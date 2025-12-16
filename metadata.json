@@ -1,0 +1,5 @@
+{
+  "name": "Devotional Video Maker",
+  "description": "A comprehensive AI-powered studio for creating devotional music videos. Ingests audio, plans storyboards, generates consistent imagery with Gemini 3 Pro, and animates clips with Veo, all with a human-in-the-loop workflow.",
+  "requestFramePermissions": []
+}
