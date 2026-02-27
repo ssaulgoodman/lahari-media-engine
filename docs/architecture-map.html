@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lahari — Architecture</title>
+<style>
+  :root {
+    --bg: #0c0c0e;
+    --surface: #141416;
+    --surface-2: #1a1a1e;
+    --border: #222226;
+    --border-hover: #333338;
+    --text: #d4d4d8;
+    --text-dim: #71717a;
+    --text-faint: #52525b;
+    --white: #fafafa;
+    --accent: #c4a35a;
+    --accent-dim: rgba(196,163,90,0.15);
+    --green: #4ade80;
+    --green-dim: rgba(74,222,128,0.1);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.1);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.1);
+    --emerald: #34d399;
+    --emerald-dim: rgba(52,211,153,0.1);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    padding: 48px 56px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--white);
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-top: 4px;
+    margin-bottom: 56px;
+  }
+
+  h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin: 64px 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ─── Phase cards ─── */
+  .flow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    margin: 24px 0;
+    overflow-x: auto;
+    padding-bottom: 16px;
+  }
+
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 230px;
+    max-width: 270px;
+    flex-shrink: 0;
+  }
+  .phase:hover { border-color: var(--border-hover); }
+
+  .phase-num {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 6px;
+  }
+  .phase-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 12px;
+  }
+
+  .io-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  .io-items {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    list-style: none;
+  }
+  .io-items li {
+    padding-left: 14px;
+    position: relative;
+  }
+  .io-items li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--text-faint);
+  }
+  .io-items.out li::before { background: var(--accent); opacity: 0.5; }
+
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-size: 14px;
+    padding-top: 20px;
+  }
+
+  /* ─── Tags ─── */
+  .tags { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .tag {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+  }
+  .tag-gemini   { background: var(--blue-dim); color: var(--blue); }
+  .tag-claude   { background: var(--accent-dim); color: var(--accent); }
+  .tag-imagen   { background: var(--amber-dim); color: var(--amber); }
+  .tag-gpi      { background: var(--emerald-dim); color: var(--emerald); }
+  .tag-veo      { background: var(--green-dim); color: var(--green); }
+  .tag-client   { background: var(--red-dim); color: var(--text-dim); }
+
+  /* ─── Call chain ─── */
+  .call-chain {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 24px;
+    margin: 16px 0;
+  }
+  .call {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .call:last-child { border-bottom: none; }
+  .call-num {
+    background: var(--surface-2);
+    color: var(--text-dim);
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .call-body { flex: 1; }
+  .call-name { font-size: 13px; font-weight: 600; color: var(--white); }
+  .call-model { font-size: 10px; color: var(--text-faint); margin-top: 1px; }
+  .call-io { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+  .call-io span { color: var(--text-dim); }
+  .call-stored { font-size: 10px; color: var(--text-faint); margin-top: 3px; font-style: italic; }
+
+  /* ─── Reference chain diagram ─── */
+  .ref-chain {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px 28px;
+    margin: 16px 0;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 2;
+    color: var(--text-dim);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .ref-chain .label { color: var(--text-faint); }
+  .ref-chain .value { color: var(--white); }
+  .ref-chain .arrow-char { color: var(--text-faint); }
+
+  /* ─── Data flow ─── */
+  .data-flow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 2.2;
+    color: var(--text-dim);
+    white-space: pre;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  .data-flow .model { color: var(--accent); }
+  .data-flow .output { color: var(--white); }
+  .data-flow .storage { color: var(--text-faint); font-style: italic; }
+
+  /* ─── DB schema ─── */
+  .schema-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .schema-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .schema-card:hover { border-color: var(--border-hover); }
+  .schema-name {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 10px;
+  }
+  .schema-field {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    line-height: 1.8;
+  }
+  .schema-field .col { color: var(--text); }
+  .schema-field .type { color: var(--text-faint); }
+  .schema-field .note { color: var(--text-faint); font-style: italic; }
+
+  /* ─── Model table ─── */
+  .model-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 12px;
+  }
+  .model-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .model-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+    vertical-align: top;
+  }
+  .model-table tr:last-child td { border-bottom: none; }
+  .model-table .model-name { color: var(--white); font-weight: 500; }
+  .model-table .model-id { font-family: 'SF Mono', monospace; font-size: 11px; }
+
+  .section { margin-bottom: 80px; }
+
+  /* ─── Legend ─── */
+  .legend {
+    display: flex;
+    gap: 16px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ─── Sequential diagram ─── */
+  .seq-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--text-dim);
+    white-space: pre;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  .seq-diagram .action { color: var(--white); }
+  .seq-diagram .ref { color: var(--accent); }
+  .seq-diagram .lock { color: var(--green); }
+</style>
+</head>
+<body>
+
+<h1>Lahari Media Engine</h1>
+<p class="subtitle">Architecture, pipeline, and data flow reference</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>AI Models</h2>
+
+<div class="legend">
+  <div class="legend-item"><span class="tag tag-gemini">Gemini</span> Text analysis + vision</div>
+  <div class="legend-item"><span class="tag tag-claude">Claude</span> Structured planning</div>
+  <div class="legend-item"><span class="tag tag-imagen">Imagen 4</span> Text-only image gen</div>
+  <div class="legend-item"><span class="tag tag-gpi">Gemini Pro Image</span> Multimodal image gen</div>
+  <div class="legend-item"><span class="tag tag-veo">Veo 3.1</span> Video gen</div>
+</div>
+
+<table class="model-table">
+  <tr><th>Model</th><th>ID</th><th>Type</th><th>Role</th></tr>
+  <tr>
+    <td class="model-name">Gemini 3 Pro</td>
+    <td class="model-id">gemini-3-pro-preview</td>
+    <td>Text + vision</td>
+    <td>Audio analysis, concept generation, shot critique, director chat</td>
+  </tr>
+  <tr>
+    <td class="model-name">Claude Sonnet</td>
+    <td class="model-id">claude-sonnet-4-6</td>
+    <td>Structured text</td>
+    <td>Script planning (tool_use), style brainstorm/refine/enrich, shot prompt writing</td>
+  </tr>
+  <tr>
+    <td class="model-name">Imagen 4</td>
+    <td class="model-id">imagen-4.0-generate-001</td>
+    <td>Text &rarr; image</td>
+    <td>Style exploration only (no reference images needed)</td>
+  </tr>
+  <tr>
+    <td class="model-name">Gemini 3 Pro Image</td>
+    <td class="model-id">gemini-3-pro-image-preview</td>
+    <td>Multimodal &rarr; image</td>
+    <td>Character looks, environment looks, shot frames (accepts reference images)</td>
+  </tr>
+  <tr>
+    <td class="model-name">Veo 3.1</td>
+    <td class="model-id">veo-3.1-fast-generate-preview</td>
+    <td>Image &rarr; video</td>
+    <td>Keyframe morphing (start frame + optional end frame + motion prompt)</td>
+  </tr>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Blueprint Phase</h2>
+
+<div class="flow">
+  <div class="phase">
+    <div class="phase-num">Stage 1</div>
+    <div class="phase-title">Audio Analysis</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items"><li>Audio file (MP3/WAV)</li></ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>Lyrics (timestamped, original language)</li>
+      <li>Musical structure (sections, timing, energy)</li>
+      <li>Meaning (theme, emotion, cultural context)</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>projects.lyrics, musical_structure, meaning</li></ul>
+    <div class="tags"><span class="tag tag-gemini">Gemini &times; 3</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 2</div>
+    <div class="phase-title">Concept</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items"><li>Lyrics + structure + meaning</li></ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>3 concept options (deity, mood, theme, direction)</li>
+      <li>User picks one &rarr; locked</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>projects.locked_concept</li></ul>
+    <div class="tags"><span class="tag tag-gemini">Gemini</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 3</div>
+    <div class="phase-title">Script</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items"><li>Locked concept + lyrics + structure</li></ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>Cast (name + physical description)</li>
+      <li>Environments (name + description)</li>
+      <li>Scenes (label, timing, narrative)</li>
+      <li>Shots (direction, duration, castNames, envName)</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>cast_members, environments, scenes, shots</li></ul>
+    <div class="tags"><span class="tag tag-claude">Claude</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 4</div>
+    <div class="phase-title">Style</div>
+    <div class="io-label">Process</div>
+    <ul class="io-items out">
+      <li>Brainstorm 4 text directions</li>
+      <li>Selectively visualize with Imagen 4</li>
+      <li>Optional: refine, upload reference</li>
+      <li>Lock one &rarr; enrich style DNA</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>projects.style_asset_id, style_description</li></ul>
+    <div class="tags">
+      <span class="tag tag-claude">Claude</span>
+      <span class="tag tag-imagen">Imagen 4</span>
+    </div>
+  </div>
+</div>
+
+<div class="flow">
+  <div class="phase">
+    <div class="phase-num">Stage 5</div>
+    <div class="phase-title">Characters</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items">
+      <li>Character description + style DNA</li>
+      <li>Style image (visual reference)</li>
+      <li>Optional: user feedback</li>
+    </ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>3 looks per character (close-up, mid, full)</li>
+      <li>User picks one &rarr; locked reference</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>cast_members.reference_asset_id</li></ul>
+    <div class="tags"><span class="tag tag-gpi">Gemini Pro Image</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 6</div>
+    <div class="phase-title">Environments</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items">
+      <li>Environment description + style DNA</li>
+      <li>Style image (visual reference)</li>
+    </ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>3 looks per environment</li>
+      <li>User picks one &rarr; locked reference</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>environments.reference_asset_id</li></ul>
+    <div class="tags"><span class="tag tag-gpi">Gemini Pro Image</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 7</div>
+    <div class="phase-title">Shot Prompts</div>
+    <div class="io-label">Input (full context)</div>
+    <ul class="io-items">
+      <li>Script skeleton + style DNA</li>
+      <li>Character descriptions + lyrics</li>
+      <li>Scene narratives + concept</li>
+    </ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>visualPrompt per shot (image direction)</li>
+      <li>motionPrompt per shot (video direction)</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>shots.visual_prompt, motion_prompt</li></ul>
+    <div class="tags"><span class="tag tag-claude">Claude</span></div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Studio Phase &mdash; Sequential Shot Workflow</h2>
+
+<div class="flow">
+  <div class="phase">
+    <div class="phase-num">Stage 8</div>
+    <div class="phase-title">Start Frame</div>
+    <div class="io-label">Reference chain</div>
+    <ul class="io-items">
+      <li>Character ref images (identity)</li>
+      <li>Style ref image (visual language)</li>
+      <li>Environment ref image (location)</li>
+      <li>Prev shot end frame (continuity)</li>
+    </ul>
+    <div class="io-label">Prompt includes</div>
+    <ul class="io-items out">
+      <li>Numbered image index</li>
+      <li>Reference usage instructions</li>
+      <li>Priority order + negative constraints</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>shots.image_asset_id</li></ul>
+    <div class="tags"><span class="tag tag-gpi">Gemini Pro Image</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 9</div>
+    <div class="phase-title">End Frame</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items">
+      <li>Start frame (Image 1)</li>
+      <li>Style ref (Image 2)</li>
+      <li>Motion prompt</li>
+    </ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>What the camera sees AFTER motion</li>
+      <li>Same scene, characters, environment</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>shots.end_image_asset_id</li></ul>
+    <div class="tags"><span class="tag tag-gpi">Gemini Pro Image</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 10</div>
+    <div class="phase-title">Lock</div>
+    <div class="io-label">Requires</div>
+    <ul class="io-items">
+      <li>Start frame exists</li>
+      <li>End frame exists</li>
+    </ul>
+    <div class="io-label">Effect</div>
+    <ul class="io-items out">
+      <li>shots.locked = 1</li>
+      <li>Next shot in scene becomes actionable</li>
+      <li>End frame available as continuity ref</li>
+    </ul>
+    <div class="tags"><span class="tag tag-client">User action</span></div>
+  </div>
+
+  <div class="arrow">&rarr;</div>
+
+  <div class="phase">
+    <div class="phase-num">Stage 11</div>
+    <div class="phase-title">Video</div>
+    <div class="io-label">Input</div>
+    <ul class="io-items">
+      <li>Start keyframe image</li>
+      <li>End keyframe image</li>
+      <li>Motion prompt + scene context</li>
+    </ul>
+    <div class="io-label">Output</div>
+    <ul class="io-items out">
+      <li>Video clip (MP4)</li>
+    </ul>
+    <div class="io-label">Stored</div>
+    <ul class="io-items"><li>shots.video_asset_id</li></ul>
+    <div class="tags"><span class="tag tag-veo">Veo 3.1</span></div>
+  </div>
+</div>
+
+<p style="font-size: 12px; color: var(--text-dim); margin: 8px 0 16px; line-height: 1.8;">
+  Scenes are independent &mdash; can work on multiple scenes in parallel.<br>
+  Shots within a scene are sequential &mdash; shot N+1 needs shot N locked.
+</p>
+
+<div class="seq-diagram"><span class="action">Scene 1</span>
+  <span class="action">Shot 1</span> &larr; style + char refs + env ref (no continuity ref)
+    Start frame &rarr; End frame &rarr; <span class="lock">Lock</span>
+                                          |
+                                          <span class="ref">end frame passes down</span>
+                                          &darr;
+  <span class="action">Shot 2</span> &larr; style + char refs + env ref + <span class="ref">Shot 1 end frame</span>
+    Start frame &rarr; End frame &rarr; <span class="lock">Lock</span>
+                                          |
+                                          <span class="ref">end frame passes down</span>
+                                          &darr;
+  <span class="action">Shot 3</span> &larr; ... (continues sequentially)
+
+<span class="action">Scene 2</span> (independent, can run in parallel)
+  <span class="action">Shot 1</span> &larr; style + char refs + env ref (no continuity ref)
+    ...</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Shot Start Frame &mdash; Reference Index</h2>
+
+<div class="ref-chain"><span class="label">Image 1</span> = <span class="value">Character reference: Kolasura</span>        <span class="arrow-char">&larr;</span> cast_members.reference_asset_id
+<span class="label">Image 2</span> = <span class="value">Character reference: Mahalakshmi</span>   <span class="arrow-char">&larr;</span> cast_members.reference_asset_id
+<span class="label">Image 3</span> = <span class="value">Style reference</span>                     <span class="arrow-char">&larr;</span> projects.style_asset_id
+<span class="label">Image 4</span> = <span class="value">Environment reference: Vaikuntha</span>    <span class="arrow-char">&larr;</span> environments.reference_asset_id
+<span class="label">Image 5</span> = <span class="value">Continuity reference</span>                <span class="arrow-char">&larr;</span> prev shot's end_image_asset_id
+
+<span class="label">REFERENCE USAGE</span>
+  Character refs  &rarr; preserve identity, face, hairstyle, costume, proportions
+  Style ref       &rarr; transfer lighting, palette, texture, lens language
+  Environment ref &rarr; transfer location design, materials, weather, ambience
+  Continuity ref  &rarr; continue action, framing, emotional beat, object continuity
+
+<span class="label">PRIORITY ORDER</span>
+  1. Character identity
+  2. Temporal continuity
+  3. Environment fidelity
+  4. Style fidelity
+
+<span class="label">NEGATIVE CONSTRAINTS</span>
+  Do not borrow identity from style ref
+  Do not redesign the character
+  Do not change setting unless scene requires it
+  Do not break continuity in costume, pose, or props
+  No text, no watermark, no logos</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Complete AI Call Chain</h2>
+
+<div class="call-chain">
+  <div class="call">
+    <div class="call-num">1</div>
+    <div class="call-body">
+      <div class="call-name">analyzeAudio (&times;3 parallel)</div>
+      <div class="call-model">Gemini 3 Pro</div>
+      <div class="call-io">In: <span>audio file</span> &rarr; Out: <span>lyrics + structure + meaning</span></div>
+      <div class="call-stored">Stored: projects.lyrics, musical_structure, meaning</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">2</div>
+    <div class="call-body">
+      <div class="call-name">generateConcepts</div>
+      <div class="call-model">Gemini 3 Pro</div>
+      <div class="call-io">In: <span>lyrics + meaning + structure</span> &rarr; Out: <span>3 concept options</span></div>
+      <div class="call-stored">Stored: projects.concept_options &rarr; user locks &rarr; projects.locked_concept</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">3</div>
+    <div class="call-body">
+      <div class="call-name">planScenes</div>
+      <div class="call-model">Claude Sonnet (tool_use)</div>
+      <div class="call-io">In: <span>concept + lyrics + structure + meaning</span> &rarr; Out: <span>cast[] + environments[] + scenes[shots[]]</span></div>
+      <div class="call-stored">Stored: cast_members, environments, scenes, shots (direction placeholders only)</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">4</div>
+    <div class="call-body">
+      <div class="call-name">brainstormStyleDirections</div>
+      <div class="call-model">Claude Sonnet</div>
+      <div class="call-io">In: <span>concept + lyrics + meaning + script summary</span> &rarr; Out: <span>4 style directions (text)</span></div>
+      <div class="call-stored">Not persisted (client state)</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">5</div>
+    <div class="call-body">
+      <div class="call-name">generateSingleStyleImage (&times;N user selects)</div>
+      <div class="call-model">Imagen 4</div>
+      <div class="call-io">In: <span>style direction text + subject</span> &rarr; Out: <span>style image</span></div>
+      <div class="call-stored">Stored: assets (category: style)</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">6</div>
+    <div class="call-body">
+      <div class="call-name">enrichStyleDNA</div>
+      <div class="call-model">Claude Sonnet (vision)</div>
+      <div class="call-io">In: <span>locked style image + short desc</span> &rarr; Out: <span>enriched style DNA paragraph</span></div>
+      <div class="call-stored">Stored: projects.style_description, style_asset_id</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">7</div>
+    <div class="call-body">
+      <div class="call-name">generateCharacterLooks (&times;N characters, 3 each)</div>
+      <div class="call-model">Gemini 3 Pro Image Preview</div>
+      <div class="call-io">In: <span>char desc + style DNA + style image ref</span> &rarr; Out: <span>3 look images</span></div>
+      <div class="call-stored">Stored: assets (category: character) &rarr; user locks &rarr; cast_members.reference_asset_id</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">8</div>
+    <div class="call-body">
+      <div class="call-name">generateEnvironmentLooks (&times;N environments, 3 each)</div>
+      <div class="call-model">Gemini 3 Pro Image Preview</div>
+      <div class="call-io">In: <span>env desc + style DNA + style image ref</span> &rarr; Out: <span>3 look images</span></div>
+      <div class="call-stored">Stored: assets (category: environment) &rarr; user locks &rarr; environments.reference_asset_id</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">9</div>
+    <div class="call-body">
+      <div class="call-name">writeShotPrompts (batch, all shots)</div>
+      <div class="call-model">Claude Sonnet</div>
+      <div class="call-io">In: <span>script skeleton + style DNA + char descs + concept + lyrics</span> &rarr; Out: <span>visualPrompt + motionPrompt per shot</span></div>
+      <div class="call-stored">Stored: shots.visual_prompt, shots.motion_prompt</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">10</div>
+    <div class="call-body">
+      <div class="call-name">generateShotStartFrame (&times;N shots, sequential per scene)</div>
+      <div class="call-model">Gemini 3 Pro Image Preview</div>
+      <div class="call-io">In: <span>visualPrompt + char refs + style ref + env ref + prev end frame</span> &rarr; Out: <span>start frame image</span></div>
+      <div class="call-stored">Stored: assets (shot_image) + shots.image_asset_id</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">11</div>
+    <div class="call-body">
+      <div class="call-name">generateShotEndFrame (&times;N shots)</div>
+      <div class="call-model">Gemini 3 Pro Image Preview</div>
+      <div class="call-io">In: <span>start frame + style ref + motionPrompt</span> &rarr; Out: <span>end frame image</span></div>
+      <div class="call-stored">Stored: assets (shot_end_frame) + shots.end_image_asset_id</div>
+    </div>
+  </div>
+  <div class="call">
+    <div class="call-num">12</div>
+    <div class="call-body">
+      <div class="call-name">generateVideo (&times;N shots)</div>
+      <div class="call-model">Veo 3.1</div>
+      <div class="call-io">In: <span>start keyframe + end keyframe + motion prompt + scene context</span> &rarr; Out: <span>video clip (MP4)</span></div>
+      <div class="call-stored">Stored: assets (shot_video) + shots.video_asset_id</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Data Flow</h2>
+
+<div class="data-flow"><span class="output">Audio File</span>
+  &darr;
+  <span class="model">[Gemini &times; 3]</span> &rarr; <span class="output">lyrics, meaning, structure</span>    <span class="storage">&rarr; projects table</span>
+  &darr;
+  <span class="model">[Gemini]</span> &rarr; <span class="output">3 concept options</span> &rarr; user picks &rarr; <span class="output">locked concept</span>    <span class="storage">&rarr; projects.locked_concept</span>
+  &darr;
+  <span class="model">[Claude]</span> &rarr; <span class="output">cast + environments + scenes + shots</span>    <span class="storage">&rarr; 4 tables</span>
+  &darr;
+  <span class="model">[Claude]</span> &rarr; <span class="output">4 style text directions</span>    <span class="storage">&rarr; client state</span>
+  &darr;
+  <span class="model">[Imagen 4]</span> &rarr; <span class="output">style images</span> &rarr; user locks &rarr; <span class="model">[Claude vision]</span> &rarr; <span class="output">style DNA</span>    <span class="storage">&rarr; projects.style_*</span>
+  &darr;
+  <span class="model">[Gemini Pro Image]</span> &times;3 per character &rarr; user locks    <span class="storage">&rarr; cast_members.reference_asset_id</span>
+  <span class="model">[Gemini Pro Image]</span> &times;3 per environment &rarr; user locks    <span class="storage">&rarr; environments.reference_asset_id</span>
+  &darr;
+  <span class="model">[Claude]</span> &rarr; <span class="output">visualPrompt + motionPrompt per shot</span>    <span class="storage">&rarr; shots.visual_prompt, motion_prompt</span>
+  &darr;
+  <span class="model">[Gemini Pro Image]</span> &rarr; <span class="output">start frame</span>    <span class="storage">&rarr; shots.image_asset_id</span>
+  <span class="model">[Gemini Pro Image]</span> &rarr; <span class="output">end frame</span>    <span class="storage">&rarr; shots.end_image_asset_id</span>
+  user locks &rarr; <span class="output">shots.locked = 1</span> &rarr; next shot receives end frame as continuity ref
+  &darr;
+  <span class="model">[Veo 3.1]</span> &rarr; <span class="output">video clip</span>    <span class="storage">&rarr; shots.video_asset_id</span>
+  &darr;
+  <span class="model">[FFmpeg WASM]</span> &rarr; <span class="output">final rendered video</span>    <span class="storage">&rarr; client download</span></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Database Schema</h2>
+
+<div class="schema-grid">
+  <div class="schema-card">
+    <div class="schema-name">projects</div>
+    <div class="schema-field">
+      <span class="col">id</span> <span class="type">TEXT PK</span><br>
+      <span class="col">title</span> <span class="type">TEXT</span><br>
+      <span class="col">status</span> <span class="type">TEXT</span> <span class="note">uploaded &rarr; analyzed &rarr; concept_locked &rarr; scripted &rarr; style_locked &rarr; characters_locked</span><br>
+      <span class="col">audio_path</span> <span class="type">TEXT</span><br>
+      <span class="col">lyrics</span> <span class="type">TEXT</span><br>
+      <span class="col">musical_structure</span> <span class="type">TEXT (JSON)</span><br>
+      <span class="col">meaning</span> <span class="type">TEXT</span><br>
+      <span class="col">concept_options</span> <span class="type">TEXT (JSON)</span><br>
+      <span class="col">locked_concept</span> <span class="type">TEXT (JSON)</span><br>
+      <span class="col">style_description</span> <span class="type">TEXT</span> <span class="note">enriched DNA</span><br>
+      <span class="col">style_asset_id</span> <span class="type">TEXT &rarr; assets</span><br>
+      <span class="col">video_mode</span> <span class="type">TEXT</span> <span class="note">montage | cinematic</span><br>
+      <span class="col">target_duration</span> <span class="type">INT</span> <span class="note">clip length (seconds)</span><br>
+      <span class="col">cost_estimate</span> <span class="type">REAL</span>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-name">cast_members</div>
+    <div class="schema-field">
+      <span class="col">id</span> <span class="type">TEXT PK</span><br>
+      <span class="col">project_id</span> <span class="type">TEXT &rarr; projects</span><br>
+      <span class="col">name</span> <span class="type">TEXT</span> <span class="note">e.g. "Kolasura"</span><br>
+      <span class="col">description</span> <span class="type">TEXT</span> <span class="note">physical desc for image gen</span><br>
+      <span class="col">reference_asset_id</span> <span class="type">TEXT &rarr; assets</span> <span class="note">locked look</span><br>
+      <span class="col">sort_order</span> <span class="type">INT</span>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-name">environments</div>
+    <div class="schema-field">
+      <span class="col">id</span> <span class="type">TEXT PK</span><br>
+      <span class="col">project_id</span> <span class="type">TEXT &rarr; projects</span><br>
+      <span class="col">name</span> <span class="type">TEXT</span> <span class="note">e.g. "Vaikuntha Palace"</span><br>
+      <span class="col">description</span> <span class="type">TEXT</span><br>
+      <span class="col">reference_asset_id</span> <span class="type">TEXT &rarr; assets</span> <span class="note">locked look</span><br>
+      <span class="col">sort_order</span> <span class="type">INT</span>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-name">shots</div>
+    <div class="schema-field">
+      <span class="col">id</span> <span class="type">TEXT PK</span><br>
+      <span class="col">scene_id</span> <span class="type">TEXT &rarr; scenes</span><br>
+      <span class="col">visual_prompt</span> <span class="type">TEXT</span> <span class="note">image direction</span><br>
+      <span class="col">motion_prompt</span> <span class="type">TEXT</span> <span class="note">video direction</span><br>
+      <span class="col">duration</span> <span class="type">REAL</span><br>
+      <span class="col">cast_ids</span> <span class="type">TEXT (JSON)</span> <span class="note">string[]</span><br>
+      <span class="col">environment_id</span> <span class="type">TEXT &rarr; environments</span><br>
+      <span class="col">image_asset_id</span> <span class="type">TEXT &rarr; assets</span> <span class="note">start frame</span><br>
+      <span class="col">image_status</span> <span class="type">TEXT</span><br>
+      <span class="col">end_image_asset_id</span> <span class="type">TEXT &rarr; assets</span> <span class="note">end frame</span><br>
+      <span class="col">end_image_status</span> <span class="type">TEXT</span><br>
+      <span class="col">locked</span> <span class="type">INT</span> <span class="note">0 | 1</span><br>
+      <span class="col">user_feedback</span> <span class="type">TEXT</span> <span class="note">director notes</span><br>
+      <span class="col">video_asset_id</span> <span class="type">TEXT &rarr; assets</span><br>
+      <span class="col">video_status</span> <span class="type">TEXT</span><br>
+      <span class="col">critique</span> <span class="type">TEXT (JSON)</span><br>
+      <span class="col">attempt_count</span> <span class="type">INT</span>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-name">assets</div>
+    <div class="schema-field">
+      <span class="col">id</span> <span class="type">TEXT PK</span><br>
+      <span class="col">project_id</span> <span class="type">TEXT &rarr; projects</span><br>
+      <span class="col">category</span> <span class="type">TEXT</span> <span class="note">style | character | environment | shot_image | shot_end_frame | shot_video</span><br>
+      <span class="col">file_path</span> <span class="type">TEXT</span> <span class="note">relative to storage/</span><br>
+      <span class="col">prompt</span> <span class="type">TEXT</span><br>
+      <span class="col">created_at</span> <span class="type">TEXT</span>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-name">scenes</div>
+    <div class="schema-field">
+      <span class="col">id</span> <span class="type">TEXT PK</span><br>
+      <span class="col">project_id</span> <span class="type">TEXT &rarr; projects</span><br>
+      <span class="col">section_label</span> <span class="type">TEXT</span> <span class="note">e.g. "Verse 1"</span><br>
+      <span class="col">start_time</span> <span class="type">TEXT</span> <span class="note">"0:15"</span><br>
+      <span class="col">end_time</span> <span class="type">TEXT</span><br>
+      <span class="col">lyrics</span> <span class="type">TEXT</span><br>
+      <span class="col">narrative_description</span> <span class="type">TEXT</span><br>
+      <span class="col">sort_order</span> <span class="type">INT</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="section">
+<h2>Storage Layout</h2>
+
+<div class="ref-chain"><span class="value">storage/</span>
+  <span class="value">lahari.db</span>            <span class="label">SQLite database (WAL mode)</span>
+  <span class="value">audio/</span>
+    <span class="value">{uuid}.mp3</span>          <span class="label">Uploaded audio files</span>
+  <span class="value">images/</span>
+    <span class="value">{uuid}.png</span>          <span class="label">Style explorations</span>
+    <span class="value">{uuid}.png</span>          <span class="label">Character looks (3 per character)</span>
+    <span class="value">{uuid}.png</span>          <span class="label">Environment looks (3 per environment)</span>
+    <span class="value">{uuid}.png</span>          <span class="label">Shot start frames</span>
+    <span class="value">{uuid}.png</span>          <span class="label">Shot end frames</span>
+  <span class="value">videos/</span>
+    <span class="value">{uuid}.mp4</span>          <span class="label">Generated video clips</span>
+
+<span class="label">All paths in assets.file_path are relative to storage/</span>
+<span class="label">Served via /storage/{file_path} endpoint</span>
+<span class="label">Assets are never deleted — persistence guarantee</span></div>
+</div>
+
+</body>
+</html>
