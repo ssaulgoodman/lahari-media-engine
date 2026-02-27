@@ -4,7 +4,8 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { saveBuffer, STORAGE_ROOT_PATH, readAsBase64, mimeFromExt } from '../storage.js';
-import { transcribeLyrics, detectStructure, summarizeMeaning, generateConceptOptions } from '../services/gemini.js';
+import { transcribeLyrics, detectStructure } from '../services/gemini.js';
+import { summarizeMeaning, generateConceptOptions } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 
 const router = Router();
@@ -171,23 +172,20 @@ router.post('/', upload.single('audio'), async (req, res) => {
     const audioMime = mimeFromExt(audioPath);
     const audioRef = [{ type: 'audio' as const, label: 'Uploaded audio', url: `/storage/${audioPath}` }];
 
-    // Phase 1: parallel lyrics + structure + meaning
-    console.log(`[${projectId}] Analyzing: lyrics + structure + meaning...`);
+    // Phase 1a: parallel lyrics + structure (audio analysis via Gemini)
+    console.log(`[${projectId}] Analyzing: lyrics + structure...`);
     const t0Phase1 = Date.now();
-    const [lyricsResult, structureResult, meaningResult] = await Promise.allSettled([
+    const [lyricsResult, structureResult] = await Promise.allSettled([
       transcribeLyrics(audioBase64, audioMime, language),
       detectStructure(audioBase64, audioMime),
-      summarizeMeaning(audioBase64, audioMime, language),
     ]);
     const phase1Duration = Date.now() - t0Phase1;
 
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
     const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
-    const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
 
     if (lyricsResult.status === 'rejected') console.warn('[lyrics] Failed:', lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn('[structure] Failed:', structureResult.reason);
-    if (meaningResult.status === 'rejected') console.warn('[meaning] Failed:', meaningResult.reason);
 
     logCall({
       projectId,
@@ -215,17 +213,26 @@ router.post('/', upload.single('audio'), async (req, res) => {
       error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
     });
 
-    logCall({
-      projectId,
-      stage: 'summarize-meaning',
-      model: 'gemini-3-pro-preview',
-      prompt: `Summarize the meaning of this song: what it's about, who it addresses, emotional arc, cultural context.`,
-      referenceInputs: audioRef,
-      responseSummary: meaningResult.status === 'fulfilled' ? meaning : 'FAILED',
-      durationMs: phase1Duration,
-      costEstimate: 0.01,
-      error: meaningResult.status === 'rejected' ? String(meaningResult.reason) : undefined,
-    });
+    // Phase 1b: meaning summary (Claude Sonnet, text-only — needs lyrics)
+    let meaning = '';
+    if (lyrics) {
+      console.log(`[${projectId}] Summarizing meaning (Claude Sonnet)...`);
+      const t0Meaning = Date.now();
+      try {
+        meaning = await summarizeMeaning(title, language || 'Unknown', lyrics, context);
+      } catch (err: any) {
+        console.warn('[meaning] Failed:', err.message);
+      }
+      logCall({
+        projectId,
+        stage: 'summarize-meaning',
+        model: 'claude-sonnet-4-6',
+        prompt: `Summarize the meaning of "${title}": what it's about, who it addresses, emotional arc, cultural context.`,
+        responseSummary: meaning || 'FAILED',
+        durationMs: Date.now() - t0Meaning,
+        costEstimate: 0.005,
+      });
+    }
 
     // Save to DB — analysis only (concepts generated separately)
     db.prepare(`
@@ -265,13 +272,14 @@ router.post('/:id/generate-concepts', async (req, res) => {
   try {
     console.log(`[${project.id}] Generating concept options...`);
     const t0 = Date.now();
-    const conceptOptions = await generateConceptOptions(lyrics, musicalStructure, { title, language, context });
+    const meaning = project.meaning || '';
+    const conceptOptions = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context);
     const durationMs = Date.now() - t0;
 
     logCall({
       projectId: project.id,
       stage: 'generate-concepts',
-      model: 'gemini-3-pro-preview',
+      model: 'claude-opus-4-6',
       prompt: `Generate EXACTLY 3 creative concept directions for "${title}"${language ? ` (${language})` : ''}${context ? ` — Context: ${context}` : ''}\n\nLyrics:\n${lyrics}\n\nStructure:\n${musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join(', ')}`,
       responseSummary: conceptOptions.map((c: any, i: number) =>
         `[${i + 1}] ${c.conceptDirection} — ${c.mood} / ${c.visualSuggestions?.artStyle || 'N/A'} / ${c.visualSuggestions?.colorPalette || 'N/A'}\n    Theme: ${c.theme}`
@@ -293,7 +301,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'generate-concepts',
-      model: 'gemini-3-pro-preview',
+      model: 'claude-opus-4-6',
       prompt: `Generate concepts for "${title}"`,
       durationMs: 0,
       error: err.message,

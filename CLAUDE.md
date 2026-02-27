@@ -101,21 +101,19 @@ server/
 - `POST/PUT/DELETE /api/projects/:id/cast/:memberId` — Cast member management
 - `POST/PUT/DELETE /api/projects/:id/environments/:envId` — Environment management
 
-### AI Models (4 models, each with a distinct role)
+### AI Models (5 models, each with a distinct role)
 
 | Model | ID | Role | Used For |
 |-------|-----|------|----------|
-| **Gemini 3 Pro** | `gemini-3-pro-preview` | Text analysis + vision | Audio analysis, concept generation, shot critique, chat |
-| **Claude Sonnet** | `claude-sonnet-4-6` | Structured text + planning | Script planning, style brainstorm/refine/enrich, shot prompt writing, prompt compilation |
-| **Imagen 4** | `imagen-4.0-generate-001` | Text-only image gen | Style exploration only (doesn't need reference images) |
-| **Gemini 3 Pro Image** | `gemini-3-pro-image-preview` | Multimodal image gen | Character looks, environment looks, shot start/end frames (accepts reference images) |
+| **Gemini 3 Pro** | `gemini-3-pro-preview` | Text analysis + vision | Audio analysis (lyrics, structure), shot critique, chat |
+| **Claude Opus** | `claude-opus-4-6` | Creative direction | Concept generation, style brainstorm |
+| **Claude Sonnet** | `claude-sonnet-4-6` | Structured text + planning | Meaning summary, script planning, style refine/enrich, shot prompt writing |
+| **Gemini 3 Pro Image** | `gemini-3-pro-image-preview` | Image gen (multimodal) | Style visualization, character looks, environment looks, shot start/end frames |
 | **Veo 3.1** | `veo-3.1-fast-generate-preview` | Video gen | Keyframe morphing with start + end frames |
 
-### Image Generation: Two-Model Architecture
+### Image Generation
 
-**Imagen 4** — text-only, used for style exploration. Style visualization doesn't need reference images (the style image IS the reference being created). Fast, high quality for visual direction exploration.
-
-**gemini-3-pro-image-preview** — multimodal, accepts reference images as inline data. Used for everything that needs visual consistency: character looks (with style ref), environment looks (with style ref), shot frames (with full reference chain: characters + style + environment + continuity).
+**gemini-3-pro-image-preview** — used for ALL image generation. Accepts reference images as inline data for visual consistency: style visualization, character looks (with style ref), environment looks (with style ref), shot frames (with full reference chain: characters + style + environment + continuity).
 
 ### Shot Frame Reference Chain (gemini-3-pro-image-preview)
 

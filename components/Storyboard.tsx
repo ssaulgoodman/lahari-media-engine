@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
+import { ImageModal } from './ImageModal';
 
 interface Props {
   scenes: VideoScene[];
@@ -13,6 +14,10 @@ interface Props {
 }
 
 export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onGenerateImage, onGenerateEndFrame, onGenerateVideo, onLockShot }) => {
+
+  // Track which shots are showing frames instead of video
+  const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
+  const [modalImage, setModalImage] = useState<string | null>(null);
 
   // Determine if a shot is actionable (sequential enforcement)
   const isShotActionable = (scene: VideoScene, shotIdx: number): boolean => {
@@ -99,7 +104,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onG
                             <span className="text-[8px] bg-black/70 text-zinc-400 px-1.5 py-0.5 rounded uppercase font-bold backdrop-blur-sm">Start</span>
                           </div>
                           {shot.imageUrl ? (
-                            <img src={shot.imageUrl} className="w-full h-full object-cover" />
+                            <img src={shot.imageUrl} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-zinc-700">
                               <span className="text-[10px]">No start frame</span>
@@ -118,7 +123,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onG
                             <span className="text-[8px] bg-black/70 text-zinc-400 px-1.5 py-0.5 rounded uppercase font-bold backdrop-blur-sm">End</span>
                           </div>
                           {shot.endImageUrl ? (
-                            <img src={shot.endImageUrl} className="w-full h-full object-cover" />
+                            <img src={shot.endImageUrl} onClick={() => setModalImage(shot.endImageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-zinc-700">
                               <span className="text-[10px]">{hasStartFrame ? 'Generate end frame' : '—'}</span>
@@ -126,10 +131,24 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onG
                           )}
                         </div>
 
-                        {/* Video overlay (plays over both frames) */}
-                        {shot.videoUrl && (
+                        {/* Video overlay (togglable — click "Frames" to see start/end) */}
+                        {shot.videoUrl && !showFrames[shot.id] && (
                           <div className="absolute inset-0 z-20 bg-black">
                             <video src={shot.videoUrl} controls loop playsInline className="w-full h-full object-contain" />
+                          </div>
+                        )}
+
+                        {/* Video/Frames toggle */}
+                        {shot.videoUrl && (
+                          <div className="absolute bottom-1 right-1 z-30 flex gap-0.5">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setShowFrames(prev => ({ ...prev, [shot.id]: false })); }}
+                              className={`text-[8px] px-1.5 py-0.5 rounded-l font-bold backdrop-blur-md transition-colors ${!showFrames[shot.id] ? 'bg-accent-600/80 text-white' : 'bg-black/60 text-zinc-400 hover:text-white'}`}
+                            >Video</button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setShowFrames(prev => ({ ...prev, [shot.id]: true })); }}
+                              className={`text-[8px] px-1.5 py-0.5 rounded-r font-bold backdrop-blur-md transition-colors ${showFrames[shot.id] ? 'bg-accent-600/80 text-white' : 'bg-black/60 text-zinc-400 hover:text-white'}`}
+                            >Frames</button>
                           </div>
                         )}
 
@@ -271,13 +290,38 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onG
                               </button>
                             </>
                           ) : (
-                            <button
-                              onClick={() => onGenerateVideo(scene.id, shot.id)}
-                              disabled={isGenerating}
-                              className="flex-1 bg-accent-600 hover:bg-accent-500 text-white py-2.5 rounded text-xs font-bold shadow-lg shadow-accent-500/20 disabled:opacity-50 disabled:shadow-none"
-                            >
-                              {shot.videoUrl ? 'Regenerate Video' : 'Generate Video'}
-                            </button>
+                            <div className="flex flex-col gap-2 w-full">
+                              <button
+                                onClick={() => onGenerateVideo(scene.id, shot.id)}
+                                disabled={isGenerating}
+                                className="w-full bg-accent-600 hover:bg-accent-500 text-white py-2.5 rounded text-xs font-bold shadow-lg shadow-accent-500/20 disabled:opacity-50 disabled:shadow-none"
+                              >
+                                {shot.videoUrl ? 'Regenerate Video' : 'Generate Video'}
+                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => onLockShot(scene.id, shot.id)}
+                                  disabled={isGenerating}
+                                  className="flex-1 text-[10px] text-zinc-500 hover:text-yellow-400 py-1.5 rounded border border-white/5 hover:border-yellow-500/30 transition-colors"
+                                >
+                                  Unlock
+                                </button>
+                                <button
+                                  onClick={() => onGenerateImage(scene.id, shot.id)}
+                                  disabled={isGenerating}
+                                  className="flex-1 text-[10px] text-zinc-500 hover:text-white py-1.5 rounded border border-white/5 hover:border-white/20 transition-colors"
+                                >
+                                  Regen Start
+                                </button>
+                                <button
+                                  onClick={() => onGenerateEndFrame(scene.id, shot.id)}
+                                  disabled={isGenerating}
+                                  className="flex-1 text-[10px] text-zinc-500 hover:text-white py-1.5 rounded border border-white/5 hover:border-white/20 transition-colors"
+                                >
+                                  Regen End
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -295,6 +339,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onG
           </div>
         </div>
       ))}
+
+      {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
     </div>
   );
 };

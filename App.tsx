@@ -26,6 +26,8 @@ const App: React.FC = () => {
   // Style candidates — now managed inside AnalysisEditor (brainstorm flow)
   // Character look candidates per cast member
   const [lookCandidates, setLookCandidates] = useState<Record<string, { id: string; url: string }[]>>({});
+  // Per-member loading state for parallel character generation
+  const [looksLoading, setLooksLoading] = useState<Set<string>>(new Set());
   // X-Ray panel
   const [xrayOpen, setXrayOpen] = useState(false);
 
@@ -46,10 +48,10 @@ const App: React.FC = () => {
 
   // Determine which step to show based on project phase
   const navigateToPhase = (p: ApiProject) => {
-    if (p.status === 'characters_locked' && p.scenes.length > 0) {
+    if ((p.status === 'characters_locked' || p.status === 'environments_locked') && p.scenes.length > 0) {
       // All Blueprint phases complete — go to Studio
       setCurrentStep(AppStep.STUDIO);
-    } else if (p.conceptOptions.length > 0 || p.status === 'concept_locked' || p.status === 'scripted' || p.status === 'style_locked' || p.status === 'characters_locked') {
+    } else if (p.conceptOptions.length > 0 || p.status === 'concept_locked' || p.status === 'scripted' || p.status === 'style_locked' || p.status === 'characters_locked' || p.status === 'environments_locked') {
       setCurrentStep(AppStep.BLUEPRINT);
     } else {
       // analyzed but no concepts yet, or still uploading — stay on upload/analysis page
@@ -141,7 +143,7 @@ const App: React.FC = () => {
 
   const handleGenerateLooks = async (castMemberId: string, feedback?: string) => {
     if (!project) return;
-    setLoading(true);
+    setLooksLoading(prev => new Set(prev).add(castMemberId));
     setError(null);
     try {
       const result = await api.generateLooks(project.id, castMemberId, feedback);
@@ -150,7 +152,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setLooksLoading(prev => { const next = new Set(prev); next.delete(castMemberId); return next; });
     }
   };
 
@@ -208,6 +210,34 @@ const App: React.FC = () => {
       setProject(p);
     } catch (err: any) {
       setError('Script generation failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Advance past Characters / Environments ────────────────────
+
+  const handleAdvanceCharacters = async () => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const p = await api.advanceCharacters(project.id);
+      setProject(p);
+    } catch (err: any) {
+      setError('Failed to advance: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdvanceEnvironments = async () => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const p = await api.advanceEnvironments(project.id);
+      setProject(p);
+    } catch (err: any) {
+      setError('Failed to advance: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -308,11 +338,16 @@ const App: React.FC = () => {
 
   const handleLockShot = async (sceneId: string, shotId: string) => {
     if (!project) return;
+    // Toggle: if already locked, unlock; otherwise lock
+    const scene = project.scenes.find(s => s.id === sceneId);
+    const shot = scene?.shots.find(s => s.id === shotId);
     try {
-      const p = await api.lockShot(project.id, shotId);
+      const p = shot?.locked
+        ? await api.unlockShot(project.id, shotId)
+        : await api.lockShot(project.id, shotId);
       setProject(p);
     } catch (err: any) {
-      setError(`Lock failed: ${err.message}`);
+      setError(`${shot?.locked ? 'Unlock' : 'Lock'} failed: ${err.message}`);
     }
   };
 
@@ -421,7 +456,7 @@ const App: React.FC = () => {
                 const isAccessible =
                   step.id === AppStep.UPLOAD ||
                   (project && (step.id === AppStep.BLUEPRINT)) ||
-                  (project && project.status === 'characters_locked' && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
+                  (project && (project.status === 'characters_locked' || project.status === 'environments_locked') && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
 
                 return (
                   <button
@@ -496,6 +531,7 @@ const App: React.FC = () => {
               <AnalysisEditor
                 project={project}
                 isLoading={loading}
+                looksLoading={looksLoading}
                 lookCandidates={lookCandidates}
                 onLockConcept={handleLockConcept}
                 onLockStyle={handleLockStyle}
@@ -508,6 +544,8 @@ const App: React.FC = () => {
                 onGenerateScript={handleGenerateScript}
                 onUpdateProject={handleUpdateProject}
                 onLaunchStudio={handleLaunchStudio}
+                onAdvanceCharacters={handleAdvanceCharacters}
+                onAdvanceEnvironments={handleAdvanceEnvironments}
                 onSetProject={setProject}
               />
             )}

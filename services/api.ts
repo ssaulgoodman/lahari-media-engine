@@ -226,6 +226,18 @@ export const lockEnvironment = async (projectId: string, environmentId: string, 
   return handleResponse(res);
 };
 
+// ─── Phase Advancement ──────────────────────────────────────────────
+
+export const advanceCharacters = async (projectId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/advance-characters`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const advanceEnvironments = async (projectId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/advance-environments`, { method: 'POST' });
+  return handleResponse(res);
+};
+
 // ─── Script Generation ──────────────────────────────────────────────
 
 export const generateScript = async (projectId: string) => {
@@ -245,6 +257,11 @@ export const generateShotImage = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
+export const generateShotFramePair = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-frame-pair`, { method: 'POST' });
+  return handleResponse(res);
+};
+
 export const generateShotVideo = async (projectId: string, shotId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, { method: 'POST' });
   return handleResponse(res);
@@ -261,6 +278,11 @@ export const updateShot = async (projectId: string, shotId: string, updates: Rec
 
 export const lockShot = async (projectId: string, shotId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/lock`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const unlockShot = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/unlock`, { method: 'POST' });
   return handleResponse(res);
 };
 

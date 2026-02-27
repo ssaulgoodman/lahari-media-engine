@@ -2,10 +2,12 @@
 import React, { useState, useRef } from 'react';
 import { ApiProject, ConceptOption, CastMember, Environment, VideoMode } from '../types';
 import * as api from '../services/api';
+import { ImageModal } from './ImageModal';
 
 interface Props {
   project: ApiProject;
   isLoading: boolean;
+  looksLoading: Set<string>;
   lookCandidates: Record<string, { id: string; url: string }[]>;
   onLockConcept: (index: number) => void;
   onLockStyle: (assetId: string, styleDescription?: string) => void;
@@ -18,26 +20,29 @@ interface Props {
   onGenerateScript: () => void;
   onUpdateProject: (updates: Record<string, any>) => void;
   onLaunchStudio: () => void;
+  onAdvanceCharacters: () => void;
+  onAdvanceEnvironments: () => void;
   onSetProject?: (project: ApiProject) => void;
 }
 
-type Phase = 'concept' | 'script' | 'style' | 'characters';
+type Phase = 'concept' | 'script' | 'style' | 'characters' | 'environments';
 
-const PHASE_ORDER: Phase[] = ['concept', 'script', 'style', 'characters'];
+const PHASE_ORDER: Phase[] = ['concept', 'script', 'style', 'characters', 'environments'];
 
 const phaseIndex = (p: Phase) => PHASE_ORDER.indexOf(p);
 
 // Determine active phase from project status
-// Flow: concept_locked → scripted → style_locked → characters_locked
+// Flow: concept_locked → scripted → style_locked → characters_locked → environments_locked
 const getActivePhase = (project: ApiProject): Phase => {
   switch (project.status) {
     case 'analyzed': return 'concept';
     case 'concept_locked': return 'script';
     case 'scripted': return 'style';
     case 'style_locked': return 'characters';
-    case 'characters_locked':
+    case 'characters_locked': return 'environments';
+    case 'environments_locked':
     case 'in_production':
-      return 'characters';
+      return 'environments';
     default: return 'concept';
   }
 };
@@ -63,6 +68,7 @@ const EnvironmentCard: React.FC<{
 }> = ({ env, projectId, isLoading, onProjectUpdate }) => {
   const [looks, setLooks] = useState<{ id: string; url: string }[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [modalImage, setModalImage] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -98,7 +104,7 @@ const EnvironmentCard: React.FC<{
           <div className="mb-3">
             <span className="text-[10px] uppercase font-bold text-green-400 mb-1 block">✓ Locked</span>
             <div className="aspect-video rounded-lg overflow-hidden border border-green-500/30">
-              <img src={env.referenceImageUrl} className="w-full h-full object-cover" />
+              <img src={env.referenceImageUrl} onClick={() => setModalImage(env.referenceImageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
             </div>
           </div>
         )}
@@ -119,12 +125,11 @@ const EnvironmentCard: React.FC<{
             {looks.map(look => (
               <div
                 key={look.id}
-                onClick={() => handleLock(look.id)}
-                className="cursor-pointer aspect-video rounded overflow-hidden border border-white/10 hover:border-accent-500 transition-all relative group"
+                className="aspect-video rounded overflow-hidden border border-white/10 hover:border-accent-500 transition-all relative group"
               >
-                <img src={look.url} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                  <span className="text-[8px] font-bold text-white bg-accent-600 px-2 py-0.5 rounded-full">Lock</span>
+                <img src={look.url} onClick={() => setModalImage(look.url)} className="w-full h-full object-cover cursor-zoom-in" />
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                  <button onClick={() => handleLock(look.id)} className="pointer-events-auto text-[8px] font-bold text-white bg-accent-600 hover:bg-accent-500 px-2 py-0.5 rounded-full cursor-pointer">Lock</button>
                 </div>
               </div>
             ))}
@@ -133,21 +138,22 @@ const EnvironmentCard: React.FC<{
 
         <button
           onClick={handleGenerate}
-          disabled={generating || isLoading}
+          disabled={generating}
           className="w-full py-2 bg-accent-600/20 hover:bg-accent-600 text-accent-400 hover:text-white rounded text-xs font-bold border border-accent-500/30 transition-all disabled:opacity-30"
         >
           {generating ? 'Generating...' : env.referenceImageUrl ? 'Regenerate Looks' : 'Generate 3 Looks'}
         </button>
       </div>
+      {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
     </div>
   );
 };
 
 export const AnalysisEditor: React.FC<Props> = ({
-  project, isLoading, lookCandidates,
+  project, isLoading, looksLoading, lookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
-  onGenerateScript, onUpdateProject, onLaunchStudio, onSetProject,
+  onGenerateScript, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject,
 }) => {
   const activePhase = getActivePhase(project);
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
@@ -161,6 +167,8 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [expandedScenes, setExpandedScenes] = useState<Set<string>>(new Set());
   const [isBrainstorming, setIsBrainstorming] = useState(false);
   const [isLocking, setIsLocking] = useState(false);
+  const [showExploredStyles, setShowExploredStyles] = useState(false);
+  const [modalImage, setModalImage] = useState<string | null>(null);
 
   const canAccess = (phase: Phase) => phaseIndex(phase) <= phaseIndex(activePhase);
   const isLocked = (phase: Phase) => phaseIndex(phase) < phaseIndex(activePhase);
@@ -298,7 +306,7 @@ export const AnalysisEditor: React.FC<Props> = ({
             </div>
           ) : slot.imageUrl ? (
             <div className="aspect-video rounded-xl overflow-hidden border border-white/10 relative group">
-              <img src={slot.imageUrl} className="w-full h-full object-cover" />
+              <img src={slot.imageUrl} onClick={() => setModalImage(slot.imageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                 <button
                   onClick={onLock}
@@ -363,12 +371,13 @@ export const AnalysisEditor: React.FC<Props> = ({
         <div>
           <h2 className="text-4xl font-display font-medium text-white">{project.title || 'Production Pipeline'}</h2>
           <p className="text-zinc-500 mt-2 font-light">
-            Phase: {viewPhase === 'concept' ? '1. Choose Concept' : viewPhase === 'script' ? '2. Generate Script' : viewPhase === 'style' ? '3. Lock Art Style' : '4. Lock Characters'}
+            Phase: {viewPhase === 'concept' ? '1. Choose Concept' : viewPhase === 'script' ? '2. Generate Script' : viewPhase === 'style' ? '3. Lock Art Style' : viewPhase === 'characters' ? '4. Lock Characters' : '5. Lock Environments'}
           </p>
         </div>
-        {project.status === 'characters_locked' && (
-          <button onClick={onLaunchStudio} className="bg-accent-600 hover:bg-accent-500 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-accent-500/20 transition-all hover:scale-105">
-            Launch Studio →
+        {(project.status === 'environments_locked' || (project.status === 'characters_locked' && project.environments.length === 0)) && (
+          <button onClick={onLaunchStudio} disabled={isLoading} className="bg-accent-600 hover:bg-accent-500 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-accent-500/20 transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-3">
+            {isLoading && <div className="w-4 h-4 border-t-2 border-white rounded-full animate-spin"></div>}
+            {isLoading ? 'Writing shot prompts...' : 'Launch Studio →'}
           </button>
         )}
       </div>
@@ -443,30 +452,94 @@ export const AnalysisEditor: React.FC<Props> = ({
       {viewPhase === 'style' && (
         <div className="space-y-8">
           {isLocked('style') ? (
-            <div className="glass p-8 rounded-2xl border border-green-500/20">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-green-400 text-lg">✓</span>
-                  <h3 className="text-lg font-display text-white">Locked Style</h3>
+            <div className="space-y-6">
+              <div className="glass p-8 rounded-2xl border border-green-500/20">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-green-400 text-lg">✓</span>
+                    <h3 className="text-lg font-display text-white">Locked Style</h3>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowExploredStyles(prev => !prev)}
+                      className="text-xs text-zinc-400 hover:text-white border border-white/10 hover:border-white/30 px-3 py-1.5 rounded transition-colors"
+                    >
+                      {showExploredStyles ? 'Hide Explorer' : 'Explore New Directions'}
+                    </button>
+                    {project.status === 'style_locked' && (
+                      <button
+                        onClick={onUnlockStyle}
+                        disabled={isLoading}
+                        className="text-xs text-zinc-500 hover:text-red-400 border border-white/10 hover:border-red-500/30 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+                      >
+                        Unlock & Re-explore
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {project.status === 'style_locked' && (
-                  <button
-                    onClick={onUnlockStyle}
-                    disabled={isLoading}
-                    className="text-xs text-zinc-500 hover:text-red-400 border border-white/10 hover:border-red-500/30 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
-                  >
-                    Unlock & Re-explore
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-6 items-start">
-                {project.styleAssetUrl && (
-                  <img src={project.styleAssetUrl} className="w-64 rounded-xl border border-white/10" />
-                )}
-                <div className="flex-1">
-                  <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{project.styleDescription}</p>
+                <div className="flex gap-6 items-start">
+                  {project.styleAssetUrl && (
+                    <img src={project.styleAssetUrl} onClick={() => setModalImage(project.styleAssetUrl!)} className="w-64 rounded-xl border border-white/10 cursor-zoom-in" />
+                  )}
+                  <div className="flex-1">
+                    <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{project.styleDescription}</p>
+                    {project.status === 'style_locked' && (
+                      <button
+                        onClick={() => setViewPhase('characters')}
+                        className="mt-4 px-6 py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold hover:bg-green-600 hover:text-white transition-all"
+                      >
+                        Proceed to Characters →
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Explore / regenerate styles while locked */}
+              {showExploredStyles && (
+                <div className="glass p-6 rounded-2xl border border-white/5 space-y-4">
+                  <h4 className="text-sm font-display text-zinc-400">Explore More Directions</h4>
+                  <div className="flex gap-3">
+                    <input
+                      value={brainstormNotes}
+                      onChange={(e) => setBrainstormNotes(e.target.value)}
+                      placeholder="Optional: style preferences... e.g. 'painterly', 'dark and moody', 'Ravi Varma inspired'"
+                      className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-accent-500/50"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
+                    />
+                    <button
+                      onClick={handleBrainstorm}
+                      disabled={isBrainstorming}
+                      className="px-6 py-2.5 bg-accent-600 hover:bg-accent-500 rounded-lg text-xs font-bold text-white shadow-lg disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate All' : 'Brainstorm 4 Directions'}
+                    </button>
+                  </div>
+
+                  {/* Brainstorming spinner */}
+                  {isBrainstorming && styleSlots.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-48 space-y-4">
+                      <div className="w-12 h-12 border-t-2 border-accent-400 rounded-full animate-spin"></div>
+                      <p className="text-zinc-400 animate-pulse text-sm">Brainstorming visual directions...</p>
+                    </div>
+                  )}
+
+                  {/* Previously explored style cards */}
+                  {styleSlots.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {styleSlots.map((slot, idx) => (
+                        <StyleCard
+                          key={idx}
+                          slot={slot}
+                          index={idx}
+                          onVisualize={() => handleVisualize(idx)}
+                          onLock={() => handleLockSlot(slot)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-6">
@@ -475,7 +548,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                 <div>
                   <h3 className="text-lg font-display text-white mb-1">Art Style Exploration</h3>
                   <p className="text-zinc-500 text-sm">
-                    Gemini will brainstorm 4 distinct visual directions based on your song's mood, lyrics, and concept.
+                    Claude will brainstorm 4 distinct visual directions based on your song's mood, lyrics, and concept.
                     Then you choose which ones to visualize as images.
                   </p>
                 </div>
@@ -633,21 +706,35 @@ export const AnalysisEditor: React.FC<Props> = ({
                           <div className="w-full h-full flex items-center justify-center text-zinc-600 text-[10px]">?</div>
                         )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium text-white truncate">{member.name}</div>
-                        <div className="text-[10px] text-zinc-500 truncate">{member.referenceImageUrl ? '✓ Look Set' : 'No Look Set'}</div>
+                        <div className="text-[10px] text-zinc-500 truncate">{looksLoading.has(member.id) ? 'Generating...' : member.referenceImageUrl ? '✓ Look Set' : 'No Look Set'}</div>
                       </div>
+                      {looksLoading.has(member.id) && (
+                        <div className="w-4 h-4 border-2 border-accent-400/30 border-t-accent-400 rounded-full animate-spin flex-shrink-0"></div>
+                      )}
                     </div>
                   ))}
                 </div>
 
-                {/* All characters locked? Show proceed button */}
-                {project.cast.length > 0 && project.cast.every(c => c.referenceImageUrl) && (
+                {/* Generate All Looks — fire parallel calls */}
+                {project.cast.length > 0 && project.status === 'style_locked' && (
                   <button
-                    onClick={onLaunchStudio}
-                    className="mt-4 w-full py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold hover:bg-green-600 hover:text-white transition-all"
+                    onClick={() => project.cast.filter(c => !c.referenceImageUrl).forEach(c => onGenerateLooks(c.id))}
+                    disabled={looksLoading.size > 0}
+                    className="mt-4 w-full py-2.5 bg-accent-600/20 text-accent-400 border border-accent-500/30 rounded-lg text-xs font-bold hover:bg-accent-600 hover:text-white transition-all disabled:opacity-30"
                   >
-                    All Characters Locked → Launch Studio
+                    {looksLoading.size > 0 ? `Generating ${looksLoading.size} character${looksLoading.size > 1 ? 's' : ''}...` : 'Generate All Looks'}
+                  </button>
+                )}
+
+                {/* Proceed when user is satisfied with character looks */}
+                {project.cast.length > 0 && project.cast.some(c => c.referenceImageUrl) && project.status === 'style_locked' && (
+                  <button
+                    onClick={onAdvanceCharacters}
+                    className="mt-2 w-full py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold hover:bg-green-600 hover:text-white transition-all"
+                  >
+                    Proceed to Environments →
                   </button>
                 )}
               </div>
@@ -712,10 +799,10 @@ export const AnalysisEditor: React.FC<Props> = ({
                           const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
                           onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
                         }}
-                        disabled={isLoading}
+                        disabled={looksLoading.has(activeMember.id)}
                         className="w-full py-2.5 bg-accent-600 hover:bg-accent-500 text-white rounded text-xs font-bold shadow-lg disabled:opacity-50"
                       >
-                        {isLoading ? 'Generating Looks...' : 'Generate 3 Looks'}
+                        {looksLoading.has(activeMember.id) ? 'Generating Looks...' : activeMember.referenceImageUrl ? 'Regenerate Looks' : 'Generate 3 Looks'}
                       </button>
                     </div>
 
@@ -724,14 +811,14 @@ export const AnalysisEditor: React.FC<Props> = ({
                       <div className="space-y-2">
                         <span className="text-[10px] uppercase font-bold text-green-400">✓ Locked Reference</span>
                         <div className="aspect-video rounded-xl overflow-hidden border-2 border-green-500/30">
-                          <img src={activeMember.referenceImageUrl} className="w-full h-full object-cover" />
+                          <img src={activeMember.referenceImageUrl} onClick={() => setModalImage(activeMember.referenceImageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
                         </div>
                       </div>
                     )}
                   </div>
 
                   {/* Look Options */}
-                  {isLoading && activeLooks.length === 0 && (
+                  {looksLoading.has(activeMember.id) && activeLooks.length === 0 && (
                     <div className="grid grid-cols-3 gap-4">
                       {[...Array(3)].map((_, i) => (
                         <div key={i} className="aspect-video rounded-xl bg-zinc-800 animate-pulse border border-white/5 flex items-center justify-center">
@@ -749,12 +836,11 @@ export const AnalysisEditor: React.FC<Props> = ({
                       {activeLooks.map((look) => (
                         <div
                           key={look.id}
-                          onClick={() => onLockCharacter(activeMember.id, look.id)}
-                          className="cursor-pointer relative aspect-video rounded-xl overflow-hidden group border border-white/10 hover:border-accent-500 transition-all"
+                          className="relative aspect-video rounded-xl overflow-hidden group border border-white/10 hover:border-accent-500 transition-all"
                         >
-                          <img src={look.url} className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                            <span className="bg-white text-black px-3 py-1 rounded-full text-xs font-bold">Lock This Look</span>
+                          <img src={look.url} onClick={() => setModalImage(look.url)} className="w-full h-full object-cover cursor-zoom-in" />
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                            <button onClick={() => onLockCharacter(activeMember.id, look.id)} className="pointer-events-auto bg-white text-black px-3 py-1 rounded-full text-xs font-bold hover:bg-accent-400 transition-colors cursor-pointer">Lock This Look</button>
                           </div>
                         </div>
                       ))}
@@ -769,10 +855,16 @@ export const AnalysisEditor: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* ─── Environment Look Dev ─── */}
-          {project.environments.length > 0 && (
+        </div>
+      )}
+
+      {/* ═══════════════════ PHASE 5: ENVIRONMENTS ═══════════════════ */}
+      {viewPhase === 'environments' && (
+        <div className="space-y-8">
+          {project.environments.length > 0 ? (
             <div className="glass p-8 rounded-2xl">
-              <h3 className="text-lg font-display text-white mb-6">Environments</h3>
+              <h3 className="text-lg font-display text-white mb-6">Environment Look Dev</h3>
+              <p className="text-sm text-zinc-400 mb-6">Generate and lock visual references for key environments. Skip any that don't need a reference — shots will still work with text descriptions alone.</p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {project.environments.map(env => (
                   <EnvironmentCard
@@ -784,6 +876,24 @@ export const AnalysisEditor: React.FC<Props> = ({
                   />
                 ))}
               </div>
+              {project.status === 'characters_locked' && (
+                <button
+                  onClick={onAdvanceEnvironments}
+                  className="mt-6 w-full py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-sm font-bold hover:bg-green-600 hover:text-white transition-all"
+                >
+                  Done with Environments → Proceed to Studio
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="glass p-8 rounded-2xl text-center">
+              <p className="text-zinc-400 mb-2">No environments proposed by the script.</p>
+              <button
+                onClick={onAdvanceEnvironments}
+                className="mt-4 px-6 py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-sm font-bold hover:bg-green-600 hover:text-white transition-all"
+              >
+                Skip Environments → Proceed to Studio
+              </button>
             </div>
           )}
         </div>
@@ -947,6 +1057,8 @@ export const AnalysisEditor: React.FC<Props> = ({
           )}
         </div>
       )}
+
+      {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
     </div>
   );
 };

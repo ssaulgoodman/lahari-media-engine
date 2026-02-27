@@ -23,6 +23,7 @@ export type ProjectPhase =
   | 'concept_locked'
   | 'style_locked'
   | 'characters_locked'
+  | 'environments_locked'
   | 'scripted'
   | 'in_production'
   | 'rendered'

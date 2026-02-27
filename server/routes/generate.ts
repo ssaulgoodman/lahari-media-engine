@@ -3,7 +3,7 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { readAsBase64, mimeFromExt, saveBase64 } from '../storage.js';
-import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame, generateShotEndFrame } from '../services/imagen.js';
+import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame, generateShotEndFrame, generateShotFramePair } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector } from '../services/gemini.js';
 import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle } from '../services/claude.js';
 import { generateVideo } from '../services/veo.js';
@@ -105,7 +105,7 @@ router.post('/:id/brainstorm-styles', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'brainstorm-styles',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-6',
       prompt: `Brainstorm 4 style directions | Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood}${userNotes ? ` | User notes: ${userNotes}` : ''}`,
       contextChain: buildContextChain(project.id),
       responseSummary: JSON.stringify(directions),
@@ -119,7 +119,7 @@ router.post('/:id/brainstorm-styles', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'brainstorm-styles',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-6',
       prompt: `Brainstorm 4 style directions`,
       durationMs: 0,
       error: err.message,
@@ -154,7 +154,7 @@ router.post('/:id/visualize-style', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'visualize-style',
-      model: 'imagen-4.0-generate-001',
+      model: 'gemini-3-pro-image-preview',
       prompt: stylePrompt,
       contextChain: buildContextChain(project.id),
       responseSummary: `Generated style image`,
@@ -169,7 +169,7 @@ router.post('/:id/visualize-style', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'visualize-style',
-      model: 'imagen-4.0-generate-001',
+      model: 'gemini-3-pro-image-preview',
       prompt: stylePrompt,
       durationMs: 0,
       error: err.message,
@@ -405,14 +405,19 @@ router.post('/:id/lock-character', (req, res) => {
 
   db.prepare('UPDATE cast_members SET reference_asset_id = ? WHERE id = ?').run(assetId, castMemberId);
 
-  // Check if all cast members have references → advance status
+  // Don't auto-advance — user clicks "Proceed" when satisfied
+  res.json(getFullProject(paramStr(req.params.id)));
+});
+
+// ─── Advance past Characters phase ─────────────────────────────────
+// User decides when they're done — not all cast members need looks
+
+router.post('/:id/advance-characters', (req, res) => {
   const project: any = db.prepare('SELECT id, status FROM projects WHERE id = ?').get(paramStr(req.params.id));
-  const unreferenced: any = db.prepare('SELECT COUNT(*) as c FROM cast_members WHERE project_id = ? AND reference_asset_id IS NULL').get(paramStr(req.params.id));
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.status !== 'style_locked') return res.status(400).json({ error: 'Not in style_locked phase' });
 
-  if (unreferenced.c === 0 && project.status === 'style_locked') {
-    db.prepare("UPDATE projects SET status = 'characters_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
-  }
-
+  db.prepare("UPDATE projects SET status = 'characters_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
   res.json(getFullProject(paramStr(req.params.id)));
 });
 
@@ -491,6 +496,19 @@ router.post('/:id/lock-environment', (req, res) => {
 
   db.prepare('UPDATE environments SET reference_asset_id = ? WHERE id = ?').run(assetId, environmentId);
 
+  // Don't auto-advance — user clicks "Proceed" when satisfied
+  res.json(getFullProject(paramStr(req.params.id)));
+});
+
+// ─── Advance past Environments phase ────────────────────────────────
+// User decides when they're done — not all environments need looks
+
+router.post('/:id/advance-environments', (req, res) => {
+  const project: any = db.prepare('SELECT id, status FROM projects WHERE id = ?').get(paramStr(req.params.id));
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.status !== 'characters_locked') return res.status(400).json({ error: 'Not in characters_locked phase' });
+
+  db.prepare("UPDATE projects SET status = 'environments_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
   res.json(getFullProject(paramStr(req.params.id)));
 });
 
@@ -665,8 +683,10 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
       }
     }
 
-    // Call Gemini to write prompts — batch per scene to manage output size
+    // Write prompts in batches with continuity overlap
     const BATCH_SIZE = 15;
+    let previousBatchTail: { id: string; visualPrompt: string; motionPrompt: string }[] | undefined;
+
     for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
       const batch = allShots.slice(i, i + BATCH_SIZE);
       const prompts = await writeShotPrompts(batch, {
@@ -674,12 +694,19 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         cast: cast.map((c: any) => ({ name: c.name, description: c.description })),
         concept,
         lyrics: project.lyrics || '',
-      });
+      }, previousBatchTail);
 
       // Write back to DB
       const updateShot = db.prepare('UPDATE shots SET visual_prompt = ?, motion_prompt = ? WHERE id = ?');
       for (const p of prompts) {
         updateShot.run(p.visualPrompt || '', p.motionPrompt || '', p.id);
+      }
+
+      // Keep last 2 shots as continuity context for next batch
+      if (prompts.length >= 2) {
+        previousBatchTail = prompts.slice(-2);
+      } else if (prompts.length === 1) {
+        previousBatchTail = prompts;
       }
     }
 
@@ -868,6 +895,7 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
 
     const endImagePath = await generateShotEndFrame({
       startFramePath: startAsset.file_path,
+      visualPrompt: shot.visual_prompt || '',
       motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
       styleImagePath,
       styleDNA: project.style_description || 'Cinematic',
@@ -906,6 +934,128 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
   }
 });
 
+// ─── Generate Shot Frame Pair (start + end in one call) ──────────────
+
+router.post('/:id/shots/:shotId/generate-frame-pair', async (req, res) => {
+  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(paramStr(req.params.shotId));
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  // Sequential enforcement
+  if (shot.sort_order > 0) {
+    const prevShot: any = db.prepare(
+      'SELECT id, locked FROM shots WHERE scene_id = ? AND sort_order = ?'
+    ).get(shot.scene_id, shot.sort_order - 1);
+    if (prevShot && !prevShot.locked) {
+      return res.status(400).json({ error: 'Previous shot must be locked first (sequential enforcement)' });
+    }
+  }
+
+  const shotCastIds = JSON.parse(shot.cast_ids || '[]');
+  const cast = db.prepare('SELECT * FROM cast_members WHERE project_id = ?').all(paramStr(req.params.id)) as any[];
+  const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
+
+  let styleImagePath: string | undefined;
+  if (project.style_asset_id) {
+    const styleAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(project.style_asset_id);
+    if (styleAsset) styleImagePath = styleAsset.file_path;
+  }
+
+  const characterRefs: { name: string; imagePath: string }[] = [];
+  for (const c of activeCast) {
+    if (c.reference_asset_id) {
+      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(c.reference_asset_id);
+      if (asset) characterRefs.push({ name: c.name, imagePath: asset.file_path });
+    }
+  }
+
+  let environmentRef: { name: string; imagePath: string } | undefined;
+  if (shot.environment_id) {
+    const env: any = db.prepare('SELECT * FROM environments WHERE id = ?').get(shot.environment_id);
+    if (env?.reference_asset_id) {
+      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(env.reference_asset_id);
+      if (asset) environmentRef = { name: env.name, imagePath: asset.file_path };
+    }
+  }
+
+  let prevShotEndFramePath: string | undefined;
+  if (shot.sort_order > 0) {
+    const prevShot: any = db.prepare(
+      'SELECT end_image_asset_id FROM shots WHERE scene_id = ? AND sort_order = ? AND locked = 1'
+    ).get(shot.scene_id, shot.sort_order - 1);
+    if (prevShot?.end_image_asset_id) {
+      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(prevShot.end_image_asset_id);
+      if (asset) prevShotEndFramePath = asset.file_path;
+    }
+  }
+
+  try {
+    db.prepare("UPDATE shots SET image_status = 'loading', end_image_status = 'loading' WHERE id = ?").run(shot.id);
+    const t0 = Date.now();
+
+    console.log(`[shot ${shot.id}] Generating frame pair (single call) with ${characterRefs.length} char refs, env: ${environmentRef?.name || 'none'}`);
+
+    const { startFramePath, endFramePath } = await generateShotFramePair({
+      visualPrompt: shot.visual_prompt || '',
+      motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
+      styleDNA: project.style_description || 'Cinematic',
+      styleImagePath,
+      characterRefs,
+      environmentRef,
+      prevShotEndFramePath,
+      userFeedback: shot.user_feedback || undefined,
+    });
+
+    const durationMs = Date.now() - t0;
+
+    const startAssetId = uuidv4();
+    db.prepare(`INSERT INTO assets (id, project_id, category, file_path, prompt) VALUES (?, ?, 'shot_image', ?, ?)`)
+      .run(startAssetId, project.id, startFramePath, shot.visual_prompt || '');
+
+    const endAssetId = uuidv4();
+    db.prepare(`INSERT INTO assets (id, project_id, category, file_path, prompt) VALUES (?, ?, 'shot_end_frame', ?, ?)`)
+      .run(endAssetId, project.id, endFramePath, shot.motion_prompt || '');
+
+    db.prepare(`
+      UPDATE shots SET
+        image_asset_id = ?,
+        image_status = 'success',
+        end_image_asset_id = ?,
+        end_image_status = 'success',
+        attempt_count = COALESCE(attempt_count, 0) + 1
+      WHERE id = ?
+    `).run(startAssetId, endAssetId, shot.id);
+
+    logCall({
+      projectId: project.id,
+      stage: 'generate-shot-frame-pair',
+      model: 'gemini-3-pro-image-preview',
+      prompt: `${shot.visual_prompt} | Motion: ${shot.motion_prompt}`,
+      referenceInputs: [
+        ...(styleImagePath ? [{ type: 'image' as const, label: 'Style ref', url: `/storage/${styleImagePath}` }] : []),
+        ...characterRefs.map(r => ({ type: 'image' as const, label: `${r.name} ref`, url: `/storage/${r.imagePath}` })),
+        ...(environmentRef ? [{ type: 'image' as const, label: `Env: ${environmentRef.name}`, url: `/storage/${environmentRef.imagePath}` }] : []),
+      ],
+      contextChain: buildContextChain(project.id),
+      responseSummary: 'Generated start + end frame pair in single call',
+      outputAssetIds: [startAssetId, endAssetId],
+      durationMs,
+      costEstimate: 0.04,
+    });
+
+    db.prepare("UPDATE projects SET cost_estimate = cost_estimate + 0.04, updated_at = datetime('now') WHERE id = ?")
+      .run(paramStr(req.params.id));
+
+    res.json(getFullProject(paramStr(req.params.id)));
+  } catch (err: any) {
+    console.error(`[shot ${shot.id}] Frame pair gen failed:`, err);
+    db.prepare("UPDATE shots SET image_status = 'error', end_image_status = 'error' WHERE id = ?").run(shot.id);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Lock Shot ───────────────────────────────────────────────────────
 
 router.post('/:id/shots/:shotId/lock', (req, res) => {
@@ -915,6 +1065,14 @@ router.post('/:id/shots/:shotId/lock', (req, res) => {
   if (!shot.end_image_asset_id) return res.status(400).json({ error: 'End frame required to lock' });
 
   db.prepare('UPDATE shots SET locked = 1 WHERE id = ?').run(shot.id);
+  res.json(getFullProject(paramStr(req.params.id)));
+});
+
+router.post('/:id/shots/:shotId/unlock', (req, res) => {
+  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(paramStr(req.params.shotId));
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  db.prepare('UPDATE shots SET locked = 0 WHERE id = ?').run(shot.id);
   res.json(getFullProject(paramStr(req.params.id)));
 });
 
