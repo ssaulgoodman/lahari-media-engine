@@ -89,7 +89,7 @@ export const ChatAssistant: React.FC<Props> = ({ messages, onSendMessage, isLoad
             className="absolute right-2 top-2 p-1.5 bg-accent-600 text-white rounded-lg hover:bg-accent-500 disabled:opacity-50 disabled:bg-zinc-800 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-              <path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A.75.75 0 003.779 8.1l5.22.427 5.2.427a.75.75 0 00.95-.826 4.925-1.414.95-.826L3.105 2.289zM3.105 17.711a.75.75 0 01-.826-.95l1.414-4.925a.75.75 0 01.086-.234l5.22.427 5.2.427a.75.75 0 01.95-.826 4.925 1.414.95.826L3.105 17.711z" />
+              <path d="M3.105 2.29a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.16 9.5h5.59a.75.75 0 010 1.5H5.16a1.5 1.5 0 00-1.467 1.335l-1.414 4.925a.75.75 0 00.826.95l15.02-7.036a.75.75 0 000-1.348L3.105 2.29z" />
             </svg>
           </button>
         </div>

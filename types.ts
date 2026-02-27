@@ -1,19 +1,32 @@
 
 export enum AppStep {
   UPLOAD = 0,
-  ANALYSIS = 1,
-  STORYBOARD = 2,
-  EXPORT = 3,
+  BLUEPRINT = 1,
+  STUDIO = 2,
+  RENDER = 3,
 }
 
 export enum GenerationStatus {
   IDLE = 'idle',
   LOADING = 'loading',
+  CRITIQUING = 'critiquing',
   SUCCESS = 'success',
   ERROR = 'error',
 }
 
 export type VideoMode = 'montage' | 'cinematic';
+
+export type ProjectPhase =
+  | 'uploaded'
+  | 'analyzing'
+  | 'analyzed'
+  | 'concept_locked'
+  | 'style_locked'
+  | 'characters_locked'
+  | 'scripted'
+  | 'in_production'
+  | 'rendered'
+  | 'error';
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -22,74 +35,103 @@ export interface ChatMessage {
 
 export interface MusicalSection {
   id: string;
-  label: string; // "Intro", "Verse 1", "Chorus", "Bridge"
-  startTime: string; // "00:00"
-  endTime: string; // "00:15"
-  energyLevel: 'Low' | 'Medium' | 'High'; 
-  description: string; // "Soft flute intro" or "Heavy drum crescendo"
+  label: string;
+  startTime: string;
+  endTime: string;
+  energyLevel: 'Low' | 'Medium' | 'High';
+  description: string;
+}
+
+export interface ShotCritique {
+  score: number;
+  reasoning: string;
+  isConsistent: boolean;
+  suggestions: string;
 }
 
 export interface VideoShot {
   id: string;
-  duration: number; // Duration in seconds
-  visualPrompt: string; // "Wide angle, Lord Shiva dancing..."
-  motionPrompt: string; // "Slow zoom in..."
-  
-  // Image Generation
+  duration: number;
+  visualPrompt: string;
+  motionPrompt: string;
+  castIds: string[];
   imageUrl?: string;
   imageStatus: GenerationStatus;
-  
-  // Video Generation
+  endImageUrl?: string;
+  endImageStatus: GenerationStatus;
+  locked: boolean;
+  userFeedback?: string;
+  environmentId?: string;
+  critique?: ShotCritique;
+  attemptCount?: number;
   videoUrl?: string;
   videoStatus: GenerationStatus;
-  
-  // Continuity
-  useNextAsEndFrame: boolean; // If true, uses the next shot's image as the lastFrame
+  useNextAsEndFrame: boolean;
   error?: string;
 }
 
 export interface VideoScene {
   id: string;
-  sectionLabel: string; // e.g. "Chorus 1"
+  sectionLabel: string;
   startTime: string;
   endTime: string;
   lyrics: string;
-  narrativeDescription: string; // "The energy rises as the deity reveals his power"
+  narrativeDescription: string;
   shots: VideoShot[];
 }
 
-export interface ProjectConcept {
+export interface ConceptOption {
   title: string;
   language: string;
   deity: string;
   mood: string;
   theme: string;
-  musicalStructure: MusicalSection[];
+  lyricsSummary?: string;
+  conceptDirection: string;
   visualSuggestions: {
-    physicalDescription: string; // Specific visual traits of the deity
-    artStyle: string; // "Cinematic, dark, moody"
+    physicalDescription: string;
+    artStyle: string;
     colorPalette: string;
   };
 }
 
-export interface VisualIdentity {
-  styleDescription: string;
-  characterSheet: string;
-  colorPalette: string;
+export interface CastMember {
+  id: string;
+  name: string;
+  description: string;
+  referenceAssetId?: string;
+  referenceImageUrl?: string;
+}
+
+export interface Environment {
+  id: string;
+  name: string;
+  description: string;
+  referenceAssetId?: string;
+  referenceImageUrl?: string;
+}
+
+/** The full project state as returned by the API */
+export interface ApiProject {
+  id: string;
+  title: string;
+  status: ProjectPhase;
+  audioPath: string;
+  lyrics?: string;
+  meaning?: string;
+  musicalStructure: MusicalSection[];
+  conceptOptions: ConceptOption[];
+  lockedConcept: ConceptOption | null;
+  styleDescription?: string;
+  styleAssetUrl?: string;
+  colorPalette?: string;
   videoMode: VideoMode;
-  heroImage?: string; // The "Master Reference" base64
-}
-
-export interface ProjectAnalysis {
-  concept: ProjectConcept;
-  visualIdentity: VisualIdentity;
-  targetDuration: number;
-}
-
-export interface ProjectState {
-  audioFile: File | null;
-  audioUrl: string | null;
-  analysis: ProjectAnalysis | null;
-  scenes: VideoScene[]; // Hierarchical structure
+  cast: CastMember[];
+  environments: Environment[];
+  scenes: VideoScene[];
   chatHistory: ChatMessage[];
+  targetDuration: number;
+  costEstimate: number;
+  createdAt: string;
+  updatedAt: string;
 }

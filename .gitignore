@@ -1,3 +1,7 @@
+# Environment variables (API keys)
+.env
+.env.*
+
 # Logs
 logs
 *.log
@@ -11,6 +15,13 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Storage (generated assets + database)
+storage/audio/*
+storage/images/*
+storage/videos/*
+storage/*.db
+!storage/.gitkeep
 
 # Editor directories and files
 .vscode/*
