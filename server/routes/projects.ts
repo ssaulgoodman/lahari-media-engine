@@ -82,6 +82,7 @@ const getFullProject = (projectId: string) => {
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
     styleDescription: project.style_description,
     styleAssetUrl,
+    styleExploration: project.style_exploration ? JSON.parse(project.style_exploration) : null,
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
     cast: cast.map((c: any) => ({
@@ -351,6 +352,7 @@ router.patch('/:id', (req, res) => {
   if (targetDuration !== undefined) { sets.push('target_duration = ?'); vals.push(targetDuration); }
   if (styleDescription !== undefined) { sets.push('style_description = ?'); vals.push(styleDescription); }
   if (colorPalette !== undefined) { sets.push('color_palette = ?'); vals.push(colorPalette); }
+  if (req.body.styleExploration !== undefined) { sets.push('style_exploration = ?'); vals.push(JSON.stringify(req.body.styleExploration)); }
 
   if (sets.length === 0) return res.status(400).json({ error: 'No fields to update' });
 

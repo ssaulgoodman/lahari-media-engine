@@ -22,7 +22,6 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
   const [context, setContext] = useState('');
   const [language, setLanguage] = useState('');
 
-  // Editable lyrics (initialized from project when analysis completes)
   const [editedLyrics, setEditedLyrics] = useState<string | null>(null);
   const [editedContext, setEditedContext] = useState('');
 
@@ -32,11 +31,10 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
     }
   };
 
-  // Analysis complete — show results
   const hasAnalysis = project && project.status !== 'uploaded' && project.status !== 'analyzing' && project.lyrics;
   const hasConcepts = project && project.conceptOptions.length > 0;
 
-  // If analysis is done but no concepts yet, show the review page
+  // ─── Analysis review ───────────────────────────────────────────
   if (hasAnalysis && !hasConcepts) {
     const lyrics = editedLyrics ?? project.lyrics ?? '';
     const totalDuration = project.musicalStructure.length > 0
@@ -44,109 +42,88 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
       : 60;
 
     return (
-      <div className="max-w-5xl mx-auto space-y-6 animate-slide-up p-6 pb-32">
+      <div className="max-w-4xl mx-auto space-y-8 animate-slide-up pb-32">
         {/* Header */}
-        <div className="border-b border-white/10 pb-6">
-          <h2 className="text-4xl font-display font-medium text-white">{project.title}</h2>
-          <p className="text-zinc-500 mt-2 font-light">Review the analysis, then generate creative concepts.</p>
+        <div className="border-b border-white/[0.06] pb-5">
+          <h2 className="text-2xl font-display font-medium text-white tracking-tight">{project.title}</h2>
+          <p className="text-zinc-500 mt-1 text-sm">Review the analysis, then generate creative concepts.</p>
         </div>
 
         {/* Audio player */}
         {project.audioPath && (
-          <div className="glass p-4 rounded-2xl flex items-center gap-4">
+          <div className="surface rounded-xl p-4 flex items-center gap-4">
             <audio controls src={`/storage/${project.audioPath}`} className="flex-1 h-10" />
           </div>
         )}
 
         {/* Song Structure Timeline */}
         {project.musicalStructure.length > 0 && (
-          <div className="glass p-6 rounded-2xl space-y-3">
-            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
-              Song Structure
-              <span className="text-[10px] font-normal text-zinc-600 lowercase tracking-normal">
-                {project.musicalStructure.length} sections detected
-              </span>
-            </h3>
-            <div className="relative h-16 w-full bg-black/50 rounded-xl flex overflow-hidden border border-white/5">
+          <div className="surface rounded-xl p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Song Structure</h3>
+              <span className="text-[11px] text-zinc-600">{project.musicalStructure.length} sections</span>
+            </div>
+            <div className="relative h-14 w-full bg-black/40 rounded-lg flex overflow-hidden border border-white/[0.04]">
               {project.musicalStructure.map((section, idx) => {
                 const start = parseTime(section.startTime);
                 const end = parseTime(section.endTime);
                 const width = Math.max(((end - start) / totalDuration) * 100, 2);
                 let bgClass = 'bg-zinc-800';
                 const label = (section.label || '').toLowerCase();
-                if (label.includes('chorus')) bgClass = 'bg-amber-500/70';
-                else if (label.includes('verse')) bgClass = 'bg-accent-500/40';
-                else if (label.includes('bridge')) bgClass = 'bg-violet-500/40';
+                if (label.includes('chorus')) bgClass = 'bg-amber-500/60';
+                else if (label.includes('verse')) bgClass = 'bg-accent-500/30';
+                else if (label.includes('bridge')) bgClass = 'bg-violet-500/30';
                 else if (label.includes('intro') || label.includes('outro')) bgClass = 'bg-zinc-700';
-                else if (label.includes('interlude')) bgClass = 'bg-cyan-500/30';
+                else if (label.includes('interlude')) bgClass = 'bg-cyan-500/20';
                 return (
                   <div
                     key={idx}
                     style={{ width: `${width}%` }}
-                    className={`h-full ${bgClass} border-r border-black/30 flex flex-col items-center justify-center group relative`}
+                    className={`h-full ${bgClass} border-r border-black/30 flex flex-col items-center justify-center`}
                   >
-                    <span className="text-[9px] font-bold text-white uppercase truncate px-1">{section.label}</span>
-                    <span className="text-[8px] text-white/50 font-mono">{section.startTime}-{section.endTime}</span>
+                    <span className="text-[10px] font-medium text-white/80 uppercase truncate px-1">{section.label}</span>
+                    <span className="text-[10px] text-white/40 font-mono">{section.startTime}</span>
                   </div>
                 );
               })}
             </div>
-            {/* Section detail list */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-2">
-              {project.musicalStructure.map((section, idx) => (
-                <div key={idx} className="bg-black/30 rounded-lg p-2 border border-white/5 text-[11px]">
-                  <div className="flex justify-between items-center mb-0.5">
-                    <span className="font-semibold text-zinc-300">{section.label}</span>
-                    <span className="font-mono text-zinc-600">{section.startTime}–{section.endTime}</span>
-                  </div>
-                  {section.description && <div className="text-zinc-500 truncate">{section.description}</div>}
-                  {section.energyLevel && (
-                    <span className={`text-[9px] font-mono mt-0.5 inline-block px-1.5 py-0.5 rounded ${
-                      section.energyLevel === 'High' ? 'bg-red-500/15 text-red-400' :
-                      section.energyLevel === 'Medium' ? 'bg-amber-500/15 text-amber-400' :
-                      'bg-blue-500/15 text-blue-400'
-                    }`}>{section.energyLevel}</span>
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
-        {/* Lyrics — editable */}
-        <div className="glass p-6 rounded-2xl space-y-3">
+        {/* Lyrics */}
+        <div className="surface rounded-xl p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Transcribed Lyrics</h3>
-            <span className="text-[10px] text-zinc-600">Editable — fix any transcription errors before generating concepts</span>
+            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Transcribed Lyrics</h3>
+            <span className="text-[11px] text-zinc-600">Editable</span>
           </div>
           <textarea
             value={lyrics}
             onChange={(e) => setEditedLyrics(e.target.value)}
-            className="w-full h-56 bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-zinc-300 font-mono leading-relaxed focus:border-accent-500/50 outline-none resize-none custom-scrollbar"
+            className="w-full h-48 surface-inset rounded-lg p-4 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none"
           />
         </div>
 
-        {/* Meaning / Summary */}
+        {/* Meaning */}
         {project.meaning && (
-          <div className="glass p-6 rounded-2xl space-y-3">
-            <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Song Meaning</h3>
+          <div className="surface rounded-xl p-6 space-y-3">
+            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Song Meaning</h3>
             <p className="text-sm text-zinc-300 leading-relaxed">{project.meaning}</p>
           </div>
         )}
 
-        {/* Additional context for concept generation */}
-        <div className="glass p-6 rounded-2xl space-y-3">
-          <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Additional Context</h3>
-          <p className="text-zinc-600 text-xs">Add any notes to guide concept generation — deity, narrative ideas, visual references, etc.</p>
+        {/* Additional context */}
+        <div className="surface rounded-xl p-6 space-y-3">
+          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Additional Context</h3>
+          <p className="text-zinc-600 text-[11px]">Add notes to guide concept generation — deity, narrative ideas, visual references.</p>
           <textarea
             value={editedContext}
             onChange={(e) => setEditedContext(e.target.value)}
-            placeholder="e.g. This is a devotional song for Lord Shiva. I want a dramatic, cinematic visual style with dark tones..."
-            className="w-full h-24 bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white focus:border-accent-500/50 outline-none resize-none"
+            placeholder="e.g. This is a devotional song for Lord Shiva…"
+            className="w-full h-20 surface-inset rounded-lg p-4 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none"
           />
         </div>
 
-        {/* Generate Concepts CTA */}
+        {/* CTA */}
         <div className="flex justify-center pt-4">
           <button
             onClick={() => onGenerateConcepts({
@@ -155,12 +132,12 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
               language: language || undefined,
             })}
             disabled={isGeneratingConcepts}
-            className="px-12 py-4 bg-gradient-to-r from-accent-600 to-violet-600 hover:from-accent-500 hover:to-violet-500 text-white font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 text-sm tracking-wide"
+            className="px-10 py-3 bg-white text-black font-semibold rounded-md hover:bg-zinc-200 transition-colors disabled:opacity-50 text-sm outline-none focus-visible:ring-1 focus-visible:ring-white/20"
           >
             {isGeneratingConcepts ? (
               <span className="flex items-center gap-3">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Generating 3 Creative Directions...
+                <div className="w-4 h-4 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                Generating Concepts...
               </span>
             ) : (
               'Generate Creative Concepts'
@@ -171,37 +148,18 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
     );
   }
 
-  // Analyzing spinner
+  // ─── Analyzing spinner ──────────────────────────────────────────
   if (isAnalyzing) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8 animate-fade-in">
-        <style>{`
-          @keyframes ellipsis {
-            0% { content: ''; }
-            25% { content: '.'; }
-            50% { content: '..'; }
-            75% { content: '...'; }
-          }
-          .dots::after {
-            content: '';
-            animation: ellipsis 1.5s infinite;
-          }
-        `}</style>
-        <div className="flex flex-col items-center gap-8 z-10">
-          <div className="relative w-32 h-32">
-            <div className="absolute inset-0 border-t-2 border-accent-400 rounded-full animate-spin"></div>
-            <div className="absolute inset-2 border-r-2 border-accent-600/50 rounded-full animate-spin [animation-duration:1.5s]"></div>
-            <div className="absolute inset-4 border-b-2 border-accent-100/30 rounded-full animate-spin [animation-duration:2s]"></div>
-            <div className="absolute inset-0 flex items-center justify-center">
-               <span className="text-4xl animate-pulse">~</span>
-            </div>
-          </div>
-          <div className="text-center space-y-3">
-            <h3 className="text-2xl font-display text-white">Analyzing Audio</h3>
-            <div className="space-y-1">
-              <p className="text-zinc-400 font-light tracking-wide">Transcribing Lyrics<span className="dots"></span></p>
-              <p className="text-zinc-400 font-light tracking-wide">Detecting Song Structure<span className="dots" style={{ animationDelay: '0.5s' }}></span></p>
-              <p className="text-zinc-400 font-light tracking-wide">Extracting Meaning<span className="dots" style={{ animationDelay: '1s' }}></span></p>
+      <div className="h-full flex flex-col items-center justify-center p-8">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-10 h-10 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-display text-white">Analyzing Audio</h3>
+            <div className="space-y-1 text-sm text-zinc-500">
+              <p>Transcribing lyrics…</p>
+              <p>Detecting structure…</p>
+              <p>Extracting meaning…</p>
             </div>
           </div>
         </div>
@@ -209,9 +167,9 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
     );
   }
 
-  // Default: upload form
+  // ─── Upload form ────────────────────────────────────────────────
   return (
-    <div className="h-full flex flex-col items-center justify-center p-8 animate-fade-in">
+    <div className="h-full flex flex-col items-center justify-center p-8">
       <input
         type="file"
         ref={fileInputRef}
@@ -220,55 +178,61 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         onChange={handleFileChange}
       />
 
-      <div className="glass p-12 rounded-3xl text-center max-w-xl w-full hover:bg-white/5 transition-all duration-500 group border border-white/5 shadow-2xl shadow-black/50">
-        <div className="space-y-10">
-          <div className="w-24 h-24 mx-auto bg-accent-500/10 rounded-2xl flex items-center justify-center border border-accent-500/20 group-hover:scale-110 group-hover:border-accent-400 group-hover:rotate-3 transition-all duration-300">
-             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-10 h-10 text-accent-400">
+      <div className="gradient-border rounded-2xl p-10 text-center max-w-md w-full">
+        <div className="space-y-8">
+          <div className="w-16 h-16 mx-auto bg-gradient-to-br from-accent-500/10 to-purple-500/10 rounded-2xl flex items-center justify-center">
+             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-8 h-8 text-zinc-400" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
              </svg>
           </div>
 
-          <div className="space-y-4">
-            <h2 className="text-5xl font-display font-medium text-white tracking-tight">New Project</h2>
-            <p className="text-zinc-400 font-light leading-relaxed">
-              Import your master track.
-            </p>
+          <div className="space-y-2">
+            <h2 className="text-3xl font-display font-semibold tracking-tight gradient-text">New Project</h2>
+            <p className="text-zinc-500 text-sm">Import your master track.</p>
           </div>
 
-          {/* Metadata Inputs */}
           <div className="space-y-3 text-left">
               <div className="space-y-1">
-                  <label className="text-xs text-zinc-500 uppercase font-bold pl-1">Song Title (Optional)</label>
+                  <label htmlFor="song-title" className="text-[11px] text-zinc-500 uppercase font-medium pl-1">Song Title</label>
                   <input
+                      id="song-title"
+                      name="title"
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g. Pranathosmi"
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-accent-500/50 outline-none"
+                      autoComplete="off"
+                      className="w-full surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                   />
               </div>
               <div className="space-y-1">
-                  <label className="text-xs text-zinc-500 uppercase font-bold pl-1">Language (Optional)</label>
+                  <label htmlFor="song-language" className="text-[11px] text-zinc-500 uppercase font-medium pl-1">Language</label>
                   <input
+                      id="song-language"
+                      name="language"
                       value={language}
                       onChange={(e) => setLanguage(e.target.value)}
                       placeholder="e.g. Sanskrit, Kannada"
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-accent-500/50 outline-none"
+                      autoComplete="off"
+                      className="w-full surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                   />
               </div>
               <div className="space-y-1">
-                  <label className="text-xs text-zinc-500 uppercase font-bold pl-1">Context / Deity (Optional)</label>
+                  <label htmlFor="song-context" className="text-[11px] text-zinc-500 uppercase font-medium pl-1">Context / Deity</label>
                   <input
+                      id="song-context"
+                      name="context"
                       value={context}
                       onChange={(e) => setContext(e.target.value)}
                       placeholder="e.g. Lord Murugan, Carnatic Classical"
-                      className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-white focus:border-accent-500/50 outline-none"
+                      autoComplete="off"
+                      className="w-full surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                   />
               </div>
           </div>
 
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-full px-12 py-4 bg-white text-black font-semibold rounded-xl hover:bg-accent-400 hover:text-white transition-all tracking-wide shadow-lg hover:shadow-accent-500/25"
+            className="w-full px-8 py-3 bg-white text-black font-semibold rounded-md hover:bg-zinc-200 transition-colors text-sm outline-none focus-visible:ring-1 focus-visible:ring-white/20"
           >
             Select Audio File
           </button>

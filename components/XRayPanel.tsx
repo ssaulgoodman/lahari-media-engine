@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as api from '../services/api';
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -48,17 +49,17 @@ interface Props {
 // ─── Stage metadata ──────────────────────────────────────────────────
 
 const STAGES: Record<string, { label: string; color: string; accent: string; icon: string }> = {
-  'transcribe-lyrics':  { label: 'Transcribe Lyrics',  color: 'bg-sky-500/15',    accent: 'text-sky-400',     icon: 'abc' },
-  'detect-structure':   { label: 'Detect Structure',   color: 'bg-sky-500/15',    accent: 'text-sky-400',     icon: 'waveform' },
-  'summarize-meaning':  { label: 'Summarize Meaning',  color: 'bg-sky-500/15',    accent: 'text-sky-400',     icon: 'meaning' },
-  'generate-concepts':  { label: 'Generate Concepts',  color: 'bg-violet-500/15', accent: 'text-violet-400',  icon: 'lightbulb' },
-  'generate-styles':    { label: 'Generate Styles',    color: 'bg-amber-500/15',  accent: 'text-amber-400',   icon: 'palette' },
-  'analyze-style-image':{ label: 'Analyze Style',      color: 'bg-amber-500/15',  accent: 'text-amber-400',   icon: 'eye' },
-  'generate-looks':     { label: 'Generate Looks',     color: 'bg-emerald-500/15',accent: 'text-emerald-400', icon: 'user' },
-  'generate-script':    { label: 'Generate Script',    color: 'bg-cyan-500/15',   accent: 'text-cyan-400',    icon: 'script' },
-  'generate-shot-image':{ label: 'Shot Image',         color: 'bg-rose-500/15',   accent: 'text-rose-400',    icon: 'camera' },
-  'generate-shot-video':{ label: 'Shot Video',         color: 'bg-red-500/15',    accent: 'text-red-400',     icon: 'film' },
-  'chat':               { label: 'Chat',               color: 'bg-zinc-500/15',   accent: 'text-zinc-400',    icon: 'chat' },
+  'transcribe-lyrics':  { label: 'Transcribe Lyrics',  color: 'bg-sky-500/15',    accent: 'text-sky-400',     icon: 'A' },
+  'detect-structure':   { label: 'Detect Structure',   color: 'bg-sky-500/15',    accent: 'text-sky-400',     icon: '~' },
+  'summarize-meaning':  { label: 'Summarize Meaning',  color: 'bg-sky-500/15',    accent: 'text-sky-400',     icon: '=' },
+  'generate-concepts':  { label: 'Generate Concepts',  color: 'bg-violet-500/15', accent: 'text-violet-400',  icon: '*' },
+  'generate-styles':    { label: 'Generate Styles',    color: 'bg-amber-500/15',  accent: 'text-amber-400',   icon: '#' },
+  'analyze-style-image':{ label: 'Analyze Style',      color: 'bg-amber-500/15',  accent: 'text-amber-400',   icon: 'o' },
+  'generate-looks':     { label: 'Generate Looks',     color: 'bg-emerald-500/15',accent: 'text-emerald-400', icon: '@' },
+  'generate-script':    { label: 'Generate Script',    color: 'bg-cyan-500/15',   accent: 'text-cyan-400',    icon: 'S' },
+  'generate-shot-image':{ label: 'Shot Image',         color: 'bg-rose-500/15',   accent: 'text-rose-400',    icon: '[]' },
+  'generate-shot-video':{ label: 'Shot Video',         color: 'bg-red-500/15',    accent: 'text-red-400',     icon: '>>' },
+  'chat':               { label: 'Chat',               color: 'bg-zinc-500/15',   accent: 'text-zinc-400',    icon: '..' },
 };
 
 const getStageMeta = (stage: string) => {
@@ -68,24 +69,10 @@ const getStageMeta = (stage: string) => {
   return { label: stage, color: 'bg-zinc-500/15', accent: 'text-zinc-400', icon: '?' };
 };
 
-const ICON_MAP: Record<string, string> = {
-  abc: 'A',
-  waveform: '~',
-  meaning: '=',
-  lightbulb: '*',
-  palette: '#',
-  eye: 'o',
-  user: '@',
-  script: 'S',
-  camera: '[]',
-  film: '>>',
-  chat: '..',
-};
-
 // ─── Sub-components ──────────────────────────────────────────────────
 
 const SectionLabel: React.FC<{ children: React.ReactNode; color?: string }> = ({ children, color = 'text-zinc-500' }) => (
-  <div className={`text-[9px] ${color} uppercase tracking-[0.15em] font-semibold mb-2 flex items-center gap-2`}>
+  <div className={`text-[10px] ${color} uppercase tracking-[0.12em] font-medium mb-2 flex items-center gap-2`}>
     <span>{children}</span>
     <div className="flex-1 h-px bg-current opacity-20" />
   </div>
@@ -96,10 +83,10 @@ const ImageThumb: React.FC<{ url: string; label?: string; size?: 'sm' | 'md' }> 
     <img
       src={url}
       alt={label || ''}
-      className={`${size === 'sm' ? 'w-16 h-16' : 'w-24 h-24'} object-cover rounded-lg border border-white/10 bg-zinc-900`}
+      className={`${size === 'sm' ? 'w-16 h-16' : 'w-24 h-24'} object-cover rounded-lg border border-white/[0.08] bg-obsidian-800`}
     />
     {label && (
-      <div className="absolute inset-x-0 bottom-0 bg-black/70 text-[8px] text-zinc-300 px-1 py-0.5 rounded-b-lg truncate text-center">
+      <div className="absolute inset-x-0 bottom-0 bg-black/70 text-[10px] text-zinc-300 px-1 py-0.5 rounded-b-lg truncate text-center">
         {label}
       </div>
     )}
@@ -119,8 +106,8 @@ const AudioBadge: React.FC<{ label: string; url?: string }> = ({ label, url }) =
 );
 
 const ContextPill: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex items-baseline gap-1.5 bg-violet-500/8 border border-violet-500/15 rounded px-2.5 py-1.5">
-    <span className="text-[9px] text-violet-400/60 uppercase tracking-wider font-semibold shrink-0">{label}</span>
+  <div className="flex items-baseline gap-1.5 bg-violet-500/[0.06] border border-violet-500/15 rounded-md px-2.5 py-1.5">
+    <span className="text-[10px] text-violet-400/60 uppercase tracking-wider font-medium shrink-0">{label}</span>
     <span className="text-[11px] text-violet-300/90">{value}</span>
   </div>
 );
@@ -138,74 +125,63 @@ const CallCard: React.FC<{ call: XRayEntry; isExpanded: boolean; onToggle: () =>
 
   return (
     <div className={`${hasError ? 'bg-red-500/[0.03]' : ''}`}>
-      {/* Collapsed summary */}
-      <button onClick={onToggle} className="w-full text-left px-5 py-3.5 flex items-center gap-4 hover:bg-white/[0.02] transition-colors group">
-        {/* Stage icon */}
-        <div className={`w-9 h-9 rounded-xl ${meta.color} flex items-center justify-center flex-shrink-0 border border-white/5`}>
-          <span className={`text-[10px] font-bold font-mono ${meta.accent}`}>{ICON_MAP[meta.icon] || '?'}</span>
+      <button onClick={onToggle} className="w-full text-left px-5 py-3.5 flex items-center gap-4 hover:bg-white/[0.02] transition-colors">
+        <div className={`w-8 h-8 rounded-lg ${meta.color} flex items-center justify-center flex-shrink-0 border border-white/[0.04]`}>
+          <span className={`text-[10px] font-bold font-mono ${meta.accent}`}>{meta.icon}</span>
         </div>
 
-        {/* Info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`text-[12px] font-semibold ${meta.accent}`}>{meta.label}</span>
+            <span className={`text-[12px] font-medium ${meta.accent}`}>{meta.label}</span>
             {call.stage.includes(':attempt-') && (
-              <span className="text-[9px] bg-white/5 border border-white/10 text-zinc-400 px-1.5 py-0.5 rounded-full font-mono">
+              <span className="text-[10px] bg-white/[0.04] border border-white/[0.08] text-zinc-400 px-1.5 py-0.5 rounded-md font-mono">
                 {call.stage.split(':')[1]}
               </span>
             )}
             {hasError && (
-              <span className="text-[9px] bg-red-500/20 border border-red-500/30 text-red-400 px-1.5 py-0.5 rounded-full font-semibold">FAILED</span>
+              <span className="text-[10px] bg-red-500/20 border border-red-500/30 text-red-400 px-1.5 py-0.5 rounded-md font-medium">FAILED</span>
             )}
           </div>
-          <div className="text-[11px] text-zinc-500 truncate mt-0.5 max-w-md">
+          <div className="text-[11px] text-zinc-600 truncate mt-0.5 max-w-md">
             {hasError ? call.error : call.responseSummary || '—'}
           </div>
         </div>
 
-        {/* Stats */}
         <div className="flex items-center gap-4 flex-shrink-0 text-[10px] font-mono text-zinc-600">
           <span>{(call.durationMs / 1000).toFixed(1)}s</span>
           <span>${(call.costEstimate || 0).toFixed(3)}</span>
         </div>
 
-        {/* Thumbnails preview (collapsed) */}
         {!isExpanded && imageOutputs.length > 0 && (
           <div className="flex -space-x-2 flex-shrink-0">
             {imageOutputs.slice(0, 3).map((a, i) => (
               <img key={i} src={a.url} className="w-8 h-8 object-cover rounded-md border-2 border-obsidian-950" alt="" />
             ))}
             {imageOutputs.length > 3 && (
-              <div className="w-8 h-8 rounded-md border-2 border-obsidian-950 bg-zinc-800 flex items-center justify-center text-[9px] text-zinc-400">
+              <div className="w-8 h-8 rounded-md border-2 border-obsidian-950 bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-400">
                 +{imageOutputs.length - 3}
               </div>
             )}
           </div>
         )}
 
-        {/* Chevron */}
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
           className={`text-zinc-700 flex-shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
           <path d="M6 9l6 6 6-6"/>
         </svg>
       </button>
 
-      {/* Expanded detail */}
       {isExpanded && (
         <div className="px-5 pb-5 space-y-4">
-
-          {/* ─── INPUT SECTION ─── */}
           <SectionLabel color={meta.accent}>Input</SectionLabel>
 
-          {/* Prompt — full width, generous height */}
           <div>
             <div className="text-[10px] text-zinc-500 font-medium mb-1.5">Prompt sent to model</div>
-            <div className="bg-zinc-900/60 border border-white/5 rounded-xl p-4 max-h-[400px] overflow-y-auto custom-scrollbar">
+            <div className="surface-inset rounded-lg p-4 max-h-[400px] overflow-y-auto">
               <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.prompt}</pre>
             </div>
           </div>
 
-          {/* References row */}
           {(audioRefs.length > 0 || imageRefs.length > 0) && (
             <div className="flex gap-4 flex-wrap">
               {audioRefs.map((ref, i) => (
@@ -217,10 +193,9 @@ const CallCard: React.FC<{ call: XRayEntry; isExpanded: boolean; onToggle: () =>
             </div>
           )}
 
-          {/* Rolling context */}
           {hasContext && (
             <div>
-              <div className="text-[10px] text-zinc-500 font-medium mb-1.5">Rolling context fed into this call</div>
+              <div className="text-[10px] text-zinc-500 font-medium mb-1.5">Rolling context</div>
               <div className="flex flex-wrap gap-1.5">
                 {call.contextChain.lockedConcept && <ContextPill label="Concept" value={call.contextChain.lockedConcept} />}
                 {call.contextChain.lockedStyle && <ContextPill label="Style" value={call.contextChain.lockedStyle} />}
@@ -232,30 +207,26 @@ const CallCard: React.FC<{ call: XRayEntry; isExpanded: boolean; onToggle: () =>
             </div>
           )}
 
-          {/* ─── OUTPUT SECTION ─── */}
           <div className="mt-2" />
           <SectionLabel color={hasError ? 'text-red-400' : 'text-emerald-400'}>
             {hasError ? 'Error' : 'Output'}
           </SectionLabel>
 
-          {/* Error block */}
           {hasError && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 max-h-[300px] overflow-y-auto custom-scrollbar">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 max-h-[300px] overflow-y-auto">
               <pre className="text-[11px] text-red-300 whitespace-pre-wrap font-mono leading-relaxed">{call.error}</pre>
             </div>
           )}
 
-          {/* Response — full width, generous height */}
           {call.responseSummary && (
             <div>
               <div className="text-[10px] text-zinc-500 font-medium mb-1.5">Model response</div>
-              <div className="bg-zinc-900/60 border border-white/5 rounded-xl p-4 max-h-[400px] overflow-y-auto custom-scrollbar">
+              <div className="surface-inset rounded-lg p-4 max-h-[400px] overflow-y-auto">
                 <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.responseSummary}</pre>
               </div>
             </div>
           )}
 
-          {/* Generated images */}
           {imageOutputs.length > 0 && (
             <div>
               <div className="text-[10px] text-zinc-500 font-medium mb-1.5">Generated images</div>
@@ -267,21 +238,19 @@ const CallCard: React.FC<{ call: XRayEntry; isExpanded: boolean; onToggle: () =>
             </div>
           )}
 
-          {/* Generated videos */}
           {videoOutputs.length > 0 && (
             <div>
               <div className="text-[10px] text-zinc-500 font-medium mb-1.5">Generated video</div>
               <div className="flex gap-3 flex-wrap">
                 {videoOutputs.map((a, i) => (
-                  <video key={i} src={a.url} className="w-48 h-28 object-cover rounded-lg border border-white/10 bg-zinc-900" controls muted />
+                  <video key={i} src={a.url} className="w-48 h-28 object-cover rounded-lg border border-white/[0.08] bg-obsidian-800" controls muted />
                 ))}
               </div>
             </div>
           )}
 
-          {/* Footer */}
-          <div className="flex items-center gap-3 pt-2 border-t border-white/5">
-            <span className="text-[10px] font-mono bg-zinc-900 border border-white/5 text-zinc-500 px-2 py-1 rounded">{call.model}</span>
+          <div className="flex items-center gap-3 pt-2 border-t border-white/[0.06]">
+            <span className="text-[10px] font-mono bg-obsidian-800 border border-white/[0.06] text-zinc-500 px-2 py-1 rounded-md">{call.model}</span>
             <span className="text-[10px] font-mono text-zinc-600">{(call.durationMs / 1000).toFixed(2)}s</span>
             <span className="text-[10px] font-mono text-zinc-600">${(call.costEstimate || 0).toFixed(4)}</span>
             <span className="text-[10px] font-mono text-zinc-700 ml-auto">{new Date(call.createdAt).toLocaleTimeString()}</span>
@@ -289,8 +258,7 @@ const CallCard: React.FC<{ call: XRayEntry; isExpanded: boolean; onToggle: () =>
         </div>
       )}
 
-      {/* Divider */}
-      <div className="h-px bg-white/5" />
+      <div className="h-px bg-white/[0.04]" />
     </div>
   );
 };
@@ -335,33 +303,36 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[100] flex">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
 
-      {/* Panel */}
-      <div className="relative ml-auto w-full max-w-3xl bg-obsidian-950/95 backdrop-blur-md border-l border-white/10 shadow-2xl flex flex-col h-full">
-
-        {/* ─── Header ─── */}
+      <motion.div
+        initial={{ x: '100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '100%' }}
+        transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+        className="relative ml-auto w-full max-w-3xl bg-obsidian-950 border-l border-white/[0.08] shadow-2xl flex flex-col h-full"
+      >
+        {/* Header */}
         <div className="flex-shrink-0 p-5 border-b border-white/[0.06]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-500/30 to-violet-500/30 border border-accent-500/20 flex items-center justify-center">
-                <span className="text-accent-400 font-bold text-sm font-mono">X</span>
+              <div className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
+                <span className="text-white font-bold text-sm font-mono">X</span>
               </div>
               <div>
-                <h2 className="text-sm font-display font-semibold text-white tracking-wide">X-Ray</h2>
-                <p className="text-[10px] text-zinc-600">Every AI call, fully transparent</p>
+                <h2 className="text-sm font-display font-medium text-white">X-Ray</h2>
+                <p className="text-[11px] text-zinc-600">Every AI call, fully transparent</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={refresh}
                 disabled={loading}
-                className="text-[11px] text-zinc-500 hover:text-white border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg transition-all"
+                className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-all"
               >
                 {loading ? 'Loading...' : 'Refresh'}
               </button>
-              <button onClick={onClose} className="text-zinc-600 hover:text-white p-1.5 hover:bg-white/5 rounded-lg transition-colors">
+              <button onClick={onClose} className="text-zinc-600 hover:text-white w-8 h-8 rounded-md hover:bg-white/[0.06] flex items-center justify-center transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
@@ -369,30 +340,30 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
 
           {/* Stats */}
           <div className="flex gap-2 mb-4">
-            <div className="bg-zinc-900/80 border border-white/5 px-3 py-1.5 rounded-lg">
-              <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Calls</div>
-              <div className="text-sm text-white font-mono font-semibold">{calls.length}</div>
+            <div className="surface rounded-lg px-3 py-1.5">
+              <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Calls</div>
+              <div className="text-sm text-white font-mono font-medium">{calls.length}</div>
             </div>
-            <div className="bg-zinc-900/80 border border-white/5 px-3 py-1.5 rounded-lg">
-              <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Cost</div>
-              <div className="text-sm text-white font-mono font-semibold">${totalCost.toFixed(2)}</div>
+            <div className="surface rounded-lg px-3 py-1.5">
+              <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Cost</div>
+              <div className="text-sm text-white font-mono font-medium">${totalCost.toFixed(2)}</div>
             </div>
-            <div className="bg-zinc-900/80 border border-white/5 px-3 py-1.5 rounded-lg">
-              <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Time</div>
-              <div className="text-sm text-white font-mono font-semibold">{(totalDuration / 1000).toFixed(0)}s</div>
+            <div className="surface rounded-lg px-3 py-1.5">
+              <div className="text-[10px] text-zinc-600 uppercase tracking-wide">Time</div>
+              <div className="text-sm text-white font-mono font-medium">{(totalDuration / 1000).toFixed(0)}s</div>
             </div>
             {errorCount > 0 && (
-              <div className="bg-red-500/10 border border-red-500/20 px-3 py-1.5 rounded-lg">
-                <div className="text-[9px] text-red-400/60 uppercase tracking-wider">Errors</div>
-                <div className="text-sm text-red-400 font-mono font-semibold">{errorCount}</div>
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-1.5">
+                <div className="text-[10px] text-red-400/60 uppercase tracking-wide">Errors</div>
+                <div className="text-sm text-red-400 font-mono font-medium">{errorCount}</div>
               </div>
             )}
           </div>
 
           {/* Current rolling context */}
           {hasCurrentContext && (
-            <div className="mb-4 p-3 bg-violet-500/[0.06] border border-violet-500/15 rounded-xl">
-              <div className="text-[9px] text-violet-400/70 uppercase tracking-[0.15em] font-semibold mb-2">Current Rolling Context</div>
+            <div className="mb-4 p-3 bg-violet-500/[0.04] border border-violet-500/10 rounded-xl">
+              <div className="text-[10px] text-violet-400/70 uppercase tracking-wide font-medium mb-2">Current Rolling Context</div>
               <div className="space-y-1">
                 {currentContext.lockedConcept && <ContextPill label="Concept" value={currentContext.lockedConcept} />}
                 {currentContext.lockedStyle && <ContextPill label="Style" value={currentContext.lockedStyle} />}
@@ -426,10 +397,10 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                 <button
                   key={f.key}
                   onClick={() => setFilter(f.key)}
-                  className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all ${
+                  className={`text-[11px] px-2.5 py-1 rounded-md border transition-all ${
                     filter === f.key
-                      ? 'bg-white/10 border-white/20 text-white font-medium'
-                      : 'border-transparent text-zinc-600 hover:text-zinc-400 hover:bg-white/5'
+                      ? 'bg-white/[0.08] border-white/20 text-white font-medium'
+                      : 'border-transparent text-zinc-600 hover:text-zinc-400 hover:bg-white/[0.04]'
                   }`}
                 >
                   {f.label}{count > 0 ? ` (${count})` : ''}
@@ -439,11 +410,11 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
           </div>
         </div>
 
-        {/* ─── Call list ─── */}
+        {/* Call list */}
         <div className="flex-1 overflow-y-auto">
           {filteredCalls.length === 0 && (
             <div className="flex flex-col items-center justify-center h-64 text-zinc-700">
-              <div className="text-3xl mb-3 opacity-50">~</div>
+              <div className="text-2xl mb-3 opacity-40">~</div>
               <div className="text-sm">
                 {calls.length === 0
                   ? 'No AI calls yet. Run a generation to see the trace.'
@@ -461,7 +432,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
             />
           ))}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

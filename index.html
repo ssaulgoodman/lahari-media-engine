@@ -1,45 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme: dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#09090b" />
     <title>Lahari Music - Video Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Outfit', 'sans-serif'],
-              display: ['Space Grotesk', 'sans-serif'],
+              sans: ['Geist', 'system-ui', 'sans-serif'],
+              display: ['Geist', 'system-ui', 'sans-serif'],
+              mono: ['Geist Mono', 'ui-monospace', 'monospace'],
             },
             colors: {
               obsidian: {
-                950: '#050505',
+                950: '#09090b',
                 900: '#0a0a0a',
-                800: '#121212',
-                700: '#1a1a1a',
+                800: '#141414',
+                700: '#1c1c1c',
               },
               accent: {
                 100: '#E0E7FF',
-                400: '#818CF8', // Indigo/Purple vibe for modern sleekness
+                400: '#818CF8',
                 500: '#6366F1',
                 600: '#4F46E5',
                 900: '#312E81',
               },
-              gold: { // Keeping gold for the 'Devotional' touch, but subtle
+              gold: {
                  400: '#FACC15',
                  500: '#EAB308',
               }
             },
             animation: {
-              'fade-in': 'fadeIn 0.5s ease-out',
-              'slide-up': 'slideUp 0.5s ease-out',
-              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'fade-in': 'fadeIn 0.3s ease-out',
+              'slide-up': 'slideUp 0.3s ease-out',
+              'shimmer': 'shimmer 2s ease-in-out infinite',
             },
             keyframes: {
               fadeIn: {
@@ -47,8 +49,12 @@
                 '100%': { opacity: '1' },
               },
               slideUp: {
-                '0%': { transform: 'translateY(20px)', opacity: '0' },
+                '0%': { transform: 'translateY(8px)', opacity: '0' },
                 '100%': { transform: 'translateY(0)', opacity: '1' },
+              },
+              shimmer: {
+                '0%': { backgroundPosition: '-200% 0' },
+                '100%': { backgroundPosition: '200% 0' },
               }
             }
           }
@@ -57,39 +63,88 @@
     </script>
     <style>
       body {
-        background-color: #050505;
+        background-color: #09090b;
+        background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.08), transparent);
         color: #e5e5e5;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
-      /* Custom Scrollbar */
+      h1, h2, h3, h4 { text-wrap: balance; }
+      .font-mono, [class*="font-mono"] { font-variant-numeric: tabular-nums; }
+      ::selection {
+        background: rgba(79, 70, 229, 0.3);
+        color: white;
+      }
+      /* Scrollbar */
       ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+        width: 5px;
+        height: 5px;
       }
       ::-webkit-scrollbar-track {
-        background: #0a0a0a; 
+        background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #333; 
+        background: #27272a;
         border-radius: 3px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #6366F1; 
+        background: #3f3f46;
       }
-      .glass {
-        background: rgba(255, 255, 255, 0.02);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+      /* Surface system */
+      .surface {
+        background: rgba(255, 255, 255, 0.03);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
       }
-      .glass-panel {
-        background: rgba(10, 10, 10, 0.7);
-        backdrop-filter: blur(20px);
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
+      .surface-raised {
+        background: rgba(255, 255, 255, 0.05);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+      .surface-inset {
+        background: rgba(0, 0, 0, 0.25);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+      }
+      /* Skeleton shimmer */
+      .skeleton {
+        background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+        background-size: 200% 100%;
+        animation: shimmer 2s ease-in-out infinite;
+      }
+      /* Gradient accent system */
+      .gradient-text {
+        background: linear-gradient(135deg, #818CF8 0%, #C084FC 50%, #F472B6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .gradient-border {
+        position: relative;
+      }
+      .gradient-border::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        padding: 1px;
+        background: linear-gradient(135deg, rgba(129,140,248,0.3), rgba(192,132,252,0.1), transparent);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask-composite: exclude;
+        pointer-events: none;
+      }
+      .glow-emerald {
+        box-shadow: 0 0 20px rgba(16,185,129,0.08), inset 0 0 0 1px rgba(16,185,129,0.15);
+      }
+      /* Respect reduced motion */
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
       }
     </style>
   <!-- importmap removed — all deps resolved via node_modules + Vite -->
 </head>
-  <body class="antialiased selection:bg-accent-900 selection:text-accent-100 font-sans">
+  <body class="antialiased font-sans">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AppStep, ApiProject, VideoShot, GenerationStatus, ChatMessage } from './types';
 import { StepUpload } from './components/StepUpload';
 import { AnalysisEditor } from './components/AnalysisEditor';
@@ -10,11 +11,18 @@ import { XRayPanel } from './components/XRayPanel';
 import * as api from './services/api';
 
 const PIPELINE_STEPS = [
-  { id: AppStep.UPLOAD, label: 'Import', icon: '💿' },
-  { id: AppStep.BLUEPRINT, label: 'Blueprint', icon: '📐' },
-  { id: AppStep.STUDIO, label: 'Studio', icon: '🎬' },
-  { id: AppStep.RENDER, label: 'Render', icon: '💾' },
+  { id: AppStep.UPLOAD, label: 'Import' },
+  { id: AppStep.BLUEPRINT, label: 'Blueprint' },
+  { id: AppStep.STUDIO, label: 'Studio' },
+  { id: AppStep.RENDER, label: 'Render' },
 ];
+
+const pageTransition = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.25, ease: 'easeOut' as const },
+};
 
 const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.UPLOAD);
@@ -23,13 +31,22 @@ const App: React.FC = () => {
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Style candidates — now managed inside AnalysisEditor (brainstorm flow)
   // Character look candidates per cast member
   const [lookCandidates, setLookCandidates] = useState<Record<string, { id: string; url: string }[]>>({});
   // Per-member loading state for parallel character generation
   const [looksLoading, setLooksLoading] = useState<Set<string>>(new Set());
   // X-Ray panel
   const [xrayOpen, setXrayOpen] = useState(false);
+  // Studio scene navigation
+  const [activeSceneIdx, setActiveSceneIdx] = useState(0);
+
+  // Auto-dismiss error toast
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   // On mount: load the most recent project (if any)
   useEffect(() => {
@@ -49,12 +66,10 @@ const App: React.FC = () => {
   // Determine which step to show based on project phase
   const navigateToPhase = (p: ApiProject) => {
     if ((p.status === 'characters_locked' || p.status === 'environments_locked') && p.scenes.length > 0) {
-      // All Blueprint phases complete — go to Studio
       setCurrentStep(AppStep.STUDIO);
     } else if (p.conceptOptions.length > 0 || p.status === 'concept_locked' || p.status === 'scripted' || p.status === 'style_locked' || p.status === 'characters_locked' || p.status === 'environments_locked') {
       setCurrentStep(AppStep.BLUEPRINT);
     } else {
-      // analyzed but no concepts yet, or still uploading — stay on upload/analysis page
       setCurrentStep(AppStep.UPLOAD);
     }
   };
@@ -67,7 +82,6 @@ const App: React.FC = () => {
     try {
       const p = await api.createProject(file, metadata);
       setProject(p);
-      // Stay on UPLOAD step — shows analysis results, user reviews before concepts
       setCurrentStep(AppStep.UPLOAD);
     } catch (err: any) {
       setError(err.message || 'Failed to analyze audio.');
@@ -276,7 +290,6 @@ const App: React.FC = () => {
 
   const handleGenerateImage = async (sceneId: string, shotId: string) => {
     if (!project) return;
-    // Optimistic status update
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -292,7 +305,6 @@ const App: React.FC = () => {
       setProject(p);
     } catch (err: any) {
       setError(`Image generation failed: ${err.message}`);
-      // Reset status
       setProject(prev => {
         if (!prev) return prev;
         return {
@@ -338,7 +350,6 @@ const App: React.FC = () => {
 
   const handleLockShot = async (sceneId: string, shotId: string) => {
     if (!project) return;
-    // Toggle: if already locked, unlock; otherwise lock
     const scene = project.scenes.find(s => s.id === sceneId);
     const shot = scene?.shots.find(s => s.id === shotId);
     try {
@@ -383,7 +394,6 @@ const App: React.FC = () => {
 
   const handleUpdateShot = async (sceneId: string, shotId: string, updates: Partial<VideoShot>) => {
     if (!project) return;
-    // Optimistic local update
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -394,7 +404,6 @@ const App: React.FC = () => {
         } : s)
       };
     });
-    // Persist to server (fire and forget for prompt edits)
     api.updateShot(project.id, shotId, updates).catch(console.error);
   };
 
@@ -402,7 +411,6 @@ const App: React.FC = () => {
 
   const handleChatMessage = async (text: string) => {
     if (!project) return;
-    // Optimistic add user message
     setProject(prev => prev ? {
       ...prev,
       chatHistory: [...prev.chatHistory, { role: 'user' as const, text }]
@@ -438,19 +446,20 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
-      <header className="h-16 border-b border-white/5 bg-obsidian-900/80 backdrop-blur-md flex-shrink-0 z-50">
-        <div className="h-full px-6 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 bg-gradient-to-tr from-accent-600 to-accent-400 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-accent-500/20">
-                L
-              </div>
-              <h1 className="text-lg font-display font-medium text-white tracking-wide hidden md:block">
-                Lahari Music <span className="text-zinc-500 mx-2">/</span> <span className="text-accent-400">Video Engine</span>
-              </h1>
-            </div>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[999] focus:top-2 focus:left-2 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:rounded-md focus:text-sm">Skip to content</a>
+      {/* Header */}
+      <header className="h-14 bg-obsidian-950/80 backdrop-blur-xl shadow-[0_1px_0_0_rgba(255,255,255,0.04)] flex-shrink-0 z-50">
+        <div className="h-full px-6 grid grid-cols-[1fr_auto_1fr] items-center">
+          {/* Left — Logo */}
+          <div className="flex items-center">
+            <h1 className="text-sm font-display font-medium text-white tracking-wide">
+              Lahari <span className="text-zinc-500">/</span> <span className="text-zinc-400">Video Engine</span>
+            </h1>
+          </div>
 
-            <div className="hidden md:flex items-center bg-zinc-900/50 rounded-full p-1 border border-white/5">
+          {/* Center — Nav + Scene tabs */}
+          <div className="flex items-center gap-1">
+            <nav className="hidden md:flex items-center gap-1 relative">
               {PIPELINE_STEPS.map((step) => {
                 const isActive = currentStep === step.id;
                 const isAccessible =
@@ -463,42 +472,75 @@ const App: React.FC = () => {
                     key={step.id}
                     disabled={!isAccessible}
                     onClick={() => setCurrentStep(step.id)}
-                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
+                    className={`relative px-3 py-1.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 focus-visible:rounded-md ${
                       isActive
-                        ? 'bg-zinc-800 text-white shadow-md'
+                        ? 'text-white'
                         : isAccessible
-                          ? 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
-                          : 'text-zinc-700 opacity-50 cursor-not-allowed'
+                          ? 'text-zinc-500 hover:text-zinc-300'
+                          : 'text-zinc-700 cursor-not-allowed'
                     }`}
                   >
-                    <span>{step.icon}</span>
-                    <span>{step.label}</span>
+                    {step.label}
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute -bottom-[9px] left-0 right-0 h-px bg-white"
+                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      />
+                    )}
                   </button>
                 );
               })}
-            </div>
+            </nav>
+
+            {isStudio && project && project.scenes.length > 0 && (
+              <div className="hidden md:flex items-center gap-1 ml-2 pl-3 border-l border-white/[0.06]">
+                <span className="text-xs text-zinc-600 mr-1">Scenes</span>
+                {project.scenes.map((scene, idx) => {
+                  const isActive = idx === activeSceneIdx;
+                  const allLocked = scene.shots.every(s => s.locked);
+                  return (
+                    <button
+                      key={scene.id}
+                      onClick={() => setActiveSceneIdx(idx)}
+                      className={`relative px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
+                        isActive
+                          ? 'text-white'
+                          : allLocked
+                            ? 'text-zinc-300 hover:text-white'
+                            : 'text-zinc-600 hover:text-zinc-400'
+                      }`}
+                    >
+                      {allLocked && <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline mr-0.5" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>}
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <div className="flex gap-4 items-center">
+          {/* Right — Actions */}
+          <div className="flex gap-3 items-center justify-end">
             {project && (
               <>
-                <div className="bg-zinc-900/50 px-3 py-1.5 rounded border border-white/5 text-xs font-mono text-zinc-400">
-                  Est. Cost: <span className="text-white">${project.costEstimate.toFixed(2)}</span>
-                </div>
+                <span className="text-[11px] font-mono text-zinc-500">
+                  ${project.costEstimate.toFixed(2)}
+                </span>
                 <button
                   onClick={() => setXrayOpen(true)}
-                  className="bg-accent-500/10 hover:bg-accent-500/20 border border-accent-500/30 text-accent-400 px-3 py-1.5 rounded text-xs font-mono font-bold transition-colors"
+                  aria-label="Open X-Ray debug panel"
+                  className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-2.5 py-1 rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
                 >
                   X-Ray
                 </button>
-                <div className="flex gap-2">
-                  <button onClick={handleNewProject} className="text-xs text-zinc-400 hover:text-white border border-white/10 px-3 py-1.5 rounded transition-colors flex items-center gap-2">
-                    <span>+</span> New
-                  </button>
-                </div>
-                <div className="hidden md:flex items-center px-3 py-1.5 rounded border border-white/5 text-[10px] text-zinc-500 font-mono uppercase">
-                  {project.status.replace('_', ' ')}
-                </div>
+                <button
+                  onClick={handleNewProject}
+                  aria-label="Create new project"
+                  className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-2.5 py-1 rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                >
+                  + New
+                </button>
               </>
             )}
           </div>
@@ -506,73 +548,79 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <main className={`flex-1 overflow-y-auto relative ${isStudio ? 'bg-zinc-900/20' : ''}`}>
-          <div className="fixed inset-0 pointer-events-none z-0 opacity-20 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-accent-900/40 via-obsidian-950 to-obsidian-950"></div>
+        <main id="main-content" className="flex-1 overflow-y-auto relative">
 
-          <div className="relative z-10 w-full p-6">
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-200 p-4 rounded-lg mb-8 flex justify-between items-center max-w-4xl mx-auto">
-                <span>{error}</span>
-                <button onClick={() => setError(null)} className="hover:text-white px-2">✕</button>
-              </div>
-            )}
+          <div className="relative z-10 w-full p-8">
+            {/* Page transitions */}
+            <AnimatePresence mode="wait">
+              {currentStep === AppStep.UPLOAD && (
+                <motion.div key="upload" {...pageTransition}>
+                  <StepUpload
+                    project={project}
+                    onFileSelect={handleFileUpload}
+                    onGenerateConcepts={handleGenerateConcepts}
+                    isAnalyzing={loading}
+                    isGeneratingConcepts={conceptsLoading}
+                  />
+                </motion.div>
+              )}
 
-            {currentStep === AppStep.UPLOAD && (
-              <StepUpload
-                project={project}
-                onFileSelect={handleFileUpload}
-                onGenerateConcepts={handleGenerateConcepts}
-                isAnalyzing={loading}
-                isGeneratingConcepts={conceptsLoading}
-              />
-            )}
+              {currentStep === AppStep.BLUEPRINT && project && (
+                <motion.div key="blueprint" {...pageTransition}>
+                  <AnalysisEditor
+                    project={project}
+                    isLoading={loading}
+                    looksLoading={looksLoading}
+                    lookCandidates={lookCandidates}
+                    onLockConcept={handleLockConcept}
+                    onLockStyle={handleLockStyle}
+                    onUnlockStyle={handleUnlockStyle}
+                    onGenerateLooks={handleGenerateLooks}
+                    onLockCharacter={handleLockCharacter}
+                    onAddCast={handleAddCast}
+                    onUpdateCast={handleUpdateCast}
+                    onDeleteCast={handleDeleteCast}
+                    onGenerateScript={handleGenerateScript}
+                    onUpdateProject={handleUpdateProject}
+                    onLaunchStudio={handleLaunchStudio}
+                    onAdvanceCharacters={handleAdvanceCharacters}
+                    onAdvanceEnvironments={handleAdvanceEnvironments}
+                    onSetProject={setProject}
+                  />
+                </motion.div>
+              )}
 
-            {currentStep === AppStep.BLUEPRINT && project && (
-              <AnalysisEditor
-                project={project}
-                isLoading={loading}
-                looksLoading={looksLoading}
-                lookCandidates={lookCandidates}
-                onLockConcept={handleLockConcept}
-                onLockStyle={handleLockStyle}
-                onUnlockStyle={handleUnlockStyle}
-                onGenerateLooks={handleGenerateLooks}
-                onLockCharacter={handleLockCharacter}
-                onAddCast={handleAddCast}
-                onUpdateCast={handleUpdateCast}
-                onDeleteCast={handleDeleteCast}
-                onGenerateScript={handleGenerateScript}
-                onUpdateProject={handleUpdateProject}
-                onLaunchStudio={handleLaunchStudio}
-                onAdvanceCharacters={handleAdvanceCharacters}
-                onAdvanceEnvironments={handleAdvanceEnvironments}
-                onSetProject={setProject}
-              />
-            )}
+              {currentStep === AppStep.STUDIO && project && (
+                <motion.div key="studio" {...pageTransition}>
+                  <Storyboard
+                    scenes={project.scenes}
+                    project={project}
+                    activeSceneIdx={activeSceneIdx}
+                    onSceneChange={setActiveSceneIdx}
+                    onUpdateShot={handleUpdateShot}
+                    onGenerateImage={handleGenerateImage}
+                    onGenerateEndFrame={handleGenerateEndFrame}
+                    onGenerateVideo={handleGenerateVideo}
+                    onLockShot={handleLockShot}
+                  />
+                </motion.div>
+              )}
 
-            {currentStep === AppStep.STUDIO && project && (
-              <Storyboard
-                scenes={project.scenes}
-                project={project}
-                onUpdateShot={handleUpdateShot}
-                onGenerateImage={handleGenerateImage}
-                onGenerateEndFrame={handleGenerateEndFrame}
-                onGenerateVideo={handleGenerateVideo}
-                onLockShot={handleLockShot}
-              />
-            )}
-
-            {currentStep === AppStep.RENDER && project && (
-              <StepRender
-                project={project}
-                onBack={() => setCurrentStep(AppStep.STUDIO)}
-              />
-            )}
+              {currentStep === AppStep.RENDER && project && (
+                <motion.div key="render" {...pageTransition}>
+                  <StepRender
+                    project={project}
+                    onBack={() => setCurrentStep(AppStep.STUDIO)}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </main>
 
+        {/* Co-Director sidebar — commented out, not wired yet
         {isStudio && (
-          <aside className="w-80 lg:w-96 flex-shrink-0 z-20 shadow-2xl bg-obsidian-900 border-l border-white/5">
+          <aside className="w-80 lg:w-96 flex-shrink-0 z-20 shadow-2xl bg-obsidian-950/80 backdrop-blur-xl shadow-[inset_1px_0_0_0_rgba(255,255,255,0.04)]">
             <ChatAssistant
               messages={project?.chatHistory || []}
               onSendMessage={handleChatMessage}
@@ -580,7 +628,28 @@ const App: React.FC = () => {
             />
           </aside>
         )}
+        */}
       </div>
+
+      {/* Error toast */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-[200] max-w-lg w-full"
+          >
+            <div role="alert" aria-live="polite" className="surface-raised rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-2xl shadow-black/50 border-red-500/20">
+              <span className="text-[13px] text-red-300">{error}</span>
+              <button onClick={() => setError(null)} aria-label="Dismiss error" className="text-zinc-500 hover:text-white text-sm flex-shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-white/20 focus-visible:rounded-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* X-Ray Panel */}
       {project && (

@@ -1,11 +1,14 @@
 
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
 
 interface Props {
   scenes: VideoScene[];
   project: ApiProject | null;
+  activeSceneIdx: number;
+  onSceneChange: (idx: number) => void;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateImage: (sceneId: string, shotId: string) => void;
   onGenerateEndFrame: (sceneId: string, shotId: string) => void;
@@ -13,334 +16,283 @@ interface Props {
   onLockShot: (sceneId: string, shotId: string) => void;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, onUpdateShot, onGenerateImage, onGenerateEndFrame, onGenerateVideo, onLockShot }) => {
-
-  // Track which shots are showing frames instead of video
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateEndFrame, onGenerateVideo, onLockShot }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
+  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion'>>({});
 
-  // Determine if a shot is actionable (sequential enforcement)
   const isShotActionable = (scene: VideoScene, shotIdx: number): boolean => {
-    if (shotIdx === 0) return true; // First shot in scene always actionable
+    if (shotIdx === 0) return true;
     const prevShot = scene.shots[shotIdx - 1];
     return !!prevShot?.locked;
   };
 
-  return (
-    <div className="space-y-12 pb-32">
-      {/* Cast + Environment References */}
-      <div className="flex justify-between items-end px-2">
-        <div className="flex gap-4 flex-wrap">
-          {project?.cast.filter(c => !!c.referenceImageUrl).map(member => (
-            <div key={member.id} className="flex items-center gap-4 px-4 py-2 glass rounded-full w-fit border border-white/5">
-              <div className="relative w-8 h-8 rounded-full overflow-hidden border border-accent-500/50">
-                <img src={member.referenceImageUrl} className="w-full h-full object-cover" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] text-accent-400 font-bold uppercase">{member.name}</span>
-                <span className="text-[9px] text-zinc-500">Character</span>
-              </div>
-            </div>
-          ))}
-          {project?.environments.filter(e => !!e.referenceImageUrl).map(env => (
-            <div key={env.id} className="flex items-center gap-4 px-4 py-2 glass rounded-full w-fit border border-white/5">
-              <div className="relative w-8 h-8 rounded overflow-hidden border border-emerald-500/50">
-                <img src={env.referenceImageUrl} className="w-full h-full object-cover" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] text-emerald-400 font-bold uppercase">{env.name}</span>
-                <span className="text-[9px] text-zinc-500">Environment</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="text-zinc-500 text-xs font-mono">Shift + Scroll to navigate timeline</div>
-      </div>
+  const activeScene = scenes[activeSceneIdx];
+  if (!activeScene) return null;
 
-      {scenes.map((scene, sceneIdx) => (
-        <div key={scene.id} className="space-y-4">
-          {/* Scene Header */}
-          <div className="flex items-center gap-4 border-b border-white/5 pb-2 mx-4 mt-8">
-            <div className="flex flex-col">
-              <div className="flex items-center gap-3">
-                <h3 className="text-xl font-display font-medium text-white">Scene {sceneIdx + 1}</h3>
-                <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider ${scene.sectionLabel.toLowerCase().includes('chorus') ? 'bg-gold-500/10 border-gold-500/30 text-gold-400' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>
-                  {scene.sectionLabel}
-                </span>
-              </div>
-              <p className="text-zinc-500 italic text-sm max-w-2xl mt-1">"{scene.lyrics}"</p>
+  return (
+    <div className="max-w-5xl mx-auto pb-32 space-y-6">
+      {/* Scene Header */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeScene.id}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.2 }}
+          className="space-y-6"
+        >
+          <div className="space-y-1">
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-lg font-display font-medium text-white">Scene {activeSceneIdx + 1}</h2>
+              <span className="text-xs text-zinc-600 font-mono">{activeScene.startTime}–{activeScene.endTime}</span>
+              <span className="text-xs text-zinc-600">{activeScene.sectionLabel}</span>
             </div>
-            <div className="ml-auto text-right hidden md:block">
-              <div className="text-xs font-mono text-zinc-600">{scene.startTime} - {scene.endTime}</div>
-              <div className="text-xs text-zinc-500">{(scene.narrativeDescription || '').substring(0, 60)}...</div>
-            </div>
+            {activeScene.narrativeDescription && (
+              <p className="text-sm text-zinc-400 max-w-3xl">{activeScene.narrativeDescription}</p>
+            )}
           </div>
 
-          {/* Horizontal Filmstrip */}
-          <div className="overflow-x-auto custom-scrollbar pb-6 px-4">
-            <div className="flex gap-6 w-max items-start">
-              {scene.shots.map((shot, shotIdx) => {
-                const actionable = isShotActionable(scene, shotIdx);
-                const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
-                const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR || shot.endImageStatus === GenerationStatus.ERROR;
-                const activeCastMembers = project?.cast.filter(c => shot.castIds?.includes(c.id)) || [];
-                const canLock = !!shot.imageUrl && !!shot.endImageUrl && !shot.locked;
-                const hasStartFrame = !!shot.imageUrl;
-                const hasEndFrame = !!shot.endImageUrl;
+          {/* Vertical Shot List */}
+          <div className="space-y-4">
+            {activeScene.shots.map((shot, shotIdx) => {
+              const actionable = isShotActionable(activeScene, shotIdx);
+              const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
+              const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR || shot.endImageStatus === GenerationStatus.ERROR;
+              const activeCastMembers = project?.cast.filter(c => shot.castIds?.includes(c.id)) || [];
+              const canLock = !!shot.imageUrl && !!shot.endImageUrl && !shot.locked;
+              const hasStartFrame = !!shot.imageUrl;
+              const hasEndFrame = !!shot.endImageUrl;
 
-                return (
-                  <div key={shot.id} className="relative flex items-center">
-                    <div className={`w-[420px] bg-zinc-900 border rounded-xl overflow-hidden shadow-2xl flex flex-col group transition-all duration-300 ${
-                      shot.locked ? 'border-green-500/30 ring-1 ring-green-500/10' :
-                      !actionable ? 'border-white/5 opacity-40' :
-                      isError ? 'border-red-500/30' : 'border-white/5 hover:border-accent-500/30'
-                    }`}>
+              return (
+                <motion.div
+                  key={shot.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: shotIdx * 0.03 }}
+                  className={`rounded-xl overflow-hidden transition-opacity ${
+                    !actionable ? 'opacity-40' : ''
+                  }`}
+                >
+                  {/* Header bar — shot info, toggles, actions */}
+                  <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium text-white">Shot {shotIdx + 1}</span>
+                      <span className="text-xs text-zinc-600 font-mono">{shot.duration}s</span>
+                      {activeCastMembers.map(c => (
+                        <span key={c.id} className="text-xs text-zinc-500">{c.name}</span>
+                      ))}
+                      {shot.locked && (
+                        <span className="text-xs text-zinc-400 flex items-center gap-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true">
+                            <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                          </svg>
+                          Locked
+                        </span>
+                      )}
+                      {shot.videoUrl && (
+                        <div className="flex gap-px ml-1 bg-white/[0.04] rounded-md overflow-hidden">
+                          <button
+                            onClick={() => setShowFrames(prev => ({ ...prev, [shot.id]: false }))}
+                            className={`text-xs px-3 py-1 font-medium transition-colors ${!showFrames[shot.id] ? 'bg-white/[0.1] text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                          >Video</button>
+                          <button
+                            onClick={() => setShowFrames(prev => ({ ...prev, [shot.id]: true }))}
+                            className={`text-xs px-3 py-1 font-medium transition-colors ${showFrames[shot.id] ? 'bg-white/[0.1] text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                          >Frames</button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!shot.locked ? (
+                        <>
+                          <button
+                            onClick={() => onGenerateImage(activeScene.id, shot.id)}
+                            disabled={isGenerating || !actionable}
+                            className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 rounded-md text-xs font-medium disabled:opacity-30 transition-colors"
+                          >
+                            {hasStartFrame ? 'Regen Start' : 'Start Frame'}
+                          </button>
+                          <button
+                            onClick={() => onGenerateEndFrame(activeScene.id, shot.id)}
+                            disabled={isGenerating || !hasStartFrame || !actionable}
+                            className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 rounded-md text-xs font-medium disabled:opacity-30 transition-colors"
+                          >
+                            {hasEndFrame ? 'Regen End' : 'End Frame'}
+                          </button>
+                          <button
+                            onClick={() => onLockShot(activeScene.id, shot.id)}
+                            disabled={!canLock || isGenerating}
+                            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold disabled:opacity-30 hover:bg-zinc-200 transition-colors"
+                          >
+                            Lock Shot
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => onLockShot(activeScene.id, shot.id)}
+                            disabled={isGenerating}
+                            className="px-3 py-1.5 text-xs text-zinc-500 hover:text-amber-400 rounded-md border border-white/[0.06] hover:border-amber-500/20 transition-colors"
+                          >
+                            Unlock
+                          </button>
+                          <button
+                            onClick={() => onGenerateImage(activeScene.id, shot.id)}
+                            disabled={isGenerating}
+                            className="px-3 py-1.5 text-xs text-zinc-500 hover:text-white rounded-md border border-white/[0.06] hover:border-white/20 transition-colors"
+                          >
+                            Regen Start
+                          </button>
+                          <button
+                            onClick={() => onGenerateEndFrame(activeScene.id, shot.id)}
+                            disabled={isGenerating}
+                            className="px-3 py-1.5 text-xs text-zinc-500 hover:text-white rounded-md border border-white/[0.06] hover:border-white/20 transition-colors"
+                          >
+                            Regen End
+                          </button>
+                          <button
+                            onClick={() => onGenerateVideo(activeScene.id, shot.id)}
+                            disabled={isGenerating}
+                            className="px-5 py-1.5 bg-white text-black hover:bg-zinc-200 rounded-md text-xs font-semibold disabled:opacity-50 transition-colors"
+                          >
+                            {shot.videoUrl ? 'Regenerate Video' : 'Generate Video'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
 
-                      {/* Dual Frame Display */}
-                      <div className="relative flex border-b border-white/5">
-                        {/* Start Frame */}
-                        <div className="flex-1 relative aspect-video bg-black">
-                          <div className="absolute top-1 left-1 z-20">
-                            <span className="text-[8px] bg-black/70 text-zinc-400 px-1.5 py-0.5 rounded uppercase font-bold backdrop-blur-sm">Start</span>
+                  {/* Media: Video or Frames */}
+                  <div className="relative">
+                    {shot.videoUrl && !showFrames[shot.id] ? (
+                      <div className="bg-black">
+                        <video src={shot.videoUrl} controls loop playsInline className="w-full h-auto" />
+                      </div>
+                    ) : (
+                      <div className="flex">
+                        <div className="flex-1 relative bg-black min-h-[120px]">
+                          <div className="absolute top-2 left-2 z-20">
+                            <span className="text-[10px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start</span>
                           </div>
                           {shot.imageUrl ? (
-                            <img src={shot.imageUrl} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
+                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-zinc-700">
-                              <span className="text-[10px]">No start frame</span>
+                            <div className="w-full min-h-[120px] flex items-center justify-center text-zinc-700">
+                              <span className="text-xs">No start frame</span>
                             </div>
                           )}
                         </div>
-
-                        {/* Divider */}
-                        <div className="w-[1px] bg-white/10 relative">
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[8px] text-zinc-600 bg-zinc-900 px-1 py-0.5 rounded z-10">→</div>
-                        </div>
-
-                        {/* End Frame */}
-                        <div className="flex-1 relative aspect-video bg-black">
-                          <div className="absolute top-1 left-1 z-20">
-                            <span className="text-[8px] bg-black/70 text-zinc-400 px-1.5 py-0.5 rounded uppercase font-bold backdrop-blur-sm">End</span>
+                        <div className="w-px bg-white/[0.06] flex-shrink-0" />
+                        <div className="flex-1 relative bg-black min-h-[120px]">
+                          <div className="absolute top-2 left-2 z-20">
+                            <span className="text-[10px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">End</span>
                           </div>
                           {shot.endImageUrl ? (
-                            <img src={shot.endImageUrl} onClick={() => setModalImage(shot.endImageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
+                            <img src={shot.endImageUrl} alt={`Shot ${shotIdx + 1} end frame`} onClick={() => setModalImage(shot.endImageUrl!)} className="w-full h-auto cursor-zoom-in" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-zinc-700">
-                              <span className="text-[10px]">{hasStartFrame ? 'Generate end frame' : '—'}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Video overlay (togglable — click "Frames" to see start/end) */}
-                        {shot.videoUrl && !showFrames[shot.id] && (
-                          <div className="absolute inset-0 z-20 bg-black">
-                            <video src={shot.videoUrl} controls loop playsInline className="w-full h-full object-contain" />
-                          </div>
-                        )}
-
-                        {/* Video/Frames toggle */}
-                        {shot.videoUrl && (
-                          <div className="absolute bottom-1 right-1 z-30 flex gap-0.5">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setShowFrames(prev => ({ ...prev, [shot.id]: false })); }}
-                              className={`text-[8px] px-1.5 py-0.5 rounded-l font-bold backdrop-blur-md transition-colors ${!showFrames[shot.id] ? 'bg-accent-600/80 text-white' : 'bg-black/60 text-zinc-400 hover:text-white'}`}
-                            >Video</button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setShowFrames(prev => ({ ...prev, [shot.id]: true })); }}
-                              className={`text-[8px] px-1.5 py-0.5 rounded-r font-bold backdrop-blur-md transition-colors ${showFrames[shot.id] ? 'bg-accent-600/80 text-white' : 'bg-black/60 text-zinc-400 hover:text-white'}`}
-                            >Frames</button>
-                          </div>
-                        )}
-
-                        {/* Locked badge */}
-                        {shot.locked && !isGenerating && (
-                          <div className="absolute top-2 right-2 z-20 bg-green-500/20 border border-green-500/30 text-green-400 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-md flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                            Locked
-                          </div>
-                        )}
-
-                        {/* Critique Badge */}
-                        {shot.critique && !isGenerating && (
-                          <div className="absolute top-2 left-2 z-20 group/score">
-                            <div className={`px-2 py-1 rounded-full text-[10px] font-bold border backdrop-blur-md flex items-center gap-1 cursor-help ${
-                              shot.critique.score >= 7 ? 'bg-green-500/20 text-green-300 border-green-500/30'
-                                : shot.critique.score >= 5 ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30'
-                                : 'bg-red-500/20 text-red-300 border-red-500/30'
-                            }`}>
-                              <span>★ {shot.critique.score}</span>
-                              {shot.attemptCount && shot.attemptCount > 1 && (
-                                <span className="text-[8px] opacity-70 border-l border-white/20 pl-1">R{shot.attemptCount}</span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Error State */}
-                        {isError && !isGenerating && (
-                          <div className="absolute bottom-2 left-2 right-2 bg-red-500/10 border border-red-500/30 rounded px-2 py-1.5 z-20">
-                            <p className="text-[10px] text-red-300 font-medium">Generation failed</p>
-                          </div>
-                        )}
-
-                        {/* Loading overlay */}
-                        {isGenerating && (
-                          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-30 backdrop-blur-sm">
-                            <div className="w-8 h-8 border-t-2 border-accent-400 rounded-full animate-spin mb-3"></div>
-                            <span className="text-[10px] text-accent-100 uppercase tracking-widest animate-pulse font-bold">
-                              {shot.imageStatus === GenerationStatus.LOADING ? 'Generating Start Frame...'
-                                : shot.endImageStatus === GenerationStatus.LOADING ? 'Generating End Frame...'
-                                : shot.videoStatus === GenerationStatus.LOADING ? 'Generating Video...'
-                                : 'Processing...'}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Not actionable overlay */}
-                        {!actionable && !isGenerating && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
-                            <span className="text-[10px] text-zinc-500 font-medium">Lock previous shot first</span>
-                          </div>
-                        )}
-
-                        {/* Shot number + cast pills */}
-                        {!isGenerating && (
-                          <div className="absolute bottom-2 right-2 flex flex-col items-end gap-1 z-20">
-                            <div className="bg-black/60 px-2 py-1 rounded text-[10px] font-mono text-white border border-white/10 backdrop-blur-md">
-                              <span className="font-bold">SHOT {shotIdx + 1}</span>
-                              <span className="text-zinc-500 ml-1.5">{shot.duration}s</span>
-                            </div>
-                            {activeCastMembers.length > 0 && (
-                              <div className="flex gap-1">
-                                {activeCastMembers.map(c => (
-                                  <div key={c.id} className="bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded text-[8px] text-zinc-300 border border-white/10">
-                                    {c.name}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Prompts & Controls */}
-                      <div className="p-4 space-y-3 flex-1 flex flex-col bg-zinc-900/50">
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-baseline">
-                            <label className="text-[10px] uppercase text-zinc-500 font-bold">Image Prompt</label>
-                            <span className="text-[9px] text-zinc-600">Gemini 3 Pro</span>
-                          </div>
-                          <textarea
-                            value={shot.visualPrompt}
-                            onChange={(e) => onUpdateShot(scene.id, shot.id, { visualPrompt: e.target.value })}
-                            disabled={!actionable || shot.locked}
-                            className="w-full bg-black/30 border border-white/5 rounded p-2 text-xs text-zinc-300 focus:border-accent-500/50 outline-none resize-none h-14 disabled:opacity-50"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-baseline">
-                            <label className="text-[10px] uppercase text-zinc-500 font-bold">Video Motion</label>
-                            <span className="text-[9px] text-zinc-600">Veo 3.1</span>
-                          </div>
-                          <textarea
-                            value={shot.motionPrompt}
-                            onChange={(e) => onUpdateShot(scene.id, shot.id, { motionPrompt: e.target.value })}
-                            disabled={!actionable || shot.locked}
-                            className="w-full bg-black/30 border border-white/5 rounded p-2 text-xs text-zinc-300 focus:border-accent-500/50 outline-none resize-none h-10 disabled:opacity-50"
-                          />
-                        </div>
-
-                        {/* Feedback input */}
-                        {actionable && !shot.locked && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] uppercase text-zinc-500 font-bold">Feedback</label>
-                            <input
-                              placeholder="e.g. 'make the sky redder', 'add more detail to the temple'"
-                              defaultValue={shot.userFeedback || ''}
-                              onBlur={(e) => onUpdateShot(scene.id, shot.id, { userFeedback: e.target.value } as any)}
-                              className="w-full bg-black/30 border border-white/5 rounded p-2 text-xs text-zinc-300 focus:border-accent-500/50 outline-none"
-                            />
-                          </div>
-                        )}
-
-                        {/* Action buttons */}
-                        <div className="flex gap-2 pt-1">
-                          {!shot.locked ? (
-                            <>
-                              <button
-                                onClick={() => onGenerateImage(scene.id, shot.id)}
-                                disabled={isGenerating || !actionable}
-                                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2 rounded text-xs font-medium border border-white/5 disabled:opacity-30"
-                              >
-                                {hasStartFrame ? 'Regen Start' : 'Start Frame'}
-                              </button>
-                              <button
-                                onClick={() => onGenerateEndFrame(scene.id, shot.id)}
-                                disabled={isGenerating || !hasStartFrame || !actionable}
-                                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-2 rounded text-xs font-medium border border-white/5 disabled:opacity-30"
-                              >
-                                {hasEndFrame ? 'Regen End' : 'End Frame'}
-                              </button>
-                              <button
-                                onClick={() => onLockShot(scene.id, shot.id)}
-                                disabled={!canLock || isGenerating}
-                                className="px-3 bg-green-600/20 hover:bg-green-600 text-green-400 hover:text-white py-2 rounded text-xs font-bold border border-green-500/30 disabled:opacity-30 transition-all"
-                              >
-                                Lock
-                              </button>
-                            </>
-                          ) : (
-                            <div className="flex flex-col gap-2 w-full">
-                              <button
-                                onClick={() => onGenerateVideo(scene.id, shot.id)}
-                                disabled={isGenerating}
-                                className="w-full bg-accent-600 hover:bg-accent-500 text-white py-2.5 rounded text-xs font-bold shadow-lg shadow-accent-500/20 disabled:opacity-50 disabled:shadow-none"
-                              >
-                                {shot.videoUrl ? 'Regenerate Video' : 'Generate Video'}
-                              </button>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => onLockShot(scene.id, shot.id)}
-                                  disabled={isGenerating}
-                                  className="flex-1 text-[10px] text-zinc-500 hover:text-yellow-400 py-1.5 rounded border border-white/5 hover:border-yellow-500/30 transition-colors"
-                                >
-                                  Unlock
-                                </button>
-                                <button
-                                  onClick={() => onGenerateImage(scene.id, shot.id)}
-                                  disabled={isGenerating}
-                                  className="flex-1 text-[10px] text-zinc-500 hover:text-white py-1.5 rounded border border-white/5 hover:border-white/20 transition-colors"
-                                >
-                                  Regen Start
-                                </button>
-                                <button
-                                  onClick={() => onGenerateEndFrame(scene.id, shot.id)}
-                                  disabled={isGenerating}
-                                  className="flex-1 text-[10px] text-zinc-500 hover:text-white py-1.5 rounded border border-white/5 hover:border-white/20 transition-colors"
-                                >
-                                  Regen End
-                                </button>
-                              </div>
+                            <div className="w-full min-h-[120px] flex items-center justify-center text-zinc-700">
+                              <span className="text-xs">{hasStartFrame ? 'Generate end frame' : '—'}</span>
                             </div>
                           )}
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    {shotIdx < scene.shots.length - 1 && (
-                      <div className="w-8 h-[1px] flex items-center justify-center relative -mx-2 z-0">
-                        <div className={`w-full h-[1px] ${shot.locked ? 'bg-green-500/50' : 'bg-zinc-800'}`}></div>
+                    {/* Critique score */}
+                    {shot.critique && !isGenerating && (
+                      <div className="absolute top-2 left-2 z-20">
+                        <div className={`px-2 py-1 rounded-md text-[10px] font-medium border ${
+                          shot.critique.score >= 7 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20'
+                            : shot.critique.score >= 5 ? 'bg-amber-500/20 text-amber-300 border-amber-500/20'
+                            : 'bg-red-500/20 text-red-300 border-red-500/20'
+                        }`}>
+                          {shot.critique.score}/10
+                          {shot.attemptCount && shot.attemptCount > 1 && (
+                            <span className="text-[10px] opacity-60 ml-1">R{shot.attemptCount}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {isError && !isGenerating && (
+                      <div className="absolute bottom-2 left-2 right-2 bg-red-500/10 border border-red-500/20 rounded-md px-2 py-1 z-20">
+                        <p className="text-xs text-red-300">Generation failed</p>
+                      </div>
+                    )}
+
+                    {/* Loading overlay */}
+                    {isGenerating && (
+                      <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-30">
+                        <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin mb-2" />
+                        <span className="text-xs text-zinc-400">
+                          {shot.imageStatus === GenerationStatus.LOADING ? 'Generating start frame…'
+                            : shot.endImageStatus === GenerationStatus.LOADING ? 'Generating end frame…'
+                            : shot.videoStatus === GenerationStatus.LOADING ? 'Generating video…'
+                            : 'Processing…'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Not actionable */}
+                    {!actionable && !isGenerating && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                        <span className="text-xs text-zinc-500">Lock previous shot first</span>
                       </div>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      ))}
 
-      {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
+                  {/* Prompts — full width below media */}
+                  <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
+
+                    {/* Prompts — toggle between Image / Motion, full width */}
+                    {(shot.locked || actionable) && (() => {
+                      const activeTab = promptTab[shot.id] || 'image';
+                      const promptText = activeTab === 'image' ? shot.visualPrompt : shot.motionPrompt;
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-4">
+                            <button
+                              onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'image' }))}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                            >Image Prompt</button>
+                            <button
+                              onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'motion' }))}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                            >Motion Prompt</button>
+                          </div>
+                          {shot.locked ? (
+                            <p className="text-sm text-zinc-400 leading-relaxed">{promptText}</p>
+                          ) : (
+                            <>
+                              <textarea
+                                value={promptText}
+                                onChange={(e) => onUpdateShot(activeScene.id, shot.id, activeTab === 'image' ? { visualPrompt: e.target.value } : { motionPrompt: e.target.value })}
+                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-28"
+                              />
+                              <input
+                                placeholder="Feedback — e.g. 'make sky redder'"
+                                defaultValue={shot.userFeedback || ''}
+                                onBlur={(e) => onUpdateShot(activeScene.id, shot.id, { userFeedback: e.target.value } as any)}
+                                className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                              />
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
+      </AnimatePresence>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ApiProject, ConceptOption, CastMember, Environment, VideoMode } from '../types';
 import * as api from '../services/api';
 import { ImageModal } from './ImageModal';
@@ -31,8 +32,6 @@ const PHASE_ORDER: Phase[] = ['concept', 'script', 'style', 'characters', 'envir
 
 const phaseIndex = (p: Phase) => PHASE_ORDER.indexOf(p);
 
-// Determine active phase from project status
-// Flow: concept_locked → scripted → style_locked → characters_locked → environments_locked
 const getActivePhase = (project: ApiProject): Phase => {
   switch (project.status) {
     case 'analyzed': return 'concept';
@@ -58,96 +57,7 @@ interface StyleSlot {
   isRefining?: boolean;
 }
 
-// ─── Environment Card (self-contained, calls API directly) ──────────
-
-const EnvironmentCard: React.FC<{
-  env: Environment;
-  projectId: string;
-  isLoading: boolean;
-  onProjectUpdate: (p: ApiProject) => void;
-}> = ({ env, projectId, isLoading, onProjectUpdate }) => {
-  const [looks, setLooks] = useState<{ id: string; url: string }[]>([]);
-  const [generating, setGenerating] = useState(false);
-  const [modalImage, setModalImage] = useState<string | null>(null);
-
-  const handleGenerate = async () => {
-    setGenerating(true);
-    try {
-      const result = await api.generateEnvironmentLook(projectId, env.id);
-      setLooks(result.looks || []);
-      onProjectUpdate(result.project);
-    } catch (err: any) {
-      console.error('Environment look gen failed:', err);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleLock = async (assetId: string) => {
-    try {
-      const p = await api.lockEnvironment(projectId, env.id, assetId);
-      onProjectUpdate(p);
-      setLooks([]);
-    } catch (err: any) {
-      console.error('Environment lock failed:', err);
-    }
-  };
-
-  return (
-    <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-      <div className="p-4">
-        <h4 className="text-sm font-display font-medium text-white mb-1">{env.name}</h4>
-        <p className="text-xs text-zinc-400 leading-relaxed mb-3">{env.description}</p>
-
-        {/* Locked reference */}
-        {env.referenceImageUrl && (
-          <div className="mb-3">
-            <span className="text-[10px] uppercase font-bold text-green-400 mb-1 block">✓ Locked</span>
-            <div className="aspect-video rounded-lg overflow-hidden border border-green-500/30">
-              <img src={env.referenceImageUrl} onClick={() => setModalImage(env.referenceImageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
-            </div>
-          </div>
-        )}
-
-        {/* Generated looks */}
-        {generating && looks.length === 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="aspect-video rounded bg-zinc-800 animate-pulse border border-white/5 flex items-center justify-center">
-                <div className="w-4 h-4 border-2 border-accent-400/30 border-t-accent-400 rounded-full animate-spin"></div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {looks.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            {looks.map(look => (
-              <div
-                key={look.id}
-                className="aspect-video rounded overflow-hidden border border-white/10 hover:border-accent-500 transition-all relative group"
-              >
-                <img src={look.url} onClick={() => setModalImage(look.url)} className="w-full h-full object-cover cursor-zoom-in" />
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                  <button onClick={() => handleLock(look.id)} className="pointer-events-auto text-[8px] font-bold text-white bg-accent-600 hover:bg-accent-500 px-2 py-0.5 rounded-full cursor-pointer">Lock</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="w-full py-2 bg-accent-600/20 hover:bg-accent-600 text-accent-400 hover:text-white rounded text-xs font-bold border border-accent-500/30 transition-all disabled:opacity-30"
-        >
-          {generating ? 'Generating...' : env.referenceImageUrl ? 'Regenerate Looks' : 'Generate 3 Looks'}
-        </button>
-      </div>
-      {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
-    </div>
-  );
-};
+// EnvironmentCard removed — environments now use sidebar+detail layout inline
 
 export const AnalysisEditor: React.FC<Props> = ({
   project, isLoading, looksLoading, lookCandidates,
@@ -158,22 +68,83 @@ export const AnalysisEditor: React.FC<Props> = ({
   const activePhase = getActivePhase(project);
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
   const [activeCastId, setActiveCastId] = useState<string | null>(project.cast[0]?.id || null);
+  const [activeEnvId, setActiveEnvId] = useState<string | null>(project.environments[0]?.id || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ─── Style exploration state (ephemeral) ────────────────────────
-  const [styleSlots, setStyleSlots] = useState<StyleSlot[]>([]);
-  const [userSlot, setUserSlot] = useState<StyleSlot>({ title: 'Your Vision', description: '' });
+  // Style exploration state — initialize from persisted data
+  const [styleSlots, setStyleSlots] = useState<StyleSlot[]>(() => {
+    const saved = project.styleExploration?.slots;
+    return saved ? saved.map(s => ({ ...s })) : [];
+  });
+  const [userSlot, setUserSlot] = useState<StyleSlot>(() => {
+    const saved = project.styleExploration?.userSlot;
+    return saved ? { ...saved } : { title: 'Your Vision', description: '' };
+  });
   const [brainstormNotes, setBrainstormNotes] = useState('');
   const [expandedScenes, setExpandedScenes] = useState<Set<string>>(new Set());
   const [isBrainstorming, setIsBrainstorming] = useState(false);
   const [isLocking, setIsLocking] = useState(false);
   const [showExploredStyles, setShowExploredStyles] = useState(false);
+  const [expandedStyleIdx, setExpandedStyleIdx] = useState<number | null>(null);
+  const [showCustomSlot, setShowCustomSlot] = useState(false);
   const [modalImage, setModalImage] = useState<string | null>(null);
 
+  // Environment look state
+  const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
+  const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
+
+  // Auto-persist style exploration to DB whenever slots change (debounced)
+  const styleExplorationInitRef = useRef(true);
+  useEffect(() => {
+    // Skip the initial render (don't save what we just loaded)
+    if (styleExplorationInitRef.current) {
+      styleExplorationInitRef.current = false;
+      return;
+    }
+    // Skip if nothing to save
+    if (styleSlots.length === 0 && !userSlot.description) return;
+    // Debounce to avoid hammering on rapid state changes
+    const timer = setTimeout(() => {
+      const payload = {
+        slots: styleSlots.filter(s => !s.isGenerating && !s.isRefining).map(s => ({ title: s.title, description: s.description, imageUrl: s.imageUrl, assetId: s.assetId })),
+        userSlot: userSlot.description ? { title: userSlot.title, description: userSlot.description, imageUrl: userSlot.imageUrl, assetId: userSlot.assetId } : undefined,
+      };
+      api.updateProject(project.id, { styleExploration: payload }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [styleSlots, userSlot, project.id]);
+
   const canAccess = (phase: Phase) => phaseIndex(phase) <= phaseIndex(activePhase);
-  const isLocked = (phase: Phase) => phaseIndex(phase) < phaseIndex(activePhase);
+  const isLockedPhase = (phase: Phase) => phaseIndex(phase) < phaseIndex(activePhase);
   const activeMember = project.cast.find(c => c.id === activeCastId);
   const activeLooks = activeCastId ? (lookCandidates[activeCastId] || []) : [];
+  const activeEnv = project.environments.find(e => e.id === activeEnvId);
+  const activeEnvLooks = activeEnvId ? (envLooks[activeEnvId] || []) : [];
+
+  // ─── Environment Handlers ──────────────────────────────────────
+
+  const handleEnvGenerate = async (envId: string) => {
+    setEnvGenerating(prev => new Set(prev).add(envId));
+    try {
+      const result = await api.generateEnvironmentLook(project.id, envId);
+      setEnvLooks(prev => ({ ...prev, [envId]: result.looks || [] }));
+      onSetProject?.(result.project);
+    } catch (err: any) {
+      console.error('Environment look gen failed:', err);
+    } finally {
+      setEnvGenerating(prev => { const s = new Set(prev); s.delete(envId); return s; });
+    }
+  };
+
+  const handleEnvLock = async (envId: string, assetId: string) => {
+    try {
+      const p = await api.lockEnvironment(project.id, envId, assetId);
+      onSetProject?.(p);
+      setEnvLooks(prev => ({ ...prev, [envId]: [] }));
+    } catch (err: any) {
+      console.error('Environment lock failed:', err);
+    }
+  };
 
   // ─── Style Exploration Handlers ─────────────────────────────────
 
@@ -226,7 +197,7 @@ export const AnalysisEditor: React.FC<Props> = ({
         title: result.title,
         description: result.description,
         isRefining: false,
-        imageUrl: undefined, // clear old image since description changed
+        imageUrl: undefined,
         assetId: undefined,
       } : s));
     } catch (err: any) {
@@ -259,806 +230,997 @@ export const AnalysisEditor: React.FC<Props> = ({
     }
   };
 
-  // ─── Style Card Component ──────────────────────────────────────
+  // ─── Style Card ──────────────────────────────────────────────────
 
-  const StyleCard: React.FC<{
+  const StyleRow: React.FC<{
     slot: StyleSlot;
     index: number;
-    isUserSlot?: boolean;
+    expanded: boolean;
+    onToggle: () => void;
     onVisualize: () => void;
     onLock: () => void;
-    onDescriptionChange?: (desc: string) => void;
-  }> = ({ slot, index, isUserSlot, onVisualize, onLock, onDescriptionChange }) => {
+  }> = ({ slot, index, expanded, onToggle, onVisualize, onLock }) => {
     const [refineInput, setRefineInput] = useState('');
 
     return (
-      <div className="glass rounded-2xl border border-white/5 overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="px-5 pt-5 pb-3">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-display font-medium text-white">{slot.title || 'Untitled'}</h4>
-            {!isUserSlot && (
-              <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded text-zinc-500">#{index + 1}</span>
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.04 }}
+        className="rounded-xl overflow-hidden border border-white/[0.06]"
+      >
+        {/* Collapsed row — always visible */}
+        <button
+          onClick={onToggle}
+          className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
+        >
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            {slot.imageUrl && (
+              <img src={slot.imageUrl} alt={slot.title} className="w-10 h-10 rounded-md object-cover flex-shrink-0" />
             )}
+            <div className="min-w-0 flex-1">
+              <h4 className="text-sm font-medium text-white">{slot.title || 'Untitled'}</h4>
+              {!expanded && (
+                <p className="text-xs text-zinc-500 line-clamp-1 mt-0.5">{slot.description}</p>
+              )}
+            </div>
           </div>
+          <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+            {slot.isGenerating && (
+              <div className="w-4 h-4 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+            )}
+            {slot.imageUrl && !expanded && (
+              <span className="text-[10px] text-zinc-500 border border-white/[0.08] px-2 py-0.5 rounded">Image ready</span>
+            )}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`}>
+              <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+            </svg>
+          </div>
+        </button>
 
-          {/* Description — editable for user slot, display for AI slots */}
-          {isUserSlot ? (
-            <textarea
-              value={slot.description}
-              onChange={(e) => onDescriptionChange?.(e.target.value)}
-              placeholder="Describe your visual style... e.g. 'Mughal miniature painting meets soft candlelight, intricate botanical borders, earthy jewel tones'"
-              className="w-full h-24 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-zinc-300 outline-none focus:border-accent-500/50 resize-none leading-relaxed"
-            />
-          ) : (
-            <p className="text-xs text-zinc-400 leading-relaxed">{slot.description}</p>
-          )}
-        </div>
+        {/* Expanded content */}
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              key="expanded"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="border-t border-white/[0.06]">
+                {/* Image result — show first if exists */}
+                {(slot.isGenerating || slot.imageUrl) && (
+                  <div className="bg-black/20">
+                    {slot.isGenerating ? (
+                      <div className="h-56 flex items-center justify-center">
+                        <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                      </div>
+                    ) : (
+                      <div className="relative group">
+                        <img src={slot.imageUrl} onClick={() => setModalImage(slot.imageUrl!)} className="w-full h-auto max-h-[360px] object-contain mx-auto cursor-zoom-in" alt={slot.title} />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <button
+                            onClick={onLock}
+                            disabled={isLocking}
+                            className="bg-white text-black px-5 py-2.5 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                          >
+                            {isLocking ? 'Locking…' : 'Lock This Style'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-        {/* Image Area */}
-        <div className="px-5 flex-1">
-          {slot.isGenerating ? (
-            <div className="aspect-video rounded-xl bg-zinc-800 animate-pulse border border-white/5 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-6 h-6 border-2 border-accent-400/30 border-t-accent-400 rounded-full animate-spin"></div>
-                <span className="text-[10px] text-zinc-500">Generating...</span>
+                <div className="px-5 py-4 space-y-4">
+                  <p className="text-sm text-zinc-300 leading-relaxed">{slot.description}</p>
+
+                  {/* Refine + Visualize row */}
+                  <div className="flex gap-2">
+                    <input
+                      value={refineInput}
+                      onChange={(e) => setRefineInput(e.target.value)}
+                      placeholder="Refine this direction…"
+                      className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && refineInput) {
+                          handleRefine(index, refineInput);
+                          setRefineInput('');
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={() => { handleRefine(index, refineInput); setRefineInput(''); }}
+                      disabled={!refineInput || slot.isRefining}
+                      className="px-4 py-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-md text-xs text-zinc-300 disabled:opacity-30 transition-colors"
+                    >
+                      {slot.isRefining ? 'Refining…' : 'Refine'}
+                    </button>
+                    <button
+                      onClick={onVisualize}
+                      disabled={!slot.description || slot.isGenerating}
+                      className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                    >
+                      {slot.isGenerating ? 'Generating…' : slot.imageUrl ? 'Re-visualize' : 'Visualize'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          ) : slot.imageUrl ? (
-            <div className="aspect-video rounded-xl overflow-hidden border border-white/10 relative group">
-              <img src={slot.imageUrl} onClick={() => setModalImage(slot.imageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                <button
-                  onClick={onLock}
-                  disabled={isLocking}
-                  className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:bg-accent-400 transition-colors disabled:opacity-50"
-                >
-                  {isLocking ? 'Locking...' : 'Lock This Style'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="aspect-video rounded-xl border-2 border-dashed border-white/10 flex items-center justify-center">
-              <span className="text-zinc-700 text-xs">No image yet</span>
-            </div>
+            </motion.div>
           )}
-        </div>
-
-        {/* Actions */}
-        <div className="px-5 py-4 space-y-2">
-          {/* Refine input (AI slots only) */}
-          {!isUserSlot && slot.description && (
-            <div className="flex gap-2">
-              <input
-                value={refineInput}
-                onChange={(e) => setRefineInput(e.target.value)}
-                placeholder="Refine: 'more golden', 'darker mood'..."
-                className="flex-1 bg-black/40 border border-white/10 rounded px-3 py-1.5 text-xs text-white outline-none focus:border-accent-500/50"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && refineInput) {
-                    handleRefine(index, refineInput);
-                    setRefineInput('');
-                  }
-                }}
-              />
-              <button
-                onClick={() => { handleRefine(index, refineInput); setRefineInput(''); }}
-                disabled={!refineInput || slot.isRefining}
-                className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded text-xs text-zinc-300 border border-white/5 disabled:opacity-30"
-              >
-                {slot.isRefining ? '...' : 'Refine'}
-              </button>
-            </div>
-          )}
-
-          {/* Visualize button */}
-          <button
-            onClick={onVisualize}
-            disabled={!slot.description || slot.isGenerating}
-            className="w-full py-2 bg-accent-600/20 hover:bg-accent-600 text-accent-400 hover:text-white rounded-lg text-xs font-bold border border-accent-500/30 transition-all disabled:opacity-30 disabled:hover:bg-accent-600/20 disabled:hover:text-accent-400"
-          >
-            {slot.isGenerating ? 'Generating...' : slot.imageUrl ? 'Re-visualize' : 'Visualize'}
-          </button>
-        </div>
-      </div>
+        </AnimatePresence>
+      </motion.div>
     );
   };
 
+  // ─── Phase content animation wrapper ─────────────────────────────
+
+  const phaseTransition = {
+    initial: { opacity: 0, y: 6 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -6 },
+    transition: { duration: 0.2 },
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-slide-up p-8 pb-32">
+    <div className="max-w-5xl mx-auto space-y-6 pb-32">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end border-b border-white/10 pb-6 gap-6">
-        <div>
-          <h2 className="text-4xl font-display font-medium text-white">{project.title || 'Production Pipeline'}</h2>
-          <p className="text-zinc-500 mt-2 font-light">
-            Phase: {viewPhase === 'concept' ? '1. Choose Concept' : viewPhase === 'script' ? '2. Generate Script' : viewPhase === 'style' ? '3. Lock Art Style' : viewPhase === 'characters' ? '4. Lock Characters' : '5. Lock Environments'}
-          </p>
-        </div>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-display font-medium text-white tracking-tight">{project.title || 'Blueprint'}</h2>
         {(project.status === 'environments_locked' || (project.status === 'characters_locked' && project.environments.length === 0)) && (
-          <button onClick={onLaunchStudio} disabled={isLoading} className="bg-accent-600 hover:bg-accent-500 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-accent-500/20 transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-3">
-            {isLoading && <div className="w-4 h-4 border-t-2 border-white rounded-full animate-spin"></div>}
-            {isLoading ? 'Writing shot prompts...' : 'Launch Studio →'}
+          <button onClick={onLaunchStudio} disabled={isLoading} className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-2">
+            {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+            {isLoading ? 'Writing shot prompts...' : 'Launch Studio'}
           </button>
         )}
       </div>
 
-      {/* Phase Progress Bar */}
-      <div className="flex gap-1">
-        {PHASE_ORDER.map((phase, idx) => (
-          <button
-            key={phase}
-            disabled={!canAccess(phase)}
-            onClick={() => canAccess(phase) && setViewPhase(phase)}
-            className={`flex-1 h-10 rounded-lg flex items-center justify-center text-xs font-medium transition-all border ${
-              viewPhase === phase
-                ? 'bg-accent-600 border-accent-500 text-white'
-                : isLocked(phase)
-                  ? 'bg-green-500/10 border-green-500/30 text-green-400 cursor-pointer hover:bg-green-500/20'
-                  : canAccess(phase)
-                    ? 'bg-zinc-800 border-white/5 text-zinc-400 cursor-pointer hover:bg-zinc-700'
-                    : 'bg-zinc-900 border-white/5 text-zinc-700 cursor-not-allowed'
-            }`}
-          >
-            {isLocked(phase) && <span className="mr-1">✓</span>}
-            {idx + 1}. {phase.charAt(0).toUpperCase() + phase.slice(1)}
-          </button>
-        ))}
+      {/* Phase Progress — Chips connected by lines */}
+      <div className="flex items-center justify-center gap-0">
+        {PHASE_ORDER.map((phase, idx) => {
+          const locked = isLockedPhase(phase);
+          const active = viewPhase === phase;
+          const accessible = canAccess(phase);
+
+          return (
+            <React.Fragment key={phase}>
+              <button
+                disabled={!accessible}
+                onClick={() => accessible && setViewPhase(phase)}
+                className={`px-4 py-2 rounded-md text-[11px] font-medium transition-colors ${
+                  active
+                    ? 'bg-white/[0.08] text-white'
+                    : locked
+                      ? 'text-zinc-300 hover:text-white'
+                      : accessible
+                        ? 'text-zinc-500 hover:text-zinc-300'
+                        : 'text-zinc-700 cursor-not-allowed'
+                }`}
+              >
+                {locked && (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 mr-1 inline" aria-hidden="true">
+                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                  </svg>
+                )}
+                {phase.charAt(0).toUpperCase() + phase.slice(1)}
+              </button>
+              {idx < PHASE_ORDER.length - 1 && (
+                <div className={`w-8 h-px ${locked ? 'bg-white/20' : 'bg-white/[0.08]'}`} />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
 
-      {/* ═══════════════════ PHASE 1: CONCEPT ═══════════════════ */}
-      {viewPhase === 'concept' && (
-        <div className="space-y-8">
-          {isLocked('concept') ? (
-            <div className="glass p-8 rounded-2xl border border-green-500/20">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-green-400 text-lg">✓</span>
-                <h3 className="text-lg font-display text-white">Locked Concept: {project.lockedConcept?.conceptDirection}</h3>
+      {/* Phase Content */}
+      <AnimatePresence mode="wait">
+        {/* ═══ CONCEPT ═══ */}
+        {viewPhase === 'concept' && (
+          <motion.div key="concept" {...phaseTransition} className="space-y-6">
+            {isLockedPhase('concept') ? (
+              <div className="rounded-xl p-6 border border-white/[0.06]">
+                <div className="flex items-center gap-2 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
+                  <h3 className="text-sm font-medium text-white">{project.lockedConcept?.conceptDirection}</h3>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-[13px]">
+                  <div><span className="text-xs text-zinc-500 block uppercase tracking-wide mb-0.5">Deity</span><span className="text-white">{project.lockedConcept?.deity}</span></div>
+                  <div><span className="text-xs text-zinc-500 block uppercase tracking-wide mb-0.5">Mood</span><span className="text-white">{project.lockedConcept?.mood}</span></div>
+                  <div><span className="text-xs text-zinc-500 block uppercase tracking-wide mb-0.5">Direction</span><span className="text-white">{project.lockedConcept?.conceptDirection}</span></div>
+                </div>
+                <p className="text-zinc-400 mt-4 text-sm leading-relaxed">{project.lockedConcept?.theme}</p>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                <div><span className="text-zinc-500 text-xs block uppercase">Deity</span><span className="text-white">{project.lockedConcept?.deity}</span></div>
-                <div><span className="text-zinc-500 text-xs block uppercase">Mood</span><span className="text-white">{project.lockedConcept?.mood}</span></div>
-                <div><span className="text-zinc-500 text-xs block uppercase">Direction</span><span className="text-white">{project.lockedConcept?.conceptDirection}</span></div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium text-white mb-1">Choose a Creative Direction</h3>
+                  <p className="text-zinc-500 text-[13px]">{project.conceptOptions.length} concepts generated. Pick one to proceed.</p>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {project.conceptOptions.map((concept, idx) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.05 }}
+                      whileHover={{ y: -2 }}
+                      className="surface rounded-xl p-5 space-y-3 cursor-pointer group hover:shadow-lg hover:shadow-black/20"
+                      onClick={() => !isLoading && onLockConcept(idx)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-white font-medium text-sm">{concept.conceptDirection}</span>
+                        <span className="text-[10px] text-zinc-600 font-mono">{idx + 1}</span>
+                      </div>
+                      <div className="space-y-1.5 text-[13px]">
+                        <div><span className="text-zinc-500">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
+                        <div><span className="text-zinc-500">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
+                        <p className="text-zinc-400 text-[13px] leading-relaxed">{concept.theme}</p>
+                      </div>
+                      <button disabled={isLoading} className="w-full py-2 bg-white/[0.06] text-zinc-300 rounded-md text-[11px] font-medium group-hover:bg-white group-hover:text-black transition-colors disabled:opacity-50">
+                        {isLoading ? 'Locking...' : 'Choose'}
+                      </button>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-              <p className="text-zinc-400 mt-4 text-sm">{project.lockedConcept?.theme}</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <h3 className="text-lg font-display text-white">Choose a Creative Direction</h3>
-              <p className="text-zinc-500 text-sm">Gemini analyzed your song and proposed {project.conceptOptions.length} distinct concepts. Pick one to proceed.</p>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {project.conceptOptions.map((concept, idx) => (
-                  <div key={idx} className="glass p-6 rounded-2xl space-y-4 hover:border-accent-500/50 border border-white/5 transition-all group cursor-pointer" onClick={() => !isLoading && onLockConcept(idx)}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-accent-400 font-bold text-sm uppercase">{concept.conceptDirection}</span>
-                      <span className="text-[10px] bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">Option {idx + 1}</span>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="text-xs"><span className="text-zinc-500">Deity:</span> <span className="text-white">{concept.deity}</span></div>
-                      <div className="text-xs"><span className="text-zinc-500">Mood:</span> <span className="text-white">{concept.mood}</span></div>
-                      <p className="text-zinc-300 text-sm leading-relaxed">{concept.theme}</p>
-                    </div>
-                    <button disabled={isLoading} className="w-full py-2 bg-accent-600/20 text-accent-400 rounded-lg text-xs font-bold border border-accent-500/30 group-hover:bg-accent-600 group-hover:text-white transition-all">
-                      {isLoading ? 'Locking...' : 'Choose This Concept'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </motion.div>
+        )}
 
-      {/* ═══════════════════ PHASE 3: STYLE ═══════════════════ */}
-      {viewPhase === 'style' && (
-        <div className="space-y-8">
-          {isLocked('style') ? (
-            <div className="space-y-6">
-              <div className="glass p-8 rounded-2xl border border-green-500/20">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-green-400 text-lg">✓</span>
-                    <h3 className="text-lg font-display text-white">Locked Style</h3>
-                  </div>
+        {/* ═══ SCRIPT ═══ */}
+        {viewPhase === 'script' && (
+          <motion.div key="script" {...phaseTransition} className="space-y-6">
+            {/* Director Settings */}
+            <div className="surface rounded-xl p-5">
+              <div className="flex gap-6 items-center flex-wrap">
+                <div className="space-y-2 flex-1 min-w-[200px]">
+                  <label className="text-[11px] uppercase font-medium text-zinc-500 tracking-wide">Director Mode</label>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => setShowExploredStyles(prev => !prev)}
-                      className="text-xs text-zinc-400 hover:text-white border border-white/10 hover:border-white/30 px-3 py-1.5 rounded transition-colors"
+                      onClick={() => onUpdateProject({ videoMode: 'montage' })}
+                      className={`flex-1 py-2 rounded-md text-[11px] font-medium transition-colors ${project.videoMode === 'montage' ? 'bg-white text-black' : 'bg-obsidian-800 text-zinc-500 hover:text-zinc-300'}`}
                     >
-                      {showExploredStyles ? 'Hide Explorer' : 'Explore New Directions'}
+                      Montage
                     </button>
-                    {project.status === 'style_locked' && (
-                      <button
-                        onClick={onUnlockStyle}
-                        disabled={isLoading}
-                        className="text-xs text-zinc-500 hover:text-red-400 border border-white/10 hover:border-red-500/30 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
-                      >
-                        Unlock & Re-explore
-                      </button>
-                    )}
+                    <button
+                      onClick={() => onUpdateProject({ videoMode: 'cinematic' })}
+                      className={`flex-1 py-2 rounded-md text-[11px] font-medium transition-colors ${project.videoMode === 'cinematic' ? 'bg-white text-black' : 'bg-obsidian-800 text-zinc-500 hover:text-zinc-300'}`}
+                    >
+                      Cinematic
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-6 items-start">
-                  {project.styleAssetUrl && (
-                    <img src={project.styleAssetUrl} onClick={() => setModalImage(project.styleAssetUrl!)} className="w-64 rounded-xl border border-white/10 cursor-zoom-in" />
-                  )}
-                  <div className="flex-1">
-                    <p className="text-zinc-300 text-sm leading-relaxed whitespace-pre-wrap">{project.styleDescription}</p>
-                    {project.status === 'style_locked' && (
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase font-medium text-zinc-500 tracking-wide">Pacing</label>
+                  <div className="flex gap-2">
+                    {[5, 8, 10].map(d => (
                       <button
-                        onClick={() => setViewPhase('characters')}
-                        className="mt-4 px-6 py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold hover:bg-green-600 hover:text-white transition-all"
+                        key={d}
+                        onClick={() => onUpdateProject({ targetDuration: d })}
+                        className={`px-4 py-2 rounded-md text-[11px] font-mono ${project.targetDuration === d ? 'bg-white text-black' : 'bg-obsidian-800 text-zinc-500 hover:text-zinc-300'} transition-colors`}
                       >
-                        Proceed to Characters →
+                        {d}s
                       </button>
-                    )}
+                    ))}
                   </div>
+                </div>
+                <button
+                  onClick={onGenerateScript}
+                  disabled={isLoading}
+                  className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                >
+                  {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                  {isLoading ? 'Writing...' : project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
+                </button>
+              </div>
+            </div>
+
+            {/* Loading — first gen */}
+            {isLoading && project.scenes.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-48 space-y-3">
+                <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                <p className="text-zinc-500 text-sm">Writing your script...</p>
+              </div>
+            )}
+
+            {/* Scenes */}
+            {project.scenes.length > 0 && (
+              <div className="surface rounded-xl relative">
+                {isLoading && (
+                  <div className="absolute inset-0 bg-black/60 rounded-xl z-10 flex flex-col items-center justify-center gap-3">
+                    <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                    <p className="text-zinc-300 text-sm">Rewriting script...</p>
+                  </div>
+                )}
+                <div className="p-5 flex justify-between items-center border-b border-white/[0.06]">
+                  <h3 className="text-sm font-medium text-white">Script Breakdown</h3>
+                  <div className="flex items-center gap-4">
+                    <button
+                      className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                      onClick={() => {
+                        if (expandedScenes.size === project.scenes.length) {
+                          setExpandedScenes(new Set());
+                        } else {
+                          setExpandedScenes(new Set(project.scenes.map(s => s.id)));
+                        }
+                      }}
+                    >
+                      {expandedScenes.size === project.scenes.length ? 'Collapse All' : 'Expand All'}
+                    </button>
+                    <span className="text-[11px] font-mono text-zinc-600">
+                      {project.scenes.length} Scenes / {project.scenes.reduce((acc, s) => acc + s.shots.length, 0)} Shots
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y divide-white/[0.04]">
+                  {project.scenes.map((scene, idx) => {
+                    const isExpanded = expandedScenes.has(scene.id);
+                    return (
+                      <div key={scene.id}>
+                        <button
+                          className="w-full text-left p-4 flex justify-between items-start hover:bg-white/[0.02] transition-colors"
+                          onClick={() => {
+                            const next = new Set(expandedScenes);
+                            if (isExpanded) next.delete(scene.id); else next.add(scene.id);
+                            setExpandedScenes(next);
+                          }}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-3 mb-0.5">
+                              <span className="text-white font-medium text-sm">Scene {idx + 1}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-md ${
+                                scene.sectionLabel.toLowerCase().includes('chorus')
+                                  ? 'bg-amber-500/10 text-amber-400'
+                                  : 'bg-white/[0.04] text-zinc-500'
+                              }`}>
+                                {scene.sectionLabel}
+                              </span>
+                              <span className="text-[10px] text-zinc-600">{scene.shots.length} shots</span>
+                            </div>
+                            <p className="text-zinc-500 text-[13px] truncate">{scene.narrativeDescription}</p>
+                          </div>
+                          <div className="flex items-center gap-3 ml-4 shrink-0">
+                            <span className="text-[11px] font-mono text-zinc-600">{scene.startTime} - {scene.endTime}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                              className={`text-zinc-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                              <path d="M6 9l6 6 6-6"/>
+                            </svg>
+                          </div>
+                        </button>
+
+                        {isExpanded && (
+                          <div className="px-4 pb-4 space-y-2 border-t border-white/[0.04] pt-3">
+                            {scene.lyrics && (
+                              <p className="text-zinc-600 italic text-[13px] mb-3">"{scene.lyrics}"</p>
+                            )}
+                            {scene.shots.map((shot, sIdx) => (
+                              <div key={shot.id} className="flex gap-3 p-3 surface-inset rounded-lg">
+                                <div className="text-[11px] font-mono text-zinc-600 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[13px] text-zinc-300 mb-1">{shot.visualPrompt || '—'}</div>
+                                  {shot.motionPrompt && (
+                                    <div className="text-[11px] text-zinc-500 mb-1">{shot.motionPrompt}</div>
+                                  )}
+                                  <div className="text-[11px] text-zinc-600 flex gap-3">
+                                    <span>{shot.duration}s</span>
+                                    <span>{shot.castIds.length > 0 ? shot.castIds.length + ' Cast' : 'No Cast'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+            )}
 
-              {/* Explore / regenerate styles while locked */}
-              {showExploredStyles && (
-                <div className="glass p-6 rounded-2xl border border-white/5 space-y-4">
-                  <h4 className="text-sm font-display text-zinc-400">Explore More Directions</h4>
+            {project.scenes.length === 0 && !isLoading && (
+              <div className="flex flex-col items-center justify-center h-48 text-zinc-600 text-sm">
+                <p>Hit "Generate Script" to create a cinematic shot list.</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {/* ═══ STYLE ═══ */}
+        {viewPhase === 'style' && (
+          <motion.div key="style" {...phaseTransition} className="space-y-6">
+            {isLockedPhase('style') ? (
+              <div className="space-y-5">
+                {!showExploredStyles ? (
+                  /* ── Locked style overview ── */
+                  <div className="rounded-xl overflow-hidden border border-white/[0.06]">
+                    {/* Header bar */}
+                    <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
+                      <div className="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true">
+                          <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                        </svg>
+                        <h3 className="text-sm font-medium text-white">Locked Style</h3>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowExploredStyles(true)}
+                          className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-colors"
+                        >
+                          Explore New
+                        </button>
+                        {project.status === 'style_locked' && (
+                          <button
+                            onClick={onUnlockStyle}
+                            disabled={isLoading}
+                            className="text-[11px] text-zinc-500 hover:text-red-400 border border-white/[0.08] hover:border-red-500/20 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+                          >
+                            Unlock
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Side-by-side: image left, description right */}
+                    <div className="flex flex-col md:flex-row">
+                      {project.styleAssetUrl && (
+                        <div className="md:w-2/5 flex-shrink-0 bg-black/20 cursor-zoom-in" onClick={() => setModalImage(project.styleAssetUrl!)}>
+                          <img src={project.styleAssetUrl} alt="Locked style" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                      <div className="flex-1 px-5 py-4 space-y-4">
+                        <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Style DNA</h4>
+                        <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{project.styleDescription}</p>
+                        {project.status === 'style_locked' && (
+                          <button
+                            onClick={() => setViewPhase('characters')}
+                            className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                          >
+                            Proceed to Characters
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Explorer view (replaces locked overview) ── */
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium text-white">Explore New Directions</h3>
+                      <button
+                        onClick={() => setShowExploredStyles(false)}
+                        className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-colors"
+                      >
+                        Back to Style
+                      </button>
+                    </div>
+
+                    {/* Current style thumbnail for reference */}
+                    {project.styleAssetUrl && (
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/[0.06]">
+                        <img src={project.styleAssetUrl} alt="Current style" className="w-16 h-16 rounded-md object-cover cursor-zoom-in" onClick={() => setModalImage(project.styleAssetUrl!)} />
+                        <div>
+                          <span className="text-xs text-zinc-500">Current locked style</span>
+                          <p className="text-sm text-zinc-300 line-clamp-1 mt-0.5">{project.styleDescription?.slice(0, 80)}…</p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <input
+                        value={brainstormNotes}
+                        onChange={(e) => setBrainstormNotes(e.target.value)}
+                        placeholder="Style preferences..."
+                        className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
+                      />
+                      <button
+                        onClick={handleBrainstorm}
+                        disabled={isBrainstorming}
+                        className="px-5 py-2.5 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 whitespace-nowrap transition-colors"
+                      >
+                        {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate' : 'Brainstorm'}
+                      </button>
+                    </div>
+
+                    {isBrainstorming && styleSlots.length === 0 && (
+                      <div className="flex flex-col items-center justify-center h-40 space-y-3">
+                        <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                        <p className="text-zinc-500 text-sm">Brainstorming...</p>
+                      </div>
+                    )}
+
+                    {styleSlots.length > 0 && (
+                      <div className="space-y-3">
+                        {styleSlots.map((slot, idx) => (
+                          <StyleRow
+                            key={idx}
+                            slot={slot}
+                            index={idx}
+                            expanded={expandedStyleIdx === idx}
+                            onToggle={() => setExpandedStyleIdx(prev => prev === idx ? null : idx)}
+                            onVisualize={() => handleVisualize(idx)}
+                            onLock={() => handleLockSlot(slot)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="surface rounded-xl p-5 space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-white mb-1">Art Style Exploration</h3>
+                    <p className="text-zinc-500 text-[13px]">
+                      Claude brainstorms 4 visual directions. You choose which to visualize as images.
+                    </p>
+                  </div>
+
                   <div className="flex gap-3">
                     <input
                       value={brainstormNotes}
                       onChange={(e) => setBrainstormNotes(e.target.value)}
-                      placeholder="Optional: style preferences... e.g. 'painterly', 'dark and moody', 'Ravi Varma inspired'"
-                      className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-accent-500/50"
+                      placeholder="Style preferences... e.g. 'painterly', 'dark and moody', 'Ravi Varma inspired'"
+                      className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                       onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
                     />
                     <button
                       onClick={handleBrainstorm}
                       disabled={isBrainstorming}
-                      className="px-6 py-2.5 bg-accent-600 hover:bg-accent-500 rounded-lg text-xs font-bold text-white shadow-lg disabled:opacity-50 whitespace-nowrap"
+                      className="px-5 py-2.5 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 whitespace-nowrap transition-colors"
                     >
-                      {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate All' : 'Brainstorm 4 Directions'}
+                      {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate' : 'Brainstorm 4 Directions'}
                     </button>
                   </div>
-
-                  {/* Brainstorming spinner */}
-                  {isBrainstorming && styleSlots.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-48 space-y-4">
-                      <div className="w-12 h-12 border-t-2 border-accent-400 rounded-full animate-spin"></div>
-                      <p className="text-zinc-400 animate-pulse text-sm">Brainstorming visual directions...</p>
-                    </div>
-                  )}
-
-                  {/* Previously explored style cards */}
-                  {styleSlots.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {styleSlots.map((slot, idx) => (
-                        <StyleCard
-                          key={idx}
-                          slot={slot}
-                          index={idx}
-                          onVisualize={() => handleVisualize(idx)}
-                          onLock={() => handleLockSlot(slot)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Brainstorm Controls */}
-              <div className="glass p-6 rounded-2xl space-y-4">
-                <div>
-                  <h3 className="text-lg font-display text-white mb-1">Art Style Exploration</h3>
-                  <p className="text-zinc-500 text-sm">
-                    Claude will brainstorm 4 distinct visual directions based on your song's mood, lyrics, and concept.
-                    Then you choose which ones to visualize as images.
-                  </p>
                 </div>
 
-                <div className="flex gap-3">
-                  <input
-                    value={brainstormNotes}
-                    onChange={(e) => setBrainstormNotes(e.target.value)}
-                    placeholder="Optional: style preferences... e.g. 'painterly', 'dark and moody', 'Ravi Varma inspired'"
-                    className="flex-1 bg-black/40 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-accent-500/50"
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
-                  />
-                  <button
-                    onClick={handleBrainstorm}
-                    disabled={isBrainstorming}
-                    className="px-6 py-2.5 bg-accent-600 hover:bg-accent-500 rounded-lg text-xs font-bold text-white shadow-lg disabled:opacity-50 whitespace-nowrap"
-                  >
-                    {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate All' : 'Brainstorm 4 Directions'}
-                  </button>
-                </div>
-              </div>
+                {isBrainstorming && styleSlots.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-40 space-y-3">
+                    <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                    <p className="text-zinc-500 text-sm">Brainstorming visual directions...</p>
+                  </div>
+                )}
 
-              {/* Brainstorming spinner */}
-              {isBrainstorming && styleSlots.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-48 space-y-4">
-                  <div className="w-12 h-12 border-t-2 border-accent-400 rounded-full animate-spin"></div>
-                  <p className="text-zinc-400 animate-pulse text-sm">Brainstorming visual directions...</p>
-                </div>
-              )}
-
-              {/* Style Direction Cards */}
-              {styleSlots.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {styleSlots.map((slot, idx) => (
-                    <StyleCard
-                      key={`ai-${idx}-${slot.title}`}
-                      slot={slot}
-                      index={idx}
-                      onVisualize={() => handleVisualize(idx)}
-                      onLock={() => handleLockSlot(slot)}
-                    />
-                  ))}
-
-                  {/* User's own slot */}
-                  <div className="glass rounded-2xl border border-dashed border-accent-500/30 overflow-hidden flex flex-col">
-                    <div className="px-5 pt-5 pb-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-display font-medium text-accent-400">Your Vision</h4>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            if (e.target.files?.[0]) handleUploadReference(e.target.files[0]);
-                          }}
-                        />
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="text-[10px] bg-zinc-800 hover:bg-zinc-700 px-2 py-0.5 rounded text-zinc-400 border border-white/5"
-                        >
-                          Upload Image
-                        </button>
-                      </div>
-                      <textarea
-                        value={userSlot.description}
-                        onChange={(e) => setUserSlot(prev => ({ ...prev, description: e.target.value }))}
-                        placeholder="Write your own style direction... or upload a reference image above."
-                        className="w-full h-24 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-zinc-300 outline-none focus:border-accent-500/50 resize-none leading-relaxed"
+                {styleSlots.length > 0 && (
+                  <div className="space-y-3">
+                    {styleSlots.map((slot, idx) => (
+                      <StyleRow
+                        key={`ai-${idx}-${slot.title}`}
+                        slot={slot}
+                        index={idx}
+                        expanded={expandedStyleIdx === idx}
+                        onToggle={() => setExpandedStyleIdx(prev => prev === idx ? null : idx)}
+                        onVisualize={() => handleVisualize(idx)}
+                        onLock={() => handleLockSlot(slot)}
                       />
-                    </div>
+                    ))}
 
-                    {/* Image area */}
-                    <div className="px-5 flex-1">
-                      {userSlot.isGenerating ? (
-                        <div className="aspect-video rounded-xl bg-zinc-800 animate-pulse border border-white/5 flex items-center justify-center">
-                          <div className="flex flex-col items-center gap-2">
-                            <div className="w-6 h-6 border-2 border-accent-400/30 border-t-accent-400 rounded-full animate-spin"></div>
-                            <span className="text-[10px] text-zinc-500">Generating...</span>
-                          </div>
-                        </div>
-                      ) : userSlot.imageUrl ? (
-                        <div className="aspect-video rounded-xl overflow-hidden border border-white/10 relative group">
-                          <img src={userSlot.imageUrl} className="w-full h-full object-cover" />
-                          {userSlot.assetId && (
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    {/* Custom slot */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) handleUploadReference(e.target.files[0]);
+                      }}
+                    />
+                    {!showCustomSlot ? (
+                      <button
+                        onClick={() => setShowCustomSlot(true)}
+                        className="w-full py-3 rounded-xl border border-dashed border-white/[0.1] text-sm text-zinc-500 hover:text-zinc-300 hover:border-white/20 transition-colors"
+                      >
+                        + Add Custom Direction
+                      </button>
+                    ) : (
+                      <div className="rounded-xl overflow-hidden border border-white/[0.06]">
+                        <div className="px-5 py-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium text-white">Your Vision</h4>
+                            <div className="flex gap-2">
                               <button
-                                onClick={() => handleLockSlot(userSlot)}
-                                disabled={isLocking}
-                                className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:bg-accent-400 transition-colors disabled:opacity-50"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="text-xs bg-white/[0.06] hover:bg-white/[0.1] px-3 py-1.5 rounded-md text-zinc-400 transition-colors"
                               >
-                                {isLocking ? 'Locking...' : 'Lock This Style'}
+                                Upload Reference
+                              </button>
+                              <button
+                                onClick={() => setShowCustomSlot(false)}
+                                className="text-xs text-zinc-600 hover:text-zinc-400 px-2 py-1.5 transition-colors"
+                              >
+                                Cancel
                               </button>
                             </div>
-                          )}
+                          </div>
+                          <textarea
+                            value={userSlot.description}
+                            onChange={(e) => setUserSlot(prev => ({ ...prev, description: e.target.value }))}
+                            placeholder="Describe your visual style direction…"
+                            className="w-full h-20 surface-inset rounded-md p-3 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none leading-relaxed"
+                          />
+                          <button
+                            onClick={() => handleVisualize(0, true)}
+                            disabled={!userSlot.description || userSlot.isGenerating}
+                            className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                          >
+                            {userSlot.isGenerating ? 'Generating…' : userSlot.imageUrl ? 'Re-visualize' : 'Visualize'}
+                          </button>
                         </div>
-                      ) : (
-                        <div className="aspect-video rounded-xl border-2 border-dashed border-white/10 flex items-center justify-center">
-                          <span className="text-zinc-700 text-xs">Write a description or upload an image</span>
-                        </div>
-                      )}
-                    </div>
 
-                    {/* Visualize button */}
-                    <div className="px-5 py-4">
-                      <button
-                        onClick={() => handleVisualize(0, true)}
-                        disabled={!userSlot.description || userSlot.isGenerating}
-                        className="w-full py-2 bg-accent-600/20 hover:bg-accent-600 text-accent-400 hover:text-white rounded-lg text-xs font-bold border border-accent-500/30 transition-all disabled:opacity-30"
-                      >
-                        {userSlot.isGenerating ? 'Generating...' : userSlot.imageUrl ? 'Re-visualize' : 'Visualize'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Empty state — no brainstorm yet, no slots */}
-              {!isBrainstorming && styleSlots.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-48 space-y-3 text-zinc-600">
-                  <p className="text-sm">Hit "Brainstorm 4 Directions" to explore visual styles.</p>
-                  <p className="text-xs">Or type your own style preferences first to guide the brainstorm.</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ═══════════════════ PHASE 4: CHARACTERS & ENVIRONMENTS ═══════════════════ */}
-      {viewPhase === 'characters' && (
-        <div className="space-y-8">
-          {/* ─── Character Look Dev ─── */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Cast List */}
-            <div className="lg:col-span-3 space-y-4">
-              <div className="glass p-6 rounded-2xl h-full flex flex-col">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-display text-white">Cast</h3>
-                  <button onClick={() => onAddCast('New Character', 'Description...')} className="text-xs bg-accent-600 hover:bg-accent-500 text-white px-2 py-1 rounded">+ Add</button>
-                </div>
-                <div className="flex-1 space-y-2 overflow-y-auto custom-scrollbar pr-1">
-                  {project.cast.map(member => (
-                    <div
-                      key={member.id}
-                      onClick={() => setActiveCastId(member.id)}
-                      className={`p-3 rounded-lg border cursor-pointer transition-all flex gap-3 items-center ${
-                        activeCastId === member.id ? 'bg-white/10 border-accent-500/50' : 'bg-black/20 border-white/5 hover:bg-white/5'
-                      }`}
-                    >
-                      <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0 border border-white/10">
-                        {member.referenceImageUrl ? (
-                          <img src={member.referenceImageUrl} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-600 text-[10px]">?</div>
+                        {(userSlot.isGenerating || userSlot.imageUrl) && (
+                          <div className="border-t border-white/[0.06]">
+                            {userSlot.isGenerating ? (
+                              <div className="h-64 skeleton flex items-center justify-center">
+                                <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                              </div>
+                            ) : (
+                              <div className="relative group">
+                                <img src={userSlot.imageUrl} className="w-full h-auto max-h-[400px] object-contain mx-auto cursor-zoom-in" onClick={() => setModalImage(userSlot.imageUrl!)} />
+                                {userSlot.assetId && (
+                                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <button
+                                      onClick={() => handleLockSlot(userSlot)}
+                                      disabled={isLocking}
+                                      className="bg-white text-black px-5 py-2.5 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                                    >
+                                      {isLocking ? 'Locking…' : 'Lock This Style'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-white truncate">{member.name}</div>
-                        <div className="text-[10px] text-zinc-500 truncate">{looksLoading.has(member.id) ? 'Generating...' : member.referenceImageUrl ? '✓ Look Set' : 'No Look Set'}</div>
-                      </div>
-                      {looksLoading.has(member.id) && (
-                        <div className="w-4 h-4 border-2 border-accent-400/30 border-t-accent-400 rounded-full animate-spin flex-shrink-0"></div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Generate All Looks — fire parallel calls */}
-                {project.cast.length > 0 && project.status === 'style_locked' && (
-                  <button
-                    onClick={() => project.cast.filter(c => !c.referenceImageUrl).forEach(c => onGenerateLooks(c.id))}
-                    disabled={looksLoading.size > 0}
-                    className="mt-4 w-full py-2.5 bg-accent-600/20 text-accent-400 border border-accent-500/30 rounded-lg text-xs font-bold hover:bg-accent-600 hover:text-white transition-all disabled:opacity-30"
-                  >
-                    {looksLoading.size > 0 ? `Generating ${looksLoading.size} character${looksLoading.size > 1 ? 's' : ''}...` : 'Generate All Looks'}
-                  </button>
+                    )}
+                  </div>
                 )}
 
-                {/* Proceed when user is satisfied with character looks */}
-                {project.cast.length > 0 && project.cast.some(c => c.referenceImageUrl) && project.status === 'style_locked' && (
-                  <button
-                    onClick={onAdvanceCharacters}
-                    className="mt-2 w-full py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-xs font-bold hover:bg-green-600 hover:text-white transition-all"
-                  >
-                    Proceed to Environments →
-                  </button>
+                {!isBrainstorming && styleSlots.length === 0 && (
+                  <div className="flex flex-col items-center justify-center h-40 space-y-2 text-zinc-600">
+                    <p className="text-sm">Hit "Brainstorm 4 Directions" to explore visual styles.</p>
+                    <p className="text-[11px]">Or type preferences first to guide the brainstorm.</p>
+                  </div>
                 )}
               </div>
-            </div>
+            )}
+          </motion.div>
+        )}
 
-            {/* Character Editor */}
-            <div className="lg:col-span-9">
-              {activeMember ? (
-                <div key={activeMember.id} className="glass p-8 rounded-2xl flex flex-col">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-display text-white">Edit: {activeMember.name}</h3>
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Delete "${activeMember.name}"? This cannot be undone.`)) {
-                          onDeleteCast(activeMember.id);
-                          setActiveCastId(project.cast.find(c => c.id !== activeMember.id)?.id || null);
-                        }
-                      }}
-                      className="text-xs text-zinc-500 hover:text-red-400 border border-white/10 hover:border-red-500/30 px-3 py-1.5 rounded transition-colors"
-                    >
-                      Delete Character
-                    </button>
+        {/* ═══ CHARACTERS ═══ */}
+        {viewPhase === 'characters' && (
+          <motion.div key="characters" {...phaseTransition} className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Cast sidebar */}
+              <div className="lg:col-span-3">
+                <div className="surface rounded-xl p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wide">Cast</h3>
+                    <button onClick={() => onAddCast('New Character', 'Description...')} className="text-xs bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 px-2.5 py-1 rounded-md transition-colors">+ Add</button>
+                  </div>
+                  <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
+                    {project.cast.map(member => {
+                      const isActive = activeCastId === member.id;
+                      const hasLook = !!member.referenceImageUrl;
+                      return (
+                        <button
+                          key={member.id}
+                          onClick={() => setActiveCastId(member.id)}
+                          className={`w-full text-left p-2.5 rounded-lg cursor-pointer transition-colors flex gap-3 items-center ${
+                            isActive ? 'bg-white/[0.08] border-l-2 border-l-accent-400' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+                          }`}
+                        >
+                          <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${hasLook ? '' : 'bg-white/[0.04]'}`}>
+                            {member.referenceImageUrl ? (
+                              <img src={member.referenceImageUrl} alt={member.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-600 text-sm">?</div>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{member.name}</div>
+                            <div className="text-xs text-zinc-500 truncate flex items-center gap-1">
+                              {looksLoading.has(member.id) ? (
+                                <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
+                              ) : hasLook ? (
+                                <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
+                              ) : 'No look'}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                    <div className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-zinc-500">Name</label>
+                  {project.cast.length > 0 && project.status === 'style_locked' && (
+                    <button
+                      onClick={() => project.cast.filter(c => !c.referenceImageUrl).forEach(c => onGenerateLooks(c.id))}
+                      disabled={looksLoading.size > 0}
+                      className="w-full py-2 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                    >
+                      {looksLoading.size > 0 ? `Generating ${looksLoading.size}...` : 'Generate All Looks'}
+                    </button>
+                  )}
+
+                  {project.cast.length > 0 && project.cast.some(c => c.referenceImageUrl) && project.status === 'style_locked' && (
+                    <button
+                      onClick={onAdvanceCharacters}
+                      className="w-full py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                    >
+                      Proceed to Environments
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Character detail */}
+              <div className="lg:col-span-9">
+                {activeMember ? (
+                  <div key={activeMember.id} className="rounded-xl overflow-hidden border border-white/[0.06]">
+                    {/* Header bar — name, status, actions */}
+                    <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <input
                           key={`name-${activeMember.id}`}
                           defaultValue={activeMember.name}
                           onBlur={(e) => onUpdateCast(activeMember.id, { name: e.target.value })}
-                          className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white text-sm outline-none focus:border-accent-500/50"
+                          className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 max-w-[200px]"
                         />
+                        {activeMember.referenceImageUrl && (
+                          <span className="text-xs text-zinc-400 flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
+                            Locked
+                          </span>
+                        )}
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-zinc-500">Visual Description</label>
-                        <textarea
-                          key={`desc-${activeMember.id}`}
-                          defaultValue={activeMember.description}
-                          onBlur={(e) => onUpdateCast(activeMember.id, { description: e.target.value })}
-                          className="w-full h-28 bg-black/40 border border-white/10 rounded px-3 py-2 text-white text-sm outline-none focus:border-accent-500/50 resize-none"
-                        />
-                      </div>
-                      {/* Feedback for regeneration */}
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-zinc-500">Feedback (optional)</label>
-                        <input
-                          key={`feedback-${activeMember.id}`}
-                          placeholder="e.g. 'make the crown bigger', 'more golden jewelry'"
-                          className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-white text-xs outline-none focus:border-accent-500/50"
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              onGenerateLooks(activeMember.id, (e.target as HTMLInputElement).value || undefined);
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
+                            onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
+                          }}
+                          disabled={looksLoading.has(activeMember.id)}
+                          className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                        >
+                          {looksLoading.has(activeMember.id) ? 'Generating…' : activeMember.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Delete "${activeMember.name}"?`)) {
+                              onDeleteCast(activeMember.id);
+                              setActiveCastId(project.cast.find(c => c.id !== activeMember.id)?.id || null);
                             }
                           }}
-                          id={`char-feedback-${activeMember.id}`}
-                        />
+                          className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md transition-colors"
+                          aria-label={`Delete ${activeMember.name}`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
+                        </button>
                       </div>
-                      <button
-                        onClick={() => {
-                          const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
-                          onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
-                        }}
-                        disabled={looksLoading.has(activeMember.id)}
-                        className="w-full py-2.5 bg-accent-600 hover:bg-accent-500 text-white rounded text-xs font-bold shadow-lg disabled:opacity-50"
-                      >
-                        {looksLoading.has(activeMember.id) ? 'Generating Looks...' : activeMember.referenceImageUrl ? 'Regenerate Looks' : 'Generate 3 Looks'}
-                      </button>
                     </div>
 
-                    {/* Current locked look */}
-                    {activeMember.referenceImageUrl && (
-                      <div className="space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-green-400">✓ Locked Reference</span>
-                        <div className="aspect-video rounded-xl overflow-hidden border-2 border-green-500/30">
-                          <img src={activeMember.referenceImageUrl} onClick={() => setModalImage(activeMember.referenceImageUrl!)} className="w-full h-full object-cover cursor-zoom-in" />
+                    {/* Hero area — locked image, look candidates, loading, or empty */}
+                    {activeMember.referenceImageUrl ? (
+                      <div className="relative cursor-zoom-in bg-black/20" onClick={() => setModalImage(activeMember.referenceImageUrl!)}>
+                        <img src={activeMember.referenceImageUrl} alt={activeMember.name} className="w-full h-auto max-h-[500px] object-contain mx-auto" />
+                      </div>
+                    ) : looksLoading.has(activeMember.id) && activeLooks.length === 0 ? (
+                      <div className="h-64 flex items-center justify-center bg-black/20">
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                          <span className="text-sm text-zinc-500">Generating looks…</span>
                         </div>
+                      </div>
+                    ) : activeLooks.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-px bg-black/20">
+                        {activeLooks.map((look) => (
+                          <div key={look.id} className="relative group cursor-pointer bg-black/10">
+                            <img src={look.url} alt={activeMember.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                              <button onClick={() => onLockCharacter(activeMember.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-48 flex items-center justify-center bg-black/10">
+                        <span className="text-sm text-zinc-500">No reference yet — generate looks below</span>
                       </div>
                     )}
-                  </div>
 
-                  {/* Look Options */}
-                  {looksLoading.has(activeMember.id) && activeLooks.length === 0 && (
-                    <div className="grid grid-cols-3 gap-4">
-                      {[...Array(3)].map((_, i) => (
-                        <div key={i} className="aspect-video rounded-xl bg-zinc-800 animate-pulse border border-white/5 flex items-center justify-center">
-                          <div className="flex flex-col items-center gap-2">
-                            <div className="w-6 h-6 border-2 border-accent-400/30 border-t-accent-400 rounded-full animate-spin"></div>
-                            <span className="text-[10px] text-zinc-500">Look {i + 1}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {activeLooks.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
-                      {activeLooks.map((look) => (
-                        <div
-                          key={look.id}
-                          className="relative aspect-video rounded-xl overflow-hidden group border border-white/10 hover:border-accent-500 transition-all"
-                        >
-                          <img src={look.url} onClick={() => setModalImage(look.url)} className="w-full h-full object-cover cursor-zoom-in" />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                            <button onClick={() => onLockCharacter(activeMember.id, look.id)} className="pointer-events-auto bg-white text-black px-3 py-1 rounded-full text-xs font-bold hover:bg-accent-400 transition-colors cursor-pointer">Lock This Look</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="glass p-8 rounded-2xl h-full flex items-center justify-center text-zinc-500">
-                  Select a cast member to edit.
-                </div>
-              )}
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {/* ═══════════════════ PHASE 5: ENVIRONMENTS ═══════════════════ */}
-      {viewPhase === 'environments' && (
-        <div className="space-y-8">
-          {project.environments.length > 0 ? (
-            <div className="glass p-8 rounded-2xl">
-              <h3 className="text-lg font-display text-white mb-6">Environment Look Dev</h3>
-              <p className="text-sm text-zinc-400 mb-6">Generate and lock visual references for key environments. Skip any that don't need a reference — shots will still work with text descriptions alone.</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {project.environments.map(env => (
-                  <EnvironmentCard
-                    key={env.id}
-                    env={env}
-                    projectId={project.id}
-                    isLoading={isLoading}
-                    onProjectUpdate={(p: any) => onSetProject?.(p)}
-                  />
-                ))}
-              </div>
-              {project.status === 'characters_locked' && (
-                <button
-                  onClick={onAdvanceEnvironments}
-                  className="mt-6 w-full py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-sm font-bold hover:bg-green-600 hover:text-white transition-all"
-                >
-                  Done with Environments → Proceed to Studio
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="glass p-8 rounded-2xl text-center">
-              <p className="text-zinc-400 mb-2">No environments proposed by the script.</p>
-              <button
-                onClick={onAdvanceEnvironments}
-                className="mt-4 px-6 py-2.5 bg-green-600/20 text-green-400 border border-green-500/30 rounded-lg text-sm font-bold hover:bg-green-600 hover:text-white transition-all"
-              >
-                Skip Environments → Proceed to Studio
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ═══════════════════ PHASE 2: SCRIPT ═══════════════════ */}
-      {viewPhase === 'script' && (
-        <div className="space-y-8">
-          {/* Director Settings */}
-          <div className="glass p-6 rounded-2xl">
-            <div className="flex gap-6 items-center">
-              <div className="space-y-2 flex-1">
-                <label className="text-[10px] uppercase font-bold text-zinc-500">Director Mode</label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => onUpdateProject({ videoMode: 'montage' })}
-                    className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${project.videoMode === 'montage' ? 'bg-accent-600 border-accent-500 text-white' : 'bg-black/20 border-white/10 text-zinc-400'}`}
-                  >
-                    Montage
-                  </button>
-                  <button
-                    onClick={() => onUpdateProject({ videoMode: 'cinematic' })}
-                    className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-all ${project.videoMode === 'cinematic' ? 'bg-accent-600 border-accent-500 text-white' : 'bg-black/20 border-white/10 text-zinc-400'}`}
-                  >
-                    Cinematic
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] uppercase font-bold text-zinc-500">Base Pacing</label>
-                <div className="flex gap-2">
-                  {[5, 8, 10].map(d => (
-                    <button
-                      key={d}
-                      onClick={() => onUpdateProject({ targetDuration: d })}
-                      className={`px-4 py-2 rounded border text-xs font-mono ${project.targetDuration === d ? 'bg-accent-600 border-accent-500 text-white' : 'bg-black/40 border-white/10 text-zinc-400'}`}
-                    >
-                      {d}s
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button
-                onClick={onGenerateScript}
-                disabled={isLoading}
-                className="bg-accent-600 hover:bg-accent-500 text-white px-8 py-3 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center gap-3"
-              >
-                {isLoading && (
-                  <div className="w-4 h-4 border-t-2 border-white rounded-full animate-spin"></div>
-                )}
-                {isLoading ? 'Writing Script...' : project.scenes.length > 0 ? 'Regenerate Script' : 'Generate Script'}
-              </button>
-            </div>
-          </div>
-
-          {/* First gen — no scenes yet */}
-          {isLoading && project.scenes.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-64 space-y-4">
-              <div className="w-12 h-12 border-t-2 border-accent-400 rounded-full animate-spin"></div>
-              <p className="text-zinc-400 animate-pulse">Writing your script...</p>
-              <p className="text-zinc-500 text-xs">This takes 10-20 seconds</p>
-            </div>
-          )}
-
-          {project.scenes.length > 0 && (
-            <div className="glass p-8 rounded-2xl relative">
-              {/* Regeneration overlay */}
-              {isLoading && (
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-2xl z-10 flex flex-col items-center justify-center gap-4">
-                  <div className="w-10 h-10 border-t-2 border-accent-400 rounded-full animate-spin"></div>
-                  <p className="text-zinc-300 font-medium">Rewriting script...</p>
-                  <p className="text-zinc-500 text-xs">This takes 10-20 seconds</p>
-                </div>
-              )}
-              <h3 className="text-lg font-display text-white/90 mb-6 flex justify-between items-center">
-                <span>Script Breakdown</span>
-                <div className="flex items-center gap-4">
-                  <button
-                    className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
-                    onClick={() => {
-                      if (expandedScenes.size === project.scenes.length) {
-                        setExpandedScenes(new Set());
-                      } else {
-                        setExpandedScenes(new Set(project.scenes.map(s => s.id)));
-                      }
-                    }}
-                  >
-                    {expandedScenes.size === project.scenes.length ? 'Collapse All' : 'Expand All'}
-                  </button>
-                  <span className="text-xs font-mono text-zinc-500">
-                    {project.scenes.length} Scenes / {project.scenes.reduce((acc, s) => acc + s.shots.length, 0)} Shots
-                  </span>
-                </div>
-              </h3>
-              <div className="space-y-4">
-                {project.scenes.map((scene, idx) => {
-                  const isExpanded = expandedScenes.has(scene.id);
-                  return (
-                    <div key={scene.id} className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-                      <button
-                        className="w-full text-left p-4 flex justify-between items-start hover:bg-white/[0.02] transition-colors"
-                        onClick={() => {
-                          const next = new Set(expandedScenes);
-                          if (isExpanded) next.delete(scene.id); else next.add(scene.id);
-                          setExpandedScenes(next);
-                        }}
+                    {/* Bottom — description + feedback */}
+                    <div className="px-5 py-4 space-y-3 border-t border-white/[0.06]">
+                      <div
+                        key={`desc-${activeMember.id}`}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onBlur={(e) => onUpdateCast(activeMember.id, { description: e.currentTarget.textContent || '' })}
+                        className="text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="text-accent-400 font-bold font-display uppercase text-sm tracking-wider">Scene {idx + 1}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded border ${
-                              scene.sectionLabel.toLowerCase().includes('chorus')
-                                ? 'bg-gold-500/20 border-gold-500/50 text-gold-400'
-                                : 'bg-zinc-800 border-zinc-700 text-zinc-400'
-                            }`}>
-                              {scene.sectionLabel}
-                            </span>
-                            <span className="text-[10px] text-zinc-600">{scene.shots.length} shots</span>
-                          </div>
-                          <p className="text-zinc-400 text-sm truncate">{scene.narrativeDescription}</p>
-                        </div>
-                        <div className="flex items-center gap-3 ml-4 shrink-0">
-                          <span className="text-xs font-mono text-zinc-600">{scene.startTime} - {scene.endTime}</span>
-                          <span className={`text-zinc-500 text-xs transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
-                        </div>
-                      </button>
+                        {activeMember.description}
+                      </div>
+                      <input
+                        key={`feedback-${activeMember.id}`}
+                        placeholder="Feedback — e.g. 'make the crown bigger'"
+                        className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                        autoComplete="off"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            onGenerateLooks(activeMember.id, (e.target as HTMLInputElement).value || undefined);
+                          }
+                        }}
+                        id={`char-feedback-${activeMember.id}`}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="surface rounded-xl p-8 h-full flex items-center justify-center text-zinc-600 text-sm">
+                    Select a cast member.
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
-                      {isExpanded && (
-                        <div className="px-4 pb-4 space-y-2 border-t border-white/5 pt-3">
-                          {scene.lyrics && (
-                            <p className="text-zinc-500 italic text-sm mb-3">"{scene.lyrics}"</p>
+        {/* ═══ ENVIRONMENTS ═══ */}
+        {viewPhase === 'environments' && (
+          <motion.div key="environments" {...phaseTransition} className="space-y-6">
+            {project.environments.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Env sidebar */}
+                <div className="lg:col-span-3">
+                  <div className="surface rounded-xl p-4 space-y-4">
+                    <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wide">Environments</h3>
+                    <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
+                      {project.environments.map(env => {
+                        const isActive = activeEnvId === env.id;
+                        const hasLook = !!env.referenceImageUrl;
+                        return (
+                          <button
+                            key={env.id}
+                            onClick={() => setActiveEnvId(env.id)}
+                            className={`w-full text-left p-2.5 rounded-lg cursor-pointer transition-colors flex gap-3 items-center ${
+                              isActive ? 'bg-white/[0.08] border-l-2 border-l-accent-400' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+                            }`}
+                          >
+                            <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${hasLook ? '' : 'bg-white/[0.04]'}`}>
+                              {env.referenceImageUrl ? (
+                                <img src={env.referenceImageUrl} alt={env.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-zinc-600 text-sm">?</div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{env.name}</div>
+                              <div className="text-xs text-zinc-500 truncate flex items-center gap-1">
+                                {envGenerating.has(env.id) ? (
+                                  <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
+                                ) : hasLook ? (
+                                  <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
+                                ) : 'No look'}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {project.status === 'characters_locked' && (
+                      <button
+                        onClick={onAdvanceEnvironments}
+                        className="w-full py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                      >
+                        Proceed to Studio
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Environment detail */}
+                <div className="lg:col-span-9">
+                  {activeEnv ? (
+                    <div key={activeEnv.id} className="rounded-xl overflow-hidden border border-white/[0.06]">
+                      {/* Header bar — name, status, actions */}
+                      <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="text-sm font-medium text-white">{activeEnv.name}</span>
+                          {activeEnv.referenceImageUrl && (
+                            <span className="text-xs text-zinc-400 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
+                              Locked
+                            </span>
                           )}
-                          {scene.shots.map((shot, sIdx) => (
-                            <div key={shot.id} className="flex gap-4 p-3 bg-black/40 rounded border border-white/5">
-                              <div className="text-xs font-mono text-zinc-600 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm text-zinc-300 mb-1">{shot.visualPrompt || '—'}</div>
-                                {shot.motionPrompt && (
-                                  <div className="text-xs text-zinc-500 mb-1">{shot.motionPrompt}</div>
-                                )}
-                                <div className="text-xs text-zinc-600 flex gap-3">
-                                  <span>{shot.duration}s</span>
-                                  <span>{shot.castIds.length > 0 ? shot.castIds.length + ' Cast' : 'No Cast'}</span>
-                                </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEnvGenerate(activeEnv.id)}
+                            disabled={envGenerating.has(activeEnv.id)}
+                            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                          >
+                            {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Hero area — locked image, look candidates, loading, or empty */}
+                      {activeEnv.referenceImageUrl ? (
+                        <div className="relative cursor-zoom-in bg-black/20" onClick={() => setModalImage(activeEnv.referenceImageUrl!)}>
+                          <img src={activeEnv.referenceImageUrl} alt={activeEnv.name} className="w-full h-auto max-h-[500px] object-contain mx-auto" />
+                        </div>
+                      ) : envGenerating.has(activeEnv.id) && activeEnvLooks.length === 0 ? (
+                        <div className="h-64 flex items-center justify-center bg-black/20">
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                            <span className="text-sm text-zinc-500">Generating looks…</span>
+                          </div>
+                        </div>
+                      ) : activeEnvLooks.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-px bg-black/20">
+                          {activeEnvLooks.map(look => (
+                            <div key={look.id} className="relative group cursor-pointer bg-black/10">
+                              <img src={look.url} alt={activeEnv.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                                <button onClick={() => handleEnvLock(activeEnv.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
                               </div>
                             </div>
                           ))}
                         </div>
+                      ) : (
+                        <div className="h-48 flex items-center justify-center bg-black/10">
+                          <span className="text-sm text-zinc-500">No reference yet — generate looks above</span>
+                        </div>
                       )}
+
+                      {/* Bottom — description */}
+                      <div className="px-5 py-4 border-t border-white/[0.06]">
+                        <div
+                          key={`env-desc-${activeEnv.id}`}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={async (e) => {
+                            try {
+                              const res = await fetch(`/api/projects/${project.id}/environments/${activeEnv.id}`, {
+                                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: activeEnv.name, description: e.currentTarget.textContent || '' }),
+                              });
+                              if (res.ok) onSetProject?.(await res.json());
+                            } catch {}
+                          }}
+                          className="text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
+                        >
+                          {activeEnv.description}
+                        </div>
+                      </div>
                     </div>
-                  );
-                })}
+                  ) : (
+                    <div className="surface rounded-xl p-8 h-full flex items-center justify-center text-zinc-600 text-sm">
+                      Select an environment.
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="rounded-xl border border-white/[0.06] p-8 text-center">
+                <p className="text-zinc-500 mb-4 text-sm">No environments proposed by the script.</p>
+                <button
+                  onClick={onAdvanceEnvironments}
+                  className="px-6 py-2.5 bg-white text-black rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors"
+                >
+                  Skip — Proceed to Studio
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          {project.scenes.length === 0 && !isLoading && (
-            <div className="flex flex-col items-center justify-center h-64 space-y-4 text-zinc-500">
-              <p>Hit "Generate Script" to create a cinematic shot list from your locked concept, style, and characters.</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
+      <AnimatePresence>
+        {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
+      </AnimatePresence>
     </div>
   );
 };

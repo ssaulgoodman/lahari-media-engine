@@ -27,35 +27,35 @@ export const ChatAssistant: React.FC<Props> = ({ messages, onSendMessage, isLoad
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-white/5 bg-obsidian-900/50 backdrop-blur-md">
-        <h3 className="font-display font-medium text-white flex items-center gap-2">
-          <span>✨</span> Co-Director
-        </h3>
-        <p className="text-xs text-zinc-500 mt-1">Refine prompts & style with Gemini.</p>
+      <div className="p-4 shadow-[0_1px_0_0_rgba(255,255,255,0.04)] bg-obsidian-950/80">
+        <h3 className="text-sm font-display font-medium text-white">Co-Director</h3>
+        <p className="text-[11px] text-zinc-600 mt-0.5">Refine prompts and style with Gemini.</p>
       </div>
 
-      <div className="flex-grow overflow-y-auto p-4 space-y-4" ref={scrollRef}>
+      <div className="flex-grow overflow-y-auto p-4 space-y-3" ref={scrollRef}>
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-            <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center">
-                <span className="text-xl">💬</span>
+            <div className="w-10 h-10 bg-white/[0.04] rounded-lg flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-zinc-500" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
             </div>
-            <div className="text-zinc-400 text-sm">
-                <p className="mb-2">I can help adjust your storyboard.</p>
-                <div className="space-y-2 text-xs">
-                    <p className="bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors" onClick={() => setInput("Make Scene 2 more dramatic")}>"Make Scene 2 more dramatic"</p>
-                    <p className="bg-white/5 p-2 rounded-lg cursor-pointer hover:bg-white/10 transition-colors" onClick={() => setInput("Change the global style to Cyberpunk")}>"Change style to Cyberpunk"</p>
+            <div className="text-zinc-500 text-sm">
+                <p className="mb-3">I can help adjust your storyboard.</p>
+                <div className="space-y-2 text-[13px]">
+                    <button type="button" className="w-full text-left surface rounded-lg p-2.5 cursor-pointer hover:bg-white/[0.06] transition-colors text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20" onClick={() => setInput("Make Scene 2 more dramatic")}>"Make Scene 2 more dramatic"</button>
+                    <button type="button" className="w-full text-left surface rounded-lg p-2.5 cursor-pointer hover:bg-white/[0.06] transition-colors text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20" onClick={() => setInput("Change the global style to Cyberpunk")}>"Change style to Cyberpunk"</button>
                 </div>
             </div>
           </div>
         )}
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div 
-              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                msg.role === 'user' 
-                  ? 'bg-zinc-800 text-white rounded-br-none border border-zinc-700' 
-                  : 'bg-accent-900/20 border border-accent-500/20 text-accent-100 rounded-bl-none'
+            <div
+              className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
+                msg.role === 'user'
+                  ? 'bg-white/[0.06] text-white'
+                  : 'bg-white/[0.04] text-zinc-300'
               }`}
             >
               {msg.text}
@@ -64,31 +64,34 @@ export const ChatAssistant: React.FC<Props> = ({ messages, onSendMessage, isLoad
         ))}
         {isLoading && (
            <div className="flex justify-start">
-             <div className="bg-accent-900/10 border border-accent-500/10 px-4 py-2 rounded-2xl rounded-bl-none">
+             <div className="bg-white/[0.04] px-3.5 py-2.5 rounded-xl">
                <div className="flex gap-1">
-                 <span className="w-1.5 h-1.5 bg-accent-400 rounded-full animate-bounce"></span>
-                 <span className="w-1.5 h-1.5 bg-accent-400 rounded-full animate-bounce [animation-delay:0.1s]"></span>
-                 <span className="w-1.5 h-1.5 bg-accent-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                 <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce"></span>
+                 <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0.1s]"></span>
+                 <span className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce [animation-delay:0.2s]"></span>
                </div>
              </div>
            </div>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t border-white/5 bg-obsidian-900">
-        <div className="relative group">
+      <form onSubmit={handleSubmit} className="p-4 shadow-[0_-1px_0_0_rgba(255,255,255,0.04)] bg-obsidian-950/80">
+        <div className="relative">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Suggest a change..."
-            className="w-full bg-black border border-white/10 rounded-xl pl-4 pr-12 py-3 text-sm text-white focus:border-accent-500/50 focus:outline-none placeholder:text-zinc-600 transition-colors group-hover:border-white/20"
+            name="chat-input"
+            autoComplete="off"
+            placeholder="Suggest a change…"
+            className="w-full surface-inset rounded-lg pl-4 pr-12 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 placeholder:text-zinc-600 transition-colors"
           />
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={isLoading || !input.trim()}
-            className="absolute right-2 top-2 p-1.5 bg-accent-600 text-white rounded-lg hover:bg-accent-500 disabled:opacity-50 disabled:bg-zinc-800 transition-colors"
+            aria-label="Send message"
+            className="absolute right-1.5 top-1.5 p-1.5 bg-white text-black rounded-md hover:bg-zinc-200 disabled:opacity-30 disabled:bg-zinc-700 disabled:text-zinc-500 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
               <path d="M3.105 2.29a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.16 9.5h5.59a.75.75 0 010 1.5H5.16a1.5 1.5 0 00-1.467 1.335l-1.414 4.925a.75.75 0 00.826.95l15.02-7.036a.75.75 0 000-1.348L3.105 2.29z" />
             </svg>
           </button>

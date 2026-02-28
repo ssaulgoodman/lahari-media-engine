@@ -125,6 +125,7 @@ export interface ApiProject {
   lockedConcept: ConceptOption | null;
   styleDescription?: string;
   styleAssetUrl?: string;
+  styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
   colorPalette?: string;
   videoMode: VideoMode;
   cast: CastMember[];

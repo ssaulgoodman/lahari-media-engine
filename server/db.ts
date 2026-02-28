@@ -30,6 +30,7 @@ db.exec(`
     video_mode TEXT DEFAULT 'montage',
     target_duration INTEGER DEFAULT 8,
     cost_estimate REAL DEFAULT 0,
+    style_exploration TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -137,5 +138,8 @@ try { db.exec('ALTER TABLE shots ADD COLUMN end_image_status TEXT DEFAULT \'idle
 try { db.exec('ALTER TABLE shots ADD COLUMN locked INTEGER DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE shots ADD COLUMN user_feedback TEXT'); } catch {}
 try { db.exec('ALTER TABLE shots ADD COLUMN environment_id TEXT'); } catch {}
+
+// Style exploration persistence
+try { db.exec('ALTER TABLE projects ADD COLUMN style_exploration TEXT'); } catch {}
 
 export default db;
