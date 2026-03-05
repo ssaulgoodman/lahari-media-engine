@@ -11,6 +11,12 @@ import { saveBase64, readAsBase64 } from '../storage.js';
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
+/** Detect actual image format from base64 data */
+const detectImageExt = (base64: string): string => {
+  if (base64.startsWith('/9j/') || base64.startsWith('/9j+')) return 'jpg';
+  return 'png';
+};
+
 // ─── Multimodal Image Generation (gemini-3-pro-image-preview) ───────
 
 type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
@@ -53,7 +59,7 @@ const extractImages = (response: any): string[] => {
   for (const part of candidate.content.parts) {
     if ((part as any).inlineData) {
       const { data } = (part as any).inlineData;
-      paths.push(saveBase64(data, 'images', 'png'));
+      paths.push(saveBase64(data, 'images', detectImageExt(data)));
     }
   }
   return paths;
@@ -114,7 +120,7 @@ export const generateStyleOptions = async (
       const imageData = response.generatedImages?.[0]?.image?.imageBytes;
       if (!imageData) throw new Error('No image generated');
 
-      const assetPath = saveBase64(imageData, 'images', 'png');
+      const assetPath = saveBase64(imageData, 'images', detectImageExt(imageData));
       return { style: direction, assetPath };
     })
   );
