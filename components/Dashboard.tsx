@@ -189,13 +189,13 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
       {/* Table */}
       <div className="border border-white/[0.06] rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[36px_1fr_90px_70px_120px_100px_110px] px-4 py-2 text-[10px] text-zinc-600 uppercase tracking-wide border-b border-white/[0.04] bg-white/[0.01]">
+        <div className="grid grid-cols-[36px_1fr_90px_70px_120px_100px_110px] px-4 py-2.5 text-[11px] text-zinc-500 uppercase tracking-wide border-b border-white/[0.04] bg-white/[0.01]">
           <span>#</span>
           <span>Song</span>
           <span>Deity</span>
           <button
             onClick={() => setSortBy(s => s === 'duration_asc' ? 'duration_desc' : s === 'duration_desc' ? 'priority' : 'duration_asc')}
-            className={`text-left hover:text-zinc-400 transition-colors ${sortBy.startsWith('duration') ? 'text-zinc-300' : ''}`}
+            className={`text-left hover:text-zinc-300 transition-colors ${sortBy.startsWith('duration') ? 'text-zinc-200' : ''}`}
           >
             Dur. {sortBy === 'duration_asc' ? '↑' : sortBy === 'duration_desc' ? '↓' : ''}
           </button>
@@ -230,31 +230,31 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                 idx % 2 === 0 ? '' : 'bg-white/[0.01]'
               }`}
             >
-              <span className="text-[11px] text-zinc-600 font-mono">{item.priority}</span>
+              <span className="text-[12px] text-zinc-400 font-mono">{item.priority}</span>
 
               <div className="min-w-0">
-                <div className="text-[12px] text-zinc-200 truncate">{item.song_name}</div>
-                <div className="text-[10px] text-zinc-600 truncate">{item.album} · {item.isrc}</div>
+                <div className="text-[13px] text-zinc-100 truncate">{item.song_name}</div>
+                <div className="text-[11px] text-zinc-400 truncate">{item.album} · {item.isrc}</div>
               </div>
 
-              <span className="text-[11px] text-zinc-400">{item.deity}</span>
-              <span className="text-[11px] text-zinc-500 font-mono">{formatDuration(item.duration_seconds)}</span>
+              <span className="text-[12px] text-zinc-300">{item.deity}</span>
+              <span className="text-[12px] text-zinc-400 font-mono">{formatDuration(item.duration_seconds)}</span>
 
-              {/* Pipeline pills — inspired by echo dashboard */}
+              {/* Pipeline pills */}
               <div className="flex items-center gap-1">
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                  item.audio_uploaded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-600'
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                  item.audio_uploaded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-500'
                 }`}>Audio</span>
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                  item.srts_ready ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-600'
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                  item.srts_ready ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-500'
                 }`}>SRT</span>
-                <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                  item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-600'
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                  item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-500'
                 }`}>Video</span>
               </div>
 
               {/* Status */}
-              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full w-fit ${
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full w-fit ${
                 item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400'
                   : item.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400'
                   : item.status === 'review' ? 'bg-amber-500/10 text-amber-400'
@@ -270,7 +270,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                 {hasProject ? (
                   <button
                     onClick={() => onOpenProject(item.lahari_project_id!)}
-                    className="text-[11px] text-zinc-400 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                    className="text-[12px] text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
                   >
                     Open
                   </button>
@@ -278,12 +278,12 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                   <button
                     onClick={() => handleStart(item)}
                     disabled={starting === item.id}
-                    className="text-[11px] bg-white text-black px-3 py-1 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                    className="text-[12px] bg-white text-black px-3 py-1.5 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors"
                   >
                     {starting === item.id ? '...' : 'Start'}
                   </button>
                 ) : !item.audio_uploaded ? (
-                  <span className="text-[10px] text-zinc-600">Needs audio</span>
+                  <span className="text-[11px] text-zinc-500">Needs audio</span>
                 ) : null}
               </div>
             </div>
