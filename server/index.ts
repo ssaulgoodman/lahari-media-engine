@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { projectsRouter } from './routes/projects.js';
 import { generateRouter } from './routes/generate.js';
+import { queueRouter } from './routes/queue.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -21,6 +22,7 @@ app.use('/storage', express.static(path.join(__dirname, '..', 'storage')));
 // API Routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/projects', generateRouter);
+app.use('/api/queue', queueRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

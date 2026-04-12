@@ -8,10 +8,11 @@ import { Storyboard } from './components/Storyboard';
 import { StepRender } from './components/StepRender';
 import { ChatAssistant } from './components/ChatAssistant';
 import { XRayPanel } from './components/XRayPanel';
+import { Dashboard } from './components/Dashboard';
 import * as api from './services/api';
 
 const PIPELINE_STEPS = [
-  { id: AppStep.UPLOAD, label: 'Import' },
+  { id: AppStep.UPLOAD, label: 'Queue' },
   { id: AppStep.BLUEPRINT, label: 'Blueprint' },
   { id: AppStep.STUDIO, label: 'Studio' },
   { id: AppStep.RENDER, label: 'Render' },
@@ -438,6 +439,38 @@ const App: React.FC = () => {
     setSidebarOpen(false);
   };
 
+  // ─── Queue: Start Production ──────────────────────────────────────
+
+  const handleStartProduction = async (queueId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.startProduction(queueId);
+      setProject(result.project);
+      setCurrentStep(AppStep.UPLOAD); // Stay on upload to run analysis
+      navigateToPhase(result.project);
+    } catch (err: any) {
+      setError(err.message || 'Failed to start production');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenProject = async (projectId: string) => {
+    setLoading(true);
+    try {
+      const p = await api.getProject(projectId);
+      setProject(p);
+      setLookCandidates({});
+      setActiveSceneIdx(0);
+      navigateToPhase(p);
+    } catch (err: any) {
+      setError('Failed to load project: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ─── Project Sidebar ──────────────────────────────────────────
 
   const openSidebar = async () => {
@@ -568,7 +601,16 @@ const App: React.FC = () => {
           <div className="relative z-10 w-full p-8">
             {/* Page transitions */}
             <AnimatePresence mode="wait">
-              {currentStep === AppStep.UPLOAD && (
+              {currentStep === AppStep.UPLOAD && !project && (
+                <motion.div key="queue" {...pageTransition}>
+                  <Dashboard
+                    onStartProduction={handleStartProduction}
+                    onOpenProject={handleOpenProject}
+                  />
+                </motion.div>
+              )}
+
+              {currentStep === AppStep.UPLOAD && project && (
                 <motion.div key="upload" {...pageTransition}>
                   <StepUpload
                     project={project}

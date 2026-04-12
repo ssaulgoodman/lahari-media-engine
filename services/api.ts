@@ -307,3 +307,32 @@ export const sendChatMessage = async (projectId: string, message: string) => {
   });
   return handleResponse(res);
 };
+
+// ─── Music Video Queue ────────────────────────────────────────────
+
+export const listQueue = async (filters?: { status?: string; deity?: string }) => {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.deity) params.set('deity', filters.deity);
+  const res = await fetch(`${API}/queue?${params}`);
+  return handleResponse(res);
+};
+
+export const getQueueDeities = async (): Promise<string[]> => {
+  const res = await fetch(`${API}/queue/deities`);
+  return handleResponse(res);
+};
+
+export const startProduction = async (queueId: string) => {
+  const res = await fetch(`${API}/queue/${queueId}/start`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const updateQueueItem = async (queueId: string, updates: Record<string, any>) => {
+  const res = await fetch(`${API}/queue/${queueId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  return handleResponse(res);
+};

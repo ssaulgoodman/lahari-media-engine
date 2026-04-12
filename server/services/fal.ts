@@ -68,7 +68,7 @@ export const generateFalVideo = async (
       prompt: motionPrompt || 'Cinematic camera movement',
       image_url: imageUrl,
       resolution: opts?.resolution || '720p',
-      duration: opts?.duration || '5',
+      duration: opts?.duration || '10',
       aspect_ratio: '16:9',
       generate_audio: opts?.generateAudio ?? false,
     },
@@ -91,6 +91,6 @@ export const generateFalVideo = async (
   const buffer = Buffer.from(await videoRes.arrayBuffer());
   const videoPath = saveBuffer(buffer, 'videos', 'mp4');
 
-  const durationSec = parseInt(opts?.duration || '5', 10) || 5;
+  const durationSec = parseInt(opts?.duration || '10', 10) || 10;
   return { videoPath, durationSec };
 };
