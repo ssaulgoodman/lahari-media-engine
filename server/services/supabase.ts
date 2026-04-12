@@ -32,6 +32,7 @@ export interface QueueItem {
   isrc?: string;
   album?: string;
   audio_uploaded?: boolean;
+  audio_url?: string | null;
   srts_ready?: boolean;
 }
 
@@ -48,7 +49,8 @@ export const listQueue = async (filters?: {
       *,
       songs!inner (
         song_name, deity, original_language, duration_seconds,
-        isrc, album, audio_uploaded, srts_ready
+        isrc, album, audio_uploaded, srts_ready,
+        audio_storage_url, drive_audio_url
       )
     `)
     .order('priority', { ascending: true });
@@ -72,7 +74,8 @@ export const listQueue = async (filters?: {
     duration_seconds: row.songs?.duration_seconds,
     isrc: row.songs?.isrc,
     album: row.songs?.album,
-    audio_uploaded: row.songs?.audio_uploaded,
+    audio_uploaded: !!(row.songs?.audio_storage_url || row.songs?.drive_audio_url),
+    audio_url: row.songs?.audio_storage_url || row.songs?.drive_audio_url || null,
     srts_ready: row.songs?.srts_ready,
     songs: undefined,
   }));

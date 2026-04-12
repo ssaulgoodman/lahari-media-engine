@@ -46,17 +46,17 @@ router.post('/:queueId/start', async (req, res) => {
       if (project) return res.json({ project, queueItem: item });
     }
 
-    // Get song files
-    const files = await getSongFiles(item.song_id);
-    const audioFile = files.find(f => f.file_type === 'audio_wav' || f.file_type === 'audio_m4a');
-    if (!audioFile) return res.status(400).json({ error: 'No audio file available for this song. Upload audio first.' });
+    // Get audio URL — prefer Supabase Storage, fall back to Google Drive
+    const audioUrl = (item as any).audio_url;
+    if (!audioUrl) return res.status(400).json({ error: 'No audio file available for this song. Upload audio first.' });
 
     // Download audio
-    const audioBuffer = await downloadFile(audioFile.storage_url);
-    const ext = audioFile.file_type === 'audio_wav' ? 'wav' : 'm4a';
+    const audioBuffer = await downloadFile(audioUrl);
+    const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
     const audioPath = saveBuffer(audioBuffer, 'audio', ext);
 
-    // Get SRT for lyrics (prefer verified Sanskrit, fall back to TurboScribe)
+    // Get SRT for lyrics
+    const files = await getSongFiles(item.song_id);
     const srtFile = files.find(f => f.file_type === 'srt_verified_san')
       || files.find(f => f.file_type.startsWith('srt_verified_'))
       || files.find(f => f.file_type === 'srt_turbo_scribe');
