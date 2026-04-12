@@ -38,6 +38,10 @@ const getFullProject = (projectId: string) => {
         const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.end_image_asset_id);
         if (asset) shot.endImageUrl = `/storage/${asset.file_path}`;
       }
+      if (shot.extracted_last_frame_asset_id) {
+        const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.extracted_last_frame_asset_id);
+        if (asset) shot.extractedLastFrameUrl = `/storage/${asset.file_path}`;
+      }
       if (shot.video_asset_id) {
         const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.video_asset_id);
         if (asset) shot.videoUrl = `/storage/${asset.file_path}`;
@@ -85,6 +89,7 @@ const getFullProject = (projectId: string) => {
     styleExploration: project.style_exploration ? JSON.parse(project.style_exploration) : null,
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
+    videoModel: project.video_model || 'veo-3.1',
     cast: cast.map((c: any) => ({
       id: c.id,
       name: c.name,
@@ -114,6 +119,8 @@ const getFullProject = (projectId: string) => {
         castIds: shot.castIds || [],
         imageUrl: shot.imageUrl,
         endImageUrl: shot.endImageUrl,
+        extractedLastFrameUrl: shot.extractedLastFrameUrl,
+        continuityFrom: shot.continuity_from || 'cut',
         endImageStatus: shot.end_image_status || 'idle',
         locked: !!shot.locked,
         userFeedback: shot.user_feedback || undefined,
@@ -343,12 +350,13 @@ router.post('/:id/lock-concept', (req, res) => {
 
 // Update project settings
 router.patch('/:id', (req, res) => {
-  const { title, videoMode, targetDuration, styleDescription, colorPalette } = req.body;
+  const { title, videoMode, targetDuration, styleDescription, colorPalette, videoModel } = req.body;
   const sets: string[] = [];
   const vals: any[] = [];
 
   if (title !== undefined) { sets.push('title = ?'); vals.push(title); }
   if (videoMode !== undefined) { sets.push('video_mode = ?'); vals.push(videoMode); }
+  if (videoModel !== undefined) { sets.push('video_model = ?'); vals.push(videoModel); }
   if (targetDuration !== undefined) { sets.push('target_duration = ?'); vals.push(targetDuration); }
   if (styleDescription !== undefined) { sets.push('style_description = ?'); vals.push(styleDescription); }
   if (colorPalette !== undefined) { sets.push('color_palette = ?'); vals.push(colorPalette); }
@@ -439,11 +447,14 @@ router.get('/:id/xray', (req, res) => {
 // ─── Shot Updates ───────────────────────────────────────────────────
 
 router.patch('/:id/shots/:shotId', (req, res) => {
-  const { visualPrompt, motionPrompt, useNextAsEndFrame, userFeedback } = req.body;
+  const { visualPrompt, motionPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
   if (visualPrompt !== undefined) db.prepare('UPDATE shots SET visual_prompt = ? WHERE id = ?').run(visualPrompt, req.params.shotId);
   if (motionPrompt !== undefined) db.prepare('UPDATE shots SET motion_prompt = ? WHERE id = ?').run(motionPrompt, req.params.shotId);
   if (useNextAsEndFrame !== undefined) db.prepare('UPDATE shots SET use_next_as_end_frame = ? WHERE id = ?').run(useNextAsEndFrame ? 1 : 0, req.params.shotId);
   if (userFeedback !== undefined) db.prepare('UPDATE shots SET user_feedback = ? WHERE id = ?').run(userFeedback || null, req.params.shotId);
+  if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
+    db.prepare('UPDATE shots SET continuity_from = ? WHERE id = ?').run(continuityFrom, req.params.shotId);
+  }
   res.json(getFullProject(paramStr(req.params.id)));
 });
 

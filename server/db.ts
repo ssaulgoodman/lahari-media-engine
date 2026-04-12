@@ -139,6 +139,20 @@ try { db.exec('ALTER TABLE shots ADD COLUMN locked INTEGER DEFAULT 0'); } catch 
 try { db.exec('ALTER TABLE shots ADD COLUMN user_feedback TEXT'); } catch {}
 try { db.exec('ALTER TABLE shots ADD COLUMN environment_id TEXT'); } catch {}
 
+// Extracted last frame from generated video — replaces end frame as continuity ref
+try { db.exec('ALTER TABLE shots ADD COLUMN extracted_last_frame_asset_id TEXT'); } catch {}
+
+// Vision description of the previous shot's extracted last frame — injected
+// as continuity context into this shot's image + motion prompts.
+try { db.exec('ALTER TABLE shots ADD COLUMN continuity_description TEXT'); } catch {}
+
+// 'cut' (default) = hard cut, independent shot, can generate in parallel.
+// 'prev_shot' = this shot continues from the previous shot's last frame.
+try { db.exec("ALTER TABLE shots ADD COLUMN continuity_from TEXT DEFAULT 'cut'"); } catch {}
+
+// Video model: 'veo-3.1' (default), 'seedance-2.0-fast', 'seedance-2.0', etc.
+try { db.exec("ALTER TABLE projects ADD COLUMN video_model TEXT DEFAULT 'veo-3.1'"); } catch {}
+
 // Style exploration persistence
 try { db.exec('ALTER TABLE projects ADD COLUMN style_exploration TEXT'); } catch {}
 

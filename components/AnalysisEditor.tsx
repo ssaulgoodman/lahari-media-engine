@@ -92,6 +92,7 @@ export const AnalysisEditor: React.FC<Props> = ({
   // Environment look state
   const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
   const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
+  const [promptPreview, setPromptPreview] = useState<string | null>(null); // entity id
 
   // Auto-persist style exploration to DB whenever slots change (debounced)
   const styleExplorationInitRef = useRef(true);
@@ -945,12 +946,16 @@ export const AnalysisEditor: React.FC<Props> = ({
                     </button>
                   )}
 
-                  {project.cast.length > 0 && project.cast.some(c => c.referenceImageUrl) && project.status === 'style_locked' && (
+                  {project.status === 'style_locked' && (
                     <button
                       onClick={onAdvanceCharacters}
-                      className="w-full py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                      className={`w-full py-2 rounded-md text-xs font-semibold transition-colors ${
+                        project.cast.some(c => c.referenceImageUrl)
+                          ? 'bg-white text-black hover:bg-zinc-200'
+                          : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1] hover:text-white border border-white/[0.08]'
+                      }`}
                     >
-                      Proceed to Environments
+                      {project.cast.some(c => c.referenceImageUrl) ? 'Proceed to Environments' : 'Skip — Proceed to Environments'}
                     </button>
                   )}
                 </div>
@@ -999,8 +1004,35 @@ export const AnalysisEditor: React.FC<Props> = ({
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
                         </button>
+                        <button
+                          onClick={() => setPromptPreview(prev => prev === activeMember.id ? null : activeMember.id)}
+                          className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          {promptPreview === activeMember.id ? 'Hide prompt' : 'View prompt'}
+                        </button>
                       </div>
                     </div>
+
+                    {/* Prompt preview */}
+                    {promptPreview === activeMember.id && (
+                      <div className="px-5 py-3 border-b border-white/[0.06] flex items-start gap-3">
+                        {project.styleAssetUrl && (
+                          <div className="relative flex-shrink-0">
+                            <img src={project.styleAssetUrl} className="w-12 h-12 object-cover rounded border border-white/[0.06]" alt="Style ref" />
+                            <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[8px] text-zinc-400 text-center rounded-b">Style</div>
+                          </div>
+                        )}
+                        <pre className="flex-1 text-[10px] text-zinc-500 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
+`${activeMember.name} — ${activeMember.description || '(no description)'}
+
+Mid-shot portrait, upper body and face visible.
+Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
+
+→ Model: gemini-3-pro-image-preview
+→ 3 parallel calls, same prompt`
+                        }</pre>
+                      </div>
+                    )}
 
                     {/* Hero area — locked image, look candidates, loading, or empty */}
                     {activeMember.referenceImageUrl ? (
@@ -1143,8 +1175,35 @@ export const AnalysisEditor: React.FC<Props> = ({
                           >
                             {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
                           </button>
+                          <button
+                            onClick={() => setPromptPreview(prev => prev === activeEnv.id ? null : activeEnv.id)}
+                            className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                          >
+                            {promptPreview === activeEnv.id ? 'Hide prompt' : 'View prompt'}
+                          </button>
                         </div>
                       </div>
+
+                      {/* Prompt preview */}
+                      {promptPreview === activeEnv.id && (
+                        <div className="px-5 py-3 border-b border-white/[0.06] flex items-start gap-3">
+                          {project.styleAssetUrl && (
+                            <div className="relative flex-shrink-0">
+                              <img src={project.styleAssetUrl} className="w-12 h-12 object-cover rounded border border-white/[0.06]" alt="Style ref" />
+                              <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[8px] text-zinc-400 text-center rounded-b">Style</div>
+                            </div>
+                          )}
+                          <pre className="flex-1 text-[10px] text-zinc-500 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
+`${activeEnv.name} — ${activeEnv.description || '(no description)'}
+
+Wide establishing shot, no characters.
+Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
+
+→ Model: gemini-3-pro-image-preview
+→ 3 parallel calls, same prompt`
+                          }</pre>
+                        </div>
+                      )}
 
                       {/* Hero area — locked image, look candidates, loading, or empty */}
                       {activeEnv.referenceImageUrl ? (

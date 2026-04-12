@@ -156,8 +156,10 @@ export const generateSingleStyleImage = async (
 // ─── Character Look Generation (gemini-3-pro-image-preview) ─────────
 
 /**
- * Generate 3 character look variations in a single API call.
- * Uses the locked style image as a visual reference.
+ * Generate 3 character look variations via 3 parallel API calls with the SAME prompt.
+ * gemini-3-pro-image-preview returns only 1 image per response and doesn't support
+ * candidateCount, so parallel calls are the only real-time path. Same prompt →
+ * natural variation from model sampling — user picks the best.
  */
 export const generateCharacterLooks = async (
   character: { name: string; description: string },
@@ -166,53 +168,57 @@ export const generateCharacterLooks = async (
   userFeedback?: string
 ): Promise<string[]> => {
   const ai = getAI();
-  const parts: ContentPart[] = [];
+  const N = 3;
 
+  const parts: ContentPart[] = [];
   if (styleImagePath) {
     parts.push({ text: 'Image 1 = Style reference' });
     parts.push(imagePartFromPath(styleImagePath));
   }
 
-  let prompt = `Generate THREE variations of this character portrait in the visual style of Image 1.
+  let prompt = `Generate ONE cinematic character portrait in the visual style of Image 1.
 
 ${character.name} — ${character.description}
 
-Mid-shot character portrait, upper body and face visible, detailed costume and ornaments.
+Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
 
 Style: ${styleDNA}`;
-
-  if (userFeedback) {
-    prompt += `\n\nDirector note: ${userFeedback}`;
-  }
-
-  prompt += `\n\nThree cinematic character portraits. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a film still. Follow image reference and style.`;
+  if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
+  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
 
   parts.push({ text: prompt });
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
-    contents: [{ role: 'user', parts }],
-    config: {
-      responseModalities: ['IMAGE'],
-      // @ts-ignore
-      imageConfig: { aspectRatio: '16:9' }
+  const singleCall = async (): Promise<string | null> => {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview',
+        contents: [{ role: 'user', parts }],
+        config: {
+          responseModalities: ['IMAGE'],
+          // @ts-ignore
+          imageConfig: { aspectRatio: '16:9' }
+        }
+      });
+      const paths = extractImages(response);
+      return paths[0] || null;
+    } catch (err) {
+      console.error('[imagen] Character variant failed:', err);
+      return null;
     }
-  });
+  };
 
-  const paths = extractImages(response);
-  if (paths.length === 0) {
-    console.error('[imagen] Character look generation returned no images');
-  } else {
-    console.log(`[imagen] Character look: got ${paths.length} images in single call`);
-  }
+  const results = await Promise.all(Array.from({ length: N }, () => singleCall()));
+  const paths = results.filter((p): p is string => p !== null);
+  console.log(`[imagen] Character looks: got ${paths.length}/${N} images via parallel calls`);
   return paths;
 };
 
 // ─── Environment Look Generation (gemini-3-pro-image-preview) ───────
 
 /**
- * Generate 3 environment look variations in a single API call.
- * Uses the locked style image as a visual reference.
+ * Generate 3 environment look variations via 3 parallel API calls with the SAME prompt.
+ * Natural sampling variation → user picks the best.
  */
 export const generateEnvironmentLooks = async (
   environment: { name: string; description: string },
@@ -220,40 +226,47 @@ export const generateEnvironmentLooks = async (
   styleImagePath?: string
 ): Promise<string[]> => {
   const ai = getAI();
-  const parts: ContentPart[] = [];
+  const N = 3;
 
+  const parts: ContentPart[] = [];
   if (styleImagePath) {
     parts.push({ text: 'Image 1 = Style reference' });
     parts.push(imagePartFromPath(styleImagePath));
   }
 
-  parts.push({ text: `Generate THREE variations of this environment in the visual style of Image 1. No characters or figures.
+  parts.push({ text: `Generate ONE cinematic environment shot in the visual style of Image 1. No characters or figures.
 
 ${environment.name} — ${environment.description}
 
-Wide establishing shot, full environment visible.
+Wide establishing shot, full environment visible, empty scene.
 
 Style: ${styleDNA}
 
-Three cinematic environments, empty scenes. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a film still.` });
+One single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.` });
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
-    contents: [{ role: 'user', parts }],
-    config: {
-      responseModalities: ['IMAGE'],
-      // @ts-ignore
-      imageConfig: { aspectRatio: '16:9' }
+  const singleCall = async (): Promise<string | null> => {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-image-preview',
+        contents: [{ role: 'user', parts }],
+        config: {
+          responseModalities: ['IMAGE'],
+          // @ts-ignore
+          imageConfig: { aspectRatio: '16:9' }
+        }
+      });
+      const paths = extractImages(response);
+      return paths[0] || null;
+    } catch (err) {
+      console.error('[imagen] Environment variant failed:', err);
+      return null;
     }
-  });
+  };
 
-  const paths = extractImages(response);
-  if (paths.length === 0) {
-    console.error('[imagen] Environment look generation returned no images');
-  } else {
-    console.log(`[imagen] Environment look: got ${paths.length} images in single call`);
-  }
+  const results = await Promise.all(Array.from({ length: N }, () => singleCall()));
+  const paths = results.filter((p): p is string => p !== null);
+  console.log(`[imagen] Environment looks: got ${paths.length}/${N} images via parallel calls`);
   return paths;
 };
 
@@ -273,7 +286,9 @@ export const generateShotStartFrame = async (opts: {
   characterRefs: { name: string; imagePath: string }[];
   environmentRef?: { name: string; imagePath: string };
   prevShotEndFramePath?: string;
+  continuityDescription?: string;
   userFeedback?: string;
+  failedImagePath?: string;
 }): Promise<string> => {
   const parts: ContentPart[] = [];
 
@@ -309,12 +324,25 @@ export const generateShotStartFrame = async (opts: {
     parts.push(imagePartFromPath(opts.prevShotEndFramePath));
   }
 
+  // Failed previous attempt — show the model what went wrong so it avoids
+  // the same issues. Only included when user gave feedback + we have the old image.
+  if (opts.failedImagePath && opts.userFeedback) {
+    imageIdx++;
+    parts.push({ text: `Image ${imageIdx} = PREVIOUS ATTEMPT (rejected). Problems: ${opts.userFeedback}. Do NOT repeat these issues.` });
+    parts.push(imagePartFromPath(opts.failedImagePath));
+  }
+
   // ── Scene + instructions ──
   let prompt = `Scene: ${opts.visualPrompt}
 
 Style: ${opts.styleDNA}
 
-Preserve character identity from character references. Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference.`;
+Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference image. If the style text description below conflicts with the style reference image, follow the image — it is the ground truth for lighting, color palette, and visual texture.`;
+
+  if (opts.continuityDescription) {
+    prompt += `\n\nPrevious shot ended with: ${opts.continuityDescription}
+This shot should begin from that exact continuity state — matching pose, camera position, lighting, and mid-action beats — then transition into the scene described above.`;
+  }
 
   if (opts.userFeedback) {
     prompt += `\n\nDirector note: ${opts.userFeedback}`;

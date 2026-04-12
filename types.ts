@@ -60,6 +60,8 @@ export interface VideoShot {
   imageStatus: GenerationStatus;
   endImageUrl?: string;
   endImageStatus: GenerationStatus;
+  extractedLastFrameUrl?: string;
+  continuityFrom: 'cut' | 'prev_shot';
   locked: boolean;
   userFeedback?: string;
   environmentId?: string;
@@ -128,6 +130,7 @@ export interface ApiProject {
   styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
   colorPalette?: string;
   videoMode: VideoMode;
+  videoModel: string;
   cast: CastMember[];
   environments: Environment[];
   scenes: VideoScene[];

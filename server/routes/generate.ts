@@ -3,10 +3,11 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { readAsBase64, mimeFromExt, saveBase64 } from '../storage.js';
-import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame, generateShotEndFrame, generateShotFramePair } from '../services/imagen.js';
-import { critiqueShotImage, chatWithDirector } from '../services/gemini.js';
-import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle } from '../services/claude.js';
-import { generateVideo } from '../services/veo.js';
+import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame } from '../services/imagen.js';
+import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
+import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt } from '../services/claude.js';
+import { generateVideo, extractLastFrame } from '../services/veo.js';
+import { generateFalVideo, FAL_VIDEO_MODELS } from '../services/fal.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 
@@ -696,10 +697,18 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         lyrics: project.lyrics || '',
       }, previousBatchTail);
 
-      // Write back to DB
-      const updateShot = db.prepare('UPDATE shots SET visual_prompt = ?, motion_prompt = ? WHERE id = ?');
+      // Write back to DB, including Claude's continuity decision per shot.
+      // First shot of each scene is forced to 'cut' (scene boundaries are always hard cuts).
+      const firstShotIdsPerScene = new Set(
+        scenes
+          .map((scene: any) => db.prepare('SELECT id FROM shots WHERE scene_id = ? ORDER BY sort_order LIMIT 1').get(scene.id) as any)
+          .filter(Boolean)
+          .map((row: any) => row.id)
+      );
+      const updateShot = db.prepare('UPDATE shots SET visual_prompt = ?, motion_prompt = ?, continuity_from = ? WHERE id = ?');
       for (const p of prompts) {
-        updateShot.run(p.visualPrompt || '', p.motionPrompt || '', p.id);
+        const continuity = firstShotIdsPerScene.has(p.id) ? 'cut' : (p.continuityFrom || 'cut');
+        updateShot.run(p.visualPrompt || '', p.motionPrompt || '', continuity, p.id);
       }
 
       // Keep last 2 shots as continuity context for next batch
@@ -734,6 +743,67 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   }
 });
 
+// ─── Refine Shot Prompt (vision + rewrite) ─────────────────────────
+
+router.post('/:id/shots/:shotId/refine-prompt', async (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(paramStr(req.params.shotId));
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  if (!shot.image_asset_id) return res.status(400).json({ error: 'No image to refine — generate one first' });
+
+  const imageAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.image_asset_id);
+  if (!imageAsset) return res.status(400).json({ error: 'Image asset not found' });
+
+  const shotCastIds = JSON.parse(shot.cast_ids || '[]');
+  const cast = db.prepare('SELECT * FROM cast_members WHERE project_id = ?').all(paramStr(req.params.id)) as any[];
+  const charDescs = cast
+    .filter((c: any) => shotCastIds.includes(c.id))
+    .map((c: any) => `${c.name}: ${c.description || 'no description'}`);
+
+  try {
+    const t0 = Date.now();
+    const imageBase64 = readAsBase64(imageAsset.file_path);
+    const mime = mimeFromExt(imageAsset.file_path);
+
+    const result = await refineShotPrompt({
+      currentVisualPrompt: shot.visual_prompt || '',
+      currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
+      feedback,
+      failedImageBase64: imageBase64,
+      failedImageMime: mime,
+      styleDNA: project.style_description || 'Cinematic',
+      characterDescriptions: charDescs,
+    });
+
+    // Update the shot prompts with the rewritten versions
+    db.prepare('UPDATE shots SET visual_prompt = ?, motion_prompt = ?, user_feedback = ? WHERE id = ?')
+      .run(result.visualPrompt, result.motionPrompt, feedback, shot.id);
+
+    const durationMs = Date.now() - t0;
+    logCall({
+      projectId: project.id,
+      stage: 'refine-shot-prompt',
+      model: 'claude-sonnet-4-6',
+      prompt: `Refine: "${feedback}" | Original: "${(shot.visual_prompt || '').substring(0, 80)}…"`,
+      referenceInputs: [{ type: 'image', label: 'Failed attempt', url: `/storage/${imageAsset.file_path}` }],
+      contextChain: buildContextChain(project.id),
+      responseSummary: `Rewritten: "${result.visualPrompt.substring(0, 100)}…"`,
+      durationMs,
+      costEstimate: 0.01,
+    });
+
+    res.json(getFullProject(paramStr(req.params.id)));
+  } catch (err: any) {
+    console.error(`[shot ${shot.id}] Prompt refinement failed:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Generate Shot Start Frame (with full reference chain) ───────────
 
 router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
@@ -745,13 +815,14 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 
   const scene: any = db.prepare('SELECT * FROM scenes WHERE id = ?').get(shot.scene_id);
 
-  // Sequential enforcement: check if previous shot in same scene is locked
-  if (shot.sort_order > 0) {
+  // Sequential enforcement only for continuity-linked shots.
+  // Hard-cut shots are independent and can generate in parallel.
+  if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
     const prevShot: any = db.prepare(
-      'SELECT id, locked FROM shots WHERE scene_id = ? AND sort_order = ?'
+      'SELECT id, video_asset_id FROM shots WHERE scene_id = ? AND sort_order = ?'
     ).get(shot.scene_id, shot.sort_order - 1);
-    if (prevShot && !prevShot.locked) {
-      return res.status(400).json({ error: 'Previous shot must be locked first (sequential enforcement)' });
+    if (prevShot && !prevShot.video_asset_id) {
+      return res.status(400).json({ error: 'Previous shot must have a generated video first (continuity dependency)' });
     }
   }
 
@@ -788,15 +859,32 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     }
   }
 
-  // Resolve previous shot's end frame for continuity
+  // Continuity lookup — only runs when Claude tagged this shot as continuing
+  // from the previous one. Hard-cut shots skip this entirely so they can
+  // generate in parallel without waiting for the previous shot's video.
   let prevShotEndFramePath: string | undefined;
-  if (shot.sort_order > 0) {
+  let continuityDescription: string | undefined = shot.continuity_description || undefined;
+  if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
     const prevShot: any = db.prepare(
-      'SELECT end_image_asset_id FROM shots WHERE scene_id = ? AND sort_order = ? AND locked = 1'
+      'SELECT extracted_last_frame_asset_id, end_image_asset_id FROM shots WHERE scene_id = ? AND sort_order = ? AND locked = 1'
     ).get(shot.scene_id, shot.sort_order - 1);
-    if (prevShot?.end_image_asset_id) {
-      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(prevShot.end_image_asset_id);
+    const continuityAssetId = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
+    if (continuityAssetId) {
+      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(continuityAssetId);
       if (asset) prevShotEndFramePath = asset.file_path;
+    }
+
+    // Vision-describe the extracted continuity frame once, cache on the shot.
+    if (prevShotEndFramePath && !continuityDescription) {
+      try {
+        const base64 = readAsBase64(prevShotEndFramePath);
+        const mime = mimeFromExt(prevShotEndFramePath);
+        continuityDescription = await describeFrame(base64, mime);
+        db.prepare('UPDATE shots SET continuity_description = ? WHERE id = ?').run(continuityDescription, shot.id);
+        console.log(`[shot ${shot.id}] Continuity described: ${continuityDescription.substring(0, 100)}...`);
+      } catch (err: any) {
+        console.warn(`[shot ${shot.id}] Continuity description failed: ${err.message}`);
+      }
     }
   }
 
@@ -806,6 +894,14 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 
     console.log(`[shot ${shot.id}] Generating start frame with ${characterRefs.length} char refs, env: ${environmentRef?.name || 'none'}, prev end frame: ${prevShotEndFramePath ? 'yes' : 'no'}`);
 
+    // If regenerating with feedback, pass the failed image so the model can
+    // see what went wrong and avoid the same issues.
+    let failedImagePath: string | undefined;
+    if (userFeedback && shot.image_asset_id) {
+      const failedAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.image_asset_id);
+      if (failedAsset) failedImagePath = failedAsset.file_path;
+    }
+
     const imagePath = await generateShotStartFrame({
       visualPrompt: shotPrompt,
       styleDNA: project.style_description || 'Cinematic',
@@ -813,7 +909,9 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       characterRefs,
       environmentRef,
       prevShotEndFramePath,
+      continuityDescription,
       userFeedback,
+      failedImagePath,
     });
 
     const durationMs = Date.now() - t0;
@@ -827,7 +925,8 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       UPDATE shots SET
         image_asset_id = ?,
         image_status = 'success',
-        attempt_count = COALESCE(attempt_count, 0) + 1
+        attempt_count = COALESCE(attempt_count, 0) + 1,
+        user_feedback = NULL
       WHERE id = ?
     `).run(assetId, shot.id);
 
@@ -868,193 +967,11 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
   }
 });
 
-// ─── Generate Shot End Frame ─────────────────────────────────────────
+// End frame and frame-pair endpoints removed — the new workflow captures the
+// real last frame from the generated video via ffmpeg extraction (see
+// generate-video below). Predicting end frames was unreliable; extracting
+// them after Veo plays the shot naturally is truthful continuity.
 
-router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(paramStr(req.params.shotId));
-  if (!shot) return res.status(404).json({ error: 'Shot not found' });
-  if (!shot.image_asset_id) return res.status(400).json({ error: 'Start frame must be generated first' });
-
-  const startAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.image_asset_id);
-  if (!startAsset) return res.status(400).json({ error: 'Start frame asset not found' });
-
-  let styleImagePath: string | undefined;
-  if (project.style_asset_id) {
-    const styleAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(project.style_asset_id);
-    if (styleAsset) styleImagePath = styleAsset.file_path;
-  }
-
-  try {
-    db.prepare("UPDATE shots SET end_image_status = 'loading' WHERE id = ?").run(shot.id);
-    const t0 = Date.now();
-
-    console.log(`[shot ${shot.id}] Generating end frame...`);
-
-    const endImagePath = await generateShotEndFrame({
-      startFramePath: startAsset.file_path,
-      visualPrompt: shot.visual_prompt || '',
-      motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      styleImagePath,
-      styleDNA: project.style_description || 'Cinematic',
-    });
-
-    const durationMs = Date.now() - t0;
-
-    const assetId = uuidv4();
-    db.prepare(`INSERT INTO assets (id, project_id, category, file_path, prompt) VALUES (?, ?, 'shot_end_frame', ?, ?)`)
-      .run(assetId, project.id, endImagePath, shot.motion_prompt || 'End frame');
-
-    db.prepare(`UPDATE shots SET end_image_asset_id = ?, end_image_status = 'success' WHERE id = ?`)
-      .run(assetId, shot.id);
-
-    logCall({
-      projectId: project.id,
-      stage: 'generate-shot-end-frame',
-      model: 'gemini-3-pro-image-preview',
-      prompt: shot.motion_prompt || 'End frame generation',
-      referenceInputs: [{ type: 'image', label: 'Start frame', url: `/storage/${startAsset.file_path}` }],
-      contextChain: buildContextChain(project.id),
-      responseSummary: 'Generated end frame',
-      outputAssetIds: [assetId],
-      durationMs,
-      costEstimate: 0.04,
-    });
-
-    db.prepare("UPDATE projects SET cost_estimate = cost_estimate + 0.04, updated_at = datetime('now') WHERE id = ?")
-      .run(paramStr(req.params.id));
-
-    res.json(getFullProject(paramStr(req.params.id)));
-  } catch (err: any) {
-    console.error(`[shot ${shot.id}] End frame gen failed:`, err);
-    db.prepare("UPDATE shots SET end_image_status = 'error' WHERE id = ?").run(shot.id);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ─── Generate Shot Frame Pair (start + end in one call) ──────────────
-
-router.post('/:id/shots/:shotId/generate-frame-pair', async (req, res) => {
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(paramStr(req.params.shotId));
-  if (!shot) return res.status(404).json({ error: 'Shot not found' });
-
-  // Sequential enforcement
-  if (shot.sort_order > 0) {
-    const prevShot: any = db.prepare(
-      'SELECT id, locked FROM shots WHERE scene_id = ? AND sort_order = ?'
-    ).get(shot.scene_id, shot.sort_order - 1);
-    if (prevShot && !prevShot.locked) {
-      return res.status(400).json({ error: 'Previous shot must be locked first (sequential enforcement)' });
-    }
-  }
-
-  const shotCastIds = JSON.parse(shot.cast_ids || '[]');
-  const cast = db.prepare('SELECT * FROM cast_members WHERE project_id = ?').all(paramStr(req.params.id)) as any[];
-  const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
-
-  let styleImagePath: string | undefined;
-  if (project.style_asset_id) {
-    const styleAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(project.style_asset_id);
-    if (styleAsset) styleImagePath = styleAsset.file_path;
-  }
-
-  const characterRefs: { name: string; imagePath: string }[] = [];
-  for (const c of activeCast) {
-    if (c.reference_asset_id) {
-      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(c.reference_asset_id);
-      if (asset) characterRefs.push({ name: c.name, imagePath: asset.file_path });
-    }
-  }
-
-  let environmentRef: { name: string; imagePath: string } | undefined;
-  if (shot.environment_id) {
-    const env: any = db.prepare('SELECT * FROM environments WHERE id = ?').get(shot.environment_id);
-    if (env?.reference_asset_id) {
-      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(env.reference_asset_id);
-      if (asset) environmentRef = { name: env.name, imagePath: asset.file_path };
-    }
-  }
-
-  let prevShotEndFramePath: string | undefined;
-  if (shot.sort_order > 0) {
-    const prevShot: any = db.prepare(
-      'SELECT end_image_asset_id FROM shots WHERE scene_id = ? AND sort_order = ? AND locked = 1'
-    ).get(shot.scene_id, shot.sort_order - 1);
-    if (prevShot?.end_image_asset_id) {
-      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(prevShot.end_image_asset_id);
-      if (asset) prevShotEndFramePath = asset.file_path;
-    }
-  }
-
-  try {
-    db.prepare("UPDATE shots SET image_status = 'loading', end_image_status = 'loading' WHERE id = ?").run(shot.id);
-    const t0 = Date.now();
-
-    console.log(`[shot ${shot.id}] Generating frame pair (single call) with ${characterRefs.length} char refs, env: ${environmentRef?.name || 'none'}`);
-
-    const { startFramePath, endFramePath } = await generateShotFramePair({
-      visualPrompt: shot.visual_prompt || '',
-      motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      styleDNA: project.style_description || 'Cinematic',
-      styleImagePath,
-      characterRefs,
-      environmentRef,
-      prevShotEndFramePath,
-      userFeedback: shot.user_feedback || undefined,
-    });
-
-    const durationMs = Date.now() - t0;
-
-    const startAssetId = uuidv4();
-    db.prepare(`INSERT INTO assets (id, project_id, category, file_path, prompt) VALUES (?, ?, 'shot_image', ?, ?)`)
-      .run(startAssetId, project.id, startFramePath, shot.visual_prompt || '');
-
-    const endAssetId = uuidv4();
-    db.prepare(`INSERT INTO assets (id, project_id, category, file_path, prompt) VALUES (?, ?, 'shot_end_frame', ?, ?)`)
-      .run(endAssetId, project.id, endFramePath, shot.motion_prompt || '');
-
-    db.prepare(`
-      UPDATE shots SET
-        image_asset_id = ?,
-        image_status = 'success',
-        end_image_asset_id = ?,
-        end_image_status = 'success',
-        attempt_count = COALESCE(attempt_count, 0) + 1
-      WHERE id = ?
-    `).run(startAssetId, endAssetId, shot.id);
-
-    logCall({
-      projectId: project.id,
-      stage: 'generate-shot-frame-pair',
-      model: 'gemini-3-pro-image-preview',
-      prompt: `${shot.visual_prompt} | Motion: ${shot.motion_prompt}`,
-      referenceInputs: [
-        ...(styleImagePath ? [{ type: 'image' as const, label: 'Style ref', url: `/storage/${styleImagePath}` }] : []),
-        ...characterRefs.map(r => ({ type: 'image' as const, label: `${r.name} ref`, url: `/storage/${r.imagePath}` })),
-        ...(environmentRef ? [{ type: 'image' as const, label: `Env: ${environmentRef.name}`, url: `/storage/${environmentRef.imagePath}` }] : []),
-      ],
-      contextChain: buildContextChain(project.id),
-      responseSummary: 'Generated start + end frame pair in single call',
-      outputAssetIds: [startAssetId, endAssetId],
-      durationMs,
-      costEstimate: 0.04,
-    });
-
-    db.prepare("UPDATE projects SET cost_estimate = cost_estimate + 0.04, updated_at = datetime('now') WHERE id = ?")
-      .run(paramStr(req.params.id));
-
-    res.json(getFullProject(paramStr(req.params.id)));
-  } catch (err: any) {
-    console.error(`[shot ${shot.id}] Frame pair gen failed:`, err);
-    db.prepare("UPDATE shots SET image_status = 'error', end_image_status = 'error' WHERE id = ?").run(shot.id);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ─── Lock Shot ───────────────────────────────────────────────────────
 
@@ -1062,7 +979,7 @@ router.post('/:id/shots/:shotId/lock', (req, res) => {
   const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(paramStr(req.params.shotId));
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
   if (!shot.image_asset_id) return res.status(400).json({ error: 'Start frame required to lock' });
-  if (!shot.end_image_asset_id) return res.status(400).json({ error: 'End frame required to lock' });
+  if (!shot.video_asset_id) return res.status(400).json({ error: 'Video must be generated before locking' });
 
   db.prepare('UPDATE shots SET locked = 1 WHERE id = ?').run(shot.id);
   res.json(getFullProject(paramStr(req.params.id)));
@@ -1115,56 +1032,74 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     }
     if (castNames) veoPromptParts.push(`Characters: ${castNames}`);
     veoPromptParts.push(`${mood} mood`);
+    // Continuity context — only for shots Claude tagged as 'prev_shot'.
+    if (shot.continuity_from === 'prev_shot' && shot.continuity_description) {
+      veoPromptParts.push(`Starting state (from previous shot): ${shot.continuity_description}`);
+    }
 
     const veoPrompt = veoPromptParts.join('. ');
 
-    console.log(`  [shot ${shot.id} video] ${veoPrompt.substring(0, 120)}...`);
+    const videoModelKey = project.video_model || 'veo-3.1';
+    const isFal = videoModelKey in FAL_VIDEO_MODELS;
 
-    // Use shot's own end frame if available, else fall back to next shot's start frame
-    let endImagePath: string | undefined;
-    if (shot.end_image_asset_id) {
-      const endAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.end_image_asset_id);
-      if (endAsset) endImagePath = endAsset.file_path;
-    } else if (shot.use_next_as_end_frame) {
-      // Legacy fallback: use next shot's start frame
-      const nextShot: any = db.prepare(`
-        SELECT s.image_asset_id FROM shots s WHERE s.sort_order > ? AND s.scene_id = ? ORDER BY s.sort_order LIMIT 1
-      `).get(shot.sort_order, shot.scene_id);
+    console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 100)}...`);
 
-      if (nextShot?.image_asset_id) {
-        const nextAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(nextShot.image_asset_id);
-        if (nextAsset) endImagePath = nextAsset.file_path;
-      }
+    // Route to the right provider
+    let videoPath: string;
+    let costEstimate: number;
+    let modelId: string;
+
+    if (isFal) {
+      const result = await generateFalVideo(imageAsset.file_path, veoPrompt, videoModelKey);
+      videoPath = result.videoPath;
+      const falModel = FAL_VIDEO_MODELS[videoModelKey];
+      costEstimate = falModel.costPerSec * result.durationSec;
+      modelId = falModel.id;
+    } else {
+      // Default: Veo
+      videoPath = await generateVideo(imageAsset.file_path, veoPrompt);
+      costEstimate = 0.80;
+      modelId = 'veo-3.1-fast-generate-preview';
     }
 
-    const videoPath = await generateVideo(imageAsset.file_path, veoPrompt, endImagePath);
     const durationMs = Date.now() - t0;
 
     const assetId = uuidv4();
     db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'shot_video', ?)`)
       .run(assetId, project.id, videoPath);
 
-    db.prepare(`UPDATE shots SET video_asset_id = ?, video_status = 'success' WHERE id = ?`)
-      .run(assetId, shot.id);
+    // Extract the actual last frame from the generated video so the next shot
+    // can branch from where we truly ended up, not where we predicted we'd be.
+    let extractedAssetId: string | null = null;
+    try {
+      const framePath = await extractLastFrame(videoPath);
+      extractedAssetId = uuidv4();
+      db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'shot_extracted_last_frame', ?)`)
+        .run(extractedAssetId, project.id, framePath);
+    } catch (err: any) {
+      console.warn(`  [shot ${shot.id}] last-frame extraction failed: ${err.message}`);
+    }
+
+    db.prepare(`UPDATE shots SET video_asset_id = ?, video_status = 'success', extracted_last_frame_asset_id = ? WHERE id = ?`)
+      .run(assetId, extractedAssetId, shot.id);
 
     logCall({
       projectId: project.id,
       stage: 'generate-shot-video',
-      model: 'veo-3.1-fast-generate-preview',
+      model: modelId,
       prompt: veoPrompt,
       referenceInputs: [
         { type: 'image', label: 'Start keyframe', url: `/storage/${imageAsset.file_path}` },
-        ...(endImagePath ? [{ type: 'image' as const, label: 'End keyframe', url: `/storage/${endImagePath}` }] : []),
       ],
       contextChain: buildContextChain(project.id),
-      responseSummary: `Video generated: ${videoPath}`,
-      outputAssetIds: [assetId],
+      responseSummary: `Video generated via ${isFal ? 'fal.ai' : 'Veo'}: ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
+      outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
       durationMs,
-      costEstimate: 0.80,
+      costEstimate,
     });
 
-    db.prepare("UPDATE projects SET cost_estimate = cost_estimate + 0.80, updated_at = datetime('now') WHERE id = ?")
-      .run(paramStr(req.params.id));
+    db.prepare("UPDATE projects SET cost_estimate = cost_estimate + ?, updated_at = datetime('now') WHERE id = ?")
+      .run(costEstimate, paramStr(req.params.id));
 
     res.json(getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
@@ -1172,7 +1107,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'generate-shot-video',
-      model: 'veo-3.1-fast-generate-preview',
+      model: project.video_model || 'veo-3.1',
       prompt: shot.motion_prompt || 'Cinematic camera movement',
       referenceInputs: [{ type: 'image', label: 'Start keyframe', url: `/storage/${imageAsset.file_path}` }],
       contextChain: buildContextChain(project.id),

@@ -24,6 +24,18 @@ const pageTransition = {
   transition: { duration: 0.25, ease: 'easeOut' as const },
 };
 
+type ProjectSummary = { id: string; title: string; status: string; created_at: string; updated_at: string };
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  uploaded: { label: 'Uploaded', color: 'text-zinc-500' },
+  analyzed: { label: 'Analyzed', color: 'text-zinc-400' },
+  concept_locked: { label: 'Concept', color: 'text-blue-400' },
+  scripted: { label: 'Scripted', color: 'text-indigo-400' },
+  style_locked: { label: 'Styled', color: 'text-purple-400' },
+  characters_locked: { label: 'Characters', color: 'text-pink-400' },
+  environments_locked: { label: 'Environments', color: 'text-emerald-400' },
+};
+
 const App: React.FC = () => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.UPLOAD);
   const [project, setProject] = useState<ApiProject | null>(null);
@@ -39,6 +51,10 @@ const App: React.FC = () => {
   const [xrayOpen, setXrayOpen] = useState(false);
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
+  // Project sidebar
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [projectList, setProjectList] = useState<ProjectSummary[]>([]);
+  const [projectListLoading, setProjectListLoading] = useState(false);
 
   // Auto-dismiss error toast
   useEffect(() => {
@@ -318,33 +334,16 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateEndFrame = async (sceneId: string, shotId: string) => {
+  const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string) => {
     if (!project) return;
-    setProject(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        scenes: prev.scenes.map(s => s.id === sceneId ? {
-          ...s,
-          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, endImageStatus: GenerationStatus.LOADING } : sh)
-        } : s)
-      };
-    });
+    setLoading(true);
     try {
-      const p = await api.generateShotEndFrame(project.id, shotId);
+      const p = await api.refineShotPrompt(project.id, shotId, feedback);
       setProject(p);
     } catch (err: any) {
-      setError(`End frame generation failed: ${err.message}`);
-      setProject(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          scenes: prev.scenes.map(s => s.id === sceneId ? {
-            ...s,
-            shots: s.shots.map(sh => sh.id === shotId ? { ...sh, endImageStatus: GenerationStatus.ERROR } : sh)
-          } : s)
-        };
-      });
+      setError(`Prompt refinement failed: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -432,11 +431,42 @@ const App: React.FC = () => {
   // ─── New Project ────────────────────────────────────────────────
 
   const handleNewProject = () => {
-    if (window.confirm('Start a new project? Previous projects are saved in the database.')) {
-      setProject(null);
-      setCurrentStep(AppStep.UPLOAD);
+    setProject(null);
+    setCurrentStep(AppStep.UPLOAD);
+    setLookCandidates({});
+    setError(null);
+    setSidebarOpen(false);
+  };
+
+  // ─── Project Sidebar ──────────────────────────────────────────
+
+  const openSidebar = async () => {
+    setSidebarOpen(true);
+    setProjectListLoading(true);
+    try {
+      const list = await api.listProjects();
+      setProjectList(list);
+    } catch {
+      setProjectList([]);
+    } finally {
+      setProjectListLoading(false);
+    }
+  };
+
+  const loadProject = async (id: string) => {
+    if (project?.id === id) { setSidebarOpen(false); return; }
+    setLoading(true);
+    setSidebarOpen(false);
+    try {
+      const p = await api.getProject(id);
+      setProject(p);
       setLookCandidates({});
-      setError(null);
+      setActiveSceneIdx(0);
+      navigateToPhase(p);
+    } catch (err: any) {
+      setError('Failed to load project: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -450,11 +480,20 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="h-14 bg-obsidian-950/80 backdrop-blur-xl shadow-[0_1px_0_0_rgba(255,255,255,0.04)] flex-shrink-0 z-50">
         <div className="h-full px-6 grid grid-cols-[1fr_auto_1fr] items-center">
-          {/* Left — Logo */}
-          <div className="flex items-center">
-            <h1 className="text-sm font-display font-medium text-white tracking-wide">
-              Lahari <span className="text-zinc-500">/</span> <span className="text-zinc-400">Video Engine</span>
-            </h1>
+          {/* Left — Logo + Project Switcher */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={openSidebar}
+              className="flex items-center gap-2 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md px-1 -ml-1"
+            >
+              <h1 className="text-sm font-display font-medium text-white tracking-wide">
+                Lahari <span className="text-zinc-500">/</span> <span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">Video Engine</span>
+              </h1>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-600 group-hover:text-zinc-400 transition-colors"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            {project && (
+              <span className="text-[11px] text-zinc-500 truncate max-w-[200px]">{project.title}</span>
+            )}
           </div>
 
           {/* Center — Nav + Scene tabs */}
@@ -534,13 +573,6 @@ const App: React.FC = () => {
                 >
                   X-Ray
                 </button>
-                <button
-                  onClick={handleNewProject}
-                  aria-label="Create new project"
-                  className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-2.5 py-1 rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                >
-                  + New
-                </button>
               </>
             )}
           </div>
@@ -599,9 +631,10 @@ const App: React.FC = () => {
                     onSceneChange={setActiveSceneIdx}
                     onUpdateShot={handleUpdateShot}
                     onGenerateImage={handleGenerateImage}
-                    onGenerateEndFrame={handleGenerateEndFrame}
                     onGenerateVideo={handleGenerateVideo}
                     onLockShot={handleLockShot}
+                    onRefinePrompt={handleRefinePrompt}
+                    onUpdateProject={handleUpdateProject}
                   />
                 </motion.div>
               )}
@@ -630,6 +663,92 @@ const App: React.FC = () => {
         )}
         */}
       </div>
+
+      {/* Project Sidebar */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <>
+            <motion.div
+              key="sidebar-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="fixed inset-0 bg-black/60 z-[100]"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <motion.aside
+              key="sidebar-panel"
+              initial={{ x: -320, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -320, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+              className="fixed top-0 left-0 bottom-0 w-80 bg-obsidian-900 border-r border-white/[0.06] z-[101] flex flex-col"
+            >
+              <div className="h-14 px-5 flex items-center justify-between border-b border-white/[0.06] flex-shrink-0">
+                <span className="text-sm font-medium text-white">Projects</span>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="text-zinc-500 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              <div className="p-3 border-b border-white/[0.06] flex-shrink-0">
+                <button
+                  onClick={handleNewProject}
+                  className="w-full text-[13px] text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] rounded-lg px-3 py-2 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
+                  New Project
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2">
+                {projectListLoading ? (
+                  <div className="space-y-2 p-2">
+                    {[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-lg" />)}
+                  </div>
+                ) : projectList.length === 0 ? (
+                  <p className="text-sm text-zinc-600 text-center py-8">No projects yet</p>
+                ) : (
+                  <div className="space-y-1">
+                    {projectList.map(p => {
+                      const isActive = project?.id === p.id;
+                      const status = STATUS_LABELS[p.status] || { label: p.status, color: 'text-zinc-500' };
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => loadProject(p.id)}
+                          className={`w-full text-left rounded-lg px-3 py-3 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 group ${
+                            isActive
+                              ? 'bg-white/[0.08] border border-white/[0.1]'
+                              : 'hover:bg-white/[0.04] border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className={`text-[13px] font-medium truncate ${isActive ? 'text-white' : 'text-zinc-300 group-hover:text-white'} transition-colors`}>
+                              {p.title}
+                            </span>
+                            {isActive && (
+                              <span className="text-[9px] bg-white/10 text-zinc-400 px-1.5 py-0.5 rounded flex-shrink-0">OPEN</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span className={`text-[11px] font-medium ${status.color}`}>{status.label}</span>
+                            <span className="text-[10px] text-zinc-600">{new Date(p.updated_at).toLocaleDateString()}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Error toast */}
       <AnimatePresence>

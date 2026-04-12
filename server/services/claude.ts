@@ -296,7 +296,7 @@ export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
   context: { styleDNA: string; cast: { name: string; description: string }[]; concept: any; lyrics: string },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
-): Promise<{ id: string; visualPrompt: string; motionPrompt: string }[]> => {
+): Promise<{ id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]> => {
   const client = getClient();
 
   const shotList = shots.map((s, i) =>
@@ -333,7 +333,11 @@ For EACH shot, write using the write_shot_prompts tool:
 - motionPrompt: How the camera and characters MOVE. 1 sentence.
   Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
 
-CONTINUITY: Ensure smooth visual flow between consecutive shots. Adjacent shots should feel like a continuous film — no jarring jumps in composition, camera position, or character placement.
+- continuityFrom: How this shot relates to the one before it.
+  - 'cut' = HARD CUT. This shot is visually independent — different angle/subject/framing/environment, or the first shot of a scene. Most shots should be 'cut'.
+  - 'prev_shot' = CONTINUOUS. This shot visually flows from the previous one — same subject in same/adjacent framing, camera continuation, or an unbroken motion beat. Only mark 'prev_shot' when the cut is genuinely invisible.
+
+  Use 'prev_shot' sparingly — music videos are mostly hard cuts. The first shot of a scene is ALWAYS 'cut'.
 
 Match the IDs exactly.`;
 
@@ -354,9 +358,10 @@ Match the IDs exactly.`;
               properties: {
                 id: { type: 'string', description: 'Shot ID — must match exactly' },
                 visualPrompt: { type: 'string', description: 'What we see. 1-2 sentences. Characters + environment + action.' },
-                motionPrompt: { type: 'string', description: 'Camera + character movement. 1 sentence.' }
+                motionPrompt: { type: 'string', description: 'Camera + character movement. 1 sentence.' },
+                continuityFrom: { type: 'string', enum: ['cut', 'prev_shot'], description: "'cut' for hard cut (default, most shots), 'prev_shot' for continuous flow from previous shot" }
               },
-              required: ['id', 'visualPrompt', 'motionPrompt']
+              required: ['id', 'visualPrompt', 'motionPrompt', 'continuityFrom']
             }
           }
         },
@@ -573,5 +578,85 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.` }
 
   const textBlock = response.content.find((b: any) => b.type === 'text');
   return (textBlock && textBlock.type === 'text' ? textBlock.text : null) || 'Cinematic, high contrast.';
+};
+
+// ─── Refine Shot Prompt (vision + rewrite) ──────────────────────────
+
+/**
+ * Claude sees the failed image, the current prompt, and the user's feedback,
+ * then rewrites the visual prompt to fix the issues. Full rewrite, not append.
+ */
+export const refineShotPrompt = async (opts: {
+  currentVisualPrompt: string;
+  currentMotionPrompt: string;
+  feedback: string;
+  failedImageBase64: string;
+  failedImageMime: string;
+  styleDNA: string;
+  characterDescriptions: string[];
+}): Promise<{ visualPrompt: string; motionPrompt: string }> => {
+  const client = getClient();
+
+  const mediaType = opts.failedImageMime.startsWith('image/')
+    ? opts.failedImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+    : 'image/png';
+
+  const response = await client.messages.create({
+    model: SONNET,
+    max_tokens: 1024,
+    tools: [{
+      name: 'rewrite_shot_prompt',
+      description: 'Rewrite the shot prompt to fix the issues identified in the feedback',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in the frame.' },
+          motionPrompt: { type: 'string', description: 'Motion prompt (adjust only if the feedback requires it, otherwise keep the original).' }
+        },
+        required: ['visualPrompt', 'motionPrompt']
+      }
+    }],
+    tool_choice: { type: 'tool', name: 'rewrite_shot_prompt' },
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
+        { type: 'text', text: `You are a cinematographer fixing a shot that didn't come out right.
+
+THE IMAGE ABOVE is the failed attempt. Study it carefully.
+
+CURRENT PROMPT (what produced this image):
+Visual: ${opts.currentVisualPrompt}
+Motion: ${opts.currentMotionPrompt}
+
+DIRECTOR FEEDBACK (what's wrong):
+${opts.feedback}
+
+STYLE DNA: ${opts.styleDNA}
+
+CHARACTERS IN SCENE:
+${opts.characterDescriptions.join('\n') || 'None specified'}
+
+REWRITE the visual prompt to fix the issues. Techniques to consider:
+- Face not crisp → specify "sharp facial detail, close-up framing" or "medium close-up"
+- Lighting too flat → specify lighting direction: "strong rim light from behind", "warm key light from left"
+- Wrong composition → specify camera: "low angle looking up", "bird's eye view", "tight close-up"
+- Style drift → reinforce the style DNA terms explicitly
+- Character doesn't match → add specific physical details from the character description
+- Too AI/generic → add grounding details: specific textures, materials, atmospheric effects
+
+Do NOT just append the feedback. REWRITE the prompt from scratch, keeping what worked and fixing what didn't. Keep it 1-3 sentences — direct and visual.
+
+Only change the motion prompt if the feedback specifically mentions movement or camera motion.` }
+      ]
+    }]
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') {
+    throw new Error('Claude did not return rewritten prompt');
+  }
+
+  return toolBlock.input as { visualPrompt: string; motionPrompt: string };
 };
 

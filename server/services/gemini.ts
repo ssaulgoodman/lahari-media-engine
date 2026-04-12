@@ -200,6 +200,29 @@ Return your assessment as JSON. The "suggestions" field should contain SPECIFIC,
   return safeParseJSON(response.text);
 };
 
+// ─── Frame Description (for shot continuity reconciliation) ─────────
+
+/**
+ * Describe what's shown in an extracted video frame — used to tell the next
+ * shot what the previous shot actually ended with (subject pose, camera
+ * position, lighting, action mid-beat). Kept short and factual.
+ */
+export const describeFrame = async (imageBase64: string, mimeType = 'image/png'): Promise<string> => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [
+        { inlineData: { mimeType, data: imageBase64 } },
+        { text: `Describe this single video frame factually for shot continuity. 2-3 sentences max.
+Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion.
+Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.` }
+      ]
+    }
+  });
+  return (response.text || '').trim();
+};
+
 // ─── Chat ───────────────────────────────────────────────────────────
 
 export const chatWithDirector = async (

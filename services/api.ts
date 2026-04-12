@@ -252,13 +252,17 @@ export const writeShotPrompts = async (projectId: string) => {
 
 // ─── Shot Image & Video ─────────────────────────────────────────────
 
-export const generateShotImage = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST' });
+export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback })
+  });
   return handleResponse(res);
 };
 
-export const generateShotFramePair = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-frame-pair`, { method: 'POST' });
+export const generateShotImage = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST' });
   return handleResponse(res);
 };
 
@@ -283,11 +287,6 @@ export const lockShot = async (projectId: string, shotId: string) => {
 
 export const unlockShot = async (projectId: string, shotId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/unlock`, { method: 'POST' });
-  return handleResponse(res);
-};
-
-export const generateShotEndFrame = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 
