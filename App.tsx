@@ -478,63 +478,52 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[999] focus:top-2 focus:left-2 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:rounded-md focus:text-sm">Skip to content</a>
       {/* Header */}
-      <header className="h-14 bg-obsidian-950/80 backdrop-blur-xl shadow-[0_1px_0_0_rgba(255,255,255,0.04)] flex-shrink-0 z-50">
-        <div className="h-full px-6 grid grid-cols-[1fr_auto_1fr] items-center">
-          {/* Left — Logo + Project Switcher */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={openSidebar}
-              className="flex items-center gap-2 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md px-1 -ml-1"
-            >
-              <h1 className="text-sm font-display font-medium text-white tracking-wide">
-                Lahari <span className="text-zinc-500">/</span> <span className="text-zinc-400 group-hover:text-zinc-200 transition-colors">Video Engine</span>
-              </h1>
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-600 group-hover:text-zinc-400 transition-colors"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
+      <header className="h-12 bg-obsidian-950/90 backdrop-blur-xl border-b border-white/[0.04] flex-shrink-0 z-50">
+        <div className="h-full px-5 flex items-center gap-6">
+          {/* Logo + Project */}
+          <button
+            onClick={openSidebar}
+            className="flex items-center gap-2 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md flex-shrink-0"
+          >
+            <span className="text-[13px] font-display font-medium text-white">Lahari</span>
             {project && (
-              <span className="text-[11px] text-zinc-500 truncate max-w-[200px]">{project.title}</span>
+              <>
+                <span className="text-zinc-700">/</span>
+                <span className="text-[13px] text-zinc-500 group-hover:text-zinc-300 transition-colors truncate max-w-[180px]">{project.title}</span>
+              </>
             )}
-          </div>
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-700 group-hover:text-zinc-400 transition-colors flex-shrink-0"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
 
-          {/* Center — Nav + Scene tabs */}
-          <div className="flex items-center gap-1">
-            <nav className="hidden md:flex items-center gap-1 relative">
-              {PIPELINE_STEPS.map((step) => {
-                const isActive = currentStep === step.id;
-                const isAccessible =
-                  step.id === AppStep.UPLOAD ||
-                  (project && (step.id === AppStep.BLUEPRINT)) ||
-                  (project && (project.status === 'characters_locked' || project.status === 'environments_locked') && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
+          {/* Nav */}
+          <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
+            {PIPELINE_STEPS.map((step) => {
+              const isActive = currentStep === step.id;
+              const isAccessible =
+                step.id === AppStep.UPLOAD ||
+                (project && (step.id === AppStep.BLUEPRINT)) ||
+                (project && (project.status === 'characters_locked' || project.status === 'environments_locked') && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
 
-                return (
-                  <button
-                    key={step.id}
-                    disabled={!isAccessible}
-                    onClick={() => setCurrentStep(step.id)}
-                    className={`relative px-3 py-1.5 text-[13px] font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 focus-visible:rounded-md ${
-                      isActive
-                        ? 'text-white'
-                        : isAccessible
-                          ? 'text-zinc-500 hover:text-zinc-300'
-                          : 'text-zinc-700 cursor-not-allowed'
-                    }`}
-                  >
-                    {step.label}
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute -bottom-[9px] left-0 right-0 h-px bg-white"
-                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
+              return (
+                <button
+                  key={step.id}
+                  disabled={!isAccessible}
+                  onClick={() => setCurrentStep(step.id)}
+                  className={`relative px-3 py-1 text-[12px] font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
+                    isActive
+                      ? 'text-white bg-white/[0.06]'
+                      : isAccessible
+                        ? 'text-zinc-500 hover:text-zinc-300'
+                        : 'text-zinc-700 cursor-not-allowed'
+                  }`}
+                >
+                  {step.label}
+                </button>
+              );
+            })}
 
-            {isStudio && project && project.scenes.length > 0 && (
-              <div className="hidden md:flex items-center gap-1 ml-2 pl-3 border-l border-white/[0.06]">
-                <span className="text-xs text-zinc-600 mr-1">Scenes</span>
+            {isStudio && project && project.scenes.length > 1 && (
+              <div className="flex items-center gap-0.5 ml-3 pl-3 border-l border-white/[0.06]">
                 {project.scenes.map((scene, idx) => {
                   const isActive = idx === activeSceneIdx;
                   const allLocked = scene.shots.every(s => s.locked);
@@ -542,34 +531,28 @@ const App: React.FC = () => {
                     <button
                       key={scene.id}
                       onClick={() => setActiveSceneIdx(idx)}
-                      className={`relative px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
-                        isActive
-                          ? 'text-white'
-                          : allLocked
-                            ? 'text-zinc-300 hover:text-white'
-                            : 'text-zinc-600 hover:text-zinc-400'
+                      className={`w-6 h-6 text-[11px] font-medium rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 ${
+                        isActive ? 'bg-white/[0.1] text-white'
+                          : allLocked ? 'text-zinc-400 hover:text-white'
+                          : 'text-zinc-600 hover:text-zinc-400'
                       }`}
                     >
-                      {allLocked && <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline mr-0.5" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>}
                       {idx + 1}
                     </button>
                   );
                 })}
               </div>
             )}
-          </div>
+          </nav>
 
-          {/* Right — Actions */}
-          <div className="flex gap-3 items-center justify-end">
+          {/* Right */}
+          <div className="flex items-center gap-3 flex-shrink-0">
             {project && (
               <>
-                <span className="text-[11px] font-mono text-zinc-500">
-                  ${project.costEstimate.toFixed(2)}
-                </span>
+                <span className="text-[10px] font-mono text-zinc-600">${project.costEstimate.toFixed(2)}</span>
                 <button
                   onClick={() => setXrayOpen(true)}
-                  aria-label="Open X-Ray debug panel"
-                  className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-2.5 py-1 rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
+                  className="text-[10px] text-zinc-600 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
                 >
                   X-Ray
                 </button>
@@ -754,16 +737,16 @@ const App: React.FC = () => {
       <AnimatePresence>
         {error && (
           <motion.div
-            initial={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.2 }}
-            className="fixed top-16 left-1/2 -translate-x-1/2 z-[200] max-w-lg w-full"
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.15 }}
+            className="fixed top-14 left-1/2 -translate-x-1/2 z-[200] max-w-md w-full px-4"
           >
-            <div role="alert" aria-live="polite" className="surface-raised rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-2xl shadow-black/50 border-red-500/20">
-              <span className="text-[13px] text-red-300">{error}</span>
-              <button onClick={() => setError(null)} aria-label="Dismiss error" className="text-zinc-500 hover:text-white text-sm flex-shrink-0 outline-none focus-visible:ring-1 focus-visible:ring-white/20 focus-visible:rounded-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            <div role="alert" className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 flex items-center justify-between gap-2 shadow-lg shadow-black/30">
+              <span className="text-[12px] text-red-300 line-clamp-2">{error}</span>
+              <button onClick={() => setError(null)} className="text-zinc-500 hover:text-white flex-shrink-0 p-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>
           </motion.div>

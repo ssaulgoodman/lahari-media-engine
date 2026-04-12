@@ -268,7 +268,7 @@ export const AnalysisEditor: React.FC<Props> = ({
           </div>
           <div className="flex items-center gap-3 flex-shrink-0 ml-4">
             {slot.isGenerating && (
-              <div className="w-4 h-4 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+              <div className="w-3.5 h-3.5 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
             )}
             {slot.imageUrl && !expanded && (
               <span className="text-[10px] text-zinc-500 border border-white/[0.08] px-2 py-0.5 rounded">Image ready</span>
@@ -521,7 +521,7 @@ export const AnalysisEditor: React.FC<Props> = ({
             {/* Loading — first gen */}
             {isLoading && project.scenes.length === 0 && (
               <div className="flex flex-col items-center justify-center h-48 space-y-3">
-                <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
                 <p className="text-zinc-500 text-sm">Writing your script...</p>
               </div>
             )}
@@ -531,7 +531,7 @@ export const AnalysisEditor: React.FC<Props> = ({
               <div className="surface rounded-xl relative">
                 {isLoading && (
                   <div className="absolute inset-0 bg-black/60 rounded-xl z-10 flex flex-col items-center justify-center gap-3">
-                    <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                    <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
                     <p className="text-zinc-300 text-sm">Rewriting script...</p>
                   </div>
                 )}
@@ -727,7 +727,7 @@ export const AnalysisEditor: React.FC<Props> = ({
 
                     {isBrainstorming && styleSlots.length === 0 && (
                       <div className="flex flex-col items-center justify-center h-40 space-y-3">
-                        <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                        <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
                         <p className="text-zinc-500 text-sm">Brainstorming...</p>
                       </div>
                     )}
@@ -780,7 +780,7 @@ export const AnalysisEditor: React.FC<Props> = ({
 
                 {isBrainstorming && styleSlots.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-40 space-y-3">
-                    <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                    <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
                     <p className="text-zinc-500 text-sm">Brainstorming visual directions...</p>
                   </div>
                 )}

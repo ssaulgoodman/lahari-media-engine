@@ -153,14 +153,10 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
     return (
       <div className="h-full flex flex-col items-center justify-center p-8">
         <div className="flex flex-col items-center gap-6">
-          <div className="w-10 h-10 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
           <div className="text-center space-y-2">
-            <h3 className="text-xl font-display text-white">Analyzing Audio</h3>
-            <div className="space-y-1 text-sm text-zinc-500">
-              <p>Transcribing lyrics…</p>
-              <p>Detecting structure…</p>
-              <p>Extracting meaning…</p>
-            </div>
+            <h3 className="text-lg font-display text-white">Analyzing audio</h3>
+            <p className="text-sm text-zinc-500">Transcribing, detecting structure, extracting meaning</p>
           </div>
         </div>
       </div>

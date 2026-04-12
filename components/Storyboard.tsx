@@ -89,81 +89,93 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
               const canGenerateVideo = hasStartFrame && !isGenerating;
               const canLock = hasStartFrame && hasVideo && !shot.locked;
 
+              // Progress dots: Frame → Video → Locked
+              const progress = shot.locked ? 3 : hasVideo ? 2 : hasStartFrame ? 1 : 0;
+
               return (
                 <motion.div
                   key={shot.id}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: shotIdx * 0.03 }}
-                  className={`rounded-xl overflow-hidden transition-opacity ${
-                    !actionable ? 'opacity-40' : ''
+                  className={`rounded-xl overflow-hidden border transition-all ${
+                    !actionable ? 'opacity-40 border-white/[0.03]'
+                      : shot.locked ? 'border-white/[0.08]'
+                      : 'border-white/[0.05]'
                   }`}
                 >
-                  {/* Header bar — shot info, toggles, actions */}
-                  <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium text-white">Shot {shotIdx + 1}</span>
-                      <span className="text-xs text-zinc-600 font-mono">{shot.duration}s</span>
-                      {activeCastMembers.map(c => (
-                        <span key={c.id} className="text-xs text-zinc-500">{c.name}</span>
-                      ))}
+                  {/* Header */}
+                  <div className="px-4 py-2.5 flex items-center gap-3 bg-white/[0.01]">
+                    {/* Left: shot info */}
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="text-[13px] font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
+
+                      {/* Progress dots */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {[1, 2, 3].map(step => (
+                          <div key={step} className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                            step <= progress ? 'bg-white' : 'bg-white/[0.1]'
+                          }`} />
+                        ))}
+                      </div>
+
+                      <span className="text-[10px] text-zinc-600 font-mono flex-shrink-0">{shot.duration}s</span>
+
+                      {activeCastMembers.length > 0 && (
+                        <span className="text-[10px] text-zinc-600 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
+                      )}
+
                       {shotIdx > 0 && (
                         <button
                           onClick={() => onUpdateShot(activeScene.id, shot.id, { continuityFrom: shot.continuityFrom === 'prev_shot' ? 'cut' : 'prev_shot' } as any)}
-                          className={`text-[10px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded border transition-colors ${
+                          className={`text-[9px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
                             shot.continuityFrom === 'prev_shot'
-                              ? 'text-amber-300 border-amber-500/30 hover:border-amber-400/50'
-                              : 'text-zinc-600 border-white/[0.06] hover:border-white/20 hover:text-zinc-400'
+                              ? 'text-amber-400/80 bg-amber-500/10'
+                              : 'text-zinc-600 hover:text-zinc-400'
                           }`}
-                          title={shot.continuityFrom === 'prev_shot' ? 'Continues from previous shot (click to cut)' : 'Hard cut — independent (click to chain)'}
                         >
-                          {shot.continuityFrom === 'prev_shot' ? '→ Continues' : 'Cut'}
+                          {shot.continuityFrom === 'prev_shot' ? 'chain' : 'cut'}
                         </button>
                       )}
-                      {shot.locked && (
-                        <span className="text-xs text-zinc-400 flex items-center gap-1">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true">
-                            <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                          </svg>
-                          Locked
-                        </span>
-                      )}
+                    </div>
+
+                    {/* Right: actions */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       {shot.videoUrl && (
-                        <div className="flex gap-px ml-1 bg-white/[0.04] rounded-md overflow-hidden">
+                        <div className="flex gap-px bg-white/[0.04] rounded overflow-hidden mr-1">
                           <button
                             onClick={() => setShowFrames(prev => ({ ...prev, [shot.id]: false }))}
-                            className={`text-xs px-3 py-1 font-medium transition-colors ${!showFrames[shot.id] ? 'bg-white/[0.1] text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            className={`text-[10px] px-2 py-1 font-medium transition-colors ${!showFrames[shot.id] ? 'bg-white/[0.08] text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
                           >Video</button>
                           <button
                             onClick={() => setShowFrames(prev => ({ ...prev, [shot.id]: true }))}
-                            className={`text-xs px-3 py-1 font-medium transition-colors ${showFrames[shot.id] ? 'bg-white/[0.1] text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                            className={`text-[10px] px-2 py-1 font-medium transition-colors ${showFrames[shot.id] ? 'bg-white/[0.08] text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
                           >Frames</button>
                         </div>
                       )}
-                    </div>
-                    <div className="flex items-center gap-2">
+
                       {!shot.locked ? (
                         <>
                           <button
                             onClick={() => onGenerateImage(activeScene.id, shot.id)}
                             disabled={isGenerating || !actionable}
-                            className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 rounded-md text-xs font-medium disabled:opacity-30 transition-colors"
+                            className="px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded transition-colors disabled:opacity-30"
                           >
-                            {hasStartFrame ? 'Regen Start' : 'Start Frame'}
+                            {hasStartFrame ? 'Regen' : 'Frame'}
                           </button>
                           <button
                             onClick={() => onGenerateVideo(activeScene.id, shot.id)}
                             disabled={!canGenerateVideo || !actionable}
-                            className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 rounded-md text-xs font-medium disabled:opacity-30 transition-colors"
+                            className="px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded transition-colors disabled:opacity-30"
                           >
-                            {hasVideo ? 'Regen Video' : 'Generate Video'}
+                            {hasVideo ? 'Regen Vid' : 'Video'}
                           </button>
                           <button
                             onClick={() => onLockShot(activeScene.id, shot.id)}
                             disabled={!canLock || isGenerating}
-                            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold disabled:opacity-30 hover:bg-zinc-200 transition-colors"
+                            className="px-3 py-1 bg-white text-black rounded text-[11px] font-semibold disabled:opacity-20 hover:bg-zinc-200 transition-colors"
                           >
-                            Lock Shot
+                            Lock
                           </button>
                         </>
                       ) : (
@@ -171,23 +183,23 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           <button
                             onClick={() => onLockShot(activeScene.id, shot.id)}
                             disabled={isGenerating}
-                            className="px-3 py-1.5 text-xs text-zinc-500 hover:text-amber-400 rounded-md border border-white/[0.06] hover:border-amber-500/20 transition-colors"
+                            className="px-2.5 py-1 text-[11px] text-zinc-600 hover:text-amber-400 rounded transition-colors"
                           >
                             Unlock
                           </button>
                           <button
                             onClick={() => onGenerateImage(activeScene.id, shot.id)}
                             disabled={isGenerating}
-                            className="px-3 py-1.5 text-xs text-zinc-500 hover:text-white rounded-md border border-white/[0.06] hover:border-white/20 transition-colors"
+                            className="px-2.5 py-1 text-[11px] text-zinc-600 hover:text-white rounded transition-colors"
                           >
-                            Regen Start
+                            Regen
                           </button>
                           <button
                             onClick={() => onGenerateVideo(activeScene.id, shot.id)}
                             disabled={isGenerating}
-                            className="px-5 py-1.5 bg-white text-black hover:bg-zinc-200 rounded-md text-xs font-semibold disabled:opacity-50 transition-colors"
+                            className="px-3 py-1 bg-white text-black hover:bg-zinc-200 rounded text-[11px] font-semibold disabled:opacity-40 transition-colors"
                           >
-                            Regenerate Video
+                            Regen Video
                           </button>
                         </>
                       )}
@@ -258,13 +270,16 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                     {/* Loading overlay */}
                     {isGenerating && (
-                      <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-30">
-                        <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin mb-2" />
-                        <span className="text-xs text-zinc-400">
-                          {shot.imageStatus === GenerationStatus.LOADING ? 'Generating start frame…'
-                            : shot.videoStatus === GenerationStatus.LOADING ? 'Generating video + extracting last frame…'
-                            : 'Processing…'}
+                      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-30 gap-3">
+                        <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+                        <span className="text-[11px] text-zinc-400 font-medium">
+                          {shot.imageStatus === GenerationStatus.LOADING ? 'Generating frame'
+                            : shot.videoStatus === GenerationStatus.LOADING ? 'Generating video'
+                            : 'Processing'}
                         </span>
+                        <div className="w-24 h-0.5 bg-white/[0.06] rounded-full overflow-hidden">
+                          <div className="h-full bg-white/30 rounded-full animate-shimmer" style={{ width: '40%' }} />
+                        </div>
                       </div>
                     )}
 
