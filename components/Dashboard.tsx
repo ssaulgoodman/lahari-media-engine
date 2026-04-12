@@ -35,6 +35,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
   const [deities, setDeities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'priority' | 'duration_asc' | 'duration_desc'>('priority');
 
   // Persisted filters
   const [statusFilter, setStatusFilter] = useState(() => {
@@ -80,13 +81,18 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
     }
   };
 
-  const filtered = search
+  const filtered = (search
     ? items.filter(i =>
         i.song_name?.toLowerCase().includes(search.toLowerCase())
         || i.isrc?.toLowerCase().includes(search.toLowerCase())
         || i.album?.toLowerCase().includes(search.toLowerCase())
       )
-    : items;
+    : items
+  ).sort((a, b) => {
+    if (sortBy === 'duration_asc') return a.duration_seconds - b.duration_seconds;
+    if (sortBy === 'duration_desc') return b.duration_seconds - a.duration_seconds;
+    return a.priority - b.priority;
+  });
 
   // Stats from full list (before search filter)
   const stats = {
@@ -187,7 +193,12 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
           <span>#</span>
           <span>Song</span>
           <span>Deity</span>
-          <span>Dur.</span>
+          <button
+            onClick={() => setSortBy(s => s === 'duration_asc' ? 'duration_desc' : s === 'duration_desc' ? 'priority' : 'duration_asc')}
+            className={`text-left hover:text-zinc-400 transition-colors ${sortBy.startsWith('duration') ? 'text-zinc-300' : ''}`}
+          >
+            Dur. {sortBy === 'duration_asc' ? '↑' : sortBy === 'duration_desc' ? '↓' : ''}
+          </button>
           <span>Pipeline</span>
           <span>Status</span>
           <span></span>
