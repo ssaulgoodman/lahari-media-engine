@@ -13,7 +13,10 @@ const PORT = process.env.PORT || 3001;
 const app = express();
 
 // Middleware
-app.use(cors());
+const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : ['http://localhost:3002', 'http://localhost:3000'];
+app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '50mb' }));
 
 // Serve stored assets (images, videos, audio)
