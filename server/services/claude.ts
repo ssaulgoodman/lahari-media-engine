@@ -153,8 +153,8 @@ const parseTimestamp = (t: string): number => {
 };
 
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number }
-): Promise<{ cast: any[]; environments: any[]; scenes: any[] }> => {
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; userNote?: string }
+): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = input.basePacing || 8;
 
@@ -172,7 +172,7 @@ MEANING: ${input.meaning}
 MUSICAL STRUCTURE: ${input.musicalStructure}
 
 CLIP LENGTH: All shots are fixed at ${pacing} seconds. You decide creative content, not duration.
-
+${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
 Plan the full music video using the plan_music_video tool.
 
 CAST rules:
@@ -287,7 +287,7 @@ SCENE rules:
     }
   }
 
-  return data;
+  return { ...data, prompt };
 };
 
 // ─── Write Shot Prompts (after all creative decisions locked) ───────

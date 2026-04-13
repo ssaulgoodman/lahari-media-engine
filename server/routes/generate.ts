@@ -520,12 +520,13 @@ router.post('/:id/generate-script', async (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file' });
 
+  const { userNote } = req.body || {};
   const concept = JSON.parse(project.locked_concept || '{}');
 
-  const scriptPrompt = `Plan script + propose cast for "${project.title}" — Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood} | Mode: ${project.video_mode || 'montage'}`;
+  const scriptPrompt = `Plan script + propose cast for "${project.title}" — Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood} | Mode: ${project.video_mode || 'montage'}${userNote ? ' | Note: ' + userNote : ''}`;
 
   try {
-    console.log(`[${project.id}] Generating script + cast...`);
+    console.log(`[${project.id}] Generating script + cast${userNote ? ' with note: ' + userNote : ''}...`);
 
     const t0 = Date.now();
     const data = await planScenes({
@@ -535,8 +536,12 @@ router.post('/:id/generate-script', async (req, res) => {
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 8,
+      userNote,
     });
     const durationMs = Date.now() - t0;
+
+    // Cache the full prompt for transparency/View Prompt UI
+    db.prepare('UPDATE projects SET last_script_prompt = ? WHERE id = ?').run(data.prompt, project.id);
 
     // ── Create proposed cast members ──
     // Clear old cast (script proposes fresh cast each time)

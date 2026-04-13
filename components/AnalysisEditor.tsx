@@ -18,7 +18,7 @@ interface Props {
   onAddCast: (name: string, description: string) => void;
   onUpdateCast: (memberId: string, updates: { name?: string; description?: string }) => void;
   onDeleteCast: (memberId: string) => void;
-  onGenerateScript: () => void;
+  onGenerateScript: (userNote?: string) => void;
   onUpdateProject: (updates: Record<string, any>) => void;
   onLaunchStudio: () => void;
   onAdvanceCharacters: () => void;
@@ -93,6 +93,8 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
   const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
   const [promptPreview, setPromptPreview] = useState<string | null>(null); // entity id
+  const [scriptNote, setScriptNote] = useState('');
+  const [showScriptPrompt, setShowScriptPrompt] = useState(false);
 
   // Auto-persist style exploration to DB whenever slots change (debounced)
   const styleExplorationInitRef = useRef(true);
@@ -507,15 +509,46 @@ export const AnalysisEditor: React.FC<Props> = ({
                     ))}
                   </div>
                 </div>
-                <button
-                  onClick={onGenerateScript}
-                  disabled={isLoading}
-                  className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
-                >
-                  {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
-                  {isLoading ? 'Writing...' : project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {project.scenes.length > 0 && (
+                    <button
+                      onClick={() => setShowScriptPrompt(s => !s)}
+                      className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1"
+                    >
+                      {showScriptPrompt ? 'Hide prompt' : 'View prompt'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { onGenerateScript(scriptNote || undefined); setScriptNote(''); }}
+                    disabled={isLoading}
+                    className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                  >
+                    {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                    {isLoading ? 'Writing...' : project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
+                  </button>
+                </div>
               </div>
+
+              {/* Note + prompt preview (shown after first generation) */}
+              {project.scenes.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <input
+                    value={scriptNote}
+                    onChange={e => setScriptNote(e.target.value)}
+                    placeholder="Regenerate note — e.g. 'make scene 3 more intimate' or 'add more deity close-ups'"
+                    className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && scriptNote.trim()) {
+                        onGenerateScript(scriptNote);
+                        setScriptNote('');
+                      }
+                    }}
+                  />
+                  {showScriptPrompt && project.lastScriptPrompt && (
+                    <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project.lastScriptPrompt}</pre>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Loading — first gen */}

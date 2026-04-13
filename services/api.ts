@@ -240,8 +240,12 @@ export const advanceEnvironments = async (projectId: string) => {
 
 // ─── Script Generation ──────────────────────────────────────────────
 
-export const generateScript = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/generate-script`, { method: 'POST' });
+export const generateScript = async (projectId: string, userNote?: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/generate-script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userNote ? { userNote } : {}),
+  });
   return handleResponse(res);
 };
 

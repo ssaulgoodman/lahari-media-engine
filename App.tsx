@@ -232,12 +232,12 @@ const App: React.FC = () => {
 
   // ─── Script Generation ──────────────────────────────────────────
 
-  const handleGenerateScript = async () => {
+  const handleGenerateScript = async (userNote?: string) => {
     if (!project) return;
     setLoading(true);
     setError(null);
     try {
-      const p = await api.generateScript(project.id);
+      const p = await api.generateScript(project.id, userNote);
       setProject(p);
     } catch (err: any) {
       setError('Script generation failed: ' + err.message);

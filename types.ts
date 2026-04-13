@@ -131,6 +131,8 @@ export interface ApiProject {
   colorPalette?: string;
   videoMode: VideoMode;
   videoModel: string;
+  lastScriptPrompt?: string;
+  lastConceptPrompt?: string;
   cast: CastMember[];
   environments: Environment[];
   scenes: VideoScene[];

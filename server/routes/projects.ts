@@ -90,6 +90,8 @@ const getFullProject = (projectId: string) => {
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
     videoModel: project.video_model || 'veo-3.1',
+    lastScriptPrompt: project.last_script_prompt || undefined,
+    lastConceptPrompt: project.last_concept_prompt || undefined,
     cast: cast.map((c: any) => ({
       id: c.id,
       name: c.name,

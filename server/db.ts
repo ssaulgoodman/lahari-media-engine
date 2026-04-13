@@ -153,6 +153,10 @@ try { db.exec("ALTER TABLE shots ADD COLUMN continuity_from TEXT DEFAULT 'cut'")
 // Video model: 'veo-3.1' (default), 'seedance-2.0-fast', 'seedance-2.0', etc.
 try { db.exec("ALTER TABLE projects ADD COLUMN video_model TEXT DEFAULT 'veo-3.1'"); } catch {}
 
+// Last prompts used — for transparency (view + regenerate with note).
+try { db.exec('ALTER TABLE projects ADD COLUMN last_script_prompt TEXT'); } catch {}
+try { db.exec('ALTER TABLE projects ADD COLUMN last_concept_prompt TEXT'); } catch {}
+
 // Style exploration persistence
 try { db.exec('ALTER TABLE projects ADD COLUMN style_exploration TEXT'); } catch {}
 
