@@ -212,36 +212,61 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       <div className="bg-black">
                         <video src={shot.videoUrl} controls loop playsInline className="w-full h-auto" />
                       </div>
-                    ) : (
+                    ) : hasVideo && (shot.extractedLastFrameUrl || shot.endImageUrl) ? (
+                      // Post-video: show start + extracted last frame side-by-side
                       <div className="flex">
                         <div className="flex-1 relative bg-black min-h-[120px]">
                           <div className="absolute top-2 left-2 z-20">
                             <span className="text-[10px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start</span>
                           </div>
-                          {shot.imageUrl ? (
+                          {shot.imageUrl && (
                             <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in" />
-                          ) : (
-                            <div className="w-full min-h-[120px] flex items-center justify-center text-zinc-700">
-                              <span className="text-xs">No start frame</span>
-                            </div>
                           )}
                         </div>
                         <div className="w-px bg-white/[0.06] flex-shrink-0" />
-                        <div className="flex-1 relative bg-black min-h-[120px]">
+                        <div className="flex-1 relative bg-black min-h-[120px] group/last">
                           <div className="absolute top-2 left-2 z-20">
-                            <span className="text-[10px] bg-black/60 text-emerald-300/80 px-1.5 py-0.5 rounded-md uppercase font-medium">Last Frame (from video)</span>
+                            <span className="text-[10px] bg-black/60 text-emerald-300/80 px-1.5 py-0.5 rounded-md uppercase font-medium">End (from video)</span>
                           </div>
-                          {shot.extractedLastFrameUrl ? (
-                            <img src={shot.extractedLastFrameUrl} alt={`Shot ${shotIdx + 1} extracted last frame`} onClick={() => setModalImage(shot.extractedLastFrameUrl!)} className="w-full h-auto cursor-zoom-in" />
-                          ) : shot.endImageUrl ? (
-                            // Legacy fallback for pre-migration shots that still have a predicted end frame
-                            <img src={shot.endImageUrl} alt={`Shot ${shotIdx + 1} end frame`} onClick={() => setModalImage(shot.endImageUrl!)} className="w-full h-auto cursor-zoom-in opacity-70" />
-                          ) : (
-                            <div className="w-full min-h-[120px] flex items-center justify-center text-zinc-700 text-center px-4">
-                              <span className="text-xs">{hasVideo ? 'Extracting…' : hasStartFrame ? 'Generate video to capture last frame' : '—'}</span>
+                          <img
+                            src={shot.extractedLastFrameUrl || shot.endImageUrl!}
+                            alt={`Shot ${shotIdx + 1} last frame`}
+                            onClick={() => setModalImage((shot.extractedLastFrameUrl || shot.endImageUrl)!)}
+                            className={`w-full h-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
+                          />
+                          {/* Action: use this frame as next shot's start */}
+                          {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && (
+                            <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  // Mark the next shot as continuing from this one
+                                  const nextShot = activeScene.shots[shotIdx + 1];
+                                  onUpdateShot(activeScene.id, nextShot.id, { continuityFrom: 'prev_shot' } as any);
+                                }}
+                                className="text-[10px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                title="Mark next shot as continuous — it will use this frame as visual continuity reference"
+                              >
+                                → Use for next shot
+                              </button>
                             </div>
                           )}
                         </div>
+                      </div>
+                    ) : (
+                      // Pre-video: just show the start frame full width (no confusing empty slot)
+                      <div className="relative bg-black min-h-[160px]">
+                        {shot.imageUrl ? (
+                          <>
+                            <div className="absolute top-2 left-2 z-20">
+                              <span className="text-[10px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start Frame</span>
+                            </div>
+                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in mx-auto max-h-[400px] object-contain" />
+                          </>
+                        ) : (
+                          <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-700">
+                            <span className="text-xs">No start frame — click &quot;Frame&quot; to generate</span>
+                          </div>
+                        )}
                       </div>
                     )}
 
