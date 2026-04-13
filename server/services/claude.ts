@@ -58,8 +58,9 @@ export const generateConceptOptions = async (
   lyrics: string,
   meaning: string,
   musicalStructure: any[],
-  context?: string
-): Promise<any[]> => {
+  context?: string,
+  userNote?: string
+): Promise<{ concepts: any[]; prompt: string }> => {
   const client = getClient();
 
   const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
@@ -75,7 +76,7 @@ ${meaning}
 
 MUSICAL STRUCTURE:
 ${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}
-
+${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
 Generate EXACTLY 3 creative directions for a music video:
 1. Traditional/classical — rooted in culture, devotional storytelling
 2. Modern/contemporary — fresh visual language, cinematic realism
@@ -135,7 +136,7 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
 
   const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
   if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('No concepts generated');
-  return (toolBlock.input as any).concepts || [];
+  return { concepts: (toolBlock.input as any).concepts || [], prompt };
 };
 
 // ─── Script Planning (Stage 5) ──────────────────────────────────────

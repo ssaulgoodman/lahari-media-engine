@@ -111,7 +111,7 @@ const App: React.FC = () => {
 
   const [conceptsLoading, setConceptsLoading] = useState(false);
 
-  const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string }) => {
+  const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string; userNote?: string }) => {
     if (!project) return;
     setConceptsLoading(true);
     setError(null);
@@ -362,7 +362,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateVideo = async (sceneId: string, shotId: string) => {
+  const handleGenerateVideo = async (sceneId: string, shotId: string, promptOverride?: string) => {
     if (!project) return;
     setProject(prev => {
       if (!prev) return prev;
@@ -375,7 +375,7 @@ const App: React.FC = () => {
       };
     });
     try {
-      const p = await api.generateShotVideo(project.id, shotId);
+      const p = await api.generateShotVideo(project.id, shotId, promptOverride);
       setProject(p);
     } catch (err: any) {
       setError(`Video generation failed: ${err.message}`);
@@ -627,6 +627,7 @@ const App: React.FC = () => {
                     onUpdateCast={handleUpdateCast}
                     onDeleteCast={handleDeleteCast}
                     onGenerateScript={handleGenerateScript}
+                    onGenerateConcepts={handleGenerateConcepts}
                     onUpdateProject={handleUpdateProject}
                     onLaunchStudio={handleLaunchStudio}
                     onAdvanceCharacters={handleAdvanceCharacters}

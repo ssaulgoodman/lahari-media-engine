@@ -19,6 +19,7 @@ interface Props {
   onUpdateCast: (memberId: string, updates: { name?: string; description?: string }) => void;
   onDeleteCast: (memberId: string) => void;
   onGenerateScript: (userNote?: string) => void;
+  onGenerateConcepts?: (opts?: { userNote?: string }) => void;
   onUpdateProject: (updates: Record<string, any>) => void;
   onLaunchStudio: () => void;
   onAdvanceCharacters: () => void;
@@ -63,7 +64,7 @@ export const AnalysisEditor: React.FC<Props> = ({
   project, isLoading, looksLoading, lookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
-  onGenerateScript, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject,
+  onGenerateScript, onGenerateConcepts, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject,
 }) => {
   const activePhase = getActivePhase(project);
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
@@ -95,6 +96,8 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [promptPreview, setPromptPreview] = useState<string | null>(null); // entity id
   const [scriptNote, setScriptNote] = useState('');
   const [showScriptPrompt, setShowScriptPrompt] = useState(false);
+  const [conceptNote, setConceptNote] = useState('');
+  const [showConceptPrompt, setShowConceptPrompt] = useState(false);
 
   // Auto-persist style exploration to DB whenever slots change (debounced)
   const styleExplorationInitRef = useRef(true);
@@ -437,10 +440,50 @@ export const AnalysisEditor: React.FC<Props> = ({
               </div>
             ) : (
               <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium text-white mb-1">Choose a Creative Direction</h3>
-                  <p className="text-zinc-500 text-[13px]">{project.conceptOptions.length} concepts generated. Pick one to proceed.</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-white mb-1">Choose a Creative Direction</h3>
+                    <p className="text-zinc-500 text-[13px]">{project.conceptOptions.length} concepts generated. Pick one to proceed.</p>
+                  </div>
+                  {onGenerateConcepts && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowConceptPrompt(s => !s)}
+                        className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1"
+                      >
+                        {showConceptPrompt ? 'Hide prompt' : 'View prompt'}
+                      </button>
+                      <button
+                        onClick={() => { onGenerateConcepts({ userNote: conceptNote || undefined }); setConceptNote(''); }}
+                        disabled={isLoading}
+                        className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1.5 transition-colors disabled:opacity-50"
+                      >
+                        Regenerate
+                      </button>
+                    </div>
+                  )}
                 </div>
+
+                {onGenerateConcepts && (
+                  <div className="space-y-3">
+                    <input
+                      value={conceptNote}
+                      onChange={e => setConceptNote(e.target.value)}
+                      placeholder="Regenerate note — e.g. 'more abstract' or 'focus on devotion not mythology'"
+                      className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && conceptNote.trim()) {
+                          onGenerateConcepts({ userNote: conceptNote });
+                          setConceptNote('');
+                        }
+                      }}
+                    />
+                    {showConceptPrompt && project.lastConceptPrompt && (
+                      <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project.lastConceptPrompt}</pre>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   {project.conceptOptions.map((concept, idx) => (
                     <motion.div

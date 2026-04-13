@@ -11,7 +11,7 @@ interface Props {
   onSceneChange: (idx: number) => void;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateImage: (sceneId: string, shotId: string) => void;
-  onGenerateVideo: (sceneId: string, shotId: string) => void;
+  onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string) => void;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void;
   onUpdateProject?: (updates: Record<string, any>) => void;
@@ -26,7 +26,8 @@ const VIDEO_MODELS = [
 export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
-  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'compiled'>>({});
+  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
+  const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
 
   // A shot is actionable immediately if it's a hard cut (independent).
   // Only continuity-linked shots ('prev_shot') wait for the previous shot
@@ -346,6 +347,22 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         shot.userFeedback ? `\nDirector note: ${shot.userFeedback}` : '',
                       ].filter(Boolean).join('\n');
 
+                      // Mirror of the Veo prompt builder in generate.ts
+                      const concept = project?.lockedConcept;
+                      const castNamesStr = shotCast.map(c => c.name).join(', ');
+                      const mood = concept?.mood || 'Cinematic';
+                      const narrativeBrief = (activeScene.narrativeDescription || '').length > 120
+                        ? activeScene.narrativeDescription.substring(0, 120) + '...'
+                        : activeScene.narrativeDescription;
+                      const veoParts = [shot.motionPrompt || 'Cinematic camera movement'];
+                      if (narrativeBrief) veoParts.push(narrativeBrief);
+                      if (castNamesStr) veoParts.push(`Characters: ${castNamesStr}`);
+                      veoParts.push(`${mood} mood`);
+                      if (shot.continuityFrom === 'prev_shot' && (shot as any).continuityDescription) {
+                        veoParts.push(`Starting state (from previous shot): ${(shot as any).continuityDescription}`);
+                      }
+                      const autoVeoPrompt = veoParts.join('. ');
+
                       const promptText = activeTab === 'compiled' ? compiledText
                         : activeTab === 'image' ? shot.visualPrompt : shot.motionPrompt;
 
@@ -361,8 +378,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
                             >Motion</button>
                             <button
-                              onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'compiled' as any }))}
-                              className={`text-sm font-medium transition-colors ${(activeTab as string) === 'compiled' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                              onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'video' }))}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                            >Video</button>
+                            <button
+                              onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'compiled' }))}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
                             >Compiled</button>
                           </div>
 
@@ -426,7 +447,38 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             );
                           })()}
 
-                          {activeTab === 'compiled' ? (
+                          {activeTab === 'video' ? (
+                            <div className="space-y-3">
+                              <div className="text-[11px] text-zinc-500">
+                                This is the full prompt sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame. Edit to override.
+                              </div>
+                              <textarea
+                                value={videoOverride[shot.id] ?? autoVeoPrompt}
+                                onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
+                                className="w-full surface-inset rounded-md p-3 text-[12px] text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    const override = videoOverride[shot.id];
+                                    onGenerateVideo(activeScene.id, shot.id, override && override !== autoVeoPrompt ? override : undefined);
+                                  }}
+                                  disabled={!hasStartFrame || isGenerating}
+                                  className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                                >
+                                  Generate Video with this prompt
+                                </button>
+                                {videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
+                                  <button
+                                    onClick={() => setVideoOverride(prev => { const { [shot.id]: _, ...rest } = prev; return rest; })}
+                                    className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                                  >
+                                    Reset to auto
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ) : activeTab === 'compiled' ? (
                             <div className="space-y-3">
                               <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">{compiledText}</pre>
                               {compiledRefs.length > 0 && (

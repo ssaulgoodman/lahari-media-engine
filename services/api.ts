@@ -57,7 +57,7 @@ export const deleteProject = async (id: string) => {
 
 export const generateConcepts = async (
   projectId: string,
-  opts?: { lyrics?: string; context?: string; language?: string }
+  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string }
 ) => {
   const res = await fetch(`${API}/projects/${projectId}/generate-concepts`, {
     method: 'POST',
@@ -270,8 +270,12 @@ export const generateShotImage = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
-export const generateShotVideo = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, { method: 'POST' });
+export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(promptOverride ? { promptOverride } : {}),
+  });
   return handleResponse(res);
 };
 

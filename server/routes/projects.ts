@@ -270,6 +270,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
 
   const lyrics = req.body.lyrics ?? project.lyrics ?? '';
   const context = req.body.context || undefined;
+  const userNote = req.body.userNote || undefined;
   const title = project.title;
   const language = req.body.language || undefined;
   const musicalStructure = project.musical_structure ? JSON.parse(project.musical_structure) : [];
@@ -280,11 +281,15 @@ router.post('/:id/generate-concepts', async (req, res) => {
   }
 
   try {
-    console.log(`[${project.id}] Generating concept options...`);
+    console.log(`[${project.id}] Generating concept options${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const conceptOptions = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote);
+    const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
+
+    // Cache prompt for transparency
+    db.prepare('UPDATE projects SET last_concept_prompt = ? WHERE id = ?').run(result.prompt, paramStr(req.params.id));
 
     logCall({
       projectId: project.id,

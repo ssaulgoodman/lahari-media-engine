@@ -1001,6 +1001,8 @@ router.post('/:id/shots/:shotId/unlock', (req, res) => {
 // ─── Generate Shot Video ────────────────────────────────────────────
 
 router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
+  const { promptOverride } = req.body || {};
+
   const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
@@ -1042,7 +1044,8 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       veoPromptParts.push(`Starting state (from previous shot): ${shot.continuity_description}`);
     }
 
-    const veoPrompt = veoPromptParts.join('. ');
+    // Use user-provided override if given, otherwise the auto-built prompt
+    const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
 
     const videoModelKey = project.video_model || 'veo-3.1';
     const isFal = videoModelKey in FAL_VIDEO_MODELS;
