@@ -447,8 +447,9 @@ const App: React.FC = () => {
     try {
       const result = await api.startProduction(queueId);
       setProject(result.project);
-      setCurrentStep(AppStep.UPLOAD); // Stay on upload to run analysis
-      navigateToPhase(result.project);
+      // Jump to Blueprint — audio + lyrics are already imported from Supabase,
+      // user should proceed to concept/script generation.
+      setCurrentStep(AppStep.BLUEPRINT);
     } catch (err: any) {
       setError(err.message || 'Failed to start production');
     } finally {
@@ -601,23 +602,11 @@ const App: React.FC = () => {
           <div className="relative z-10 w-full p-8">
             {/* Page transitions */}
             <AnimatePresence mode="wait">
-              {currentStep === AppStep.UPLOAD && !project && (
+              {currentStep === AppStep.UPLOAD && (
                 <motion.div key="queue" {...pageTransition}>
                   <Dashboard
                     onStartProduction={handleStartProduction}
                     onOpenProject={handleOpenProject}
-                  />
-                </motion.div>
-              )}
-
-              {currentStep === AppStep.UPLOAD && project && (
-                <motion.div key="upload" {...pageTransition}>
-                  <StepUpload
-                    project={project}
-                    onFileSelect={handleFileUpload}
-                    onGenerateConcepts={handleGenerateConcepts}
-                    isAnalyzing={loading}
-                    isGeneratingConcepts={conceptsLoading}
                   />
                 </motion.div>
               )}
