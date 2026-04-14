@@ -160,6 +160,7 @@ interface Props {
   onAddCast: (name: string, description: string) => void;
   onUpdateCast: (memberId: string, updates: { name?: string; description?: string }) => void;
   onDeleteCast: (memberId: string) => void;
+  onConfirmDestructive?: (opts: { title: string; description: string; confirmLabel?: string; run: () => any }) => void;
   onGenerateScript: (userNote?: string) => void;
   onGenerateConcepts?: (opts?: { userNote?: string }) => void;
   onUnlockConcept?: () => void;
@@ -210,7 +211,7 @@ export const AnalysisEditor: React.FC<Props> = ({
   project, isLoading, looksLoading, lookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
-  onGenerateScript, onGenerateConcepts, onUnlockConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject,
+  onGenerateScript, onGenerateConcepts, onUnlockConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject, onConfirmDestructive,
 }) => {
   const activePhase = getActivePhase(project);
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
@@ -1365,9 +1366,19 @@ export const AnalysisEditor: React.FC<Props> = ({
                         </button>
                         <button
                           onClick={() => {
-                            if (window.confirm(`Delete "${activeMember.name}"?`)) {
+                            const runDelete = () => {
                               onDeleteCast(activeMember.id);
                               setActiveCastId(project.cast.find(c => c.id !== activeMember.id)?.id || null);
+                            };
+                            if (onConfirmDestructive) {
+                              onConfirmDestructive({
+                                title: `Delete "${activeMember.name}"?`,
+                                description: 'Removes this cast member. Shots that reference them will lose that character ref until you re-add one.',
+                                confirmLabel: 'Delete',
+                                run: runDelete,
+                              });
+                            } else {
+                              runDelete();
                             }
                           }}
                           className="text-zinc-400 hover:text-red-400 p-1.5 rounded-md transition-colors"

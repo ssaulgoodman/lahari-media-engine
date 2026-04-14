@@ -752,6 +752,13 @@ const App: React.FC = () => {
                     onAddCast={handleAddCast}
                     onUpdateCast={handleUpdateCast}
                     onDeleteCast={handleDeleteCast}
+                    onConfirmDestructive={(opts) => setDestructive({
+                      title: opts.title,
+                      description: opts.description,
+                      mode: 'simple',
+                      confirmLabel: opts.confirmLabel,
+                      run: async () => { await opts.run(); return null; },
+                    })}
                     onGenerateScript={handleGenerateScript}
                     onGenerateConcepts={handleGenerateConcepts}
                     onUpdateProject={handleUpdateProject}

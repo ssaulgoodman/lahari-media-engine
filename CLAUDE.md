@@ -127,7 +127,19 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
-**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/upload-and-lock-style`
+**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
+
+### Queue completion writeback
+
+When a render finishes in `StepRender`, the "Publish to queue" button POSTs the final mp4 blob to `/api/queue/publish/:projectId`. The server:
+
+1. Saves the video to `/storage/videos/` and registers an `assets` row (category `final_render`).
+2. Walks up `parent_project_id` locally to collect the fork-lineage.
+3. Finds the Supabase `music_video_queue` row where `lahari_project_id` matches any id in that chain.
+4. Updates that row: `status = 'completed'`, `video_url = <public url>`, `lahari_project_id = <this fork's id>` (latest-completed-wins).
+5. Sets the local project's status to `'completed'` too.
+
+If you want to change the resolution policy later, swap step 4 for: first-completed-wins (skip if already completed), or explicit-promote-only (no auto-update).
 
 ## Typography + color system
 

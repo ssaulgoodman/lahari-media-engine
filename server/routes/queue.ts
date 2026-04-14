@@ -2,7 +2,8 @@
  * Music Video Queue routes — reads from Supabase, connects to Lahari projects.
  */
 import { Router } from 'express';
-import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile } from '../services/supabase.js';
+import multer from 'multer';
+import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile, findQueueByProjectIds } from '../services/supabase.js';
 import { saveBuffer, readAsBase64, mimeFromExt } from '../storage.js';
 import { detectStructure } from '../services/gemini.js';
 import { summarizeMeaning } from '../services/claude.js';
@@ -10,6 +11,8 @@ import { logCall } from '../xray.js';
 import db from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -163,6 +166,68 @@ router.patch('/:queueId', async (req, res) => {
     await updateQueueItem(req.params.queueId, { status, notes, assigned_to, video_url });
     res.json({ ok: true });
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Publish a completed render — uploads the final video, saves it to
+ * /storage/videos, finds the originating queue row via fork-lineage walk,
+ * and updates it with status='completed' + video_url.
+ *
+ * Latest-completed-wins: the queue row flips lahari_project_id to point
+ * at whichever fork was most recently published.
+ */
+router.post('/publish/:projectId', upload.single('video'), async (req, res) => {
+  const rawId = req.params.projectId;
+  const projectId: string = Array.isArray(rawId) ? rawId[0] : rawId;
+  const project: any = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!req.file) return res.status(400).json({ error: 'Video file required (multipart field: video)' });
+
+  try {
+    // Save final to /storage/videos for a durable URL.
+    const videoPath = saveBuffer(req.file.buffer, 'videos', 'mp4');
+    const publicBase = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3003}`;
+    const videoUrl = `${publicBase}/storage/${videoPath}`;
+
+    // Register the asset locally so we can find it later.
+    const assetId = uuidv4();
+    db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'final_render', ?)`).run(assetId, projectId, videoPath);
+
+    // Walk up the fork chain so we can find whichever queue row started this project tree.
+    const chain: string[] = [projectId];
+    let cur = projectId;
+    while (true) {
+      const row: any = db.prepare('SELECT parent_project_id FROM projects WHERE id = ?').get(cur);
+      if (!row?.parent_project_id) break;
+      chain.push(row.parent_project_id);
+      cur = row.parent_project_id;
+    }
+
+    const queueRow = await findQueueByProjectIds(chain);
+    if (queueRow) {
+      await updateQueueItem(queueRow.id, {
+        status: 'completed',
+        video_url: videoUrl,
+        // Latest-completed wins: point the queue at the actual finished fork.
+        lahari_project_id: projectId,
+      });
+    }
+
+    // Mark the Lahari project itself as completed so the Dashboard pipeline
+    // pill can reflect it independently of the queue.
+    db.prepare(`UPDATE projects SET status = 'completed', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+
+    res.json({
+      videoUrl,
+      videoPath,
+      queueRowUpdated: !!queueRow,
+      queueRowId: queueRow?.id || null,
+      project: getFullProject(projectId),
+    });
+  } catch (err: any) {
+    console.error(`[queue/publish ${projectId}] failed:`, err);
     res.status(500).json({ error: err.message });
   }
 });

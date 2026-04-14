@@ -15,6 +15,10 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("Initializing...");
   const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null);
+  const [finalBlob, setFinalBlob] = useState<Blob | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<{ videoUrl: string; queueRowUpdated: boolean } | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const ffmpegRef = useRef(new FFmpeg());
   const messageRef = useRef<HTMLParagraphElement>(null);
 
@@ -50,9 +54,10 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
 
   const renderVideo = async () => {
     if (!project.audioPath) {
-        alert("Audio file missing.");
+        setRenderError('Audio file missing on this project.');
         return;
     }
+    setRenderError(null);
 
     setIsRendering(true);
     setFinalVideoUrl(null);
@@ -92,7 +97,9 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         ]);
 
         const data = await ffmpeg.readFile('out.mp4');
-        const url = URL.createObjectURL(new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' }));
+        const blob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        setFinalBlob(blob);
         setFinalVideoUrl(url);
         setStatusText("Render Complete!");
 
@@ -101,6 +108,30 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         setStatusText(`Error: ${e.message}`);
     } finally {
         setIsRendering(false);
+    }
+  };
+
+  // Upload the final render to /storage and mark the owning queue row
+  // completed (latest-completed-wins: queue points at this fork now).
+  const publishToQueue = async () => {
+    if (!finalBlob) return;
+    setIsPublishing(true);
+    setRenderError(null);
+    try {
+      const form = new FormData();
+      form.append('video', new File([finalBlob], 'final.mp4', { type: 'video/mp4' }));
+      const res = await fetch(`/api/queue/publish/${project.id}`, { method: 'POST', body: form });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(body.error || `Publish failed: ${res.status}`);
+      }
+      const data = await res.json();
+      setPublishResult({ videoUrl: data.videoUrl, queueRowUpdated: data.queueRowUpdated });
+    } catch (e: any) {
+      console.error(e);
+      setRenderError(e.message);
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -137,6 +168,9 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
                             >
                                 {isRendering ? 'Rendering...' : 'Start Render'}
                             </button>
+                            {renderError && (
+                                <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">{renderError}</p>
+                            )}
                             {isRendering && (
                                 <div className="w-full max-w-md h-1 bg-zinc-800 rounded-full overflow-hidden">
                                     <div className="h-full bg-white transition-all duration-300" style={{ width: `${progress}%` }}></div>
@@ -148,17 +182,35 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
                             <div className="aspect-video bg-black rounded-lg overflow-hidden border border-white/[0.08] shadow-2xl">
                                 <video src={finalVideoUrl} controls className="w-full h-full" />
                             </div>
-                            <div className="flex justify-center gap-4">
-                                <a
-                                    href={finalVideoUrl}
-                                    download={`lahari_master_${Date.now()}.mp4`}
-                                    className="bg-white text-black px-8 py-2.5 rounded-md font-semibold hover:bg-zinc-200 transition-all flex items-center gap-2 text-sm"
-                                >
-                                    Download Master
-                                </a>
-                                <button onClick={() => setFinalVideoUrl(null)} className="text-zinc-400 hover:text-white px-6 py-2.5 text-sm transition-colors">
-                                    Discard & Retry
-                                </button>
+                            <div className="flex flex-col items-center gap-4">
+                                <div className="flex justify-center gap-3 flex-wrap">
+                                    <a
+                                        href={finalVideoUrl}
+                                        download={`lahari_master_${Date.now()}.mp4`}
+                                        className="bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] px-6 py-2.5 rounded-md font-semibold transition-all flex items-center gap-2 text-sm"
+                                    >
+                                        Download Master
+                                    </a>
+                                    <button
+                                        onClick={publishToQueue}
+                                        disabled={isPublishing || !!publishResult}
+                                        className="bg-white text-black px-8 py-2.5 rounded-md font-semibold hover:bg-zinc-200 transition-all disabled:opacity-50 flex items-center gap-2 text-sm"
+                                        title="Upload to Lahari storage and mark the queue row as completed on Supabase"
+                                    >
+                                        {isPublishing ? 'Publishing…' : publishResult ? 'Published ✓' : 'Publish to queue'}
+                                    </button>
+                                    <button onClick={() => { setFinalVideoUrl(null); setFinalBlob(null); setPublishResult(null); }} className="text-zinc-400 hover:text-white px-6 py-2.5 text-sm transition-colors">
+                                        Discard & Retry
+                                    </button>
+                                </div>
+                                {publishResult && (
+                                    <div className="text-xs text-zinc-300 surface-inset rounded-md px-3 py-2 max-w-lg text-center">
+                                        {publishResult.queueRowUpdated
+                                            ? <>Queue row marked completed. Final URL: <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-accent-400 hover:underline">{publishResult.videoUrl}</a></>
+                                            : <>Saved to <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-accent-400 hover:underline">{publishResult.videoUrl}</a>. No matching queue row found — this project wasn't started from the queue.</>
+                                        }
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

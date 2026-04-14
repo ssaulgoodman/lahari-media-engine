@@ -93,6 +93,24 @@ export const updateQueueItem = async (
   if (error) throw new Error(`Supabase error: ${error.message}`);
 };
 
+/**
+ * Find the queue row that started any project in the given id list — used
+ * when marking a project complete: we walk up the fork chain locally, then
+ * ask Supabase which queue row owns any project in that lineage.
+ */
+export const findQueueByProjectIds = async (projectIds: string[]): Promise<QueueItem | null> => {
+  if (projectIds.length === 0) return null;
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('music_video_queue')
+    .select('*')
+    .in('lahari_project_id', projectIds)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  return (data as any) || null;
+};
+
 // ─── Song Files ─────────────────────────────────────────────────────
 
 export const getSongFiles = async (songId: string) => {
