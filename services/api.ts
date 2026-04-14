@@ -76,21 +76,17 @@ export const generateConcepts = async (
   return handleResponse(res);
 };
 
-export const lockConcept = async (projectId: string, conceptIndex: number) => {
+export const lockConcept = async (projectId: string, conceptIndex: number, opts?: { fork?: boolean }) => {
   const res = await fetch(`${API}/projects/${projectId}/lock-concept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conceptIndex })
+    body: JSON.stringify({ conceptIndex, ...(opts || {}) })
   });
   return handleResponse(res);
 };
 
-export const unlockConcept = async (projectId: string, opts?: { force?: boolean; fork?: boolean }) => {
-  const res = await fetch(`${API}/projects/${projectId}/unlock-concept`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opts || {}),
-  });
+export const unlockConcept = async (projectId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/unlock-concept`, { method: 'POST' });
   return handleResponse(res);
 };
 
@@ -137,21 +133,13 @@ export const refineStyleDirection = async (projectId: string, description: strin
   return handleResponse(res);
 };
 
-const postWithFork = (path: string, opts?: { fork?: boolean }) =>
-  fetch(`${API}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opts || {}),
-  }).then(handleResponse);
-
-export const unlockStyle = (projectId: string, opts?: { fork?: boolean }) =>
-  postWithFork(`/projects/${projectId}/unlock-style`, opts);
-export const unlockScript = (projectId: string, opts?: { fork?: boolean }) =>
-  postWithFork(`/projects/${projectId}/unlock-script`, opts);
-export const unlockCharacters = (projectId: string, opts?: { fork?: boolean }) =>
-  postWithFork(`/projects/${projectId}/unlock-characters`, opts);
-export const unlockEnvironments = (projectId: string, opts?: { fork?: boolean }) =>
-  postWithFork(`/projects/${projectId}/unlock-environments`, opts);
+// Unlocks are pure nav — no body, no options. Destructive events live on
+// the active mutation endpoints (lock-concept, generate-script, etc).
+const simplePost = (path: string) => fetch(`${API}${path}`, { method: 'POST' }).then(handleResponse);
+export const unlockStyle = (projectId: string) => simplePost(`/projects/${projectId}/unlock-style`);
+export const unlockScript = (projectId: string) => simplePost(`/projects/${projectId}/unlock-script`);
+export const unlockCharacters = (projectId: string) => simplePost(`/projects/${projectId}/unlock-characters`);
+export const unlockEnvironments = (projectId: string) => simplePost(`/projects/${projectId}/unlock-environments`);
 
 export const lockStyle = async (projectId: string, assetId: string, styleDescription?: string) => {
   const res = await fetch(`${API}/projects/${projectId}/lock-style`, {

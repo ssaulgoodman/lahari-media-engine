@@ -441,60 +441,59 @@ router.post('/:id/generate-concepts', async (req, res) => {
 
 // Lock concept choice
 router.post('/:id/lock-concept', (req, res) => {
-  const { conceptIndex } = req.body;
-  const project: any = db.prepare('SELECT concept_options FROM projects WHERE id = ?').get(paramStr(req.params.id));
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const { conceptIndex, fork } = req.body;
+  const sourceId = paramStr(req.params.id);
+  const srcProject: any = db.prepare('SELECT concept_options, locked_concept FROM projects WHERE id = ?').get(sourceId);
+  if (!srcProject) return res.status(404).json({ error: 'Project not found' });
 
-  const options = JSON.parse(project.concept_options || '[]');
+  const options = JSON.parse(srcProject.concept_options || '[]');
   if (conceptIndex < 0 || conceptIndex >= options.length) {
     return res.status(400).json({ error: 'Invalid concept index' });
   }
-
   const chosen = options[conceptIndex];
 
-  // Don't create cast here — the script phase will propose the full cast.
-  // Don't set style_description here — that's the style phase's job.
-  // Only lock the concept narrative (mood, theme, deity, direction).
+  // Destructive case: the user is switching AWAY from a previously locked
+  // concept and downstream work (scenes/style/cast/env) was built around
+  // the old one. That downstream work is now semantically invalid, so wipe
+  // it. If fork=true, do all of this on a new fork, leaving the original
+  // frozen as a snapshot.
+  const prevLocked = srcProject.locked_concept ? JSON.parse(srcProject.locked_concept) : null;
+  const switching = prevLocked && JSON.stringify(prevLocked) !== JSON.stringify(chosen);
+  const sceneCount = (db.prepare('SELECT COUNT(*) as n FROM scenes WHERE project_id = ?').get(sourceId) as any)?.n || 0;
+  const needsWipe = switching && sceneCount > 0;
+
+  const projectId = fork === true ? forkProject(sourceId) : sourceId;
+
+  if (needsWipe) {
+    db.prepare('DELETE FROM scenes WHERE project_id = ?').run(projectId);
+    db.prepare('DELETE FROM cast_members WHERE project_id = ?').run(projectId);
+    db.prepare('DELETE FROM environments WHERE project_id = ?').run(projectId);
+    db.prepare(`
+      UPDATE projects SET
+        style_asset_id = NULL, style_description = NULL, style_exploration = NULL,
+        last_script_prompt = NULL, last_write_shots_prompt = NULL
+      WHERE id = ?
+    `).run(projectId);
+  }
+
   db.prepare(`
     UPDATE projects SET
       status = 'concept_locked',
       locked_concept = ?,
       updated_at = datetime('now')
     WHERE id = ?
-  `).run(
-    JSON.stringify(chosen),
-    paramStr(req.params.id)
-  );
+  `).run(JSON.stringify(chosen), projectId);
 
-  res.json(getFullProject(paramStr(req.params.id)));
+  res.json(getFullProject(projectId));
 });
 
-// Unlock concept — cascade-wipe everything downstream. Client is expected
-// to confirm with the user before calling this since any script / style /
-// character / environment work will be lost. Pass { fork: true } to fork first.
+// Unlock concept — pure navigation: reveal the concept options grid
+// without touching anything downstream. locked_concept stays so we know
+// what was previously chosen. The cascade-wipe only triggers if the user
+// then picks a DIFFERENT concept via /lock-concept (see that endpoint).
 router.post('/:id/unlock-concept', (req, res) => {
-  const sourceId = paramStr(req.params.id);
-  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
-  const shotsWithContent = (db.prepare(
-    `SELECT COUNT(*) as n FROM shots WHERE (image_asset_id IS NOT NULL OR video_asset_id IS NOT NULL)
-     AND scene_id IN (SELECT id FROM scenes WHERE project_id = ?)`
-  ).get(projectId) as any)?.n || 0;
-  if (shotsWithContent > 0 && req.body?.force !== true) {
-    return res.status(400).json({ error: `Cannot unlock — ${shotsWithContent} shot(s) have generated images or videos. Pass force=true to discard and reset.` });
-  }
-
-  // Wipe downstream creative decisions
-  db.prepare('DELETE FROM scenes WHERE project_id = ?').run(projectId);
-  db.prepare(`
-    UPDATE projects SET
-      status = 'analyzed',
-      locked_concept = NULL,
-      style_asset_id = NULL,
-      style_description = NULL,
-      style_exploration = NULL,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(projectId);
+  const projectId = paramStr(req.params.id);
+  db.prepare(`UPDATE projects SET status = 'analyzed', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   res.json(getFullProject(projectId));
 });
 

@@ -85,11 +85,17 @@ SQLite tables (see `server/db.ts`):
 
 ### Fork system
 
-Destructive operations accept `{ fork: true }` on the server. Fork deep-copies all DB rows under a new id with `parent_project_id = source`; asset file_paths are shared (zero disk bloat). Sidebar groups forks indented under parents with timestamps + delete. Helper: `forkProject(sourceId)` in `server/routes/projects.ts`. UI dialog: `DestructiveAction` state in `App.tsx` (`mode: 'fork'` for 3-button Fork/Overwrite/Cancel, `mode: 'simple'` for 2-button Confirm/Cancel).
+Fork deep-copies all DB rows under a new id with `parent_project_id = source`; asset file_paths are shared (zero disk bloat). Sidebar groups forks indented under parents with timestamps + delete. Helper: `forkProject(sourceId)` in `server/routes/projects.ts`. UI dialog: `DestructiveAction` state in `App.tsx` (`mode: 'fork'` for 3-button Fork/Overwrite/Cancel, `mode: 'simple'` for 2-button Confirm/Cancel).
 
-**Fork-capable endpoints:** `unlock-concept`, `unlock-script`, `unlock-style`, `unlock-characters`, `unlock-environments`, `analyze-audio`, `generate-script` (re-run only — wipes cast + scenes). First-time `generate-script` runs without the dialog.
+**Unlock vs. switch semantics (important):**
+- **All `unlock-*` endpoints are pure navigation** — they revert the phase marker only. No data is wiped. A user can unlock concept to browse alternatives without losing anything.
+- **Destructive events happen on the active mutation**:
+  - `lock-concept` with `{ fork?: boolean }` — if the new concept differs from the previous `locked_concept` AND scenes exist, server wipes scenes/cast/environments/style (or does so on the fork).
+  - `generate-script` with `{ fork?: boolean }` — on re-run (scenes already exist), wipes cast + scenes + prompts.
 
-**Not forked** (non-destructive): `generate-concepts` (just replaces options), `lock-concept` / `lock-style` (set fields), `generate-looks` / `generate-environment-look` (replaces one ref), `write-shot-prompts` (overwrites prompts, keeps media).
+**Fork-capable endpoints:** `lock-concept`, `generate-script` (re-run), `analyze-audio`. First-time gens and unlocks never open the dialog.
+
+**Non-destructive** (no fork needed): all unlocks, `generate-concepts` (replaces options), `lock-style`, `generate-looks` / `generate-environment-look`, `write-shot-prompts`.
 
 ### Launch Studio shortcut
 

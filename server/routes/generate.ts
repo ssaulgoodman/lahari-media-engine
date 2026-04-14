@@ -265,61 +265,49 @@ router.post('/:id/lock-style', async (req, res) => {
 // was generated after that phase. Script unlock blocks if shots have
 // locked content (images/videos).
 
+// All unlocks are pure navigation — they revert the phase marker so the
+// user can browse options again, but don't wipe any data. Destructive
+// events happen when the user actively picks/regenerates something new
+// (e.g. lock-concept with a different choice, generate-script re-run).
 router.post('/:id/unlock-script', (req, res) => {
-  const sourceId = paramStr(req.params.id);
-  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const projectId = paramStr(req.params.id);
   const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (project.status !== 'scripted') {
     return res.status(400).json({ error: `Cannot unlock script from status "${project.status}". Unlock later phases first.` });
   }
-  // Wipe scenes + shots — script will be re-written.
-  db.prepare('DELETE FROM scenes WHERE project_id = ?').run(projectId);
   db.prepare(`UPDATE projects SET status = 'concept_locked', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   res.json(getFullProject(projectId));
 });
 
 router.post('/:id/unlock-style', (req, res) => {
-  const sourceId = paramStr(req.params.id);
-  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const projectId = paramStr(req.params.id);
   const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (project.status !== 'style_locked') {
     return res.status(400).json({ error: `Cannot unlock style from status "${project.status}". Unlock later phases first.` });
   }
-  db.prepare(`UPDATE projects SET status = 'scripted', style_asset_id = NULL, style_description = NULL, updated_at = datetime('now') WHERE id = ?`).run(projectId);
+  db.prepare(`UPDATE projects SET status = 'scripted', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   res.json(getFullProject(projectId));
 });
 
 router.post('/:id/unlock-characters', (req, res) => {
-  const sourceId = paramStr(req.params.id);
-  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const projectId = paramStr(req.params.id);
   const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (project.status !== 'characters_locked') {
     return res.status(400).json({ error: `Cannot unlock characters from status "${project.status}". Unlock later phases first.` });
   }
-  // Keep character looks — user can still regenerate individual ones.
   db.prepare(`UPDATE projects SET status = 'style_locked', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   res.json(getFullProject(projectId));
 });
 
 router.post('/:id/unlock-environments', (req, res) => {
-  const sourceId = paramStr(req.params.id);
-  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const projectId = paramStr(req.params.id);
   const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  // Allow either environments_locked (before studio) or in_production (from studio).
   if (project.status !== 'environments_locked' && project.status !== 'in_production') {
     return res.status(400).json({ error: `Cannot unlock environments from status "${project.status}".` });
-  }
-  // Check: if any shots have generated content, block to prevent accidental loss.
-  const shotsWithContent = db.prepare(
-    `SELECT COUNT(*) as n FROM shots WHERE (image_asset_id IS NOT NULL OR video_asset_id IS NOT NULL)
-     AND scene_id IN (SELECT id FROM scenes WHERE project_id = ?)`
-  ).get(projectId) as any;
-  if (shotsWithContent?.n > 0) {
-    return res.status(400).json({ error: `Cannot unlock — ${shotsWithContent.n} shot(s) have generated images or videos. Unlock those individually first.` });
   }
   db.prepare(`UPDATE projects SET status = 'characters_locked', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   res.json(getFullProject(projectId));

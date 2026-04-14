@@ -151,8 +151,26 @@ const App: React.FC = () => {
 
   const handleLockConcept = async (conceptIndex: number) => {
     if (!project) return;
-    setLoading(true);
-    setError(null);
+    const chosen = project.conceptOptions[conceptIndex];
+    const prev = project.lockedConcept;
+    const switching = prev && JSON.stringify(prev) !== JSON.stringify(chosen);
+    const hasScenes = project.scenes.length > 0;
+    const hasMedia = project.scenes.some(s => s.shots.some((x: any) => x.imageUrl || x.videoUrl));
+
+    // Destructive only when switching AWAY from a previously locked concept
+    // with downstream work. Picking for the first time, re-picking the same
+    // concept, or switching before any script exists is all a plain lock.
+    if (switching && hasScenes) {
+      setDestructive({
+        title: 'Switch to a different concept?',
+        description: hasMedia
+          ? 'The script, style, cast, environments, and ALL generated images/videos were built around the old concept — switching makes them invalid and they will be discarded. Fork first to keep a snapshot.'
+          : 'The script, style, cast, and environments were built around the old concept — switching invalidates them and they will be wiped. Fork first to keep a snapshot.',
+        run: ({ fork }) => api.lockConcept(project.id, conceptIndex, { fork }),
+      });
+      return;
+    }
+    setLoading(true); setError(null);
     try {
       const p = await api.lockConcept(project.id, conceptIndex);
       setProject(p);
@@ -200,47 +218,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUnlockConcept = () => {
-    if (!project) return;
-    const hasScenes = project.scenes.length > 0;
-    const hasContent = project.scenes.some(s => s.shots.some((x: any) => x.imageUrl || x.videoUrl));
-    if (!hasScenes) {
-      // Nothing downstream — no dialog needed.
-      doUnlock(() => api.unlockConcept(project.id));
-      return;
-    }
-    setDestructive({
-      title: 'Unlock concept?',
-      description: hasContent
-        ? 'This DISCARDS all generated images, videos, script, style, characters, and environments. Fork first to keep a snapshot.'
-        : 'This wipes the script and style selection. Fork first to keep a snapshot.',
-      run: ({ fork }) => api.unlockConcept(project.id, { fork, force: hasContent }),
-    });
-  };
-  const handleUnlockScript = () => {
-    if (!project) return;
-    setDestructive({
-      title: 'Unlock script?',
-      description: 'This deletes all scenes and shots. Concept stays locked.',
-      run: ({ fork }) => api.unlockScript(project.id, { fork }),
-    });
-  };
-  const handleUnlockCharacters = () => {
-    if (!project) return;
-    setDestructive({
-      title: 'Unlock characters?',
-      description: 'Character look images stay — you just step back a phase to edit the cast.',
-      run: ({ fork }) => api.unlockCharacters(project.id, { fork }),
-    });
-  };
-  const handleUnlockEnvironments = () => {
-    if (!project) return;
-    setDestructive({
-      title: 'Unlock environments?',
-      description: 'Environment look images stay — you just step back to edit the list.',
-      run: ({ fork }) => api.unlockEnvironments(project.id, { fork }),
-    });
-  };
+  // All unlocks are pure navigation now — no dialog, no data loss.
+  // Destructive events happen when the user actively picks or regenerates
+  // something (lock-concept with a different choice, generate-script re-run).
+  const handleUnlockConcept = () => doUnlock(() => api.unlockConcept(project!.id));
+  const handleUnlockScript = () => doUnlock(() => api.unlockScript(project!.id));
+  const handleUnlockCharacters = () => doUnlock(() => api.unlockCharacters(project!.id));
+  const handleUnlockEnvironments = () => doUnlock(() => api.unlockEnvironments(project!.id));
 
   const doUnlock = async (fn: () => Promise<any>) => {
     if (!project) return;
