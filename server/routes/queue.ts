@@ -3,7 +3,10 @@
  */
 import { Router } from 'express';
 import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile } from '../services/supabase.js';
-import { saveBuffer } from '../storage.js';
+import { saveBuffer, readAsBase64, mimeFromExt } from '../storage.js';
+import { detectStructure } from '../services/gemini.js';
+import { summarizeMeaning } from '../services/claude.js';
+import { logCall } from '../xray.js';
 import db from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
@@ -81,14 +84,69 @@ router.post('/:queueId/start', async (req, res) => {
     const projectId = uuidv4();
     db.prepare(`
       INSERT INTO projects (id, title, status, audio_path, lyrics)
-      VALUES (?, ?, 'uploaded', ?, ?)
+      VALUES (?, ?, 'analyzing', ?, ?)
     `).run(projectId, item.song_name || 'Untitled', audioPath, lyrics || null);
 
-    // Link back to queue
+    // Link back to queue immediately (don't wait for analysis)
     await updateQueueItem(queueId, {
       status: 'in_progress',
       lahari_project_id: projectId,
     });
+
+    // Run audio analysis: musical structure (Gemini) + meaning (Claude).
+    // Lyrics come from SRT so no transcription needed.
+    const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: `/storage/${audioPath}` }];
+    try {
+      const audioBase64 = readAsBase64(audioPath);
+      const audioMime = mimeFromExt(audioPath);
+
+      const t0 = Date.now();
+      const [structureResult, meaningResult] = await Promise.allSettled([
+        detectStructure(audioBase64, audioMime),
+        lyrics ? summarizeMeaning(item.song_name || 'Untitled', 'Unknown', lyrics, '') : Promise.resolve(''),
+      ]);
+      const analysisMs = Date.now() - t0;
+
+      const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
+      const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
+
+      if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
+      if (meaningResult.status === 'rejected') console.warn(`[queue ${projectId}] meaning failed:`, meaningResult.reason);
+
+      logCall({
+        projectId,
+        stage: 'detect-structure',
+        model: 'gemini-3-pro-preview',
+        prompt: 'Identify musical sections: label, startTime, endTime, energy level, description. Max 10 sections.',
+        referenceInputs: audioRef,
+        responseSummary: structureResult.status === 'fulfilled'
+          ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join('\n')
+          : 'FAILED',
+        durationMs: analysisMs,
+        costEstimate: 0.01,
+        error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
+      });
+
+      if (lyrics) {
+        logCall({
+          projectId,
+          stage: 'summarize-meaning',
+          model: 'claude-sonnet-4-6',
+          prompt: `Summarize the meaning of "${item.song_name}": what it's about, who it addresses, emotional arc, cultural context.`,
+          responseSummary: meaning || 'FAILED',
+          durationMs: analysisMs,
+          costEstimate: 0.005,
+          error: meaningResult.status === 'rejected' ? String(meaningResult.reason) : undefined,
+        });
+      }
+
+      db.prepare(`UPDATE projects SET status = 'analyzed', musical_structure = ?, meaning = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(JSON.stringify(musicalStructure), meaning, projectId);
+    } catch (err: any) {
+      console.error(`[queue ${projectId}] analysis failed:`, err);
+      // Don't fail the whole request — project is still usable, user can regenerate concepts manually.
+      db.prepare(`UPDATE projects SET status = 'analyzed', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+    }
 
     const project = getFullProject(projectId);
     res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: projectId } });

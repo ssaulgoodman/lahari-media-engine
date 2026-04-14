@@ -15,19 +15,27 @@ interface Props {
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void;
   onUpdateProject?: (updates: Record<string, any>) => void;
+  onRewriteShotPrompts?: (userNote?: string) => void;
+  onUsePrevLastFrame?: (shotId: string) => void;
+  isLoading?: boolean;
 }
 
-const VIDEO_MODELS = [
-  { key: 'veo-3.1', label: 'Veo 3.1' },
-  { key: 'seedance-2.0-fast', label: 'Seedance 2.0 Fast' },
-  { key: 'seedance-2.0', label: 'Seedance 2.0' },
-];
-
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onUsePrevLastFrame, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
+  const [showBulkPrompt, setShowBulkPrompt] = useState(false);
+  const [bulkNote, setBulkNote] = useState('');
+  const [expandedShotId, setExpandedShotId] = useState<string | null>(null);
+
+  // Auto-expand the first actionable unlocked shot when switching scenes
+  React.useEffect(() => {
+    const scene = scenes[activeSceneIdx];
+    if (!scene) return;
+    const firstUnlocked = scene.shots.find(s => !s.locked) || scene.shots[0];
+    setExpandedShotId(firstUnlocked?.id || null);
+  }, [activeSceneIdx, scenes]);
 
   // A shot is actionable immediately if it's a hard cut (independent).
   // Only continuity-linked shots ('prev_shot') wait for the previous shot
@@ -43,8 +51,170 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const activeScene = scenes[activeSceneIdx];
   if (!activeScene) return null;
 
+  const hasBulkPrompt = !!project?.lastWriteShotsPrompt;
+  const totalShots = scenes.reduce((acc, s) => acc + s.shots.length, 0);
+  const lockedShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => x.locked).length, 0);
+  const videoShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.videoUrl).length, 0);
+  const frameShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.imageUrl).length, 0);
+  const concept = project?.lockedConcept;
+
   return (
     <div className="max-w-5xl mx-auto pb-32 space-y-6">
+      {/* Story & Shots overview — concept, scene list, progress, bulk prompt */}
+      <div className="surface rounded-xl overflow-hidden">
+        {/* Concept summary */}
+        {concept && (
+          <div className="px-5 py-4 border-b border-white/[0.04]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-400 mb-1">
+                  <span>Story</span>
+                  {concept.deity && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.deity}</span></>}
+                  {concept.mood && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.mood}</span></>}
+                </div>
+                <p className="text-sm text-zinc-300 leading-relaxed">{concept.conceptDirection || concept.theme}</p>
+                {concept.conceptDirection && concept.theme && concept.theme !== concept.conceptDirection && (
+                  <p className="text-xs text-zinc-400 leading-relaxed mt-1">{concept.theme}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Progress row */}
+        <div className="px-5 py-3 border-b border-white/[0.04] flex items-center gap-6 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400">Scenes</span>
+            <span className="text-white font-medium">{scenes.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400">Shots</span>
+            <span className="text-white font-medium">{totalShots}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400">Frames</span>
+            <span className="text-white font-medium">{frameShots}/{totalShots}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400">Videos</span>
+            <span className="text-white font-medium">{videoShots}/{totalShots}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-400">Locked</span>
+            <span className="text-white font-medium">{lockedShots}/{totalShots}</span>
+          </div>
+        </div>
+
+        {/* Scene tabs — navigate + see at-a-glance status */}
+        <div className="px-5 py-3 border-b border-white/[0.04] flex flex-wrap gap-2">
+          {scenes.map((s, i) => {
+            const isActive = i === activeSceneIdx;
+            const sceneVideoCount = s.shots.filter(x => !!x.videoUrl).length;
+            const sceneDone = sceneVideoCount === s.shots.length && s.shots.length > 0;
+            return (
+              <button
+                key={s.id}
+                onClick={() => onSceneChange(i)}
+                className={`px-3 py-1.5 rounded-md text-[11px] transition-colors border ${
+                  isActive
+                    ? 'bg-white text-black border-white'
+                    : sceneDone
+                      ? 'bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.08]'
+                      : 'bg-transparent text-zinc-400 border-white/[0.06] hover:text-zinc-300 hover:border-white/[0.12]'
+                }`}
+              >
+                <span className="font-medium">S{i + 1}</span>
+                <span className="mx-1.5 opacity-60">·</span>
+                <span className="font-mono opacity-80">{s.startTime}</span>
+                <span className="mx-1.5 opacity-60">·</span>
+                <span>{s.shots.length} shots</span>
+                {sceneVideoCount > 0 && !isActive && (
+                  <span className="ml-1.5 opacity-60">({sceneVideoCount} done)</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Master prompt (collapsible, secondary) */}
+        {onRewriteShotPrompts && hasBulkPrompt && (
+          <div className="px-5 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Master shot-prompts</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowBulkPrompt(s => !s)}
+                  className="text-[11px] text-zinc-400 hover:text-white transition-colors px-2 py-1"
+                >
+                  {showBulkPrompt ? 'Hide' : 'View'}
+                </button>
+                <button
+                  onClick={() => { onRewriteShotPrompts(bulkNote || undefined); setBulkNote(''); }}
+                  disabled={isLoading}
+                  className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1.5 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                  {isLoading ? 'Rewriting...' : 'Rewrite all'}
+                </button>
+              </div>
+            </div>
+            {showBulkPrompt && (
+              <div className="mt-3 space-y-3">
+                <input
+                  value={bulkNote}
+                  onChange={e => setBulkNote(e.target.value)}
+                  placeholder="Rewrite note — e.g. 'more deity close-ups', 'reduce camera motion'"
+                  className="w-full surface-inset rounded-md px-3 py-2 text-xs text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && bulkNote.trim() && !isLoading) {
+                      onRewriteShotPrompts(bulkNote);
+                      setBulkNote('');
+                    }
+                  }}
+                />
+                {/* Formatted scene → shot breakdown instead of raw concatenated text */}
+                <div className="surface-inset rounded-md p-4 max-h-96 overflow-y-auto space-y-4">
+                  {scenes.map((s, sIdx) => (
+                    <div key={s.id} className="space-y-2">
+                      <div className="flex items-baseline gap-2 pb-1 border-b border-white/[0.04]">
+                        <span className="text-[11px] uppercase tracking-wide text-zinc-400">Scene {sIdx + 1}</span>
+                        <span className="text-[11px] text-zinc-400 font-mono">{s.startTime}–{s.endTime}</span>
+                        <span className="text-[11px] text-zinc-400">{s.sectionLabel}</span>
+                      </div>
+                      {s.narrativeDescription && (
+                        <p className="text-xs text-zinc-400 italic">{s.narrativeDescription}</p>
+                      )}
+                      <div className="space-y-2">
+                        {s.shots.map((shot, shIdx) => (
+                          <div key={shot.id} className="pl-3 border-l-2 border-white/[0.05] space-y-1">
+                            <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+                              <span className="font-medium text-zinc-300">Shot {shIdx + 1}</span>
+                              <span className="font-mono">{shot.duration}s</span>
+                              <span className={`uppercase tracking-wide ${shot.continuityFrom === 'prev_shot' ? 'text-accent-400' : 'text-zinc-400'}`}>
+                                {shot.continuityFrom === 'prev_shot' ? '· continues' : '· cut'}
+                              </span>
+                            </div>
+                            <div className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-400">Visual:</span> {shot.visualPrompt}</div>
+                            {shot.motionPrompt && (
+                              <div className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-400">Motion:</span> {shot.motionPrompt}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <details className="text-[11px] text-zinc-400">
+                  <summary className="cursor-pointer hover:text-zinc-300">Raw master prompt (what Claude saw)</summary>
+                  <pre className="mt-2 surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project?.lastWriteShotsPrompt}</pre>
+                </details>
+                <p className="text-[11px] text-zinc-400">Rewriting replaces every shot's prompt. Existing frames and videos stay as-is — regenerate per-shot to apply new prompts.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Scene Header */}
       <AnimatePresence mode="wait">
         <motion.div
@@ -58,20 +228,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
           <div className="space-y-1">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-display font-medium text-white">Scene {activeSceneIdx + 1}</h2>
-              <span className="text-xs text-zinc-600 font-mono">{activeScene.startTime}–{activeScene.endTime}</span>
-              <span className="text-xs text-zinc-600">{activeScene.sectionLabel}</span>
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-[10px] text-zinc-600">Video model</span>
-                <select
-                  value={project?.videoModel || 'veo-3.1'}
-                  onChange={(e) => onUpdateProject?.({ videoModel: e.target.value })}
-                  className="surface-inset rounded-md px-2 py-1 text-[11px] text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 bg-transparent cursor-pointer"
-                >
-                  {VIDEO_MODELS.map(m => (
-                    <option key={m.key} value={m.key}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
+              <span className="text-xs text-zinc-400 font-mono">{activeScene.startTime}–{activeScene.endTime}</span>
+              <span className="text-xs text-zinc-400">{activeScene.sectionLabel}</span>
             </div>
             {activeScene.narrativeDescription && (
               <p className="text-sm text-zinc-400 max-w-3xl">{activeScene.narrativeDescription}</p>
@@ -92,6 +250,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
               // Progress dots: Frame → Video → Locked
               const progress = shot.locked ? 3 : hasVideo ? 2 : hasStartFrame ? 1 : 0;
+              const isExpanded = expandedShotId === shot.id;
 
               return (
                 <motion.div
@@ -105,11 +264,26 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       : 'border-white/[0.05]'
                   }`}
                 >
-                  {/* Header */}
-                  <div className="px-4 py-2.5 flex items-center gap-3 bg-white/[0.01]">
+                  {/* Header — click to expand/collapse */}
+                  <div
+                    className={`px-4 py-2.5 flex items-center gap-3 bg-white/[0.01] ${isExpanded ? '' : 'hover:bg-white/[0.03] cursor-pointer'}`}
+                    onClick={(e) => {
+                      // Don't toggle when user clicks a button/input inside the header
+                      const tag = (e.target as HTMLElement).closest('button, select, input, textarea, a');
+                      if (tag) return;
+                      setExpandedShotId(isExpanded ? null : shot.id);
+                    }}
+                  >
+                    {/* Chevron */}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      className={`text-zinc-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                      aria-hidden="true"
+                    ><polyline points="9 18 15 12 9 6"/></svg>
+
                     {/* Left: shot info */}
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-[13px] font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
+                      <span className="text-xs font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
 
                       {/* Progress dots */}
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -120,19 +294,19 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         ))}
                       </div>
 
-                      <span className="text-[10px] text-zinc-600 font-mono flex-shrink-0">{shot.duration}s</span>
+                      <span className="text-[11px] text-zinc-400 font-mono flex-shrink-0">{shot.duration}s</span>
 
                       {activeCastMembers.length > 0 && (
-                        <span className="text-[10px] text-zinc-600 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
+                        <span className="text-[11px] text-zinc-400 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
                       )}
 
                       {shotIdx > 0 && (
                         <button
                           onClick={() => onUpdateShot(activeScene.id, shot.id, { continuityFrom: shot.continuityFrom === 'prev_shot' ? 'cut' : 'prev_shot' } as any)}
-                          className={`text-[9px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
+                          className={`text-[11px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
                             shot.continuityFrom === 'prev_shot'
                               ? 'text-amber-400/80 bg-amber-500/10'
-                              : 'text-zinc-600 hover:text-zinc-400'
+                              : 'text-zinc-400 hover:text-zinc-400'
                           }`}
                         >
                           {shot.continuityFrom === 'prev_shot' ? 'chain' : 'cut'}
@@ -140,73 +314,84 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       )}
                     </div>
 
-                    {/* Right: actions */}
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Right: actions — one consistent toolbar, icons + tooltips */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {/* Video/Frames toggle — only when video exists */}
                       {shot.videoUrl && (
-                        <div className="flex gap-px bg-white/[0.04] rounded overflow-hidden mr-1">
+                        <div className="flex gap-px bg-white/[0.04] rounded overflow-hidden mr-2">
                           <button
                             onClick={() => setShowFrames(prev => ({ ...prev, [shot.id]: false }))}
-                            className={`text-[10px] px-2 py-1 font-medium transition-colors ${!showFrames[shot.id] ? 'bg-white/[0.08] text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                            className={`text-[11px] px-2 py-1 font-medium transition-colors ${!showFrames[shot.id] ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            title="Show video"
                           >Video</button>
                           <button
                             onClick={() => setShowFrames(prev => ({ ...prev, [shot.id]: true }))}
-                            className={`text-[10px] px-2 py-1 font-medium transition-colors ${showFrames[shot.id] ? 'bg-white/[0.08] text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                            className={`text-[11px] px-2 py-1 font-medium transition-colors ${showFrames[shot.id] ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            title="Show start + end frames"
                           >Frames</button>
                         </div>
                       )}
 
-                      {!shot.locked ? (
-                        <>
-                          <button
-                            onClick={() => onGenerateImage(activeScene.id, shot.id)}
-                            disabled={isGenerating || !actionable}
-                            className="px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded transition-colors disabled:opacity-30"
-                          >
-                            {hasStartFrame ? 'Regen' : 'Frame'}
-                          </button>
-                          <button
-                            onClick={() => onGenerateVideo(activeScene.id, shot.id)}
-                            disabled={!canGenerateVideo || !actionable}
-                            className="px-2.5 py-1 text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.06] rounded transition-colors disabled:opacity-30"
-                          >
-                            {hasVideo ? 'Regen Vid' : 'Video'}
-                          </button>
-                          <button
-                            onClick={() => onLockShot(activeScene.id, shot.id)}
-                            disabled={!canLock || isGenerating}
-                            className="px-3 py-1 bg-white text-black rounded text-[11px] font-semibold disabled:opacity-20 hover:bg-zinc-200 transition-colors"
-                          >
-                            Lock
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => onLockShot(activeScene.id, shot.id)}
-                            disabled={isGenerating}
-                            className="px-2.5 py-1 text-[11px] text-zinc-600 hover:text-amber-400 rounded transition-colors"
-                          >
-                            Unlock
-                          </button>
-                          <button
-                            onClick={() => onGenerateImage(activeScene.id, shot.id)}
-                            disabled={isGenerating}
-                            className="px-2.5 py-1 text-[11px] text-zinc-600 hover:text-white rounded transition-colors"
-                          >
-                            Regen
-                          </button>
-                          <button
-                            onClick={() => onGenerateVideo(activeScene.id, shot.id)}
-                            disabled={isGenerating}
-                            className="px-3 py-1 bg-white text-black hover:bg-zinc-200 rounded text-[11px] font-semibold disabled:opacity-40 transition-colors"
-                          >
-                            Regen Video
-                          </button>
-                        </>
-                      )}
+                      {/* Regen frame */}
+                      <button
+                        onClick={() => onGenerateImage(activeScene.id, shot.id)}
+                        disabled={isGenerating || (!actionable && !shot.locked)}
+                        className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center gap-1"
+                        title={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                          <circle cx="9" cy="9" r="2"/>
+                          <path d="M21 15l-5-5L5 21"/>
+                        </svg>
+                        <span className="text-[11px] hidden sm:inline">{hasStartFrame ? 'Regen' : 'Frame'}</span>
+                      </button>
+
+                      {/* Regen video */}
+                      <button
+                        onClick={() => onGenerateVideo(activeScene.id, shot.id)}
+                        disabled={!canGenerateVideo && !shot.locked || isGenerating}
+                        className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center gap-1"
+                        title={hasVideo ? 'Regenerate video' : 'Generate video'}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polygon points="23 7 16 12 23 17 23 7"/>
+                          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                        </svg>
+                        <span className="text-[11px] hidden sm:inline">{hasVideo ? 'Regen' : 'Video'}</span>
+                      </button>
+
+                      {/* Lock / Unlock — standard place, standard icon */}
+                      <button
+                        onClick={() => onLockShot(activeScene.id, shot.id)}
+                        disabled={isGenerating || (!shot.locked && !canLock)}
+                        className={`p-1.5 rounded transition-colors flex items-center gap-1 ${
+                          shot.locked
+                            ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
+                            : canLock
+                              ? 'bg-white text-black hover:bg-zinc-200'
+                              : 'text-zinc-400'
+                        } disabled:opacity-30`}
+                        title={shot.locked ? 'Unlock shot — allow edits' : canLock ? 'Lock shot' : 'Generate start frame + video first to lock'}
+                      >
+                        {shot.locked ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                          </svg>
+                        )}
+                        <span className="text-[11px] hidden sm:inline">{shot.locked ? 'Unlock' : 'Lock'}</span>
+                      </button>
                     </div>
                   </div>
 
+                  {/* Body — collapses when not expanded */}
+                  {isExpanded && <>
                   {/* Media: Video or Frames */}
                   <div className="relative">
                     {shot.videoUrl && !showFrames[shot.id] ? (
@@ -218,7 +403,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       <div className="flex">
                         <div className="flex-1 relative bg-black min-h-[120px]">
                           <div className="absolute top-2 left-2 z-20">
-                            <span className="text-[10px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start</span>
+                            <span className="text-[11px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start</span>
                           </div>
                           {shot.imageUrl && (
                             <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in" />
@@ -227,7 +412,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         <div className="w-px bg-white/[0.06] flex-shrink-0" />
                         <div className="flex-1 relative bg-black min-h-[120px] group/last">
                           <div className="absolute top-2 left-2 z-20">
-                            <span className="text-[10px] bg-black/60 text-emerald-300/80 px-1.5 py-0.5 rounded-md uppercase font-medium">End (from video)</span>
+                            <span className="text-[11px] bg-black/60 text-emerald-300/80 px-1.5 py-0.5 rounded-md uppercase font-medium">End (from video)</span>
                           </div>
                           <img
                             src={shot.extractedLastFrameUrl || shot.endImageUrl!}
@@ -236,16 +421,15 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             className={`w-full h-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
                           />
                           {/* Action: use this frame as next shot's start */}
-                          {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && (
+                          {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && onUsePrevLastFrame && (
                             <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 transition-opacity">
                               <button
                                 onClick={() => {
-                                  // Mark the next shot as continuing from this one
-                                  const nextShot = activeScene.shots[shotIdx + 1];
-                                  onUpdateShot(activeScene.id, nextShot.id, { continuityFrom: 'prev_shot' } as any);
+                                  // Silent replace — easy to regen the frame if user regrets it.
+                                  onUsePrevLastFrame(activeScene.shots[shotIdx + 1].id);
                                 }}
-                                className="text-[10px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
-                                title="Mark next shot as continuous — it will use this frame as visual continuity reference"
+                                className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                title="Copy this frame directly as the next shot's start frame — skips image generation for seamless continuity"
                               >
                                 → Use for next shot
                               </button>
@@ -259,12 +443,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         {shot.imageUrl ? (
                           <>
                             <div className="absolute top-2 left-2 z-20">
-                              <span className="text-[10px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start Frame</span>
+                              <span className="text-[11px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start Frame</span>
                             </div>
                             <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in mx-auto max-h-[400px] object-contain" />
                           </>
                         ) : (
-                          <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-700">
+                          <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
                             <span className="text-xs">No start frame — click &quot;Frame&quot; to generate</span>
                           </div>
                         )}
@@ -274,14 +458,14 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     {/* Critique score */}
                     {shot.critique && !isGenerating && (
                       <div className="absolute top-2 left-2 z-20">
-                        <div className={`px-2 py-1 rounded-md text-[10px] font-medium border ${
+                        <div className={`px-2 py-1 rounded-md text-[11px] font-medium border ${
                           shot.critique.score >= 7 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20'
                             : shot.critique.score >= 5 ? 'bg-amber-500/20 text-amber-300 border-amber-500/20'
                             : 'bg-red-500/20 text-red-300 border-red-500/20'
                         }`}>
                           {shot.critique.score}/10
                           {shot.attemptCount && shot.attemptCount > 1 && (
-                            <span className="text-[10px] opacity-60 ml-1">R{shot.attemptCount}</span>
+                            <span className="text-[11px] opacity-60 ml-1">R{shot.attemptCount}</span>
                           )}
                         </div>
                       </div>
@@ -312,7 +496,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     {/* Not actionable — only for continuity-linked shots waiting on prev video */}
                     {!actionable && !isGenerating && (
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
-                        <span className="text-xs text-zinc-500">Waiting on previous shot's video (continuity)</span>
+                        <span className="text-xs text-zinc-400">Waiting on previous shot's video (continuity)</span>
                       </div>
                     )}
                   </div>
@@ -371,91 +555,61 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           <div className="flex items-center gap-4">
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'image' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
                             >Image</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'motion' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
                             >Motion</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'video' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
                             >Video</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'compiled' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
+                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
                             >Compiled</button>
                           </div>
 
-                          {/* Reference chips — available @mentions for the image prompt */}
+                          {/* Reference chips — informational: these refs are attached to this call */}
                           {activeTab === 'image' && !shot.locked && (() => {
-                            const allRefs: { tag: string; label: string; url?: string }[] = [];
+                            const allRefs: { label: string; url?: string }[] = [];
                             shotCast.forEach(c => {
-                              if (c.referenceImageUrl) allRefs.push({ tag: `@${c.name}`, label: c.name, url: c.referenceImageUrl });
+                              if (c.referenceImageUrl) allRefs.push({ label: c.name, url: c.referenceImageUrl });
                             });
-                            if (shotEnv?.referenceImageUrl) allRefs.push({ tag: `@${shotEnv.name}`, label: shotEnv.name, url: shotEnv.referenceImageUrl });
-                            if (project?.styleAssetUrl) allRefs.push({ tag: '@style', label: 'Style', url: project.styleAssetUrl });
+                            if (shotEnv?.referenceImageUrl) allRefs.push({ label: shotEnv.name, url: shotEnv.referenceImageUrl });
+                            if (project?.styleAssetUrl) allRefs.push({ label: 'Style', url: project.styleAssetUrl });
 
                             if (allRefs.length === 0) return null;
-
-                            // Which @mentions are already in the prompt
-                            const prompt = shot.visualPrompt.toLowerCase();
-                            const activeRefs = allRefs.filter(r => prompt.includes(r.tag.toLowerCase()));
 
                             return (
                               <div className="space-y-2">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[10px] text-zinc-600 mr-1">Refs:</span>
-                                  {allRefs.map(ref => {
-                                    const isActive = prompt.includes(ref.tag.toLowerCase());
-                                    return (
-                                      <button
-                                        key={ref.tag}
-                                        onClick={() => {
-                                          const ta = document.getElementById(`prompt-${shot.id}`) as HTMLTextAreaElement;
-                                          if (!ta) return;
-                                          const pos = ta.selectionStart || ta.value.length;
-                                          const before = ta.value.slice(0, pos);
-                                          const after = ta.value.slice(pos);
-                                          const newVal = `${before}${ref.tag} ${after}`;
-                                          onUpdateShot(activeScene.id, shot.id, { visualPrompt: newVal });
-                                          setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = pos + ref.tag.length + 1; }, 0);
-                                        }}
-                                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors border ${
-                                          isActive
-                                            ? 'border-white/20 text-white bg-white/[0.06]'
-                                            : 'border-white/[0.06] text-zinc-500 hover:text-zinc-300 hover:border-white/15'
-                                        }`}
-                                      >
-                                        {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover" alt="" />}
-                                        <span>{ref.tag}</span>
-                                      </button>
-                                    );
-                                  })}
+                                  <span className="text-[11px] text-zinc-400 mr-1">Attached refs:</span>
+                                  {allRefs.map((ref, i) => (
+                                    <div
+                                      key={i}
+                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02]"
+                                      title={`${ref.label} — sent as a reference image to the model`}
+                                    >
+                                      {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover" alt="" />}
+                                      <span>{ref.label}</span>
+                                    </div>
+                                  ))}
                                 </div>
-                                {activeRefs.length > 0 && (
-                                  <div className="flex gap-1.5">
-                                    {activeRefs.map(ref => (
-                                      <div key={ref.tag} className="relative">
-                                        <img src={ref.url} className="w-10 h-10 rounded border border-white/[0.1] object-cover" alt={ref.label} />
-                                        <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[8px] text-zinc-400 text-center rounded-b">{ref.tag}</div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
                               </div>
                             );
                           })()}
 
                           {activeTab === 'video' ? (
                             <div className="space-y-3">
-                              <div className="text-[11px] text-zinc-500">
+                              <div className="text-[11px] text-zinc-400">
                                 This is the full prompt sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame. Edit to override.
                               </div>
                               <textarea
                                 value={videoOverride[shot.id] ?? autoVeoPrompt}
                                 onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
-                                className="w-full surface-inset rounded-md p-3 text-[12px] text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
+                                className="w-full surface-inset rounded-md p-3 text-xs text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
                               />
                               <div className="flex items-center gap-2">
                                 <button
@@ -466,12 +620,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   disabled={!hasStartFrame || isGenerating}
                                   className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
                                 >
-                                  Generate Video with this prompt
+                                  Regenerate with this custom prompt
                                 </button>
                                 {videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
                                   <button
                                     onClick={() => setVideoOverride(prev => { const { [shot.id]: _, ...rest } = prev; return rest; })}
-                                    className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                                    className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
                                   >
                                     Reset to auto
                                   </button>
@@ -488,9 +642,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                       {ref.url ? (
                                         <img src={ref.url} className="w-14 h-14 object-cover rounded-md border border-white/[0.06]" alt={ref.label} />
                                       ) : (
-                                        <div className="w-14 h-14 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[9px] text-zinc-600">?</div>
+                                        <div className="w-14 h-14 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[11px] text-zinc-400">?</div>
                                       )}
-                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[9px] text-zinc-400 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
+                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
                                     </div>
                                   ))}
                                 </div>
@@ -539,6 +693,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       );
                     })()}
                   </div>
+                  </>}
                 </motion.div>
               );
             })}

@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppStep, ApiProject, VideoShot, GenerationStatus, ChatMessage } from './types';
-import { StepUpload } from './components/StepUpload';
 import { AnalysisEditor } from './components/AnalysisEditor';
 import { Storyboard } from './components/Storyboard';
 import { StepRender } from './components/StepRender';
@@ -25,7 +24,29 @@ const pageTransition = {
   transition: { duration: 0.25, ease: 'easeOut' as const },
 };
 
-type ProjectSummary = { id: string; title: string; status: string; created_at: string; updated_at: string };
+type ProjectSummary = {
+  id: string;
+  title: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  parentProjectId?: string;
+};
+
+// Humanize a timestamp: "3m ago", "2h ago", "yesterday", "Mar 4".
+const relativeTime = (iso?: string): string => {
+  if (!iso) return '';
+  const then = new Date(iso.includes('T') || iso.includes('Z') ? iso : iso.replace(' ', 'T') + 'Z');
+  const mins = Math.round((Date.now() - then.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   uploaded: { label: 'Uploaded', color: 'text-zinc-500' },
@@ -142,6 +163,99 @@ const App: React.FC = () => {
     }
   };
 
+  // ─── Destructive action dialog state ────────────────────────────
+  // The 3-option dialog (Fork primary / Overwrite / Cancel) is opened via
+  // setDestructive({...}). We store what to do on each choice.
+  type DestructiveAction = {
+    title: string;
+    description: string;
+    // Fork-capable flows: 3 buttons (Fork & change · Overwrite · Cancel)
+    // Simple confirms: 2 buttons (confirmLabel · Cancel)
+    mode?: 'fork' | 'simple';
+    confirmLabel?: string;      // used in 'simple' mode
+    overwriteLabel?: string;    // used in 'fork' mode
+    run: (opts: { fork: boolean }) => Promise<any> | any;
+    onDone?: (result: any) => void;  // handles result when the action is not a project mutation
+  };
+  const [destructive, setDestructive] = useState<DestructiveAction | null>(null);
+
+  const runDestructive = async (fork: boolean) => {
+    if (!destructive) return;
+    const action = destructive;
+    setDestructive(null);
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await action.run({ fork });
+      if (action.onDone) {
+        action.onDone(result);
+      } else if (result && typeof result === 'object' && 'id' in result) {
+        // Default: treat result as updated project
+        setProject(result);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUnlockConcept = () => {
+    if (!project) return;
+    const hasScenes = project.scenes.length > 0;
+    const hasContent = project.scenes.some(s => s.shots.some((x: any) => x.imageUrl || x.videoUrl));
+    if (!hasScenes) {
+      // Nothing downstream — no dialog needed.
+      doUnlock(() => api.unlockConcept(project.id));
+      return;
+    }
+    setDestructive({
+      title: 'Unlock concept?',
+      description: hasContent
+        ? 'This DISCARDS all generated images, videos, script, style, characters, and environments. Fork first to keep a snapshot.'
+        : 'This wipes the script and style selection. Fork first to keep a snapshot.',
+      run: ({ fork }) => api.unlockConcept(project.id, { fork, force: hasContent }),
+    });
+  };
+  const handleUnlockScript = () => {
+    if (!project) return;
+    setDestructive({
+      title: 'Unlock script?',
+      description: 'This deletes all scenes and shots. Concept stays locked.',
+      run: ({ fork }) => api.unlockScript(project.id, { fork }),
+    });
+  };
+  const handleUnlockCharacters = () => {
+    if (!project) return;
+    setDestructive({
+      title: 'Unlock characters?',
+      description: 'Character look images stay — you just step back a phase to edit the cast.',
+      run: ({ fork }) => api.unlockCharacters(project.id, { fork }),
+    });
+  };
+  const handleUnlockEnvironments = () => {
+    if (!project) return;
+    setDestructive({
+      title: 'Unlock environments?',
+      description: 'Environment look images stay — you just step back to edit the list.',
+      run: ({ fork }) => api.unlockEnvironments(project.id, { fork }),
+    });
+  };
+
+  const doUnlock = async (fn: () => Promise<any>) => {
+    if (!project) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const p = await fn();
+      setProject(p);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ─── Style Lock ────────────────────────────────────────────────
 
   const handleLockStyle = async (assetId: string, styleDescription?: string) => {
@@ -157,18 +271,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUnlockStyle = async () => {
-    if (!project) return;
-    setLoading(true);
-    try {
-      const p = await api.unlockStyle(project.id);
-      setProject(p);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleUnlockStyle = async () => { await doUnlock(() => api.unlockStyle(project!.id)); };
 
   // ─── Character Look Generation & Lock ───────────────────────────
 
@@ -286,6 +389,31 @@ const App: React.FC = () => {
       setCurrentStep(AppStep.STUDIO);
     } catch (err: any) {
       setError('Failed to prepare shot prompts: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUsePrevLastFrame = async (shotId: string) => {
+    if (!project) return;
+    setError(null);
+    try {
+      const p = await api.usePrevLastFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError('Failed to copy frame: ' + err.message);
+    }
+  };
+
+  const handleRewriteShotPrompts = async (userNote?: string) => {
+    if (!project) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const p = await api.writeShotPrompts(project.id, userNote);
+      setProject(p);
+    } catch (err: any) {
+      setError('Failed to rewrite shot prompts: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -427,16 +555,6 @@ const App: React.FC = () => {
     } finally {
       setChatLoading(false);
     }
-  };
-
-  // ─── New Project ────────────────────────────────────────────────
-
-  const handleNewProject = () => {
-    setProject(null);
-    setCurrentStep(AppStep.UPLOAD);
-    setLookCandidates({});
-    setError(null);
-    setSidebarOpen(false);
   };
 
   // ─── Queue: Start Production ──────────────────────────────────────
@@ -619,6 +737,10 @@ const App: React.FC = () => {
                     looksLoading={looksLoading}
                     lookCandidates={lookCandidates}
                     onLockConcept={handleLockConcept}
+                    onUnlockConcept={handleUnlockConcept}
+                    onUnlockScript={handleUnlockScript}
+                    onUnlockCharacters={handleUnlockCharacters}
+                    onUnlockEnvironments={handleUnlockEnvironments}
                     onLockStyle={handleLockStyle}
                     onUnlockStyle={handleUnlockStyle}
                     onGenerateLooks={handleGenerateLooks}
@@ -650,6 +772,9 @@ const App: React.FC = () => {
                     onLockShot={handleLockShot}
                     onRefinePrompt={handleRefinePrompt}
                     onUpdateProject={handleUpdateProject}
+                    onRewriteShotPrompts={handleRewriteShotPrompts}
+                    onUsePrevLastFrame={handleUsePrevLastFrame}
+                    isLoading={loading}
                   />
                 </motion.div>
               )}
@@ -678,6 +803,60 @@ const App: React.FC = () => {
         )}
         */}
       </div>
+
+      {/* Destructive action dialog — Fork is primary, Overwrite is secondary */}
+      <AnimatePresence>
+        {destructive && (
+          <>
+            <motion.div
+              key="destructive-backdrop"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.12 }}
+              className="fixed inset-0 bg-black/70 z-[200] backdrop-blur-sm"
+              onClick={() => setDestructive(null)}
+            />
+            <motion.div
+              key="destructive-dialog"
+              initial={{ opacity: 0, scale: 0.97, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 8 }}
+              transition={{ duration: 0.15 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(92vw,480px)] surface-raised rounded-xl z-[201] p-6 space-y-5"
+            >
+              <div className="space-y-2">
+                <h3 className="text-lg font-medium text-white">{destructive.title}</h3>
+                <p className="text-sm text-zinc-400 leading-relaxed">{destructive.description}</p>
+              </div>
+              {destructive.mode !== 'simple' && (
+                <div className="surface-inset rounded-md p-3 text-xs text-zinc-400 leading-relaxed">
+                  <strong className="text-zinc-300">Fork</strong> creates a copy with a new name and performs the change on it. Original stays frozen as a snapshot you can open from the sidebar.
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setDestructive(null)}
+                  className="text-xs text-zinc-400 hover:text-zinc-300 px-3 py-2 rounded-md transition-colors"
+                >Cancel</button>
+                {destructive.mode === 'simple' ? (
+                  <button
+                    onClick={() => runDestructive(false)}
+                    className="text-xs font-semibold bg-red-500/90 text-white hover:bg-red-500 px-4 py-2 rounded-md transition-colors"
+                  >{destructive.confirmLabel || 'Confirm'}</button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => runDestructive(false)}
+                      className="text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] px-3 py-2 rounded-md transition-colors"
+                    >{destructive.overwriteLabel || 'Overwrite'}</button>
+                    <button
+                      onClick={() => runDestructive(true)}
+                      className="text-xs font-semibold bg-white text-black hover:bg-zinc-200 px-4 py-2 rounded-md transition-colors"
+                    >Fork & change</button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Project Sidebar */}
       <AnimatePresence>
@@ -710,55 +889,104 @@ const App: React.FC = () => {
                 </button>
               </div>
 
-              <div className="p-3 border-b border-white/[0.06] flex-shrink-0">
-                <button
-                  onClick={handleNewProject}
-                  className="w-full text-[13px] text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] rounded-lg px-3 py-2 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 flex items-center justify-center gap-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
-                  New Project
-                </button>
-              </div>
-
               <div className="flex-1 overflow-y-auto p-2">
                 {projectListLoading ? (
                   <div className="space-y-2 p-2">
-                    {[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-lg" />)}
+                    {[1, 2, 3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}
                   </div>
                 ) : projectList.length === 0 ? (
-                  <p className="text-sm text-zinc-600 text-center py-8">No projects yet</p>
-                ) : (
-                  <div className="space-y-1">
-                    {projectList.map(p => {
-                      const isActive = project?.id === p.id;
-                      const status = STATUS_LABELS[p.status] || { label: p.status, color: 'text-zinc-500' };
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => loadProject(p.id)}
-                          className={`w-full text-left rounded-lg px-3 py-3 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 group ${
-                            isActive
-                              ? 'bg-white/[0.08] border border-white/[0.1]'
-                              : 'hover:bg-white/[0.04] border border-transparent'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className={`text-[13px] font-medium truncate ${isActive ? 'text-white' : 'text-zinc-300 group-hover:text-white'} transition-colors`}>
-                              {p.title}
-                            </span>
-                            {isActive && (
-                              <span className="text-[9px] bg-white/10 text-zinc-400 px-1.5 py-0.5 rounded flex-shrink-0">OPEN</span>
+                  <p className="text-sm text-zinc-400 text-center py-8">No projects yet</p>
+                ) : (() => {
+                  // Build lineage tree: orig → children → grandchildren, flattened
+                  // with depth so we can indent. Originals sorted by updatedAt DESC.
+                  const childrenOf = new Map<string, ProjectSummary[]>();
+                  projectList.forEach(p => {
+                    if (p.parentProjectId) {
+                      const arr = childrenOf.get(p.parentProjectId) || [];
+                      arr.push(p);
+                      childrenOf.set(p.parentProjectId, arr);
+                    }
+                  });
+                  const byId = new Map(projectList.map(p => [p.id, p]));
+                  const roots = projectList.filter(p => !p.parentProjectId || !byId.has(p.parentProjectId));
+                  const flat: { project: ProjectSummary; depth: number }[] = [];
+                  const walk = (p: ProjectSummary, depth: number) => {
+                    flat.push({ project: p, depth });
+                    const kids = (childrenOf.get(p.id) || []).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+                    kids.forEach(k => walk(k, depth + 1));
+                  };
+                  roots.forEach(r => walk(r, 0));
+
+                  return (
+                    <div className="space-y-px">
+                      {flat.map(({ project: p, depth }) => {
+                        const isActive = project?.id === p.id;
+                        const isFork = !!p.parentProjectId && byId.has(p.parentProjectId);
+                        return (
+                          <div
+                            key={p.id}
+                            className={`group relative rounded-md transition-colors ${
+                              isActive
+                                ? 'bg-white/[0.08]'
+                                : 'hover:bg-white/[0.03]'
+                            }`}
+                            style={{ paddingLeft: depth * 14 }}
+                          >
+                            {/* Fork guide line */}
+                            {depth > 0 && (
+                              <span
+                                aria-hidden="true"
+                                className="absolute left-3 top-0 bottom-0 w-px bg-white/[0.08]"
+                                style={{ left: (depth - 1) * 14 + 14 }}
+                              />
                             )}
+                            <button
+                              onClick={() => loadProject(p.id)}
+                              className="w-full text-left px-3 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                {isFork && (
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 flex-shrink-0" aria-hidden="true">
+                                    <circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9v1a4 4 0 0 1-4 4H8"/><path d="M6 8v7"/>
+                                  </svg>
+                                )}
+                                <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
+                                  {p.title}
+                                </span>
+                                <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible">
+                                  {relativeTime(p.updatedAt)}
+                                </span>
+                              </div>
+                            </button>
+                            {/* Delete button — hover reveal, does not shift layout */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDestructive({
+                                  title: `Delete "${p.title}"?`,
+                                  description: 'Removes the project from the list. Generated files stay on disk and can be re-linked later if needed.',
+                                  mode: 'simple',
+                                  confirmLabel: 'Delete',
+                                  run: async () => {
+                                    await api.deleteProject(p.id);
+                                    setProjectList(list => list.filter(x => x.id !== p.id));
+                                    if (project?.id === p.id) setProject(null);
+                                  },
+                                });
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-red-300 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Delete project"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+                              </svg>
+                            </button>
                           </div>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className={`text-[11px] font-medium ${status.color}`}>{status.label}</span>
-                            <span className="text-[10px] text-zinc-600">{new Date(p.updated_at).toLocaleDateString()}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </motion.aside>
           </>

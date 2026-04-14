@@ -53,6 +53,15 @@ export const deleteProject = async (id: string) => {
   return handleResponse(res);
 };
 
+export const analyzeAudio = async (id: string, opts?: { fork?: boolean }) => {
+  const res = await fetch(`${API}/projects/${id}/analyze-audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+  });
+  return handleResponse(res);
+};
+
 // ─── Concept Generation & Lock-in ───────────────────────────────────
 
 export const generateConcepts = async (
@@ -73,6 +82,20 @@ export const lockConcept = async (projectId: string, conceptIndex: number) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ conceptIndex })
   });
+  return handleResponse(res);
+};
+
+export const unlockConcept = async (projectId: string, opts?: { force?: boolean; fork?: boolean }) => {
+  const res = await fetch(`${API}/projects/${projectId}/unlock-concept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+  });
+  return handleResponse(res);
+};
+
+export const forkProject = async (projectId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/fork`, { method: 'POST' });
   return handleResponse(res);
 };
 
@@ -114,10 +137,21 @@ export const refineStyleDirection = async (projectId: string, description: strin
   return handleResponse(res);
 };
 
-export const unlockStyle = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/unlock-style`, { method: 'POST' });
-  return handleResponse(res);
-};
+const postWithFork = (path: string, opts?: { fork?: boolean }) =>
+  fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+  }).then(handleResponse);
+
+export const unlockStyle = (projectId: string, opts?: { fork?: boolean }) =>
+  postWithFork(`/projects/${projectId}/unlock-style`, opts);
+export const unlockScript = (projectId: string, opts?: { fork?: boolean }) =>
+  postWithFork(`/projects/${projectId}/unlock-script`, opts);
+export const unlockCharacters = (projectId: string, opts?: { fork?: boolean }) =>
+  postWithFork(`/projects/${projectId}/unlock-characters`, opts);
+export const unlockEnvironments = (projectId: string, opts?: { fork?: boolean }) =>
+  postWithFork(`/projects/${projectId}/unlock-environments`, opts);
 
 export const lockStyle = async (projectId: string, assetId: string, styleDescription?: string) => {
   const res = await fetch(`${API}/projects/${projectId}/lock-style`, {
@@ -132,6 +166,16 @@ export const analyzeStyleImage = async (projectId: string, imageFile: File) => {
   const form = new FormData();
   form.append('image', imageFile);
   const res = await fetch(`${API}/projects/${projectId}/analyze-style-image`, {
+    method: 'POST',
+    body: form
+  });
+  return handleResponse(res);
+};
+
+export const uploadAndLockStyle = async (projectId: string, imageFile: File) => {
+  const form = new FormData();
+  form.append('image', imageFile);
+  const res = await fetch(`${API}/projects/${projectId}/upload-and-lock-style`, {
     method: 'POST',
     body: form
   });
@@ -249,8 +293,12 @@ export const generateScript = async (projectId: string, userNote?: string) => {
   return handleResponse(res);
 };
 
-export const writeShotPrompts = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/write-shot-prompts`, { method: 'POST' });
+export const writeShotPrompts = async (projectId: string, userNote?: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/write-shot-prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userNote ? { userNote } : {}),
+  });
   return handleResponse(res);
 };
 
@@ -267,6 +315,11 @@ export const refineShotPrompt = async (projectId: string, shotId: string, feedba
 
 export const generateShotImage = async (projectId: string, shotId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const usePrevLastFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/use-prev-last-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 

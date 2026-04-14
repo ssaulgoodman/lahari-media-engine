@@ -51,18 +51,38 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
  * Optionally accepts an end keyframe for cinematic morphing.
  * Returns the storage path of the generated video.
  */
+export const VEO_MODELS = {
+  'veo-3.1-fast': { id: 'veo-3.1-fast-generate-preview', label: 'Veo 3.1 Fast', durations: [8], costPerSec: 0.10 },
+  'veo-3.1':      { id: 'veo-3.1-generate-preview',      label: 'Veo 3.1',      durations: [4, 6, 8], costPerSec: 0.20 },
+} as const;
+
+export type VeoModelKey = keyof typeof VEO_MODELS;
+
 export const generateVideo = async (
   startImagePath: string,
   motionPrompt: string,
-  endImagePath?: string
-): Promise<string> => {
+  endImagePath?: string,
+  opts?: { resolution?: '720p' | '1080p'; aspectRatio?: '16:9' | '9:16'; durationSec?: number; modelKey?: VeoModelKey }
+): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
   const ai = getAI();
   const startBase64 = readAsBase64(startImagePath);
 
+  const modelKey: VeoModelKey = opts?.modelKey || 'veo-3.1-fast';
+  const model = VEO_MODELS[modelKey] || VEO_MODELS['veo-3.1-fast'];
+
+  // Clamp the requested duration to one the selected Veo variant supports.
+  const durations = [...model.durations] as number[];
+  const requested = opts?.durationSec ?? durations[0];
+  const durationSec = durations.reduce<number>(
+    (best, d) => Math.abs(d - requested) < Math.abs(best - requested) ? d : best,
+    durations[0]
+  );
+
   const config: any = {
     numberOfVideos: 1,
-    resolution: '720p',
-    aspectRatio: '16:9'
+    resolution: opts?.resolution || '720p',
+    aspectRatio: opts?.aspectRatio || '16:9',
+    durationSeconds: durationSec,
   };
 
   if (endImagePath) {
@@ -74,7 +94,7 @@ export const generateVideo = async (
   }
 
   let operation = await ai.models.generateVideos({
-    model: 'veo-3.1-fast-generate-preview',
+    model: model.id,
     prompt: motionPrompt || 'Cinematic camera movement',
     image: {
       imageBytes: startBase64,
@@ -97,6 +117,6 @@ export const generateVideo = async (
   if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`);
 
   const buffer = Buffer.from(await videoRes.arrayBuffer());
-  const path = saveBuffer(buffer, 'videos', 'mp4');
-  return path;
+  const videoPath = saveBuffer(buffer, 'videos', 'mp4');
+  return { videoPath, modelId: model.id, durationSec };
 };

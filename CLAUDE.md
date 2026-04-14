@@ -79,9 +79,13 @@ Priority: character identity > continuity > environment > style. Explicit note: 
 ### Database
 
 SQLite tables (see `server/db.ts`):
-- `projects` — core state incl. `video_model`, `last_script_prompt`, `last_concept_prompt`
+- `projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage), `last_*_prompt` cached prompts, `style_exploration`
 - `scenes`, `shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`)
 - `cast_members`, `environments`, `assets`, `chat_messages`, `ai_calls`
+
+### Fork system
+
+Destructive operations (unlock-concept, unlock-script, unlock-style, unlock-characters, unlock-environments, analyze-audio) accept `{ fork: true }` on the server. Fork deep-copies all DB rows under a new id with `parent_project_id = source`; asset file_paths are shared (zero disk bloat). The sidebar groups forks indented under parents. Helper: `forkProject(sourceId)` in `server/routes/projects.ts`. UI dialog: `DestructiveAction` state in `App.tsx` (supports `mode: 'fork' | 'simple'`).
 
 **Supabase tables (read-only from Lahari):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
@@ -109,7 +113,24 @@ SQLite tables (see `server/db.ts`):
 - `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
-**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`
+**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/upload-and-lock-style`
+
+## Typography + color system
+
+The `index.html` `<style>` block has a commented spec. Short version:
+- **Size tiers (5)**: `text-[11px]` micro · `text-xs` small · `text-sm` body+tabs · `text-lg` heading · `text-2xl` display. No other sizes.
+- **Color tiers (3)**: `text-white` primary · `text-zinc-300` body · `text-zinc-400` muted. Anything darker (zinc-500+) disappears on the dark bg — don't use for text.
+- **Bg**: `#141418` (warm near-black, one step up from pure 950).
+
+## Video models
+
+Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/veo.ts` (`VEO_MODELS`) and `server/services/fal.ts` (`FAL_VIDEO_MODELS`). Four keys:
+- `veo-3.1-fast` — 8s fixed, cheapest
+- `veo-3.1` — 4s/6s/8s variable, higher quality
+- `seedance-2.0-fast` — 5s/10s via fal.ai
+- `seedance-2.0` — 5s/10s via fal.ai, higher quality
+
+Pacing buttons in the Script phase are derived from the selected model's `durations`.
 
 ## Express 5 quirks
 

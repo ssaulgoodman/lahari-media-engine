@@ -295,9 +295,9 @@ SCENE rules:
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { styleDNA: string; cast: { name: string; description: string }[]; concept: any; lyrics: string },
+  context: { styleDNA: string; cast: { name: string; description: string }[]; concept: any; lyrics: string; userNote?: string },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
-): Promise<{ id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]> => {
+): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = getClient();
 
   const shotList = shots.map((s, i) =>
@@ -311,6 +311,10 @@ export const writeShotPrompts = async (
     ? `\nPREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\n${previousBatchTail.map(t => `[${t.id}]: visual: "${t.visualPrompt}" | motion: "${t.motionPrompt}"`).join('\n')}\n`
     : '';
 
+  const userNoteBlock = context.userNote
+    ? `\nUSER DIRECTION (apply to this rewrite): ${context.userNote}\n`
+    : '';
+
   const prompt = `You are a cinematographer writing shot-by-shot prompts for a devotional music video.
 
 STYLE DNA (for context, do NOT include in prompts):
@@ -320,7 +324,7 @@ CHARACTERS:
 ${castList}
 
 CONCEPT: ${context.concept.deity || ''} — ${context.concept.theme}. Mood: ${context.concept.mood}.
-${tailContext}
+${userNoteBlock}${tailContext}
 SHOTS:
 ${shotList}
 
@@ -378,7 +382,7 @@ Match the IDs exactly.`;
     throw new Error('Claude did not return tool_use response');
   }
 
-  return (toolBlock.input as any).shots;
+  return { shots: (toolBlock.input as any).shots, prompt };
 };
 
 // ─── Style Brainstorming (text-only, no images) ─────────────────────

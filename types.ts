@@ -131,8 +131,12 @@ export interface ApiProject {
   colorPalette?: string;
   videoMode: VideoMode;
   videoModel: string;
+  aspectRatio: '16:9' | '9:16' | '1:1';
+  videoResolution: '720p' | '1080p';
   lastScriptPrompt?: string;
   lastConceptPrompt?: string;
+  lastWriteShotsPrompt?: string;
+  parentProjectId?: string;
   cast: CastMember[];
   environments: Environment[];
   scenes: VideoScene[];

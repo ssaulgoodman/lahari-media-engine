@@ -112,7 +112,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
       {/* Header */}
       <div>
         <h2 className="text-lg font-display font-medium text-white">Music Video Queue</h2>
-        <p className="text-sm text-zinc-500 mt-0.5">
+        <p className="text-sm text-zinc-400 mt-0.5">
           {filtered.length === stats.total
             ? `${stats.total} songs`
             : `${filtered.length} of ${stats.total} songs`}
@@ -136,8 +136,8 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                 isActive ? `ring-1 ${card.ring}` : ''
               }`}
             >
-              <p className={`text-xl font-semibold font-mono ${card.color}`}>{card.count}</p>
-              <p className="text-[11px] text-zinc-600 mt-0.5">{card.label}</p>
+              <p className={`text-2xl font-semibold font-mono ${card.color}`}>{card.count}</p>
+              <p className="text-[11px] text-zinc-400 mt-0.5">{card.label}</p>
             </button>
           );
         })}
@@ -146,13 +146,13 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
       {/* Filters */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
           <input
             type="text"
             placeholder="Search by name, ISRC, album..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full surface-inset rounded-md pl-9 pr-3 py-1.5 text-[12px] text-zinc-300 placeholder:text-zinc-700 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+            className="w-full surface-inset rounded-md pl-9 pr-3 py-1.5 text-xs text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
           />
         </div>
 
@@ -160,7 +160,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
           <select
             value={deityFilter}
             onChange={(e) => setDeityFilter(e.target.value)}
-            className="surface-inset rounded-md px-3 py-1.5 text-[12px] text-zinc-300 outline-none bg-transparent cursor-pointer"
+            className="surface-inset rounded-md px-3 py-1.5 text-xs text-zinc-300 outline-none bg-transparent cursor-pointer"
           >
             <option value="">All Deities</option>
             {deities.map(d => <option key={d} value={d}>{d}</option>)}
@@ -170,7 +170,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
         {hasFilters && (
           <button
             onClick={() => { setStatusFilter('all'); setDeityFilter(''); setSearch(''); }}
-            className="text-[11px] text-zinc-500 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors flex items-center gap-1"
+            className="text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors flex items-center gap-1"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             Clear
@@ -180,7 +180,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
         <button
           onClick={load}
           disabled={loading}
-          className="ml-auto text-[11px] text-zinc-500 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
+          className="ml-auto text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
@@ -189,13 +189,13 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
       {/* Table */}
       <div className="border border-white/[0.06] rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[36px_1fr_90px_70px_120px_100px_110px] px-4 py-2.5 text-[11px] text-zinc-500 uppercase tracking-wide border-b border-white/[0.04] bg-white/[0.01]">
+        <div className="grid grid-cols-[36px_1fr_90px_70px_120px_100px_110px] px-4 py-2.5 text-[11px] text-zinc-400 uppercase tracking-wide border-b border-white/[0.04] bg-white/[0.01]">
           <span>#</span>
           <span>Song</span>
           <span>Deity</span>
           <button
             onClick={() => setSortBy(s => s === 'duration_asc' ? 'duration_desc' : s === 'duration_desc' ? 'priority' : 'duration_asc')}
-            className={`text-left hover:text-zinc-300 transition-colors ${sortBy.startsWith('duration') ? 'text-zinc-200' : ''}`}
+            className={`text-left hover:text-zinc-300 transition-colors ${sortBy.startsWith('duration') ? 'text-zinc-300' : ''}`}
           >
             Dur. {sortBy === 'duration_asc' ? '↑' : sortBy === 'duration_desc' ? '↓' : ''}
           </button>
@@ -213,7 +213,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
 
         {/* Empty */}
         {!loading && filtered.length === 0 && (
-          <div className="flex items-center justify-center h-32 text-zinc-600 text-xs">
+          <div className="flex items-center justify-center h-32 text-zinc-400 text-xs">
             No songs match filters
           </div>
         )}
@@ -230,26 +230,26 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                 idx % 2 === 0 ? '' : 'bg-white/[0.01]'
               }`}
             >
-              <span className="text-[12px] text-zinc-400 font-mono">{item.priority}</span>
+              <span className="text-xs text-zinc-400 font-mono">{item.priority}</span>
 
               <div className="min-w-0">
-                <div className="text-[13px] text-zinc-100 truncate">{item.song_name}</div>
+                <div className="text-xs text-white truncate">{item.song_name}</div>
                 <div className="text-[11px] text-zinc-400 truncate">{item.album} · {item.isrc}</div>
               </div>
 
-              <span className="text-[12px] text-zinc-300">{item.deity}</span>
-              <span className="text-[12px] text-zinc-400 font-mono">{formatDuration(item.duration_seconds)}</span>
+              <span className="text-xs text-zinc-300">{item.deity}</span>
+              <span className="text-xs text-zinc-400 font-mono">{formatDuration(item.duration_seconds)}</span>
 
               {/* Pipeline pills */}
               <div className="flex items-center gap-1">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  item.audio_uploaded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-500'
+                <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                  item.audio_uploaded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>Audio</span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  item.srts_ready ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-500'
+                <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                  item.srts_ready ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>SRT</span>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-500'
+                <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                  item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>Video</span>
               </div>
 
@@ -258,7 +258,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                 item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400'
                   : item.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400'
                   : item.status === 'review' ? 'bg-amber-500/10 text-amber-400'
-                  : 'bg-white/[0.04] text-zinc-500'
+                  : 'bg-white/[0.04] text-zinc-400'
               }`}>
                 {item.status === 'in_progress' ? 'In Progress'
                   : item.status === 'completed' ? 'Done'
@@ -270,7 +270,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                 {hasProject ? (
                   <button
                     onClick={() => onOpenProject(item.lahari_project_id!)}
-                    className="text-[12px] text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                    className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
                   >
                     Open
                   </button>
@@ -278,12 +278,12 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                   <button
                     onClick={() => handleStart(item)}
                     disabled={starting === item.id}
-                    className="text-[12px] bg-white text-black px-3 py-1.5 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                    className="text-xs bg-white text-black px-3 py-1.5 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors"
                   >
                     {starting === item.id ? '...' : 'Start'}
                   </button>
                 ) : !item.audio_uploaded ? (
-                  <span className="text-[11px] text-zinc-500">Needs audio</span>
+                  <span className="text-[11px] text-zinc-400">Needs audio</span>
                 ) : null}
               </div>
             </div>

@@ -46,7 +46,7 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         {/* Header */}
         <div className="border-b border-white/[0.06] pb-5">
           <h2 className="text-2xl font-display font-medium text-white tracking-tight">{project.title}</h2>
-          <p className="text-zinc-500 mt-1 text-sm">Review the analysis, then generate creative concepts.</p>
+          <p className="text-zinc-400 mt-1 text-sm">Review the analysis, then generate creative concepts.</p>
         </div>
 
         {/* Audio player */}
@@ -60,8 +60,8 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         {project.musicalStructure.length > 0 && (
           <div className="surface rounded-xl p-6 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Song Structure</h3>
-              <span className="text-[11px] text-zinc-600">{project.musicalStructure.length} sections</span>
+              <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Song Structure</h3>
+              <span className="text-[11px] text-zinc-400">{project.musicalStructure.length} sections</span>
             </div>
             <div className="relative h-14 w-full bg-black/40 rounded-lg flex overflow-hidden border border-white/[0.04]">
               {project.musicalStructure.map((section, idx) => {
@@ -81,8 +81,8 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
                     style={{ width: `${width}%` }}
                     className={`h-full ${bgClass} border-r border-black/30 flex flex-col items-center justify-center`}
                   >
-                    <span className="text-[10px] font-medium text-white/80 uppercase truncate px-1">{section.label}</span>
-                    <span className="text-[10px] text-white/40 font-mono">{section.startTime}</span>
+                    <span className="text-[11px] font-medium text-white/80 uppercase truncate px-1">{section.label}</span>
+                    <span className="text-[11px] text-white/40 font-mono">{section.startTime}</span>
                   </div>
                 );
               })}
@@ -93,8 +93,8 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         {/* Lyrics */}
         <div className="surface rounded-xl p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Transcribed Lyrics</h3>
-            <span className="text-[11px] text-zinc-600">Editable</span>
+            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Transcribed Lyrics</h3>
+            <span className="text-[11px] text-zinc-400">Editable</span>
           </div>
           <textarea
             value={lyrics}
@@ -106,15 +106,15 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         {/* Meaning */}
         {project.meaning && (
           <div className="surface rounded-xl p-6 space-y-3">
-            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Song Meaning</h3>
+            <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Song Meaning</h3>
             <p className="text-sm text-zinc-300 leading-relaxed">{project.meaning}</p>
           </div>
         )}
 
         {/* Additional context */}
         <div className="surface rounded-xl p-6 space-y-3">
-          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Additional Context</h3>
-          <p className="text-zinc-600 text-[11px]">Add notes to guide concept generation — deity, narrative ideas, visual references.</p>
+          <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Additional Context</h3>
+          <p className="text-zinc-400 text-[11px]">Add notes to guide concept generation — deity, narrative ideas, visual references.</p>
           <textarea
             value={editedContext}
             onChange={(e) => setEditedContext(e.target.value)}
@@ -156,7 +156,7 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
           <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
           <div className="text-center space-y-2">
             <h3 className="text-lg font-display text-white">Analyzing audio</h3>
-            <p className="text-sm text-zinc-500">Transcribing, detecting structure, extracting meaning</p>
+            <p className="text-sm text-zinc-400">Transcribing, detecting structure, extracting meaning</p>
           </div>
         </div>
       </div>
@@ -183,13 +183,13 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-3xl font-display font-semibold tracking-tight gradient-text">New Project</h2>
-            <p className="text-zinc-500 text-sm">Import your master track.</p>
+            <h2 className="text-2xl font-display font-semibold tracking-tight gradient-text">New Project</h2>
+            <p className="text-zinc-400 text-sm">Import your master track.</p>
           </div>
 
           <div className="space-y-3 text-left">
               <div className="space-y-1">
-                  <label htmlFor="song-title" className="text-[11px] text-zinc-500 uppercase font-medium pl-1">Song Title</label>
+                  <label htmlFor="song-title" className="text-[11px] text-zinc-400 uppercase font-medium pl-1">Song Title</label>
                   <input
                       id="song-title"
                       name="title"
@@ -201,7 +201,7 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
                   />
               </div>
               <div className="space-y-1">
-                  <label htmlFor="song-language" className="text-[11px] text-zinc-500 uppercase font-medium pl-1">Language</label>
+                  <label htmlFor="song-language" className="text-[11px] text-zinc-400 uppercase font-medium pl-1">Language</label>
                   <input
                       id="song-language"
                       name="language"
@@ -213,7 +213,7 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
                   />
               </div>
               <div className="space-y-1">
-                  <label htmlFor="song-context" className="text-[11px] text-zinc-500 uppercase font-medium pl-1">Context / Deity</label>
+                  <label htmlFor="song-context" className="text-[11px] text-zinc-400 uppercase font-medium pl-1">Context / Deity</label>
                   <input
                       id="song-context"
                       name="context"

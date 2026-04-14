@@ -4,6 +4,148 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ApiProject, ConceptOption, CastMember, Environment, VideoMode } from '../types';
 import * as api from '../services/api';
 import { ImageModal } from './ImageModal';
+import { Markdown } from './Markdown';
+import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
+
+// StyleRow must live at module scope (not inside AnalysisEditor's body) —
+// otherwise every parent re-render creates a new component reference and
+// unmounts/remounts all rows on every keystroke, causing jerky animations
+// and textarea flicker.
+interface StyleSlotType { title: string; description: string; imageUrl?: string; assetId?: string; isGenerating?: boolean; isRefining?: boolean; }
+interface StyleRowProps {
+  slot: StyleSlotType;
+  index: number;
+  expanded: boolean;
+  onToggle: () => void;
+  onVisualize: () => void;
+  onLock: () => void;
+  onRefine: (text: string) => void;
+  onOpenModal: (url: string) => void;
+  isLocking: boolean;
+}
+const StyleRow: React.FC<StyleRowProps> = React.memo(({ slot, index, expanded, onToggle, onVisualize, onLock, onRefine, onOpenModal, isLocking }) => {
+  const [refineInput, setRefineInput] = useState('');
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-white/[0.06]">
+      {/* Collapsed row — always visible */}
+      <button
+        onClick={onToggle}
+        className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          {slot.imageUrl ? (
+            <img src={slot.imageUrl} alt={slot.title} className="w-14 h-14 rounded-md object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-14 h-14 rounded-md surface-inset flex items-center justify-center flex-shrink-0">
+              <span className="text-[11px] text-zinc-400 uppercase tracking-wide">#{index + 1}</span>
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-medium text-white">{slot.title || 'Untitled'}</h4>
+            {!expanded && (
+              <p className="text-xs text-zinc-400 line-clamp-1 mt-0.5">{slot.description}</p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+          {slot.isGenerating && (
+            <div className="w-3.5 h-3.5 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+          )}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-zinc-400 transition-transform ${expanded ? 'rotate-180' : ''}`}>
+            <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Expanded content — instant show/hide, no height animation (too jerky). */}
+      {expanded && (
+        <div className="border-t border-white/[0.06]">
+          {(slot.isGenerating || slot.imageUrl) && (
+            <div className="bg-black/20">
+              {slot.isGenerating ? (
+                <div className="h-56 flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                </div>
+              ) : (
+                <div className="relative group">
+                  <img src={slot.imageUrl} onClick={() => onOpenModal(slot.imageUrl!)} className="w-full h-auto max-h-[360px] object-contain mx-auto cursor-zoom-in" alt={slot.title} />
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onOpenModal(slot.imageUrl!); }}
+                    className="absolute top-3 right-3 p-1.5 rounded-md bg-black/40 backdrop-blur-sm text-zinc-300 hover:text-white hover:bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="View full screen"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onLock(); }}
+                    disabled={isLocking}
+                    className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-sm text-black px-3.5 py-1.5 rounded-md text-xs font-semibold hover:bg-white transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-black/30"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    {isLocking ? 'Locking…' : 'Lock style'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="px-5 py-4 space-y-4">
+            <p className="text-sm text-zinc-300 leading-relaxed">{slot.description}</p>
+
+            {/* Refine + Visualize row */}
+            <div className="flex gap-2">
+              <input
+                value={refineInput}
+                onChange={(e) => setRefineInput(e.target.value)}
+                placeholder="Refine this direction…"
+                className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && refineInput) { onRefine(refineInput); setRefineInput(''); }
+                }}
+              />
+              <button
+                onClick={() => { onRefine(refineInput); setRefineInput(''); }}
+                disabled={!refineInput || slot.isRefining}
+                className="px-4 py-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-md text-xs text-zinc-300 disabled:opacity-30 transition-colors"
+              >
+                {slot.isRefining ? 'Refining…' : 'Refine'}
+              </button>
+              <button
+                onClick={onVisualize}
+                disabled={!slot.description || slot.isGenerating}
+                className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+              >
+                {slot.isGenerating ? 'Generating…' : slot.imageUrl ? 'Re-visualize' : 'Visualize'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+StyleRow.displayName = 'StyleRow';
+
+// Standardized unlock affordance — same icon, same hover style, consistent position across phases.
+const UnlockPill: React.FC<{ onClick: () => void; disabled?: boolean; label?: string }> = ({ onClick, disabled, label = 'Unlock' }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className="text-[11px] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 px-2.5 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+    title="Unlock this phase to make changes"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+    </svg>
+    {label}
+  </button>
+);
 
 interface Props {
   project: ApiProject;
@@ -20,6 +162,10 @@ interface Props {
   onDeleteCast: (memberId: string) => void;
   onGenerateScript: (userNote?: string) => void;
   onGenerateConcepts?: (opts?: { userNote?: string }) => void;
+  onUnlockConcept?: () => void;
+  onUnlockScript?: () => void;
+  onUnlockCharacters?: () => void;
+  onUnlockEnvironments?: () => void;
   onUpdateProject: (updates: Record<string, any>) => void;
   onLaunchStudio: () => void;
   onAdvanceCharacters: () => void;
@@ -64,7 +210,7 @@ export const AnalysisEditor: React.FC<Props> = ({
   project, isLoading, looksLoading, lookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
-  onGenerateScript, onGenerateConcepts, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject,
+  onGenerateScript, onGenerateConcepts, onUnlockConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject,
 }) => {
   const activePhase = getActivePhase(project);
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
@@ -86,9 +232,31 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [isBrainstorming, setIsBrainstorming] = useState(false);
   const [isLocking, setIsLocking] = useState(false);
   const [showExploredStyles, setShowExploredStyles] = useState(false);
-  const [expandedStyleIdx, setExpandedStyleIdx] = useState<number | null>(null);
-  const [showCustomSlot, setShowCustomSlot] = useState(false);
+  const [expandedStyleIdxs, setExpandedStyleIdxs] = useState<Set<number>>(new Set());
+  const toggleStyleIdx = (idx: number) => {
+    setExpandedStyleIdxs(prev => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  };
+  const [showCustomSlot, setShowCustomSlot] = useState(true);
+  const [uploadedStyleFile, setUploadedStyleFile] = useState<File | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
+  const [showSongAnalysis, setShowSongAnalysis] = useState(false);
+  const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
+
+  const handleRerunAnalysis = async () => {
+    setIsAnalyzingAudio(true);
+    try {
+      const updated = await api.analyzeAudio(project.id);
+      onSetProject?.(updated);
+    } catch (err: any) {
+      console.error('Re-analysis failed:', err);
+    } finally {
+      setIsAnalyzingAudio(false);
+    }
+  };
 
   // Environment look state
   const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
@@ -223,143 +391,35 @@ export const AnalysisEditor: React.FC<Props> = ({
   };
 
   const handleUploadReference = async (file: File) => {
+    setUploadedStyleFile(file);
+    setUserSlot(prev => ({ ...prev, imageUrl: URL.createObjectURL(file) }));
     try {
       const result = await api.analyzeStyleImage(project.id, file);
       const styleDesc = result.styleDescription || '';
-      setUserSlot({
+      setUserSlot(prev => ({
+        ...prev,
         title: 'Uploaded Reference',
         description: styleDesc,
-        imageUrl: URL.createObjectURL(file),
-      });
+        imageUrl: prev.imageUrl || URL.createObjectURL(file),
+      }));
     } catch (err: any) {
       console.error('Upload analysis failed:', err);
     }
   };
 
-  // ─── Style Card ──────────────────────────────────────────────────
-
-  const StyleRow: React.FC<{
-    slot: StyleSlot;
-    index: number;
-    expanded: boolean;
-    onToggle: () => void;
-    onVisualize: () => void;
-    onLock: () => void;
-  }> = ({ slot, index, expanded, onToggle, onVisualize, onLock }) => {
-    const [refineInput, setRefineInput] = useState('');
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: index * 0.04 }}
-        className="rounded-xl overflow-hidden border border-white/[0.06]"
-      >
-        {/* Collapsed row — always visible */}
-        <button
-          onClick={onToggle}
-          className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-white/[0.02] transition-colors"
-        >
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            {slot.imageUrl && (
-              <img src={slot.imageUrl} alt={slot.title} className="w-10 h-10 rounded-md object-cover flex-shrink-0" />
-            )}
-            <div className="min-w-0 flex-1">
-              <h4 className="text-sm font-medium text-white">{slot.title || 'Untitled'}</h4>
-              {!expanded && (
-                <p className="text-xs text-zinc-500 line-clamp-1 mt-0.5">{slot.description}</p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-3 flex-shrink-0 ml-4">
-            {slot.isGenerating && (
-              <div className="w-3.5 h-3.5 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
-            )}
-            {slot.imageUrl && !expanded && (
-              <span className="text-[10px] text-zinc-500 border border-white/[0.08] px-2 py-0.5 rounded">Image ready</span>
-            )}
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-180' : ''}`}>
-              <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
-            </svg>
-          </div>
-        </button>
-
-        {/* Expanded content */}
-        <AnimatePresence initial={false}>
-          {expanded && (
-            <motion.div
-              key="expanded"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="border-t border-white/[0.06]">
-                {/* Image result — show first if exists */}
-                {(slot.isGenerating || slot.imageUrl) && (
-                  <div className="bg-black/20">
-                    {slot.isGenerating ? (
-                      <div className="h-56 flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
-                      </div>
-                    ) : (
-                      <div className="relative group">
-                        <img src={slot.imageUrl} onClick={() => setModalImage(slot.imageUrl!)} className="w-full h-auto max-h-[360px] object-contain mx-auto cursor-zoom-in" alt={slot.title} />
-                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                          <button
-                            onClick={onLock}
-                            disabled={isLocking}
-                            className="bg-white text-black px-5 py-2.5 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50"
-                          >
-                            {isLocking ? 'Locking…' : 'Lock This Style'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="px-5 py-4 space-y-4">
-                  <p className="text-sm text-zinc-300 leading-relaxed">{slot.description}</p>
-
-                  {/* Refine + Visualize row */}
-                  <div className="flex gap-2">
-                    <input
-                      value={refineInput}
-                      onChange={(e) => setRefineInput(e.target.value)}
-                      placeholder="Refine this direction…"
-                      className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && refineInput) {
-                          handleRefine(index, refineInput);
-                          setRefineInput('');
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => { handleRefine(index, refineInput); setRefineInput(''); }}
-                      disabled={!refineInput || slot.isRefining}
-                      className="px-4 py-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-md text-xs text-zinc-300 disabled:opacity-30 transition-colors"
-                    >
-                      {slot.isRefining ? 'Refining…' : 'Refine'}
-                    </button>
-                    <button
-                      onClick={onVisualize}
-                      disabled={!slot.description || slot.isGenerating}
-                      className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-                    >
-                      {slot.isGenerating ? 'Generating…' : slot.imageUrl ? 'Re-visualize' : 'Visualize'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    );
+  const handleLockUploadedDirect = async () => {
+    if (!uploadedStyleFile) return;
+    setIsLocking(true);
+    try {
+      const updated = await api.uploadAndLockStyle(project.id, uploadedStyleFile);
+      onSetProject?.(updated);
+    } catch (err: any) {
+      console.error('Direct lock failed:', err);
+    } finally {
+      setIsLocking(false);
+    }
   };
+
 
   // ─── Phase content animation wrapper ─────────────────────────────
 
@@ -369,6 +429,10 @@ export const AnalysisEditor: React.FC<Props> = ({
     exit: { opacity: 0, y: -6 },
     transition: { duration: 0.2 },
   };
+
+  const hasGeneratedMedia = !!project.styleAssetUrl
+    || project.cast.some(c => c.referenceImageUrl)
+    || project.environments.some(e => e.referenceImageUrl);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-32">
@@ -383,6 +447,169 @@ export const AnalysisEditor: React.FC<Props> = ({
         )}
       </div>
 
+      {/* Render settings — toolbar: 3 equal cells with dividers, plus a title column */}
+      <div className="surface rounded-xl overflow-hidden">
+        <div className="flex items-stretch divide-x divide-white/[0.06]">
+          {/* Title cell */}
+          <div className="flex items-center gap-2 px-5 py-3 flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+            <span className="text-[11px] uppercase tracking-wide text-zinc-400">Render</span>
+          </div>
+
+          {/* Aspect */}
+          <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-400">Aspect</div>
+            <div className="relative">
+              <select
+                value={project.aspectRatio || '16:9'}
+                onChange={e => onUpdateProject({ aspectRatio: e.target.value })}
+                disabled={hasGeneratedMedia}
+                title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
+                className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer disabled:opacity-50 appearance-none pr-5"
+              >
+                <option value="16:9">16:9 — landscape</option>
+                <option value="9:16">9:16 — portrait</option>
+                <option value="1:1">1:1 — square</option>
+              </select>
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </label>
+
+          {/* Video resolution */}
+          <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
+            <div className="relative">
+              <select
+                value={project.videoResolution || '720p'}
+                onChange={e => onUpdateProject({ videoResolution: e.target.value })}
+                className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none pr-5"
+              >
+                <option value="720p">720p (HD)</option>
+                <option value="1080p">1080p (Full HD)</option>
+              </select>
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </label>
+
+          {/* Video model */}
+          <label className="flex-[1.5] px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+            <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
+            <div className="relative">
+              <select
+                value={project.videoModel || VIDEO_MODELS[0].key}
+                onChange={e => {
+                  const newModel = getVideoModel(e.target.value);
+                  const updates: Record<string, any> = { videoModel: e.target.value };
+                  // Clamp pacing to a valid duration for the new model.
+                  if (!newModel.durations.includes(project.targetDuration)) {
+                    updates.targetDuration = newModel.durations[0];
+                  }
+                  onUpdateProject(updates);
+                }}
+                className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none truncate pr-5"
+              >
+                {VIDEO_MODELS.map(m => (
+                  <option key={m.key} value={m.key}>{m.label}{m.note ? ` — ${m.note}` : ''}</option>
+                ))}
+              </select>
+              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Song analysis — Gemini's read on lyrics, meaning, musical structure */}
+      {(project.meaning || project.musicalStructure?.length > 0 || project.lyrics) && (() => {
+        const needsAnalysis = !project.meaning || !(project.musicalStructure?.length > 0);
+        return (
+        <div className="surface rounded-xl">
+          <div className="w-full px-5 py-3 flex items-center justify-between gap-3">
+            <button
+              onClick={() => setShowSongAnalysis(s => !s)}
+              className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity flex-1 min-w-0"
+            >
+              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Song analysis</span>
+              {/* Explicit pills — what's captured, what's missing */}
+              <span className="flex items-center gap-1.5 flex-wrap">
+                {(() => {
+                  const items = [
+                    { label: 'Lyrics', present: !!project.lyrics },
+                    { label: `Structure${project.musicalStructure?.length > 0 ? ` · ${project.musicalStructure.length} section${project.musicalStructure.length === 1 ? '' : 's'}` : ''}`, present: project.musicalStructure?.length > 0 },
+                    { label: 'Meaning', present: !!project.meaning },
+                  ];
+                  return items.map(it => (
+                    <span
+                      key={it.label}
+                      className={`text-[11px] px-2 py-0.5 rounded border ${
+                        it.present
+                          ? 'text-zinc-300 border-white/[0.08] bg-white/[0.03]'
+                          : 'text-amber-300/80 border-amber-300/20 bg-amber-300/[0.04]'
+                      }`}
+                    >
+                      {it.present ? '✓ ' : '— '}{it.label}
+                    </span>
+                  ));
+                })()}
+              </span>
+            </button>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {needsAnalysis && (
+                <button
+                  onClick={handleRerunAnalysis}
+                  disabled={isAnalyzingAudio}
+                  className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
+                  title="Run detect-structure (Gemini) + summarize-meaning (Claude) on this project's audio"
+                >
+                  {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                  {isAnalyzingAudio ? 'Analyzing…' : 'Run analysis'}
+                </button>
+              )}
+              <button onClick={() => setShowSongAnalysis(s => !s)} className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors">
+                {showSongAnalysis ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+          {showSongAnalysis && (
+            <div className="px-5 pb-5 space-y-4 border-t border-white/[0.04] pt-4">
+              {project.meaning && (
+                <div>
+                  <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Meaning</h4>
+                  <Markdown>{project.meaning}</Markdown>
+                </div>
+              )}
+              {project.musicalStructure?.length > 0 && (
+                <div>
+                  <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Musical structure</h4>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                    {project.musicalStructure.map((section, idx) => (
+                      <div key={idx} className="surface-inset rounded-md px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-white font-medium truncate">{section.label}</span>
+                          <span className="text-[11px] text-zinc-400 font-mono flex-shrink-0">{section.startTime}–{section.endTime}</span>
+                        </div>
+                        {section.description && (
+                          <p className="text-[11px] text-zinc-400 mt-1 line-clamp-2">{section.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {project.lyrics && (
+                <div>
+                  <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Lyrics</h4>
+                  <pre className="surface-inset rounded-md p-3 text-xs text-zinc-300 font-sans whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project.lyrics}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        );
+      })()}
+
       {/* Phase Progress — Chips connected by lines */}
       <div className="flex items-center justify-center gap-0">
         {PHASE_ORDER.map((phase, idx) => {
@@ -395,14 +622,14 @@ export const AnalysisEditor: React.FC<Props> = ({
               <button
                 disabled={!accessible}
                 onClick={() => accessible && setViewPhase(phase)}
-                className={`px-4 py-2 rounded-md text-[11px] font-medium transition-colors ${
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   active
                     ? 'bg-white/[0.08] text-white'
                     : locked
                       ? 'text-zinc-300 hover:text-white'
                       : accessible
-                        ? 'text-zinc-500 hover:text-zinc-300'
-                        : 'text-zinc-700 cursor-not-allowed'
+                        ? 'text-zinc-400 hover:text-zinc-300'
+                        : 'text-zinc-400 cursor-not-allowed'
                 }`}
               >
                 {locked && (
@@ -427,29 +654,51 @@ export const AnalysisEditor: React.FC<Props> = ({
           <motion.div key="concept" {...phaseTransition} className="space-y-6">
             {isLockedPhase('concept') ? (
               <div className="rounded-xl p-6 border border-white/[0.06]">
-                <div className="flex items-center gap-2 mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
-                  <h3 className="text-sm font-medium text-white">{project.lockedConcept?.conceptDirection}</h3>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
+                    <h3 className="text-sm font-medium text-white">{project.lockedConcept?.conceptDirection}</h3>
+                  </div>
+                  {onUnlockConcept && (
+                    <UnlockPill onClick={onUnlockConcept} disabled={isLoading} />
+                  )}
                 </div>
-                <div className="grid grid-cols-3 gap-4 text-[13px]">
-                  <div><span className="text-xs text-zinc-500 block uppercase tracking-wide mb-0.5">Deity</span><span className="text-white">{project.lockedConcept?.deity}</span></div>
-                  <div><span className="text-xs text-zinc-500 block uppercase tracking-wide mb-0.5">Mood</span><span className="text-white">{project.lockedConcept?.mood}</span></div>
-                  <div><span className="text-xs text-zinc-500 block uppercase tracking-wide mb-0.5">Direction</span><span className="text-white">{project.lockedConcept?.conceptDirection}</span></div>
+                <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div><span className="text-xs text-zinc-400 block uppercase tracking-wide mb-0.5">Deity</span><span className="text-white">{project.lockedConcept?.deity}</span></div>
+                  <div><span className="text-xs text-zinc-400 block uppercase tracking-wide mb-0.5">Mood</span><span className="text-white">{project.lockedConcept?.mood}</span></div>
+                  <div><span className="text-xs text-zinc-400 block uppercase tracking-wide mb-0.5">Direction</span><span className="text-white">{project.lockedConcept?.conceptDirection}</span></div>
                 </div>
                 <p className="text-zinc-400 mt-4 text-sm leading-relaxed">{project.lockedConcept?.theme}</p>
+              </div>
+            ) : project.conceptOptions.length === 0 ? (
+              /* Empty state — first-time generate */
+              <div className="surface rounded-xl p-10 flex flex-col items-center justify-center text-center space-y-4">
+                <h3 className="text-sm font-medium text-white">No concepts yet</h3>
+                <p className="text-zinc-400 text-xs max-w-md">Claude will propose 3 creative directions based on the song's lyrics, mood, and musical structure.</p>
+                {onGenerateConcepts && (
+                  <button
+                    onClick={() => onGenerateConcepts()}
+                    disabled={isLoading}
+                    className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                  >
+                    {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                    {isLoading ? 'Generating concepts...' : 'Generate Concepts'}
+                  </button>
+                )}
+                {isLoading && <p className="text-[11px] text-zinc-400">Claude Opus is thinking — typically 20–40s.</p>}
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h3 className="text-sm font-medium text-white mb-1">Choose a Creative Direction</h3>
-                    <p className="text-zinc-500 text-[13px]">{project.conceptOptions.length} concepts generated. Pick one to proceed.</p>
+                    <p className="text-zinc-400 text-xs">{project.conceptOptions.length} concepts generated. Pick one to proceed.</p>
                   </div>
                   {onGenerateConcepts && (
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setShowConceptPrompt(s => !s)}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1"
+                        className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors px-2 py-1"
                       >
                         {showConceptPrompt ? 'Hide prompt' : 'View prompt'}
                       </button>
@@ -470,7 +719,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                       value={conceptNote}
                       onChange={e => setConceptNote(e.target.value)}
                       placeholder="Regenerate note — e.g. 'more abstract' or 'focus on devotion not mythology'"
-                      className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                      className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                       onKeyDown={e => {
                         if (e.key === 'Enter' && conceptNote.trim()) {
                           onGenerateConcepts({ userNote: conceptNote });
@@ -484,7 +733,13 @@ export const AnalysisEditor: React.FC<Props> = ({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="relative grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {isLoading && (
+                    <div className="absolute inset-0 bg-black/60 rounded-xl z-10 flex flex-col items-center justify-center gap-3">
+                      <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+                      <p className="text-zinc-300 text-sm">Generating concepts...</p>
+                    </div>
+                  )}
                   {project.conceptOptions.map((concept, idx) => (
                     <motion.div
                       key={idx}
@@ -497,12 +752,12 @@ export const AnalysisEditor: React.FC<Props> = ({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-white font-medium text-sm">{concept.conceptDirection}</span>
-                        <span className="text-[10px] text-zinc-600 font-mono">{idx + 1}</span>
+                        <span className="text-[11px] text-zinc-400 font-mono">{idx + 1}</span>
                       </div>
-                      <div className="space-y-1.5 text-[13px]">
-                        <div><span className="text-zinc-500">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
-                        <div><span className="text-zinc-500">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
-                        <p className="text-zinc-400 text-[13px] leading-relaxed">{concept.theme}</p>
+                      <div className="space-y-1.5 text-xs">
+                        <div><span className="text-zinc-400">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
+                        <div><span className="text-zinc-400">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
+                        <p className="text-zinc-400 text-xs leading-relaxed">{concept.theme}</p>
                       </div>
                       <button disabled={isLoading} className="w-full py-2 bg-white/[0.06] text-zinc-300 rounded-md text-[11px] font-medium group-hover:bg-white group-hover:text-black transition-colors disabled:opacity-50">
                         {isLoading ? 'Locking...' : 'Choose'}
@@ -520,43 +775,45 @@ export const AnalysisEditor: React.FC<Props> = ({
           <motion.div key="script" {...phaseTransition} className="space-y-6">
             {/* Director Settings */}
             <div className="surface rounded-xl p-5">
-              <div className="flex gap-6 items-center flex-wrap">
-                <div className="space-y-2 flex-1 min-w-[200px]">
-                  <label className="text-[11px] uppercase font-medium text-zinc-500 tracking-wide">Director Mode</label>
-                  <div className="flex gap-2">
+              <div className="flex items-end gap-6 flex-wrap">
+                <div className="space-y-2">
+                  <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Director Mode</label>
+                  <div className="flex gap-1 surface-inset rounded-md p-0.5">
                     <button
                       onClick={() => onUpdateProject({ videoMode: 'montage' })}
-                      className={`flex-1 py-2 rounded-md text-[11px] font-medium transition-colors ${project.videoMode === 'montage' ? 'bg-white text-black' : 'bg-obsidian-800 text-zinc-500 hover:text-zinc-300'}`}
+                      className={`px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${project.videoMode === 'montage' ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
                     >
                       Montage
                     </button>
                     <button
                       onClick={() => onUpdateProject({ videoMode: 'cinematic' })}
-                      className={`flex-1 py-2 rounded-md text-[11px] font-medium transition-colors ${project.videoMode === 'cinematic' ? 'bg-white text-black' : 'bg-obsidian-800 text-zinc-500 hover:text-zinc-300'}`}
+                      className={`px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${project.videoMode === 'cinematic' ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
                     >
                       Cinematic
                     </button>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[11px] uppercase font-medium text-zinc-500 tracking-wide">Pacing</label>
-                  <div className="flex gap-2">
-                    {[5, 8, 10].map(d => (
+                  <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block" title={`${getVideoModel(project.videoModel).label} allows: ${getVideoModel(project.videoModel).durations.map(d => `${d}s`).join(', ')}`}>
+                    Pacing <span className="text-zinc-400 normal-case tracking-normal font-normal">· {getVideoModel(project.videoModel).label}</span>
+                  </label>
+                  <div className="flex gap-1 surface-inset rounded-md p-0.5">
+                    {getVideoModel(project.videoModel).durations.map(d => (
                       <button
                         key={d}
                         onClick={() => onUpdateProject({ targetDuration: d })}
-                        className={`px-4 py-2 rounded-md text-[11px] font-mono ${project.targetDuration === d ? 'bg-white text-black' : 'bg-obsidian-800 text-zinc-500 hover:text-zinc-300'} transition-colors`}
+                        className={`px-3 py-1.5 rounded text-[11px] font-mono transition-colors ${project.targetDuration === d ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
                       >
                         {d}s
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 ml-auto">
                   {project.scenes.length > 0 && (
                     <button
                       onClick={() => setShowScriptPrompt(s => !s)}
-                      className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1"
+                      className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors px-2 py-1"
                     >
                       {showScriptPrompt ? 'Hide prompt' : 'View prompt'}
                     </button>
@@ -564,9 +821,9 @@ export const AnalysisEditor: React.FC<Props> = ({
                   <button
                     onClick={() => { onGenerateScript(scriptNote || undefined); setScriptNote(''); }}
                     disabled={isLoading}
-                    className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
                   >
-                    {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                    {isLoading && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
                     {isLoading ? 'Writing...' : project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
                   </button>
                 </div>
@@ -579,7 +836,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                     value={scriptNote}
                     onChange={e => setScriptNote(e.target.value)}
                     placeholder="Regenerate note — e.g. 'make scene 3 more intimate' or 'add more deity close-ups'"
-                    className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-600 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                    className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                     onKeyDown={e => {
                       if (e.key === 'Enter' && scriptNote.trim()) {
                         onGenerateScript(scriptNote);
@@ -598,7 +855,7 @@ export const AnalysisEditor: React.FC<Props> = ({
             {isLoading && project.scenes.length === 0 && (
               <div className="flex flex-col items-center justify-center h-48 space-y-3">
                 <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
-                <p className="text-zinc-500 text-sm">Writing your script...</p>
+                <p className="text-zinc-400 text-sm">Writing your script...</p>
               </div>
             )}
 
@@ -613,9 +870,12 @@ export const AnalysisEditor: React.FC<Props> = ({
                 )}
                 <div className="p-5 flex justify-between items-center border-b border-white/[0.06]">
                   <h3 className="text-sm font-medium text-white">Script Breakdown</h3>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    {onUnlockScript && project.status === 'scripted' && (
+                      <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
+                    )}
                     <button
-                      className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                      className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
                       onClick={() => {
                         if (expandedScenes.size === project.scenes.length) {
                           setExpandedScenes(new Set());
@@ -626,7 +886,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                     >
                       {expandedScenes.size === project.scenes.length ? 'Collapse All' : 'Expand All'}
                     </button>
-                    <span className="text-[11px] font-mono text-zinc-600">
+                    <span className="text-[11px] font-mono text-zinc-400">
                       {project.scenes.length} Scenes / {project.scenes.reduce((acc, s) => acc + s.shots.length, 0)} Shots
                     </span>
                   </div>
@@ -647,21 +907,21 @@ export const AnalysisEditor: React.FC<Props> = ({
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-0.5">
                               <span className="text-white font-medium text-sm">Scene {idx + 1}</span>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-md ${
+                              <span className={`text-[11px] px-2 py-0.5 rounded-md ${
                                 scene.sectionLabel.toLowerCase().includes('chorus')
                                   ? 'bg-amber-500/10 text-amber-400'
-                                  : 'bg-white/[0.04] text-zinc-500'
+                                  : 'bg-white/[0.04] text-zinc-400'
                               }`}>
                                 {scene.sectionLabel}
                               </span>
-                              <span className="text-[10px] text-zinc-600">{scene.shots.length} shots</span>
+                              <span className="text-[11px] text-zinc-400">{scene.shots.length} shots</span>
                             </div>
-                            <p className="text-zinc-500 text-[13px] truncate">{scene.narrativeDescription}</p>
+                            <p className="text-zinc-400 text-xs truncate">{scene.narrativeDescription}</p>
                           </div>
                           <div className="flex items-center gap-3 ml-4 shrink-0">
-                            <span className="text-[11px] font-mono text-zinc-600">{scene.startTime} - {scene.endTime}</span>
+                            <span className="text-[11px] font-mono text-zinc-400">{scene.startTime} - {scene.endTime}</span>
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                              className={`text-zinc-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                              className={`text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
                               <path d="M6 9l6 6 6-6"/>
                             </svg>
                           </div>
@@ -670,17 +930,17 @@ export const AnalysisEditor: React.FC<Props> = ({
                         {isExpanded && (
                           <div className="px-4 pb-4 space-y-2 border-t border-white/[0.04] pt-3">
                             {scene.lyrics && (
-                              <p className="text-zinc-600 italic text-[13px] mb-3">"{scene.lyrics}"</p>
+                              <p className="text-zinc-400 italic text-xs mb-3">"{scene.lyrics}"</p>
                             )}
                             {scene.shots.map((shot, sIdx) => (
                               <div key={shot.id} className="flex gap-3 p-3 surface-inset rounded-lg">
-                                <div className="text-[11px] font-mono text-zinc-600 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
+                                <div className="text-[11px] font-mono text-zinc-400 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-[13px] text-zinc-300 mb-1">{shot.visualPrompt || '—'}</div>
+                                  <div className="text-xs text-zinc-300 mb-1">{shot.visualPrompt || '—'}</div>
                                   {shot.motionPrompt && (
-                                    <div className="text-[11px] text-zinc-500 mb-1">{shot.motionPrompt}</div>
+                                    <div className="text-[11px] text-zinc-400 mb-1">{shot.motionPrompt}</div>
                                   )}
-                                  <div className="text-[11px] text-zinc-600 flex gap-3">
+                                  <div className="text-[11px] text-zinc-400 flex gap-3">
                                     <span>{shot.duration}s</span>
                                     <span>{shot.castIds.length > 0 ? shot.castIds.length + ' Cast' : 'No Cast'}</span>
                                   </div>
@@ -697,7 +957,7 @@ export const AnalysisEditor: React.FC<Props> = ({
             )}
 
             {project.scenes.length === 0 && !isLoading && (
-              <div className="flex flex-col items-center justify-center h-48 text-zinc-600 text-sm">
+              <div className="flex flex-col items-center justify-center h-48 text-zinc-400 text-sm">
                 <p>Hit "Generate Script" to create a cinematic shot list.</p>
               </div>
             )}
@@ -723,18 +983,12 @@ export const AnalysisEditor: React.FC<Props> = ({
                       <div className="flex gap-2">
                         <button
                           onClick={() => setShowExploredStyles(true)}
-                          className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-colors"
+                          className="text-[11px] text-zinc-400 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-colors"
                         >
                           Explore New
                         </button>
                         {project.status === 'style_locked' && (
-                          <button
-                            onClick={onUnlockStyle}
-                            disabled={isLoading}
-                            className="text-[11px] text-zinc-500 hover:text-red-400 border border-white/[0.08] hover:border-red-500/20 px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
-                          >
-                            Unlock
-                          </button>
+                          <UnlockPill onClick={onUnlockStyle} disabled={isLoading} />
                         )}
                       </div>
                     </div>
@@ -747,8 +1001,8 @@ export const AnalysisEditor: React.FC<Props> = ({
                         </div>
                       )}
                       <div className="flex-1 px-5 py-4 space-y-4">
-                        <h4 className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Style DNA</h4>
-                        <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{project.styleDescription}</p>
+                        <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Style DNA</h4>
+                        <Markdown>{project.styleDescription || ''}</Markdown>
                         {project.status === 'style_locked' && (
                           <button
                             onClick={() => setViewPhase('characters')}
@@ -767,7 +1021,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                       <h3 className="text-sm font-medium text-white">Explore New Directions</h3>
                       <button
                         onClick={() => setShowExploredStyles(false)}
-                        className="text-[11px] text-zinc-500 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-colors"
+                        className="text-[11px] text-zinc-400 hover:text-white border border-white/[0.08] hover:border-white/20 px-3 py-1.5 rounded-md transition-colors"
                       >
                         Back to Style
                       </button>
@@ -778,7 +1032,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                       <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/[0.06]">
                         <img src={project.styleAssetUrl} alt="Current style" className="w-16 h-16 rounded-md object-cover cursor-zoom-in" onClick={() => setModalImage(project.styleAssetUrl!)} />
                         <div>
-                          <span className="text-xs text-zinc-500">Current locked style</span>
+                          <span className="text-xs text-zinc-400">Current locked style</span>
                           <p className="text-sm text-zinc-300 line-clamp-1 mt-0.5">{project.styleDescription?.slice(0, 80)}…</p>
                         </div>
                       </div>
@@ -804,7 +1058,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                     {isBrainstorming && styleSlots.length === 0 && (
                       <div className="flex flex-col items-center justify-center h-40 space-y-3">
                         <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
-                        <p className="text-zinc-500 text-sm">Brainstorming...</p>
+                        <p className="text-zinc-400 text-sm">Brainstorming...</p>
                       </div>
                     )}
 
@@ -815,10 +1069,13 @@ export const AnalysisEditor: React.FC<Props> = ({
                             key={idx}
                             slot={slot}
                             index={idx}
-                            expanded={expandedStyleIdx === idx}
-                            onToggle={() => setExpandedStyleIdx(prev => prev === idx ? null : idx)}
+                            expanded={expandedStyleIdxs.has(idx)}
+                            onToggle={() => toggleStyleIdx(idx)}
                             onVisualize={() => handleVisualize(idx)}
                             onLock={() => handleLockSlot(slot)}
+                            onRefine={(text) => handleRefine(idx, text)}
+                            onOpenModal={setModalImage}
+                            isLocking={isLocking}
                           />
                         ))}
                       </div>
@@ -831,7 +1088,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                 <div className="surface rounded-xl p-5 space-y-4">
                   <div>
                     <h3 className="text-sm font-medium text-white mb-1">Art Style Exploration</h3>
-                    <p className="text-zinc-500 text-[13px]">
+                    <p className="text-zinc-400 text-xs">
                       Claude brainstorms 4 visual directions. You choose which to visualize as images.
                     </p>
                   </div>
@@ -844,6 +1101,14 @@ export const AnalysisEditor: React.FC<Props> = ({
                       className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                       onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
                     />
+                    {styleSlots.length > 0 && (
+                      <button
+                        onClick={() => setExpandedStyleIdxs(expandedStyleIdxs.size === styleSlots.length ? new Set() : new Set(styleSlots.map((_, i) => i)))}
+                        className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors px-3 whitespace-nowrap"
+                      >
+                        {expandedStyleIdxs.size === styleSlots.length ? 'Collapse all' : 'Expand all'}
+                      </button>
+                    )}
                     <button
                       onClick={handleBrainstorm}
                       disabled={isBrainstorming}
@@ -857,7 +1122,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                 {isBrainstorming && styleSlots.length === 0 && (
                   <div className="flex flex-col items-center justify-center h-40 space-y-3">
                     <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
-                    <p className="text-zinc-500 text-sm">Brainstorming visual directions...</p>
+                    <p className="text-zinc-400 text-sm">Brainstorming visual directions...</p>
                   </div>
                 )}
 
@@ -868,10 +1133,13 @@ export const AnalysisEditor: React.FC<Props> = ({
                         key={`ai-${idx}-${slot.title}`}
                         slot={slot}
                         index={idx}
-                        expanded={expandedStyleIdx === idx}
-                        onToggle={() => setExpandedStyleIdx(prev => prev === idx ? null : idx)}
+                        expanded={expandedStyleIdxs.has(idx)}
+                        onToggle={() => toggleStyleIdx(idx)}
                         onVisualize={() => handleVisualize(idx)}
                         onLock={() => handleLockSlot(slot)}
+                        onRefine={(text) => handleRefine(idx, text)}
+                        onOpenModal={setModalImage}
+                        isLocking={isLocking}
                       />
                     ))}
 
@@ -888,7 +1156,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                     {!showCustomSlot ? (
                       <button
                         onClick={() => setShowCustomSlot(true)}
-                        className="w-full py-3 rounded-xl border border-dashed border-white/[0.1] text-sm text-zinc-500 hover:text-zinc-300 hover:border-white/20 transition-colors"
+                        className="w-full py-3 rounded-xl border border-dashed border-white/[0.1] text-sm text-zinc-400 hover:text-zinc-300 hover:border-white/20 transition-colors"
                       >
                         + Add Custom Direction
                       </button>
@@ -906,7 +1174,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                               </button>
                               <button
                                 onClick={() => setShowCustomSlot(false)}
-                                className="text-xs text-zinc-600 hover:text-zinc-400 px-2 py-1.5 transition-colors"
+                                className="text-xs text-zinc-400 hover:text-zinc-400 px-2 py-1.5 transition-colors"
                               >
                                 Cancel
                               </button>
@@ -915,16 +1183,28 @@ export const AnalysisEditor: React.FC<Props> = ({
                           <textarea
                             value={userSlot.description}
                             onChange={(e) => setUserSlot(prev => ({ ...prev, description: e.target.value }))}
-                            placeholder="Describe your visual style direction…"
+                            placeholder="Describe your visual style direction — or upload a reference image to auto-fill this."
                             className="w-full h-20 surface-inset rounded-md p-3 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none leading-relaxed"
                           />
-                          <button
-                            onClick={() => handleVisualize(0, true)}
-                            disabled={!userSlot.description || userSlot.isGenerating}
-                            className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-                          >
-                            {userSlot.isGenerating ? 'Generating…' : userSlot.imageUrl ? 'Re-visualize' : 'Visualize'}
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => handleVisualize(0, true)}
+                              disabled={!userSlot.description || userSlot.isGenerating}
+                              className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                            >
+                              {userSlot.isGenerating ? 'Generating…' : userSlot.imageUrl && !uploadedStyleFile ? 'Re-visualize' : 'Visualize'}
+                            </button>
+                            {uploadedStyleFile && (
+                              <button
+                                onClick={handleLockUploadedDirect}
+                                disabled={isLocking}
+                                className="px-5 py-2 bg-white/[0.06] border border-white/[0.08] text-zinc-300 hover:text-white hover:bg-white/[0.1] rounded-md text-xs font-semibold transition-colors disabled:opacity-50"
+                                title="Skip visualization — lock the uploaded image as the style ref directly"
+                              >
+                                {isLocking ? 'Locking…' : 'Use uploaded image as style'}
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         {(userSlot.isGenerating || userSlot.imageUrl) && (
@@ -936,16 +1216,26 @@ export const AnalysisEditor: React.FC<Props> = ({
                             ) : (
                               <div className="relative group">
                                 <img src={userSlot.imageUrl} className="w-full h-auto max-h-[400px] object-contain mx-auto cursor-zoom-in" onClick={() => setModalImage(userSlot.imageUrl!)} />
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setModalImage(userSlot.imageUrl!); }}
+                                  className="absolute top-3 right-3 p-1.5 rounded-md bg-black/40 backdrop-blur-sm text-zinc-300 hover:text-white hover:bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="View full screen"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                                  </svg>
+                                </button>
                                 {userSlot.assetId && (
-                                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <button
-                                      onClick={() => handleLockSlot(userSlot)}
-                                      disabled={isLocking}
-                                      className="bg-white text-black px-5 py-2.5 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors disabled:opacity-50"
-                                    >
-                                      {isLocking ? 'Locking…' : 'Lock This Style'}
-                                    </button>
-                                  </div>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleLockSlot(userSlot); }}
+                                    disabled={isLocking}
+                                    className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-sm text-black px-3.5 py-1.5 rounded-md text-xs font-semibold hover:bg-white transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-black/30"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                                    </svg>
+                                    {isLocking ? 'Locking…' : 'Lock style'}
+                                  </button>
                                 )}
                               </div>
                             )}
@@ -957,7 +1247,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                 )}
 
                 {!isBrainstorming && styleSlots.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-40 space-y-2 text-zinc-600">
+                  <div className="flex flex-col items-center justify-center h-40 space-y-2 text-zinc-400">
                     <p className="text-sm">Hit "Brainstorm 4 Directions" to explore visual styles.</p>
                     <p className="text-[11px]">Or type preferences first to guide the brainstorm.</p>
                   </div>
@@ -970,12 +1260,17 @@ export const AnalysisEditor: React.FC<Props> = ({
         {/* ═══ CHARACTERS ═══ */}
         {viewPhase === 'characters' && (
           <motion.div key="characters" {...phaseTransition} className="space-y-6">
+            {onUnlockCharacters && project.status === 'characters_locked' && (
+              <div className="flex justify-end">
+                <UnlockPill onClick={onUnlockCharacters} disabled={isLoading} label="Unlock characters" />
+              </div>
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Cast sidebar */}
               <div className="lg:col-span-3">
                 <div className="surface rounded-xl p-4 space-y-4">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wide">Cast</h3>
+                    <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">Cast</h3>
                     <button onClick={() => onAddCast('New Character', 'Description...')} className="text-xs bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 px-2.5 py-1 rounded-md transition-colors">+ Add</button>
                   </div>
                   <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
@@ -994,12 +1289,12 @@ export const AnalysisEditor: React.FC<Props> = ({
                             {member.referenceImageUrl ? (
                               <img src={member.referenceImageUrl} alt={member.name} className="w-full h-full object-cover" />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center text-zinc-600 text-sm">?</div>
+                              <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">?</div>
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{member.name}</div>
-                            <div className="text-xs text-zinc-500 truncate flex items-center gap-1">
+                            <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
                               {looksLoading.has(member.id) ? (
                                 <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
                               ) : hasLook ? (
@@ -1048,7 +1343,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                           key={`name-${activeMember.id}`}
                           defaultValue={activeMember.name}
                           onBlur={(e) => onUpdateCast(activeMember.id, { name: e.target.value })}
-                          className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 max-w-[200px]"
+                          className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 flex-1 min-w-0"
                         />
                         {activeMember.referenceImageUrl && (
                           <span className="text-xs text-zinc-400 flex items-center gap-1">
@@ -1075,14 +1370,14 @@ export const AnalysisEditor: React.FC<Props> = ({
                               setActiveCastId(project.cast.find(c => c.id !== activeMember.id)?.id || null);
                             }
                           }}
-                          className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md transition-colors"
+                          className="text-zinc-400 hover:text-red-400 p-1.5 rounded-md transition-colors"
                           aria-label={`Delete ${activeMember.name}`}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
                         </button>
                         <button
                           onClick={() => setPromptPreview(prev => prev === activeMember.id ? null : activeMember.id)}
-                          className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                          className="text-[11px] text-zinc-400 hover:text-zinc-400 transition-colors"
                         >
                           {promptPreview === activeMember.id ? 'Hide prompt' : 'View prompt'}
                         </button>
@@ -1095,10 +1390,10 @@ export const AnalysisEditor: React.FC<Props> = ({
                         {project.styleAssetUrl && (
                           <div className="relative flex-shrink-0">
                             <img src={project.styleAssetUrl} className="w-12 h-12 object-cover rounded border border-white/[0.06]" alt="Style ref" />
-                            <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[8px] text-zinc-400 text-center rounded-b">Style</div>
+                            <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 text-center rounded-b">Style</div>
                           </div>
                         )}
-                        <pre className="flex-1 text-[10px] text-zinc-500 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
+                        <pre className="flex-1 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
 `${activeMember.name} — ${activeMember.description || '(no description)'}
 
 Mid-shot portrait, upper body and face visible.
@@ -1119,7 +1414,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                       <div className="h-64 flex items-center justify-center bg-black/20">
                         <div className="flex flex-col items-center gap-3">
                           <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
-                          <span className="text-sm text-zinc-500">Generating looks…</span>
+                          <span className="text-sm text-zinc-400">Generating looks…</span>
                         </div>
                       </div>
                     ) : activeLooks.length > 0 ? (
@@ -1135,7 +1430,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                       </div>
                     ) : (
                       <div className="h-48 flex items-center justify-center bg-black/10">
-                        <span className="text-sm text-zinc-500">No reference yet — generate looks below</span>
+                        <span className="text-sm text-zinc-400">No reference yet — generate looks below</span>
                       </div>
                     )}
 
@@ -1165,7 +1460,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                     </div>
                   </div>
                 ) : (
-                  <div className="surface rounded-xl p-8 h-full flex items-center justify-center text-zinc-600 text-sm">
+                  <div className="surface rounded-xl p-8 h-full flex items-center justify-center text-zinc-400 text-sm">
                     Select a cast member.
                   </div>
                 )}
@@ -1177,12 +1472,17 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
         {/* ═══ ENVIRONMENTS ═══ */}
         {viewPhase === 'environments' && (
           <motion.div key="environments" {...phaseTransition} className="space-y-6">
+            {onUnlockEnvironments && project.status === 'environments_locked' && (
+              <div className="flex justify-end">
+                <UnlockPill onClick={onUnlockEnvironments} disabled={isLoading} label="Unlock environments" />
+              </div>
+            )}
             {project.environments.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Env sidebar */}
                 <div className="lg:col-span-3">
                   <div className="surface rounded-xl p-4 space-y-4">
-                    <h3 className="text-sm font-medium text-zinc-500 uppercase tracking-wide">Environments</h3>
+                    <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">Environments</h3>
                     <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
                       {project.environments.map(env => {
                         const isActive = activeEnvId === env.id;
@@ -1199,12 +1499,12 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                               {env.referenceImageUrl ? (
                                 <img src={env.referenceImageUrl} alt={env.name} className="w-full h-full object-cover" />
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center text-zinc-600 text-sm">?</div>
+                                <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">?</div>
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{env.name}</div>
-                              <div className="text-xs text-zinc-500 truncate flex items-center gap-1">
+                              <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
                                 {envGenerating.has(env.id) ? (
                                   <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
                                 ) : hasLook ? (
@@ -1217,10 +1517,20 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                       })}
                     </div>
 
+                    {project.environments.length > 0 && project.status === 'characters_locked' && (
+                      <button
+                        onClick={() => project.environments.filter(e => !e.referenceImageUrl).forEach(e => handleEnvGenerate(e.id))}
+                        disabled={envGenerating.size > 0}
+                        className="w-full py-2 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                      >
+                        {envGenerating.size > 0 ? `Generating ${envGenerating.size}...` : 'Generate All Looks'}
+                      </button>
+                    )}
+
                     {project.status === 'characters_locked' && (
                       <button
                         onClick={onAdvanceEnvironments}
-                        className="w-full py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                        className="w-full py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white rounded-md text-xs font-semibold border border-white/[0.08] transition-colors"
                       >
                         Proceed to Studio
                       </button>
@@ -1253,7 +1563,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                           </button>
                           <button
                             onClick={() => setPromptPreview(prev => prev === activeEnv.id ? null : activeEnv.id)}
-                            className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                            className="text-[11px] text-zinc-400 hover:text-zinc-400 transition-colors"
                           >
                             {promptPreview === activeEnv.id ? 'Hide prompt' : 'View prompt'}
                           </button>
@@ -1266,10 +1576,10 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                           {project.styleAssetUrl && (
                             <div className="relative flex-shrink-0">
                               <img src={project.styleAssetUrl} className="w-12 h-12 object-cover rounded border border-white/[0.06]" alt="Style ref" />
-                              <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[8px] text-zinc-400 text-center rounded-b">Style</div>
+                              <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 text-center rounded-b">Style</div>
                             </div>
                           )}
-                          <pre className="flex-1 text-[10px] text-zinc-500 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
+                          <pre className="flex-1 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
 `${activeEnv.name} — ${activeEnv.description || '(no description)'}
 
 Wide establishing shot, no characters.
@@ -1290,7 +1600,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                         <div className="h-64 flex items-center justify-center bg-black/20">
                           <div className="flex flex-col items-center gap-3">
                             <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
-                            <span className="text-sm text-zinc-500">Generating looks…</span>
+                            <span className="text-sm text-zinc-400">Generating looks…</span>
                           </div>
                         </div>
                       ) : activeEnvLooks.length > 0 ? (
@@ -1306,7 +1616,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                         </div>
                       ) : (
                         <div className="h-48 flex items-center justify-center bg-black/10">
-                          <span className="text-sm text-zinc-500">No reference yet — generate looks above</span>
+                          <span className="text-sm text-zinc-400">No reference yet — generate looks above</span>
                         </div>
                       )}
 
@@ -1332,7 +1642,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                       </div>
                     </div>
                   ) : (
-                    <div className="surface rounded-xl p-8 h-full flex items-center justify-center text-zinc-600 text-sm">
+                    <div className="surface rounded-xl p-8 h-full flex items-center justify-center text-zinc-400 text-sm">
                       Select an environment.
                     </div>
                   )}
@@ -1340,7 +1650,7 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
               </div>
             ) : (
               <div className="rounded-xl border border-white/[0.06] p-8 text-center">
-                <p className="text-zinc-500 mb-4 text-sm">No environments proposed by the script.</p>
+                <p className="text-zinc-400 mb-4 text-sm">No environments proposed by the script.</p>
                 <button
                   onClick={onAdvanceEnvironments}
                   className="px-6 py-2.5 bg-white text-black rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors"

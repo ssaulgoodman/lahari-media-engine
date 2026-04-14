@@ -156,8 +156,17 @@ try { db.exec("ALTER TABLE projects ADD COLUMN video_model TEXT DEFAULT 'veo-3.1
 // Last prompts used — for transparency (view + regenerate with note).
 try { db.exec('ALTER TABLE projects ADD COLUMN last_script_prompt TEXT'); } catch {}
 try { db.exec('ALTER TABLE projects ADD COLUMN last_concept_prompt TEXT'); } catch {}
+try { db.exec('ALTER TABLE projects ADD COLUMN last_write_shots_prompt TEXT'); } catch {}
 
 // Style exploration persistence
 try { db.exec('ALTER TABLE projects ADD COLUMN style_exploration TEXT'); } catch {}
+
+// Render settings — aspect ratio applies to both image gen and video gen;
+// video resolution applies only to video gen (Gemini image is fixed ~1MP).
+try { db.exec("ALTER TABLE projects ADD COLUMN aspect_ratio TEXT DEFAULT '16:9'"); } catch {}
+try { db.exec("ALTER TABLE projects ADD COLUMN video_resolution TEXT DEFAULT '720p'"); } catch {}
+
+// Lineage — points to the project this one was forked from. NULL for originals.
+try { db.exec('ALTER TABLE projects ADD COLUMN parent_project_id TEXT'); } catch {}
 
 export default db;

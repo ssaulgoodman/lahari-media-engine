@@ -2,13 +2,13 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
-import { readAsBase64, mimeFromExt, saveBase64 } from '../storage.js';
+import { readAsBase64, mimeFromExt, saveBase64, saveBuffer } from '../storage.js';
 import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
 import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt } from '../services/claude.js';
-import { generateVideo, extractLastFrame } from '../services/veo.js';
+import { generateVideo, extractLastFrame, VEO_MODELS, VeoModelKey } from '../services/veo.js';
 import { generateFalVideo, FAL_VIDEO_MODELS } from '../services/fal.js';
-import { getFullProject } from './projects.js';
+import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 
 const router = Router();
@@ -259,28 +259,120 @@ router.post('/:id/lock-style', async (req, res) => {
   res.json(getFullProject(projectId));
 });
 
-// ─── Unlock Style (revert to scripted) ──────────────────────────────
+// ─── Phase unlock endpoints ─────────────────────────────────────────
+// All unlocks allow reverting by one step. Downstream-facing phases
+// (style, characters, environments) can be unlocked as long as nothing
+// was generated after that phase. Script unlock blocks if shots have
+// locked content (images/videos).
 
-router.post('/:id/unlock-style', (req, res) => {
-  const projectId = paramStr(req.params.id);
+router.post('/:id/unlock-script', (req, res) => {
+  const sourceId = paramStr(req.params.id);
+  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
   const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  // Only allow unlocking if currently style_locked (not further along)
-  if (project.status !== 'style_locked') {
-    return res.status(400).json({ error: `Cannot unlock style from status "${project.status}". Only allowed when style_locked.` });
+  if (project.status !== 'scripted') {
+    return res.status(400).json({ error: `Cannot unlock script from status "${project.status}". Unlock later phases first.` });
   }
-
-  db.prepare(`
-    UPDATE projects SET
-      status = 'scripted',
-      style_asset_id = NULL,
-      style_description = NULL,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(projectId);
-
+  // Wipe scenes + shots — script will be re-written.
+  db.prepare('DELETE FROM scenes WHERE project_id = ?').run(projectId);
+  db.prepare(`UPDATE projects SET status = 'concept_locked', updated_at = datetime('now') WHERE id = ?`).run(projectId);
   res.json(getFullProject(projectId));
+});
+
+router.post('/:id/unlock-style', (req, res) => {
+  const sourceId = paramStr(req.params.id);
+  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.status !== 'style_locked') {
+    return res.status(400).json({ error: `Cannot unlock style from status "${project.status}". Unlock later phases first.` });
+  }
+  db.prepare(`UPDATE projects SET status = 'scripted', style_asset_id = NULL, style_description = NULL, updated_at = datetime('now') WHERE id = ?`).run(projectId);
+  res.json(getFullProject(projectId));
+});
+
+router.post('/:id/unlock-characters', (req, res) => {
+  const sourceId = paramStr(req.params.id);
+  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.status !== 'characters_locked') {
+    return res.status(400).json({ error: `Cannot unlock characters from status "${project.status}". Unlock later phases first.` });
+  }
+  // Keep character looks — user can still regenerate individual ones.
+  db.prepare(`UPDATE projects SET status = 'style_locked', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+  res.json(getFullProject(projectId));
+});
+
+router.post('/:id/unlock-environments', (req, res) => {
+  const sourceId = paramStr(req.params.id);
+  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const project: any = db.prepare('SELECT status FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  // Allow either environments_locked (before studio) or in_production (from studio).
+  if (project.status !== 'environments_locked' && project.status !== 'in_production') {
+    return res.status(400).json({ error: `Cannot unlock environments from status "${project.status}".` });
+  }
+  // Check: if any shots have generated content, block to prevent accidental loss.
+  const shotsWithContent = db.prepare(
+    `SELECT COUNT(*) as n FROM shots WHERE (image_asset_id IS NOT NULL OR video_asset_id IS NOT NULL)
+     AND scene_id IN (SELECT id FROM scenes WHERE project_id = ?)`
+  ).get(projectId) as any;
+  if (shotsWithContent?.n > 0) {
+    return res.status(400).json({ error: `Cannot unlock — ${shotsWithContent.n} shot(s) have generated images or videos. Unlock those individually first.` });
+  }
+  db.prepare(`UPDATE projects SET status = 'characters_locked', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+  res.json(getFullProject(projectId));
+});
+
+// ─── Upload + Lock Style Image (skip visualize) ─────────────────────
+// User uploads an image, we save it, analyze for style description,
+// and lock it as the project's style ref in one shot.
+router.post('/:id/upload-and-lock-style', upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Image required' });
+  const projectId = paramStr(req.params.id);
+
+  try {
+    // Save the uploaded image as a project asset
+    const ext = req.file.mimetype.includes('png') ? 'png' : req.file.mimetype.includes('jpeg') ? 'jpg' : 'png';
+    const filePath = saveBuffer(req.file.buffer, 'images', ext);
+    const assetId = uuidv4();
+    db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'style', ?)`)
+      .run(assetId, projectId, filePath);
+
+    // Analyze for style description so downstream shot gen has something to reference
+    const t0 = Date.now();
+    let styleDesc = 'User-uploaded style reference';
+    try {
+      const imageBase64 = req.file.buffer.toString('base64');
+      styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
+    } catch (err: any) {
+      console.warn(`[${projectId}] style analysis failed, using default description:`, err.message);
+    }
+    const durationMs = Date.now() - t0;
+
+    db.prepare(
+      `UPDATE projects SET status = 'style_locked', style_asset_id = ?, style_description = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(assetId, styleDesc, projectId);
+
+    logCall({
+      projectId,
+      stage: 'upload-and-lock-style',
+      model: 'claude-sonnet-4-6',
+      prompt: 'User uploaded image directly as style — analyzed for description, locked as style ref.',
+      referenceInputs: [{ type: 'image', label: 'User-uploaded style', url: `/storage/${filePath}` }],
+      contextChain: buildContextChain(projectId),
+      responseSummary: styleDesc.substring(0, 200),
+      outputAssetIds: [assetId],
+      durationMs,
+      costEstimate: 0.01,
+    });
+
+    res.json(getFullProject(projectId));
+  } catch (err: any) {
+    console.error(`[${projectId}] upload-and-lock-style failed:`, err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── Analyze Uploaded Style Image ───────────────────────────────────
@@ -356,7 +448,8 @@ router.post('/:id/generate-looks', async (req, res) => {
       { name: member.name, description: member.description || '' },
       styleDNA,
       styleImagePath,
-      feedback
+      feedback,
+      project.aspect_ratio || '16:9'
     );
     const durationMs = Date.now() - t0;
 
@@ -449,7 +542,8 @@ router.post('/:id/generate-environment-look', async (req, res) => {
     const imagePaths = await generateEnvironmentLooks(
       { name: env.name, description: env.description || '' },
       styleDNA,
-      styleImagePath
+      styleImagePath,
+      project.aspect_ratio || '16:9'
     );
     const durationMs = Date.now() - t0;
 
@@ -662,6 +756,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.style_description) return res.status(400).json({ error: 'Style not locked yet' });
+  const userNote: string | undefined = req.body?.userNote;
 
   const concept = JSON.parse(project.locked_concept || '{}');
   const cast = db.prepare('SELECT * FROM cast_members WHERE project_id = ? ORDER BY sort_order').all(project.id) as any[];
@@ -692,15 +787,23 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
     // Write prompts in batches with continuity overlap
     const BATCH_SIZE = 15;
     let previousBatchTail: { id: string; visualPrompt: string; motionPrompt: string }[] | undefined;
+    const batchPrompts: string[] = [];
 
     for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
       const batch = allShots.slice(i, i + BATCH_SIZE);
-      const prompts = await writeShotPrompts(batch, {
+      const result = await writeShotPrompts(batch, {
         styleDNA: project.style_description,
         cast: cast.map((c: any) => ({ name: c.name, description: c.description })),
         concept,
         lyrics: project.lyrics || '',
+        userNote,
       }, previousBatchTail);
+      const prompts = result.shots;
+      batchPrompts.push(
+        allShots.length > BATCH_SIZE
+          ? `=== Batch ${Math.floor(i / BATCH_SIZE) + 1} (shots ${i + 1}–${Math.min(i + BATCH_SIZE, allShots.length)}) ===\n${result.prompt}`
+          : result.prompt
+      );
 
       // Write back to DB, including Claude's continuity decision per shot.
       // First shot of each scene is forced to 'cut' (scene boundaries are always hard cuts).
@@ -723,6 +826,9 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         previousBatchTail = prompts;
       }
     }
+
+    db.prepare('UPDATE projects SET last_write_shots_prompt = ? WHERE id = ?')
+      .run(batchPrompts.join('\n\n'), project.id);
 
     const durationMs = Date.now() - t0;
     console.log(`[${project.id}] Shot prompts written for ${allShots.length} shots in ${durationMs}ms`);
@@ -917,6 +1023,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       continuityDescription,
       userFeedback,
       failedImagePath,
+      aspectRatio: project.aspect_ratio || '16:9',
     });
 
     const durationMs = Date.now() - t0;
@@ -977,6 +1084,53 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 // generate-video below). Predicting end frames was unreliable; extracting
 // them after Veo plays the shot naturally is truthful continuity.
 
+
+// ─── Use Previous Shot's Last Frame as This Shot's Start Frame ──────
+// Skips image generation entirely — copies the ffmpeg-extracted last frame
+// from the previous shot's video and uses it directly. Most seamless form
+// of continuity since the frame IS literally where the previous shot ended.
+router.post('/:id/shots/:shotId/use-prev-last-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(shotId);
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const prevShot: any = db.prepare(
+    'SELECT * FROM shots WHERE scene_id = ? AND sort_order < ? ORDER BY sort_order DESC LIMIT 1'
+  ).get(shot.scene_id, shot.sort_order);
+  if (!prevShot) return res.status(400).json({ error: 'No previous shot in this scene' });
+  if (!prevShot.extracted_last_frame_asset_id) {
+    return res.status(400).json({ error: 'Previous shot has no extracted last frame yet — generate its video first' });
+  }
+
+  const sourceAsset: any = db.prepare('SELECT * FROM assets WHERE id = ?').get(prevShot.extracted_last_frame_asset_id);
+  if (!sourceAsset) return res.status(400).json({ error: 'Source frame asset missing' });
+
+  // Create a new asset row (category shot_image) pointing at the same file.
+  // Sharing file_path avoids duplication on disk; the separate row keeps
+  // provenance/ai_calls traceability clean.
+  const newAssetId = uuidv4();
+  db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'shot_image', ?)`)
+    .run(newAssetId, projectId, sourceAsset.file_path);
+
+  db.prepare(
+    `UPDATE shots SET image_asset_id = ?, image_status = 'success', continuity_from = 'prev_shot' WHERE id = ?`
+  ).run(newAssetId, shotId);
+
+  logCall({
+    projectId,
+    stage: 'copy-prev-last-frame',
+    model: 'copy',
+    prompt: `Copied prev shot (${prevShot.id}) extracted last frame as start frame for shot ${shotId}`,
+    referenceInputs: [{ type: 'image', label: 'Prev shot last frame', url: `/storage/${sourceAsset.file_path}` }],
+    outputAssetIds: [newAssetId],
+    durationMs: 0,
+    costEstimate: 0,
+  });
+
+  res.json(getFullProject(projectId));
+});
 
 // ─── Lock Shot ───────────────────────────────────────────────────────
 
@@ -1047,8 +1201,11 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     // Use user-provided override if given, otherwise the auto-built prompt
     const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
 
-    const videoModelKey = project.video_model || 'veo-3.1';
+    // Support legacy 'veo-3.1' key (used to mean Fast) by remapping to veo-3.1-fast.
+    const rawModelKey = project.video_model || 'veo-3.1-fast';
+    const videoModelKey = rawModelKey === 'veo-3.1' ? 'veo-3.1-fast' : rawModelKey;
     const isFal = videoModelKey in FAL_VIDEO_MODELS;
+    const isVeo = videoModelKey in VEO_MODELS;
 
     console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 100)}...`);
 
@@ -1057,17 +1214,41 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     let costEstimate: number;
     let modelId: string;
 
+    const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
+    const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
+
     if (isFal) {
-      const result = await generateFalVideo(imageAsset.file_path, veoPrompt, videoModelKey);
+      const result = await generateFalVideo(imageAsset.file_path, veoPrompt, videoModelKey, {
+        aspectRatio: aspect,
+        resolution,
+        duration: String(shot.duration || 10),
+      });
       videoPath = result.videoPath;
       const falModel = FAL_VIDEO_MODELS[videoModelKey];
       costEstimate = falModel.costPerSec * result.durationSec;
       modelId = falModel.id;
+    } else if (isVeo) {
+      const result = await generateVideo(imageAsset.file_path, veoPrompt, undefined, {
+        aspectRatio: aspect,
+        resolution,
+        durationSec: shot.duration,
+        modelKey: videoModelKey as VeoModelKey,
+      });
+      videoPath = result.videoPath;
+      const veoModel = VEO_MODELS[videoModelKey as VeoModelKey];
+      costEstimate = veoModel.costPerSec * result.durationSec;
+      modelId = result.modelId;
     } else {
-      // Default: Veo
-      videoPath = await generateVideo(imageAsset.file_path, veoPrompt);
-      costEstimate = 0.80;
-      modelId = 'veo-3.1-fast-generate-preview';
+      // Unknown key — fall back to Veo Fast
+      const result = await generateVideo(imageAsset.file_path, veoPrompt, undefined, {
+        aspectRatio: aspect,
+        resolution,
+        durationSec: shot.duration,
+        modelKey: 'veo-3.1-fast',
+      });
+      videoPath = result.videoPath;
+      costEstimate = VEO_MODELS['veo-3.1-fast'].costPerSec * result.durationSec;
+      modelId = result.modelId;
     }
 
     const durationMs = Date.now() - t0;

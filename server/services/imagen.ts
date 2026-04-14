@@ -165,7 +165,8 @@ export const generateCharacterLooks = async (
   character: { name: string; description: string },
   styleDNA: string,
   styleImagePath?: string,
-  userFeedback?: string
+  userFeedback?: string,
+  aspectRatio: string = '16:9'
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -197,7 +198,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
         config: {
           responseModalities: ['IMAGE'],
           // @ts-ignore
-          imageConfig: { aspectRatio: '16:9' }
+          imageConfig: { aspectRatio }
         }
       });
       const paths = extractImages(response);
@@ -223,7 +224,8 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
 export const generateEnvironmentLooks = async (
   environment: { name: string; description: string },
   styleDNA: string,
-  styleImagePath?: string
+  styleImagePath?: string,
+  aspectRatio: string = '16:9'
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -253,7 +255,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
         config: {
           responseModalities: ['IMAGE'],
           // @ts-ignore
-          imageConfig: { aspectRatio: '16:9' }
+          imageConfig: { aspectRatio }
         }
       });
       const paths = extractImages(response);
@@ -289,6 +291,7 @@ export const generateShotStartFrame = async (opts: {
   continuityDescription?: string;
   userFeedback?: string;
   failedImagePath?: string;
+  aspectRatio?: string;
 }): Promise<string> => {
   const parts: ContentPart[] = [];
 
@@ -352,7 +355,7 @@ This shot should begin from that exact continuity state — matching pose, camer
 
   parts.push({ text: prompt });
 
-  return generateImageWithRefs(parts);
+  return generateImageWithRefs(parts, opts.aspectRatio || '16:9');
 };
 
 // ─── Shot End Frame Generation (gemini-3-pro-image-preview) ──────────

@@ -108,14 +108,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     <div className="max-w-4xl mx-auto space-y-8 pb-32">
         <div className="text-center space-y-2 mb-8">
             <h2 className="text-2xl font-display font-medium text-white tracking-tight">Final Render</h2>
-            <p className="text-zinc-500 text-sm">Compile your masterpiece locally using FFmpeg WASM.</p>
+            <p className="text-zinc-400 text-sm">Compile your masterpiece locally using FFmpeg WASM.</p>
         </div>
 
         <div className="surface rounded-xl p-8 space-y-8 text-center">
             {!loaded ? (
                 <div className="py-12 flex flex-col items-center gap-4">
                     <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
-                    <p className="text-zinc-500 text-sm">{statusText}</p>
+                    <p className="text-zinc-400 text-sm">{statusText}</p>
                 </div>
             ) : (
                 <div className="space-y-8">
@@ -156,7 +156,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
                                 >
                                     Download Master
                                 </a>
-                                <button onClick={() => setFinalVideoUrl(null)} className="text-zinc-500 hover:text-white px-6 py-2.5 text-sm transition-colors">
+                                <button onClick={() => setFinalVideoUrl(null)} className="text-zinc-400 hover:text-white px-6 py-2.5 text-sm transition-colors">
                                     Discard & Retry
                                 </button>
                             </div>
@@ -166,8 +166,8 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             )}
 
             <div className="pt-6 border-t border-white/[0.06] flex justify-between items-center">
-                <button onClick={onBack} className="text-zinc-500 hover:text-white text-sm transition-colors">Back to Studio</button>
-                <div className="text-[10px] text-zinc-700 font-mono">
+                <button onClick={onBack} className="text-zinc-400 hover:text-white text-sm transition-colors">Back to Studio</button>
+                <div className="text-[11px] text-zinc-400 font-mono">
                     @ffmpeg/wasm
                 </div>
             </div>

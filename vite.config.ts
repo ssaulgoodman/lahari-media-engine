@@ -7,8 +7,8 @@ export default defineConfig({
     port: 3002,
     host: '0.0.0.0',
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/storage': 'http://localhost:3001',
+      '/api': 'http://localhost:3003',
+      '/storage': 'http://localhost:3003',
     }
   },
   plugins: [react()],

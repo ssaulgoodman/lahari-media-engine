@@ -21,10 +21,10 @@
             },
             colors: {
               obsidian: {
-                950: '#09090b',
-                900: '#0a0a0a',
-                800: '#141414',
-                700: '#1c1c1c',
+                950: '#141418',
+                900: '#17171c',
+                800: '#1f1f25',
+                700: '#2a2a32',
               },
               accent: {
                 100: '#E0E7FF',
@@ -63,7 +63,7 @@
     </script>
     <style>
       body {
-        background-color: #09090b;
+        background-color: #141418;
         background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.08), transparent);
         color: #e5e5e5;
         -webkit-font-smoothing: antialiased;
@@ -90,6 +90,30 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #3f3f46;
       }
+      /* ─── Typography system ──────────────────────────────────────────
+         Stick to these — don't invent new sizes or intensities.
+
+         SIZE TIERS (5 total, clear hierarchy):
+           text-[11px]  Micro    — UPPERCASE section dividers (RENDER, SONG ANALYSIS), tiny metadata
+           text-xs      Small    — 12px descriptions, card subtitles, secondary labels
+           text-sm      Body     — 14px default body + primary nav/tabs (Concept, Script…)
+           text-lg      Heading  — 18px section headings
+           text-2xl     Display  — 24px page titles
+
+         Visual hierarchy rule: two co-located elements should differ by at least one tier.
+         Section label (11px) next to a tab (14px) = clear hierarchy. Two 11px things = flat/confusing.
+
+         COLOR TIERS (3 total — anything darker disappears on the dark bg):
+           text-white      Primary — titles, active states, locked-in values
+           text-zinc-300   Body    — body text, main content, emphasized labels
+           text-zinc-400   Muted   — secondary body, labels, captions, hints
+
+         Avoid: text-zinc-500 / 600 / 700 / 800 for any text (they vanish).
+                text-xl / text-3xl (use text-2xl).
+                Custom pixel sizes outside of 11px.
+
+         Background: body is #141418 (warm near-black, slightly lifted from pure 950).
+      */
       /* Surface system */
       .surface {
         background: rgba(255, 255, 255, 0.03);

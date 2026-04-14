@@ -118,7 +118,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
         <div className="flex-shrink-0 h-14 px-5 flex items-center justify-between border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-medium text-white">X-Ray</h2>
-            <span className="text-[11px] text-zinc-600 font-mono">
+            <span className="text-[11px] text-zinc-400 font-mono">
               {calls.length} calls · ${totalCost.toFixed(2)} · {(totalDuration / 1000).toFixed(0)}s
               {errorCount > 0 && <span className="text-red-400 ml-2">· {errorCount} errors</span>}
             </span>
@@ -127,11 +127,11 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
             <button
               onClick={refresh}
               disabled={loading}
-              className="text-[11px] text-zinc-500 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md px-2 py-1"
+              className="text-[11px] text-zinc-400 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md px-2 py-1"
             >
               {loading ? '…' : 'Refresh'}
             </button>
-            <button onClick={onClose} className="text-zinc-500 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1">
+            <button onClick={onClose} className="text-zinc-400 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
@@ -151,7 +151,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                   key={g.key}
                   onClick={() => setFilter(g.key)}
                   className={`text-[11px] px-2.5 py-1 rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 ${
-                    active ? 'bg-white/[0.08] text-white' : 'text-zinc-500 hover:text-zinc-300'
+                    active ? 'bg-white/[0.08] text-white' : 'text-zinc-400 hover:text-zinc-300'
                   }`}
                 >
                   {g.label}{count > 0 ? ` ${count}` : ''}
@@ -165,14 +165,14 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
             placeholder="Search prompts…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="surface-inset rounded-md px-2.5 py-1 text-[11px] text-zinc-300 placeholder:text-zinc-700 outline-none focus-visible:ring-1 focus-visible:ring-white/20 w-40"
+            className="surface-inset rounded-md px-2.5 py-1 text-[11px] text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 w-40"
           />
         </div>
 
         {/* Call list */}
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
-            <div className="flex items-center justify-center h-48 text-zinc-700 text-xs">
+            <div className="flex items-center justify-center h-48 text-zinc-400 text-xs">
               {calls.length === 0 ? 'No calls yet' : 'No matches'}
             </div>
           )}
@@ -191,17 +191,17 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                   onClick={() => setExpandedId(isExpanded ? null : call.id)}
                   className="w-full text-left px-5 py-2.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors outline-none focus-visible:bg-white/[0.04]"
                 >
-                  <span className="text-[10px] font-mono text-zinc-700 w-16 flex-shrink-0">{time}</span>
-                  <span className={`text-[12px] flex-shrink-0 w-40 truncate ${hasError ? 'text-red-400' : 'text-zinc-300'}`}>
+                  <span className="text-[11px] font-mono text-zinc-400 w-16 flex-shrink-0">{time}</span>
+                  <span className={`text-xs flex-shrink-0 w-40 truncate ${hasError ? 'text-red-400' : 'text-zinc-300'}`}>
                     {prettyStage(call.stage)}
                   </span>
-                  <span className="text-[11px] text-zinc-600 truncate flex-1 min-w-0">
+                  <span className="text-[11px] text-zinc-400 truncate flex-1 min-w-0">
                     {hasError ? call.error : call.responseSummary || call.prompt.substring(0, 80)}
                   </span>
-                  <span className="text-[10px] font-mono text-zinc-600 flex-shrink-0">{(call.durationMs / 1000).toFixed(1)}s</span>
-                  <span className="text-[10px] font-mono text-zinc-600 flex-shrink-0 w-12 text-right">${(call.costEstimate || 0).toFixed(2)}</span>
+                  <span className="text-[11px] font-mono text-zinc-400 flex-shrink-0">{(call.durationMs / 1000).toFixed(1)}s</span>
+                  <span className="text-[11px] font-mono text-zinc-400 flex-shrink-0 w-12 text-right">${(call.costEstimate || 0).toFixed(2)}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    className={`text-zinc-700 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                    className={`text-zinc-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
                     <path d="M6 9l6 6 6-6"/>
                   </svg>
                 </button>
@@ -210,7 +210,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                   <div className="px-5 pb-5 pt-1 space-y-4">
                     {/* Prompt */}
                     <div>
-                      <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-1.5">Prompt</div>
+                      <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Prompt</div>
                       <div className="surface-inset rounded-md p-3 max-h-64 overflow-y-auto">
                         <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.prompt}</pre>
                       </div>
@@ -219,12 +219,12 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     {/* Reference images */}
                     {imageRefs.length > 0 && (
                       <div>
-                        <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-1.5">Reference inputs</div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Reference inputs</div>
                         <div className="flex gap-2 flex-wrap">
                           {imageRefs.map((ref, i) => (
                             <div key={i} className="relative group">
                               <img src={ref.url} className="w-16 h-16 object-cover rounded-md border border-white/[0.06]" alt={ref.label} />
-                              <div className="absolute inset-x-0 bottom-0 bg-black/70 text-[9px] text-zinc-300 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
+                              <div className="absolute inset-x-0 bottom-0 bg-black/70 text-[11px] text-zinc-300 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
                             </div>
                           ))}
                         </div>
@@ -234,14 +234,14 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     {/* Output or error */}
                     {hasError ? (
                       <div>
-                        <div className="text-[10px] text-red-400 uppercase tracking-wide mb-1.5">Error</div>
+                        <div className="text-[11px] text-red-400 uppercase tracking-wide mb-1.5">Error</div>
                         <div className="bg-red-500/[0.05] border border-red-500/10 rounded-md p-3 max-h-48 overflow-y-auto">
                           <pre className="text-[11px] text-red-300 whitespace-pre-wrap font-mono leading-relaxed">{call.error}</pre>
                         </div>
                       </div>
                     ) : call.responseSummary ? (
                       <div>
-                        <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-1.5">Response</div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Response</div>
                         <div className="surface-inset rounded-md p-3 max-h-48 overflow-y-auto">
                           <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.responseSummary}</pre>
                         </div>
@@ -251,7 +251,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     {/* Image outputs */}
                     {imageOutputs.length > 0 && (
                       <div>
-                        <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-1.5">Generated images</div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Generated images</div>
                         <div className="flex gap-2 flex-wrap">
                           {imageOutputs.map((a, i) => (
                             <img key={i} src={a.url} className="w-24 h-24 object-cover rounded-md border border-white/[0.06]" alt="" />
@@ -263,7 +263,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     {/* Video outputs */}
                     {videoOutputs.length > 0 && (
                       <div>
-                        <div className="text-[10px] text-zinc-600 uppercase tracking-wide mb-1.5">Generated video</div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Generated video</div>
                         <div className="flex gap-2 flex-wrap">
                           {videoOutputs.map((a, i) => (
                             <video key={i} src={a.url} className="w-48 h-28 object-cover rounded-md border border-white/[0.06]" controls muted />
@@ -273,13 +273,13 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     )}
 
                     {/* Footer */}
-                    <div className="flex items-center gap-3 pt-2 text-[10px] font-mono text-zinc-600 border-t border-white/[0.04]">
+                    <div className="flex items-center gap-3 pt-2 text-[11px] font-mono text-zinc-400 border-t border-white/[0.04]">
                       <span>{call.model}</span>
-                      <span className="text-zinc-700">·</span>
+                      <span className="text-zinc-400">·</span>
                       <span>{(call.durationMs / 1000).toFixed(2)}s</span>
-                      <span className="text-zinc-700">·</span>
+                      <span className="text-zinc-400">·</span>
                       <span>${(call.costEstimate || 0).toFixed(4)}</span>
-                      <span className="text-zinc-700 ml-auto">{new Date(call.createdAt).toLocaleTimeString()}</span>
+                      <span className="text-zinc-400 ml-auto">{new Date(call.createdAt).toLocaleTimeString()}</span>
                     </div>
                   </div>
                 )}

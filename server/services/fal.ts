@@ -10,16 +10,18 @@ import { saveBuffer, STORAGE_ROOT_PATH } from '../storage.js';
 
 // ─── Available models ──────────────────────────────────────────────
 
-export const FAL_VIDEO_MODELS: Record<string, { id: string; label: string; costPerSec: number }> = {
+export const FAL_VIDEO_MODELS: Record<string, { id: string; label: string; costPerSec: number; durations: number[] }> = {
   'seedance-2.0-fast': {
     id: 'bytedance/seedance-2.0/fast/image-to-video',
     label: 'Seedance 2.0 Fast',
     costPerSec: 0.24,
+    durations: [5, 10],
   },
   'seedance-2.0': {
     id: 'bytedance/seedance-2.0/image-to-video',
     label: 'Seedance 2.0',
     costPerSec: 0.30,
+    durations: [5, 10],
   },
 };
 
@@ -52,7 +54,7 @@ export const generateFalVideo = async (
   startImagePath: string,
   motionPrompt: string,
   modelKey = 'seedance-2.0-fast',
-  opts?: { duration?: string; resolution?: string; generateAudio?: boolean }
+  opts?: { duration?: string; resolution?: string; aspectRatio?: string; generateAudio?: boolean }
 ): Promise<{ videoPath: string; durationSec: number }> => {
   ensureConfigured();
 
@@ -69,7 +71,7 @@ export const generateFalVideo = async (
       image_url: imageUrl,
       resolution: opts?.resolution || '720p',
       duration: opts?.duration || '10',
-      aspect_ratio: '16:9',
+      aspect_ratio: opts?.aspectRatio || '16:9',
       generate_audio: opts?.generateAudio ?? false,
     },
     logs: true,
