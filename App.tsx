@@ -337,16 +337,26 @@ const App: React.FC = () => {
 
   const handleGenerateScript = async (userNote?: string) => {
     if (!project) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const p = await api.generateScript(project.id, userNote);
-      setProject(p);
-    } catch (err: any) {
-      setError('Script generation failed: ' + err.message);
-    } finally {
-      setLoading(false);
+    // First-time gen: no existing script to destroy, just run.
+    if (project.scenes.length === 0) {
+      setLoading(true); setError(null);
+      try {
+        const p = await api.generateScript(project.id, userNote);
+        setProject(p);
+      } catch (err: any) {
+        setError('Script generation failed: ' + err.message);
+      } finally { setLoading(false); }
+      return;
     }
+    // Re-gen: destructive (wipes cast + deletes scenes/shots). Offer fork.
+    const hasMedia = project.scenes.some(s => s.shots.some((x: any) => x.imageUrl || x.videoUrl));
+    setDestructive({
+      title: 'Regenerate script?',
+      description: hasMedia
+        ? 'This wipes the cast, deletes every scene and shot, and DISCARDS all generated images and videos. Fork first to keep a snapshot.'
+        : 'This wipes the cast and deletes every scene and shot. Fork first to keep a snapshot.',
+      run: ({ fork }) => api.generateScript(project.id, userNote, { fork }),
+    });
   };
 
   // ─── Advance past Characters / Environments ────────────────────
@@ -381,6 +391,16 @@ const App: React.FC = () => {
 
   const handleLaunchStudio = async () => {
     if (!project) return;
+    // Skip bulk prompt regeneration if every shot already has a prompt written.
+    // User just clicking Launch Studio again after coming back from Blueprint
+    // shouldn't burn a Claude call. The explicit "Rewrite all" button in Studio
+    // covers the deliberate-regen case.
+    const allShotsHavePrompts = project.scenes.length > 0
+      && project.scenes.every(s => s.shots.length > 0 && s.shots.every(x => !!x.visualPrompt));
+    if (allShotsHavePrompts) {
+      setCurrentStep(AppStep.STUDIO);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {

@@ -610,7 +610,11 @@ router.post('/:id/advance-environments', (req, res) => {
 // ─── Generate Script ────────────────────────────────────────────────
 
 router.post('/:id/generate-script', async (req, res) => {
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
+  // Destructive on re-run: wipes cast + deletes existing scenes. Pass
+  // { fork: true } to fork first and run on the new project.
+  const sourceId = paramStr(req.params.id);
+  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
+  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file' });
 

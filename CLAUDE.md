@@ -85,7 +85,15 @@ SQLite tables (see `server/db.ts`):
 
 ### Fork system
 
-Destructive operations (unlock-concept, unlock-script, unlock-style, unlock-characters, unlock-environments, analyze-audio) accept `{ fork: true }` on the server. Fork deep-copies all DB rows under a new id with `parent_project_id = source`; asset file_paths are shared (zero disk bloat). The sidebar groups forks indented under parents. Helper: `forkProject(sourceId)` in `server/routes/projects.ts`. UI dialog: `DestructiveAction` state in `App.tsx` (supports `mode: 'fork' | 'simple'`).
+Destructive operations accept `{ fork: true }` on the server. Fork deep-copies all DB rows under a new id with `parent_project_id = source`; asset file_paths are shared (zero disk bloat). Sidebar groups forks indented under parents with timestamps + delete. Helper: `forkProject(sourceId)` in `server/routes/projects.ts`. UI dialog: `DestructiveAction` state in `App.tsx` (`mode: 'fork'` for 3-button Fork/Overwrite/Cancel, `mode: 'simple'` for 2-button Confirm/Cancel).
+
+**Fork-capable endpoints:** `unlock-concept`, `unlock-script`, `unlock-style`, `unlock-characters`, `unlock-environments`, `analyze-audio`, `generate-script` (re-run only — wipes cast + scenes). First-time `generate-script` runs without the dialog.
+
+**Not forked** (non-destructive): `generate-concepts` (just replaces options), `lock-concept` / `lock-style` (set fields), `generate-looks` / `generate-environment-look` (replaces one ref), `write-shot-prompts` (overwrites prompts, keeps media).
+
+### Launch Studio shortcut
+
+`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
 
 **Supabase tables (read-only from Lahari):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
