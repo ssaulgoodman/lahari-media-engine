@@ -63,24 +63,24 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
  * Returns the storage path of the generated video.
  */
 // Developer API and Vertex AI use different model identifiers for the same
-// underlying Veo models. Developer API moved to "veo-3.1-*" naming; Vertex
-// is still on "veo-3.0-*". We keep both here and pick at call time.
+// underlying Veo models. Both transports are now on the GA 3.1 family
+// (released Nov 2025) — 3.1 supports first+last frame conditioning; 3.0 did not.
 export const VEO_MODELS = {
   'veo-3.1-fast': {
     id: 'veo-3.1-fast-generate-preview',
-    // Vertex uses GA naming; -preview variants typically need Model Garden
-    // approval while -001 (GA) is broadly available.
-    vertexId: 'veo-3.0-fast-generate-001',
+    vertexId: 'veo-3.1-fast-generate-001',
     label: 'Veo 3.1 Fast',
     durations: [8],
     costPerSec: 0.10,
+    supportsLastFrame: true,
   },
   'veo-3.1': {
     id: 'veo-3.1-generate-preview',
-    vertexId: 'veo-3.0-generate-001',
+    vertexId: 'veo-3.1-generate-001',
     label: 'Veo 3.1',
     durations: [4, 6, 8],
     costPerSec: 0.20,
+    supportsLastFrame: true,
   },
 } as const;
 

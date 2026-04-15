@@ -12,6 +12,8 @@ export interface VideoModelSpec {
   costPerSec: number;
   /** Extra context shown under the label in the picker. */
   note?: string;
+  /** Whether this model accepts an end keyframe (enables reverse-chain). */
+  supportsLastFrame: boolean;
 }
 
 export const VIDEO_MODELS: VideoModelSpec[] = [
@@ -22,6 +24,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     durations: [8],
     costPerSec: 0.10,
     note: 'Fixed 8s — cheapest, fastest',
+    supportsLastFrame: true,
   },
   {
     key: 'veo-3.1',
@@ -30,6 +33,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     durations: [4, 6, 8],
     costPerSec: 0.20,
     note: 'Variable duration, higher quality',
+    supportsLastFrame: true,
   },
   {
     key: 'seedance-2.0-fast',
@@ -38,6 +42,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     durations: [5, 10],
     costPerSec: 0.24,
     note: '5s or 10s via fal.ai',
+    supportsLastFrame: false,
   },
   {
     key: 'seedance-2.0',
@@ -46,6 +51,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     durations: [5, 10],
     costPerSec: 0.30,
     note: '5s or 10s, higher quality',
+    supportsLastFrame: false,
   },
 ];
 

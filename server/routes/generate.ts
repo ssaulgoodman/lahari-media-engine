@@ -1246,6 +1246,42 @@ router.post('/:id/shots/:shotId/use-prev-last-frame', async (req, res) => {
   res.json(getFullProject(projectId));
 });
 
+// ─── Reverse-chain: use THIS shot's start frame as PREV shot's end keyframe ─
+// Lets the artist rewind: "this start looks right — make the previous shot
+// land here." Copies this shot's image_asset_id into the previous shot's
+// end_image_asset_id and marks that shot's video as stale so the artist
+// regens it. Stale (not deleted) — prior video stays accessible via history.
+// Only works on models that support first+last frame conditioning (Veo 3.1).
+router.post('/:id/shots/:shotId/use-as-prev-end', (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  const shot: any = db.prepare('SELECT * FROM shots WHERE id = ?').get(shotId);
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  if (!shot.image_asset_id) return res.status(400).json({ error: 'This shot has no start frame to use' });
+
+  const project: any = db.prepare('SELECT video_model FROM projects WHERE id = ?').get(projectId);
+  const modelKey = project?.video_model || 'veo-3.1-fast';
+  const veoModel = (VEO_MODELS as any)[modelKey];
+  const falModel = (FAL_VIDEO_MODELS as any)[modelKey];
+  const supportsLastFrame = veoModel?.supportsLastFrame || falModel?.supportsLastFrame || false;
+  if (!supportsLastFrame) {
+    return res.status(400).json({ error: `Current video model (${modelKey}) does not support end-keyframe conditioning. Switch to Veo 3.1 to use reverse-chain.` });
+  }
+
+  const prevShot: any = db.prepare(
+    'SELECT * FROM shots WHERE scene_id = ? AND sort_order < ? ORDER BY sort_order DESC LIMIT 1'
+  ).get(shot.scene_id, shot.sort_order);
+  if (!prevShot) return res.status(400).json({ error: 'No previous shot in this scene' });
+  if (prevShot.locked) return res.status(400).json({ error: 'Previous shot is locked — unlock it first' });
+
+  db.prepare(
+    `UPDATE shots SET end_image_asset_id = ?, end_image_status = 'success', video_status = 'stale' WHERE id = ?`
+  ).run(shot.image_asset_id, prevShot.id);
+
+  res.json(getFullProject(projectId));
+});
+
 // ─── Lock Shot ───────────────────────────────────────────────────────
 
 router.post('/:id/shots/:shotId/lock', (req, res) => {
@@ -1263,6 +1299,57 @@ router.post('/:id/shots/:shotId/unlock', (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   db.prepare('UPDATE shots SET locked = 0 WHERE id = ?').run(shot.id);
+  res.json(getFullProject(paramStr(req.params.id)));
+});
+
+// ─── Shot video history (revert after bad regen) ────────────────────
+
+router.get('/:id/shots/:shotId/video-history', (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot: any = db.prepare('SELECT id, video_asset_id FROM shots WHERE id = ?').get(shotId);
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const rows: any[] = db.prepare(
+    `SELECT id, file_path, metadata, created_at FROM assets
+     WHERE shot_id = ? AND category = 'shot_video'
+     ORDER BY datetime(created_at) DESC`
+  ).all(shotId);
+
+  const versions = rows.map((r) => {
+    let pairedFrameId: string | null = null;
+    try { pairedFrameId = JSON.parse(r.metadata || '{}').extracted_last_frame_asset_id || null; } catch {}
+    const frame: any = pairedFrameId
+      ? db.prepare('SELECT file_path FROM assets WHERE id = ?').get(pairedFrameId)
+      : null;
+    return {
+      assetId: r.id,
+      videoUrl: `/storage/${r.file_path}`,
+      thumbnailUrl: frame ? `/storage/${frame.file_path}` : null,
+      createdAt: r.created_at,
+      isCurrent: r.id === shot.video_asset_id,
+    };
+  });
+
+  res.json({ versions });
+});
+
+router.post('/:id/shots/:shotId/revert-video', (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const { assetId } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId required' });
+
+  const asset: any = db.prepare(
+    `SELECT id, metadata FROM assets WHERE id = ? AND shot_id = ? AND category = 'shot_video'`
+  ).get(assetId, shotId);
+  if (!asset) return res.status(404).json({ error: 'Version not found for this shot' });
+
+  let framePair: string | null = null;
+  try { framePair = JSON.parse(asset.metadata || '{}').extracted_last_frame_asset_id || null; } catch {}
+
+  db.prepare(
+    `UPDATE shots SET video_asset_id = ?, extracted_last_frame_asset_id = ?, video_status = 'success' WHERE id = ?`
+  ).run(asset.id, framePair, shotId);
+
   res.json(getFullProject(paramStr(req.params.id)));
 });
 
@@ -1331,6 +1418,20 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
     const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
 
+    // Reverse-chain: if another shot pushed its start frame into this shot's
+    // end_image_asset_id, pass it to Veo as the target last frame so the clip
+    // lands exactly where the next shot begins. Skip silently for models
+    // that don't accept first+last frame (Seedance, Veo 3.0) — the endpoint
+    // that set it already gates the feature, this is just defense in depth.
+    let endImagePath: string | undefined;
+    const modelSupportsLastFrame =
+      (isVeo && (VEO_MODELS[videoModelKey as VeoModelKey] as any)?.supportsLastFrame) ||
+      (isFal && (FAL_VIDEO_MODELS[videoModelKey] as any)?.supportsLastFrame);
+    if (shot.end_image_asset_id && modelSupportsLastFrame) {
+      const endAsset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.end_image_asset_id);
+      if (endAsset) endImagePath = endAsset.file_path;
+    }
+
     if (isFal) {
       const result = await generateFalVideo(imageAsset.file_path, veoPrompt, videoModelKey, {
         aspectRatio: aspect,
@@ -1342,7 +1443,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       costEstimate = falModel.costPerSec * result.durationSec;
       modelId = falModel.id;
     } else if (isVeo) {
-      const result = await generateVideo(imageAsset.file_path, veoPrompt, undefined, {
+      const result = await generateVideo(imageAsset.file_path, veoPrompt, endImagePath, {
         aspectRatio: aspect,
         resolution,
         durationSec: shot.duration,
@@ -1354,7 +1455,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       modelId = result.modelId;
     } else {
       // Unknown key — fall back to Veo Fast
-      const result = await generateVideo(imageAsset.file_path, veoPrompt, undefined, {
+      const result = await generateVideo(imageAsset.file_path, veoPrompt, endImagePath, {
         aspectRatio: aspect,
         resolution,
         durationSec: shot.duration,
@@ -1368,8 +1469,6 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const durationMs = Date.now() - t0;
 
     const assetId = uuidv4();
-    db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'shot_video', ?)`)
-      .run(assetId, project.id, videoPath);
 
     // Extract the actual last frame from the generated video so the next shot
     // can branch from where we truly ended up, not where we predicted we'd be.
@@ -1379,11 +1478,17 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       const framePath = await extractLastFrame(videoPath);
       extractedFramePath = framePath;
       extractedAssetId = uuidv4();
-      db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'shot_extracted_last_frame', ?)`)
-        .run(extractedAssetId, project.id, framePath);
+      db.prepare(`INSERT INTO assets (id, project_id, shot_id, category, file_path) VALUES (?, ?, ?, 'shot_extracted_last_frame', ?)`)
+        .run(extractedAssetId, project.id, shot.id, framePath);
     } catch (err: any) {
       console.warn(`  [shot ${shot.id}] last-frame extraction failed: ${err.message}`);
     }
+
+    // Pair the extracted-frame id into the video asset's metadata so revert
+    // can restore both pointers atomically from a single history entry.
+    const videoMetadata = JSON.stringify({ extracted_last_frame_asset_id: extractedAssetId });
+    db.prepare(`INSERT INTO assets (id, project_id, shot_id, category, file_path, metadata) VALUES (?, ?, ?, 'shot_video', ?, ?)`)
+      .run(assetId, project.id, shot.id, videoPath, videoMetadata);
 
     db.prepare(`UPDATE shots SET video_asset_id = ?, video_status = 'success', extracted_last_frame_asset_id = ? WHERE id = ?`)
       .run(assetId, extractedAssetId, shot.id);

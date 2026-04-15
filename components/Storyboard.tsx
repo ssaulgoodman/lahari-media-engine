@@ -5,6 +5,10 @@ import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { ShotVideoPreview } from './ShotVideoPreview';
+import { getShotVideoHistory } from '../services/api';
+import { getVideoModel } from '../constants/videoModels';
+
+type VideoVersion = { assetId: string; videoUrl: string; thumbnailUrl: string | null; createdAt: string; isCurrent: boolean };
 
 // "0:32" / "00:32" / "1:23:45" → seconds. Guards against undefined / junk.
 const parseTimeToSec = (t?: string): number => {
@@ -34,10 +38,16 @@ interface Props {
   onCancelShotVideo?: (shotId: string) => void;
   onUsePrevLastFrame?: (shotId: string) => void;
   onClearShotFrame?: (shotId: string) => void;
+  onRevertVideo?: (shotId: string, assetId: string) => void | Promise<void>;
+  onUseAsPrevEnd?: (shotId: string) => void | Promise<void>;
+  /** Shot IDs waiting for a bulk-frame worker (ordered — position = Nth in line). */
+  frameQueue?: string[];
+  /** Shot IDs waiting for a bulk-video worker (ordered). */
+  videoQueue?: string[];
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
@@ -49,6 +59,26 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [expandedShotIds, setExpandedShotIds] = useState<Set<string>>(new Set());
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
   const contextBarRef = React.useRef<HTMLDivElement>(null);
+  const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
+  const [historyVersions, setHistoryVersions] = useState<VideoVersion[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
+
+  const openHistory = async (shotId: string) => {
+    if (!project) return;
+    if (historyOpenFor === shotId) { setHistoryOpenFor(null); return; }
+    setHistoryOpenFor(shotId);
+    setHistoryLoading(true);
+    try {
+      const { versions } = await getShotVideoHistory(project.id, shotId);
+      setHistoryVersions(versions);
+    } catch {
+      setHistoryVersions([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   // Auto-expand the first actionable unlocked shot the first time a project
   // loads, so the Studio isn't a wall of closed cards.
@@ -393,6 +423,15 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         </button>
                       )}
 
+                      {shot.videoStatus === GenerationStatus.STALE && (
+                        <span
+                          className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 flex-shrink-0"
+                          title="The previous video is out of sync with the end keyframe set by the next shot. Regenerate to land on that frame."
+                        >
+                          stale
+                        </span>
+                      )}
+
                       {shot.refinedFromPrevFrame && (
                         <span
                           className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0"
@@ -401,6 +440,27 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           refined
                         </span>
                       )}
+
+                      {/* Bulk-queue position — surfaces "Nth in line" while a
+                          bulk gen worker hasn't picked this shot up yet. Frames
+                          or video pulls whichever applies (exclusive because
+                          the handler skips shots already generating the other). */}
+                      {(() => {
+                        const framePos = frameQueue?.indexOf(shot.id) ?? -1;
+                        const videoPos = videoQueue?.indexOf(shot.id) ?? -1;
+                        if (framePos < 0 && videoPos < 0) return null;
+                        const kind = framePos >= 0 ? 'frame' : 'video';
+                        const pos = framePos >= 0 ? framePos + 1 : videoPos + 1;
+                        const ordinal = pos === 1 ? '1st' : pos === 2 ? '2nd' : pos === 3 ? '3rd' : `${pos}th`;
+                        return (
+                          <span
+                            className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0 font-mono"
+                            title={`Queued for bulk ${kind} generation — ${ordinal} in line.`}
+                          >
+                            queued · {ordinal}
+                          </span>
+                        );
+                      })()}
 
                       {!actionable && !shot.imageUrl && (
                         <span
@@ -428,6 +488,23 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             title="Show start + end frames"
                           >Frames</button>
                         </div>
+                      )}
+
+                      {/* History — lets the artist revert to an earlier generation
+                          after a regen they didn't like. */}
+                      {shot.videoUrl && (
+                        <button
+                          onClick={() => openHistory(shot.id)}
+                          className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${historyOpenFor === shot.id ? 'text-white bg-white/[0.1]' : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'}`}
+                          title="Version history — revert to an earlier generation"
+                          aria-label="Version history"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+                            <path d="M3 3v5h5"/>
+                            <path d="M12 7v5l3 2"/>
+                          </svg>
+                        </button>
                       )}
 
                       {/* Sleek icon-only toolbar — tooltip carries the label.
@@ -520,6 +597,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                             </button>
                           )}
+                          {shot.imageUrl && shotIdx > 0 && !activeScene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                            <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => onUseAsPrevEnd(shot.id)}
+                                className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                title="Use this start frame as the previous shot's end keyframe. Previous shot's video becomes stale — regen to land on this frame."
+                              >
+                                ← Use as prev shot's end
+                              </button>
+                            </div>
+                          )}
                           {shot.imageUrl && (
                             <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
                           )}
@@ -569,6 +657,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                               </button>
+                            )}
+                            {shotIdx > 0 && !activeScene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                              <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => onUseAsPrevEnd(shot.id)}
+                                  className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                  title="Use this start frame as the previous shot's end keyframe. Previous shot's video becomes stale — regen to land on this frame."
+                                >
+                                  ← Use as prev shot's end
+                                </button>
+                              </div>
                             )}
                             <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[480px] h-auto w-auto cursor-zoom-in" />
                           </>
@@ -640,6 +739,62 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     )}
                   </div>
+
+                  {/* Version history panel — opens via the history button above.
+                      Lets the artist revert to an earlier generation when a
+                      regen produced something worse. Pointer swap only; files
+                      on disk are kept regardless. */}
+                  {historyOpenFor === shot.id && (
+                    <div className="px-5 py-3 border-t border-white/[0.06] bg-white/[0.02]">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] uppercase tracking-wider text-zinc-400">Version history</span>
+                        <button
+                          onClick={() => setHistoryOpenFor(null)}
+                          className="text-[11px] text-zinc-400 hover:text-white"
+                        >Close</button>
+                      </div>
+                      {historyLoading ? (
+                        <div className="text-xs text-zinc-400 py-3">Loading…</div>
+                      ) : historyVersions.length === 0 ? (
+                        <div className="text-xs text-zinc-400 py-3">No previous versions yet — regenerate to build history.</div>
+                      ) : (
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {historyVersions.map((v, idx) => (
+                            <button
+                              key={v.assetId}
+                              disabled={v.isCurrent}
+                              onClick={async () => {
+                                await onRevertVideo?.(shot.id, v.assetId);
+                                setHistoryOpenFor(null);
+                              }}
+                              className={`flex-shrink-0 w-28 rounded-md overflow-hidden border transition-all text-left ${
+                                v.isCurrent
+                                  ? 'border-white/40 ring-1 ring-white/30'
+                                  : 'border-white/[0.08] hover:border-white/30 cursor-pointer'
+                              }`}
+                              title={v.isCurrent ? 'Current version' : 'Revert to this version'}
+                            >
+                              <div className="aspect-video bg-black flex items-center justify-center">
+                                {v.thumbnailUrl ? (
+                                  <img src={v.thumbnailUrl} alt={`v${historyVersions.length - idx}`} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-[10px] text-zinc-500">no preview</span>
+                                )}
+                              </div>
+                              <div className="px-2 py-1.5">
+                                <div className="text-[11px] text-zinc-300 font-medium">
+                                  {v.isCurrent ? 'Current' : `Revert`}
+                                </div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  {new Date(v.createdAt + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Prompts — full width below media */}
                   <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">

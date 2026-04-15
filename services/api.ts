@@ -399,6 +399,25 @@ export const generateShotVideo = async (projectId: string, shotId: string, promp
   return handleResponse(res);
 };
 
+export const useShotAsPrevEnd = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/use-as-prev-end`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const getShotVideoHistory = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/video-history`);
+  return handleResponse(res) as Promise<{ versions: Array<{ assetId: string; videoUrl: string; thumbnailUrl: string | null; createdAt: string; isCurrent: boolean }> }>;
+};
+
+export const revertShotVideo = async (projectId: string, shotId: string, assetId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/revert-video`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assetId })
+  });
+  return handleResponse(res);
+};
+
 export const updateShot = async (projectId: string, shotId: string, updates: Record<string, any>) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}`, {
     method: 'PATCH',

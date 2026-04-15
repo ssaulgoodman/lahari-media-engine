@@ -12,6 +12,7 @@ export enum GenerationStatus {
   CRITIQUING = 'critiquing',
   SUCCESS = 'success',
   ERROR = 'error',
+  STALE = 'stale',
 }
 
 export type VideoMode = 'montage' | 'cinematic';

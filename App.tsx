@@ -8,6 +8,7 @@ import { StepRender } from './components/StepRender';
 import { ChatAssistant } from './components/ChatAssistant';
 import { XRayPanel } from './components/XRayPanel';
 import { Dashboard } from './components/Dashboard';
+import { PromptsLibrary } from './components/PromptsLibrary';
 import { getVideoModel } from './constants/videoModels';
 import * as api from './services/api';
 
@@ -72,6 +73,13 @@ const App: React.FC = () => {
   const [looksLoading, setLooksLoading] = useState<Set<string>>(new Set());
   // X-Ray panel
   const [xrayOpen, setXrayOpen] = useState(false);
+  // Prompts library — full-page overlay, not tied to a project
+  const [promptsOpen, setPromptsOpen] = useState(false);
+  // Bulk-queue state — shot IDs waiting for a worker to pick them up.
+  // Order matters: position in the array = visible "Nth in line" badge.
+  // Worker pulls from the front; UI reads indexOf for the badge.
+  const [frameQueue, setFrameQueue] = useState<string[]>([]);
+  const [videoQueue, setVideoQueue] = useState<string[]>([]);
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   // Project sidebar
@@ -554,6 +562,26 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUseAsPrevEnd = async (shotId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.useShotAsPrevEnd(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Reverse-chain failed: ${err.message}`);
+    }
+  };
+
+  const handleRevertVideo = async (shotId: string, assetId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.revertShotVideo(project.id, shotId, assetId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Revert failed: ${err.message}`);
+    }
+  };
+
   const handleLockShot = async (sceneId: string, shotId: string) => {
     if (!project) return;
     const scene = project.scenes.find(s => s.id === sceneId);
@@ -627,11 +655,17 @@ const App: React.FC = () => {
   // "5 at a time, queue the rest" actually means — no artificial sleeps,
   // no fixed batches. Rejections are swallowed into the results array so
   // one failure doesn't abort the whole bulk.
-  const runWithConcurrency = async <T,>(items: T[], limit: number, fn: (item: T) => Promise<any>): Promise<void> => {
+  const runWithConcurrency = async <T,>(
+    items: T[],
+    limit: number,
+    fn: (item: T) => Promise<any>,
+    onStart?: (item: T) => void,
+  ): Promise<void> => {
     let cursor = 0;
     const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (cursor < items.length) {
         const idx = cursor++;
+        if (onStart) onStart(items[idx]);
         try { await fn(items[idx]); } catch (err) { /* logged by the handler */ }
       }
     });
@@ -653,21 +687,32 @@ const App: React.FC = () => {
       });
     }
     if (targets.length === 0) return;
-    // Optimistic: mark all as loading so the UI reflects the batch immediately.
-    setProject(prev => prev ? {
-      ...prev,
-      scenes: prev.scenes.map(s => ({
-        ...s,
-        shots: s.shots.map(sh =>
-          targets.some(t => t.shotId === sh.id)
-            ? { ...sh, imageStatus: GenerationStatus.LOADING }
-            : sh
-        )
-      }))
-    } : prev);
-    // Gemini image gen is comfortable with more parallelism than Veo —
-    // ~10 concurrent fits inside Tier-2 RPM easily.
-    await runWithConcurrency(targets, 10, t => api.generateShotImage(project.id, t.shotId));
+    // Seed the visible queue. Workers will dequeue + flip to LOADING as they
+    // pick each job up, so the artist sees the first ~10 active and the rest
+    // wearing a "queued (Nth)" badge instead of all flashing to loading.
+    const queueIds = targets.map(t => t.shotId);
+    setFrameQueue(queueIds);
+    try {
+      await runWithConcurrency(
+        targets,
+        10,
+        t => api.generateShotImage(project.id, t.shotId),
+        t => {
+          setFrameQueue(q => q.filter(id => id !== t.shotId));
+          setProject(prev => prev ? {
+            ...prev,
+            scenes: prev.scenes.map(s => ({
+              ...s,
+              shots: s.shots.map(sh =>
+                sh.id === t.shotId ? { ...sh, imageStatus: GenerationStatus.LOADING } : sh
+              )
+            }))
+          } : prev);
+        },
+      );
+    } finally {
+      setFrameQueue([]);
+    }
     // Authoritative refresh — parallel responses can land out of order.
     try { setProject(await api.getProject(project.id)); } catch (err: any) { setError(err.message); }
   };
@@ -687,22 +732,32 @@ const App: React.FC = () => {
       });
     }
     if (targets.length === 0) return;
-    setProject(prev => prev ? {
-      ...prev,
-      scenes: prev.scenes.map(s => ({
-        ...s,
-        shots: s.shots.map(sh =>
-          targets.some(t => t.shotId === sh.id)
-            ? { ...sh, videoStatus: GenerationStatus.LOADING }
-            : sh
-        )
-      }))
-    } : prev);
-    // Throttle to 5 concurrent on Veo. Vertex default is ~60 RPM per project
-    // on Veo Fast; at 60s-per-video this never touches the RPM ceiling, and
-    // it keeps us comfortable inside the concurrent-ops soft cap. Raise later
-    // once Google auto-scales our quotas after sustained usage.
-    await runWithConcurrency(targets, 5, t => api.generateShotVideo(project.id, t.shotId));
+    const queueIds = targets.map(t => t.shotId);
+    setVideoQueue(queueIds);
+    try {
+      // Throttle to 5 concurrent on Veo. Vertex default is ~60 RPM per project
+      // on Veo Fast; at 60s-per-video this never touches the RPM ceiling, and
+      // it keeps us comfortable inside the concurrent-ops soft cap.
+      await runWithConcurrency(
+        targets,
+        5,
+        t => api.generateShotVideo(project.id, t.shotId),
+        t => {
+          setVideoQueue(q => q.filter(id => id !== t.shotId));
+          setProject(prev => prev ? {
+            ...prev,
+            scenes: prev.scenes.map(s => ({
+              ...s,
+              shots: s.shots.map(sh =>
+                sh.id === t.shotId ? { ...sh, videoStatus: GenerationStatus.LOADING } : sh
+              )
+            }))
+          } : prev);
+        },
+      );
+    } finally {
+      setVideoQueue([]);
+    }
     try { setProject(await api.getProject(project.id)); } catch (err: any) { setError(err.message); }
   };
 
@@ -867,6 +922,15 @@ const App: React.FC = () => {
 
           {/* Right */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Prompts library — always available, cross-project reference. */}
+            <button
+              onClick={() => setPromptsOpen(true)}
+              className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
+              title="Prompts — the templates that drive every AI call"
+            >
+              Prompts
+            </button>
+            {project && <div className="w-px h-4 bg-white/[0.06]" />}
             {project && (
               <>
                 <span
@@ -921,9 +985,25 @@ const App: React.FC = () => {
         <main id="main-content" className="flex-1 overflow-y-auto relative">
 
           <div className="relative z-10 w-full p-8">
-            {/* Page transitions */}
+            {/* Prompts library — full-page overlay over the current pipeline state. */}
+            <AnimatePresence>
+              {promptsOpen && (
+                <motion.div
+                  key="prompts-library"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                >
+                  <PromptsLibrary onBack={() => setPromptsOpen(false)} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Page transitions — hidden while Prompts library is open to
+                preserve pipeline state underneath without double-rendering. */}
             <AnimatePresence mode="wait">
-              {currentStep === AppStep.UPLOAD && (
+              {!promptsOpen && currentStep === AppStep.UPLOAD && (
                 <motion.div key="queue" {...pageTransition}>
                   <Dashboard
                     onStartProduction={handleStartProduction}
@@ -932,7 +1012,7 @@ const App: React.FC = () => {
                 </motion.div>
               )}
 
-              {currentStep === AppStep.BLUEPRINT && project && (
+              {!promptsOpen && currentStep === AppStep.BLUEPRINT && project && (
                 <motion.div key="blueprint" {...pageTransition}>
                   <AnalysisEditor
                     project={project}
@@ -972,7 +1052,7 @@ const App: React.FC = () => {
                 </motion.div>
               )}
 
-              {currentStep === AppStep.STUDIO && project && (
+              {!promptsOpen && currentStep === AppStep.STUDIO && project && (
                 <motion.div key="studio" {...pageTransition}>
                   <Storyboard
                     scenes={project.scenes}
@@ -985,11 +1065,15 @@ const App: React.FC = () => {
                     onCancelShotImage={handleCancelShotImage}
                     onCancelShotVideo={handleCancelShotVideo}
                     onLockShot={handleLockShot}
+                    onRevertVideo={handleRevertVideo}
+                    onUseAsPrevEnd={handleUseAsPrevEnd}
                     onRefinePrompt={handleRefinePrompt}
                     onUpdateProject={handleUpdateProject}
                     onRewriteShotPrompts={handleRewriteShotPrompts}
                     onBulkGenerateFrames={handleBulkGenerateFrames}
                     onBulkGenerateVideos={handleBulkGenerateVideos}
+                    frameQueue={frameQueue}
+                    videoQueue={videoQueue}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
                     isLoading={loading}
@@ -997,7 +1081,7 @@ const App: React.FC = () => {
                 </motion.div>
               )}
 
-              {currentStep === AppStep.RENDER && project && (
+              {!promptsOpen && currentStep === AppStep.RENDER && project && (
                 <motion.div key="render" {...pageTransition}>
                   <StepRender
                     project={project}
