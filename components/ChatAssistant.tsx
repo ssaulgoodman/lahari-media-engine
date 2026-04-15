@@ -52,7 +52,7 @@ export const ChatAssistant: React.FC<Props> = ({ messages, onSendMessage, isLoad
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-xs leading-relaxed ${
+              className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                 msg.role === 'user'
                   ? 'bg-white/[0.06] text-white'
                   : 'bg-white/[0.04] text-zinc-300'

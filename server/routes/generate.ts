@@ -494,12 +494,17 @@ router.post('/:id/lock-character', (req, res) => {
 // ─── Advance past Characters phase ─────────────────────────────────
 // User decides when they're done — not all cast members need looks
 
+// Idempotent: if already past characters_locked, no-op. If before, bump up.
+// The UI lets users jump around tabs, so a strict status gate breaks the flow.
+const PHASE_ORDER_SERVER = ['uploaded','analyzed','concept_locked','scripted','style_locked','characters_locked','environments_locked','in_production','completed'];
+const atLeast = (cur: string, target: string) => PHASE_ORDER_SERVER.indexOf(cur) >= PHASE_ORDER_SERVER.indexOf(target);
+
 router.post('/:id/advance-characters', (req, res) => {
   const project: any = db.prepare('SELECT id, status FROM projects WHERE id = ?').get(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (project.status !== 'style_locked') return res.status(400).json({ error: 'Not in style_locked phase' });
-
-  db.prepare("UPDATE projects SET status = 'characters_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
+  if (!atLeast(project.status, 'characters_locked')) {
+    db.prepare("UPDATE projects SET status = 'characters_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
+  }
   res.json(getFullProject(paramStr(req.params.id)));
 });
 
@@ -589,9 +594,10 @@ router.post('/:id/lock-environment', (req, res) => {
 router.post('/:id/advance-environments', (req, res) => {
   const project: any = db.prepare('SELECT id, status FROM projects WHERE id = ?').get(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (project.status !== 'characters_locked') return res.status(400).json({ error: 'Not in characters_locked phase' });
-
-  db.prepare("UPDATE projects SET status = 'environments_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
+  // Also bump through characters_locked if skipped — the user is clearly done with earlier phases.
+  if (!atLeast(project.status, 'environments_locked')) {
+    db.prepare("UPDATE projects SET status = 'environments_locked', updated_at = datetime('now') WHERE id = ?").run(paramStr(req.params.id));
+  }
   res.json(getFullProject(paramStr(req.params.id)));
 });
 

@@ -49,7 +49,7 @@ const relativeTime = (iso?: string): string => {
 };
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  uploaded: { label: 'Uploaded', color: 'text-zinc-500' },
+  uploaded: { label: 'Uploaded', color: 'text-zinc-400' },
   analyzed: { label: 'Analyzed', color: 'text-zinc-400' },
   concept_locked: { label: 'Concept', color: 'text-blue-400' },
   scripted: { label: 'Scripted', color: 'text-indigo-400' },
@@ -409,6 +409,17 @@ const App: React.FC = () => {
     }
   };
 
+  const handleClearShotFrame = async (shotId: string) => {
+    if (!project) return;
+    setError(null);
+    try {
+      const p = await api.clearShotFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError('Failed to clear frame: ' + err.message);
+    }
+  };
+
   const handleRewriteShotPrompts = async (userNote?: string) => {
     if (!project) return;
     setLoading(true);
@@ -633,26 +644,26 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[999] focus:top-2 focus:left-2 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:rounded-md focus:text-sm">Skip to content</a>
-      {/* Header */}
-      <header className="h-12 bg-obsidian-950/90 backdrop-blur-xl border-b border-white/[0.04] flex-shrink-0 z-50">
-        <div className="h-full px-5 flex items-center gap-6">
-          {/* Logo + Project */}
+      {/* Header — premium minimalist nav */}
+      <header className="h-14 bg-[#141418]/90 backdrop-blur-xl border-b border-white/[0.06] flex-shrink-0 z-50">
+        <div className="h-full px-6 flex items-center gap-8">
+          {/* Brand + Project breadcrumb */}
           <button
             onClick={openSidebar}
-            className="flex items-center gap-2 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md flex-shrink-0"
+            className="flex items-center gap-2.5 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md flex-shrink-0"
           >
-            <span className="text-[13px] font-display font-medium text-white">Lahari</span>
+            <span className="text-sm font-display font-semibold text-white tracking-tight">Lahari</span>
             {project && (
               <>
-                <span className="text-zinc-700">/</span>
-                <span className="text-[13px] text-zinc-500 group-hover:text-zinc-300 transition-colors truncate max-w-[180px]">{project.title}</span>
+                <span className="text-zinc-400/60 text-sm">/</span>
+                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors truncate max-w-[200px]">{project.title}</span>
               </>
             )}
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-700 group-hover:text-zinc-400 transition-colors flex-shrink-0"><path d="M6 9l6 6 6-6"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-400/60 group-hover:text-zinc-300 transition-colors flex-shrink-0"><path d="M6 9l6 6 6-6"/></svg>
           </button>
 
-          {/* Nav */}
-          <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
+          {/* Pipeline nav — minimal underline indicator, matches blueprint phase tabs */}
+          <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
             {PIPELINE_STEPS.map((step) => {
               const isActive = currentStep === step.id;
               const isAccessible =
@@ -665,21 +676,23 @@ const App: React.FC = () => {
                   key={step.id}
                   disabled={!isAccessible}
                   onClick={() => setCurrentStep(step.id)}
-                  className={`relative px-3 py-1 text-[12px] font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
+                  className={`relative px-3.5 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
                     isActive
-                      ? 'text-white bg-white/[0.06]'
+                      ? 'text-white'
                       : isAccessible
-                        ? 'text-zinc-500 hover:text-zinc-300'
-                        : 'text-zinc-700 cursor-not-allowed'
+                        ? 'text-zinc-400 hover:text-white'
+                        : 'text-zinc-400/40 cursor-not-allowed'
                   }`}
                 >
                   {step.label}
+                  {isActive && <span aria-hidden="true" className="absolute left-3.5 right-3.5 -bottom-[12px] h-px bg-white/70" />}
                 </button>
               );
             })}
 
             {isStudio && project && project.scenes.length > 1 && (
-              <div className="flex items-center gap-0.5 ml-3 pl-3 border-l border-white/[0.06]">
+              <div className="flex items-center gap-0.5 ml-4 pl-4 border-l border-white/[0.06]">
+                <span className="text-[11px] uppercase tracking-wide text-zinc-400 mr-1.5">Scene</span>
                 {project.scenes.map((scene, idx) => {
                   const isActive = idx === activeSceneIdx;
                   const allLocked = scene.shots.every(s => s.locked);
@@ -687,10 +700,10 @@ const App: React.FC = () => {
                     <button
                       key={scene.id}
                       onClick={() => setActiveSceneIdx(idx)}
-                      className={`w-6 h-6 text-[11px] font-medium rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 ${
+                      className={`w-6 h-6 text-[11px] font-medium font-mono rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 ${
                         isActive ? 'bg-white/[0.1] text-white'
-                          : allLocked ? 'text-zinc-400 hover:text-white'
-                          : 'text-zinc-600 hover:text-zinc-400'
+                          : allLocked ? 'text-zinc-300 hover:text-white'
+                          : 'text-zinc-400/60 hover:text-zinc-300'
                       }`}
                     >
                       {idx + 1}
@@ -702,13 +715,14 @@ const App: React.FC = () => {
           </nav>
 
           {/* Right */}
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-1 flex-shrink-0">
             {project && (
               <>
-                <span className="text-[10px] font-mono text-zinc-600">${project.costEstimate.toFixed(2)}</span>
+                <span className="text-[11px] font-mono text-zinc-400 tabular-nums px-2">${project.costEstimate.toFixed(2)}</span>
+                <div className="w-px h-4 bg-white/[0.06]" />
                 <button
                   onClick={() => setXrayOpen(true)}
-                  className="text-[10px] text-zinc-600 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
+                  className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
                 >
                   X-Ray
                 </button>
@@ -740,6 +754,7 @@ const App: React.FC = () => {
                     isLoading={loading}
                     looksLoading={looksLoading}
                     lookCandidates={lookCandidates}
+                    onDiscardLookCandidates={(id) => setLookCandidates(prev => ({ ...prev, [id]: [] }))}
                     onLockConcept={handleLockConcept}
                     onUnlockConcept={handleUnlockConcept}
                     onUnlockScript={handleUnlockScript}
@@ -785,6 +800,7 @@ const App: React.FC = () => {
                     onUpdateProject={handleUpdateProject}
                     onRewriteShotPrompts={handleRewriteShotPrompts}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
+                    onClearShotFrame={handleClearShotFrame}
                     isLoading={loading}
                   />
                 </motion.div>
@@ -894,7 +910,7 @@ const App: React.FC = () => {
                 <span className="text-sm font-medium text-white">Projects</span>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="text-zinc-500 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1"
+                  className="text-zinc-400 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
@@ -909,7 +925,7 @@ const App: React.FC = () => {
                   <p className="text-sm text-zinc-400 text-center py-8">No projects yet</p>
                 ) : (() => {
                   // Build lineage tree: orig → children → grandchildren, flattened
-                  // with depth so we can indent. Originals sorted by updatedAt DESC.
+                  // with depth so we can indent. Originals sorted by createdAt DESC.
                   const childrenOf = new Map<string, ProjectSummary[]>();
                   projectList.forEach(p => {
                     if (p.parentProjectId) {
@@ -923,7 +939,7 @@ const App: React.FC = () => {
                   const flat: { project: ProjectSummary; depth: number }[] = [];
                   const walk = (p: ProjectSummary, depth: number) => {
                     flat.push({ project: p, depth });
-                    const kids = (childrenOf.get(p.id) || []).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+                    const kids = (childrenOf.get(p.id) || []).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                     kids.forEach(k => walk(k, depth + 1));
                   };
                   roots.forEach(r => walk(r, 0));
@@ -964,8 +980,8 @@ const App: React.FC = () => {
                                 <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
                                   {p.title}
                                 </span>
-                                <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible">
-                                  {relativeTime(p.updatedAt)}
+                                <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Started ${new Date(p.createdAt.includes('T') || p.createdAt.includes('Z') ? p.createdAt : p.createdAt.replace(' ', 'T') + 'Z').toLocaleString()}`}>
+                                  {relativeTime(p.createdAt)}
                                 </span>
                               </div>
                             </button>
@@ -1016,7 +1032,7 @@ const App: React.FC = () => {
           >
             <div role="alert" className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 flex items-center justify-between gap-2 shadow-lg shadow-black/30">
               <span className="text-[12px] text-red-300 line-clamp-2">{error}</span>
-              <button onClick={() => setError(null)} className="text-zinc-500 hover:text-white flex-shrink-0 p-0.5">
+              <button onClick={() => setError(null)} className="text-zinc-400 hover:text-white flex-shrink-0 p-0.5">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
               </button>
             </div>

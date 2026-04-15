@@ -5,6 +5,7 @@ import { ApiProject, ConceptOption, CastMember, Environment, VideoMode } from '.
 import * as api from '../services/api';
 import { ImageModal } from './ImageModal';
 import { Markdown } from './Markdown';
+import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
 
 // StyleRow must live at module scope (not inside AnalysisEditor's body) —
@@ -99,13 +100,18 @@ const StyleRow: React.FC<StyleRowProps> = React.memo(({ slot, index, expanded, o
 
             {/* Refine + Visualize row */}
             <div className="flex gap-2">
-              <input
+              <AutoGrowTextarea
                 value={refineInput}
                 onChange={(e) => setRefineInput(e.target.value)}
                 placeholder="Refine this direction…"
-                className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                rows={2}
+                className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && refineInput) { onRefine(refineInput); setRefineInput(''); }
+                  if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && refineInput) {
+                    e.preventDefault();
+                    onRefine(refineInput);
+                    setRefineInput('');
+                  }
                 }}
               />
               <button
@@ -152,6 +158,7 @@ interface Props {
   isLoading: boolean;
   looksLoading: Set<string>;
   lookCandidates: Record<string, { id: string; url: string }[]>;
+  onDiscardLookCandidates?: (castMemberId: string) => void;
   onLockConcept: (index: number) => void;
   onLockStyle: (assetId: string, styleDescription?: string) => void;
   onUnlockStyle: () => void;
@@ -181,17 +188,14 @@ const PHASE_ORDER: Phase[] = ['concept', 'script', 'style', 'characters', 'envir
 const phaseIndex = (p: Phase) => PHASE_ORDER.indexOf(p);
 
 const getActivePhase = (project: ApiProject): Phase => {
-  switch (project.status) {
-    case 'analyzed': return 'concept';
-    case 'concept_locked': return 'script';
-    case 'scripted': return 'style';
-    case 'style_locked': return 'characters';
-    case 'characters_locked': return 'environments';
-    case 'environments_locked':
-    case 'in_production':
-      return 'environments';
-    default: return 'concept';
-  }
+  // Promote based on data presence as well as status — protects against
+  // projects that were left in a stale status after a fork/regen.
+  if (project.environments?.some(e => !!e.referenceImageUrl) || project.status === 'environments_locked' || project.status === 'in_production') return 'environments';
+  if (project.cast?.some(c => !!c.referenceImageUrl) || project.status === 'characters_locked') return 'environments';
+  if (project.styleAssetUrl || project.status === 'style_locked') return 'characters';
+  if ((project.scenes?.length ?? 0) > 0 || project.status === 'scripted') return 'style';
+  if (project.lockedConcept || project.status === 'concept_locked') return 'script';
+  return 'concept';
 };
 
 // ─── Style Slot Type ────────────────────────────────────────────────
@@ -208,7 +212,7 @@ interface StyleSlot {
 // EnvironmentCard removed — environments now use sidebar+detail layout inline
 
 export const AnalysisEditor: React.FC<Props> = ({
-  project, isLoading, looksLoading, lookCandidates,
+  project, isLoading, looksLoading, lookCandidates, onDiscardLookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
   onGenerateScript, onGenerateConcepts, onUnlockConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject, onConfirmDestructive,
@@ -218,6 +222,20 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [activeCastId, setActiveCastId] = useState<string | null>(project.cast[0]?.id || null);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(project.environments[0]?.id || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Single popover from the sticky context bar — only one open at a time.
+  const [contextPopover, setContextPopover] = useState<'render' | 'analysis' | null>(null);
+  const contextBarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!contextPopover) return;
+    const onDown = (e: MouseEvent) => {
+      if (contextBarRef.current && !contextBarRef.current.contains(e.target as Node)) setContextPopover(null);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextPopover(null); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onEsc);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onEsc); };
+  }, [contextPopover]);
 
   // Style exploration state — initialize from persisted data
   const [styleSlots, setStyleSlots] = useState<StyleSlot[]>(() => {
@@ -244,7 +262,6 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [showCustomSlot, setShowCustomSlot] = useState(true);
   const [uploadedStyleFile, setUploadedStyleFile] = useState<File | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
-  const [showSongAnalysis, setShowSongAnalysis] = useState(false);
   const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
 
   const handleRerunAnalysis = async () => {
@@ -435,217 +452,235 @@ export const AnalysisEditor: React.FC<Props> = ({
     || project.cast.some(c => c.referenceImageUrl)
     || project.environments.some(e => e.referenceImageUrl);
 
+  // ─── Context bar derived values ───
+  const aspectLabel = project.aspectRatio || '16:9';
+  const resLabel = project.videoResolution || '720p';
+  const modelLabel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key).label;
+  const renderSummary = `${aspectLabel} · ${resLabel} · ${modelLabel}`;
+  const analysisItems = [
+    { label: 'Lyrics', present: !!project.lyrics },
+    { label: 'Structure', present: project.musicalStructure?.length > 0 },
+    { label: 'Meaning', present: !!project.meaning },
+  ];
+  const hasAnalysis = !!(project.meaning || project.musicalStructure?.length > 0 || project.lyrics);
+  const needsAnalysis = !project.meaning || !(project.musicalStructure?.length > 0);
+  // Ready to launch if we have the creative foundations — don't gate strictly on
+  // project.status because status can drift (fork, regen, old projects).
+  const everyoneHasLook = project.cast.length > 0 && project.cast.every(c => !!c.referenceImageUrl);
+  const everyEnvHasLook = project.environments.length === 0 || project.environments.every(e => !!e.referenceImageUrl);
+  const showLaunch = !!project.styleDescription && everyoneHasLook && everyEnvHasLook && project.scenes.length > 0;
+
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-32">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-display font-medium text-white tracking-tight">{project.title || 'Blueprint'}</h2>
-        {(project.status === 'environments_locked' || (project.status === 'characters_locked' && project.environments.length === 0)) && (
-          <button onClick={onLaunchStudio} disabled={isLoading} className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-2">
-            {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
-            {isLoading ? 'Writing shot prompts...' : 'Launch Studio'}
-          </button>
-        )}
-      </div>
+    <div className="max-w-5xl mx-auto pb-32">
+      {/* ═══ Sticky Context Bar — title + render + analysis + phase tabs ═══ */}
+      {/* Sticky inside <main> (the scroll container). top:0 pins to top of main once user scrolls past. */}
+      <div ref={contextBarRef} className="sticky top-0 z-40 mb-6">
+        <div className="surface rounded-xl border border-white/[0.06] bg-[#141418] shadow-md shadow-black/15">
+          {/* Row 1: Title + chips + Launch */}
+          <div className="flex items-center gap-3 h-12 px-4">
+            <h2 className="text-base font-display font-medium text-white tracking-tight truncate flex-shrink-0 max-w-[180px]">{project.title || 'Blueprint'}</h2>
+            <div className="w-px h-5 bg-white/[0.06] flex-shrink-0" />
 
-      {/* Render settings — toolbar: 3 equal cells with dividers, plus a title column */}
-      <div className="surface rounded-xl overflow-hidden">
-        <div className="flex items-stretch divide-x divide-white/[0.06]">
-          {/* Title cell */}
-          <div className="flex items-center gap-2 px-5 py-3 flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400" aria-hidden="true">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-            <span className="text-[11px] uppercase tracking-wide text-zinc-400">Render</span>
-          </div>
-
-          {/* Aspect */}
-          <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-400">Aspect</div>
-            <div className="relative">
-              <select
-                value={project.aspectRatio || '16:9'}
-                onChange={e => onUpdateProject({ aspectRatio: e.target.value })}
-                disabled={hasGeneratedMedia}
-                title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
-                className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer disabled:opacity-50 appearance-none pr-5"
-              >
-                <option value="16:9">16:9 — landscape</option>
-                <option value="9:16">9:16 — portrait</option>
-                <option value="1:1">1:1 — square</option>
-              </select>
-              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-          </label>
-
-          {/* Video resolution */}
-          <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
-            <div className="relative">
-              <select
-                value={project.videoResolution || '720p'}
-                onChange={e => onUpdateProject({ videoResolution: e.target.value })}
-                className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none pr-5"
-              >
-                <option value="720p">720p (HD)</option>
-                <option value="1080p">1080p (Full HD)</option>
-              </select>
-              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-          </label>
-
-          {/* Video model */}
-          <label className="flex-[1.5] px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
-            <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
-            <div className="relative">
-              <select
-                value={project.videoModel || VIDEO_MODELS[0].key}
-                onChange={e => {
-                  const newModel = getVideoModel(e.target.value);
-                  const updates: Record<string, any> = { videoModel: e.target.value };
-                  // Clamp pacing to a valid duration for the new model.
-                  if (!newModel.durations.includes(project.targetDuration)) {
-                    updates.targetDuration = newModel.durations[0];
-                  }
-                  onUpdateProject(updates);
-                }}
-                className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none truncate pr-5"
-              >
-                {VIDEO_MODELS.map(m => (
-                  <option key={m.key} value={m.key}>{m.label}{m.note ? ` — ${m.note}` : ''}</option>
-                ))}
-              </select>
-              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      {/* Song analysis — Gemini's read on lyrics, meaning, musical structure */}
-      {(project.meaning || project.musicalStructure?.length > 0 || project.lyrics) && (() => {
-        const needsAnalysis = !project.meaning || !(project.musicalStructure?.length > 0);
-        return (
-        <div className="surface rounded-xl">
-          <div className="w-full px-5 py-3 flex items-center justify-between gap-3">
+            {/* Render chip */}
             <button
-              onClick={() => setShowSongAnalysis(s => !s)}
-              className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity flex-1 min-w-0"
+              onClick={() => setContextPopover(p => p === 'render' ? null : 'render')}
+              className={`flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors ${contextPopover === 'render' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
+              aria-expanded={contextPopover === 'render'}
             >
-              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Song analysis</span>
-              {/* Explicit pills — what's captured, what's missing */}
-              <span className="flex items-center gap-1.5 flex-wrap">
-                {(() => {
-                  const items = [
-                    { label: 'Lyrics', present: !!project.lyrics },
-                    { label: `Structure${project.musicalStructure?.length > 0 ? ` · ${project.musicalStructure.length} section${project.musicalStructure.length === 1 ? '' : 's'}` : ''}`, present: project.musicalStructure?.length > 0 },
-                    { label: 'Meaning', present: !!project.meaning },
-                  ];
-                  return items.map(it => (
-                    <span
-                      key={it.label}
-                      className={`text-[11px] px-2 py-0.5 rounded border ${
-                        it.present
-                          ? 'text-zinc-300 border-white/[0.08] bg-white/[0.03]'
-                          : 'text-amber-300/80 border-amber-300/20 bg-amber-300/[0.04]'
-                      }`}
-                    >
-                      {it.present ? '✓ ' : '— '}{it.label}
-                    </span>
-                  ));
-                })()}
-              </span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/>
+              </svg>
+              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Render</span>
+              <span className="text-xs text-zinc-300 truncate max-w-[260px]">{renderSummary}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-zinc-400 transition-transform ${contextPopover === 'render' ? 'rotate-180' : ''}`} aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              {needsAnalysis && (
-                <button
-                  onClick={handleRerunAnalysis}
-                  disabled={isAnalyzingAudio}
-                  className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
-                  title="Run detect-structure (Gemini) + summarize-meaning (Claude) on this project's audio"
-                >
-                  {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-                  {isAnalyzingAudio ? 'Analyzing…' : 'Run analysis'}
-                </button>
-              )}
-              <button onClick={() => setShowSongAnalysis(s => !s)} className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors">
-                {showSongAnalysis ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </div>
-          {showSongAnalysis && (
-            <div className="px-5 pb-5 space-y-4 border-t border-white/[0.04] pt-4">
-              {project.meaning && (
-                <div>
-                  <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Meaning</h4>
-                  <Markdown>{project.meaning}</Markdown>
-                </div>
-              )}
-              {project.musicalStructure?.length > 0 && (
-                <div>
-                  <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Musical structure</h4>
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                    {project.musicalStructure.map((section, idx) => (
-                      <div key={idx} className="surface-inset rounded-md px-3 py-2 text-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-white font-medium truncate">{section.label}</span>
-                          <span className="text-[11px] text-zinc-400 font-mono flex-shrink-0">{section.startTime}–{section.endTime}</span>
-                        </div>
-                        {section.description && (
-                          <p className="text-[11px] text-zinc-400 mt-1 line-clamp-2">{section.description}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {project.lyrics && (
-                <div>
-                  <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Lyrics</h4>
-                  <pre className="surface-inset rounded-md p-3 text-xs text-zinc-300 font-sans whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project.lyrics}</pre>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        );
-      })()}
 
-      {/* Phase Progress — Chips connected by lines */}
-      <div className="flex items-center justify-center gap-0">
-        {PHASE_ORDER.map((phase, idx) => {
-          const locked = isLockedPhase(phase);
-          const active = viewPhase === phase;
-          const accessible = canAccess(phase);
+            {/* Spacer */}
+            <div className="flex-1" />
 
-          return (
-            <React.Fragment key={phase}>
+            {/* Analysis chip — right-aligned */}
+            {hasAnalysis && (
               <button
-                disabled={!accessible}
-                onClick={() => accessible && setViewPhase(phase)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  active
-                    ? 'bg-white/[0.08] text-white'
-                    : locked
-                      ? 'text-zinc-300 hover:text-white'
-                      : accessible
-                        ? 'text-zinc-400 hover:text-zinc-300'
-                        : 'text-zinc-400 cursor-not-allowed'
-                }`}
+                onClick={() => setContextPopover(p => p === 'analysis' ? null : 'analysis')}
+                className={`flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors ${contextPopover === 'analysis' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
+                aria-expanded={contextPopover === 'analysis'}
               >
-                {locked && (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 mr-1 inline" aria-hidden="true">
-                    <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
-                  </svg>
-                )}
-                {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                <span className="flex items-center gap-1.5">
+                  {analysisItems.map(it => (
+                    <span key={it.label} className={`text-[11px] ${it.present ? 'text-zinc-300' : 'text-amber-300/80'}`}>
+                      {it.present ? '✓' : '—'} {it.label}
+                    </span>
+                  ))}
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-zinc-400 transition-transform ${contextPopover === 'analysis' ? 'rotate-180' : ''}`} aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-              {idx < PHASE_ORDER.length - 1 && (
-                <div className={`w-8 h-px ${locked ? 'bg-white/20' : 'bg-white/[0.08]'}`} />
-              )}
-            </React.Fragment>
-          );
-        })}
+            )}
+
+            {/* Launch Studio (when ready) */}
+            {showLaunch && (
+              <button onClick={onLaunchStudio} disabled={isLoading} className="bg-white text-black px-4 py-1.5 rounded-md font-semibold text-xs hover:bg-zinc-200 transition-colors disabled:opacity-50 flex items-center gap-2 flex-shrink-0">
+                {isLoading && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                {isLoading ? 'Writing prompts…' : 'Launch Studio'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            )}
+          </div>
+
+          {/* Row 2: Phase tabs */}
+          <div className="flex items-center justify-center gap-0 px-4 py-2.5 border-t border-white/[0.04]">
+            {PHASE_ORDER.map((phase, idx) => {
+              const locked = isLockedPhase(phase);
+              const active = viewPhase === phase;
+              const accessible = canAccess(phase);
+              return (
+                <React.Fragment key={phase}>
+                  <button
+                    disabled={!accessible}
+                    onClick={() => accessible && setViewPhase(phase)}
+                    className={`relative px-3 py-1 text-xs font-medium transition-colors ${
+                      active
+                        ? 'text-white'
+                        : locked
+                          ? 'text-zinc-300 hover:text-white'
+                          : accessible
+                            ? 'text-zinc-400 hover:text-zinc-300'
+                            : 'text-zinc-400/40 cursor-not-allowed'
+                    }`}
+                  >
+                    {locked && (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5 mr-1 inline" aria-hidden="true">
+                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                    {active && <span aria-hidden="true" className="absolute left-3 right-3 -bottom-0.5 h-px bg-white/60" />}
+                  </button>
+                  {idx < PHASE_ORDER.length - 1 && <div className={`w-6 h-px ${locked ? 'bg-white/20' : 'bg-white/[0.06]'}`} />}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {/* Popover panel — slides down from the bar */}
+          <AnimatePresence initial={false}>
+            {contextPopover === 'render' && (
+              <motion.div
+                key="render-pop"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="overflow-hidden border-t border-white/[0.06]"
+              >
+                <div className="flex items-stretch divide-x divide-white/[0.06]">
+                  <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Aspect</div>
+                    <div className="relative">
+                      <select
+                        value={project.aspectRatio || '16:9'}
+                        onChange={e => onUpdateProject({ aspectRatio: e.target.value })}
+                        disabled={hasGeneratedMedia}
+                        title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
+                        className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer disabled:opacity-50 appearance-none pr-5"
+                      >
+                        <option value="16:9">16:9 — landscape</option>
+                        <option value="9:16">9:16 — portrait</option>
+                        <option value="1:1">1:1 — square</option>
+                      </select>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                  </label>
+                  <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
+                    <div className="relative">
+                      <select
+                        value={project.videoResolution || '720p'}
+                        onChange={e => onUpdateProject({ videoResolution: e.target.value })}
+                        className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none pr-5"
+                      >
+                        <option value="720p">720p (HD)</option>
+                        <option value="1080p">1080p (Full HD)</option>
+                      </select>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                  </label>
+                  <label className="flex-[1.5] px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
+                    <div className="relative">
+                      <select
+                        value={project.videoModel || VIDEO_MODELS[0].key}
+                        onChange={e => {
+                          const newModel = getVideoModel(e.target.value);
+                          const updates: Record<string, any> = { videoModel: e.target.value };
+                          if (!newModel.durations.includes(project.targetDuration)) updates.targetDuration = newModel.durations[0];
+                          onUpdateProject(updates);
+                        }}
+                        className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none truncate pr-5"
+                      >
+                        {VIDEO_MODELS.map(m => (<option key={m.key} value={m.key}>{m.label}{m.note ? ` — ${m.note}` : ''}</option>))}
+                      </select>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                  </label>
+                </div>
+              </motion.div>
+            )}
+
+            {contextPopover === 'analysis' && (
+              <motion.div
+                key="analysis-pop"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="overflow-hidden border-t border-white/[0.06]"
+              >
+                <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+                  {needsAnalysis && (
+                    <div className="flex justify-end">
+                      <button
+                        onClick={handleRerunAnalysis}
+                        disabled={isAnalyzingAudio}
+                        className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                        {isAnalyzingAudio ? 'Analyzing…' : 'Run analysis'}
+                      </button>
+                    </div>
+                  )}
+                  {project.meaning && (
+                    <div>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Meaning</h4>
+                      <Markdown>{project.meaning}</Markdown>
+                    </div>
+                  )}
+                  {project.musicalStructure?.length > 0 && (
+                    <div>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Musical structure</h4>
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                        {project.musicalStructure.map((section, idx) => (
+                          <div key={idx} className="surface-inset rounded-md px-3 py-2 text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-white font-medium truncate">{section.label}</span>
+                              <span className="text-[11px] text-zinc-400 font-mono flex-shrink-0">{section.startTime}–{section.endTime}</span>
+                            </div>
+                            {section.description && <p className="text-sm text-zinc-300 mt-1 leading-relaxed">{section.description}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {project.lyrics && (
+                    <div>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Lyrics</h4>
+                      <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-sans whitespace-pre-wrap leading-relaxed">{project.lyrics}</pre>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Phase Content */}
@@ -669,7 +704,16 @@ export const AnalysisEditor: React.FC<Props> = ({
                   <div><span className="text-xs text-zinc-400 block uppercase tracking-wide mb-0.5">Mood</span><span className="text-white">{project.lockedConcept?.mood}</span></div>
                   <div><span className="text-xs text-zinc-400 block uppercase tracking-wide mb-0.5">Direction</span><span className="text-white">{project.lockedConcept?.conceptDirection}</span></div>
                 </div>
-                <p className="text-zinc-400 mt-4 text-sm leading-relaxed">{project.lockedConcept?.theme}</p>
+                <p className="text-zinc-300 mt-4 text-sm leading-relaxed">{project.lockedConcept?.theme}</p>
+                <div className="mt-5 pt-4 border-t border-white/[0.06] flex justify-end">
+                  <button
+                    onClick={() => setViewPhase('script')}
+                    className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 transition-colors flex items-center gap-2"
+                  >
+                    Continue to Script
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
               </div>
             ) : project.conceptOptions.length === 0 ? (
               /* Empty state — first-time generate */
@@ -716,20 +760,22 @@ export const AnalysisEditor: React.FC<Props> = ({
 
                 {onGenerateConcepts && (
                   <div className="space-y-3">
-                    <input
+                    <AutoGrowTextarea
                       value={conceptNote}
                       onChange={e => setConceptNote(e.target.value)}
                       placeholder="Regenerate note — e.g. 'more abstract' or 'focus on devotion not mythology'"
-                      className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                      rows={2}
+                      className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                       onKeyDown={e => {
-                        if (e.key === 'Enter' && conceptNote.trim()) {
+                        if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && conceptNote.trim()) {
+                          e.preventDefault();
                           onGenerateConcepts({ userNote: conceptNote });
                           setConceptNote('');
                         }
                       }}
                     />
                     {showConceptPrompt && project.lastConceptPrompt && (
-                      <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project.lastConceptPrompt}</pre>
+                      <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{project.lastConceptPrompt}</pre>
                     )}
                   </div>
                 )}
@@ -741,30 +787,37 @@ export const AnalysisEditor: React.FC<Props> = ({
                       <p className="text-zinc-300 text-sm">Generating concepts...</p>
                     </div>
                   )}
-                  {project.conceptOptions.map((concept, idx) => (
+                  {project.conceptOptions.map((concept, idx) => {
+                    const isCurrent = project.lockedConcept?.conceptDirection === concept.conceptDirection
+                      && project.lockedConcept?.theme === concept.theme;
+                    return (
                     <motion.div
                       key={idx}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: idx * 0.05 }}
                       whileHover={{ y: -2 }}
-                      className="surface rounded-xl p-5 space-y-3 cursor-pointer group hover:shadow-lg hover:shadow-black/20"
+                      className={`surface rounded-xl p-5 flex flex-col gap-4 cursor-pointer group hover:shadow-lg hover:shadow-black/20 ${isCurrent ? 'ring-1 ring-white/40' : ''}`}
                       onClick={() => !isLoading && onLockConcept(idx)}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-white font-medium text-sm">{concept.conceptDirection}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white font-medium text-sm">{concept.conceptDirection}</span>
+                          {isCurrent && <span className="text-[11px] text-zinc-400">· current</span>}
+                        </div>
                         <span className="text-[11px] text-zinc-400 font-mono">{idx + 1}</span>
                       </div>
-                      <div className="space-y-1.5 text-xs">
-                        <div><span className="text-zinc-400">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
-                        <div><span className="text-zinc-400">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
-                        <p className="text-zinc-400 text-xs leading-relaxed">{concept.theme}</p>
+                      <div className="space-y-2 text-sm flex-1">
+                        <div><span className="text-white font-medium">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
+                        <div><span className="text-white font-medium">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
+                        <p className="text-zinc-300 leading-relaxed">{concept.theme}</p>
                       </div>
-                      <button disabled={isLoading} className="w-full py-2 bg-white/[0.06] text-zinc-300 rounded-md text-[11px] font-medium group-hover:bg-white group-hover:text-black transition-colors disabled:opacity-50">
-                        {isLoading ? 'Locking...' : 'Choose'}
+                      <button disabled={isLoading} className="w-full py-2 bg-white/[0.06] text-zinc-300 rounded-md text-xs font-medium group-hover:bg-white group-hover:text-black transition-colors disabled:opacity-50 mt-auto">
+                        {isLoading ? 'Locking...' : isCurrent ? 'Re-choose' : 'Choose'}
                       </button>
                     </motion.div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -833,20 +886,22 @@ export const AnalysisEditor: React.FC<Props> = ({
               {/* Note + prompt preview (shown after first generation) */}
               {project.scenes.length > 0 && (
                 <div className="space-y-3 pt-2">
-                  <input
+                  <AutoGrowTextarea
                     value={scriptNote}
                     onChange={e => setScriptNote(e.target.value)}
                     placeholder="Regenerate note — e.g. 'make scene 3 more intimate' or 'add more deity close-ups'"
-                    className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                    rows={2}
+                    className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                     onKeyDown={e => {
-                      if (e.key === 'Enter' && scriptNote.trim()) {
+                      if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && scriptNote.trim()) {
+                        e.preventDefault();
                         onGenerateScript(scriptNote);
                         setScriptNote('');
                       }
                     }}
                   />
                   {showScriptPrompt && project.lastScriptPrompt && (
-                    <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project.lastScriptPrompt}</pre>
+                    <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{project.lastScriptPrompt}</pre>
                   )}
                 </div>
               )}
@@ -917,7 +972,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                               </span>
                               <span className="text-[11px] text-zinc-400">{scene.shots.length} shots</span>
                             </div>
-                            <p className="text-zinc-400 text-xs truncate">{scene.narrativeDescription}</p>
+                            <p className="text-zinc-300 text-sm leading-relaxed truncate">{scene.narrativeDescription}</p>
                           </div>
                           <div className="flex items-center gap-3 ml-4 shrink-0">
                             <span className="text-[11px] font-mono text-zinc-400">{scene.startTime} - {scene.endTime}</span>
@@ -929,25 +984,43 @@ export const AnalysisEditor: React.FC<Props> = ({
                         </button>
 
                         {isExpanded && (
-                          <div className="px-4 pb-4 space-y-2 border-t border-white/[0.04] pt-3">
+                          <div className="px-4 pb-4 space-y-3 border-t border-white/[0.04] pt-3">
                             {scene.lyrics && (
-                              <p className="text-zinc-400 italic text-xs mb-3">"{scene.lyrics}"</p>
+                              <p className="text-zinc-400 italic text-sm leading-relaxed mb-3">"{scene.lyrics}"</p>
                             )}
-                            {scene.shots.map((shot, sIdx) => (
+                            {scene.shots.map((shot, sIdx) => {
+                              const castNames = (shot.castIds || [])
+                                .map(id => project.cast.find(c => c.id === id)?.name)
+                                .filter(Boolean) as string[];
+                              const env = shot.environmentId ? project.environments.find(e => e.id === shot.environmentId) : null;
+                              // Suppress the fallback motion text — only show real motion prompts
+                              const realMotion = shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement' ? shot.motionPrompt : null;
+                              return (
                               <div key={shot.id} className="flex gap-3 p-3 surface-inset rounded-lg">
-                                <div className="text-[11px] font-mono text-zinc-400 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-xs text-zinc-300 mb-1">{shot.visualPrompt || '—'}</div>
-                                  {shot.motionPrompt && (
-                                    <div className="text-[11px] text-zinc-400 mb-1">{shot.motionPrompt}</div>
+                                <div className="text-xs font-mono text-zinc-400 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
+                                <div className="flex-1 min-w-0 space-y-1.5">
+                                  <div className="text-sm text-zinc-300 leading-relaxed">{shot.visualPrompt || '—'}</div>
+                                  {realMotion && (
+                                    <div className="text-sm text-zinc-400 leading-relaxed">{realMotion}</div>
                                   )}
-                                  <div className="text-[11px] text-zinc-400 flex gap-3">
+                                  <div className="text-[11px] text-zinc-400 flex gap-3 flex-wrap">
                                     <span>{shot.duration}s</span>
-                                    <span>{shot.castIds.length > 0 ? shot.castIds.length + ' Cast' : 'No Cast'}</span>
+                                    {castNames.length > 0 ? (
+                                      <span><span className="text-zinc-400">Cast:</span> <span className="text-zinc-300">{castNames.join(', ')}</span></span>
+                                    ) : (
+                                      <span>No cast</span>
+                                    )}
+                                    {env && (
+                                      <span><span className="text-zinc-400">Env:</span> <span className="text-zinc-300">{env.name}</span></span>
+                                    )}
+                                    {shot.continuityFrom === 'prev_shot' && (
+                                      <span className="text-amber-400/80">· continues</span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -960,6 +1033,18 @@ export const AnalysisEditor: React.FC<Props> = ({
             {project.scenes.length === 0 && !isLoading && (
               <div className="flex flex-col items-center justify-center h-48 text-zinc-400 text-sm">
                 <p>Hit "Generate Script" to create a cinematic shot list.</p>
+              </div>
+            )}
+
+            {project.scenes.length > 0 && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setViewPhase('style')}
+                  className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 transition-colors flex items-center gap-2"
+                >
+                  Continue to Style
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
               </div>
             )}
           </motion.div>
@@ -1007,9 +1092,10 @@ export const AnalysisEditor: React.FC<Props> = ({
                         {project.status === 'style_locked' && (
                           <button
                             onClick={() => setViewPhase('characters')}
-                            className="px-5 py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                            className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 transition-colors flex items-center gap-2"
                           >
-                            Proceed to Characters
+                            Continue to Characters
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
                           </button>
                         )}
                       </div>
@@ -1040,12 +1126,13 @@ export const AnalysisEditor: React.FC<Props> = ({
                     )}
 
                     <div className="flex gap-3">
-                      <input
+                      <AutoGrowTextarea
                         value={brainstormNotes}
                         onChange={(e) => setBrainstormNotes(e.target.value)}
                         placeholder="Style preferences..."
-                        className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
+                        rows={2}
+                        className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                        onKeyDown={(e) => { if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); handleBrainstorm(); } }}
                       />
                       <button
                         onClick={handleBrainstorm}
@@ -1095,12 +1182,13 @@ export const AnalysisEditor: React.FC<Props> = ({
                   </div>
 
                   <div className="flex gap-3">
-                    <input
+                    <AutoGrowTextarea
                       value={brainstormNotes}
                       onChange={(e) => setBrainstormNotes(e.target.value)}
                       placeholder="Style preferences... e.g. 'painterly', 'dark and moody', 'Ravi Varma inspired'"
-                      className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleBrainstorm(); }}
+                      rows={2}
+                      className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); handleBrainstorm(); } }}
                     />
                     {styleSlots.length > 0 && (
                       <button
@@ -1271,63 +1359,111 @@ export const AnalysisEditor: React.FC<Props> = ({
               <div className="lg:col-span-3">
                 <div className="surface rounded-xl p-4 space-y-4">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">Cast</h3>
-                    <button onClick={() => onAddCast('New Character', 'Description...')} className="text-xs bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 px-2.5 py-1 rounded-md transition-colors">+ Add</button>
+                    <h3 className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">Cast</h3>
+                    <button onClick={() => onAddCast('New Character', 'Description...')} className="text-xs text-zinc-400 hover:text-white hover:bg-white/[0.04] px-2 py-1 rounded-md transition-colors flex items-center gap-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add
+                    </button>
                   </div>
                   <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
                     {project.cast.map(member => {
                       const isActive = activeCastId === member.id;
                       const hasLook = !!member.referenceImageUrl;
                       return (
-                        <button
+                        <div
                           key={member.id}
-                          onClick={() => setActiveCastId(member.id)}
-                          className={`w-full text-left p-2.5 rounded-lg cursor-pointer transition-colors flex gap-3 items-center ${
-                            isActive ? 'bg-white/[0.08] border-l-2 border-l-accent-400' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+                          className={`group relative rounded-lg transition-colors ${
+                            isActive ? 'bg-white/[0.08] border-l-2 border-l-white/70' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
                           }`}
                         >
-                          <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${hasLook ? '' : 'bg-white/[0.04]'}`}>
-                            {member.referenceImageUrl ? (
-                              <img src={member.referenceImageUrl} alt={member.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">?</div>
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{member.name}</div>
-                            <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
-                              {looksLoading.has(member.id) ? (
-                                <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
-                              ) : hasLook ? (
-                                <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
-                              ) : 'No look'}
+                          <button
+                            onClick={() => setActiveCastId(member.id)}
+                            className="w-full text-left p-2.5 cursor-pointer flex gap-3 items-center outline-none"
+                          >
+                            <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${hasLook ? '' : 'bg-white/[0.04]'}`}>
+                              {member.referenceImageUrl ? (
+                                <img src={member.referenceImageUrl} alt={member.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-zinc-400/60">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                                  </svg>
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        </button>
+                            <div className="min-w-0 flex-1 pr-6">
+                              <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{member.name}</div>
+                              <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
+                                {looksLoading.has(member.id) ? (
+                                  <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
+                                ) : hasLook ? (
+                                  <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
+                                ) : 'No look'}
+                              </div>
+                            </div>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const runDelete = () => {
+                                onDeleteCast(member.id);
+                                if (activeCastId === member.id) setActiveCastId(project.cast.find(c => c.id !== member.id)?.id || null);
+                              };
+                              if (onConfirmDestructive) {
+                                onConfirmDestructive({
+                                  title: `Delete "${member.name}"?`,
+                                  description: 'Removes this cast member. Shots that reference them will lose that character ref until you re-add one.',
+                                  confirmLabel: 'Delete',
+                                  run: runDelete,
+                                });
+                              } else {
+                                runDelete();
+                              }
+                            }}
+                            className="absolute top-1/2 right-2 -translate-y-1/2 text-zinc-400 hover:text-red-400 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                            aria-label={`Delete ${member.name}`}
+                            title="Delete"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                          </button>
+                        </div>
                       );
                     })}
                   </div>
 
-                  {project.cast.length > 0 && project.status === 'style_locked' && (
-                    <button
-                      onClick={() => project.cast.filter(c => !c.referenceImageUrl).forEach(c => onGenerateLooks(c.id))}
-                      disabled={looksLoading.size > 0}
-                      className="w-full py-2 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-                    >
-                      {looksLoading.size > 0 ? `Generating ${looksLoading.size}...` : 'Generate All Looks'}
-                    </button>
-                  )}
+                  {project.cast.length > 0 && project.status !== 'characters_locked' && project.status !== 'environments_locked' && (() => {
+                    const pending = project.cast.filter(c => !c.referenceImageUrl);
+                    const allDone = pending.length === 0;
+                    return (
+                      <button
+                        onClick={() => {
+                          // If everyone has a look, treat as regen-all; otherwise fill the gaps.
+                          const targets = allDone ? project.cast : pending;
+                          targets.forEach(c => onGenerateLooks(c.id));
+                        }}
+                        disabled={looksLoading.size > 0}
+                        className="w-full py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                      >
+                        {looksLoading.size > 0
+                          ? `Generating ${looksLoading.size}…`
+                          : allDone
+                            ? `Regenerate all (${project.cast.length})`
+                            : `Generate all looks (${pending.length})`}
+                      </button>
+                    );
+                  })()}
 
                   {project.status === 'style_locked' && (
                     <button
-                      onClick={onAdvanceCharacters}
-                      className={`w-full py-2 rounded-md text-xs font-semibold transition-colors ${
+                      onClick={() => { onAdvanceCharacters(); setViewPhase('environments'); }}
+                      className={`w-full py-2 rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-2 ${
                         project.cast.some(c => c.referenceImageUrl)
                           ? 'bg-white text-black hover:bg-zinc-200'
                           : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1] hover:text-white border border-white/[0.08]'
                       }`}
                     >
-                      {project.cast.some(c => c.referenceImageUrl) ? 'Proceed to Environments' : 'Skip — Proceed to Environments'}
+                      {project.cast.some(c => c.referenceImageUrl) ? 'Continue to Environments' : 'Skip — Continue to Environments'}
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
                     </button>
                   )}
                 </div>
@@ -1337,62 +1473,39 @@ export const AnalysisEditor: React.FC<Props> = ({
               <div className="lg:col-span-9">
                 {activeMember ? (
                   <div key={activeMember.id} className="rounded-xl overflow-hidden border border-white/[0.06]">
-                    {/* Header bar — name, status, actions */}
-                    <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
+                    {/* Header bar — name, status, view prompt | regenerate */}
+                    <div className="px-5 py-3 flex items-center gap-4 border-b border-white/[0.06]">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <input
                           key={`name-${activeMember.id}`}
                           defaultValue={activeMember.name}
+                          size={Math.max(8, (activeMember.name || '').length)}
                           onBlur={(e) => onUpdateCast(activeMember.id, { name: e.target.value })}
-                          className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 flex-1 min-w-0"
+                          className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 w-auto"
                         />
                         {activeMember.referenceImageUrl && (
-                          <span className="text-xs text-zinc-400 flex items-center gap-1">
+                          <span className="text-xs text-zinc-400 flex items-center gap-1 flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
                             Locked
                           </span>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
-                            onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
-                          }}
-                          disabled={looksLoading.has(activeMember.id)}
-                          className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-                        >
-                          {looksLoading.has(activeMember.id) ? 'Generating…' : activeMember.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            const runDelete = () => {
-                              onDeleteCast(activeMember.id);
-                              setActiveCastId(project.cast.find(c => c.id !== activeMember.id)?.id || null);
-                            };
-                            if (onConfirmDestructive) {
-                              onConfirmDestructive({
-                                title: `Delete "${activeMember.name}"?`,
-                                description: 'Removes this cast member. Shots that reference them will lose that character ref until you re-add one.',
-                                confirmLabel: 'Delete',
-                                run: runDelete,
-                              });
-                            } else {
-                              runDelete();
-                            }
-                          }}
-                          className="text-zinc-400 hover:text-red-400 p-1.5 rounded-md transition-colors"
-                          aria-label={`Delete ${activeMember.name}`}
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"/></svg>
-                        </button>
                         <button
                           onClick={() => setPromptPreview(prev => prev === activeMember.id ? null : activeMember.id)}
-                          className="text-[11px] text-zinc-400 hover:text-zinc-400 transition-colors"
+                          className="text-[11px] text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-md hover:bg-white/[0.04] flex-shrink-0"
                         >
                           {promptPreview === activeMember.id ? 'Hide prompt' : 'View prompt'}
                         </button>
                       </div>
+                      <button
+                        onClick={() => {
+                          const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
+                          onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
+                        }}
+                        disabled={looksLoading.has(activeMember.id)}
+                        className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors flex-shrink-0"
+                      >
+                        {looksLoading.has(activeMember.id) ? 'Generating…' : activeMember.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                      </button>
                     </div>
 
                     {/* Prompt preview */}
@@ -1404,40 +1517,73 @@ export const AnalysisEditor: React.FC<Props> = ({
                             <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 text-center rounded-b">Style</div>
                           </div>
                         )}
-                        <pre className="flex-1 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
-`${activeMember.name} — ${activeMember.description || '(no description)'}
+                        <pre className="flex-1 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{
+`Generate ONE cinematic character portrait in the visual style of Image 1.
 
-Mid-shot portrait, upper body and face visible.
-Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
+${activeMember.name} — ${activeMember.description || '(no description)'}
 
-→ Model: gemini-3-pro-image-preview
+Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
+
+Style: ${project.styleDescription || '(none)'}
+
+One single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.
+
+→ Model: gemini-3-pro-image-preview · aspect ${project.aspectRatio || '16:9'}
 → 3 parallel calls, same prompt`
                         }</pre>
                       </div>
                     )}
 
-                    {/* Hero area — locked image, look candidates, loading, or empty */}
-                    {activeMember.referenceImageUrl ? (
-                      <div className="relative cursor-zoom-in bg-black/20" onClick={() => setModalImage(activeMember.referenceImageUrl!)}>
-                        <img src={activeMember.referenceImageUrl} alt={activeMember.name} className="w-full h-auto max-h-[500px] object-contain mx-auto" />
-                      </div>
-                    ) : looksLoading.has(activeMember.id) && activeLooks.length === 0 ? (
-                      <div className="h-64 flex items-center justify-center bg-black/20">
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
-                          <span className="text-sm text-zinc-400">Generating looks…</span>
-                        </div>
-                      </div>
-                    ) : activeLooks.length > 0 ? (
-                      <div className="grid grid-cols-3 gap-px bg-black/20">
-                        {activeLooks.map((look) => (
-                          <div key={look.id} className="relative group cursor-pointer bg-black/10">
-                            <img src={look.url} alt={activeMember.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                              <button onClick={() => onLockCharacter(activeMember.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                    {/* Hero area — new candidates take priority over locked, so a regen
+                        is always visible. The locked look is preserved in the DB until the
+                        user picks a new one or hits "Keep current" to discard the candidates. */}
+                    {activeLooks.length > 0 ? (
+                      <div>
+                        {activeMember.referenceImageUrl && (
+                          <div className="px-5 py-2.5 flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02]">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="text-[11px] uppercase tracking-wide text-zinc-400 flex-shrink-0">New candidates</span>
+                              <span className="text-xs text-zinc-400">— pick one to replace the locked look, or</span>
+                              <button
+                                onClick={() => onDiscardLookCandidates?.(activeMember.id)}
+                                className="text-xs text-zinc-300 hover:text-white px-2 py-0.5 rounded-md hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 flex-shrink-0"
+                                title="Discard these candidates and revert to the currently locked look"
+                              >
+                                <img src={activeMember.referenceImageUrl} alt="" className="w-4 h-4 rounded object-cover" />
+                                Keep current
+                              </button>
                             </div>
                           </div>
-                        ))}
+                        )}
+                        <div className="grid grid-cols-3 gap-px bg-black/20">
+                          {activeLooks.map((look) => (
+                            <div key={look.id} className="relative group cursor-pointer bg-black/10">
+                              <img src={look.url} alt={activeMember.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                                <button onClick={() => onLockCharacter(activeMember.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : looksLoading.has(activeMember.id) ? (
+                      // Generating — keep the locked image visible in the background if it exists.
+                      <div className="relative">
+                        {activeMember.referenceImageUrl && (
+                          <img src={activeMember.referenceImageUrl} alt={activeMember.name} className="w-full h-auto max-h-[500px] object-contain mx-auto opacity-30" />
+                        )}
+                        <div className={`${activeMember.referenceImageUrl ? 'absolute inset-0' : 'h-64'} flex items-center justify-center bg-black/40`}>
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                            <span className="text-sm text-zinc-300">Generating new looks…</span>
+                            {activeMember.referenceImageUrl && <span className="text-[11px] text-zinc-400">Your locked look is safe — pick a new one only if you prefer it.</span>}
+                          </div>
+                        </div>
+                      </div>
+                    ) : activeMember.referenceImageUrl ? (
+                      <div className="relative cursor-zoom-in bg-black/20" onClick={() => setModalImage(activeMember.referenceImageUrl!)}>
+                        <img src={activeMember.referenceImageUrl} alt={activeMember.name} className="w-full h-auto max-h-[500px] object-contain mx-auto" />
                       </div>
                     ) : (
                       <div className="h-48 flex items-center justify-center bg-black/10">
@@ -1456,14 +1602,16 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                       >
                         {activeMember.description}
                       </div>
-                      <input
+                      <AutoGrowTextarea
                         key={`feedback-${activeMember.id}`}
                         placeholder="Feedback — e.g. 'make the crown bigger'"
-                        className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                        rows={2}
+                        className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                         autoComplete="off"
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            onGenerateLooks(activeMember.id, (e.target as HTMLInputElement).value || undefined);
+                          if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) {
+                            e.preventDefault();
+                            onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value || undefined);
                           }
                         }}
                         id={`char-feedback-${activeMember.id}`}
@@ -1493,57 +1641,108 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                 {/* Env sidebar */}
                 <div className="lg:col-span-3">
                   <div className="surface rounded-xl p-4 space-y-4">
-                    <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wide">Environments</h3>
+                    <h3 className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">Environments</h3>
                     <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
                       {project.environments.map(env => {
                         const isActive = activeEnvId === env.id;
                         const hasLook = !!env.referenceImageUrl;
                         return (
-                          <button
+                          <div
                             key={env.id}
-                            onClick={() => setActiveEnvId(env.id)}
-                            className={`w-full text-left p-2.5 rounded-lg cursor-pointer transition-colors flex gap-3 items-center ${
-                              isActive ? 'bg-white/[0.08] border-l-2 border-l-accent-400' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+                            className={`group relative rounded-lg transition-colors ${
+                              isActive ? 'bg-white/[0.08] border-l-2 border-l-white/70' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
                             }`}
                           >
-                            <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${hasLook ? '' : 'bg-white/[0.04]'}`}>
-                              {env.referenceImageUrl ? (
-                                <img src={env.referenceImageUrl} alt={env.name} className="w-full h-full object-cover" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-zinc-400 text-sm">?</div>
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{env.name}</div>
-                              <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
-                                {envGenerating.has(env.id) ? (
-                                  <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
-                                ) : hasLook ? (
-                                  <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
-                                ) : 'No look'}
+                            <button
+                              onClick={() => setActiveEnvId(env.id)}
+                              className="w-full text-left p-2.5 cursor-pointer flex gap-3 items-center outline-none"
+                            >
+                              <div className={`w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 ${hasLook ? '' : 'bg-white/[0.04]'}`}>
+                                {env.referenceImageUrl ? (
+                                  <img src={env.referenceImageUrl} alt={env.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-zinc-400/60">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>
+                                    </svg>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          </button>
+                              <div className="min-w-0 flex-1 pr-6">
+                                <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{env.name}</div>
+                                <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
+                                  {envGenerating.has(env.id) ? (
+                                    <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
+                                  ) : hasLook ? (
+                                    <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
+                                  ) : 'No look'}
+                                </div>
+                              </div>
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const runDelete = async () => {
+                                  try {
+                                    const updated = await api.deleteEnvironment(project.id, env.id);
+                                    if (activeEnvId === env.id) setActiveEnvId(updated.environments.find((x: any) => x.id !== env.id)?.id || null);
+                                    onSetProject?.(updated);
+                                  } catch {}
+                                };
+                                if (onConfirmDestructive) {
+                                  onConfirmDestructive({
+                                    title: `Delete "${env.name}"?`,
+                                    description: 'Removes this environment. Shots that reference it will lose that environment ref until you re-add one.',
+                                    confirmLabel: 'Delete',
+                                    run: runDelete,
+                                  });
+                                } else {
+                                  runDelete();
+                                }
+                              }}
+                              className="absolute top-1/2 right-2 -translate-y-1/2 text-zinc-400 hover:text-red-400 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                              aria-label={`Delete ${env.name}`}
+                              title="Delete"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                            </button>
+                          </div>
                         );
                       })}
                     </div>
 
-                    {project.environments.length > 0 && project.status === 'characters_locked' && (
-                      <button
-                        onClick={() => project.environments.filter(e => !e.referenceImageUrl).forEach(e => handleEnvGenerate(e.id))}
-                        disabled={envGenerating.size > 0}
-                        className="w-full py-2 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-                      >
-                        {envGenerating.size > 0 ? `Generating ${envGenerating.size}...` : 'Generate All Looks'}
-                      </button>
-                    )}
+                    {project.environments.length > 0 && project.status !== 'environments_locked' && (() => {
+                      const pending = project.environments.filter(e => !e.referenceImageUrl);
+                      const allDone = pending.length === 0;
+                      return (
+                        <button
+                          onClick={() => {
+                            const targets = allDone ? project.environments : pending;
+                            targets.forEach(e => handleEnvGenerate(e.id));
+                          }}
+                          disabled={envGenerating.size > 0}
+                          className="w-full py-2 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                        >
+                          {envGenerating.size > 0
+                            ? `Generating ${envGenerating.size}…`
+                            : allDone
+                              ? `Regenerate all (${project.environments.length})`
+                              : `Generate all looks (${pending.length})`}
+                        </button>
+                      );
+                    })()}
 
-                    {project.status === 'characters_locked' && (
+                    {project.status !== 'environments_locked' && (
                       <button
                         onClick={onAdvanceEnvironments}
-                        className="w-full py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white rounded-md text-xs font-semibold border border-white/[0.08] transition-colors"
+                        className={`w-full py-2 rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-2 ${
+                          project.environments.some(e => e.referenceImageUrl)
+                            ? 'bg-white text-black hover:bg-zinc-200'
+                            : 'bg-white/[0.06] text-zinc-400 hover:bg-white/[0.1] hover:text-white border border-white/[0.08]'
+                        }`}
                       >
-                        Proceed to Studio
+                        {project.environments.some(e => e.referenceImageUrl) ? 'Continue to Studio' : 'Skip — Continue to Studio'}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     )}
                   </div>
@@ -1553,32 +1752,42 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                 <div className="lg:col-span-9">
                   {activeEnv ? (
                     <div key={activeEnv.id} className="rounded-xl overflow-hidden border border-white/[0.06]">
-                      {/* Header bar — name, status, actions */}
-                      <div className="px-5 py-3 flex items-center justify-between border-b border-white/[0.06]">
+                      {/* Header bar — name, status, view prompt | regenerate */}
+                      <div className="px-5 py-3 flex items-center gap-4 border-b border-white/[0.06]">
                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <span className="text-sm font-medium text-white">{activeEnv.name}</span>
+                          <input
+                            key={`env-name-${activeEnv.id}`}
+                            defaultValue={activeEnv.name}
+                            size={Math.max(8, (activeEnv.name || '').length)}
+                            onBlur={async (e) => {
+                              if (e.target.value === activeEnv.name) return;
+                              try {
+                                const updated = await api.updateEnvironment(project.id, activeEnv.id, { name: e.target.value });
+                                onSetProject?.(updated);
+                              } catch {}
+                            }}
+                            className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 w-auto"
+                          />
                           {activeEnv.referenceImageUrl && (
-                            <span className="text-xs text-zinc-400 flex items-center gap-1">
+                            <span className="text-xs text-zinc-400 flex items-center gap-1 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
                               Locked
                             </span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleEnvGenerate(activeEnv.id)}
-                            disabled={envGenerating.has(activeEnv.id)}
-                            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
-                          >
-                            {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
-                          </button>
                           <button
                             onClick={() => setPromptPreview(prev => prev === activeEnv.id ? null : activeEnv.id)}
-                            className="text-[11px] text-zinc-400 hover:text-zinc-400 transition-colors"
+                            className="text-[11px] text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-md hover:bg-white/[0.04] flex-shrink-0"
                           >
                             {promptPreview === activeEnv.id ? 'Hide prompt' : 'View prompt'}
                           </button>
                         </div>
+                        <button
+                          onClick={() => handleEnvGenerate(activeEnv.id)}
+                          disabled={envGenerating.has(activeEnv.id)}
+                          className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors flex-shrink-0"
+                        >
+                          {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                        </button>
                       </div>
 
                       {/* Prompt preview */}
@@ -1590,40 +1799,72 @@ Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
                               <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 text-center rounded-b">Style</div>
                             </div>
                           )}
-                          <pre className="flex-1 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">{
-`${activeEnv.name} — ${activeEnv.description || '(no description)'}
+                          <pre className="flex-1 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{
+`Generate ONE cinematic environment shot in the visual style of Image 1. No characters or figures.
 
-Wide establishing shot, no characters.
-Style: ${project.styleDescription?.substring(0, 120) || '(none)'}…
+${activeEnv.name} — ${activeEnv.description || '(no description)'}
 
-→ Model: gemini-3-pro-image-preview
+Wide establishing shot, full environment visible, empty scene.
+
+Style: ${project.styleDescription || '(none)'}
+
+One single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.
+
+→ Model: gemini-3-pro-image-preview · aspect ${project.aspectRatio || '16:9'}
 → 3 parallel calls, same prompt`
                           }</pre>
                         </div>
                       )}
 
-                      {/* Hero area — locked image, look candidates, loading, or empty */}
-                      {activeEnv.referenceImageUrl ? (
-                        <div className="relative cursor-zoom-in bg-black/20" onClick={() => setModalImage(activeEnv.referenceImageUrl!)}>
-                          <img src={activeEnv.referenceImageUrl} alt={activeEnv.name} className="w-full h-auto max-h-[500px] object-contain mx-auto" />
-                        </div>
-                      ) : envGenerating.has(activeEnv.id) && activeEnvLooks.length === 0 ? (
-                        <div className="h-64 flex items-center justify-center bg-black/20">
-                          <div className="flex flex-col items-center gap-3">
-                            <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
-                            <span className="text-sm text-zinc-400">Generating looks…</span>
-                          </div>
-                        </div>
-                      ) : activeEnvLooks.length > 0 ? (
-                        <div className="grid grid-cols-3 gap-px bg-black/20">
-                          {activeEnvLooks.map(look => (
-                            <div key={look.id} className="relative group cursor-pointer bg-black/10">
-                              <img src={look.url} alt={activeEnv.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                                <button onClick={() => handleEnvLock(activeEnv.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                      {/* Hero area — same regen-priority pattern as cast: new candidates show
+                          on top of the locked look so a regen is always visible. Locked stays
+                          in the DB until the user picks a new one or hits "Keep current". */}
+                      {activeEnvLooks.length > 0 ? (
+                        <div>
+                          {activeEnv.referenceImageUrl && (
+                            <div className="px-5 py-2.5 flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02]">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-[11px] uppercase tracking-wide text-zinc-400 flex-shrink-0">New candidates</span>
+                                <span className="text-xs text-zinc-400">— pick one to replace the locked look, or</span>
+                                <button
+                                  onClick={() => setEnvLooks(prev => ({ ...prev, [activeEnv.id]: [] }))}
+                                  className="text-xs text-zinc-300 hover:text-white px-2 py-0.5 rounded-md hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 flex-shrink-0"
+                                  title="Discard these candidates and revert to the currently locked look"
+                                >
+                                  <img src={activeEnv.referenceImageUrl} alt="" className="w-4 h-4 rounded object-cover" />
+                                  Keep current
+                                </button>
                               </div>
                             </div>
-                          ))}
+                          )}
+                          <div className="grid grid-cols-3 gap-px bg-black/20">
+                            {activeEnvLooks.map(look => (
+                              <div key={look.id} className="relative group cursor-pointer bg-black/10">
+                                <img src={look.url} alt={activeEnv.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                                  <button onClick={() => handleEnvLock(activeEnv.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : envGenerating.has(activeEnv.id) ? (
+                        <div className="relative">
+                          {activeEnv.referenceImageUrl && (
+                            <img src={activeEnv.referenceImageUrl} alt={activeEnv.name} className="w-full h-auto max-h-[500px] object-contain mx-auto opacity-30" />
+                          )}
+                          <div className={`${activeEnv.referenceImageUrl ? 'absolute inset-0' : 'h-64'} flex items-center justify-center bg-black/40`}>
+                            <div className="flex flex-col items-center gap-3">
+                              <div className="w-6 h-6 border-2 border-zinc-600 border-t-white rounded-full animate-spin"></div>
+                              <span className="text-sm text-zinc-300">Generating new looks…</span>
+                              {activeEnv.referenceImageUrl && <span className="text-[11px] text-zinc-400">Your locked look is safe — pick a new one only if you prefer it.</span>}
+                            </div>
+                          </div>
+                        </div>
+                      ) : activeEnv.referenceImageUrl ? (
+                        <div className="relative cursor-zoom-in bg-black/20" onClick={() => setModalImage(activeEnv.referenceImageUrl!)}>
+                          <img src={activeEnv.referenceImageUrl} alt={activeEnv.name} className="w-full h-auto max-h-[500px] object-contain mx-auto" />
                         </div>
                       ) : (
                         <div className="h-48 flex items-center justify-center bg-black/10">

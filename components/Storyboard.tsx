@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
+import { AutoGrowTextarea } from './AutoGrowTextarea';
 
 interface Props {
   scenes: VideoScene[];
@@ -17,10 +18,11 @@ interface Props {
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
   onUsePrevLastFrame?: (shotId: string) => void;
+  onClearShotFrame?: (shotId: string) => void;
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onUsePrevLastFrame, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onUsePrevLastFrame, onClearShotFrame, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
@@ -74,7 +76,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                 </div>
                 <p className="text-sm text-zinc-300 leading-relaxed">{concept.conceptDirection || concept.theme}</p>
                 {concept.conceptDirection && concept.theme && concept.theme !== concept.conceptDirection && (
-                  <p className="text-xs text-zinc-400 leading-relaxed mt-1">{concept.theme}</p>
+                  <p className="text-sm text-zinc-300 leading-relaxed mt-1">{concept.theme}</p>
                 )}
               </div>
             </div>
@@ -160,13 +162,15 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
             </div>
             {showBulkPrompt && (
               <div className="mt-3 space-y-3">
-                <input
+                <AutoGrowTextarea
                   value={bulkNote}
                   onChange={e => setBulkNote(e.target.value)}
                   placeholder="Rewrite note — e.g. 'more deity close-ups', 'reduce camera motion'"
-                  className="w-full surface-inset rounded-md px-3 py-2 text-xs text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                  rows={2}
+                  className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                   onKeyDown={e => {
-                    if (e.key === 'Enter' && bulkNote.trim() && !isLoading) {
+                    if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && bulkNote.trim() && !isLoading) {
+                      e.preventDefault();
                       onRewriteShotPrompts(bulkNote);
                       setBulkNote('');
                     }
@@ -182,21 +186,21 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         <span className="text-[11px] text-zinc-400">{s.sectionLabel}</span>
                       </div>
                       {s.narrativeDescription && (
-                        <p className="text-xs text-zinc-400 italic">{s.narrativeDescription}</p>
+                        <p className="text-sm text-zinc-300 italic leading-relaxed">{s.narrativeDescription}</p>
                       )}
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {s.shots.map((shot, shIdx) => (
-                          <div key={shot.id} className="pl-3 border-l-2 border-white/[0.05] space-y-1">
+                          <div key={shot.id} className="pl-3 border-l-2 border-white/[0.05] space-y-1.5">
                             <div className="flex items-center gap-2 text-[11px] text-zinc-400">
                               <span className="font-medium text-zinc-300">Shot {shIdx + 1}</span>
                               <span className="font-mono">{shot.duration}s</span>
-                              <span className={`uppercase tracking-wide ${shot.continuityFrom === 'prev_shot' ? 'text-accent-400' : 'text-zinc-400'}`}>
+                              <span className={`uppercase tracking-wide ${shot.continuityFrom === 'prev_shot' ? 'text-amber-400/80' : 'text-zinc-400'}`}>
                                 {shot.continuityFrom === 'prev_shot' ? '· continues' : '· cut'}
                               </span>
                             </div>
-                            <div className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-400">Visual:</span> {shot.visualPrompt}</div>
+                            <div className="text-sm text-zinc-300 leading-relaxed"><span className="text-white font-medium">Visual:</span> {shot.visualPrompt}</div>
                             {shot.motionPrompt && (
-                              <div className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-400">Motion:</span> {shot.motionPrompt}</div>
+                              <div className="text-sm text-zinc-300 leading-relaxed"><span className="text-white font-medium">Motion:</span> {shot.motionPrompt}</div>
                             )}
                           </div>
                         ))}
@@ -206,7 +210,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                 </div>
                 <details className="text-[11px] text-zinc-400">
                   <summary className="cursor-pointer hover:text-zinc-300">Raw master prompt (what Claude saw)</summary>
-                  <pre className="mt-2 surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project?.lastWriteShotsPrompt}</pre>
+                  <pre className="mt-2 surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{project?.lastWriteShotsPrompt}</pre>
                 </details>
                 <p className="text-[11px] text-zinc-400">Rewriting replaces every shot's prompt. Existing frames and videos stay as-is — regenerate per-shot to apply new prompts.</p>
               </div>
@@ -282,8 +286,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     ><polyline points="9 18 15 12 9 6"/></svg>
 
                     {/* Left: shot info */}
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-xs font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className="text-sm font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
 
                       {/* Progress dots */}
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -294,10 +298,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         ))}
                       </div>
 
-                      <span className="text-[11px] text-zinc-400 font-mono flex-shrink-0">{shot.duration}s</span>
+                      <span className="text-xs text-zinc-400 font-mono flex-shrink-0">{shot.duration}s</span>
 
                       {activeCastMembers.length > 0 && (
-                        <span className="text-[11px] text-zinc-400 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
+                        <span className="text-sm text-zinc-300 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
                       )}
 
                       {shotIdx > 0 && (
@@ -306,7 +310,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           className={`text-[11px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
                             shot.continuityFrom === 'prev_shot'
                               ? 'text-amber-400/80 bg-amber-500/10'
-                              : 'text-zinc-400 hover:text-zinc-400'
+                              : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
                           }`}
                         >
                           {shot.continuityFrom === 'prev_shot' ? 'chain' : 'cut'}
@@ -400,17 +404,26 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     ) : hasVideo && (shot.extractedLastFrameUrl || shot.endImageUrl) ? (
                       // Post-video: show start + extracted last frame side-by-side
-                      <div className="flex">
-                        <div className="flex-1 relative bg-black min-h-[120px]">
+                      <div className="flex bg-[#141418]">
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/start">
                           <div className="absolute top-2 left-2 z-20">
                             <span className="text-[11px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start</span>
                           </div>
+                          {shot.imageUrl && !shot.locked && onClearShotFrame && (
+                            <button
+                              onClick={() => onClearShotFrame(shot.id)}
+                              className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 text-[11px] bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-white px-2 py-1 rounded-md transition-opacity"
+                              title="Remove this start frame (keeps the video)"
+                            >
+                              × Remove
+                            </button>
+                          )}
                           {shot.imageUrl && (
-                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in" />
+                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
                           )}
                         </div>
                         <div className="w-px bg-white/[0.06] flex-shrink-0" />
-                        <div className="flex-1 relative bg-black min-h-[120px] group/last">
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/last">
                           <div className="absolute top-2 left-2 z-20">
                             <span className="text-[11px] bg-black/60 text-emerald-300/80 px-1.5 py-0.5 rounded-md uppercase font-medium">End (from video)</span>
                           </div>
@@ -418,7 +431,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             src={shot.extractedLastFrameUrl || shot.endImageUrl!}
                             alt={`Shot ${shotIdx + 1} last frame`}
                             onClick={() => setModalImage((shot.extractedLastFrameUrl || shot.endImageUrl)!)}
-                            className={`w-full h-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
+                            className={`max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
                           />
                           {/* Action: use this frame as next shot's start */}
                           {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && onUsePrevLastFrame && (
@@ -439,13 +452,22 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     ) : (
                       // Pre-video: just show the start frame full width (no confusing empty slot)
-                      <div className="relative bg-black min-h-[160px]">
+                      <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/start">
                         {shot.imageUrl ? (
                           <>
                             <div className="absolute top-2 left-2 z-20">
                               <span className="text-[11px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start Frame</span>
                             </div>
-                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in mx-auto max-h-[400px] object-contain" />
+                            {!shot.locked && onClearShotFrame && (
+                              <button
+                                onClick={() => onClearShotFrame(shot.id)}
+                                className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 text-[11px] bg-black/60 hover:bg-black/80 text-zinc-300 hover:text-white px-2 py-1 rounded-md transition-opacity"
+                                title="Remove this start frame"
+                              >
+                                × Remove
+                              </button>
+                            )}
+                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[480px] h-auto w-auto cursor-zoom-in" />
                           </>
                         ) : (
                           <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
@@ -603,13 +625,13 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                           {activeTab === 'video' ? (
                             <div className="space-y-3">
-                              <div className="text-[11px] text-zinc-400">
+                              <div className="text-sm text-zinc-300">
                                 This is the full prompt sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame. Edit to override.
                               </div>
                               <textarea
                                 value={videoOverride[shot.id] ?? autoVeoPrompt}
                                 onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
-                                className="w-full surface-inset rounded-md p-3 text-xs text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
+                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
                               />
                               <div className="flex items-center gap-2">
                                 <button
@@ -634,7 +656,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             </div>
                           ) : activeTab === 'compiled' ? (
                             <div className="space-y-3">
-                              <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">{compiledText}</pre>
+                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
                               {compiledRefs.length > 0 && (
                                 <div className="flex gap-2 flex-wrap">
                                   {compiledRefs.map((ref, i) => (
@@ -651,7 +673,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               )}
                             </div>
                           ) : shot.locked ? (
-                            <p className="text-sm text-zinc-400 leading-relaxed">{promptText}</p>
+                            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{promptText}</p>
                           ) : (
                             <>
                               <textarea
@@ -662,26 +684,28 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               />
                               {hasStartFrame && (
                                 <div className="flex gap-2">
-                                  <input
+                                  <AutoGrowTextarea
                                     id={`refine-${shot.id}`}
                                     placeholder="What's wrong? e.g. 'face not crisp, lighting too flat'"
-                                    className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                                    rows={2}
+                                    className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                                        onRefinePrompt(activeScene.id, shot.id, (e.target as HTMLInputElement).value);
-                                        (e.target as HTMLInputElement).value = '';
+                                      if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
+                                        e.preventDefault();
+                                        onRefinePrompt(activeScene.id, shot.id, (e.target as HTMLTextAreaElement).value);
+                                        (e.target as HTMLTextAreaElement).value = '';
                                       }
                                     }}
                                   />
                                   <button
                                     onClick={() => {
-                                      const input = document.getElementById(`refine-${shot.id}`) as HTMLInputElement;
+                                      const input = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
                                       if (input?.value.trim()) {
                                         onRefinePrompt(activeScene.id, shot.id, input.value);
                                         input.value = '';
                                       }
                                     }}
-                                    className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0"
+                                    className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
                                   >
                                     Refine
                                   </button>

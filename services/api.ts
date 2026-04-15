@@ -314,6 +314,11 @@ export const usePrevLastFrame = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
+export const clearShotFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
 export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
     method: 'POST',

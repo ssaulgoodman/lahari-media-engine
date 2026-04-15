@@ -253,7 +253,7 @@ const getFullProject = (projectId: string) => {
 router.get('/', (_req, res) => {
   const rows = db.prepare(`
     SELECT id, title, status, created_at, updated_at, parent_project_id
-    FROM projects ORDER BY updated_at DESC
+    FROM projects ORDER BY created_at DESC
   `).all() as any[];
   res.json(rows.map(r => ({
     id: r.id,
@@ -677,6 +677,14 @@ router.get('/:id/xray', (req, res) => {
 });
 
 // ─── Shot Updates ───────────────────────────────────────────────────
+
+// Clear the start frame on a shot — keeps the video (if any) intact.
+// Also unlocks the shot since a locked shot requires a start frame + video.
+router.post('/:id/shots/:shotId/clear-frame', (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  db.prepare(`UPDATE shots SET image_asset_id = NULL, image_status = 'idle' WHERE id = ?`).run(shotId);
+  res.json(getFullProject(paramStr(req.params.id)));
+});
 
 router.patch('/:id/shots/:shotId', (req, res) => {
   const { visualPrompt, motionPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;

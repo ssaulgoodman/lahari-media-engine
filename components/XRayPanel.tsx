@@ -211,8 +211,8 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     {/* Prompt */}
                     <div>
                       <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Prompt</div>
-                      <div className="surface-inset rounded-md p-3 max-h-64 overflow-y-auto">
-                        <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.prompt}</pre>
+                      <div className="surface-inset rounded-md p-3">
+                        <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.prompt}</pre>
                       </div>
                     </div>
 
@@ -235,15 +235,15 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                     {hasError ? (
                       <div>
                         <div className="text-[11px] text-red-400 uppercase tracking-wide mb-1.5">Error</div>
-                        <div className="bg-red-500/[0.05] border border-red-500/10 rounded-md p-3 max-h-48 overflow-y-auto">
-                          <pre className="text-[11px] text-red-300 whitespace-pre-wrap font-mono leading-relaxed">{call.error}</pre>
+                        <div className="bg-red-500/[0.05] border border-red-500/10 rounded-md p-3">
+                          <pre className="text-sm text-red-300 whitespace-pre-wrap font-mono leading-relaxed">{call.error}</pre>
                         </div>
                       </div>
                     ) : call.responseSummary ? (
                       <div>
                         <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Response</div>
-                        <div className="surface-inset rounded-md p-3 max-h-48 overflow-y-auto">
-                          <pre className="text-[11px] text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.responseSummary}</pre>
+                        <div className="surface-inset rounded-md p-3">
+                          <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.responseSummary}</pre>
                         </div>
                       </div>
                     ) : null}
