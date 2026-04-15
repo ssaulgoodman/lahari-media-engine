@@ -150,6 +150,11 @@ try { db.exec('ALTER TABLE shots ADD COLUMN continuity_description TEXT'); } cat
 // 'prev_shot' = this shot continues from the previous shot's last frame.
 try { db.exec("ALTER TABLE shots ADD COLUMN continuity_from TEXT DEFAULT 'cut'"); } catch {}
 
+// Flag set when a chained shot's prompt was auto-rewritten by Claude vision
+// after the previous shot's video landed. Cleared whenever the user manually
+// edits visual_prompt or regenerates with feedback.
+try { db.exec('ALTER TABLE shots ADD COLUMN refined_from_prev_frame INTEGER DEFAULT 0'); } catch {}
+
 // Video model: 'veo-3.1' (default), 'seedance-2.0-fast', 'seedance-2.0', etc.
 try { db.exec("ALTER TABLE projects ADD COLUMN video_model TEXT DEFAULT 'veo-3.1'"); } catch {}
 

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AppStep, ApiProject, VideoShot, GenerationStatus, ChatMessage } from './types';
 import { AnalysisEditor } from './components/AnalysisEditor';
@@ -8,6 +8,7 @@ import { StepRender } from './components/StepRender';
 import { ChatAssistant } from './components/ChatAssistant';
 import { XRayPanel } from './components/XRayPanel';
 import { Dashboard } from './components/Dashboard';
+import { getVideoModel } from './constants/videoModels';
 import * as api from './services/api';
 
 const PIPELINE_STEPS = [
@@ -77,6 +78,26 @@ const App: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState<ProjectSummary[]>([]);
   const [projectListLoading, setProjectListLoading] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+
+  const startRename = (id: string, currentTitle: string) => {
+    setRenamingId(id);
+    setRenameDraft(currentTitle);
+  };
+  const cancelRename = () => { setRenamingId(null); setRenameDraft(''); };
+  const saveRename = async () => {
+    const id = renamingId;
+    const next = renameDraft.trim();
+    if (!id || !next) { cancelRename(); return; }
+    // Optimistic — flip both the list entry and (if applicable) the active
+    // project so the header updates without waiting.
+    setProjectList(list => list.map(p => p.id === id ? { ...p, title: next } : p));
+    setProject(cur => cur && cur.id === id ? { ...cur, title: next } : cur);
+    cancelRename();
+    try { await api.updateProject(id, { title: next }); }
+    catch (err: any) { setError(err.message); }
+  };
 
   // Auto-dismiss error toast
   useEffect(() => {
@@ -130,22 +151,43 @@ const App: React.FC = () => {
 
   // ─── Generate Concepts (separate from analysis) ────────────────
 
-  const [conceptsLoading, setConceptsLoading] = useState(false);
+  // One active AbortController per op key. Clicking "Stop" on any pending
+  // generate button calls abortOp(key) → the fetch rejects with AbortError,
+  // which isCancelled() catches so no error toast. Server-side work keeps
+  // running for now (harmless, still logged), but the UI unblocks instantly.
+  const opsRef = useRef<Record<string, AbortController>>({});
+  const startOp = useCallback((key: string): AbortSignal => {
+    opsRef.current[key]?.abort();
+    const ctrl = new AbortController();
+    opsRef.current[key] = ctrl;
+    return ctrl.signal;
+  }, []);
+  const abortOp = useCallback((key: string) => {
+    opsRef.current[key]?.abort();
+    delete opsRef.current[key];
+  }, []);
+  const endOp = useCallback((key: string) => {
+    delete opsRef.current[key];
+  }, []);
 
   const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string; userNote?: string }) => {
     if (!project) return;
-    setConceptsLoading(true);
+    const signal = startOp('concepts');
+    setLoading(true);
     setError(null);
     try {
-      const p = await api.generateConcepts(project.id, opts);
+      const p = await api.generateConcepts(project.id, opts, signal);
       setProject(p);
       setCurrentStep(AppStep.BLUEPRINT);
     } catch (err: any) {
-      setError(err.message || 'Concept generation failed.');
+      if (!api.isCancelled(err)) setError(err.message || 'Concept generation failed.');
     } finally {
-      setConceptsLoading(false);
+      endOp('concepts');
+      setLoading(false);
     }
   };
+
+  const handleCancelConcepts = () => abortOp('concepts');
 
   // ─── Concept Lock-in ────────────────────────────────────────────
 
@@ -259,12 +301,12 @@ const App: React.FC = () => {
 
   // ─── Character Look Generation & Lock ───────────────────────────
 
-  const handleGenerateLooks = async (castMemberId: string, feedback?: string) => {
+  const handleGenerateLooks = async (castMemberId: string, feedback?: string, refImage?: File) => {
     if (!project) return;
     setLooksLoading(prev => new Set(prev).add(castMemberId));
     setError(null);
     try {
-      const result = await api.generateLooks(project.id, castMemberId, feedback);
+      const result = await api.generateLooks(project.id, castMemberId, feedback, undefined, refImage);
       setLookCandidates(prev => ({ ...prev, [castMemberId]: result.looks }));
       setProject(result.project);
     } catch (err: any) {
@@ -323,13 +365,14 @@ const App: React.FC = () => {
     if (!project) return;
     // First-time gen: no existing script to destroy, just run.
     if (project.scenes.length === 0) {
+      const signal = startOp('script');
       setLoading(true); setError(null);
       try {
-        const p = await api.generateScript(project.id, userNote);
+        const p = await api.generateScript(project.id, userNote, undefined, signal);
         setProject(p);
       } catch (err: any) {
-        setError('Script generation failed: ' + err.message);
-      } finally { setLoading(false); }
+        if (!api.isCancelled(err)) setError('Script generation failed: ' + err.message);
+      } finally { endOp('script'); setLoading(false); }
       return;
     }
     // Re-gen: destructive (wipes cast + deletes scenes/shots). Offer fork.
@@ -450,6 +493,8 @@ const App: React.FC = () => {
 
   const handleGenerateImage = async (sceneId: string, shotId: string) => {
     if (!project) return;
+    const opKey = `image:${shotId}`;
+    const signal = startOp(opKey);
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -461,22 +506,40 @@ const App: React.FC = () => {
       };
     });
     try {
-      const p = await api.generateShotImage(project.id, shotId);
+      const p = await api.generateShotImage(project.id, shotId, signal);
       setProject(p);
     } catch (err: any) {
-      setError(`Image generation failed: ${err.message}`);
-      setProject(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          scenes: prev.scenes.map(s => s.id === sceneId ? {
-            ...s,
-            shots: s.shots.map(sh => sh.id === shotId ? { ...sh, imageStatus: GenerationStatus.ERROR } : sh)
-          } : s)
-        };
-      });
+      if (api.isCancelled(err)) {
+        setProject(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            scenes: prev.scenes.map(s => s.id === sceneId ? {
+              ...s,
+              shots: s.shots.map(sh => sh.id === shotId ? { ...sh, imageStatus: GenerationStatus.IDLE } : sh)
+            } : s)
+          };
+        });
+      } else {
+        setError(`Image generation failed: ${err.message}`);
+        setProject(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            scenes: prev.scenes.map(s => s.id === sceneId ? {
+              ...s,
+              shots: s.shots.map(sh => sh.id === shotId ? { ...sh, imageStatus: GenerationStatus.ERROR } : sh)
+            } : s)
+          };
+        });
+      }
+    } finally {
+      endOp(opKey);
     }
   };
+
+  const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
+  const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
 
   const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string) => {
     if (!project) return;
@@ -507,6 +570,8 @@ const App: React.FC = () => {
 
   const handleGenerateVideo = async (sceneId: string, shotId: string, promptOverride?: string) => {
     if (!project) return;
+    const opKey = `video:${shotId}`;
+    const signal = startOp(opKey);
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -518,21 +583,127 @@ const App: React.FC = () => {
       };
     });
     try {
-      const p = await api.generateShotVideo(project.id, shotId, promptOverride);
+      const p = await api.generateShotVideo(project.id, shotId, promptOverride, signal);
       setProject(p);
     } catch (err: any) {
-      setError(`Video generation failed: ${err.message}`);
-      setProject(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          scenes: prev.scenes.map(s => s.id === sceneId ? {
-            ...s,
-            shots: s.shots.map(sh => sh.id === shotId ? { ...sh, videoStatus: GenerationStatus.ERROR } : sh)
-          } : s)
-        };
+      if (api.isCancelled(err)) {
+        // Stop button pressed — roll the video back to idle so it doesn't
+        // stay in the loading spinner and doesn't look like an error either.
+        setProject(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            scenes: prev.scenes.map(s => s.id === sceneId ? {
+              ...s,
+              shots: s.shots.map(sh => sh.id === shotId ? { ...sh, videoStatus: GenerationStatus.IDLE } : sh)
+            } : s)
+          };
+        });
+      } else {
+        setError(`Video generation failed: ${err.message}`);
+        setProject(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            scenes: prev.scenes.map(s => s.id === sceneId ? {
+              ...s,
+              shots: s.shots.map(sh => sh.id === shotId ? { ...sh, videoStatus: GenerationStatus.ERROR } : sh)
+            } : s)
+          };
+        });
+      }
+    } finally {
+      endOp(opKey);
+    }
+  };
+
+  // ─── Bulk Studio actions ────────────────────────────────────────
+  // Frank Sinatra doesn't move his pianos — fire everything auto-firable.
+  // Each button fires only what's actionable right now; chained shots stay
+  // queued until their predecessor's video lands.
+
+  // Worker-pool concurrency limiter. N workers pull jobs from a shared
+  // index; when one finishes, the next job in line starts. This is what
+  // "5 at a time, queue the rest" actually means — no artificial sleeps,
+  // no fixed batches. Rejections are swallowed into the results array so
+  // one failure doesn't abort the whole bulk.
+  const runWithConcurrency = async <T,>(items: T[], limit: number, fn: (item: T) => Promise<any>): Promise<void> => {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (cursor < items.length) {
+        const idx = cursor++;
+        try { await fn(items[idx]); } catch (err) { /* logged by the handler */ }
+      }
+    });
+    await Promise.all(workers);
+  };
+
+  const handleBulkGenerateFrames = async () => {
+    if (!project) return;
+    const targets: { sceneId: string; shotId: string }[] = [];
+    for (const scene of project.scenes) {
+      scene.shots.forEach((shot, idx) => {
+        if (shot.imageUrl) return;
+        if (shot.imageStatus === GenerationStatus.LOADING) return;
+        if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+          const prev = scene.shots[idx - 1];
+          if (!prev?.videoUrl) return;
+        }
+        targets.push({ sceneId: scene.id, shotId: shot.id });
       });
     }
+    if (targets.length === 0) return;
+    // Optimistic: mark all as loading so the UI reflects the batch immediately.
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => ({
+        ...s,
+        shots: s.shots.map(sh =>
+          targets.some(t => t.shotId === sh.id)
+            ? { ...sh, imageStatus: GenerationStatus.LOADING }
+            : sh
+        )
+      }))
+    } : prev);
+    // Gemini image gen is comfortable with more parallelism than Veo —
+    // ~10 concurrent fits inside Tier-2 RPM easily.
+    await runWithConcurrency(targets, 10, t => api.generateShotImage(project.id, t.shotId));
+    // Authoritative refresh — parallel responses can land out of order.
+    try { setProject(await api.getProject(project.id)); } catch (err: any) { setError(err.message); }
+  };
+
+  const handleBulkGenerateVideos = async () => {
+    if (!project) return;
+    const targets: { sceneId: string; shotId: string }[] = [];
+    for (const scene of project.scenes) {
+      scene.shots.forEach((shot, idx) => {
+        if (!shot.imageUrl || shot.videoUrl) return;
+        if (shot.videoStatus === GenerationStatus.LOADING) return;
+        if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+          const prev = scene.shots[idx - 1];
+          if (!prev?.videoUrl) return;
+        }
+        targets.push({ sceneId: scene.id, shotId: shot.id });
+      });
+    }
+    if (targets.length === 0) return;
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => ({
+        ...s,
+        shots: s.shots.map(sh =>
+          targets.some(t => t.shotId === sh.id)
+            ? { ...sh, videoStatus: GenerationStatus.LOADING }
+            : sh
+        )
+      }))
+    } : prev);
+    // Throttle to 5 concurrent on Veo. Vertex default is ~60 RPM per project
+    // on Veo Fast; at 60s-per-video this never touches the RPM ceiling, and
+    // it keeps us comfortable inside the concurrent-ops soft cap. Raise later
+    // once Google auto-scales our quotas after sustained usage.
+    await runWithConcurrency(targets, 5, t => api.generateShotVideo(project.id, t.shotId));
+    try { setProject(await api.getProject(project.id)); } catch (err: any) { setError(err.message); }
   };
 
   const handleUpdateShot = async (sceneId: string, shotId: string, updates: Partial<VideoShot>) => {
@@ -690,35 +861,49 @@ const App: React.FC = () => {
               );
             })}
 
-            {isStudio && project && project.scenes.length > 1 && (
-              <div className="flex items-center gap-0.5 ml-4 pl-4 border-l border-white/[0.06]">
-                <span className="text-[11px] uppercase tracking-wide text-zinc-400 mr-1.5">Scene</span>
-                {project.scenes.map((scene, idx) => {
-                  const isActive = idx === activeSceneIdx;
-                  const allLocked = scene.shots.every(s => s.locked);
-                  return (
-                    <button
-                      key={scene.id}
-                      onClick={() => setActiveSceneIdx(idx)}
-                      className={`w-6 h-6 text-[11px] font-medium font-mono rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 ${
-                        isActive ? 'bg-white/[0.1] text-white'
-                          : allLocked ? 'text-zinc-300 hover:text-white'
-                          : 'text-zinc-400/60 hover:text-zinc-300'
-                      }`}
-                    >
-                      {idx + 1}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {/* Scene picker lives in the Studio sticky bar — one source of
+                truth instead of duplicated in the main nav. */}
           </nav>
 
           {/* Right */}
           <div className="flex items-center gap-1 flex-shrink-0">
             {project && (
               <>
-                <span className="text-[11px] font-mono text-zinc-400 tabular-nums px-2">${project.costEstimate.toFixed(2)}</span>
+                <span
+                  className="text-[11px] font-mono text-zinc-400 tabular-nums px-2"
+                  title="Actual spend so far (logged per AI call)"
+                >${project.costEstimate.toFixed(2)}</span>
+                {(() => {
+                  // Projected cost to finish the remaining pipeline at current
+                  // state: frames not yet generated + videos not yet generated
+                  // (using the selected video model's per-sec price) + a small
+                  // Claude overhead for chain prompt refreshes. Shown alongside
+                  // actual spend so artists can decide before mass-firing.
+                  const model = getVideoModel(project.videoModel);
+                  let framesRemaining = 0;
+                  let videoCostRemaining = 0;
+                  let chainRefreshesRemaining = 0;
+                  for (const scene of project.scenes || []) {
+                    for (const shot of scene.shots) {
+                      if (!shot.imageUrl) framesRemaining += 1;
+                      if (!shot.videoUrl) videoCostRemaining += (shot.duration || model.durations[0]) * model.costPerSec;
+                      // Chain refresh fires when a chained shot's predecessor video lands
+                      if (shot.continuityFrom === 'prev_shot' && !shot.refinedFromPrevFrame) chainRefreshesRemaining += 1;
+                    }
+                  }
+                  const frameCost = framesRemaining * 0.04; // Gemini 3 Pro Image per 3-call batch
+                  const chainCost = chainRefreshesRemaining * 0.01;
+                  const projected = frameCost + videoCostRemaining + chainCost;
+                  if (projected < 0.01) return null;
+                  return (
+                    <span
+                      className="text-[11px] font-mono text-zinc-400 tabular-nums px-2"
+                      title={`Projected remaining at current model (${model.label}): ${framesRemaining} frame${framesRemaining === 1 ? '' : 's'} × $0.04 + videos (${videoCostRemaining.toFixed(2)}) + chain refreshes (${chainCost.toFixed(2)}).`}
+                    >
+                      + <span className="text-zinc-300">~${projected.toFixed(2)}</span>
+                    </span>
+                  );
+                })()}
                 <div className="w-px h-4 bg-white/[0.06]" />
                 <button
                   onClick={() => setXrayOpen(true)}
@@ -776,6 +961,8 @@ const App: React.FC = () => {
                     })}
                     onGenerateScript={handleGenerateScript}
                     onGenerateConcepts={handleGenerateConcepts}
+                    onCancelConcepts={handleCancelConcepts}
+                    onCancelScript={() => abortOp('script')}
                     onUpdateProject={handleUpdateProject}
                     onLaunchStudio={handleLaunchStudio}
                     onAdvanceCharacters={handleAdvanceCharacters}
@@ -795,10 +982,14 @@ const App: React.FC = () => {
                     onUpdateShot={handleUpdateShot}
                     onGenerateImage={handleGenerateImage}
                     onGenerateVideo={handleGenerateVideo}
+                    onCancelShotImage={handleCancelShotImage}
+                    onCancelShotVideo={handleCancelShotVideo}
                     onLockShot={handleLockShot}
                     onRefinePrompt={handleRefinePrompt}
                     onUpdateProject={handleUpdateProject}
                     onRewriteShotPrompts={handleRewriteShotPrompts}
+                    onBulkGenerateFrames={handleBulkGenerateFrames}
+                    onBulkGenerateVideos={handleBulkGenerateVideos}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
                     isLoading={loading}
@@ -967,24 +1158,45 @@ const App: React.FC = () => {
                                 style={{ left: (depth - 1) * 14 + 14 }}
                               />
                             )}
-                            <button
-                              onClick={() => loadProject(p.id)}
-                              className="w-full text-left px-3 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
+                            {renamingId === p.id ? (
+                              <div className="w-full px-3 py-2 flex items-center gap-2">
                                 {isFork && (
                                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 flex-shrink-0" aria-hidden="true">
                                     <circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9v1a4 4 0 0 1-4 4H8"/><path d="M6 8v7"/>
                                   </svg>
                                 )}
-                                <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
-                                  {p.title}
-                                </span>
-                                <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Started ${new Date(p.createdAt.includes('T') || p.createdAt.includes('Z') ? p.createdAt : p.createdAt.replace(' ', 'T') + 'Z').toLocaleString()}`}>
-                                  {relativeTime(p.createdAt)}
-                                </span>
+                                <input
+                                  autoFocus
+                                  value={renameDraft}
+                                  onChange={e => setRenameDraft(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+                                    if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                                  }}
+                                  onBlur={saveRename}
+                                  className="flex-1 bg-white/[0.04] text-sm text-white border border-white/[0.12] rounded px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+                                />
                               </div>
-                            </button>
+                            ) : (
+                              <button
+                                onClick={() => loadProject(p.id)}
+                                className="w-full text-left px-3 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {isFork && (
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 flex-shrink-0" aria-hidden="true">
+                                      <circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9v1a4 4 0 0 1-4 4H8"/><path d="M6 8v7"/>
+                                    </svg>
+                                  )}
+                                  <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
+                                    {p.title}
+                                  </span>
+                                  <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Started ${new Date(p.createdAt.includes('T') || p.createdAt.includes('Z') ? p.createdAt : p.createdAt.replace(' ', 'T') + 'Z').toLocaleString()}`}>
+                                    {relativeTime(p.createdAt)}
+                                  </span>
+                                </div>
+                              </button>
+                            )}
                             {/* Delete button — hover reveal, does not shift layout */}
                             <button
                               onClick={(e) => {
@@ -1008,6 +1220,18 @@ const App: React.FC = () => {
                                 <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
                               </svg>
                             </button>
+                            {/* Rename — pencil sits just left of delete. */}
+                            {renamingId !== p.id && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); startRename(p.id, p.title); }}
+                                className="absolute right-9 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Rename project"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         );
                       })}

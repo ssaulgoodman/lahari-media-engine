@@ -13,6 +13,11 @@ const handleResponse = async (res: Response) => {
   return res.json();
 };
 
+// Thrown when the caller aborts via AbortController. Lets handlers distinguish
+// "user cancelled" from real errors and avoid showing a failure toast.
+export const isCancelled = (err: any) =>
+  err?.name === 'AbortError' || err?.code === 20 || /abort/i.test(err?.message || '');
+
 // ─── Projects ───────────────────────────────────────────────────────
 
 export const listProjects = async () => {
@@ -53,11 +58,12 @@ export const deleteProject = async (id: string) => {
   return handleResponse(res);
 };
 
-export const analyzeAudio = async (id: string, opts?: { fork?: boolean }) => {
+export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${id}/analyze-audio`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts || {}),
+    signal,
   });
   return handleResponse(res);
 };
@@ -66,12 +72,14 @@ export const analyzeAudio = async (id: string, opts?: { fork?: boolean }) => {
 
 export const generateConcepts = async (
   projectId: string,
-  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string }
+  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string },
+  signal?: AbortSignal
 ) => {
   const res = await fetch(`${API}/projects/${projectId}/generate-concepts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opts || {})
+    body: JSON.stringify(opts || {}),
+    signal,
   });
   return handleResponse(res);
 };
@@ -106,29 +114,32 @@ export const generateStyles = async (projectId: string, notes?: string) => {
   return handleResponse(res);
 };
 
-export const brainstormStyles = async (projectId: string, userNotes?: string) => {
+export const brainstormStyles = async (projectId: string, userNotes?: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/brainstorm-styles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userNotes })
+    body: JSON.stringify({ userNotes }),
+    signal,
   });
   return handleResponse(res);
 };
 
-export const visualizeStyle = async (projectId: string, prompt: string) => {
+export const visualizeStyle = async (projectId: string, prompt: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/visualize-style`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify({ prompt }),
+    signal,
   });
   return handleResponse(res);
 };
 
-export const refineStyleDirection = async (projectId: string, description: string, feedback: string) => {
+export const refineStyleDirection = async (projectId: string, description: string, feedback: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/refine-style-direction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description, feedback })
+    body: JSON.stringify({ description, feedback }),
+    signal,
   });
   return handleResponse(res);
 };
@@ -172,12 +183,49 @@ export const uploadAndLockStyle = async (projectId: string, imageFile: File) => 
 
 // ─── Character Look Generation & Lock ───────────────────────────────
 
-export const generateLooks = async (projectId: string, castMemberId: string, feedback?: string) => {
+export const generateLooks = async (
+  projectId: string,
+  castMemberId: string,
+  feedback?: string,
+  signal?: AbortSignal,
+  refImage?: File,
+) => {
+  // With a director-supplied reference image, use multipart so the server
+  // can ingest the file alongside Claude's text-derived character brief.
+  if (refImage) {
+    const form = new FormData();
+    form.append('image', refImage);
+    form.append('castMemberId', castMemberId);
+    if (feedback) form.append('feedback', feedback);
+    const res = await fetch(`${API}/projects/${projectId}/generate-looks`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    return handleResponse(res);
+  }
   const res = await fetch(`${API}/projects/${projectId}/generate-looks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ castMemberId, feedback })
+    body: JSON.stringify({ castMemberId, feedback }),
+    signal,
   });
+  return handleResponse(res);
+};
+
+export const uploadCharacterReference = async (projectId: string, castMemberId: string, imageFile: File) => {
+  const form = new FormData();
+  form.append('image', imageFile);
+  form.append('castMemberId', castMemberId);
+  const res = await fetch(`${API}/projects/${projectId}/upload-character-reference`, { method: 'POST', body: form });
+  return handleResponse(res);
+};
+
+export const uploadEnvironmentReference = async (projectId: string, environmentId: string, imageFile: File) => {
+  const form = new FormData();
+  form.append('image', imageFile);
+  form.append('environmentId', environmentId);
+  const res = await fetch(`${API}/projects/${projectId}/upload-environment-reference`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 
@@ -240,11 +288,30 @@ export const deleteEnvironment = async (projectId: string, envId: string) => {
   return handleResponse(res);
 };
 
-export const generateEnvironmentLook = async (projectId: string, environmentId: string) => {
+export const generateEnvironmentLook = async (
+  projectId: string,
+  environmentId: string,
+  signal?: AbortSignal,
+  refImage?: File,
+  note?: string,
+) => {
+  if (refImage) {
+    const form = new FormData();
+    form.append('image', refImage);
+    form.append('environmentId', environmentId);
+    if (note) form.append('note', note);
+    const res = await fetch(`${API}/projects/${projectId}/generate-environment-look`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    return handleResponse(res);
+  }
   const res = await fetch(`${API}/projects/${projectId}/generate-environment-look`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ environmentId })
+    body: JSON.stringify({ environmentId }),
+    signal,
   });
   return handleResponse(res);
 };
@@ -272,7 +339,7 @@ export const advanceEnvironments = async (projectId: string) => {
 
 // ─── Script Generation ──────────────────────────────────────────────
 
-export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean }) => {
+export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
   const body: Record<string, any> = {};
   if (userNote) body.userNote = userNote;
   if (opts?.fork) body.fork = true;
@@ -280,32 +347,35 @@ export const generateScript = async (projectId: string, userNote?: string, opts?
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
   return handleResponse(res);
 };
 
-export const writeShotPrompts = async (projectId: string, userNote?: string) => {
+export const writeShotPrompts = async (projectId: string, userNote?: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/write-shot-prompts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userNote ? { userNote } : {}),
+    signal,
   });
   return handleResponse(res);
 };
 
 // ─── Shot Image & Video ─────────────────────────────────────────────
 
-export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string) => {
+export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ feedback })
+    body: JSON.stringify({ feedback }),
+    signal,
   });
   return handleResponse(res);
 };
 
-export const generateShotImage = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST' });
+export const generateShotImage = async (projectId: string, shotId: string, signal?: AbortSignal) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST', signal });
   return handleResponse(res);
 };
 
@@ -319,11 +389,12 @@ export const clearShotFrame = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
-export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string) => {
+export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(promptOverride ? { promptOverride } : {}),
+    signal,
   });
   return handleResponse(res);
 };

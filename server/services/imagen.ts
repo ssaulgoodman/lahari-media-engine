@@ -166,22 +166,36 @@ export const generateCharacterLooks = async (
   styleDNA: string,
   styleImagePath?: string,
   userFeedback?: string,
-  aspectRatio: string = '16:9'
+  aspectRatio: string = '16:9',
+  userRefImagePath?: string,
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
 
   const parts: ContentPart[] = [];
+  const imageLabels: string[] = [];
   if (styleImagePath) {
-    parts.push({ text: 'Image 1 = Style reference' });
+    imageLabels.push('Style reference');
+    parts.push({ text: `Image ${imageLabels.length} = Style reference` });
     parts.push(imagePartFromPath(styleImagePath));
   }
+  if (userRefImagePath) {
+    imageLabels.push('User-supplied character reference');
+    parts.push({ text: `Image ${imageLabels.length} = User-supplied character reference` });
+    parts.push(imagePartFromPath(userRefImagePath));
+  }
 
-  let prompt = `Generate ONE cinematic character portrait in the visual style of Image 1.
+  const styleIdx = styleImagePath ? 1 : undefined;
+  const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-${character.name} — ${character.description}
-
-Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
+  let prompt = styleIdx
+    ? `Generate ONE cinematic character portrait in the visual style of Image ${styleIdx}.`
+    : `Generate ONE cinematic character portrait.`;
+  prompt += `\n\n${character.name} — ${character.description}`;
+  if (userRefIdx) {
+    prompt += `\n\nImage ${userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography) while rendering in the project's visual style${styleIdx ? ` (Image ${styleIdx})` : ''}. The reference image is the source of truth for WHO this character is; the style image is the source of truth for HOW to render them.`;
+  }
+  prompt += `\n\nMid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
 
 Style: ${styleDNA}`;
   if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
@@ -225,7 +239,9 @@ export const generateEnvironmentLooks = async (
   environment: { name: string; description: string },
   styleDNA: string,
   styleImagePath?: string,
-  aspectRatio: string = '16:9'
+  aspectRatio: string = '16:9',
+  userRefImagePath?: string,
+  userNote?: string,
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -235,17 +251,30 @@ export const generateEnvironmentLooks = async (
     parts.push({ text: 'Image 1 = Style reference' });
     parts.push(imagePartFromPath(styleImagePath));
   }
+  if (userRefImagePath) {
+    const idx = styleImagePath ? 2 : 1;
+    parts.push({ text: `Image ${idx} = User-supplied environment reference` });
+    parts.push(imagePartFromPath(userRefImagePath));
+  }
 
-  parts.push({ text: `Generate ONE cinematic environment shot in the visual style of Image 1. No characters or figures.
+  const styleIdx = styleImagePath ? 1 : undefined;
+  const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-${environment.name} — ${environment.description}
+  let prompt = styleIdx
+    ? `Generate ONE cinematic environment shot in the visual style of Image ${styleIdx}. No characters or figures.`
+    : `Generate ONE cinematic environment shot. No characters or figures.`;
+  prompt += `\n\n${environment.name} — ${environment.description}`;
+  if (userRefIdx) {
+    prompt += `\n\nImage ${userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood while rendering in the project's visual style${styleIdx ? ` (Image ${styleIdx})` : ''}. The reference defines WHAT the place looks like; the style defines HOW it's rendered.`;
+  }
+  prompt += `\n\nWide establishing shot, full environment visible, empty scene.
 
-Wide establishing shot, full environment visible, empty scene.
+Style: ${styleDNA}`;
+  if (userNote) prompt += `\n\nDirector note: ${userNote}`;
+  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
 
-Style: ${styleDNA}
-
-One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.` });
+  parts.push({ text: prompt });
 
   const singleCall = async (): Promise<string | null> => {
     try {

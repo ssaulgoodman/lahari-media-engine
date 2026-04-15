@@ -1,8 +1,26 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// Google Application Default Credentials bootstrap.
+// Railway env vars can't hold a multi-line file, so we accept the service
+// account JSON as GOOGLE_APPLICATION_CREDENTIALS_JSON, write it to a temp
+// file on boot, and point GOOGLE_APPLICATION_CREDENTIALS at it. The
+// @google/genai SDK then auto-picks it up when vertexai: true is set.
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const credsPath = path.join(os.tmpdir(), 'gcp-credentials.json');
+  try {
+    fs.writeFileSync(credsPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON, { mode: 0o600 });
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = credsPath;
+    console.log(`[boot] Vertex creds materialized at ${credsPath}`);
+  } catch (err: any) {
+    console.error('[boot] Failed to write GCP creds:', err.message);
+  }
+}
 import { projectsRouter } from './routes/projects.js';
 import { generateRouter } from './routes/generate.js';
 import { queueRouter } from './routes/queue.js';

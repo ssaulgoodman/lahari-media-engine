@@ -104,7 +104,7 @@ const StyleRow: React.FC<StyleRowProps> = React.memo(({ slot, index, expanded, o
                 value={refineInput}
                 onChange={(e) => setRefineInput(e.target.value)}
                 placeholder="Refine this direction…"
-                rows={2}
+                rows={1}
                 className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && refineInput) {
@@ -162,7 +162,7 @@ interface Props {
   onLockConcept: (index: number) => void;
   onLockStyle: (assetId: string, styleDescription?: string) => void;
   onUnlockStyle: () => void;
-  onGenerateLooks: (castMemberId: string, feedback?: string) => void;
+  onGenerateLooks: (castMemberId: string, feedback?: string, refImage?: File) => void | Promise<void>;
   onLockCharacter: (castMemberId: string, assetId: string) => void;
   onAddCast: (name: string, description: string) => void;
   onUpdateCast: (memberId: string, updates: { name?: string; description?: string }) => void;
@@ -170,6 +170,8 @@ interface Props {
   onConfirmDestructive?: (opts: { title: string; description: string; confirmLabel?: string; run: () => any }) => void;
   onGenerateScript: (userNote?: string) => void;
   onGenerateConcepts?: (opts?: { userNote?: string }) => void;
+  onCancelConcepts?: () => void;
+  onCancelScript?: () => void;
   onUnlockConcept?: () => void;
   onUnlockScript?: () => void;
   onUnlockCharacters?: () => void;
@@ -188,13 +190,39 @@ const PHASE_ORDER: Phase[] = ['concept', 'script', 'style', 'characters', 'envir
 const phaseIndex = (p: Phase) => PHASE_ORDER.indexOf(p);
 
 const getActivePhase = (project: ApiProject): Phase => {
-  // Promote based on data presence as well as status — protects against
-  // projects that were left in a stale status after a fork/regen.
-  if (project.environments?.some(e => !!e.referenceImageUrl) || project.status === 'environments_locked' || project.status === 'in_production') return 'environments';
-  if (project.cast?.some(c => !!c.referenceImageUrl) || project.status === 'characters_locked') return 'environments';
-  if (project.styleAssetUrl || project.status === 'style_locked') return 'characters';
-  if ((project.scenes?.length ?? 0) > 0 || project.status === 'scripted') return 'style';
-  if (project.lockedConcept || project.status === 'concept_locked') return 'script';
+  // Status is the authoritative phase marker. Unlocks explicitly revert
+  // status (concept_locked→analyzed, scripted→concept_locked, etc) while
+  // preserving downstream data so the user can browse earlier phases
+  // without losing work. If we derived from data (e.g. lockedConcept still
+  // set), unlock-concept would look broken — the concept panel would still
+  // render as locked. Trust status; fall back to data only when the status
+  // column is missing/unknown.
+  switch (project.status) {
+    case 'uploaded':
+    case 'analyzing':
+    case 'analyzed':
+    case 'error':
+      return 'concept';
+    case 'concept_locked':
+      return 'script';
+    case 'scripted':
+      return 'style';
+    case 'style_locked':
+      return 'characters';
+    case 'characters_locked':
+    case 'environments_locked':
+    case 'in_production':
+    case 'rendered':
+      return 'environments';
+  }
+
+  // Unknown status — derive from data so legacy / hand-imported projects
+  // don't get forced back to concept.
+  if (project.environments?.some(e => !!e.referenceImageUrl)) return 'environments';
+  if (project.cast?.some(c => !!c.referenceImageUrl)) return 'environments';
+  if (project.styleAssetUrl) return 'characters';
+  if ((project.scenes?.length ?? 0) > 0) return 'style';
+  if (project.lockedConcept) return 'script';
   return 'concept';
 };
 
@@ -215,13 +243,98 @@ export const AnalysisEditor: React.FC<Props> = ({
   project, isLoading, looksLoading, lookCandidates, onDiscardLookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
-  onGenerateScript, onGenerateConcepts, onUnlockConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject, onConfirmDestructive,
+  onGenerateScript, onGenerateConcepts, onCancelConcepts, onCancelScript, onUnlockConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject, onConfirmDestructive,
 }) => {
   const activePhase = getActivePhase(project);
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
   const [activeCastId, setActiveCastId] = useState<string | null>(project.cast[0]?.id || null);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(project.environments[0]?.id || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Two-mode uploads. "As guide" sends the image to Gemini alongside the style
+  // ref so the 3 candidates match the user's reference while being rendered in
+  // the project style. "As-is" skips Gemini entirely and locks the uploaded
+  // file as the character/env's reference — reuses an asset from a past run.
+  const castGuideUploadRef = useRef<HTMLInputElement>(null);
+  const castAsIsUploadRef = useRef<HTMLInputElement>(null);
+  const envGuideUploadRef = useRef<HTMLInputElement>(null);
+  const envAsIsUploadRef = useRef<HTMLInputElement>(null);
+  const styleDirectUploadRef = useRef<HTMLInputElement>(null);
+  const [castUploading, setCastUploading] = useState<Set<string>>(new Set());
+  const [envUploading, setEnvUploading] = useState<Set<string>>(new Set());
+
+  // Staged "upload as guide" files awaiting a user note before firing Gemini.
+  // Without this the image goes in blind — the user can't say "just take the
+  // face" or "use the composition but re-render in our style".
+  const [pendingCastRef, setPendingCastRef] = useState<{ memberId: string; file: File; previewUrl: string; note: string } | null>(null);
+  const [pendingEnvRef, setPendingEnvRef] = useState<{ envId: string; file: File; previewUrl: string; note: string } | null>(null);
+  useEffect(() => () => {
+    if (pendingCastRef?.previewUrl) URL.revokeObjectURL(pendingCastRef.previewUrl);
+    if (pendingEnvRef?.previewUrl) URL.revokeObjectURL(pendingEnvRef.previewUrl);
+  }, [pendingCastRef?.previewUrl, pendingEnvRef?.previewUrl]);
+
+  const handleCastUploadAsIs = async (castMemberId: string, file: File) => {
+    setCastUploading(prev => new Set([...prev, castMemberId]));
+    try {
+      const updated = await api.uploadCharacterReference(project.id, castMemberId, file);
+      onSetProject?.(updated);
+    } catch (err: any) {
+      console.error('Character upload failed:', err);
+    } finally {
+      setCastUploading(prev => { const next = new Set(prev); next.delete(castMemberId); return next; });
+    }
+  };
+
+  const stageCastRef = (castMemberId: string, file: File) => {
+    if (pendingCastRef?.previewUrl) URL.revokeObjectURL(pendingCastRef.previewUrl);
+    setPendingCastRef({ memberId: castMemberId, file, previewUrl: URL.createObjectURL(file), note: '' });
+  };
+  const fireCastRefWithNote = () => {
+    if (!pendingCastRef) return;
+    const { memberId, file, note } = pendingCastRef;
+    URL.revokeObjectURL(pendingCastRef.previewUrl);
+    setPendingCastRef(null);
+    onGenerateLooks(memberId, note.trim() || undefined, file);
+  };
+  const clearPendingCastRef = () => {
+    if (pendingCastRef?.previewUrl) URL.revokeObjectURL(pendingCastRef.previewUrl);
+    setPendingCastRef(null);
+  };
+
+  const handleEnvUploadAsIs = async (environmentId: string, file: File) => {
+    setEnvUploading(prev => new Set([...prev, environmentId]));
+    try {
+      const updated = await api.uploadEnvironmentReference(project.id, environmentId, file);
+      onSetProject?.(updated);
+    } catch (err: any) {
+      console.error('Environment upload failed:', err);
+    } finally {
+      setEnvUploading(prev => { const next = new Set(prev); next.delete(environmentId); return next; });
+    }
+  };
+
+  const stageEnvRef = (environmentId: string, file: File) => {
+    if (pendingEnvRef?.previewUrl) URL.revokeObjectURL(pendingEnvRef.previewUrl);
+    setPendingEnvRef({ envId: environmentId, file, previewUrl: URL.createObjectURL(file), note: '' });
+  };
+  const fireEnvRefWithNote = () => {
+    if (!pendingEnvRef) return;
+    const { envId, file, note } = pendingEnvRef;
+    URL.revokeObjectURL(pendingEnvRef.previewUrl);
+    setPendingEnvRef(null);
+    // Env gen doesn't have a note path yet — we'll thread it in below.
+    handleEnvGenerate(envId, file, note.trim() || undefined);
+  };
+  const clearPendingEnvRef = () => {
+    if (pendingEnvRef?.previewUrl) URL.revokeObjectURL(pendingEnvRef.previewUrl);
+    setPendingEnvRef(null);
+  };
+
+  // Snap viewPhase back whenever an unlock (or forward lock) moves activePhase.
+  // Without this, the unlocked phase stays rendered as "locked" because
+  // viewPhase is stuck at its previous value.
+  useEffect(() => {
+    setViewPhase(prev => prev === activePhase ? prev : activePhase);
+  }, [activePhase]);
 
   // Single popover from the sticky context bar — only one open at a time.
   const [contextPopover, setContextPopover] = useState<'render' | 'analysis' | null>(null);
@@ -315,10 +428,10 @@ export const AnalysisEditor: React.FC<Props> = ({
 
   // ─── Environment Handlers ──────────────────────────────────────
 
-  const handleEnvGenerate = async (envId: string) => {
+  const handleEnvGenerate = async (envId: string, refImage?: File, note?: string) => {
     setEnvGenerating(prev => new Set(prev).add(envId));
     try {
-      const result = await api.generateEnvironmentLook(project.id, envId);
+      const result = await api.generateEnvironmentLook(project.id, envId, undefined, refImage, note);
       setEnvLooks(prev => ({ ...prev, [envId]: result.looks || [] }));
       onSetProject?.(result.project);
     } catch (err: any) {
@@ -716,19 +829,53 @@ export const AnalysisEditor: React.FC<Props> = ({
                 </div>
               </div>
             ) : project.conceptOptions.length === 0 ? (
-              /* Empty state — first-time generate */
-              <div className="surface rounded-xl p-10 flex flex-col items-center justify-center text-center space-y-4">
-                <h3 className="text-sm font-medium text-white">No concepts yet</h3>
-                <p className="text-zinc-400 text-xs max-w-md">Claude will propose 3 creative directions based on the song's lyrics, mood, and musical structure.</p>
+              /* Empty state — first-time generate. Optional nudge upfront so
+                  the artist can steer the first pass (e.g. "make it abstract"
+                  or "focus on devotion over mythology") instead of burning a
+                  generation cycle just to regenerate with a note. */
+              <div className="surface rounded-xl p-10 flex flex-col items-center text-center space-y-4">
+                <div className="space-y-1.5">
+                  <h3 className="text-sm font-medium text-white">No concepts yet</h3>
+                  <p className="text-zinc-400 text-xs max-w-md">Claude will propose 3 creative directions based on the song's lyrics, mood, and musical structure. Optional: add a nudge below to steer the first pass.</p>
+                </div>
                 {onGenerateConcepts && (
-                  <button
-                    onClick={() => onGenerateConcepts()}
-                    disabled={isLoading}
-                    className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
-                  >
-                    {isLoading && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
-                    {isLoading ? 'Generating concepts...' : 'Generate Concepts'}
-                  </button>
+                  <div className="w-full max-w-lg space-y-3">
+                    <AutoGrowTextarea
+                      value={conceptNote}
+                      onChange={e => setConceptNote(e.target.value)}
+                      placeholder="Optional nudge — e.g. 'more abstract, less literal deity imagery' or 'focus on devotion, not mythology'"
+                      rows={1}
+                      disabled={isLoading}
+                      className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed text-left disabled:opacity-50"
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && !isLoading) {
+                          e.preventDefault();
+                          onGenerateConcepts(conceptNote.trim() ? { userNote: conceptNote } : undefined);
+                          setConceptNote('');
+                        }
+                      }}
+                    />
+                    {isLoading ? (
+                      <button
+                        onClick={() => onCancelConcepts?.()}
+                        className="bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] px-6 py-2.5 rounded-md font-semibold text-sm flex items-center gap-2 transition-colors mx-auto"
+                        title="Stop the in-flight concept generation. Server keeps running but the UI unblocks so you can retry or refine."
+                      >
+                        <div className="w-3.5 h-3.5 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>
+                        Generating — click to stop
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          onGenerateConcepts(conceptNote.trim() ? { userNote: conceptNote } : undefined);
+                          setConceptNote('');
+                        }}
+                        className="bg-white text-black px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-zinc-200 flex items-center gap-2 transition-colors mx-auto"
+                      >
+                        {conceptNote.trim() ? 'Generate with this nudge' : 'Generate Concepts'}
+                      </button>
+                    )}
+                  </div>
                 )}
                 {isLoading && <p className="text-[11px] text-zinc-400">Claude Opus is thinking — typically 20–40s.</p>}
               </div>
@@ -747,13 +894,23 @@ export const AnalysisEditor: React.FC<Props> = ({
                       >
                         {showConceptPrompt ? 'Hide prompt' : 'View prompt'}
                       </button>
-                      <button
-                        onClick={() => { onGenerateConcepts({ userNote: conceptNote || undefined }); setConceptNote(''); }}
-                        disabled={isLoading}
-                        className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1.5 transition-colors disabled:opacity-50"
-                      >
-                        Regenerate
-                      </button>
+                      {isLoading ? (
+                        <button
+                          onClick={() => onCancelConcepts?.()}
+                          className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1.5 transition-colors flex items-center gap-1.5"
+                          title="Stop the in-flight generation."
+                        >
+                          <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>
+                          Stop
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => { onGenerateConcepts({ userNote: conceptNote || undefined }); setConceptNote(''); }}
+                          className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1.5 transition-colors"
+                        >
+                          Regenerate
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -764,7 +921,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                       value={conceptNote}
                       onChange={e => setConceptNote(e.target.value)}
                       placeholder="Regenerate note — e.g. 'more abstract' or 'focus on devotion not mythology'"
-                      rows={2}
+                      rows={1}
                       className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                       onKeyDown={e => {
                         if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && conceptNote.trim()) {
@@ -872,14 +1029,23 @@ export const AnalysisEditor: React.FC<Props> = ({
                       {showScriptPrompt ? 'Hide prompt' : 'View prompt'}
                     </button>
                   )}
-                  <button
-                    onClick={() => { onGenerateScript(scriptNote || undefined); setScriptNote(''); }}
-                    disabled={isLoading}
-                    className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 disabled:opacity-50 flex items-center gap-2 transition-colors"
-                  >
-                    {isLoading && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
-                    {isLoading ? 'Writing...' : project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
-                  </button>
+                  {isLoading ? (
+                    <button
+                      onClick={() => onCancelScript?.()}
+                      className="bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] px-5 py-2 rounded-md font-semibold text-xs flex items-center gap-2 transition-colors"
+                      title="Stop the in-flight script generation."
+                    >
+                      <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>
+                      Stop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { onGenerateScript(scriptNote || undefined); setScriptNote(''); }}
+                      className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 flex items-center gap-2 transition-colors"
+                    >
+                      {project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -890,7 +1056,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                     value={scriptNote}
                     onChange={e => setScriptNote(e.target.value)}
                     placeholder="Regenerate note — e.g. 'make scene 3 more intimate' or 'add more deity close-ups'"
-                    rows={2}
+                    rows={1}
                     className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && scriptNote.trim()) {
@@ -1125,19 +1291,19 @@ export const AnalysisEditor: React.FC<Props> = ({
                       </div>
                     )}
 
-                    <div className="flex gap-3">
+                    <div className="flex gap-2 items-center">
                       <AutoGrowTextarea
                         value={brainstormNotes}
                         onChange={(e) => setBrainstormNotes(e.target.value)}
                         placeholder="Style preferences..."
-                        rows={2}
-                        className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                        rows={1}
+                        className="flex-1 surface-inset rounded-md px-3 py-1.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); handleBrainstorm(); } }}
                       />
                       <button
                         onClick={handleBrainstorm}
                         disabled={isBrainstorming}
-                        className="px-5 py-2.5 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 whitespace-nowrap transition-colors"
+                        className="px-3 py-1.5 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 whitespace-nowrap transition-colors"
                       >
                         {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate' : 'Brainstorm'}
                       </button>
@@ -1181,13 +1347,13 @@ export const AnalysisEditor: React.FC<Props> = ({
                     </p>
                   </div>
 
-                  <div className="flex gap-3">
+                  <div className="flex gap-2 items-center">
                     <AutoGrowTextarea
                       value={brainstormNotes}
                       onChange={(e) => setBrainstormNotes(e.target.value)}
                       placeholder="Style preferences... e.g. 'painterly', 'dark and moody', 'Ravi Varma inspired'"
-                      rows={2}
-                      className="flex-1 surface-inset rounded-md px-4 py-2.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                      rows={1}
+                      className="flex-1 surface-inset rounded-md px-3 py-1.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                       onKeyDown={(e) => { if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); handleBrainstorm(); } }}
                     />
                     {styleSlots.length > 0 && (
@@ -1198,10 +1364,39 @@ export const AnalysisEditor: React.FC<Props> = ({
                         {expandedStyleIdxs.size === styleSlots.length ? 'Collapse all' : 'Expand all'}
                       </button>
                     )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={styleDirectUploadRef}
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setIsLocking(true);
+                        try {
+                          const updated = await api.uploadAndLockStyle(project.id, file);
+                          onSetProject?.(updated);
+                        } catch (err: any) {
+                          console.error('Upload-and-lock style failed:', err);
+                        } finally {
+                          setIsLocking(false);
+                          if (e.target) e.target.value = '';
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={() => styleDirectUploadRef.current?.click()}
+                      disabled={isLocking}
+                      className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-[11px] whitespace-nowrap transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                      title="Upload your own reference image and lock it as the style directly — skips brainstorm + visualize."
+                    >
+                      {isLocking && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                      {isLocking ? 'Uploading…' : 'Upload reference'}
+                    </button>
                     <button
                       onClick={handleBrainstorm}
                       disabled={isBrainstorming}
-                      className="px-5 py-2.5 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 whitespace-nowrap transition-colors"
+                      className="px-3 py-1.5 bg-white text-black rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 whitespace-nowrap transition-colors"
                     >
                       {isBrainstorming ? 'Thinking...' : styleSlots.length > 0 ? 'Regenerate' : 'Brainstorm 4 Directions'}
                     </button>
@@ -1496,17 +1691,95 @@ export const AnalysisEditor: React.FC<Props> = ({
                           {promptPreview === activeMember.id ? 'Hide prompt' : 'View prompt'}
                         </button>
                       </div>
-                      <button
-                        onClick={() => {
-                          const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
-                          onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
-                        }}
-                        disabled={looksLoading.has(activeMember.id)}
-                        className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors flex-shrink-0"
-                      >
-                        {looksLoading.has(activeMember.id) ? 'Generating…' : activeMember.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
-                      </button>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          ref={castGuideUploadRef}
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file && activeMember) stageCastRef(activeMember.id, file);
+                            if (e.target) e.target.value = '';
+                          }}
+                        />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          ref={castAsIsUploadRef}
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file && activeMember) handleCastUploadAsIs(activeMember.id, file);
+                            if (e.target) e.target.value = '';
+                          }}
+                        />
+                        <button
+                          onClick={() => castGuideUploadRef.current?.click()}
+                          disabled={looksLoading.has(activeMember.id) || castUploading.has(activeMember.id)}
+                          className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-xs transition-colors disabled:opacity-50"
+                          title="Upload a reference image — Gemini will render 3 candidates guided by it in the project's style."
+                        >
+                          Upload as guide
+                        </button>
+                        <button
+                          onClick={() => castAsIsUploadRef.current?.click()}
+                          disabled={castUploading.has(activeMember.id) || looksLoading.has(activeMember.id)}
+                          className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                          title="Use this image directly as the locked reference — skips Gemini generation entirely. Good for reusing a look from a past run."
+                        >
+                          {castUploading.has(activeMember.id) && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                          {castUploading.has(activeMember.id) ? 'Uploading…' : 'Use as-is'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            const feedbackEl = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLInputElement;
+                            onGenerateLooks(activeMember.id, feedbackEl?.value || undefined);
+                          }}
+                          disabled={looksLoading.has(activeMember.id)}
+                          className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                        >
+                          {looksLoading.has(activeMember.id) ? 'Generating…' : activeMember.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Pending "upload as guide" — the artist picks a file,
+                        then writes exactly what Gemini should take from it
+                        before firing the 3-call batch. */}
+                    {pendingCastRef?.memberId === activeMember.id && (
+                      <div className="px-5 py-3 border-b border-white/[0.06] flex items-start gap-3 bg-white/[0.02]">
+                        <img src={pendingCastRef.previewUrl} alt="Staged reference" className="w-16 h-16 object-cover rounded-md border border-white/[0.08] flex-shrink-0" />
+                        <div className="flex-1 space-y-2 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] uppercase tracking-wide text-zinc-400">Reference ready</span>
+                            <span className="text-[11px] text-zinc-400">— tell Gemini how to use it</span>
+                          </div>
+                          <AutoGrowTextarea
+                            value={pendingCastRef.note}
+                            onChange={e => setPendingCastRef(prev => prev ? { ...prev, note: e.target.value } : prev)}
+                            placeholder="e.g. 'match the face and crown but re-render in our cinematic style' · 'use the composition, not the palette' · 'keep the pose, give him brighter lighting'"
+                            rows={1}
+                            autoFocus
+                            className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); fireCastRefWithNote(); }
+                              if (e.key === 'Escape') clearPendingCastRef();
+                            }}
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={clearPendingCastRef}
+                              className="text-[11px] text-zinc-400 hover:text-zinc-300 px-2 py-1 transition-colors"
+                            >Cancel</button>
+                            <button
+                              onClick={fireCastRefWithNote}
+                              className="text-[11px] bg-white text-black rounded-md px-3 py-1.5 font-semibold hover:bg-zinc-200 transition-colors"
+                            >Generate 3 looks</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Prompt preview */}
                     {promptPreview === activeMember.id && (
@@ -1560,8 +1833,15 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                           {activeLooks.map((look) => (
                             <div key={look.id} className="relative group cursor-pointer bg-black/10">
                               <img src={look.url} alt={activeMember.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                                <button onClick={() => onLockCharacter(activeMember.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                                <button
+                                  onClick={() => onLockCharacter(activeMember.id, look.id)}
+                                  className="pointer-events-auto bg-white/95 backdrop-blur text-black px-3 py-1.5 rounded-md text-xs font-medium hover:bg-white transition-colors flex items-center gap-1.5"
+                                  aria-label="Lock this look"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                  Lock
+                                </button>
                               </div>
                             </div>
                           ))}
@@ -1605,7 +1885,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                       <AutoGrowTextarea
                         key={`feedback-${activeMember.id}`}
                         placeholder="Feedback — e.g. 'make the crown bigger'"
-                        rows={2}
+                        rows={1}
                         className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                         autoComplete="off"
                         onKeyDown={(e) => {
@@ -1781,14 +2061,90 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                             {promptPreview === activeEnv.id ? 'Hide prompt' : 'View prompt'}
                           </button>
                         </div>
-                        <button
-                          onClick={() => handleEnvGenerate(activeEnv.id)}
-                          disabled={envGenerating.has(activeEnv.id)}
-                          className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors flex-shrink-0"
-                        >
-                          {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
-                        </button>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={envGuideUploadRef}
+                            className="hidden"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file && activeEnv) stageEnvRef(activeEnv.id, file);
+                              if (e.target) e.target.value = '';
+                            }}
+                          />
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={envAsIsUploadRef}
+                            className="hidden"
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              if (file && activeEnv) handleEnvUploadAsIs(activeEnv.id, file);
+                              if (e.target) e.target.value = '';
+                            }}
+                          />
+                          <button
+                            onClick={() => envGuideUploadRef.current?.click()}
+                            disabled={envGenerating.has(activeEnv.id) || envUploading.has(activeEnv.id)}
+                            className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-xs transition-colors disabled:opacity-50"
+                            title="Upload a reference image — Gemini will render 3 candidates guided by it in the project's style."
+                          >
+                            Upload as guide
+                          </button>
+                          <button
+                            onClick={() => envAsIsUploadRef.current?.click()}
+                            disabled={envUploading.has(activeEnv.id) || envGenerating.has(activeEnv.id)}
+                            className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-xs transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                            title="Use this image directly as the locked reference — skips Gemini generation. Good for reusing from a past run."
+                          >
+                            {envUploading.has(activeEnv.id) && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                            {envUploading.has(activeEnv.id) ? 'Uploading…' : 'Use as-is'}
+                          </button>
+                          <button
+                            onClick={() => handleEnvGenerate(activeEnv.id)}
+                            disabled={envGenerating.has(activeEnv.id)}
+                            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                          >
+                            {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Pending "upload as guide" for this environment. */}
+                      {pendingEnvRef?.envId === activeEnv.id && (
+                        <div className="px-5 py-3 border-b border-white/[0.06] flex items-start gap-3 bg-white/[0.02]">
+                          <img src={pendingEnvRef.previewUrl} alt="Staged reference" className="w-16 h-16 object-cover rounded-md border border-white/[0.08] flex-shrink-0" />
+                          <div className="flex-1 space-y-2 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Reference ready</span>
+                              <span className="text-[11px] text-zinc-400">— tell Gemini how to use it</span>
+                            </div>
+                            <AutoGrowTextarea
+                              value={pendingEnvRef.note}
+                              onChange={e => setPendingEnvRef(prev => prev ? { ...prev, note: e.target.value } : prev)}
+                              placeholder="e.g. 'match the architecture but re-render at golden hour' · 'keep the layout, change palette to our style'"
+                              rows={1}
+                              autoFocus
+                              className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); fireEnvRefWithNote(); }
+                                if (e.key === 'Escape') clearPendingEnvRef();
+                              }}
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={clearPendingEnvRef}
+                                className="text-[11px] text-zinc-400 hover:text-zinc-300 px-2 py-1 transition-colors"
+                              >Cancel</button>
+                              <button
+                                onClick={fireEnvRefWithNote}
+                                className="text-[11px] bg-white text-black rounded-md px-3 py-1.5 font-semibold hover:bg-zinc-200 transition-colors"
+                              >Generate 3 looks</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Prompt preview */}
                       {promptPreview === activeEnv.id && (
@@ -1843,7 +2199,14 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                               <div key={look.id} className="relative group cursor-pointer bg-black/10">
                                 <img src={look.url} alt={activeEnv.name} onClick={() => setModalImage(look.url)} className="w-full h-auto object-contain" />
                                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                                  <button onClick={() => handleEnvLock(activeEnv.id, look.id)} className="pointer-events-auto bg-white text-black px-4 py-2 rounded-md text-sm font-semibold hover:bg-zinc-200 transition-colors">Lock This Look</button>
+                                  <button
+                                    onClick={() => handleEnvLock(activeEnv.id, look.id)}
+                                    className="pointer-events-auto bg-white/95 backdrop-blur text-black px-3 py-1.5 rounded-md text-xs font-medium hover:bg-white transition-colors flex items-center gap-1.5"
+                                    aria-label="Lock this look"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                    Lock
+                                  </button>
                                 </div>
                               </div>
                             ))}
