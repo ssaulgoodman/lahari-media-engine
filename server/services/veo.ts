@@ -102,7 +102,14 @@ export const generateVideo = async (
   startImagePath: string,
   motionPrompt: string,
   endImagePath?: string,
-  opts?: { resolution?: '720p' | '1080p'; aspectRatio?: '16:9' | '9:16'; durationSec?: number; modelKey?: VeoModelKey }
+  opts?: {
+    resolution?: '720p' | '1080p';
+    aspectRatio?: '16:9' | '9:16';
+    durationSec?: number;
+    modelKey?: VeoModelKey;
+    /** Up to 3 asset reference images (character/environment refs) for Veo 3.1. */
+    referenceImagePaths?: string[];
+  }
 ): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
   const ai = getAI();
   const startBase64 = await readAsBase64(startImagePath);
@@ -136,9 +143,22 @@ export const generateVideo = async (
     };
   }
 
-  // Pick the right model identifier for the transport we're actually on.
+  // Reference images — character/environment refs so Veo maintains consistency.
+  // Up to 3 asset images, only on 3.1 models.
+  if (opts?.referenceImagePaths?.length && model.supportsLastFrame) {
+    const refs: any[] = [];
+    for (const refPath of opts.referenceImagePaths.slice(0, 3)) {
+      const refBase64 = await readAsBase64(refPath);
+      refs.push({
+        image: { imageBytes: refBase64, mimeType: 'image/png' },
+        referenceType: 'asset',
+      });
+    }
+    if (refs.length > 0) config.referenceImages = refs;
+  }
+
   const modelId = model.modelId;
-  console.log(`[veo] Generating video with model=${modelId}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+  console.log(`[veo] model=${modelId}, refs=${opts?.referenceImagePaths?.length || 0}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   let operation = await ai.models.generateVideos({
     model: modelId,

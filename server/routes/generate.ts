@@ -1495,6 +1495,23 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
     const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
 
+    // Collect character + environment reference images for Veo 3.1.
+    // Up to 3 asset refs so Veo maintains character/environment consistency.
+    const referenceImagePaths: string[] = [];
+    for (const c of activeCast) {
+      if (c.reference_asset_id && referenceImagePaths.length < 3) {
+        const refAsset = await selectOne('assets', { id: c.reference_asset_id });
+        if (refAsset) referenceImagePaths.push(refAsset.file_path);
+      }
+    }
+    if (shot.environment_id && referenceImagePaths.length < 3) {
+      const env = await selectOne('environments', { id: shot.environment_id });
+      if (env?.reference_asset_id) {
+        const envAsset = await selectOne('assets', { id: env.reference_asset_id });
+        if (envAsset) referenceImagePaths.push(envAsset.file_path);
+      }
+    }
+
     // Reverse-chain: if another shot pushed its start frame into this shot's
     // end_image_asset_id, pass it to Veo as the target last frame so the clip
     // lands exactly where the next shot begins. Skip silently for models
@@ -1525,18 +1542,19 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
         resolution,
         durationSec: shot.duration,
         modelKey: videoModelKey as VeoModelKey,
+        referenceImagePaths,
       });
       videoPath = result.videoPath;
       const veoModel = VEO_MODELS[videoModelKey as VeoModelKey];
       costEstimate = veoModel.costPerSec * result.durationSec;
       modelId = result.modelId;
     } else {
-      // Unknown key — fall back to Veo Fast
       const result = await generateVideo(imageAsset.file_path, veoPrompt, endImagePath, {
         aspectRatio: aspect,
         resolution,
         durationSec: shot.duration,
         modelKey: 'veo-3.1-fast',
+        referenceImagePaths,
       });
       videoPath = result.videoPath;
       costEstimate = VEO_MODELS['veo-3.1-fast'].costPerSec * result.durationSec;
