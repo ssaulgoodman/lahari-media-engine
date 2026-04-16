@@ -68,19 +68,21 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
 export const VEO_MODELS = {
   'veo-3.1-fast': {
     id: 'veo-3.1-fast-generate-preview',
-    vertexId: 'veo-3.1-fast-generate-001',
+    // Revert to 3.0 GA IDs — 3.1 IDs returned empty responses on Vertex.
+    // lastFrame support deferred until 3.1 is confirmed available.
+    vertexId: 'veo-3.0-fast-generate-001',
     label: 'Veo 3.1 Fast',
     durations: [8],
     costPerSec: 0.10,
-    supportsLastFrame: true,
+    supportsLastFrame: false,
   },
   'veo-3.1': {
     id: 'veo-3.1-generate-preview',
-    vertexId: 'veo-3.1-generate-001',
+    vertexId: 'veo-3.0-generate-001',
     label: 'Veo 3.1',
     durations: [4, 6, 8],
     costPerSec: 0.20,
-    supportsLastFrame: true,
+    supportsLastFrame: false,
   },
 } as const;
 

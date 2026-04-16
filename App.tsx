@@ -658,7 +658,7 @@ const App: React.FC = () => {
           };
         });
       } else {
-        setError(`Video generation failed: ${err.message}`);
+        setError(err.message);
         setProject(prev => {
           if (!prev) return prev;
           return {

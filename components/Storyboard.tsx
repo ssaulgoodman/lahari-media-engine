@@ -820,10 +820,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     )}
 
-                    {/* Error */}
+                    {/* Error — inline banner below the media, not floating on top */}
                     {isError && !isGenerating && (
-                      <div className="absolute bottom-2 left-2 right-2 bg-red-500/10 border border-red-500/20 rounded-md px-2 py-1 z-20">
-                        <p className="text-xs text-red-300">Generation failed</p>
+                      <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] flex items-center gap-2">
+                        <span className="text-xs text-red-300">Generation failed — click regen to retry</span>
                       </div>
                     )}
 
