@@ -1461,12 +1461,14 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const mood = concept.mood || 'Cinematic';
 
     const veoPromptParts = [motionDesc];
-    if (scene?.narrative_description) {
-      // One-line scene context so Veo understands the emotional beat
-      const narrativeBrief = scene.narrative_description.length > 120
-        ? scene.narrative_description.substring(0, 120) + '...'
-        : scene.narrative_description;
-      veoPromptParts.push(narrativeBrief);
+    // Use the shot's own visual prompt for scene context — NOT the scene
+    // narrative, which describes the whole scene and can mention characters
+    // that aren't in this specific shot.
+    if (shot.visual_prompt) {
+      const visualBrief = shot.visual_prompt.length > 150
+        ? shot.visual_prompt.substring(0, 150) + '...'
+        : shot.visual_prompt;
+      veoPromptParts.push(visualBrief);
     }
     if (castNames) veoPromptParts.push(`Characters: ${castNames}`);
     veoPromptParts.push(`${mood} mood`);
