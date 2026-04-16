@@ -1461,9 +1461,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const mood = concept.mood || 'Cinematic';
 
     const veoPromptParts = [motionDesc];
-    // Use the shot's own visual prompt for scene context — NOT the scene
-    // narrative, which describes the whole scene and can mention characters
-    // that aren't in this specific shot.
+    // Use the shot's own visual prompt for scene context.
     if (shot.visual_prompt) {
       const visualBrief = shot.visual_prompt.length > 150
         ? shot.visual_prompt.substring(0, 150) + '...'
@@ -1472,6 +1470,18 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     }
     if (castNames) veoPromptParts.push(`Characters: ${castNames}`);
     veoPromptParts.push(`${mood} mood`);
+
+    // Describe reference images in the prompt so Veo knows what each ref is.
+    // The API doesn't have a label field on referenceImages, so we use text.
+    const refNotes: string[] = [];
+    activeCast.forEach((c: any) => {
+      if (c.reference_asset_id) refNotes.push(`Reference image: ${c.name} (character — match their appearance)`);
+    });
+    if (shot.environment_id) {
+      const env = await selectOne('environments', { id: shot.environment_id });
+      if (env?.reference_asset_id) refNotes.push(`Reference image: ${env.name} (environment — match this setting)`);
+    }
+    if (refNotes.length) veoPromptParts.push(refNotes.join('. '));
     // Continuity context — only for shots Claude tagged as 'prev_shot'.
     if (shot.continuity_from === 'prev_shot' && shot.continuity_description) {
       veoPromptParts.push(`Starting state (from previous shot): ${shot.continuity_description}`);
@@ -1482,7 +1492,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
 
     // Default to 3.0 Fast (known working). Old projects stored 'veo-3.1' or
     // 'veo-3.1-fast' — those are now separate model options the user can pick.
-    const rawModelKey = project.video_model || 'veo-3.0-fast';
+    const rawModelKey = project.video_model || 'veo-3.1-fast';
     const videoModelKey = rawModelKey;
     const isFal = videoModelKey in FAL_VIDEO_MODELS;
     const isVeo = videoModelKey in VEO_MODELS;

@@ -191,7 +191,12 @@ ENVIRONMENT rules:
 SCENE rules:
 - One scene per musical section
 - narrativeDescription: what happens, 1-2 sentences
-- Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)`;
+- Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)
+
+IMPORTANT — character and environment assignment:
+- Every shot MUST have an environmentName from the environment list. The environment reference image is sent to the video model for visual consistency.
+- Every character who appears in a shot — even briefly (walks into frame, hand visible, background presence) — MUST be listed in castNames. Character reference images are sent to the video model to maintain appearance consistency.
+- Do NOT skip character/environment assignment. The video model uses these to keep the look consistent across shots.`;
 
   const response = await client.messages.create({
     model: SONNET,
@@ -330,12 +335,14 @@ ${shotList}
 
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: What we SEE in the frame. 1-2 sentences.
-  Include: composition, character physical details (from cast list), environment, action/pose.
-  Reference characters by their mythological identity.
+- visualPrompt: What we SEE in the START FRAME. 1-2 sentences.
+  Include: composition, action/pose, environment details.
+  Reference characters by name — their reference images are sent separately to the image and video models, so focus on WHAT they're DOING, not detailed physical description.
+  ONLY include characters listed in that shot's Cast field. If Cast is empty, no characters in the frame.
   Do NOT include art style, lighting, or color — the style system handles that.
 
-- motionPrompt: How the camera and characters MOVE. 1 sentence.
+- motionPrompt: How the camera and characters MOVE during the shot. 1 sentence.
+  If a character enters the frame mid-shot, describe that motion — their reference image is sent to the video model for appearance consistency.
   Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
 
 - continuityFrom: How this shot relates to the one before it.

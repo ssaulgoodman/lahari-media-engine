@@ -1009,11 +1009,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   {allRefs.map((ref, i) => (
                                     <div
                                       key={i}
-                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02]"
-                                      title={`${ref.label} — sent as a reference image to the model`}
+                                      className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
+                                      onClick={() => ref.url && setModalImage(ref.url)}
                                     >
                                       {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover" alt="" />}
                                       <span>{ref.label}</span>
+                                      {ref.url && (
+                                        <div className="hidden group-hover/ref:block fixed z-[200] pointer-events-none" style={{ transform: 'translate(-10%, -105%)' }}>
+                                          <img src={ref.url} className="w-44 h-44 object-cover rounded-lg shadow-xl border border-white/[0.1]" alt={ref.label} />
+                                          <div className="text-[10px] text-zinc-300 mt-1 text-center font-medium">{ref.label}</div>
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -1114,11 +1120,27 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                 style={{ height: 'auto', overflow: 'hidden' }}
                                 ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                               />
+                              {/* Direct regen — edit the prompt above, hit this button */}
+                              {activeTab === 'image' && (
+                                <div className="flex items-center gap-3 mt-2">
+                                  <button
+                                    onClick={() => onGenerateImage(activeScene.id, shot.id)}
+                                    disabled={isGenerating || (!actionable && !shot.locked)}
+                                    className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                                  >
+                                    {hasStartFrame ? 'Regenerate frame' : 'Generate frame'}
+                                  </button>
+                                  {hasStartFrame && <span className="text-[11px] text-zinc-400">with the prompt above + attached refs</span>}
+                                </div>
+                              )}
                               {hasStartFrame && (
+                                <>
+                                <div className="h-px bg-white/[0.06] my-3" />
+                                <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">AI refine — describe what's wrong, Claude rewrites the prompt</div>
                                 <div className="relative flex gap-2">
                                   <AutoGrowTextarea
                                     id={`refine-${shot.id}`}
-                                    placeholder="What's wrong? e.g. 'face not crisp, @character lighting too flat'"
+                                    placeholder="What's wrong? e.g. 'face not crisp, @Arjun lighting too flat'"
                                     rows={1}
                                     className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                                     onChange={(e) => {
@@ -1255,6 +1277,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     );
                                   })()}
                                 </div>
+                              </>
                               )}
                             </>
                           )}
