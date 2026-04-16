@@ -1,9 +1,13 @@
 import Database from 'better-sqlite3';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, '..', 'storage', 'lahari.db');
+const STORAGE_DIR = path.join(__dirname, '..', 'storage');
+const DB_PATH = path.join(STORAGE_DIR, 'lahari.db');
+
+fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 

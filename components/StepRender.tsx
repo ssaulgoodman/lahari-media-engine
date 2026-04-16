@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { ApiProject } from '../types';
+import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
 
 interface Props {
   project: ApiProject;
@@ -97,7 +98,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         ]);
 
         const data = await ffmpeg.readFile('out.mp4');
-        const blob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
+        const blob = new Blob([data as any], { type: 'video/mp4' });
         const url = URL.createObjectURL(blob);
         setFinalBlob(blob);
         setFinalVideoUrl(url);
@@ -135,12 +136,31 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     }
   };
 
+  // Shot videos that the timeline preview should seed with. Derived once from
+  // the project; kept stable so the editor only auto-populates on mount.
+  const previewClips = useMemo<InitialClip[]>(
+    () =>
+      project.scenes
+        .flatMap((s) => s.shots)
+        .filter((s) => !!s.videoUrl)
+        .map((s) => ({ src: s.videoUrl!, name: `shot-${s.id}` })),
+    // Only re-seed if the set of video URLs actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],
+  );
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-32">
+    <div className="max-w-5xl mx-auto space-y-8 pb-32">
         <div className="text-center space-y-2 mb-8">
             <h2 className="text-2xl font-display font-medium text-white tracking-tight">Final Render</h2>
             <p className="text-zinc-400 text-sm">Compile your masterpiece locally using FFmpeg WASM.</p>
         </div>
+
+        {previewClips.length > 0 && (
+          <div className="surface rounded-xl overflow-hidden" style={{ height: 640 }}>
+            <TimelineEditor embedded initialClips={previewClips} />
+          </div>
+        )}
 
         <div className="surface rounded-xl p-8 space-y-8 text-center">
             {!loaded ? (
