@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectOne, insertRow, insertMany, updateRows, deleteRows, countRows, maxVal, selectColumns, findShot, incrementColumn, getSB, T } from '../database.js';
 import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '../storage.js';
@@ -1276,6 +1277,85 @@ router.post('/:id/shots/:shotId/use-as-prev-end', async (req, res) => {
     end_image_status: 'success',
     video_status: 'stale',
   });
+
+  res.json(await getFullProject(projectId));
+});
+
+// ─── End frame management (mirrors start frame capabilities) ─────────
+
+// Generate an end frame from start frame + motion prompt
+router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  const project = await selectOne('projects', { id: projectId });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const shot = await selectOne('shots', { id: shotId });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  if (!shot.image_asset_id) return res.status(400).json({ error: 'Start frame required to generate end frame' });
+
+  const imageAsset = await selectOne('assets', { id: shot.image_asset_id });
+  if (!imageAsset) return res.status(400).json({ error: 'Start frame asset not found' });
+
+  const styleAsset = project.style_asset_id
+    ? await selectOne('assets', { id: project.style_asset_id })
+    : null;
+
+  try {
+    await updateRows('shots', { id: shotId }, { end_image_status: 'loading' });
+    const t0 = Date.now();
+
+    const { generateShotEndFrame } = await import('../services/imagen.js');
+    const endFramePath = await generateShotEndFrame({
+      startFramePath: imageAsset.file_path,
+      visualPrompt: shot.visual_prompt || '',
+      motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
+      styleImagePath: styleAsset?.file_path,
+      styleDNA: project.style_description || 'Cinematic',
+    });
+
+    const assetId = uuidv4();
+    await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_end_frame', file_path: endFramePath });
+    await updateRows('shots', { id: shotId }, { end_image_asset_id: assetId, end_image_status: 'success', video_status: 'stale' });
+
+    const durationMs = Date.now() - t0;
+    await logCall({
+      projectId,
+      stage: 'generate-end-frame',
+      model: 'gemini-3-pro-image-preview',
+      prompt: `End frame for shot: ${shot.visual_prompt?.substring(0, 100)}`,
+      referenceInputs: [{ type: 'image', label: 'Start frame', url: storageUrl(imageAsset.file_path) }],
+      outputAssetIds: [assetId],
+      contextChain: await buildContextChain(projectId),
+      durationMs,
+      costEstimate: 0.04,
+    });
+
+    res.json(await getFullProject(projectId));
+  } catch (err: any) {
+    await updateRows('shots', { id: shotId }, { end_image_status: 'error' });
+    res.status(500).json({ error: `End frame generation failed: ${err.message}` });
+  }
+});
+
+// Clear end frame — removes the lastFrame constraint, video generates freely
+router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  await updateRows('shots', { id: shotId }, { end_image_asset_id: null, end_image_status: 'idle' });
+  res.json(await getFullProject(paramStr(req.params.id)));
+});
+
+// Upload a custom end frame
+router.post('/:id/shots/:shotId/upload-end-frame', upload.single('image'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  if (!req.file) return res.status(400).json({ error: 'Image file required' });
+
+  const ext = path.extname(req.file.originalname).slice(1) || 'png';
+  const filePath = await saveBuffer(req.file.buffer, 'images', ext);
+  const assetId = uuidv4();
+  await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_end_frame', file_path: filePath });
+  await updateRows('shots', { id: shotId }, { end_image_asset_id: assetId, end_image_status: 'success', video_status: 'stale' });
 
   res.json(await getFullProject(projectId));
 });

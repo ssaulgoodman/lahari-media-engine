@@ -389,6 +389,23 @@ export const clearShotFrame = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
+export const generateEndFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const clearEndFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-end-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const uploadEndFrame = async (projectId: string, shotId: string, file: File) => {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/upload-end-frame`, { method: 'POST', body: form });
+  return handleResponse(res);
+};
+
 export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string, signal?: AbortSignal) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
     method: 'POST',

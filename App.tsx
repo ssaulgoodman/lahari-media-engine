@@ -471,6 +471,36 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGenerateEndFrame = async (shotId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.generateEndFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`End frame generation failed: ${err.message}`);
+    }
+  };
+
+  const handleClearEndFrame = async (shotId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.clearEndFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Clear end frame failed: ${err.message}`);
+    }
+  };
+
+  const handleUploadEndFrame = async (shotId: string, file: File) => {
+    if (!project) return;
+    try {
+      const p = await api.uploadEndFrame(project.id, shotId, file);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Upload end frame failed: ${err.message}`);
+    }
+  };
+
   const handleRewriteShotPrompts = async (userNote?: string) => {
     if (!project) return;
     setLoading(true);
@@ -1076,6 +1106,9 @@ const App: React.FC = () => {
                     videoQueue={videoQueue}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
+                    onGenerateEndFrame={handleGenerateEndFrame}
+                    onClearEndFrame={handleClearEndFrame}
+                    onUploadEndFrame={handleUploadEndFrame}
                     isLoading={loading}
                   />
                 </motion.div>
