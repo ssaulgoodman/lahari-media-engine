@@ -95,8 +95,7 @@ router.get('/errors', auth, async (req, res) => {
 // uploads every file to Supabase Storage and every row to Postgres.
 // Safe to re-run — uses upsert where possible and skips existing files.
 
-// Temporary: bypass admin auth for migration (remove after migration completes)
-router.post('/migrate-to-supabase', async (_req, res) => {
+router.post('/migrate-to-supabase', auth, async (_req, res) => {
   const OLD_STORAGE = '/app/storage';
   const OLD_DB_PATH = path.join(OLD_STORAGE, 'lahari.db');
 
