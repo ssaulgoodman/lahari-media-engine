@@ -107,9 +107,20 @@ router.post('/migrate-to-supabase', async (_req, res) => {
   const log: string[] = [];
   const l = (msg: string) => { log.push(msg); console.log(`[migrate] ${msg}`); };
 
+  // Send response headers early so Railway doesn't timeout
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Transfer-Encoding': 'chunked' });
+  const flush = () => res.write(' '); // keep-alive
+  const keepAlive = setInterval(flush, 5000);
+
   try {
-    // Dynamic import so the build doesn't break if better-sqlite3 isn't available
-    const Database = (await import('better-sqlite3')).default;
+    let Database: any;
+    try {
+      Database = (await import('better-sqlite3')).default;
+    } catch (e: any) {
+      clearInterval(keepAlive);
+      res.end(JSON.stringify({ error: `better-sqlite3 not available: ${e.message}`, log }));
+      return;
+    }
     const oldDb = new Database(OLD_DB_PATH, { readonly: true });
     const sb = getSB();
 
@@ -213,10 +224,12 @@ router.post('/migrate-to-supabase', async (_req, res) => {
     oldDb.close();
     l('Migration complete.');
 
-    res.json({ ok: true, log });
+    clearInterval(keepAlive);
+    res.end(JSON.stringify({ ok: true, log }));
   } catch (err: any) {
     l(`Fatal: ${err.message}`);
-    res.status(500).json({ error: err.message, log });
+    clearInterval(keepAlive);
+    res.end(JSON.stringify({ error: err.message, log }));
   }
 });
 
