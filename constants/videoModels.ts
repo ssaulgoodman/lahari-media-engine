@@ -18,22 +18,6 @@ export interface VideoModelSpec {
 
 export const VIDEO_MODELS: VideoModelSpec[] = [
   {
-    key: 'veo-3.0-fast',
-    label: 'Veo 3.0 Fast',
-    provider: 'veo',
-    durations: [8],
-    costPerSec: 0.10,
-    supportsLastFrame: false,
-  },
-  {
-    key: 'veo-3.0',
-    label: 'Veo 3.0',
-    provider: 'veo',
-    durations: [4, 6, 8],
-    costPerSec: 0.20,
-    supportsLastFrame: false,
-  },
-  {
     key: 'veo-3.1-fast',
     label: 'Veo 3.1 Fast',
     provider: 'veo',

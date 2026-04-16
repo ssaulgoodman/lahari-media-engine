@@ -66,20 +66,6 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
 // underlying Veo models. Both transports are now on the GA 3.1 family
 // (released Nov 2025) — 3.1 supports first+last frame conditioning; 3.0 did not.
 export const VEO_MODELS = {
-  'veo-3.0-fast': {
-    modelId: 'veo-3.0-fast-generate-001',
-    label: 'Veo 3.0 Fast',
-    durations: [8],
-    costPerSec: 0.10,
-    supportsLastFrame: false,
-  },
-  'veo-3.0': {
-    modelId: 'veo-3.0-generate-001',
-    label: 'Veo 3.0',
-    durations: [4, 6, 8],
-    costPerSec: 0.20,
-    supportsLastFrame: false,
-  },
   'veo-3.1-fast': {
     modelId: 'veo-3.1-fast-generate-001',
     label: 'Veo 3.1 Fast (+ end frame)',
