@@ -4,11 +4,11 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile, findQueueByProjectIds } from '../services/supabase.js';
-import { saveBuffer, readAsBase64, mimeFromExt } from '../storage.js';
+import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { detectStructure } from '../services/gemini.js';
 import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
-import db from '../db.js';
+import { selectOne, insertRow, updateRows } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
 
@@ -48,7 +48,7 @@ router.post('/:queueId/start', async (req, res) => {
     if (!item) return res.status(404).json({ error: 'Queue item not found' });
     if (item.lahari_project_id) {
       // Already started — return existing project
-      const project = getFullProject(item.lahari_project_id);
+      const project = await getFullProject(item.lahari_project_id);
       if (project) return res.json({ project, queueItem: item });
     }
 
@@ -59,7 +59,7 @@ router.post('/:queueId/start', async (req, res) => {
     // Download audio
     const audioBuffer = await downloadFile(audioUrl);
     const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
-    const audioPath = saveBuffer(audioBuffer, 'audio', ext);
+    const audioPath = await saveBuffer(audioBuffer, 'audio', ext);
 
     // Get SRT for lyrics
     const files = await getSongFiles(item.song_id);
@@ -71,7 +71,6 @@ router.post('/:queueId/start', async (req, res) => {
     if (srtFile) {
       try {
         const srtBuffer = await downloadFile(srtFile.storage_url);
-        // Parse SRT to plain text (strip timestamps and numbers)
         const srtText = srtBuffer.toString('utf-8');
         lyrics = srtText
           .split('\n')
@@ -85,10 +84,13 @@ router.post('/:queueId/start', async (req, res) => {
 
     // Create Lahari project
     const projectId = uuidv4();
-    db.prepare(`
-      INSERT INTO projects (id, title, status, audio_path, lyrics)
-      VALUES (?, ?, 'analyzing', ?, ?)
-    `).run(projectId, item.song_name || 'Untitled', audioPath, lyrics || null);
+    await insertRow('projects', {
+      id: projectId,
+      title: item.song_name || 'Untitled',
+      status: 'analyzing',
+      audio_path: audioPath,
+      lyrics: lyrics || null,
+    });
 
     // Link back to queue immediately (don't wait for analysis)
     await updateQueueItem(queueId, {
@@ -97,10 +99,9 @@ router.post('/:queueId/start', async (req, res) => {
     });
 
     // Run audio analysis: musical structure (Gemini) + meaning (Claude).
-    // Lyrics come from SRT so no transcription needed.
-    const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: `/storage/${audioPath}` }];
+    const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
     try {
-      const audioBase64 = readAsBase64(audioPath);
+      const audioBase64 = await readAsBase64(audioPath);
       const audioMime = mimeFromExt(audioPath);
 
       const t0 = Date.now();
@@ -116,7 +117,7 @@ router.post('/:queueId/start', async (req, res) => {
       if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
       if (meaningResult.status === 'rejected') console.warn(`[queue ${projectId}] meaning failed:`, meaningResult.reason);
 
-      logCall({
+      await logCall({
         projectId,
         stage: 'detect-structure',
         model: 'gemini-3-pro-preview',
@@ -131,7 +132,7 @@ router.post('/:queueId/start', async (req, res) => {
       });
 
       if (lyrics) {
-        logCall({
+        await logCall({
           projectId,
           stage: 'summarize-meaning',
           model: 'claude-sonnet-4-6',
@@ -143,15 +144,21 @@ router.post('/:queueId/start', async (req, res) => {
         });
       }
 
-      db.prepare(`UPDATE projects SET status = 'analyzed', musical_structure = ?, meaning = ?, updated_at = datetime('now') WHERE id = ?`)
-        .run(JSON.stringify(musicalStructure), meaning, projectId);
+      await updateRows('projects', { id: projectId }, {
+        status: 'analyzed',
+        musical_structure: JSON.stringify(musicalStructure),
+        meaning,
+        updated_at: new Date().toISOString(),
+      });
     } catch (err: any) {
       console.error(`[queue ${projectId}] analysis failed:`, err);
-      // Don't fail the whole request — project is still usable, user can regenerate concepts manually.
-      db.prepare(`UPDATE projects SET status = 'analyzed', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+      await updateRows('projects', { id: projectId }, {
+        status: 'analyzed',
+        updated_at: new Date().toISOString(),
+      });
     }
 
-    const project = getFullProject(projectId);
+    const project = await getFullProject(projectId);
     res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: projectId } });
   } catch (err: any) {
     console.error('[queue] Start production failed:', err);
@@ -172,34 +179,28 @@ router.patch('/:queueId', async (req, res) => {
 
 /**
  * Publish a completed render — uploads the final video, saves it to
- * /storage/videos, finds the originating queue row via fork-lineage walk,
+ * Supabase Storage, finds the originating queue row via fork-lineage walk,
  * and updates it with status='completed' + video_url.
- *
- * Latest-completed-wins: the queue row flips lahari_project_id to point
- * at whichever fork was most recently published.
  */
 router.post('/publish/:projectId', upload.single('video'), async (req, res) => {
   const rawId = req.params.projectId;
   const projectId: string = Array.isArray(rawId) ? rawId[0] : rawId;
-  const project: any = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!req.file) return res.status(400).json({ error: 'Video file required (multipart field: video)' });
 
   try {
-    // Save final to /storage/videos for a durable URL.
-    const videoPath = saveBuffer(req.file.buffer, 'videos', 'mp4');
-    const publicBase = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3003}`;
-    const videoUrl = `${publicBase}/storage/${videoPath}`;
+    const videoPath = await saveBuffer(req.file.buffer, 'videos', 'mp4');
+    const videoUrl = storageUrl(videoPath);
 
-    // Register the asset locally so we can find it later.
     const assetId = uuidv4();
-    db.prepare(`INSERT INTO assets (id, project_id, category, file_path) VALUES (?, ?, 'final_render', ?)`).run(assetId, projectId, videoPath);
+    await insertRow('assets', { id: assetId, project_id: projectId, category: 'final_render', file_path: videoPath });
 
     // Walk up the fork chain so we can find whichever queue row started this project tree.
     const chain: string[] = [projectId];
     let cur = projectId;
     while (true) {
-      const row: any = db.prepare('SELECT parent_project_id FROM projects WHERE id = ?').get(cur);
+      const row = await selectOne('projects', { id: cur });
       if (!row?.parent_project_id) break;
       chain.push(row.parent_project_id);
       cur = row.parent_project_id;
@@ -210,21 +211,21 @@ router.post('/publish/:projectId', upload.single('video'), async (req, res) => {
       await updateQueueItem(queueRow.id, {
         status: 'completed',
         video_url: videoUrl,
-        // Latest-completed wins: point the queue at the actual finished fork.
         lahari_project_id: projectId,
       });
     }
 
-    // Mark the Lahari project itself as completed so the Dashboard pipeline
-    // pill can reflect it independently of the queue.
-    db.prepare(`UPDATE projects SET status = 'completed', updated_at = datetime('now') WHERE id = ?`).run(projectId);
+    await updateRows('projects', { id: projectId }, {
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+    });
 
     res.json({
       videoUrl,
       videoPath,
       queueRowUpdated: !!queueRow,
       queueRowId: queueRow?.id || null,
-      project: getFullProject(projectId),
+      project: await getFullProject(projectId),
     });
   } catch (err: any) {
     console.error(`[queue/publish ${projectId}] failed:`, err);

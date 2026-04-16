@@ -1,11 +1,9 @@
 import { Router } from 'express';
-import db from '../db.js';
+import { getSB, T } from '../database.js';
 import { PROMPT_CATALOG, STAGE_META } from '../prompts/catalog.js';
 
 const router = Router();
 
-// Stage slug → list of ai_calls.stage values that roll up into it, so we can
-// aggregate usage stats without committing to one canonical string.
 const STAGE_AI_CALL_MAP: Record<string, string[]> = {
   'transcribe-lyrics':       ['audio-analysis', 'transcribe'],
   'detect-structure':        ['audio-analysis', 'structure'],
@@ -28,51 +26,52 @@ const STAGE_AI_CALL_MAP: Record<string, string[]> = {
   'chat-with-director':      ['chat'],
 };
 
-router.get('/', (_req, res) => {
-  // Roll up aggregates so each prompt card can show live usage at a glance.
-  const allStages = Object.values(STAGE_AI_CALL_MAP).flat();
-  const rows: any[] = allStages.length
-    ? db.prepare(
-        `SELECT stage,
-                COUNT(*) as call_count,
-                AVG(duration_ms) as avg_duration_ms,
-                SUM(cost_estimate) as total_cost,
-                SUM(CASE WHEN error IS NOT NULL AND error <> '' THEN 1 ELSE 0 END) as error_count
-         FROM ai_calls
-         WHERE stage IN (${allStages.map(() => '?').join(',')})
-         GROUP BY stage`
-      ).all(...allStages)
-    : [];
-  const byStage: Record<string, any> = {};
-  for (const row of rows) byStage[row.stage] = row;
+router.get('/', async (_req, res) => {
+  try {
+    const allStages = Object.values(STAGE_AI_CALL_MAP).flat();
+    // Fetch all matching ai_calls and aggregate in JS (Supabase REST doesn't support GROUP BY)
+    const { data: rows, error } = await getSB()
+      .from(T.ai_calls)
+      .select('stage, duration_ms, cost_estimate, error')
+      .in('stage', allStages);
+    if (error) throw new Error(error.message);
 
-  const prompts = PROMPT_CATALOG.map((p) => {
-    const aiStages = STAGE_AI_CALL_MAP[p.id] || [];
-    let callCount = 0;
-    let durationTotal = 0;
-    let durationSamples = 0;
-    let totalCost = 0;
-    let errorCount = 0;
-    for (const s of aiStages) {
-      const row = byStage[s];
-      if (!row) continue;
-      callCount += row.call_count || 0;
-      if (row.avg_duration_ms) { durationTotal += row.avg_duration_ms * row.call_count; durationSamples += row.call_count; }
-      totalCost += row.total_cost || 0;
-      errorCount += row.error_count || 0;
+    const byStage: Record<string, { call_count: number; duration_total: number; total_cost: number; error_count: number }> = {};
+    for (const r of (rows || [])) {
+      const s = r.stage;
+      if (!byStage[s]) byStage[s] = { call_count: 0, duration_total: 0, total_cost: 0, error_count: 0 };
+      byStage[s].call_count++;
+      byStage[s].duration_total += r.duration_ms || 0;
+      byStage[s].total_cost += r.cost_estimate || 0;
+      if (r.error) byStage[s].error_count++;
     }
-    return {
-      ...p,
-      usage: {
-        callCount,
-        avgDurationMs: durationSamples > 0 ? Math.round(durationTotal / durationSamples) : null,
-        totalCost: Math.round(totalCost * 100) / 100,
-        errorCount,
-      },
-    };
-  });
 
-  res.json({ prompts, stages: STAGE_META });
+    const prompts = PROMPT_CATALOG.map((p) => {
+      const aiStages = STAGE_AI_CALL_MAP[p.id] || [];
+      let callCount = 0, durationTotal = 0, totalCost = 0, errorCount = 0;
+      for (const s of aiStages) {
+        const agg = byStage[s];
+        if (!agg) continue;
+        callCount += agg.call_count;
+        durationTotal += agg.duration_total;
+        totalCost += agg.total_cost;
+        errorCount += agg.error_count;
+      }
+      return {
+        ...p,
+        usage: {
+          callCount,
+          avgDurationMs: callCount > 0 ? Math.round(durationTotal / callCount) : null,
+          totalCost: Math.round(totalCost * 100) / 100,
+          errorCount,
+        },
+      };
+    });
+
+    res.json({ prompts, stages: STAGE_META });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export { router as promptsRouter };

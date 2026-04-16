@@ -39,8 +39,7 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '50mb' }));
 
-// Serve stored assets (images, videos, audio)
-app.use('/storage', express.static(path.join(__dirname, '..', 'storage')));
+// Assets are served from Supabase Storage (public URLs).
 
 // API Routes
 app.use('/api/projects', projectsRouter);

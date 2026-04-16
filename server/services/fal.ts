@@ -6,7 +6,7 @@
 import { fal } from '@fal-ai/client';
 import { readFileSync } from 'fs';
 import path from 'path';
-import { saveBuffer, STORAGE_ROOT_PATH } from '../storage.js';
+import { saveBuffer, downloadToTmp } from '../storage.js';
 
 // ─── Available models ──────────────────────────────────────────────
 
@@ -35,9 +35,9 @@ const ensureConfigured = () => {
   fal.config({ credentials: key });
 };
 
-/** Upload a local storage-relative image to fal's CDN, return the public URL. */
+/** Download from Supabase Storage to /tmp, then upload to fal's CDN. */
 const uploadImage = async (storagePath: string): Promise<string> => {
-  const absPath = path.join(STORAGE_ROOT_PATH, storagePath);
+  const absPath = await downloadToTmp(storagePath);
   const buffer = readFileSync(absPath);
   const ext = path.extname(absPath).slice(1) || 'png';
   const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
@@ -93,7 +93,7 @@ export const generateFalVideo = async (
   const videoRes = await fetch(videoUrl);
   if (!videoRes.ok) throw new Error(`Failed to download fal video: ${videoRes.status}`);
   const buffer = Buffer.from(await videoRes.arrayBuffer());
-  const videoPath = saveBuffer(buffer, 'videos', 'mp4');
+  const videoPath = await saveBuffer(buffer, 'videos', 'mp4');
 
   const durationSec = parseInt(opts?.duration || '10', 10) || 10;
   return { videoPath, durationSec };

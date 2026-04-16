@@ -572,7 +572,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       <div className="bg-black">
                         <ShotVideoPreview
                           videoUrl={shot.videoUrl}
-                          audioUrl={project?.audioPath ? `/storage/${project.audioPath}` : undefined}
+                          audioUrl={project?.audioPath ? project.audioPath : undefined}
                           globalStartSec={
                             parseTimeToSec(activeScene.startTime) +
                             activeScene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)

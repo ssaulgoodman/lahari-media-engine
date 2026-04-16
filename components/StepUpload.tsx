@@ -52,7 +52,7 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         {/* Audio player */}
         {project.audioPath && (
           <div className="surface rounded-xl p-4 flex items-center gap-4">
-            <audio controls src={`/storage/${project.audioPath}`} className="flex-1 h-10" />
+            <audio controls src={project.audioPath} className="flex-1 h-10" />
           </div>
         )}
 

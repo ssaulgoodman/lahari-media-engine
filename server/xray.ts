@@ -4,7 +4,7 @@
  * exactly what prompt, references, and rolling context went into each generation.
  */
 import { v4 as uuidv4 } from 'uuid';
-import db from './db.js';
+import { selectAll, selectOne, insertRow } from './database.js';
 
 export interface XRayReference {
   type: 'image' | 'audio' | 'text';
@@ -39,8 +39,10 @@ export interface XRayEntry {
 
 /**
  * Log an AI call. Call this AFTER the AI call completes (or fails).
+ * Now async — callers should await but fire-and-forget is also fine
+ * for non-critical logging (the route can respond before the log lands).
  */
-export const logCall = (params: {
+export const logCall = async (params: {
   projectId: string;
   stage: string;
   model: string;
@@ -52,37 +54,32 @@ export const logCall = (params: {
   durationMs: number;
   costEstimate?: number;
   error?: string;
-}): string => {
+}): Promise<string> => {
   const id = uuidv4();
-  db.prepare(`
-    INSERT INTO ai_calls (id, project_id, stage, model, prompt, reference_inputs, context_chain, response_summary, output_asset_ids, duration_ms, cost_estimate, error)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  await insertRow('ai_calls', {
     id,
-    params.projectId,
-    params.stage,
-    params.model,
-    params.prompt,
-    JSON.stringify(params.referenceInputs || []),
-    JSON.stringify(params.contextChain || {}),
-    params.responseSummary || '',
-    JSON.stringify(params.outputAssetIds || []),
-    params.durationMs,
-    params.costEstimate || 0,
-    params.error || null
-  );
+    project_id: params.projectId,
+    stage: params.stage,
+    model: params.model,
+    prompt: params.prompt,
+    reference_inputs: JSON.stringify(params.referenceInputs || []),
+    context_chain: JSON.stringify(params.contextChain || {}),
+    response_summary: params.responseSummary || '',
+    output_asset_ids: JSON.stringify(params.outputAssetIds || []),
+    duration_ms: params.durationMs,
+    cost_estimate: params.costEstimate || 0,
+    error: params.error || null,
+  });
   return id;
 };
 
 /**
  * Get all AI calls for a project, newest first.
  */
-export const getCalls = (projectId: string): XRayEntry[] => {
-  const rows = db.prepare(
-    'SELECT * FROM ai_calls WHERE project_id = ? ORDER BY created_at DESC'
-  ).all(projectId) as any[];
+export const getCalls = async (projectId: string): Promise<XRayEntry[]> => {
+  const rows = await selectAll('ai_calls', { project_id: projectId }, { orderBy: 'created_at', ascending: false });
 
-  return rows.map(r => ({
+  return rows.map((r: any) => ({
     id: r.id,
     projectId: r.project_id,
     stage: r.stage,
@@ -103,12 +100,12 @@ export const getCalls = (projectId: string): XRayEntry[] => {
  * Build the rolling context summary for a project at its current state.
  * This is what gets passed to the next generation call.
  */
-export const buildContextChain = (projectId: string): XRayContext => {
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+export const buildContextChain = async (projectId: string): Promise<XRayContext> => {
+  const project = await selectOne('projects', { id: projectId });
   if (!project) return {};
 
   const concept = project.locked_concept ? JSON.parse(project.locked_concept) : null;
-  const cast = db.prepare('SELECT * FROM cast_members WHERE project_id = ?').all(projectId) as any[];
+  const cast = await selectAll('cast_members', { project_id: projectId });
   const hasLockedCast = cast.some((c: any) => c.reference_asset_id);
 
   // Only include things the user has explicitly locked — not defaults

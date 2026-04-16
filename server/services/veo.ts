@@ -4,8 +4,10 @@
  */
 import { GoogleGenAI } from '@google/genai';
 import { spawn } from 'child_process';
+import os from 'os';
 import path from 'path';
-import { readAsBase64, saveBuffer, STORAGE_ROOT_PATH } from '../storage.js';
+import fs from 'fs';
+import { readAsBase64, saveBuffer, downloadToTmp, uploadFromTmp } from '../storage.js';
 
 // Prefer Vertex AI when a GCP project is configured — higher Veo quota, the
 // generateAudio:false flag is respected, per-project billing. Fall back to
@@ -25,24 +27,21 @@ const getAI = () => isVertex()
  * Returns the storage-relative path of the saved frame (PNG).
  */
 export const extractLastFrame = async (videoStoragePath: string): Promise<string> => {
-  const absoluteVideoPath = path.join(STORAGE_ROOT_PATH, videoStoragePath);
+  const localVideo = await downloadToTmp(videoStoragePath);
 
-  // Generate output path via saveBuffer pattern — pre-allocate an empty PNG path
-  // We'll write directly to disk via ffmpeg.
   const outputFilename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-  const outputStoragePath = path.join('images', outputFilename);
-  const outputAbsolutePath = path.join(STORAGE_ROOT_PATH, outputStoragePath);
+  const outputLocal = path.join(os.tmpdir(), 'lahari-cache', outputFilename);
+  fs.mkdirSync(path.dirname(outputLocal), { recursive: true });
 
-  // ffmpeg: seek to end, grab one frame. -sseof -0.1 seeks to ~100ms before end.
   await new Promise<void>((resolve, reject) => {
     const args = [
       '-sseof', '-0.1',
-      '-i', absoluteVideoPath,
+      '-i', localVideo,
       '-vsync', '0',
       '-frames:v', '1',
       '-q:v', '2',
       '-y',
-      outputAbsolutePath,
+      outputLocal,
     ];
     const proc = spawn('ffmpeg', args);
     let stderr = '';
@@ -54,7 +53,8 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
     });
   });
 
-  return outputStoragePath;
+  const storagePath = await uploadFromTmp(outputLocal, 'images', 'png');
+  return storagePath;
 };
 
 /**
@@ -93,7 +93,7 @@ export const generateVideo = async (
   opts?: { resolution?: '720p' | '1080p'; aspectRatio?: '16:9' | '9:16'; durationSec?: number; modelKey?: VeoModelKey }
 ): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
   const ai = getAI();
-  const startBase64 = readAsBase64(startImagePath);
+  const startBase64 = await readAsBase64(startImagePath);
 
   const modelKey: VeoModelKey = opts?.modelKey || 'veo-3.1-fast';
   const model = VEO_MODELS[modelKey] || VEO_MODELS['veo-3.1-fast'];
@@ -117,7 +117,7 @@ export const generateVideo = async (
   if (isVertex()) config.generateAudio = false;
 
   if (endImagePath) {
-    const endBase64 = readAsBase64(endImagePath);
+    const endBase64 = await readAsBase64(endImagePath);
     config.lastFrame = {
       imageBytes: endBase64,
       mimeType: 'image/png'
@@ -179,6 +179,6 @@ export const generateVideo = async (
   // generateAudio:false. On Developer API the track is still present but
   // never played: <video muted> in preview, `-map 0:v:0 -map 1:a:0` in the
   // final render. Saves us from an ffmpeg post-process pass.
-  const videoPath = saveBuffer(buffer, 'videos', 'mp4');
+  const videoPath = await saveBuffer(buffer, 'videos', 'mp4');
   return { videoPath, modelId, durationSec };
 };
