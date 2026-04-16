@@ -24,8 +24,22 @@ const forkProject = (sourceId: string): string => {
   if (!src) throw new Error('Source project not found');
 
   const newId = uuidv4();
-  const suffix = ' (fork)';
-  const newTitle = src.title.endsWith(suffix) ? src.title : src.title + suffix;
+  // Pick a unique title. Strip any trailing " (N)" so repeated forks don't
+  // compound ("X (1) (1) (1)"). Then find the next free index by scanning
+  // existing titles. Artists can rename from the sidebar afterwards.
+  const base = (src.title || 'Untitled').replace(/\s*\(\d+\)\s*$/, '').trim() || 'Untitled';
+  const siblings = db.prepare(
+    `SELECT title FROM projects WHERE title = ? OR title LIKE ?`
+  ).all(base, `${base} (%)`) as { title: string }[];
+  const usedIndices = new Set<number>();
+  for (const r of siblings) {
+    if (r.title === base) { usedIndices.add(0); continue; }
+    const m = r.title.match(/\((\d+)\)\s*$/);
+    if (m) usedIndices.add(parseInt(m[1], 10));
+  }
+  let n = 1;
+  while (usedIndices.has(n)) n += 1;
+  const newTitle = `${base} (${n})`;
 
   // Pre-compute remaps so we can rewrite foreign keys.
   const srcCast = db.prepare('SELECT * FROM cast_members WHERE project_id = ?').all(sourceId) as any[];
@@ -227,6 +241,7 @@ const getFullProject = (projectId: string) => {
         endImageUrl: shot.endImageUrl,
         extractedLastFrameUrl: shot.extractedLastFrameUrl,
         continuityFrom: shot.continuity_from || 'cut',
+        refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
         locked: !!shot.locked,
         userFeedback: shot.user_feedback || undefined,
@@ -253,7 +268,7 @@ const getFullProject = (projectId: string) => {
 router.get('/', (_req, res) => {
   const rows = db.prepare(`
     SELECT id, title, status, created_at, updated_at, parent_project_id
-    FROM projects ORDER BY updated_at DESC
+    FROM projects ORDER BY created_at DESC
   `).all() as any[];
   res.json(rows.map(r => ({
     id: r.id,
@@ -678,10 +693,20 @@ router.get('/:id/xray', (req, res) => {
 
 // ─── Shot Updates ───────────────────────────────────────────────────
 
+// Clear the start frame on a shot — keeps the video (if any) intact.
+// Also unlocks the shot since a locked shot requires a start frame + video.
+router.post('/:id/shots/:shotId/clear-frame', (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  db.prepare(`UPDATE shots SET image_asset_id = NULL, image_status = 'idle' WHERE id = ?`).run(shotId);
+  res.json(getFullProject(paramStr(req.params.id)));
+});
+
 router.patch('/:id/shots/:shotId', (req, res) => {
   const { visualPrompt, motionPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
-  if (visualPrompt !== undefined) db.prepare('UPDATE shots SET visual_prompt = ? WHERE id = ?').run(visualPrompt, req.params.shotId);
-  if (motionPrompt !== undefined) db.prepare('UPDATE shots SET motion_prompt = ? WHERE id = ?').run(motionPrompt, req.params.shotId);
+  // Manual edits to the prompt invalidate the auto-refresh chip — it meant
+  // "this text was written by the vision rewrite", not "this text is current".
+  if (visualPrompt !== undefined) db.prepare('UPDATE shots SET visual_prompt = ?, refined_from_prev_frame = 0 WHERE id = ?').run(visualPrompt, req.params.shotId);
+  if (motionPrompt !== undefined) db.prepare('UPDATE shots SET motion_prompt = ?, refined_from_prev_frame = 0 WHERE id = ?').run(motionPrompt, req.params.shotId);
   if (useNextAsEndFrame !== undefined) db.prepare('UPDATE shots SET use_next_as_end_frame = ? WHERE id = ?').run(useNextAsEndFrame ? 1 : 0, req.params.shotId);
   if (userFeedback !== undefined) db.prepare('UPDATE shots SET user_feedback = ? WHERE id = ?').run(userFeedback || null, req.params.shotId);
   if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {

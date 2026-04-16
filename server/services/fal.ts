@@ -10,18 +10,20 @@ import { saveBuffer, STORAGE_ROOT_PATH } from '../storage.js';
 
 // ─── Available models ──────────────────────────────────────────────
 
-export const FAL_VIDEO_MODELS: Record<string, { id: string; label: string; costPerSec: number; durations: number[] }> = {
+export const FAL_VIDEO_MODELS: Record<string, { id: string; label: string; costPerSec: number; durations: number[]; supportsLastFrame: boolean }> = {
   'seedance-2.0-fast': {
     id: 'bytedance/seedance-2.0/fast/image-to-video',
     label: 'Seedance 2.0 Fast',
     costPerSec: 0.24,
     durations: [5, 10],
+    supportsLastFrame: false,
   },
   'seedance-2.0': {
     id: 'bytedance/seedance-2.0/image-to-video',
     label: 'Seedance 2.0',
     costPerSec: 0.30,
     durations: [5, 10],
+    supportsLastFrame: false,
   },
 };
 

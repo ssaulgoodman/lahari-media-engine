@@ -14,11 +14,12 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 ```
 
 **Env vars required:**
-- `GEMINI_API_KEY` — Turiya tier-2 key
+- `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
 - `FAL_KEY` — optional, only needed for Seedance 2.0 video gen
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for song catalog / queue
 - `CORS_ORIGINS` — comma-separated in prod
+- **Vertex AI (for Veo)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the full service-account JSON as a single-line string). `server/index.ts` boot hook materializes that JSON to `/tmp/gcp-credentials.json` and sets `GOOGLE_APPLICATION_CREDENTIALS` so the `@google/genai` SDK auto-picks it up.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
 
@@ -50,20 +51,26 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 
 ### AI Models
 
-| Stage | Model | Service |
-|-------|-------|---------|
-| Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts |
-| Concept, style brainstorm | `claude-opus-4-6` | claude.ts |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt | `claude-sonnet-4-6` | claude.ts |
-| All image gen | `gemini-3-pro-image-preview` | imagen.ts |
-| Video (default) | `veo-3.1-fast-generate-preview` | veo.ts |
-| Video (optional) | Seedance 2.0 Fast / Standard via fal.ai | fal.ts |
+| Stage | Model | Service | Transport |
+|-------|-------|---------|-----------|
+| Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
+| Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
+| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
+| Video (default) | Fast → `veo-3.0-fast-generate-001`; Std → `veo-3.0-generate-001` | veo.ts | **Vertex AI** (service-account) |
+| Video (optional) | Seedance 2.0 Fast / Standard via fal.ai | fal.ts | fal.ai API |
+
+**Veo via Vertex AI**: `veo.ts` auto-detects the transport via `isVertex()` which checks `GCP_PROJECT_ID`. When present, constructs a Vertex client (`new GoogleGenAI({ vertexai: true, project, location })`) and passes `generateAudio: false` (Vertex-only param — Developer API SDK throws on it). `VEO_MODELS` carries both `id` (Developer API) and `vertexId` (Vertex GA IDs); the correct one is picked per transport. Video download path also branches: Developer API uses `?key=`, Vertex mints a bearer token via `google-auth-library`.
 
 ### Video workflow (redesigned)
 
 No end-frame prediction. Shot = start frame + motion prompt → video plays naturally → ffmpeg extracts real last frame. Next shot optionally uses that extracted frame as continuity reference (when Claude tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
 
 **Sequential gate:** Only shots with `continuity_from === 'prev_shot'` wait for previous shot's video. Hard-cut shots are independently actionable.
+
+**Bulk fan-out (throttled)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames** — a worker-pool that queues the rest. Sized for Vertex default ~60 RPM on Veo Fast and comfortable inside Tier-2 Gemini image RPM. Raise as Google auto-scales your quota.
+
+**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
 ### Reference chain for shot start frame
 
@@ -127,7 +134,13 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
-**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
+**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
+
+**Admin diagnostics** (all behind `x-admin-secret: $ADMIN_UPLOAD_SECRET`):
+- `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
+- `GET /api/admin/usage?hours=N` — aggregates `ai_calls` by model+stage with totals and error counts.
+- `GET /api/admin/errors?limit=N` — most recent error messages verbatim. Fastest way to tell what Veo (or anything) is rejecting.
+- `POST /api/admin/restore` — multipart tarball upload → extract to `/app/storage`. Kept around for migrations.
 
 ### Queue completion writeback
 

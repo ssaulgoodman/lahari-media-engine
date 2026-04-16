@@ -154,6 +154,11 @@ try { db.exec('ALTER TABLE shots ADD COLUMN continuity_description TEXT'); } cat
 // 'prev_shot' = this shot continues from the previous shot's last frame.
 try { db.exec("ALTER TABLE shots ADD COLUMN continuity_from TEXT DEFAULT 'cut'"); } catch {}
 
+// Flag set when a chained shot's prompt was auto-rewritten by Claude vision
+// after the previous shot's video landed. Cleared whenever the user manually
+// edits visual_prompt or regenerates with feedback.
+try { db.exec('ALTER TABLE shots ADD COLUMN refined_from_prev_frame INTEGER DEFAULT 0'); } catch {}
+
 // Video model: 'veo-3.1' (default), 'seedance-2.0-fast', 'seedance-2.0', etc.
 try { db.exec("ALTER TABLE projects ADD COLUMN video_model TEXT DEFAULT 'veo-3.1'"); } catch {}
 
@@ -172,5 +177,26 @@ try { db.exec("ALTER TABLE projects ADD COLUMN video_resolution TEXT DEFAULT '72
 
 // Lineage — points to the project this one was forked from. NULL for originals.
 try { db.exec('ALTER TABLE projects ADD COLUMN parent_project_id TEXT'); } catch {}
+
+// Shot-scoped assets — lets us query every past video/frame for a shot so the
+// artist can revert to an earlier generation after a bad regen.
+try { db.exec('ALTER TABLE assets ADD COLUMN shot_id TEXT'); } catch {}
+
+// One-time backfill: link each shot's current video/frame assets to it so
+// history queries include them (legacy rows were inserted before shot_id existed).
+try {
+  db.exec(`
+    UPDATE assets SET shot_id = (
+      SELECT id FROM shots WHERE shots.video_asset_id = assets.id
+    ) WHERE shot_id IS NULL AND category = 'shot_video' AND EXISTS (
+      SELECT 1 FROM shots WHERE shots.video_asset_id = assets.id
+    );
+    UPDATE assets SET shot_id = (
+      SELECT id FROM shots WHERE shots.extracted_last_frame_asset_id = assets.id
+    ) WHERE shot_id IS NULL AND category = 'shot_extracted_last_frame' AND EXISTS (
+      SELECT 1 FROM shots WHERE shots.extracted_last_frame_asset_id = assets.id
+    );
+  `);
+} catch {}
 
 export default db;

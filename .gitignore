@@ -33,3 +33,11 @@ storage/*.db
 *.njsproj
 *.sln
 *.sw?
+
+# Local dev tooling (Claude Code, skills)
+.claude/
+.agents/
+skills/
+skills-lock.json
+storage/*.db-shm
+storage/*.db-wal

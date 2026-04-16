@@ -12,6 +12,7 @@ export enum GenerationStatus {
   CRITIQUING = 'critiquing',
   SUCCESS = 'success',
   ERROR = 'error',
+  STALE = 'stale',
 }
 
 export type VideoMode = 'montage' | 'cinematic';
@@ -62,6 +63,7 @@ export interface VideoShot {
   endImageStatus: GenerationStatus;
   extractedLastFrameUrl?: string;
   continuityFrom: 'cut' | 'prev_shot';
+  refinedFromPrevFrame?: boolean;
   locked: boolean;
   userFeedback?: string;
   environmentId?: string;

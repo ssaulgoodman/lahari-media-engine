@@ -18,7 +18,7 @@ interface QueueItem {
 }
 
 interface Props {
-  onStartProduction: (queueId: string) => void;
+  onStartProduction: (queueId: string) => Promise<void> | void;
   onOpenProject: (projectId: string) => void;
 }
 
@@ -75,7 +75,10 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
     if (!item.audio_uploaded) return;
     setStarting(item.id);
     try {
-      onStartProduction(item.id);
+      // Await the handler so the spinner stays on for the entire pull-audio +
+      // create-project round-trip (10-15s). Previously this was fire-and-forget
+      // so the spinner flashed off instantly and the user saw nothing.
+      await onStartProduction(item.id);
     } finally {
       setStarting(null);
     }
@@ -278,9 +281,10 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                   <button
                     onClick={() => handleStart(item)}
                     disabled={starting === item.id}
-                    className="text-xs bg-white text-black px-3 py-1.5 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                    className="text-xs bg-white text-black px-3 py-1.5 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors flex items-center gap-1.5"
                   >
-                    {starting === item.id ? '...' : 'Start'}
+                    {starting === item.id && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                    {starting === item.id ? 'Starting…' : 'Start'}
                   </button>
                 ) : !item.audio_uploaded ? (
                   <span className="text-[11px] text-zinc-400">Needs audio</span>

@@ -20,10 +20,10 @@ export const Markdown: React.FC<Props> = ({ children, className = '' }) => {
           ul: ({ children }) => <ul className="list-disc pl-5 space-y-1 text-zinc-300">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1 text-zinc-300">{children}</ol>,
           li: ({ children }) => <li className="text-zinc-300">{children}</li>,
-          code: ({ children }) => <code className="surface-inset rounded px-1.5 py-0.5 text-[12px] font-mono text-zinc-300">{children}</code>,
-          pre: ({ children }) => <pre className="surface-inset rounded-md p-3 text-xs font-mono text-zinc-300 overflow-x-auto whitespace-pre-wrap">{children}</pre>,
+          code: ({ children }) => <code className="surface-inset rounded px-1.5 py-0.5 text-sm font-mono text-zinc-300">{children}</code>,
+          pre: ({ children }) => <pre className="surface-inset rounded-md p-3 text-sm font-mono text-zinc-300 overflow-x-auto whitespace-pre-wrap">{children}</pre>,
           blockquote: ({ children }) => <blockquote className="border-l-2 border-white/20 pl-3 text-zinc-400 italic">{children}</blockquote>,
-          a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-accent-400 hover:text-accent-500 underline">{children}</a>,
+          a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-white hover:text-zinc-300 underline underline-offset-2 decoration-white/40">{children}</a>,
           hr: () => <hr className="border-white/[0.06] my-4" />,
         }}
       >

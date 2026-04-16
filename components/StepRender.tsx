@@ -226,8 +226,8 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
                                 {publishResult && (
                                     <div className="text-xs text-zinc-300 surface-inset rounded-md px-3 py-2 max-w-lg text-center">
                                         {publishResult.queueRowUpdated
-                                            ? <>Queue row marked completed. Final URL: <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-accent-400 hover:underline">{publishResult.videoUrl}</a></>
-                                            : <>Saved to <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-accent-400 hover:underline">{publishResult.videoUrl}</a>. No matching queue row found — this project wasn't started from the queue.</>
+                                            ? <>Queue row marked completed. Final URL: <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-white hover:text-zinc-300 underline underline-offset-2 decoration-white/40">{publishResult.videoUrl}</a></>
+                                            : <>Saved to <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-white hover:text-zinc-300 underline underline-offset-2 decoration-white/40">{publishResult.videoUrl}</a>. No matching queue row found — this project wasn't started from the queue.</>
                                         }
                                     </div>
                                 )}

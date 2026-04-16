@@ -3,6 +3,22 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
+import { AutoGrowTextarea } from './AutoGrowTextarea';
+import { ShotVideoPreview } from './ShotVideoPreview';
+import { getShotVideoHistory } from '../services/api';
+import { getVideoModel } from '../constants/videoModels';
+
+type VideoVersion = { assetId: string; videoUrl: string; thumbnailUrl: string | null; createdAt: string; isCurrent: boolean };
+
+// "0:32" / "00:32" / "1:23:45" → seconds. Guards against undefined / junk.
+const parseTimeToSec = (t?: string): number => {
+  if (!t) return 0;
+  const parts = t.split(':').map(Number);
+  if (parts.some(n => Number.isNaN(n))) return 0;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return parts[0] || 0;
+};
 
 interface Props {
   scenes: VideoScene[];
@@ -16,26 +32,82 @@ interface Props {
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void;
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
+  onBulkGenerateFrames?: () => Promise<void> | void;
+  onBulkGenerateVideos?: () => Promise<void> | void;
+  onCancelShotImage?: (shotId: string) => void;
+  onCancelShotVideo?: (shotId: string) => void;
   onUsePrevLastFrame?: (shotId: string) => void;
+  onClearShotFrame?: (shotId: string) => void;
+  onRevertVideo?: (shotId: string, assetId: string) => void | Promise<void>;
+  onUseAsPrevEnd?: (shotId: string) => void | Promise<void>;
+  /** Shot IDs waiting for a bulk-frame worker (ordered — position = Nth in line). */
+  frameQueue?: string[];
+  /** Shot IDs waiting for a bulk-video worker (ordered). */
+  videoQueue?: string[];
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onUsePrevLastFrame, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
-  const [showBulkPrompt, setShowBulkPrompt] = useState(false);
   const [bulkNote, setBulkNote] = useState('');
-  const [expandedShotId, setExpandedShotId] = useState<string | null>(null);
+  // Set of expanded shot ids so multiple shots can be open at once across
+  // scenes. The artist often jumps between scenes (review a locked shot
+  // while editing a new one) — auto-collapsing on tab switch killed context.
+  const [expandedShotIds, setExpandedShotIds] = useState<Set<string>>(new Set());
+  const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
+  const contextBarRef = React.useRef<HTMLDivElement>(null);
+  const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
+  const [historyVersions, setHistoryVersions] = useState<VideoVersion[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Auto-expand the first actionable unlocked shot when switching scenes
+  const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
+
+  const openHistory = async (shotId: string) => {
+    if (!project) return;
+    if (historyOpenFor === shotId) { setHistoryOpenFor(null); return; }
+    setHistoryOpenFor(shotId);
+    setHistoryLoading(true);
+    try {
+      const { versions } = await getShotVideoHistory(project.id, shotId);
+      setHistoryVersions(versions);
+    } catch {
+      setHistoryVersions([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Auto-expand the first actionable unlocked shot the first time a project
+  // loads, so the Studio isn't a wall of closed cards.
   React.useEffect(() => {
-    const scene = scenes[activeSceneIdx];
-    if (!scene) return;
-    const firstUnlocked = scene.shots.find(s => !s.locked) || scene.shots[0];
-    setExpandedShotId(firstUnlocked?.id || null);
-  }, [activeSceneIdx, scenes]);
+    if (expandedShotIds.size > 0) return;
+    const firstUnlocked = scenes.flatMap(s => s.shots).find(s => !s.locked);
+    if (firstUnlocked) setExpandedShotIds(new Set([firstUnlocked.id]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenes.length]);
+
+  // Close popovers on outside click / Escape — same pattern as Blueprint.
+  React.useEffect(() => {
+    if (!contextPopover) return;
+    const onDown = (e: MouseEvent) => {
+      if (contextBarRef.current && !contextBarRef.current.contains(e.target as Node)) setContextPopover(null);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextPopover(null); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onEsc);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onEsc); };
+  }, [contextPopover]);
+
+  const toggleExpanded = (shotId: string) => {
+    setExpandedShotIds(prev => {
+      const next = new Set(prev);
+      if (next.has(shotId)) next.delete(shotId); else next.add(shotId);
+      return next;
+    });
+  };
 
   // A shot is actionable immediately if it's a hard cut (independent).
   // Only continuity-linked shots ('prev_shot') wait for the previous shot
@@ -48,8 +120,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
     return !!prevShot?.videoUrl; // wait for video (so extracted frame exists)
   };
 
-  const activeScene = scenes[activeSceneIdx];
-  if (!activeScene) return null;
+  if (scenes.length === 0) return null;
 
   const hasBulkPrompt = !!project?.lastWriteShotsPrompt;
   const totalShots = scenes.reduce((acc, s) => acc + s.shots.length, 0);
@@ -58,172 +129,210 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const frameShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.imageUrl).length, 0);
   const concept = project?.lockedConcept;
 
+  // Counts for bulk actions — match the eligibility rules in App.tsx handlers.
+  // Chain-waiting shots are queued (not counted) until their predecessor's
+  // video lands and its extracted frame is available.
+  const missingPromptCount = scenes.reduce(
+    (acc, s) => acc + s.shots.filter(x => !x.visualPrompt || !x.visualPrompt.trim()).length,
+    0
+  );
+  const framesToFire = scenes.reduce((acc, s) => {
+    return acc + s.shots.filter((shot, idx) => {
+      if (shot.imageUrl) return false;
+      if (shot.imageStatus === GenerationStatus.LOADING) return false;
+      if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+        const prev = s.shots[idx - 1];
+        if (!prev?.videoUrl) return false;
+      }
+      return true;
+    }).length;
+  }, 0);
+  const videosToFire = scenes.reduce((acc, s) => {
+    return acc + s.shots.filter((shot, idx) => {
+      if (!shot.imageUrl || shot.videoUrl) return false;
+      if (shot.videoStatus === GenerationStatus.LOADING) return false;
+      if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+        const prev = s.shots[idx - 1];
+        if (!prev?.videoUrl) return false;
+      }
+      return true;
+    }).length;
+  }, 0);
+  // Chain shots that are queued waiting on a predecessor's video —
+  // surface this count so the artist knows the queue will drain on its own.
+  const chainWaitingCount = scenes.reduce((acc, s) => {
+    return acc + s.shots.filter((shot, idx) => {
+      if (shot.imageUrl || idx === 0) return false;
+      if (shot.continuityFrom !== 'prev_shot') return false;
+      const prev = s.shots[idx - 1];
+      return !prev?.videoUrl;
+    }).length;
+  }, 0);
+
   return (
-    <div className="max-w-5xl mx-auto pb-32 space-y-6">
-      {/* Story & Shots overview — concept, scene list, progress, bulk prompt */}
-      <div className="surface rounded-xl overflow-hidden">
-        {/* Concept summary */}
-        {concept && (
-          <div className="px-5 py-4 border-b border-white/[0.04]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-400 mb-1">
-                  <span>Story</span>
-                  {concept.deity && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.deity}</span></>}
-                  {concept.mood && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.mood}</span></>}
-                </div>
-                <p className="text-sm text-zinc-300 leading-relaxed">{concept.conceptDirection || concept.theme}</p>
-                {concept.conceptDirection && concept.theme && concept.theme !== concept.conceptDirection && (
-                  <p className="text-xs text-zinc-400 leading-relaxed mt-1">{concept.theme}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Progress row */}
-        <div className="px-5 py-3 border-b border-white/[0.04] flex items-center gap-6 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400">Scenes</span>
-            <span className="text-white font-medium">{scenes.length}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400">Shots</span>
-            <span className="text-white font-medium">{totalShots}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400">Frames</span>
-            <span className="text-white font-medium">{frameShots}/{totalShots}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400">Videos</span>
-            <span className="text-white font-medium">{videoShots}/{totalShots}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-400">Locked</span>
-            <span className="text-white font-medium">{lockedShots}/{totalShots}</span>
-          </div>
-        </div>
-
-        {/* Scene tabs — navigate + see at-a-glance status */}
-        <div className="px-5 py-3 border-b border-white/[0.04] flex flex-wrap gap-2">
-          {scenes.map((s, i) => {
-            const isActive = i === activeSceneIdx;
-            const sceneVideoCount = s.shots.filter(x => !!x.videoUrl).length;
-            const sceneDone = sceneVideoCount === s.shots.length && s.shots.length > 0;
-            return (
-              <button
-                key={s.id}
-                onClick={() => onSceneChange(i)}
-                className={`px-3 py-1.5 rounded-md text-[11px] transition-colors border ${
-                  isActive
-                    ? 'bg-white text-black border-white'
-                    : sceneDone
-                      ? 'bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.08]'
-                      : 'bg-transparent text-zinc-400 border-white/[0.06] hover:text-zinc-300 hover:border-white/[0.12]'
-                }`}
-              >
-                <span className="font-medium">S{i + 1}</span>
-                <span className="mx-1.5 opacity-60">·</span>
-                <span className="font-mono opacity-80">{s.startTime}</span>
-                <span className="mx-1.5 opacity-60">·</span>
-                <span>{s.shots.length} shots</span>
-                {sceneVideoCount > 0 && !isActive && (
-                  <span className="ml-1.5 opacity-60">({sceneVideoCount} done)</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Master prompt (collapsible, secondary) */}
-        {onRewriteShotPrompts && hasBulkPrompt && (
-          <div className="px-5 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Master shot-prompts</span>
-              <div className="flex items-center gap-2">
+    <div className="max-w-5xl mx-auto pb-32">
+      {/* ─── Sticky context bar ─────────────────────────────────────
+          Replaces the earlier three stacked surfaces (pipeline row,
+          story summary, scene tabs, master-prompts). Consolidates the
+          scene selector, progress, story popover, master-prompt popover,
+          and the three bulk actions into one always-visible strip. */}
+      <div ref={contextBarRef} className="sticky top-0 z-40 mb-6">
+        <div className="surface rounded-xl border border-white/[0.06] bg-[#141418] shadow-md shadow-black/15 px-4 py-2.5 flex items-center gap-2 flex-wrap">
+          {/* Scene pills — jump to anchor, keep all scenes visible. */}
+          <div className="flex items-center gap-1 overflow-x-auto mr-auto">
+            {scenes.map((s, i) => {
+              const sceneVideoCount = s.shots.filter(x => !!x.videoUrl).length;
+              const sceneFrameCount = s.shots.filter(x => !!x.imageUrl).length;
+              const done = sceneVideoCount === s.shots.length && s.shots.length > 0;
+              const inProgress = sceneVideoCount > 0 && !done;
+              const isActive = i === activeSceneIdx;
+              const dotClass = done ? 'bg-white' : inProgress ? 'bg-amber-400/80' : sceneFrameCount > 0 ? 'bg-white/50' : 'bg-white/15';
+              return (
                 <button
-                  onClick={() => setShowBulkPrompt(s => !s)}
-                  className="text-[11px] text-zinc-400 hover:text-white transition-colors px-2 py-1"
-                >
-                  {showBulkPrompt ? 'Hide' : 'View'}
-                </button>
-                <button
-                  onClick={() => { onRewriteShotPrompts(bulkNote || undefined); setBulkNote(''); }}
-                  disabled={isLoading}
-                  className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1.5 transition-colors disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-                  {isLoading ? 'Rewriting...' : 'Rewrite all'}
-                </button>
-              </div>
-            </div>
-            {showBulkPrompt && (
-              <div className="mt-3 space-y-3">
-                <input
-                  value={bulkNote}
-                  onChange={e => setBulkNote(e.target.value)}
-                  placeholder="Rewrite note — e.g. 'more deity close-ups', 'reduce camera motion'"
-                  className="w-full surface-inset rounded-md px-3 py-2 text-xs text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && bulkNote.trim() && !isLoading) {
-                      onRewriteShotPrompts(bulkNote);
-                      setBulkNote('');
-                    }
+                  key={s.id}
+                  onClick={() => {
+                    onSceneChange(i);
+                    const el = document.getElementById(`scene-${s.id}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }}
-                />
-                {/* Formatted scene → shot breakdown instead of raw concatenated text */}
-                <div className="surface-inset rounded-md p-4 max-h-96 overflow-y-auto space-y-4">
-                  {scenes.map((s, sIdx) => (
-                    <div key={s.id} className="space-y-2">
-                      <div className="flex items-baseline gap-2 pb-1 border-b border-white/[0.04]">
-                        <span className="text-[11px] uppercase tracking-wide text-zinc-400">Scene {sIdx + 1}</span>
-                        <span className="text-[11px] text-zinc-400 font-mono">{s.startTime}–{s.endTime}</span>
-                        <span className="text-[11px] text-zinc-400">{s.sectionLabel}</span>
-                      </div>
-                      {s.narrativeDescription && (
-                        <p className="text-xs text-zinc-400 italic">{s.narrativeDescription}</p>
-                      )}
-                      <div className="space-y-2">
-                        {s.shots.map((shot, shIdx) => (
-                          <div key={shot.id} className="pl-3 border-l-2 border-white/[0.05] space-y-1">
-                            <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                              <span className="font-medium text-zinc-300">Shot {shIdx + 1}</span>
-                              <span className="font-mono">{shot.duration}s</span>
-                              <span className={`uppercase tracking-wide ${shot.continuityFrom === 'prev_shot' ? 'text-accent-400' : 'text-zinc-400'}`}>
-                                {shot.continuityFrom === 'prev_shot' ? '· continues' : '· cut'}
-                              </span>
-                            </div>
-                            <div className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-400">Visual:</span> {shot.visualPrompt}</div>
-                            {shot.motionPrompt && (
-                              <div className="text-xs text-zinc-300 leading-relaxed"><span className="text-zinc-400">Motion:</span> {shot.motionPrompt}</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <details className="text-[11px] text-zinc-400">
-                  <summary className="cursor-pointer hover:text-zinc-300">Raw master prompt (what Claude saw)</summary>
-                  <pre className="mt-2 surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap max-h-64 overflow-y-auto leading-relaxed">{project?.lastWriteShotsPrompt}</pre>
-                </details>
-                <p className="text-[11px] text-zinc-400">Rewriting replaces every shot's prompt. Existing frames and videos stay as-is — regenerate per-shot to apply new prompts.</p>
-              </div>
-            )}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1.5 flex-shrink-0 border ${
+                    isActive
+                      ? 'bg-white/[0.08] text-white border-white/[0.12]'
+                      : 'bg-transparent text-zinc-300 border-white/[0.04] hover:bg-white/[0.04]'
+                  }`}
+                  title={`Scene ${i + 1} · ${s.shots.length} shot${s.shots.length === 1 ? '' : 's'} · ${sceneVideoCount}/${s.shots.length} videos`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                  <span className="font-mono">S{i + 1}</span>
+                </button>
+              );
+            })}
           </div>
-        )}
+
+          {/* Compact progress — one glance, no decorative headers. */}
+          <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
+            <span className="text-white">{frameShots}</span>/{totalShots}f · <span className="text-white">{videoShots}</span>/{totalShots}v
+            {lockedShots > 0 && <> · <span className="text-white">{lockedShots}</span>/{totalShots} locked</>}
+            {chainWaitingCount > 0 && <> · <span className="text-amber-400/80">{chainWaitingCount} wait</span></>}
+          </span>
+
+          {/* Story popover — concept context available on demand. */}
+          {concept && (
+            <div className="relative">
+              <button
+                onClick={() => setContextPopover(p => p === 'story' ? null : 'story')}
+                className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${contextPopover === 'story' ? 'bg-white/[0.08] text-white border-white/[0.12]' : 'text-zinc-300 border-white/[0.04] hover:bg-white/[0.04]'}`}
+                title="Concept summary"
+              >
+                Story
+              </button>
+              {contextPopover === 'story' && (
+                <div className="absolute top-full right-0 mt-2 w-96 surface rounded-xl p-4 shadow-xl z-30 space-y-2">
+                  <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-400">
+                    <span>Story</span>
+                    {concept.deity && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.deity}</span></>}
+                    {concept.mood && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.mood}</span></>}
+                  </div>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{concept.conceptDirection || concept.theme}</p>
+                  {concept.conceptDirection && concept.theme && concept.theme !== concept.conceptDirection && (
+                    <p className="text-sm text-zinc-400 leading-relaxed">{concept.theme}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Master shot-prompts popover — rewrite-all with note is tucked
+              here so it doesn't dominate the Studio at rest. */}
+          {onRewriteShotPrompts && hasBulkPrompt && (
+            <div className="relative">
+              <button
+                onClick={() => setContextPopover(p => p === 'prompts' ? null : 'prompts')}
+                className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${contextPopover === 'prompts' ? 'bg-white/[0.08] text-white border-white/[0.12]' : 'text-zinc-300 border-white/[0.04] hover:bg-white/[0.04]'}`}
+                title="Master shot-prompts — view or rewrite with a note"
+              >
+                Prompts
+              </button>
+              {contextPopover === 'prompts' && (
+                <div className="absolute top-full right-0 mt-2 w-[28rem] surface rounded-xl p-4 shadow-xl z-30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] uppercase tracking-wide text-zinc-400">Rewrite all shot prompts</span>
+                    <button
+                      onClick={() => { onRewriteShotPrompts(bulkNote || undefined); setBulkNote(''); setContextPopover(null); }}
+                      disabled={isLoading}
+                      className="text-[11px] bg-white text-black rounded-md px-3 py-1.5 font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors flex items-center gap-2"
+                    >
+                      {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                      {isLoading ? 'Rewriting…' : 'Rewrite all'}
+                    </button>
+                  </div>
+                  <AutoGrowTextarea
+                    value={bulkNote}
+                    onChange={e => setBulkNote(e.target.value)}
+                    placeholder="Rewrite note — e.g. 'more deity close-ups', 'reduce camera motion'"
+                    rows={1}
+                    className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && bulkNote.trim() && !isLoading) {
+                        e.preventDefault();
+                        onRewriteShotPrompts(bulkNote); setBulkNote(''); setContextPopover(null);
+                      }
+                    }}
+                  />
+                  <details className="text-[11px] text-zinc-400">
+                    <summary className="cursor-pointer hover:text-zinc-300">View current master prompt</summary>
+                    <pre className="mt-2 surface-inset rounded-md p-3 text-[11px] text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-auto">{project?.lastWriteShotsPrompt}</pre>
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Three bulk actions — the primary CTAs. */}
+          <button
+            onClick={() => onRewriteShotPrompts?.(undefined)}
+            disabled={isLoading || !onRewriteShotPrompts || totalShots === 0}
+            className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            title={missingPromptCount > 0 ? `${missingPromptCount} missing — also rewrites existing.` : 'Rewrite every shot prompt from scratch.'}
+          >
+            {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+            Write prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
+          </button>
+          <button
+            onClick={() => onBulkGenerateFrames?.()}
+            disabled={!onBulkGenerateFrames || framesToFire === 0}
+            className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            title={framesToFire > 0 ? `Fire ${framesToFire} start frame${framesToFire === 1 ? '' : 's'} in parallel.` : 'All eligible frames generated.'}
+          >
+            Frames <span className="text-zinc-400">({framesToFire})</span>
+          </button>
+          <button
+            onClick={() => onBulkGenerateVideos?.()}
+            disabled={!onBulkGenerateVideos || videosToFire === 0}
+            className="text-[11px] bg-white text-black hover:bg-zinc-100 rounded-md px-2.5 py-1 font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            title={videosToFire > 0 ? `Fire ${videosToFire} video${videosToFire === 1 ? '' : 's'} in parallel.` : 'Generate frames first.'}
+          >
+            Videos <span className="opacity-70">({videosToFire})</span>
+          </button>
+        </div>
       </div>
 
-      {/* Scene Header */}
-      <AnimatePresence mode="wait">
+      {/* Stacked scene list — all scenes visible, each with its own header
+          and shots. Switching tabs scrolls; nothing collapses. */}
+      <div className="space-y-12">
+      {scenes.map((scene, sceneIdx) => {
+        // Preserve existing variable names inside the scene body so we don't
+        // have to rename ~500 lines of JSX.
+        const activeScene = scene;
+        const activeSceneIdx = sceneIdx;
+        return (
         <motion.div
-          key={activeScene.id}
+          key={scene.id}
+          id={`scene-${scene.id}`}
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.2 }}
-          className="space-y-6"
+          className="space-y-6 scroll-mt-20"
         >
           <div className="space-y-1">
             <div className="flex items-center gap-3">
@@ -250,7 +359,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
               // Progress dots: Frame → Video → Locked
               const progress = shot.locked ? 3 : hasVideo ? 2 : hasStartFrame ? 1 : 0;
-              const isExpanded = expandedShotId === shot.id;
+              const isExpanded = expandedShotIds.has(shot.id);
 
               return (
                 <motion.div
@@ -271,7 +380,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       // Don't toggle when user clicks a button/input inside the header
                       const tag = (e.target as HTMLElement).closest('button, select, input, textarea, a');
                       if (tag) return;
-                      setExpandedShotId(isExpanded ? null : shot.id);
+                      toggleExpanded(shot.id);
                     }}
                   >
                     {/* Chevron */}
@@ -282,8 +391,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     ><polyline points="9 18 15 12 9 6"/></svg>
 
                     {/* Left: shot info */}
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-xs font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className="text-sm font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
 
                       {/* Progress dots */}
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -294,10 +403,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         ))}
                       </div>
 
-                      <span className="text-[11px] text-zinc-400 font-mono flex-shrink-0">{shot.duration}s</span>
-
+                      {/* Duration removed from the pill per artist feedback.
+                          Still visible in the expanded shot body where it
+                          matters (prompt tab / lock state). */}
                       {activeCastMembers.length > 0 && (
-                        <span className="text-[11px] text-zinc-400 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
+                        <span className="text-sm text-zinc-300 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
                       )}
 
                       {shotIdx > 0 && (
@@ -306,11 +416,59 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           className={`text-[11px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
                             shot.continuityFrom === 'prev_shot'
                               ? 'text-amber-400/80 bg-amber-500/10'
-                              : 'text-zinc-400 hover:text-zinc-400'
+                              : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
                           }`}
                         >
                           {shot.continuityFrom === 'prev_shot' ? 'chain' : 'cut'}
                         </button>
+                      )}
+
+                      {shot.videoStatus === GenerationStatus.STALE && (
+                        <span
+                          className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 flex-shrink-0"
+                          title="The previous video is out of sync with the end keyframe set by the next shot. Regenerate to land on that frame."
+                        >
+                          stale
+                        </span>
+                      )}
+
+                      {shot.refinedFromPrevFrame && (
+                        <span
+                          className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0"
+                          title="Prompt was auto-rewritten by Claude after seeing the previous shot's actual last frame — grounded continuity."
+                        >
+                          refined
+                        </span>
+                      )}
+
+                      {/* Bulk-queue position — surfaces "Nth in line" while a
+                          bulk gen worker hasn't picked this shot up yet. Frames
+                          or video pulls whichever applies (exclusive because
+                          the handler skips shots already generating the other). */}
+                      {(() => {
+                        const framePos = frameQueue?.indexOf(shot.id) ?? -1;
+                        const videoPos = videoQueue?.indexOf(shot.id) ?? -1;
+                        if (framePos < 0 && videoPos < 0) return null;
+                        const kind = framePos >= 0 ? 'frame' : 'video';
+                        const pos = framePos >= 0 ? framePos + 1 : videoPos + 1;
+                        const ordinal = pos === 1 ? '1st' : pos === 2 ? '2nd' : pos === 3 ? '3rd' : `${pos}th`;
+                        return (
+                          <span
+                            className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0 font-mono"
+                            title={`Queued for bulk ${kind} generation — ${ordinal} in line.`}
+                          >
+                            queued · {ordinal}
+                          </span>
+                        );
+                      })()}
+
+                      {!actionable && !shot.imageUrl && (
+                        <span
+                          className="text-[11px] uppercase tracking-wide text-zinc-400 flex-shrink-0"
+                          title="Waiting on previous shot's video (continuity chain)"
+                        >
+                          queued
+                        </span>
                       )}
                     </div>
 
@@ -332,47 +490,64 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         </div>
                       )}
 
-                      {/* Regen frame */}
+                      {/* History — lets the artist revert to an earlier generation
+                          after a regen they didn't like. */}
+                      {shot.videoUrl && (
+                        <button
+                          onClick={() => openHistory(shot.id)}
+                          className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${historyOpenFor === shot.id ? 'text-white bg-white/[0.1]' : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'}`}
+                          title="Version history — revert to an earlier generation"
+                          aria-label="Version history"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+                            <path d="M3 3v5h5"/>
+                            <path d="M12 7v5l3 2"/>
+                          </svg>
+                        </button>
+                      )}
+
+                      {/* Sleek icon-only toolbar — tooltip carries the label.
+                          Three 28px buttons, tight spacing, monochrome. */}
                       <button
                         onClick={() => onGenerateImage(activeScene.id, shot.id)}
                         disabled={isGenerating || (!actionable && !shot.locked)}
-                        className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center gap-1"
+                        className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
                         title={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
+                        aria-label={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                           <circle cx="9" cy="9" r="2"/>
                           <path d="M21 15l-5-5L5 21"/>
                         </svg>
-                        <span className="text-[11px] hidden sm:inline">{hasStartFrame ? 'Regen' : 'Frame'}</span>
                       </button>
 
-                      {/* Regen video */}
                       <button
                         onClick={() => onGenerateVideo(activeScene.id, shot.id)}
                         disabled={!canGenerateVideo && !shot.locked || isGenerating}
-                        className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center gap-1"
+                        className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
                         title={hasVideo ? 'Regenerate video' : 'Generate video'}
+                        aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <polygon points="23 7 16 12 23 17 23 7"/>
                           <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
                         </svg>
-                        <span className="text-[11px] hidden sm:inline">{hasVideo ? 'Regen' : 'Video'}</span>
                       </button>
 
-                      {/* Lock / Unlock — standard place, standard icon */}
                       <button
                         onClick={() => onLockShot(activeScene.id, shot.id)}
                         disabled={isGenerating || (!shot.locked && !canLock)}
-                        className={`p-1.5 rounded transition-colors flex items-center gap-1 ${
+                        className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${
                           shot.locked
-                            ? 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
+                            ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]'
                             : canLock
-                              ? 'bg-white text-black hover:bg-zinc-200'
-                              : 'text-zinc-400'
+                              ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]'
+                              : 'text-zinc-400/60'
                         } disabled:opacity-30`}
                         title={shot.locked ? 'Unlock shot — allow edits' : canLock ? 'Lock shot' : 'Generate start frame + video first to lock'}
+                        aria-label={shot.locked ? 'Unlock shot' : 'Lock shot'}
                       >
                         {shot.locked ? (
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -385,7 +560,6 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                           </svg>
                         )}
-                        <span className="text-[11px] hidden sm:inline">{shot.locked ? 'Unlock' : 'Lock'}</span>
                       </button>
                     </div>
                   </div>
@@ -396,29 +570,58 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   <div className="relative">
                     {shot.videoUrl && !showFrames[shot.id] ? (
                       <div className="bg-black">
-                        <video src={shot.videoUrl} controls loop playsInline className="w-full h-auto" />
+                        <ShotVideoPreview
+                          videoUrl={shot.videoUrl}
+                          audioUrl={project?.audioPath ? `/storage/${project.audioPath}` : undefined}
+                          globalStartSec={
+                            parseTimeToSec(activeScene.startTime) +
+                            activeScene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)
+                          }
+                          durationSec={shot.duration}
+                        />
                       </div>
                     ) : hasVideo && (shot.extractedLastFrameUrl || shot.endImageUrl) ? (
                       // Post-video: show start + extracted last frame side-by-side
-                      <div className="flex">
-                        <div className="flex-1 relative bg-black min-h-[120px]">
+                      <div className="flex bg-[#141418]">
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/start">
                           <div className="absolute top-2 left-2 z-20">
-                            <span className="text-[11px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start</span>
+                            <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span>
                           </div>
+                          {shot.imageUrl && !shot.locked && onClearShotFrame && (
+                            <button
+                              onClick={() => onClearShotFrame(shot.id)}
+                              className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                              title="Remove this start frame (keeps the video)"
+                              aria-label="Remove start frame"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          )}
+                          {shot.imageUrl && shotIdx > 0 && !activeScene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                            <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => onUseAsPrevEnd(shot.id)}
+                                className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                title="Use this start frame as the previous shot's end keyframe. Previous shot's video becomes stale — regen to land on this frame."
+                              >
+                                ← Use as prev shot's end
+                              </button>
+                            </div>
+                          )}
                           {shot.imageUrl && (
-                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in" />
+                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
                           )}
                         </div>
                         <div className="w-px bg-white/[0.06] flex-shrink-0" />
-                        <div className="flex-1 relative bg-black min-h-[120px] group/last">
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/last">
                           <div className="absolute top-2 left-2 z-20">
-                            <span className="text-[11px] bg-black/60 text-emerald-300/80 px-1.5 py-0.5 rounded-md uppercase font-medium">End (from video)</span>
+                            <span className="text-[10px] bg-black/70 backdrop-blur text-emerald-300/80 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">End</span>
                           </div>
                           <img
                             src={shot.extractedLastFrameUrl || shot.endImageUrl!}
                             alt={`Shot ${shotIdx + 1} last frame`}
                             onClick={() => setModalImage((shot.extractedLastFrameUrl || shot.endImageUrl)!)}
-                            className={`w-full h-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
+                            className={`max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
                           />
                           {/* Action: use this frame as next shot's start */}
                           {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && onUsePrevLastFrame && (
@@ -439,13 +642,34 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     ) : (
                       // Pre-video: just show the start frame full width (no confusing empty slot)
-                      <div className="relative bg-black min-h-[160px]">
+                      <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/start">
                         {shot.imageUrl ? (
                           <>
                             <div className="absolute top-2 left-2 z-20">
-                              <span className="text-[11px] bg-black/60 text-zinc-400 px-1.5 py-0.5 rounded-md uppercase font-medium">Start Frame</span>
+                              <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span>
                             </div>
-                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="w-full h-auto cursor-zoom-in mx-auto max-h-[400px] object-contain" />
+                            {!shot.locked && onClearShotFrame && (
+                              <button
+                                onClick={() => onClearShotFrame(shot.id)}
+                                className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                                title="Remove this start frame"
+                                aria-label="Remove start frame"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                              </button>
+                            )}
+                            {shotIdx > 0 && !activeScene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                              <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => onUseAsPrevEnd(shot.id)}
+                                  className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                  title="Use this start frame as the previous shot's end keyframe. Previous shot's video becomes stale — regen to land on this frame."
+                                >
+                                  ← Use as prev shot's end
+                                </button>
+                              </div>
+                            )}
+                            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[480px] h-auto w-auto cursor-zoom-in" />
                           </>
                         ) : (
                           <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
@@ -478,7 +702,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     )}
 
-                    {/* Loading overlay */}
+                    {/* Loading overlay — clickable stop button so the artist
+                        isn't stuck watching a 60-180s video gen. Cancelling
+                        reverts the shot to idle; server call orphans but is
+                        harmless (logged, no state corruption). */}
                     {isGenerating && (
                       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-30 gap-3">
                         <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
@@ -490,6 +717,18 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         <div className="w-24 h-0.5 bg-white/[0.06] rounded-full overflow-hidden">
                           <div className="h-full bg-white/30 rounded-full animate-shimmer" style={{ width: '40%' }} />
                         </div>
+                        {(shot.imageStatus === GenerationStatus.LOADING && onCancelShotImage) ||
+                        (shot.videoStatus === GenerationStatus.LOADING && onCancelShotVideo) ? (
+                          <button
+                            onClick={() => {
+                              if (shot.imageStatus === GenerationStatus.LOADING) onCancelShotImage?.(shot.id);
+                              else if (shot.videoStatus === GenerationStatus.LOADING) onCancelShotVideo?.(shot.id);
+                            }}
+                            className="text-[11px] bg-white/[0.08] hover:bg-white/[0.14] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1 transition-colors"
+                          >
+                            Stop
+                          </button>
+                        ) : null}
                       </div>
                     )}
 
@@ -500,6 +739,62 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     )}
                   </div>
+
+                  {/* Version history panel — opens via the history button above.
+                      Lets the artist revert to an earlier generation when a
+                      regen produced something worse. Pointer swap only; files
+                      on disk are kept regardless. */}
+                  {historyOpenFor === shot.id && (
+                    <div className="px-5 py-3 border-t border-white/[0.06] bg-white/[0.02]">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] uppercase tracking-wider text-zinc-400">Version history</span>
+                        <button
+                          onClick={() => setHistoryOpenFor(null)}
+                          className="text-[11px] text-zinc-400 hover:text-white"
+                        >Close</button>
+                      </div>
+                      {historyLoading ? (
+                        <div className="text-xs text-zinc-400 py-3">Loading…</div>
+                      ) : historyVersions.length === 0 ? (
+                        <div className="text-xs text-zinc-400 py-3">No previous versions yet — regenerate to build history.</div>
+                      ) : (
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {historyVersions.map((v, idx) => (
+                            <button
+                              key={v.assetId}
+                              disabled={v.isCurrent}
+                              onClick={async () => {
+                                await onRevertVideo?.(shot.id, v.assetId);
+                                setHistoryOpenFor(null);
+                              }}
+                              className={`flex-shrink-0 w-28 rounded-md overflow-hidden border transition-all text-left ${
+                                v.isCurrent
+                                  ? 'border-white/40 ring-1 ring-white/30'
+                                  : 'border-white/[0.08] hover:border-white/30 cursor-pointer'
+                              }`}
+                              title={v.isCurrent ? 'Current version' : 'Revert to this version'}
+                            >
+                              <div className="aspect-video bg-black flex items-center justify-center">
+                                {v.thumbnailUrl ? (
+                                  <img src={v.thumbnailUrl} alt={`v${historyVersions.length - idx}`} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-[10px] text-zinc-500">no preview</span>
+                                )}
+                              </div>
+                              <div className="px-2 py-1.5">
+                                <div className="text-[11px] text-zinc-300 font-medium">
+                                  {v.isCurrent ? 'Current' : `Revert`}
+                                </div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  {new Date(v.createdAt + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Prompts — full width below media */}
                   <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
@@ -603,13 +898,13 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                           {activeTab === 'video' ? (
                             <div className="space-y-3">
-                              <div className="text-[11px] text-zinc-400">
+                              <div className="text-sm text-zinc-300">
                                 This is the full prompt sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame. Edit to override.
                               </div>
                               <textarea
                                 value={videoOverride[shot.id] ?? autoVeoPrompt}
                                 onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
-                                className="w-full surface-inset rounded-md p-3 text-xs text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
+                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
                               />
                               <div className="flex items-center gap-2">
                                 <button
@@ -634,7 +929,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             </div>
                           ) : activeTab === 'compiled' ? (
                             <div className="space-y-3">
-                              <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">{compiledText}</pre>
+                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
                               {compiledRefs.length > 0 && (
                                 <div className="flex gap-2 flex-wrap">
                                   {compiledRefs.map((ref, i) => (
@@ -651,7 +946,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               )}
                             </div>
                           ) : shot.locked ? (
-                            <p className="text-sm text-zinc-400 leading-relaxed">{promptText}</p>
+                            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{promptText}</p>
                           ) : (
                             <>
                               <textarea
@@ -662,26 +957,28 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               />
                               {hasStartFrame && (
                                 <div className="flex gap-2">
-                                  <input
+                                  <AutoGrowTextarea
                                     id={`refine-${shot.id}`}
                                     placeholder="What's wrong? e.g. 'face not crisp, lighting too flat'"
-                                    className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                                    rows={1}
+                                    className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
-                                        onRefinePrompt(activeScene.id, shot.id, (e.target as HTMLInputElement).value);
-                                        (e.target as HTMLInputElement).value = '';
+                                      if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
+                                        e.preventDefault();
+                                        onRefinePrompt(activeScene.id, shot.id, (e.target as HTMLTextAreaElement).value);
+                                        (e.target as HTMLTextAreaElement).value = '';
                                       }
                                     }}
                                   />
                                   <button
                                     onClick={() => {
-                                      const input = document.getElementById(`refine-${shot.id}`) as HTMLInputElement;
+                                      const input = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
                                       if (input?.value.trim()) {
                                         onRefinePrompt(activeScene.id, shot.id, input.value);
                                         input.value = '';
                                       }
                                     }}
-                                    className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0"
+                                    className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
                                   >
                                     Refine
                                   </button>
@@ -699,7 +996,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
             })}
           </div>
         </motion.div>
-      </AnimatePresence>
+        );
+      })}
+      </div>
 
       <AnimatePresence>
         {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
