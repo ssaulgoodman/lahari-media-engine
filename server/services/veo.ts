@@ -99,6 +99,8 @@ export const generateVideo = async (
 ): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
   const ai = getAI();
   const startBase64 = await readAsBase64(startImagePath);
+  // Detect actual image format from magic bytes instead of assuming PNG
+  const startMime = startBase64.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
 
   const modelKey: VeoModelKey = opts?.modelKey || 'veo-3.1-fast';
   const model = VEO_MODELS[modelKey] || VEO_MODELS['veo-3.1-fast'];
@@ -130,26 +132,19 @@ export const generateVideo = async (
   }
 
   // Reference images — character/environment refs so Veo maintains consistency.
-  // Up to 3 asset images, only on 3.1 models.
-  if (opts?.referenceImagePaths?.length && model.supportsLastFrame) {
-    const refs: any[] = [];
-    for (const refPath of opts.referenceImagePaths.slice(0, 3)) {
-      const refBase64 = await readAsBase64(refPath);
-      refs.push({
-        image: { imageBytes: refBase64, mimeType: 'image/png' },
-        referenceType: 'asset',
-      });
-    }
-    if (refs.length > 0) config.referenceImages = refs;
-  }
+  // DISABLED: referenceImages in config causes empty responses from the SDK.
+  // The @google/genai SDK may need a different parameter structure than the
+  // REST API. Need to verify with SDK docs before re-enabling.
+  // TODO: fix referenceImages passing via SDK
+  const _referenceImagePaths = opts?.referenceImagePaths || [];
 
   const modelId = model.modelId;
-  console.log(`[veo] model=${modelId}, refs=${opts?.referenceImagePaths?.length || 0}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+  console.log(`[veo] model=${modelId}, refs=disabled(${_referenceImagePaths.length}), prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   let operation = await ai.models.generateVideos({
     model: modelId,
     prompt: motionPrompt || 'Cinematic camera movement',
-    image: { imageBytes: startBase64, mimeType: 'image/png' },
+    image: { imageBytes: startBase64, mimeType: startMime },
     config
   });
 
@@ -161,11 +156,14 @@ export const generateVideo = async (
 
   const video: any = operation.response?.generatedVideos?.[0]?.video;
   if (!video) {
-    const resp = operation.response;
+    const resp = operation.response as any;
     const genVideo = resp?.generatedVideos?.[0];
-    const reason = (genVideo as any)?.finishReason || (genVideo as any)?.blockReason || 'unknown';
-    console.error(`[veo] No video. Model=${modelId}, reason=${reason}, response=${JSON.stringify(resp || {}).substring(0, 500)}`);
-    throw new Error(`Video generation returned no video (${reason}). Model: ${modelId}`);
+    const raiReasons = resp?.raiMediaFilteredReasons;
+    const reason = raiReasons?.length
+      ? `Content filtered: ${raiReasons[0]}`
+      : (genVideo as any)?.finishReason || (genVideo as any)?.blockReason || 'unknown';
+    console.error(`[veo] No video. Model=${modelId}, reason=${reason}`);
+    throw new Error(`Video blocked by safety filter. Try rephrasing the prompt or using a different start frame. (${modelId})`);
   }
 
   // Two response shapes depending on transport:
