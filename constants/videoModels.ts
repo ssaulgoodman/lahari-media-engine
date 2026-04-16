@@ -1,11 +1,11 @@
 // Shared video model registry — must stay in sync with
-// server/services/veo.ts (VEO_MODELS) and server/services/fal.ts (FAL_VIDEO_MODELS).
-// These are the only models the UI exposes + that the server accepts.
+// server/services/segmind.ts (SEGMIND_MODELS).
+// All models now route through Segmind's unified API.
 
 export interface VideoModelSpec {
   key: string;
   label: string;
-  provider: 'veo' | 'fal';
+  provider: 'segmind';
   /** Allowed shot durations (seconds). First entry is the default. */
   durations: number[];
   /** Rough cost estimate for display ($/sec). */
@@ -14,42 +14,48 @@ export interface VideoModelSpec {
   note?: string;
   /** Whether this model accepts an end keyframe (enables reverse-chain). */
   supportsLastFrame: boolean;
+  /** Whether this model accepts reference images for consistency. */
+  supportsRefs: boolean;
 }
 
 export const VIDEO_MODELS: VideoModelSpec[] = [
   {
     key: 'veo-3.1-fast',
     label: 'Veo 3.1 Fast',
-    provider: 'veo',
+    provider: 'segmind',
     durations: [8],
     costPerSec: 0.10,
     supportsLastFrame: true,
+    supportsRefs: true,
   },
   {
     key: 'veo-3.1',
     label: 'Veo 3.1',
-    provider: 'veo',
+    provider: 'segmind',
     durations: [4, 6, 8],
     costPerSec: 0.20,
     supportsLastFrame: true,
+    supportsRefs: true,
   },
   {
     key: 'seedance-2.0-fast',
     label: 'Seedance 2.0 Fast',
-    provider: 'fal',
+    provider: 'segmind',
     durations: [5, 10],
-    costPerSec: 0.24,
-    note: '5s or 10s via fal.ai',
-    supportsLastFrame: false,
+    costPerSec: 0.146,
+    note: 'Up to 9 ref images',
+    supportsLastFrame: true,
+    supportsRefs: true,
   },
   {
     key: 'seedance-2.0',
     label: 'Seedance 2.0',
-    provider: 'fal',
+    provider: 'segmind',
     durations: [5, 10],
-    costPerSec: 0.30,
-    note: '5s or 10s, higher quality',
-    supportsLastFrame: false,
+    costPerSec: 0.182,
+    note: 'Higher quality, up to 9 ref images',
+    supportsLastFrame: true,
+    supportsRefs: true,
   },
 ];
 

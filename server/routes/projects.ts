@@ -199,62 +199,75 @@ export { forkProject };
 // ─── Helper: build full project response ────────────────────────────
 
 const getFullProject = async (projectId: string) => {
-  const project: any = await selectOne('projects', { id: projectId });
+  // Parallel fetch: project + cast + environments + scenes + chat — 5 queries instead of serial
+  const [project, cast, environments, scenes, chatMessages] = await Promise.all([
+    selectOne('projects', { id: projectId }),
+    selectAll('cast_members', { project_id: projectId }, { orderBy: 'sort_order' }),
+    selectAll('environments', { project_id: projectId }, { orderBy: 'sort_order' }),
+    selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' }),
+    selectColumns('chat_messages', 'role, text', { project_id: projectId }, { orderBy: 'id' }),
+  ]) as [any, any[], any[], any[], any[]];
   if (!project) return null;
 
-  const cast = await selectAll('cast_members', { project_id: projectId }, { orderBy: 'sort_order' });
-  const environments = await selectAll('environments', { project_id: projectId }, { orderBy: 'sort_order' });
-  const scenes = await selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' });
-  const chatMessages = await selectColumns('chat_messages', 'role, text', { project_id: projectId }, { orderBy: 'id' });
+  // Fetch ALL shots for this project's scenes in one query (not N queries per scene)
+  const sceneIds = scenes.map((s: any) => s.id);
+  const allShots = sceneIds.length > 0
+    ? await selectAll('shots', { scene_id: sceneIds }, { orderBy: 'sort_order' })
+    : [];
 
-  // Attach shots to scenes
+  // Collect every asset ID we need to resolve — one bulk fetch instead of N+1
+  const assetIds = new Set<string>();
+  for (const shot of allShots) {
+    if (shot.image_asset_id) assetIds.add(shot.image_asset_id);
+    if (shot.end_image_asset_id) assetIds.add(shot.end_image_asset_id);
+    if (shot.extracted_last_frame_asset_id) assetIds.add(shot.extracted_last_frame_asset_id);
+    if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
+  }
+  for (const c of cast) { if (c.reference_asset_id) assetIds.add(c.reference_asset_id); }
+  for (const e of environments) { if (e.reference_asset_id) assetIds.add(e.reference_asset_id); }
+  if (project.style_asset_id) assetIds.add(project.style_asset_id);
+
+  // Single bulk asset fetch — replaces 80+ individual selectOne calls
+  const assetMap = new Map<string, any>();
+  if (assetIds.size > 0) {
+    const assets = await selectAll('assets', { id: [...assetIds] });
+    for (const a of assets) assetMap.set(a.id, a);
+  }
+
+  const resolveUrl = (id: string | null | undefined) => {
+    if (!id) return undefined;
+    const a = assetMap.get(id);
+    return a ? storageUrl(a.file_path) : undefined;
+  };
+
+  // Group shots by scene
+  const shotsByScene = new Map<string, any[]>();
+  for (const shot of allShots) {
+    const arr = shotsByScene.get(shot.scene_id) || [];
+    arr.push(shot);
+    shotsByScene.set(shot.scene_id, arr);
+  }
+
   for (const scene of scenes) {
-    scene.shots = await selectAll('shots', { scene_id: scene.id }, { orderBy: 'sort_order' });
-    // Resolve shot image/video/end-frame asset paths to URLs
+    scene.shots = shotsByScene.get(scene.id) || [];
     for (const shot of scene.shots as any[]) {
-      if (shot.image_asset_id) {
-        const asset: any = await selectOne('assets', { id: shot.image_asset_id });
-        if (asset) shot.imageUrl = storageUrl(asset.file_path);
-      }
-      if (shot.end_image_asset_id) {
-        const asset: any = await selectOne('assets', { id: shot.end_image_asset_id });
-        if (asset) shot.endImageUrl = storageUrl(asset.file_path);
-      }
-      if (shot.extracted_last_frame_asset_id) {
-        const asset: any = await selectOne('assets', { id: shot.extracted_last_frame_asset_id });
-        if (asset) shot.extractedLastFrameUrl = storageUrl(asset.file_path);
-      }
-      if (shot.video_asset_id) {
-        const asset: any = await selectOne('assets', { id: shot.video_asset_id });
-        if (asset) shot.videoUrl = storageUrl(asset.file_path);
-      }
+      shot.imageUrl = resolveUrl(shot.image_asset_id);
+      shot.endImageUrl = resolveUrl(shot.end_image_asset_id);
+      shot.extractedLastFrameUrl = resolveUrl(shot.extracted_last_frame_asset_id);
+      shot.videoUrl = resolveUrl(shot.video_asset_id);
       shot.castIds = JSON.parse(shot.cast_ids || '[]');
       shot.critique = shot.critique ? JSON.parse(shot.critique) : undefined;
     }
   }
 
-  // Resolve cast reference images
+  // Resolve cast + env + style from the same asset map
   for (const member of cast as any[]) {
-    if (member.reference_asset_id) {
-      const asset: any = await selectOne('assets', { id: member.reference_asset_id });
-      if (asset) member.referenceImageUrl = storageUrl(asset.file_path);
-    }
+    member.referenceImageUrl = resolveUrl(member.reference_asset_id);
   }
-
-  // Resolve environment reference images
   for (const env of environments) {
-    if (env.reference_asset_id) {
-      const asset: any = await selectOne('assets', { id: env.reference_asset_id });
-      if (asset) env.referenceImageUrl = storageUrl(asset.file_path);
-    }
+    env.referenceImageUrl = resolveUrl(env.reference_asset_id);
   }
-
-  // Resolve style asset
-  let styleAssetUrl: string | undefined;
-  if (project.style_asset_id) {
-    const asset: any = await selectOne('assets', { id: project.style_asset_id });
-    if (asset) styleAssetUrl = storageUrl(asset.file_path);
-  }
+  const styleAssetUrl = resolveUrl(project.style_asset_id);
 
   return {
     id: project.id,
@@ -311,6 +324,8 @@ const getFullProject = async (projectId: string) => {
         continuityFrom: shot.continuity_from || 'cut',
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
+        endVisualPrompt: shot.end_visual_prompt || undefined,
+        endUserFeedback: shot.end_user_feedback || undefined,
         locked: !!shot.locked,
         userFeedback: shot.user_feedback || undefined,
         environmentId: shot.environment_id || undefined,
@@ -797,7 +812,7 @@ router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
 });
 
 router.patch('/:id/shots/:shotId', async (req, res) => {
-  const { visualPrompt, motionPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
+  const { visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
   const shotId = paramStr(req.params.shotId);
 
   // Manual edits to the prompt invalidate the auto-refresh chip — it meant
@@ -813,6 +828,9 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   }
   if (userFeedback !== undefined) {
     await updateRows('shots', { id: shotId }, { user_feedback: userFeedback || null });
+  }
+  if (endVisualPrompt !== undefined) {
+    await updateRows('shots', { id: shotId }, { end_visual_prompt: endVisualPrompt || null });
   }
   if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
     await updateRows('shots', { id: shotId }, { continuity_from: continuityFrom });

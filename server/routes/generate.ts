@@ -7,8 +7,8 @@ import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '.
 import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
 import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
-import { generateVideo, extractLastFrame, VEO_MODELS, VeoModelKey } from '../services/veo.js';
-import { generateFalVideo, FAL_VIDEO_MODELS } from '../services/fal.js';
+import { extractLastFrame } from '../services/veo.js';
+import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 
@@ -974,8 +974,8 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
 
 // ─── Refine Shot Prompt (vision + rewrite) ─────────────────────────
 
-router.post('/:id/shots/:shotId/refine-prompt', async (req, res) => {
-  const { feedback } = req.body;
+router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'), async (req, res) => {
+  const feedback = req.body?.feedback;
   if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
 
   const project = await selectOne('projects', { id: paramStr(req.params.id) });
@@ -994,17 +994,35 @@ router.post('/:id/shots/:shotId/refine-prompt', async (req, res) => {
     .filter((c: any) => shotCastIds.includes(c.id))
     .map((c: any) => `${c.name}: ${c.description || 'no description'}`);
 
+  // If user uploaded a reference image, save it and include in feedback text
+  let refImageNote = '';
+  if (req.file) {
+    refImageNote = `\n[User attached a reference image — see the second image below for what they want it to look like]`;
+  }
+
   try {
     const t0 = Date.now();
     const imageBase64 = await readAsBase64(imageAsset.file_path);
     const mime = mimeFromExt(imageAsset.file_path);
 
+    // Build images array: failed attempt + optional user reference
+    const images: { base64: string; mime: string; label: string }[] = [
+      { base64: imageBase64, mime, label: 'Failed attempt' },
+    ];
+    if (req.file) {
+      const refBase64 = req.file.buffer.toString('base64');
+      const refMime = req.file.mimetype || 'image/png';
+      images.push({ base64: refBase64, mime: refMime, label: 'User reference' });
+    }
+
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback,
+      feedback: feedback + refImageNote,
       failedImageBase64: imageBase64,
       failedImageMime: mime,
+      referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
+      referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
       styleDNA: project.style_description || 'Cinematic',
       characterDescriptions: charDescs,
     });
@@ -1261,9 +1279,8 @@ router.post('/:id/shots/:shotId/use-as-prev-end', async (req, res) => {
 
   const project = await selectOne('projects', { id: projectId });
   const modelKey = project?.video_model || 'veo-3.1-fast';
-  const veoModel = (VEO_MODELS as any)[modelKey];
-  const falModel = (FAL_VIDEO_MODELS as any)[modelKey];
-  const supportsLastFrame = veoModel?.supportsLastFrame || falModel?.supportsLastFrame || false;
+  const segModel = (SEGMIND_MODELS as any)[modelKey];
+  const supportsLastFrame = segModel?.supportsLastFrame || false;
   if (!supportsLastFrame) {
     return res.status(400).json({ error: `Current video model (${modelKey}) does not support end-keyframe conditioning. Switch to Veo 3.1 to use reverse-chain.` });
   }
@@ -1301,6 +1318,13 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     ? await selectOne('assets', { id: project.style_asset_id })
     : null;
 
+  // If regenerating with feedback, pass the failed end frame
+  let failedEndFramePath: string | undefined;
+  if (shot.end_user_feedback && shot.end_image_asset_id) {
+    const failedAsset = await selectOne('assets', { id: shot.end_image_asset_id });
+    if (failedAsset) failedEndFramePath = failedAsset.file_path;
+  }
+
   try {
     await updateRows('shots', { id: shotId }, { end_image_status: 'loading' });
     const t0 = Date.now();
@@ -1308,22 +1332,29 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     const { generateShotEndFrame } = await import('../services/imagen.js');
     const endFramePath = await generateShotEndFrame({
       startFramePath: imageAsset.file_path,
-      visualPrompt: shot.visual_prompt || '',
+      visualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
       motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
       styleImagePath: styleAsset?.file_path,
       styleDNA: project.style_description || 'Cinematic',
+      userFeedback: shot.end_user_feedback || undefined,
+      failedImagePath: failedEndFramePath,
     });
 
     const assetId = uuidv4();
     await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_end_frame', file_path: endFramePath });
-    await updateRows('shots', { id: shotId }, { end_image_asset_id: assetId, end_image_status: 'success', video_status: 'stale' });
+    await updateRows('shots', { id: shotId }, {
+      end_image_asset_id: assetId,
+      end_image_status: 'success',
+      end_user_feedback: null,
+      video_status: 'stale',
+    });
 
     const durationMs = Date.now() - t0;
     await logCall({
       projectId,
       stage: 'generate-end-frame',
       model: 'gemini-3-pro-image-preview',
-      prompt: `End frame for shot: ${shot.visual_prompt?.substring(0, 100)}`,
+      prompt: `End frame for shot: ${(shot.end_visual_prompt || shot.visual_prompt || '').substring(0, 100)}`,
       referenceInputs: [{ type: 'image', label: 'Start frame', url: storageUrl(imageAsset.file_path) }],
       outputAssetIds: [assetId],
       contextChain: await buildContextChain(projectId),
@@ -1335,6 +1366,63 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
   } catch (err: any) {
     await updateRows('shots', { id: shotId }, { end_image_status: 'error' });
     res.status(500).json({ error: `End frame generation failed: ${err.message}` });
+  }
+});
+
+// Refine end frame prompt — mirrors refine-prompt but for the end frame
+router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referenceImage'), async (req, res) => {
+  const feedback = req.body?.feedback;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  if (!shot.end_image_asset_id) return res.status(400).json({ error: 'No end frame to refine — generate one first' });
+
+  const endImageAsset = await selectOne('assets', { id: shot.end_image_asset_id });
+  if (!endImageAsset) return res.status(400).json({ error: 'End frame asset not found' });
+
+  try {
+    const t0 = Date.now();
+    const imageBase64 = await readAsBase64(endImageAsset.file_path);
+    const mime = mimeFromExt(endImageAsset.file_path);
+
+    const result = await refineShotPrompt({
+      currentVisualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
+      currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
+      feedback: `[END FRAME REFINEMENT] ${feedback}`,
+      failedImageBase64: imageBase64,
+      failedImageMime: mime,
+      referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
+      referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
+      styleDNA: project.style_description || 'Cinematic',
+      characterDescriptions: [],
+    });
+
+    // Save rewritten prompt — user sees it update, then generates separately
+    await updateRows('shots', { id: shot.id }, {
+      end_visual_prompt: result.visualPrompt,
+      end_user_feedback: feedback,
+    });
+
+    const durationMs = Date.now() - t0;
+    await logCall({
+      projectId: project.id,
+      stage: 'refine-end-frame-prompt',
+      model: 'claude-sonnet-4-6',
+      prompt: `Refine end frame: "${feedback}" | Original: "${(shot.end_visual_prompt || shot.visual_prompt || '').substring(0, 80)}…"`,
+      referenceInputs: [{ type: 'image', label: 'Failed end frame', url: storageUrl(endImageAsset.file_path) }],
+      contextChain: await buildContextChain(project.id),
+      responseSummary: `Rewritten: "${result.visualPrompt.substring(0, 100)}…"`,
+      durationMs,
+      costEstimate: 0.01,
+    });
+
+    res.json(await getFullProject(paramStr(req.params.id)));
+  } catch (err: any) {
+    console.error(`[shot ${shot.id}] End frame prompt refinement failed:`, err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1490,33 +1578,23 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     // Use user-provided override if given, otherwise the auto-built prompt
     const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
 
-    // Default to 3.0 Fast (known working). Old projects stored 'veo-3.1' or
-    // 'veo-3.1-fast' — those are now separate model options the user can pick.
-    const rawModelKey = project.video_model || 'veo-3.1-fast';
-    const videoModelKey = rawModelKey;
-    const isFal = videoModelKey in FAL_VIDEO_MODELS;
-    const isVeo = videoModelKey in VEO_MODELS;
+    const videoModelKey = (project.video_model || 'veo-3.1-fast') as SegmindModelKey;
+    const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
 
     console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 100)}...`);
-
-    // Route to the right provider
-    let videoPath: string;
-    let costEstimate: number;
-    let modelId: string;
 
     const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
     const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
 
-    // Collect character + environment reference images for Veo 3.1.
-    // Up to 3 asset refs so Veo maintains character/environment consistency.
+    // Collect character + environment reference images for consistency.
     const referenceImagePaths: string[] = [];
     for (const c of activeCast) {
-      if (c.reference_asset_id && referenceImagePaths.length < 3) {
+      if (c.reference_asset_id && referenceImagePaths.length < 9) {
         const refAsset = await selectOne('assets', { id: c.reference_asset_id });
         if (refAsset) referenceImagePaths.push(refAsset.file_path);
       }
     }
-    if (shot.environment_id && referenceImagePaths.length < 3) {
+    if (shot.environment_id && referenceImagePaths.length < 9) {
       const env = await selectOne('environments', { id: shot.environment_id });
       if (env?.reference_asset_id) {
         const envAsset = await selectOne('assets', { id: env.reference_asset_id });
@@ -1524,54 +1602,25 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       }
     }
 
-    // Reverse-chain: if another shot pushed its start frame into this shot's
-    // end_image_asset_id, pass it to Veo as the target last frame so the clip
-    // lands exactly where the next shot begins. Skip silently for models
-    // that don't accept first+last frame (Seedance, Veo 3.0) — the endpoint
-    // that set it already gates the feature, this is just defense in depth.
+    // End frame for reverse-chain (if the model supports it)
     let endImagePath: string | undefined;
-    const modelSupportsLastFrame =
-      (isVeo && (VEO_MODELS[videoModelKey as VeoModelKey] as any)?.supportsLastFrame) ||
-      (isFal && (FAL_VIDEO_MODELS[videoModelKey] as any)?.supportsLastFrame);
-    if (shot.end_image_asset_id && modelSupportsLastFrame) {
+    if (shot.end_image_asset_id && modelSpec.supportsLastFrame) {
       const endAsset = await selectOne('assets', { id: shot.end_image_asset_id });
       if (endAsset) endImagePath = endAsset.file_path;
     }
 
-    if (isFal) {
-      const result = await generateFalVideo(imageAsset.file_path, veoPrompt, videoModelKey, {
-        aspectRatio: aspect,
-        resolution,
-        duration: String(shot.duration || 10),
-      });
-      videoPath = result.videoPath;
-      const falModel = FAL_VIDEO_MODELS[videoModelKey];
-      costEstimate = falModel.costPerSec * result.durationSec;
-      modelId = falModel.id;
-    } else if (isVeo) {
-      const result = await generateVideo(imageAsset.file_path, veoPrompt, endImagePath, {
-        aspectRatio: aspect,
-        resolution,
-        durationSec: shot.duration,
-        modelKey: videoModelKey as VeoModelKey,
-        referenceImagePaths,
-      });
-      videoPath = result.videoPath;
-      const veoModel = VEO_MODELS[videoModelKey as VeoModelKey];
-      costEstimate = veoModel.costPerSec * result.durationSec;
-      modelId = result.modelId;
-    } else {
-      const result = await generateVideo(imageAsset.file_path, veoPrompt, endImagePath, {
-        aspectRatio: aspect,
-        resolution,
-        durationSec: shot.duration,
-        modelKey: 'veo-3.1-fast',
-        referenceImagePaths,
-      });
-      videoPath = result.videoPath;
-      costEstimate = VEO_MODELS['veo-3.1-fast'].costPerSec * result.durationSec;
-      modelId = result.modelId;
-    }
+    // All models go through Segmind
+    const result = await generateSegmindVideo(imageAsset.file_path, veoPrompt, {
+      endImagePath,
+      referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
+      aspectRatio: aspect,
+      resolution,
+      durationSec: shot.duration,
+      modelKey: videoModelKey in SEGMIND_MODELS ? videoModelKey : 'veo-3.1-fast',
+    });
+    let videoPath = result.videoPath;
+    let costEstimate = modelSpec.costPerSec * result.durationSec;
+    let modelId = result.modelId;
 
     const durationMs = Date.now() - t0;
 
@@ -1666,7 +1715,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
         { type: 'image', label: 'Start keyframe', url: storageUrl(imageAsset.file_path) },
       ],
       contextChain: await buildContextChain(project.id),
-      responseSummary: `Video generated via ${isFal ? 'fal.ai' : 'Veo'}: ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
+      responseSummary: `Video generated via Segmind (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
       outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
       durationMs,
       costEstimate,

@@ -604,6 +604,8 @@ export const refineShotPrompt = async (opts: {
   feedback: string;
   failedImageBase64: string;
   failedImageMime: string;
+  referenceImageBase64?: string;
+  referenceImageMime?: string;
   styleDNA: string;
   characterDescriptions: string[];
 }): Promise<{ visualPrompt: string; motionPrompt: string }> => {
@@ -613,31 +615,30 @@ export const refineShotPrompt = async (opts: {
     ? opts.failedImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
     : 'image/png';
 
-  const response = await client.messages.create({
-    model: SONNET,
-    max_tokens: 1024,
-    tools: [{
-      name: 'rewrite_shot_prompt',
-      description: 'Rewrite the shot prompt to fix the issues identified in the feedback',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in the frame.' },
-          motionPrompt: { type: 'string', description: 'Motion prompt (adjust only if the feedback requires it, otherwise keep the original).' }
-        },
-        required: ['visualPrompt', 'motionPrompt']
-      }
-    }],
-    tool_choice: { type: 'tool', name: 'rewrite_shot_prompt' },
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
-        { type: 'text', text: `You are a cinematographer fixing a shot that didn't come out right.
+  const contentBlocks: any[] = [
+    { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
+  ];
 
-THE IMAGE ABOVE is the failed attempt. Study it carefully.
+  // Add user-uploaded reference image if provided
+  if (opts.referenceImageBase64 && opts.referenceImageMime) {
+    const refMediaType = opts.referenceImageMime.startsWith('image/')
+      ? opts.referenceImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+      : 'image/png';
+    contentBlocks.push(
+      { type: 'image', source: { type: 'base64', media_type: refMediaType, data: opts.referenceImageBase64 } },
+    );
+  }
 
-CURRENT PROMPT (what produced this image):
+  const refNote = opts.referenceImageBase64
+    ? '\n\nThe SECOND IMAGE is a reference the director uploaded — use it as visual guidance for the rewrite. Match its mood, composition, or style as indicated in the feedback.'
+    : '';
+
+  contentBlocks.push({
+    type: 'text', text: `You are a cinematographer fixing a shot that didn't come out right.
+
+THE FIRST IMAGE is the failed attempt. Study it carefully.${refNote}
+
+CURRENT PROMPT (what produced the failed image):
 Visual: ${opts.currentVisualPrompt}
 Motion: ${opts.currentMotionPrompt}
 
@@ -659,8 +660,28 @@ REWRITE the visual prompt to fix the issues. Techniques to consider:
 
 Do NOT just append the feedback. REWRITE the prompt from scratch, keeping what worked and fixing what didn't. Keep it 1-3 sentences — direct and visual.
 
-Only change the motion prompt if the feedback specifically mentions movement or camera motion.` }
-      ]
+Only change the motion prompt if the feedback specifically mentions movement or camera motion.`
+  });
+
+  const response = await client.messages.create({
+    model: SONNET,
+    max_tokens: 1024,
+    tools: [{
+      name: 'rewrite_shot_prompt',
+      description: 'Rewrite the shot prompt to fix the issues identified in the feedback',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in the frame.' },
+          motionPrompt: { type: 'string', description: 'Motion prompt (adjust only if the feedback requires it, otherwise keep the original).' }
+        },
+        required: ['visualPrompt', 'motionPrompt']
+      }
+    }],
+    tool_choice: { type: 'tool', name: 'rewrite_shot_prompt' },
+    messages: [{
+      role: 'user',
+      content: contentBlocks,
     }]
   });
 

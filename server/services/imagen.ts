@@ -400,27 +400,43 @@ export const generateShotEndFrame = async (opts: {
   motionPrompt: string;
   styleImagePath?: string;
   styleDNA: string;
+  userFeedback?: string;
+  failedImagePath?: string;
 }): Promise<string> => {
   const parts: ContentPart[] = [];
+  let imageIdx = 0;
 
-  parts.push({ text: 'Image 1 = Start frame of this shot' });
+  imageIdx++;
+  parts.push({ text: `Image ${imageIdx} = Start frame of this shot` });
   parts.push(await imagePartFromPath(opts.startFramePath));
 
   if (opts.styleImagePath) {
-    parts.push({ text: 'Image 2 = Style reference' });
+    imageIdx++;
+    parts.push({ text: `Image ${imageIdx} = Style reference` });
     parts.push(await imagePartFromPath(opts.styleImagePath));
   }
 
-  parts.push({ text: `Scene: ${opts.visualPrompt}
+  if (opts.failedImagePath && opts.userFeedback) {
+    imageIdx++;
+    parts.push({ text: `Image ${imageIdx} = PREVIOUS END FRAME ATTEMPT (rejected). Problems: ${opts.userFeedback}. Do NOT repeat these issues.` });
+    parts.push(await imagePartFromPath(opts.failedImagePath));
+  }
+
+  let prompt = `Scene: ${opts.visualPrompt}
 
 Motion: ${opts.motionPrompt}
 
 Style: ${opts.styleDNA}
 
-Image 1 is the start frame of this shot. Generate the ending frame — what the camera sees after the motion described above. Same characters, same costumes, same environment, moments later.
+Image 1 is the start frame of this shot. Generate the ending frame — what the camera sees after the motion described above. Same characters, same costumes, same environment, moments later.`;
 
-No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.` });
+  if (opts.userFeedback) {
+    prompt += `\n\nDirector note: ${opts.userFeedback}`;
+  }
+
+  prompt += `\n\nNo text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
+
+  parts.push({ text: prompt });
 
   return generateImageWithRefs(parts);
 };

@@ -61,6 +61,8 @@ export interface VideoShot {
   imageStatus: GenerationStatus;
   endImageUrl?: string;
   endImageStatus: GenerationStatus;
+  endVisualPrompt?: string;
+  endUserFeedback?: string;
   extractedLastFrameUrl?: string;
   continuityFrom: 'cut' | 'prev_shot';
   refinedFromPrevFrame?: boolean;

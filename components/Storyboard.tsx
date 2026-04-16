@@ -29,7 +29,7 @@ interface Props {
   onGenerateImage: (sceneId: string, shotId: string) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string) => void;
   onLockShot: (sceneId: string, shotId: string) => void;
-  onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void;
+  onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void;
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
@@ -43,6 +43,7 @@ interface Props {
   onGenerateEndFrame?: (shotId: string) => void | Promise<void>;
   onClearEndFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
   /** Shot IDs waiting for a bulk-frame worker (ordered — position = Nth in line). */
   frameQueue?: string[];
   /** Shot IDs waiting for a bulk-video worker (ordered). */
@@ -50,7 +51,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onUploadEndFrame, frameQueue, videoQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onUploadEndFrame, onRefineEndFramePrompt, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
@@ -69,6 +70,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [mentionQuery, setMentionQuery] = useState('');
   const endFrameFileRef = React.useRef<HTMLInputElement>(null);
   const [endFrameUploadTarget, setEndFrameUploadTarget] = useState<string | null>(null);
+  // Reference image attached to refine feedback (per shot)
+  const [refineImage, setRefineImage] = useState<Record<string, File>>({});
 
   const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
 
@@ -690,7 +693,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     ) : modelSupportsLastFrame && shot.imageUrl ? (
                       // Pre-video with lastFrame support: side-by-side start + end frame slot
-                      <div className="flex bg-[#141418]">
+                      <><div className="flex bg-[#141418]">
                         <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/start">
                           <div className="absolute top-2 left-2 z-20">
                             <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span>
@@ -765,6 +768,54 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           )}
                         </div>
                       </div>
+                      {/* End frame prompt + refine section */}
+                      {!shot.locked && (shot.endImageUrl || shot.endVisualPrompt) && (
+                        <div className="px-4 py-3 border-t border-white/[0.04] space-y-2">
+                          <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">End frame prompt</div>
+                          <textarea
+                            value={shot.endVisualPrompt || shot.visualPrompt || ''}
+                            onChange={e => onUpdateShot(activeScene.id, shot.id, { endVisualPrompt: e.target.value } as any)}
+                            placeholder="Describe what this shot should end on…"
+                            className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
+                            style={{ height: 'auto', overflow: 'hidden' }}
+                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                          />
+                          <div className="flex items-center gap-2">
+                            {onGenerateEndFrame && (
+                              <button
+                                onClick={() => onGenerateEndFrame(shot.id)}
+                                className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                              >
+                                {shot.endImageUrl ? 'Regenerate end frame' : 'Generate end frame'}
+                              </button>
+                            )}
+                          </div>
+                          {/* Refine section — only when end frame exists */}
+                          {shot.endImageUrl && (
+                            <div className="pt-2 border-t border-white/[0.04] space-y-2">
+                              <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">Refine end frame</div>
+                              <div className="flex items-start gap-2">
+                                <textarea
+                                  id={`refine-end-${shot.id}`}
+                                  placeholder="What's wrong with this end frame? @mention characters…"
+                                  className="flex-1 surface-inset rounded-md p-2 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2rem]"
+                                />
+                                <button
+                                  onClick={() => {
+                                    const input = document.getElementById(`refine-end-${shot.id}`) as HTMLTextAreaElement;
+                                    if (input?.value.trim() && project) {
+                                      onRefineEndFramePrompt?.(shot.id, input.value);
+                                      input.value = '';
+                                    }
+                                  }}
+                                  className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0"
+                                >Refine</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      </>
                     ) : (
                       // Pre-video: just show the start frame full width (no confusing empty slot)
                       <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/start">
@@ -944,12 +995,14 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       }
                       if (shot.userFeedback && shot.imageUrl) compiledRefs.push({ label: 'Failed attempt', url: shot.imageUrl });
 
-                      const compiledText = [
-                        `Scene: ${shot.visualPrompt}`,
-                        `\nStyle: ${project?.styleDescription || '(none)'}`,
-                        shot.continuityFrom === 'prev_shot' ? '\nContinue visual flow from previous shot.' : '',
-                        shot.userFeedback ? `\nDirector note: ${shot.userFeedback}` : '',
-                      ].filter(Boolean).join('\n');
+                      // Mirror the exact prompt that generateShotStartFrame builds (server/services/imagen.ts)
+                      const compiledLines = [`Scene: ${shot.visualPrompt}`, '', `Style: ${project?.styleDescription || '(none)'}`, '', `Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${shot.continuityFrom === 'prev_shot' ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference image.`];
+                      if (shot.continuityFrom === 'prev_shot') {
+                        compiledLines.push('', 'Previous shot ended with: [auto-described from extracted frame]', 'This shot should begin from that exact continuity state.');
+                      }
+                      if (shot.userFeedback) compiledLines.push('', `Director note: ${shot.userFeedback}`);
+                      compiledLines.push('', 'Single cinematic frame. No text, no watermark.', 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.');
+                      const compiledText = compiledLines.join('\n');
 
                       // Mirror of the Veo prompt builder in generate.ts
                       const concept = project?.lockedConcept;
@@ -1107,6 +1160,44 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               ) : (
                                 <div className="text-xs text-zinc-400">Not generated yet</div>
                               )}
+
+                              {/* Video generation section */}
+                              <div className="h-px bg-white/[0.06] mt-2" />
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Start frame + prompt &rarr; {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} &rarr; Video
+                              </div>
+
+                              {/* Video refs (Seedance gets ref images, Veo gets them described in prompt) */}
+                              {(() => {
+                                const videoRefs: { label: string; url?: string }[] = [];
+                                if (shot.imageUrl) videoRefs.push({ label: 'Start keyframe', url: shot.imageUrl });
+                                if (shot.endImageUrl) videoRefs.push({ label: 'End keyframe', url: shot.endImageUrl });
+                                shotCast.forEach(c => { if (c.referenceImageUrl) videoRefs.push({ label: `${c.name} ref`, url: c.referenceImageUrl }); });
+                                if (shotEnv?.referenceImageUrl) videoRefs.push({ label: `${shotEnv.name} ref`, url: shotEnv.referenceImageUrl });
+                                return videoRefs.length > 0 ? (
+                                  <div className="flex gap-2 flex-wrap">
+                                    {videoRefs.map((ref, i) => (
+                                      <div key={i} className="relative group/ref">
+                                        {ref.url ? (
+                                          <img src={ref.url} className="w-12 h-12 object-cover rounded-md border border-white/[0.06] cursor-zoom-in" alt={ref.label} onClick={() => ref.url && setModalImage(ref.url)} />
+                                        ) : (
+                                          <div className="w-12 h-12 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[10px] text-zinc-400">?</div>
+                                        )}
+                                        <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[9px] text-zinc-300 px-0.5 py-px rounded-b-md truncate text-center">{ref.label}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+
+                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{autoVeoPrompt}</pre>
+
+                              {shot.videoUrl && (
+                                <>
+                                  <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Output &rarr; Video</div>
+                                  <video src={shot.videoUrl} className="max-h-48 rounded-md border border-white/[0.06]" controls muted />
+                                </>
+                              )}
                             </div>
                           ) : shot.locked ? (
                             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{promptText}</p>
@@ -1187,29 +1278,36 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     onClick={() => {
                                       const input = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
                                       if (input?.value.trim()) {
-                                        onRefinePrompt(activeScene.id, shot.id, input.value);
+                                        onRefinePrompt(activeScene.id, shot.id, input.value, refineImage[shot.id]);
                                         input.value = '';
+                                        setRefineImage(prev => { const n = { ...prev }; delete n[shot.id]; return n; });
                                       }
                                       setMentionOpen(null);
                                       setMentionQuery('');
                                     }}
                                     className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
-                                  >Refine
+                                  >Refine{refineImage[shot.id] ? ' + img' : ''}
                                   </button>
                                   <label
-                                    className="px-2 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md transition-colors flex-shrink-0 self-start cursor-pointer"
-                                    title="Upload a reference image with your feedback"
+                                    className={`px-2 py-2 ${refineImage[shot.id] ? 'bg-amber-500/20 text-amber-400' : 'bg-white/[0.06] text-zinc-400 hover:text-white'} hover:bg-white/[0.1] rounded-md transition-colors flex-shrink-0 self-start cursor-pointer`}
+                                    title={refineImage[shot.id] ? `Reference: ${refineImage[shot.id].name} (click to change)` : 'Upload a reference image with your feedback'}
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
                                     <input type="file" accept="image/*" className="hidden" onChange={(e) => {
                                       const file = e.target.files?.[0];
                                       if (file) {
-                                        // TODO: wire to refine endpoint with image
-                                        console.log('Refine image upload:', file.name);
+                                        setRefineImage(prev => ({ ...prev, [shot.id]: file }));
                                       }
                                       e.target.value = '';
                                     }} />
                                   </label>
+                                  {refineImage[shot.id] && (
+                                    <button
+                                      onClick={() => setRefineImage(prev => { const n = { ...prev }; delete n[shot.id]; return n; })}
+                                      className="text-zinc-500 hover:text-zinc-300 text-[11px] self-start pt-2"
+                                      title="Remove attached image"
+                                    >&times;</button>
+                                  )}
 
                                   {/* @mention picker dropdown */}
                                   {mentionOpen === shot.id && (() => {

@@ -364,7 +364,18 @@ export const writeShotPrompts = async (projectId: string, userNote?: string, sig
 
 // ─── Shot Image & Video ─────────────────────────────────────────────
 
-export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string, signal?: AbortSignal) => {
+export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string, referenceImage?: File, signal?: AbortSignal) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('referenceImage', referenceImage);
+    const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    return handleResponse(res);
+  }
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -391,6 +402,22 @@ export const clearShotFrame = async (projectId: string, shotId: string) => {
 
 export const generateEndFrame = async (projectId: string, shotId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const refineEndFramePrompt = async (projectId: string, shotId: string, feedback: string, referenceImage?: File) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('referenceImage', referenceImage);
+    const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, { method: 'POST', body: form });
+    return handleResponse(res);
+  }
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+  });
   return handleResponse(res);
 };
 

@@ -115,30 +115,65 @@ const App: React.FC = () => {
     }
   }, [error]);
 
-  // On mount: load the most recent project (if any)
-  useEffect(() => {
-    api.listProjects().then(projects => {
-      if (projects.length > 0) {
-        return api.getProject(projects[0].id);
-      }
-      return null;
-    }).then(p => {
-      if (p) {
-        setProject(p);
-        navigateToPhase(p);
-      }
-    }).catch(() => {}); // No projects yet, stay on upload
+  // Persist project + step to localStorage so refresh stays on the same page
+  const persistState = useCallback((projectId: string | null, step: AppStep) => {
+    if (projectId) localStorage.setItem('lahari:projectId', projectId);
+    else localStorage.removeItem('lahari:projectId');
+    localStorage.setItem('lahari:step', String(step));
   }, []);
+
+  // On mount: restore from localStorage, fall back to most recent project
+  useEffect(() => {
+    const savedId = localStorage.getItem('lahari:projectId');
+    const savedStepRaw = localStorage.getItem('lahari:step');
+    const savedStep = savedStepRaw !== null ? Number(savedStepRaw) as AppStep : null;
+
+    const load = async () => {
+      try {
+        if (savedId) {
+          const p = await api.getProject(savedId);
+          if (p) {
+            setProject(p);
+            if (savedStep !== null && savedStep >= AppStep.UPLOAD && savedStep <= AppStep.RENDER) {
+              setCurrentStep(savedStep);
+            } else {
+              navigateToPhase(p);
+            }
+            return;
+          }
+        }
+        // Fallback: load most recent project
+        const projects = await api.listProjects();
+        if (projects.length > 0) {
+          const p = await api.getProject(projects[0].id);
+          if (p) {
+            setProject(p);
+            navigateToPhase(p);
+          }
+        }
+      } catch {
+        // No projects yet, stay on upload
+      }
+    };
+    load();
+  }, []);
+
+  // Persist to localStorage whenever project or step changes
+  useEffect(() => {
+    persistState(project?.id || null, currentStep);
+  }, [project?.id, currentStep, persistState]);
 
   // Determine which step to show based on project phase
   const navigateToPhase = (p: ApiProject) => {
+    let step: AppStep;
     if ((p.status === 'characters_locked' || p.status === 'environments_locked') && p.scenes.length > 0) {
-      setCurrentStep(AppStep.STUDIO);
+      step = AppStep.STUDIO;
     } else if (p.conceptOptions.length > 0 || p.status === 'concept_locked' || p.status === 'scripted' || p.status === 'style_locked' || p.status === 'characters_locked' || p.status === 'environments_locked') {
-      setCurrentStep(AppStep.BLUEPRINT);
+      step = AppStep.BLUEPRINT;
     } else {
-      setCurrentStep(AppStep.UPLOAD);
+      step = AppStep.UPLOAD;
     }
+    setCurrentStep(step);
   };
 
   // ─── Upload & Analyze ───────────────────────────────────────────
@@ -579,14 +614,27 @@ const App: React.FC = () => {
   const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
   const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
 
-  const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string) => {
+  const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
     setLoading(true);
     try {
-      const p = await api.refineShotPrompt(project.id, shotId, feedback);
+      const p = await api.refineShotPrompt(project.id, shotId, feedback, referenceImage);
       setProject(p);
     } catch (err: any) {
       setError(`Prompt refinement failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefineEndFramePrompt = async (shotId: string, feedback: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const p = await api.refineEndFramePrompt(project.id, shotId, feedback);
+      setProject(p);
+    } catch (err: any) {
+      setError(`End frame refinement failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -1013,6 +1061,17 @@ const App: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         <main id="main-content" className="flex-1 overflow-y-auto relative">
+          {/* Loading overlay — visible during project switch */}
+          {loading && !project && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#141418]/80 backdrop-blur-sm">
+              <div className="text-sm text-zinc-400 animate-pulse">Loading…</div>
+            </div>
+          )}
+          {loading && project && (
+            <div className="absolute top-3 right-4 z-50">
+              <div className="text-[11px] text-zinc-500 animate-pulse">Loading…</div>
+            </div>
+          )}
 
           <div className="relative z-10 w-full p-8">
             {/* Prompts library — full-page overlay over the current pipeline state. */}
@@ -1109,6 +1168,7 @@ const App: React.FC = () => {
                     onGenerateEndFrame={handleGenerateEndFrame}
                     onClearEndFrame={handleClearEndFrame}
                     onUploadEndFrame={handleUploadEndFrame}
+                    onRefineEndFramePrompt={handleRefineEndFramePrompt}
                     isLoading={loading}
                   />
                 </motion.div>
