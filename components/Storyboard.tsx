@@ -820,8 +820,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     )}
 
-                    {/* Error — inline banner below the media, not floating on top */}
-                    {isError && !isGenerating && (
+                    {/* Error — only show if there's no successful content already */}
+                    {isError && !isGenerating && !shot.videoUrl && (
                       <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] flex items-center gap-2">
                         <span className="text-xs text-red-300">Generation failed — click regen to retry</span>
                       </div>
