@@ -552,12 +552,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         {shot.locked ? (
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                           </svg>
                         ) : (
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
                           </svg>
                         )}
                       </button>
@@ -799,7 +799,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   {/* Prompts — full width below media */}
                   <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
 
-                    {/* Prompts — toggle between Image / Motion / Compiled */}
+                    {/* Prompts — toggle between Frame prompt / Motion prompt / Video prompt / Full chain */}
                     {(shot.locked || actionable) && (() => {
                       const activeTab = promptTab[shot.id] || 'image';
 
@@ -850,20 +850,20 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           <div className="flex items-center gap-4">
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'image' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Image</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Frame prompt</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'motion' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Motion</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Motion prompt</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'video' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Video</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Video prompt</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'compiled' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Compiled</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Full chain</button>
                           </div>
 
                           {/* Reference chips — informational: these refs are attached to this call */}
@@ -898,9 +898,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                           {activeTab === 'video' ? (
                             <div className="space-y-3">
-                              <div className="text-sm text-zinc-300">
-                                This is the full prompt sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame. Edit to override.
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame as keyframe
                               </div>
+                              <div className="text-[11px] text-zinc-400">Edit below to override the auto-generated prompt</div>
                               <textarea
                                 value={videoOverride[shot.id] ?? autoVeoPrompt}
                                 onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
@@ -915,7 +916,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   disabled={!hasStartFrame || isGenerating}
                                   className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
                                 >
-                                  Regenerate with this custom prompt
+                                  Regenerate with this prompt
                                 </button>
                                 {videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
                                   <button
@@ -928,21 +929,52 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               </div>
                             </div>
                           ) : activeTab === 'compiled' ? (
-                            <div className="space-y-3">
-                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
+                            <div className="space-y-4">
+                              {/* Inputs section */}
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Inputs &rarr; Gemini 3 Pro Image
+                              </div>
+
+                              {/* Reference images */}
                               {compiledRefs.length > 0 && (
-                                <div className="flex gap-2 flex-wrap">
+                                <div className="flex gap-2.5 flex-wrap">
                                   {compiledRefs.map((ref, i) => (
-                                    <div key={i} className="relative">
+                                    <div key={i} className="relative group/ref">
                                       {ref.url ? (
-                                        <img src={ref.url} className="w-14 h-14 object-cover rounded-md border border-white/[0.06]" alt={ref.label} />
+                                        <img
+                                          src={ref.url}
+                                          className="w-16 h-16 object-cover rounded-md border border-white/[0.06] cursor-zoom-in"
+                                          alt={ref.label}
+                                          onClick={() => ref.url && setModalImage(ref.url)}
+                                        />
                                       ) : (
-                                        <div className="w-14 h-14 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[11px] text-zinc-400">?</div>
+                                        <div className="w-16 h-16 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[11px] text-zinc-400">?</div>
                                       )}
-                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
+                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[10px] text-zinc-300 px-1 py-0.5 rounded-b-md truncate text-center font-mono">{ref.label}</div>
                                     </div>
                                   ))}
                                 </div>
+                              )}
+
+                              {/* Text prompt */}
+                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
+
+                              {/* Divider */}
+                              <div className="h-px bg-white/[0.06]" />
+
+                              {/* Output section */}
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Output &rarr; Start frame
+                              </div>
+                              {shot.imageUrl ? (
+                                <img
+                                  src={shot.imageUrl}
+                                  alt={`Shot ${shotIdx + 1} generated start frame`}
+                                  onClick={() => setModalImage(shot.imageUrl!)}
+                                  className="max-h-48 rounded-md border border-white/[0.06] cursor-zoom-in"
+                                />
+                              ) : (
+                                <div className="text-xs text-zinc-400">Not generated yet</div>
                               )}
                             </div>
                           ) : shot.locked ? (

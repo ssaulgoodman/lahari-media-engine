@@ -730,7 +730,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                         }}
                         className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none truncate pr-5"
                       >
-                        {VIDEO_MODELS.map(m => (<option key={m.key} value={m.key}>{m.label}{m.note ? ` — ${m.note}` : ''}</option>))}
+                        {VIDEO_MODELS.map(m => (<option key={m.key} value={m.key}>{m.label}{m.supportsLastFrame ? ' (+ end frame)' : ''}</option>))}
                       </select>
                       <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
                     </div>
