@@ -1478,9 +1478,10 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     // Use user-provided override if given, otherwise the auto-built prompt
     const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
 
-    // Support legacy 'veo-3.1' key (used to mean Fast) by remapping to veo-3.1-fast.
-    const rawModelKey = project.video_model || 'veo-3.1-fast';
-    const videoModelKey = rawModelKey === 'veo-3.1' ? 'veo-3.1-fast' : rawModelKey;
+    // Default to 3.0 Fast (known working). Old projects stored 'veo-3.1' or
+    // 'veo-3.1-fast' — those are now separate model options the user can pick.
+    const rawModelKey = project.video_model || 'veo-3.0-fast';
+    const videoModelKey = rawModelKey;
     const isFal = videoModelKey in FAL_VIDEO_MODELS;
     const isVeo = videoModelKey in VEO_MODELS;
 

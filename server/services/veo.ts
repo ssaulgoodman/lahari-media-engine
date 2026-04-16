@@ -66,23 +66,37 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
 // underlying Veo models. Both transports are now on the GA 3.1 family
 // (released Nov 2025) — 3.1 supports first+last frame conditioning; 3.0 did not.
 export const VEO_MODELS = {
-  'veo-3.1-fast': {
+  'veo-3.0-fast': {
     id: 'veo-3.1-fast-generate-preview',
-    // Revert to 3.0 GA IDs — 3.1 IDs returned empty responses on Vertex.
-    // lastFrame support deferred until 3.1 is confirmed available.
     vertexId: 'veo-3.0-fast-generate-001',
-    label: 'Veo 3.1 Fast',
+    label: 'Veo 3.0 Fast',
     durations: [8],
     costPerSec: 0.10,
     supportsLastFrame: false,
   },
-  'veo-3.1': {
+  'veo-3.0': {
     id: 'veo-3.1-generate-preview',
     vertexId: 'veo-3.0-generate-001',
-    label: 'Veo 3.1',
+    label: 'Veo 3.0',
     durations: [4, 6, 8],
     costPerSec: 0.20,
     supportsLastFrame: false,
+  },
+  'veo-3.1-fast': {
+    id: 'veo-3.1-fast-generate-preview',
+    vertexId: 'veo-3.1-fast-generate-001',
+    label: 'Veo 3.1 Fast (+ end frame)',
+    durations: [8],
+    costPerSec: 0.10,
+    supportsLastFrame: true,
+  },
+  'veo-3.1': {
+    id: 'veo-3.1-generate-preview',
+    vertexId: 'veo-3.1-generate-001',
+    label: 'Veo 3.1 (+ end frame)',
+    durations: [4, 6, 8],
+    costPerSec: 0.20,
+    supportsLastFrame: true,
   },
 } as const;
 
@@ -128,13 +142,12 @@ export const generateVideo = async (
 
   // Pick the right model identifier for the transport we're actually on.
   const modelId = isVertex() ? (model as any).vertexId || model.id : model.id;
+  console.log(`[veo] Generating video with model=${modelId}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+
   let operation = await ai.models.generateVideos({
     model: modelId,
     prompt: motionPrompt || 'Cinematic camera movement',
-    image: {
-      imageBytes: startBase64,
-      mimeType: 'image/png'
-    },
+    image: { imageBytes: startBase64, mimeType: 'image/png' },
     config
   });
 
@@ -145,7 +158,13 @@ export const generateVideo = async (
   }
 
   const video: any = operation.response?.generatedVideos?.[0]?.video;
-  if (!video) throw new Error('Video generation failed — no video in response');
+  if (!video) {
+    const resp = operation.response;
+    const genVideo = resp?.generatedVideos?.[0];
+    const reason = (genVideo as any)?.finishReason || (genVideo as any)?.blockReason || 'unknown';
+    console.error(`[veo] No video. Model=${modelId}, reason=${reason}, response=${JSON.stringify(resp || {}).substring(0, 500)}`);
+    throw new Error(`Video generation returned no video (${reason}). Model: ${modelId}`);
+  }
 
   // Two response shapes depending on transport:
   //  • Developer API returns a URI you fetch with ?key=<GEMINI_API_KEY>.
