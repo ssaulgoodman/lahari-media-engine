@@ -1200,7 +1200,18 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     const items = [...castItems, ...envItems];
                                     if (items.length === 0) return null;
                                     return (
-                                      <div className="absolute left-0 bottom-full mb-1 z-[100] surface-raised rounded-lg shadow-lg border border-white/[0.08] max-h-[200px] overflow-y-auto w-64">
+                                      <div
+                                        className="fixed z-[200] surface-raised rounded-lg shadow-xl border border-white/[0.08] max-h-[200px] overflow-y-auto w-64"
+                                        style={{
+                                          // Position above the textarea using its bounding rect
+                                          ...((() => {
+                                            const el = document.getElementById(`refine-${shot.id}`);
+                                            if (!el) return {};
+                                            const rect = el.getBoundingClientRect();
+                                            return { left: rect.left, bottom: window.innerHeight - rect.top + 4 };
+                                          })()),
+                                        }}
+                                      >
                                         {items.map((item, i) => (
                                           <button
                                             key={`${item.type}-${i}`}
