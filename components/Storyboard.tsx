@@ -1110,7 +1110,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                 id={activeTab === 'image' ? `prompt-${shot.id}` : undefined}
                                 value={promptText}
                                 onChange={(e) => onUpdateShot(activeScene.id, shot.id, activeTab === 'image' ? { visualPrompt: e.target.value } : { motionPrompt: e.target.value })}
-                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-28"
+                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[3rem]"
+                                style={{ height: 'auto', overflow: 'hidden' }}
+                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                               />
                               {hasStartFrame && (
                                 <div className="relative flex gap-2">
@@ -1170,9 +1172,22 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                       setMentionQuery('');
                                     }}
                                     className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
-                                  >
-                                    Refine
+                                  >Refine
                                   </button>
+                                  <label
+                                    className="px-2 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md transition-colors flex-shrink-0 self-start cursor-pointer"
+                                    title="Upload a reference image with your feedback"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) {
+                                        // TODO: wire to refine endpoint with image
+                                        console.log('Refine image upload:', file.name);
+                                      }
+                                      e.target.value = '';
+                                    }} />
+                                  </label>
 
                                   {/* @mention picker dropdown */}
                                   {mentionOpen === shot.id && (() => {
@@ -1185,7 +1200,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     const items = [...castItems, ...envItems];
                                     if (items.length === 0) return null;
                                     return (
-                                      <div className="absolute left-0 top-full mt-1 z-30 surface-raised rounded-lg shadow-lg border border-white/[0.08] max-h-[200px] overflow-y-auto w-64">
+                                      <div className="absolute left-0 bottom-full mb-1 z-[100] surface-raised rounded-lg shadow-lg border border-white/[0.08] max-h-[200px] overflow-y-auto w-64">
                                         {items.map((item, i) => (
                                           <button
                                             key={`${item.type}-${i}`}
