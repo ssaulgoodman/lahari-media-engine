@@ -9,18 +9,18 @@ import path from 'path';
 import fs from 'fs';
 import { readAsBase64, saveBuffer, downloadToTmp, uploadFromTmp } from '../storage.js';
 
-// Prefer Vertex AI when a GCP project is configured — higher Veo quota, the
-// generateAudio:false flag is respected, per-project billing. Fall back to
-// the Developer API (GEMINI_API_KEY) if the service account env isn't set,
-// so local dev without a GCP setup keeps working.
-const isVertex = () => !!process.env.GCP_PROJECT_ID;
-const getAI = () => isVertex()
-  ? new GoogleGenAI({
-      vertexai: true,
-      project: process.env.GCP_PROJECT_ID!,
-      location: process.env.GCP_LOCATION || 'us-central1',
-    })
-  : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// Vertex AI only — no Developer API fallback. Requires GCP_PROJECT_ID +
+// GOOGLE_APPLICATION_CREDENTIALS (or GOOGLE_APPLICATION_CREDENTIALS_JSON on Railway).
+const getAI = () => {
+  if (!process.env.GCP_PROJECT_ID) {
+    throw new Error('GCP_PROJECT_ID is required for Veo. Set it in .env (local) or Railway env vars (prod).');
+  }
+  return new GoogleGenAI({
+    vertexai: true,
+    project: process.env.GCP_PROJECT_ID,
+    location: process.env.GCP_LOCATION || 'us-central1',
+  });
+};
 
 /**
  * Extract the last frame from a video file using ffmpeg.
@@ -67,32 +67,28 @@ export const extractLastFrame = async (videoStoragePath: string): Promise<string
 // (released Nov 2025) — 3.1 supports first+last frame conditioning; 3.0 did not.
 export const VEO_MODELS = {
   'veo-3.0-fast': {
-    id: 'veo-3.1-fast-generate-preview',
-    vertexId: 'veo-3.0-fast-generate-001',
+    modelId: 'veo-3.0-fast-generate-001',
     label: 'Veo 3.0 Fast',
     durations: [8],
     costPerSec: 0.10,
     supportsLastFrame: false,
   },
   'veo-3.0': {
-    id: 'veo-3.1-generate-preview',
-    vertexId: 'veo-3.0-generate-001',
+    modelId: 'veo-3.0-generate-001',
     label: 'Veo 3.0',
     durations: [4, 6, 8],
     costPerSec: 0.20,
     supportsLastFrame: false,
   },
   'veo-3.1-fast': {
-    id: 'veo-3.1-fast-generate-preview',
-    vertexId: 'veo-3.1-fast-generate-001',
+    modelId: 'veo-3.1-fast-generate-001',
     label: 'Veo 3.1 Fast (+ end frame)',
     durations: [8],
     costPerSec: 0.10,
     supportsLastFrame: true,
   },
   'veo-3.1': {
-    id: 'veo-3.1-generate-preview',
-    vertexId: 'veo-3.1-generate-001',
+    modelId: 'veo-3.1-generate-001',
     label: 'Veo 3.1 (+ end frame)',
     durations: [4, 6, 8],
     costPerSec: 0.20,
@@ -130,7 +126,7 @@ export const generateVideo = async (
   };
   // Only Vertex AI accepts generateAudio. On Developer API the SDK throws.
   // Turning audio off drops Veo 3 Fast from ~$0.15/s to ~$0.10/s.
-  if (isVertex()) config.generateAudio = false;
+  config.generateAudio = false;
 
   if (endImagePath) {
     const endBase64 = await readAsBase64(endImagePath);
@@ -141,7 +137,7 @@ export const generateVideo = async (
   }
 
   // Pick the right model identifier for the transport we're actually on.
-  const modelId = isVertex() ? (model as any).vertexId || model.id : model.id;
+  const modelId = model.modelId;
   console.log(`[veo] Generating video with model=${modelId}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   let operation = await ai.models.generateVideos({
@@ -177,21 +173,14 @@ export const generateVideo = async (
   if (video.videoBytes) {
     buffer = Buffer.from(video.videoBytes, 'base64');
   } else if (video.uri) {
-    const uri: string = video.uri;
-    if (isVertex()) {
-      // Mint a bearer token via ADC (same creds the SDK uses for the API call).
-      const { GoogleAuth } = await import('google-auth-library');
-      const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-      const client = await auth.getClient();
-      const { token } = await client.getAccessToken();
-      const res = await fetch(uri, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error(`GCS video download failed: ${res.status}`);
-      buffer = Buffer.from(await res.arrayBuffer());
-    } else {
-      const res = await fetch(`${uri}&key=${process.env.GEMINI_API_KEY}`);
-      if (!res.ok) throw new Error(`Failed to download video: ${res.status}`);
-      buffer = Buffer.from(await res.arrayBuffer());
-    }
+    // Vertex returns GCS URIs — need a bearer token to download.
+    const { GoogleAuth } = await import('google-auth-library');
+    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+    const client = await auth.getClient();
+    const { token } = await client.getAccessToken();
+    const res = await fetch(video.uri, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Video download failed: ${res.status}`);
+    buffer = Buffer.from(await res.arrayBuffer());
   } else {
     throw new Error('Video generation failed — neither videoBytes nor uri in response');
   }
