@@ -61,7 +61,7 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
-**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` URLs. Seedance models accept `first_frame_url` + `last_frame_url` + up to 9 `reference_images`. All models support end-frame conditioning. `veo.ts` still provides `extractLastFrame` (ffmpeg utility).
+**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs. Seedance models accept `first_frame_url` + `last_frame_url` + up to 9 `reference_images`. All models support end-frame conditioning and ref images. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
 
 **Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
 
@@ -90,9 +90,9 @@ Priority: character identity > continuity > environment > style. Explicit note: 
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
 - `lahari_projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
-- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`)
+- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`)
 - `lahari_cast_members`, `lahari_environments`, `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
-- `server/db.ts` is a legacy stub — do NOT use. All DB access goes through `server/database.ts`.
+- All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
 ### Fork system
 
@@ -135,7 +135,8 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Studio:**
 - `POST /api/projects/:id/shots/:shotId/generate-image`
 - `POST /api/projects/:id/shots/:shotId/generate-video` (accepts `promptOverride`)
-- `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback)
+- `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback, accepts multipart with referenceImage)
+- `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same pattern for end frame)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
 **Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
