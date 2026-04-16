@@ -7,7 +7,7 @@ import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '.
 import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
 import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
-import { extractLastFrame } from '../services/veo.js';
+import { extractLastFrame } from '../services/ffmpeg.js';
 import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
