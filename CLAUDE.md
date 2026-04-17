@@ -33,7 +33,11 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 
 Queue routes: `publish` checks `project.user_id`, `start` checks ownership before returning an existing linked project.
 
-**Optimistic UI**: Clear/remove/lock operations update React state instantly, then confirm with server. Reverts on failure. Covers: lock/unlock shot, clear start/end/extracted frames, delete cast, update project settings. AI generation calls are NOT optimistic (need server result).
+**Minimal responses + Optimistic UI**: Simple mutations return `{ ok: true }` (with `status` for phase changes) instead of the full project. Frontend applies changes optimistically and reverts on failure. This eliminates ~20 `getFullProject` round-trips.
+
+Minimal response endpoints: clear-frame, clear-end-frame, clear-extracted-frame, lock/unlock shot, PATCH shot/project/scene/concept, DELETE cast/environment, lock-character, lock-environment, advance-characters/environments, all unlocks.
+
+Full `getFullProject` still used for: all generate/refine endpoints (AI work), fork, analyze-audio, revert-video, GET /:id, queue start/publish.
 
 ## Architecture
 
