@@ -463,6 +463,11 @@ export const clearEndFrame = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
+export const clearExtractedFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-extracted-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
 export const uploadEndFrame = async (projectId: string, shotId: string, file: File) => {
   const form = new FormData();
   form.append('image', file);

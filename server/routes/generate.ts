@@ -1701,6 +1701,13 @@ router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
   res.json(await getFullProject(paramStr(req.params.id)));
 });
 
+// Clear extracted last frame — removes the ffmpeg-extracted frame from a previous video gen
+router.post('/:id/shots/:shotId/clear-extracted-frame', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  await updateRows('shots', { id: shotId }, { extracted_last_frame_asset_id: null });
+  res.json(await getFullProject(paramStr(req.params.id)));
+});
+
 // Upload a custom end frame
 router.post('/:id/shots/:shotId/upload-end-frame', upload.single('image'), async (req, res) => {
   const projectId = paramStr(req.params.id);

@@ -71,7 +71,7 @@ No end-frame prediction. Shot = start frame + motion prompt → video plays natu
 
 **Sequential gate:** Only shots with `continuity_from === 'prev_shot'` wait for previous shot's video. Hard-cut shots are independently actionable.
 
-**Bulk fan-out (throttled)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames** — a worker-pool that queues the rest. Sized for Vertex default ~60 RPM on Veo Fast and comfortable inside Tier-2 Gemini image RPM. Raise as Google auto-scales your quota.
+**Bulk fan-out (throttled, multi-pass)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames**. Both bulk handlers use a **multi-pass loop**: after each pass completes, project state is refreshed from the server and newly unblocked `prev_shot` items are picked up automatically. Failed shots (ERROR status) are excluded from automatic requeue — artist sees them in UI and can retry manually.
 
 **Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Codex Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
@@ -162,7 +162,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
 - `GET /api/admin/usage?hours=N` — aggregates `ai_calls` by model+stage with totals and error counts.
 - `GET /api/admin/errors?limit=N` — most recent error messages verbatim. Fastest way to tell what Veo (or anything) is rejecting.
-- `POST /api/admin/restore` — multipart tarball upload → extract to `/app/storage`. Kept around for migrations.
+- Migration endpoint removed — was `POST /api/admin/migrate-to-supabase`, used once on 2026-04-16.
 
 ### Queue completion writeback
 
