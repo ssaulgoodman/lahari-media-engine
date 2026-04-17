@@ -449,10 +449,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleDeleteCast = async (memberId: string) => {
     if (!project) return;
+    const prevCast = project.cast;
+    setProject(prev => prev ? { ...prev, cast: prev.cast.filter(c => c.id !== memberId) } : prev);
     try {
       const p = await api.deleteCastMember(project.id, memberId);
       setProject(p);
     } catch (err: any) {
+      setProject(prev => prev ? { ...prev, cast: prevCast } : prev);
       setError(err.message);
     }
   };
@@ -572,13 +575,27 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const updateShotOptimistic = (shotId: string, updates: Partial<VideoShot>) => {
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => ({
+        ...s,
+        shots: s.shots.map(sh => sh.id === shotId ? { ...sh, ...updates } : sh)
+      }))
+    } : prev);
+  };
+
   const handleClearShotFrame = async (shotId: string) => {
     if (!project) return;
     setError(null);
+    const shot = project.scenes.flatMap(s => s.shots).find(s => s.id === shotId);
+    const prev = { imageUrl: shot?.imageUrl, imageStatus: shot?.imageStatus, locked: shot?.locked };
+    updateShotOptimistic(shotId, { imageUrl: undefined, imageStatus: GenerationStatus.IDLE, locked: false });
     try {
       const p = await api.clearShotFrame(project.id, shotId);
       setProject(p);
     } catch (err: any) {
+      updateShotOptimistic(shotId, prev as any);
       setError('Failed to clear frame: ' + err.message);
     }
   };
@@ -595,20 +612,28 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleClearEndFrame = async (shotId: string) => {
     if (!project) return;
+    const shot = project.scenes.flatMap(s => s.shots).find(s => s.id === shotId);
+    const prev = { endImageUrl: shot?.endImageUrl, endImageStatus: shot?.endImageStatus };
+    updateShotOptimistic(shotId, { endImageUrl: undefined, endImageStatus: GenerationStatus.IDLE });
     try {
       const p = await api.clearEndFrame(project.id, shotId);
       setProject(p);
     } catch (err: any) {
+      updateShotOptimistic(shotId, prev as any);
       setError(`Clear end frame failed: ${err.message}`);
     }
   };
 
   const handleClearExtractedFrame = async (shotId: string) => {
     if (!project) return;
+    const shot = project.scenes.flatMap(s => s.shots).find(s => s.id === shotId);
+    const prev = { extractedLastFrameUrl: shot?.extractedLastFrameUrl };
+    updateShotOptimistic(shotId, { extractedLastFrameUrl: undefined });
     try {
       const p = await api.clearExtractedFrame(project.id, shotId);
       setProject(p);
     } catch (err: any) {
+      updateShotOptimistic(shotId, prev as any);
       setError(`Clear extracted frame failed: ${err.message}`);
     }
   };
@@ -641,6 +666,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleUpdateProject = async (updates: Record<string, any>) => {
     if (!project) return;
+    setProject(prev => prev ? { ...prev, ...updates } : prev);
     try {
       const p = await api.updateProject(project.id, updates);
       setProject(p);
@@ -751,13 +777,30 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     if (!project) return;
     const scene = project.scenes.find(s => s.id === sceneId);
     const shot = scene?.shots.find(s => s.id === shotId);
+    const wasLocked = shot?.locked;
+    // Optimistic update — flip lock state immediately
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => s.id === sceneId ? {
+        ...s,
+        shots: s.shots.map(sh => sh.id === shotId ? { ...sh, locked: !wasLocked } : sh)
+      } : s)
+    } : prev);
     try {
-      const p = shot?.locked
+      const p = wasLocked
         ? await api.unlockShot(project.id, shotId)
         : await api.lockShot(project.id, shotId);
       setProject(p);
     } catch (err: any) {
-      setError(`${shot?.locked ? 'Unlock' : 'Lock'} failed: ${err.message}`);
+      // Revert on failure
+      setProject(prev => prev ? {
+        ...prev,
+        scenes: prev.scenes.map(s => s.id === sceneId ? {
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, locked: !!wasLocked } : sh)
+        } : s)
+      } : prev);
+      setError(`${wasLocked ? 'Unlock' : 'Lock'} failed: ${err.message}`);
     }
   };
 

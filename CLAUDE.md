@@ -24,6 +24,10 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
 
+**Auth**: Supabase Auth with Google OAuth. Frontend uses anon key (`lib/supabase.ts`), backend verifies JWT via `requireAuth` middleware (`server/middleware/auth.ts`). All `/api/projects`, `/api/queue`, `/api/prompts` routes require auth. Admin routes use `x-admin-secret`. Health check is public. `user_id` column on `lahari_projects` — filtered on list, set on create/fork, checked via `verifyOwnership` + `router.param('id')`.
+
+**Optimistic UI**: Clear/remove/lock operations update React state instantly, then confirm with server. Reverts on failure. Covers: lock/unlock shot, clear start/end/extracted frames, delete cast, update project settings. AI generation calls are NOT optimistic (need server result).
+
 ## Architecture
 
 **Lahari Media Engine** — AI-powered music video production tool for devotional songs. Integrates with a shared Supabase song catalog (see `music_video_queue` table).
