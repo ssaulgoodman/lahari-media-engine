@@ -373,8 +373,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     if (!project) return;
     setError(null);
     try {
-      const p = await fn();
-      setProject(p);
+      const result = await fn();
+      // Minimal response: apply status change optimistically
+      if (result?.ok && result?.status) {
+        setProject(prev => prev ? { ...prev, status: result.status } : prev);
+      } else {
+        setProject(result);
+      }
     } catch (err: any) {
       setError(err.message);
     }
@@ -417,8 +422,12 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleLockCharacter = async (castMemberId: string, assetId: string) => {
     if (!project) return;
     try {
-      const p = await api.lockCharacter(project.id, castMemberId, assetId);
-      setProject(p);
+      await api.lockCharacter(project.id, castMemberId, assetId);
+      // Optimistic: set the reference on the cast member
+      setProject(prev => prev ? {
+        ...prev,
+        cast: prev.cast.map(c => c.id === castMemberId ? { ...c, referenceImageUrl: lookCandidates[castMemberId]?.find(l => l.id === assetId)?.url || c.referenceImageUrl } : c)
+      } : prev);
       setLookCandidates(prev => ({ ...prev, [castMemberId]: [] }));
     } catch (err: any) {
       setError(err.message);
@@ -452,8 +461,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     const prevCast = project.cast;
     setProject(prev => prev ? { ...prev, cast: prev.cast.filter(c => c.id !== memberId) } : prev);
     try {
-      const p = await api.deleteCastMember(project.id, memberId);
-      setProject(p);
+      await api.deleteCastMember(project.id, memberId);
     } catch (err: any) {
       setProject(prev => prev ? { ...prev, cast: prevCast } : prev);
       setError(err.message);
@@ -515,8 +523,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     if (!project) return;
     setLoading(true);
     try {
-      const p = await api.advanceCharacters(project.id);
-      setProject(p);
+      const result = await api.advanceCharacters(project.id);
+      if (result?.ok && result?.status) {
+        setProject(prev => prev ? { ...prev, status: result.status } : prev);
+      } else { setProject(result); }
     } catch (err: any) {
       setError('Failed to advance: ' + err.message);
     } finally {
@@ -528,8 +538,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     if (!project) return;
     setLoading(true);
     try {
-      const p = await api.advanceEnvironments(project.id);
-      setProject(p);
+      const result = await api.advanceEnvironments(project.id);
+      if (result?.ok && result?.status) {
+        setProject(prev => prev ? { ...prev, status: result.status } : prev);
+      } else { setProject(result); }
     } catch (err: any) {
       setError('Failed to advance: ' + err.message);
     } finally {
@@ -592,8 +604,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     const prev = { imageUrl: shot?.imageUrl, imageStatus: shot?.imageStatus, locked: shot?.locked };
     updateShotOptimistic(shotId, { imageUrl: undefined, imageStatus: GenerationStatus.IDLE, locked: false });
     try {
-      const p = await api.clearShotFrame(project.id, shotId);
-      setProject(p);
+      await api.clearShotFrame(project.id, shotId);
     } catch (err: any) {
       updateShotOptimistic(shotId, prev as any);
       setError('Failed to clear frame: ' + err.message);
@@ -616,8 +627,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     const prev = { endImageUrl: shot?.endImageUrl, endImageStatus: shot?.endImageStatus };
     updateShotOptimistic(shotId, { endImageUrl: undefined, endImageStatus: GenerationStatus.IDLE });
     try {
-      const p = await api.clearEndFrame(project.id, shotId);
-      setProject(p);
+      await api.clearEndFrame(project.id, shotId);
     } catch (err: any) {
       updateShotOptimistic(shotId, prev as any);
       setError(`Clear end frame failed: ${err.message}`);
@@ -630,8 +640,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     const prev = { extractedLastFrameUrl: shot?.extractedLastFrameUrl };
     updateShotOptimistic(shotId, { extractedLastFrameUrl: undefined });
     try {
-      const p = await api.clearExtractedFrame(project.id, shotId);
-      setProject(p);
+      await api.clearExtractedFrame(project.id, shotId);
     } catch (err: any) {
       updateShotOptimistic(shotId, prev as any);
       setError(`Clear extracted frame failed: ${err.message}`);
@@ -668,8 +677,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     if (!project) return;
     setProject(prev => prev ? { ...prev, ...updates } : prev);
     try {
-      const p = await api.updateProject(project.id, updates);
-      setProject(p);
+      await api.updateProject(project.id, updates);
     } catch (err: any) {
       setError(err.message);
     }
@@ -787,10 +795,9 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       } : s)
     } : prev);
     try {
-      const p = wasLocked
+      wasLocked
         ? await api.unlockShot(project.id, shotId)
         : await api.lockShot(project.id, shotId);
-      setProject(p);
     } catch (err: any) {
       // Revert on failure
       setProject(prev => prev ? {

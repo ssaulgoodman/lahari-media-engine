@@ -326,7 +326,7 @@ router.post('/:id/unlock-script', async (req, res) => {
     return res.status(400).json({ error: `Cannot unlock script from status "${project.status}". Unlock later phases first.` });
   }
   await updateRows('projects', { id: projectId }, { status: 'concept_locked', updated_at: new Date().toISOString() });
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true, status: 'concept_locked' });
 });
 
 router.post('/:id/unlock-style', async (req, res) => {
@@ -337,7 +337,7 @@ router.post('/:id/unlock-style', async (req, res) => {
     return res.status(400).json({ error: `Cannot unlock style from status "${project.status}". Unlock later phases first.` });
   }
   await updateRows('projects', { id: projectId }, { status: 'scripted', updated_at: new Date().toISOString() });
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true, status: 'scripted' });
 });
 
 router.post('/:id/unlock-characters', async (req, res) => {
@@ -348,7 +348,7 @@ router.post('/:id/unlock-characters', async (req, res) => {
     return res.status(400).json({ error: `Cannot unlock characters from status "${project.status}". Unlock later phases first.` });
   }
   await updateRows('projects', { id: projectId }, { status: 'style_locked', updated_at: new Date().toISOString() });
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true, status: 'style_locked' });
 });
 
 router.post('/:id/unlock-environments', async (req, res) => {
@@ -359,7 +359,7 @@ router.post('/:id/unlock-environments', async (req, res) => {
     return res.status(400).json({ error: `Cannot unlock environments from status "${project.status}".` });
   }
   await updateRows('projects', { id: projectId }, { status: 'characters_locked', updated_at: new Date().toISOString() });
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true, status: 'characters_locked' });
 });
 
 // ─── Upload + Lock Style Image (skip visualize) ─────────────────────
@@ -650,7 +650,7 @@ router.post('/:id/lock-character', async (req, res) => {
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: assetId });
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // ─── Advance past Characters phase ─────────────────────────────────
@@ -667,7 +667,7 @@ router.post('/:id/advance-characters', async (req, res) => {
   if (!atLeast(project.status, 'characters_locked')) {
     await updateRows('projects', { id: paramStr(req.params.id) }, { status: 'characters_locked', updated_at: new Date().toISOString() });
   }
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true, status: 'characters_locked' });
 });
 
 // ─── Generate Environment Looks ──────────────────────────────────────
@@ -849,7 +849,7 @@ router.post('/:id/lock-environment', async (req, res) => {
   await updateRows('environments', { id: environmentId }, { reference_asset_id: assetId });
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // ─── Advance past Environments phase ────────────────────────────────
@@ -862,7 +862,7 @@ router.post('/:id/advance-environments', async (req, res) => {
   if (!atLeast(project.status, 'environments_locked')) {
     await updateRows('projects', { id: paramStr(req.params.id) }, { status: 'environments_locked', updated_at: new Date().toISOString() });
   }
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true, status: 'environments_locked' });
 });
 
 // ─── Generate Script ────────────────────────────────────────────────
@@ -1743,14 +1743,14 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
 router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { end_image_asset_id: null, end_image_status: 'idle', video_status: 'stale' });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // Clear extracted last frame — removes the ffmpeg-extracted frame from a previous video gen
 router.post('/:id/shots/:shotId/clear-extracted-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { extracted_last_frame_asset_id: null });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // Upload a custom end frame
@@ -1777,7 +1777,7 @@ router.post('/:id/shots/:shotId/lock', async (req, res) => {
   if (!shot.video_asset_id) return res.status(400).json({ error: 'Video must be generated before locking' });
 
   await updateRows('shots', { id: shot.id }, { locked: 1 });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 router.post('/:id/shots/:shotId/unlock', async (req, res) => {
@@ -1785,7 +1785,7 @@ router.post('/:id/shots/:shotId/unlock', async (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   await updateRows('shots', { id: shot.id }, { locked: 0 });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // ─── Shot video history (revert after bad regen) ────────────────────

@@ -673,7 +673,7 @@ router.post('/:id/lock-concept', async (req, res) => {
 router.post('/:id/unlock-concept', async (req, res) => {
   const projectId = paramStr(req.params.id);
   await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true, status: 'analyzed' });
 });
 
 // Refine locked concept — Claude rewrites fields based on feedback. Non-destructive (no wipe).
@@ -728,7 +728,7 @@ router.patch('/:id/concept', async (req, res) => {
   for (const s of scenes) {
     await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
   }
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true });
 });
 
 // Update project settings
@@ -764,7 +764,7 @@ router.patch('/:id', async (req, res) => {
     }
   }
 
-  res.json(await getFullProject(projectId));
+  res.json({ ok: true });
 });
 
 // Delete project
@@ -906,7 +906,7 @@ router.put('/:id/cast/:memberId', async (req, res) => {
 
 router.delete('/:id/cast/:memberId', async (req, res) => {
   await deleteRows('cast_members', { id: paramStr(req.params.memberId) });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // ─── Environment Management ──────────────────────────────────────────
@@ -953,7 +953,7 @@ router.put('/:id/environments/:envId', async (req, res) => {
 
 router.delete('/:id/environments/:envId', async (req, res) => {
   await deleteRows('environments', { id: paramStr(req.params.envId) });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // ─── X-Ray: AI Call Log ──────────────────────────────────────────────
@@ -991,7 +991,7 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
       await updateRows('shots', { scene_id: sceneId }, { prompts_stale: true });
     }
   }
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 // ─── Shot Updates ───────────────────────────────────────────────────
@@ -1001,7 +1001,7 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
 router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { image_asset_id: null, image_status: 'idle', locked: 0 });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 router.patch('/:id/shots/:shotId', async (req, res) => {
@@ -1028,7 +1028,7 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
     await updateRows('shots', { id: shotId }, { continuity_from: continuityFrom });
   }
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json({ ok: true });
 });
 
 export { router as projectsRouter, getFullProject };
