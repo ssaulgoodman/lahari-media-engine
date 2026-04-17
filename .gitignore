@@ -41,3 +41,4 @@ skills/
 skills-lock.json
 storage/*.db-shm
 storage/*.db-wal
+storage/lahari.db.bak*

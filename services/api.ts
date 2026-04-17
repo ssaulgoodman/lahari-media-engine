@@ -249,7 +249,7 @@ export const addCastMember = async (projectId: string, name: string, description
   return handleResponse(res);
 };
 
-export const updateCastMember = async (projectId: string, memberId: string, updates: { name?: string; description?: string }) => {
+export const updateCastMember = async (projectId: string, memberId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => {
   const res = await fetch(`${API}/projects/${projectId}/cast/${memberId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -274,7 +274,7 @@ export const addEnvironment = async (projectId: string, name: string, descriptio
   return handleResponse(res);
 };
 
-export const updateEnvironment = async (projectId: string, envId: string, updates: { name?: string; description?: string }) => {
+export const updateEnvironment = async (projectId: string, envId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => {
   const res = await fetch(`${API}/projects/${projectId}/environments/${envId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

@@ -4,7 +4,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectOne, insertRow, insertMany, updateRows, deleteRows, countRows, maxVal, selectColumns, findShot, incrementColumn, getSB, T } from '../database.js';
 import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '../storage.js';
-import { generateStyleOptions, generateCharacterLooks, generateSingleStyleImage, generateEnvironmentLooks, generateShotStartFrame } from '../services/imagen.js';
+import { generateStyleOptions, generateCharacterLooks, buildCharacterPrompt, generateSingleStyleImage, generateEnvironmentLooks, buildEnvironmentPrompt, generateShotStartFrame } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
 import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
 import { extractLastFrame } from '../services/ffmpeg.js';
@@ -440,7 +440,55 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     await insertRow('assets', { id: userRefAssetId, project_id: project.id, category: 'character_user_ref', file_path: userRefImagePath });
   }
 
-  const xrayPrompt = `Generate 3 looks for "${member.name}" — ${(member.description || '').substring(0, 100)} | Style DNA: ${styleDNA.substring(0, 100)}...${feedback ? ` | Feedback: ${feedback}` : ''}${userRefImagePath ? ' | with user-supplied ref' : ''}`;
+  // Build or reuse the generation prompt. First gen auto-builds from template;
+  // subsequent gens use the saved (possibly artist-edited) prompt.
+  let genPrompt = member.generation_prompt as string | null;
+  if (!genPrompt) {
+    const styleIdx = styleImagePath ? 1 : undefined;
+    const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
+    genPrompt = buildCharacterPrompt(
+      { name: member.name, description: member.description || '' },
+      styleDNA,
+      { styleIdx, userRefIdx }
+    );
+  }
+
+  // If feedback provided and we have a generation prompt, ask Claude to rewrite
+  // the prompt (not just append). This is the "refine" path.
+  if (feedback && genPrompt) {
+    try {
+      // If current reference exists, show it to Claude as context
+      let refBase64 = '';
+      let refMime = 'image/png';
+      if (member.reference_asset_id) {
+        const refAsset = await selectOne('assets', { id: member.reference_asset_id });
+        if (refAsset) {
+          refBase64 = await readAsBase64(refAsset.file_path);
+          refMime = mimeFromExt(refAsset.file_path);
+        }
+      }
+
+      const rewritten = await refineShotPrompt({
+        currentVisualPrompt: genPrompt,
+        currentMotionPrompt: '',
+        feedback: `[CHARACTER LOOK REFINEMENT for ${member.name}] ${feedback}`,
+        failedImageBase64: refBase64,
+        failedImageMime: refMime,
+        styleDNA: styleDNA,
+        characterDescriptions: [`${member.name}: ${member.description || ''}`],
+      });
+      genPrompt = rewritten.visualPrompt;
+      console.log(`[${project.id}] Claude rewrote generation prompt for ${member.name}: ${genPrompt.substring(0, 100)}...`);
+    } catch (err: any) {
+      console.warn(`[${project.id}] Prompt rewrite failed, using feedback as director note: ${err.message}`);
+      genPrompt += `\n\nDirector note: ${feedback}`;
+    }
+  }
+
+  // Save the (possibly rewritten) prompt
+  await updateRows('cast_members', { id: castMemberId }, { generation_prompt: genPrompt });
+
+  const xrayPrompt = `Generate 3 looks for "${member.name}" | Prompt: ${genPrompt.substring(0, 150)}...`;
 
   try {
     console.log(`[${project.id}] Generating looks for ${member.name} via gemini-3-pro-image-preview${userRefImagePath ? ' (with user ref)' : ''}...`);
@@ -450,9 +498,10 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       { name: member.name, description: member.description || '' },
       styleDNA,
       styleImagePath,
-      feedback,
+      undefined, // feedback already baked into genPrompt by Claude
       project.aspect_ratio || '16:9',
       userRefImagePath,
+      genPrompt,
     );
     const durationMs = Date.now() - t0;
 
@@ -596,17 +645,32 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     await insertRow('assets', { id: refAssetId, project_id: project.id, category: 'environment_user_ref', file_path: userRefImagePath });
   }
 
+  // Build or reuse generation prompt
+  let genPrompt = env.generation_prompt as string | null;
+  if (!genPrompt) {
+    const styleIdx = styleImagePath ? 1 : undefined;
+    const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
+    genPrompt = buildEnvironmentPrompt(
+      { name: env.name, description: env.description || '' },
+      styleDNA,
+      { styleIdx, userRefIdx }
+    );
+    await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt });
+  }
+
   try {
     console.log(`[${project.id}] Generating environment looks for ${env.name}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
+    const userNote = typeof note === 'string' && note.trim() ? note.trim() : undefined;
     const imagePaths = await generateEnvironmentLooks(
       { name: env.name, description: env.description || '' },
       styleDNA,
       styleImagePath,
       project.aspect_ratio || '16:9',
       userRefImagePath,
-      typeof note === 'string' && note.trim() ? note.trim() : undefined,
+      userNote,
+      genPrompt,
     );
     const durationMs = Date.now() - t0;
 

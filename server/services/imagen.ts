@@ -161,6 +161,30 @@ export const generateSingleStyleImage = async (
  * candidateCount, so parallel calls are the only real-time path. Same prompt →
  * natural variation from model sampling — user picks the best.
  */
+/**
+ * Build the default character generation prompt from description + style.
+ * This is the template that gets saved to `generation_prompt` on first gen.
+ * The artist can then edit it directly or refine via LLM.
+ */
+export const buildCharacterPrompt = (
+  character: { name: string; description: string },
+  styleDNA: string,
+  opts?: { styleIdx?: number; userRefIdx?: number }
+): string => {
+  let prompt = opts?.styleIdx
+    ? `Generate ONE cinematic character portrait in the visual style of Image ${opts.styleIdx}.`
+    : `Generate ONE cinematic character portrait.`;
+  prompt += `\n\n${character.name} — ${character.description}`;
+  if (opts?.userRefIdx) {
+    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography) while rendering in the project's visual style${opts.styleIdx ? ` (Image ${opts.styleIdx})` : ''}. The reference image is the source of truth for WHO this character is; the style image is the source of truth for HOW to render them.`;
+  }
+  prompt += `\n\nMid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.`;
+  prompt += `\n\nStyle: ${styleDNA}`;
+  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
+  return prompt;
+};
+
 export const generateCharacterLooks = async (
   character: { name: string; description: string },
   styleDNA: string,
@@ -168,6 +192,8 @@ export const generateCharacterLooks = async (
   userFeedback?: string,
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
+  /** If set, this is the exact prompt to send (artist-edited or LLM-refined). */
+  generationPrompt?: string,
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -188,19 +214,15 @@ export const generateCharacterLooks = async (
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-  let prompt = styleIdx
-    ? `Generate ONE cinematic character portrait in the visual style of Image ${styleIdx}.`
-    : `Generate ONE cinematic character portrait.`;
-  prompt += `\n\n${character.name} — ${character.description}`;
-  if (userRefIdx) {
-    prompt += `\n\nImage ${userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography) while rendering in the project's visual style${styleIdx ? ` (Image ${styleIdx})` : ''}. The reference image is the source of truth for WHO this character is; the style image is the source of truth for HOW to render them.`;
+  // Use the saved generation_prompt if provided, otherwise build from template
+  let prompt: string;
+  if (generationPrompt) {
+    prompt = generationPrompt;
+    if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
+  } else {
+    prompt = buildCharacterPrompt(character, styleDNA, { styleIdx, userRefIdx });
+    if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   }
-  prompt += `\n\nMid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
-
-Style: ${styleDNA}`;
-  if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
-  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
 
   parts.push({ text: prompt });
 
@@ -235,6 +257,29 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
  * Generate 3 environment look variations via 3 parallel API calls with the SAME prompt.
  * Natural sampling variation → user picks the best.
  */
+/**
+ * Build the default environment generation prompt from description + style.
+ * Saved to `generation_prompt` on first gen, then editable by the artist.
+ */
+export const buildEnvironmentPrompt = (
+  environment: { name: string; description: string },
+  styleDNA: string,
+  opts?: { styleIdx?: number; userRefIdx?: number }
+): string => {
+  let prompt = opts?.styleIdx
+    ? `Generate ONE cinematic environment shot in the visual style of Image ${opts.styleIdx}. No characters or figures.`
+    : `Generate ONE cinematic environment shot. No characters or figures.`;
+  prompt += `\n\n${environment.name} — ${environment.description}`;
+  if (opts?.userRefIdx) {
+    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood while rendering in the project's visual style${opts.styleIdx ? ` (Image ${opts.styleIdx})` : ''}. The reference defines WHAT the place looks like; the style defines HOW it's rendered.`;
+  }
+  prompt += `\n\nWide establishing shot, full environment visible, empty scene.`;
+  prompt += `\n\nStyle: ${styleDNA}`;
+  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
+  return prompt;
+};
+
 export const generateEnvironmentLooks = async (
   environment: { name: string; description: string },
   styleDNA: string,
@@ -242,6 +287,8 @@ export const generateEnvironmentLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   userNote?: string,
+  /** If set, this is the exact prompt to send (artist-edited or LLM-refined). */
+  generationPrompt?: string,
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -260,19 +307,15 @@ export const generateEnvironmentLooks = async (
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-  let prompt = styleIdx
-    ? `Generate ONE cinematic environment shot in the visual style of Image ${styleIdx}. No characters or figures.`
-    : `Generate ONE cinematic environment shot. No characters or figures.`;
-  prompt += `\n\n${environment.name} — ${environment.description}`;
-  if (userRefIdx) {
-    prompt += `\n\nImage ${userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood while rendering in the project's visual style${styleIdx ? ` (Image ${styleIdx})` : ''}. The reference defines WHAT the place looks like; the style defines HOW it's rendered.`;
+  // Use the saved generation_prompt if provided, otherwise build from template
+  let prompt: string;
+  if (generationPrompt) {
+    prompt = generationPrompt;
+    if (userNote) prompt += `\n\nDirector note: ${userNote}`;
+  } else {
+    prompt = buildEnvironmentPrompt(environment, styleDNA, { styleIdx, userRefIdx });
+    if (userNote) prompt += `\n\nDirector note: ${userNote}`;
   }
-  prompt += `\n\nWide establishing shot, full environment visible, empty scene.
-
-Style: ${styleDNA}`;
-  if (userNote) prompt += `\n\nDirector note: ${userNote}`;
-  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
 
   parts.push({ text: prompt });
 

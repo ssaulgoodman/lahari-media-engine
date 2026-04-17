@@ -165,7 +165,7 @@ interface Props {
   onGenerateLooks: (castMemberId: string, feedback?: string, refImage?: File) => void | Promise<void>;
   onLockCharacter: (castMemberId: string, assetId: string) => void;
   onAddCast: (name: string, description: string) => void;
-  onUpdateCast: (memberId: string, updates: { name?: string; description?: string }) => void;
+  onUpdateCast: (memberId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => void;
   onDeleteCast: (memberId: string) => void;
   onConfirmDestructive?: (opts: { title: string; description: string; confirmLabel?: string; run: () => any }) => void;
   onGenerateScript: (userNote?: string) => void;
@@ -1883,31 +1883,56 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                       </div>
                     )}
 
-                    {/* Bottom — description + feedback */}
+                    {/* Bottom — description (context) + generation prompt (source of truth) + refine */}
                     <div className="px-5 py-4 space-y-3 border-t border-white/[0.06]">
-                      <div
-                        key={`desc-${activeMember.id}`}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => onUpdateCast(activeMember.id, { description: e.currentTarget.textContent || '' })}
-                        className="text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
-                      >
-                        {activeMember.description}
+                      {/* Description — context from script, editable */}
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Description <span className="normal-case tracking-normal">(from script)</span></div>
+                        <div
+                          key={`desc-${activeMember.id}`}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={(e) => onUpdateCast(activeMember.id, { description: e.currentTarget.textContent || '' })}
+                          className="text-sm text-zinc-400 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
+                        >
+                          {activeMember.description}
+                        </div>
                       </div>
-                      <AutoGrowTextarea
-                        key={`feedback-${activeMember.id}`}
-                        placeholder="Feedback — e.g. 'make the crown bigger'"
-                        rows={1}
-                        className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
-                        autoComplete="off"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) {
-                            e.preventDefault();
-                            onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value || undefined);
-                          }
-                        }}
-                        id={`char-feedback-${activeMember.id}`}
-                      />
+
+                      {/* Generation prompt — what actually gets sent to Gemini */}
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span></div>
+                        {activeMember.generationPrompt ? (
+                          <AutoGrowTextarea
+                            key={`gen-prompt-${activeMember.id}`}
+                            value={activeMember.generationPrompt}
+                            onChange={(e) => onUpdateCast(activeMember.id, { generationPrompt: e.target.value })}
+                            rows={3}
+                            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                          />
+                        ) : (
+                          <div className="text-xs text-zinc-500 italic">Auto-generated on first look generation</div>
+                        )}
+                      </div>
+
+                      {/* Refine feedback — tell the LLM what to change */}
+                      <div>
+                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Refine <span className="normal-case tracking-normal">(LLM rewrites the prompt)</span></div>
+                        <AutoGrowTextarea
+                          key={`feedback-${activeMember.id}`}
+                          placeholder="e.g. 'make him older, a man not a boy' — Claude will rewrite the generation prompt"
+                          rows={1}
+                          className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                          autoComplete="off"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) {
+                              e.preventDefault();
+                              onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value || undefined);
+                            }
+                          }}
+                          id={`char-feedback-${activeMember.id}`}
+                        />
+                      </div>
                     </div>
                   </div>
                 ) : (

@@ -615,9 +615,13 @@ export const refineShotPrompt = async (opts: {
     ? opts.failedImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
     : 'image/png';
 
-  const contentBlocks: any[] = [
-    { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
-  ];
+  const contentBlocks: any[] = [];
+  const hasFailedImage = opts.failedImageBase64 && opts.failedImageBase64.length > 100;
+  if (hasFailedImage) {
+    contentBlocks.push(
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
+    );
+  }
 
   // Add user-uploaded reference image if provided
   if (opts.referenceImageBase64 && opts.referenceImageMime) {
@@ -633,12 +637,16 @@ export const refineShotPrompt = async (opts: {
     ? '\n\nThe SECOND IMAGE is a reference the director uploaded — use it as visual guidance for the rewrite. Match its mood, composition, or style as indicated in the feedback.'
     : '';
 
+  const imageContext = hasFailedImage
+    ? `THE FIRST IMAGE is the failed attempt. Study it carefully.${refNote}`
+    : `No image provided — rewrite the prompt based on the feedback alone.${refNote}`;
+
   contentBlocks.push({
-    type: 'text', text: `You are a cinematographer fixing a shot that didn't come out right.
+    type: 'text', text: `You are a cinematographer refining a generation prompt.
 
-THE FIRST IMAGE is the failed attempt. Study it carefully.${refNote}
+${imageContext}
 
-CURRENT PROMPT (what produced the failed image):
+CURRENT PROMPT:
 Visual: ${opts.currentVisualPrompt}
 Motion: ${opts.currentMotionPrompt}
 

@@ -106,6 +106,7 @@ export interface CastMember {
   id: string;
   name: string;
   description: string;
+  generationPrompt?: string;
   referenceAssetId?: string;
   referenceImageUrl?: string;
 }
@@ -114,6 +115,7 @@ export interface Environment {
   id: string;
   name: string;
   description: string;
+  generationPrompt?: string;
   referenceAssetId?: string;
   referenceImageUrl?: string;
 }

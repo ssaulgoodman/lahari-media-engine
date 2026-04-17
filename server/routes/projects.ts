@@ -295,6 +295,7 @@ const getFullProject = async (projectId: string) => {
       id: c.id,
       name: c.name,
       description: c.description,
+      generationPrompt: c.generation_prompt || undefined,
       referenceAssetId: c.reference_asset_id,
       referenceImageUrl: c.referenceImageUrl,
     })),
@@ -302,6 +303,7 @@ const getFullProject = async (projectId: string) => {
       id: e.id,
       name: e.name,
       description: e.description,
+      generationPrompt: e.generation_prompt || undefined,
       referenceAssetId: e.reference_asset_id,
       referenceImageUrl: e.referenceImageUrl,
     })),
@@ -733,10 +735,11 @@ router.post('/:id/cast', async (req, res) => {
 });
 
 router.put('/:id/cast/:memberId', async (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, generationPrompt } = req.body;
   const updates: Record<string, any> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
+  if (generationPrompt !== undefined) updates.generation_prompt = generationPrompt || null;
   if (Object.keys(updates).length > 0) {
     await updateRows('cast_members', { id: paramStr(req.params.memberId) }, updates);
   }
@@ -765,10 +768,11 @@ router.post('/:id/environments', async (req, res) => {
 });
 
 router.put('/:id/environments/:envId', async (req, res) => {
-  const { name, description } = req.body;
+  const { name, description, generationPrompt } = req.body;
   const updates: Record<string, any> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
+  if (generationPrompt !== undefined) updates.generation_prompt = generationPrompt || null;
   if (Object.keys(updates).length > 0) {
     await updateRows('environments', { id: paramStr(req.params.envId) }, updates);
   }

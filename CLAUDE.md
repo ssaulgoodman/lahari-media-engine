@@ -86,6 +86,15 @@ Numbered inline images sent to Gemini 3 Pro Image:
 
 Priority: character identity > continuity > environment > style. Explicit note: when style text conflicts with style image, follow the image.
 
+### Generation prompt pattern (universal)
+
+Every generatable entity (characters, environments, shots, end frames) follows the same two-mode edit pattern:
+
+1. **Direct edit** — artist edits the `generation_prompt` field directly. What you see is what gets sent.
+2. **Refine** — artist writes feedback, Claude (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
+
+`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt. The default templates include hardcoded framing instructions (e.g. "Mid-shot portrait, eye-level framing, cinematic lighting") — these are sensible defaults, editable by the artist. Future: generate per-character framing from story context via Claude.
+
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
