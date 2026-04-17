@@ -793,10 +793,9 @@ const App: React.FC = () => {
     await Promise.all(workers);
   };
 
-  const handleBulkGenerateFrames = async () => {
-    if (!project) return;
+  const getReadyFrameTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
-    for (const scene of project.scenes) {
+    for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
         if (shot.imageUrl) return;
         if (shot.imageStatus === GenerationStatus.LOADING) return;
@@ -807,41 +806,47 @@ const App: React.FC = () => {
         targets.push({ sceneId: scene.id, shotId: shot.id });
       });
     }
-    if (targets.length === 0) return;
-    // Seed the visible queue. Workers will dequeue + flip to LOADING as they
-    // pick each job up, so the artist sees the first ~10 active and the rest
-    // wearing a "queued (Nth)" badge instead of all flashing to loading.
-    const queueIds = targets.map(t => t.shotId);
-    setFrameQueue(queueIds);
+    return targets;
+  };
+
+  const handleBulkGenerateFrames = async () => {
+    if (!project) return;
+    let latestProject = project;
     try {
-      await runWithConcurrency(
-        targets,
-        10,
-        t => api.generateShotImage(project.id, t.shotId),
-        t => {
-          setFrameQueue(q => q.filter(id => id !== t.shotId));
-          setProject(prev => prev ? {
-            ...prev,
-            scenes: prev.scenes.map(s => ({
-              ...s,
-              shots: s.shots.map(sh =>
-                sh.id === t.shotId ? { ...sh, imageStatus: GenerationStatus.LOADING } : sh
-              )
-            }))
-          } : prev);
-        },
-      );
+      while (true) {
+        const targets = getReadyFrameTargets(latestProject);
+        if (targets.length === 0) break;
+        const queueIds = targets.map(t => t.shotId);
+        setFrameQueue(queueIds);
+        await runWithConcurrency(
+          targets,
+          10,
+          t => api.generateShotImage(latestProject.id, t.shotId),
+          t => {
+            setFrameQueue(q => q.filter(id => id !== t.shotId));
+            setProject(prev => prev ? {
+              ...prev,
+              scenes: prev.scenes.map(s => ({
+                ...s,
+                shots: s.shots.map(sh =>
+                  sh.id === t.shotId ? { ...sh, imageStatus: GenerationStatus.LOADING } : sh
+                )
+              }))
+            } : prev);
+          },
+        );
+        // Refresh to see newly unblocked prev_shot frames
+        latestProject = await api.getProject(latestProject.id);
+        setProject(latestProject);
+      }
     } finally {
       setFrameQueue([]);
     }
-    // Authoritative refresh — parallel responses can land out of order.
-    try { setProject(await api.getProject(project.id)); } catch (err: any) { setError(err.message); }
   };
 
-  const handleBulkGenerateVideos = async () => {
-    if (!project) return;
+  const getReadyVideoTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
-    for (const scene of project.scenes) {
+    for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
         if (!shot.imageUrl || shot.videoUrl) return;
         if (shot.videoStatus === GenerationStatus.LOADING) return;
@@ -852,34 +857,43 @@ const App: React.FC = () => {
         targets.push({ sceneId: scene.id, shotId: shot.id });
       });
     }
-    if (targets.length === 0) return;
-    const queueIds = targets.map(t => t.shotId);
-    setVideoQueue(queueIds);
+    return targets;
+  };
+
+  const handleBulkGenerateVideos = async () => {
+    if (!project) return;
+    let latestProject = project;
     try {
-      // Throttle to 5 concurrent on Veo. Vertex default is ~60 RPM per project
-      // on Veo Fast; at 60s-per-video this never touches the RPM ceiling, and
-      // it keeps us comfortable inside the concurrent-ops soft cap.
-      await runWithConcurrency(
-        targets,
-        5,
-        t => api.generateShotVideo(project.id, t.shotId),
-        t => {
-          setVideoQueue(q => q.filter(id => id !== t.shotId));
-          setProject(prev => prev ? {
-            ...prev,
-            scenes: prev.scenes.map(s => ({
-              ...s,
-              shots: s.shots.map(sh =>
-                sh.id === t.shotId ? { ...sh, videoStatus: GenerationStatus.LOADING } : sh
-              )
-            }))
-          } : prev);
-        },
-      );
+      while (true) {
+        const targets = getReadyVideoTargets(latestProject);
+        if (targets.length === 0) break;
+        const queueIds = targets.map(t => t.shotId);
+        setVideoQueue(queueIds);
+        // Throttle to 5 concurrent. Sized for Segmind rate limits.
+        await runWithConcurrency(
+          targets,
+          5,
+          t => api.generateShotVideo(latestProject.id, t.shotId),
+          t => {
+            setVideoQueue(q => q.filter(id => id !== t.shotId));
+            setProject(prev => prev ? {
+              ...prev,
+              scenes: prev.scenes.map(s => ({
+                ...s,
+                shots: s.shots.map(sh =>
+                  sh.id === t.shotId ? { ...sh, videoStatus: GenerationStatus.LOADING } : sh
+                )
+              }))
+            } : prev);
+          },
+        );
+        // Refresh to see newly unblocked prev_shot shots
+        latestProject = await api.getProject(latestProject.id);
+        setProject(latestProject);
+      }
     } finally {
       setVideoQueue([]);
     }
-    try { setProject(await api.getProject(project.id)); } catch (err: any) { setError(err.message); }
   };
 
   const handleUpdateShot = async (sceneId: string, shotId: string, updates: Partial<VideoShot>) => {

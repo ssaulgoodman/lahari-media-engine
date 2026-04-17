@@ -71,7 +71,7 @@ No end-frame prediction. Shot = start frame + motion prompt → video plays natu
 
 **Sequential gate:** Only shots with `continuity_from === 'prev_shot'` wait for previous shot's video. Hard-cut shots are independently actionable.
 
-**Bulk fan-out (throttled)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames** — a worker-pool that queues the rest. Sized for Vertex default ~60 RPM on Veo Fast and comfortable inside Tier-2 Gemini image RPM. Raise as Google auto-scales your quota.
+**Bulk fan-out (throttled, multi-pass)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames**. Both bulk handlers use a **multi-pass loop**: after each pass completes, project state is refreshed from the server and newly unblocked `prev_shot` items are picked up automatically. No need to click the button twice — chained shots generate as their predecessors complete.
 
 **Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 

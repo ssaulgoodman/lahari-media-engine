@@ -162,7 +162,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
 - `GET /api/admin/usage?hours=N` — aggregates `ai_calls` by model+stage with totals and error counts.
 - `GET /api/admin/errors?limit=N` — most recent error messages verbatim. Fastest way to tell what Veo (or anything) is rejecting.
-- `POST /api/admin/restore` — multipart tarball upload → extract to `/app/storage`. Kept around for migrations.
+- Migration endpoint removed — was `POST /api/admin/migrate-to-supabase`, used once on 2026-04-16.
 
 ### Queue completion writeback
 
