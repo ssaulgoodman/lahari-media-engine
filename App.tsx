@@ -213,7 +213,7 @@ const App: React.FC = () => {
     delete opsRef.current[key];
   }, []);
 
-  const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string; userNote?: string }) => {
+  const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string; userNote?: string; directorBrief?: string }) => {
     if (!project) return;
     const signal = startOp('concepts');
     setLoading(true);
@@ -307,21 +307,42 @@ const App: React.FC = () => {
   // Destructive events happen when the user actively picks or regenerates
   // something (lock-concept with a different choice, generate-script re-run).
   const handleUnlockConcept = () => doUnlock(() => api.unlockConcept(project!.id));
+
+  const handleRefineConcept = async (feedback: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const p = await api.refineConcept(project.id, feedback);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Concept refinement failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateConcept = async (updates: Record<string, any>) => {
+    if (!project) return;
+    try {
+      const p = await api.updateConcept(project.id, updates);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Concept update failed: ${err.message}`);
+    }
+  };
+
   const handleUnlockScript = () => doUnlock(() => api.unlockScript(project!.id));
   const handleUnlockCharacters = () => doUnlock(() => api.unlockCharacters(project!.id));
   const handleUnlockEnvironments = () => doUnlock(() => api.unlockEnvironments(project!.id));
 
   const doUnlock = async (fn: () => Promise<any>) => {
     if (!project) return;
-    setLoading(true);
     setError(null);
     try {
       const p = await fn();
       setProject(p);
     } catch (err: any) {
       setError(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -403,6 +424,28 @@ const App: React.FC = () => {
   };
 
   // ─── Script Generation ──────────────────────────────────────────
+
+  const handleUpdateScene = async (sceneId: string, updates: { narrativeDescription?: string }) => {
+    if (!project) return;
+    // Optimistic update
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => s.id === sceneId ? { ...s, ...updates } : s)
+    } : prev);
+    api.updateScene(project.id, sceneId, updates).catch(console.error);
+  };
+
+  const handleRefineScript = async (feedback: string) => {
+    if (!project) return;
+    const signal = startOp('script');
+    setLoading(true); setError(null);
+    try {
+      const p = await api.refineScript(project.id, feedback, signal);
+      setProject(p);
+    } catch (err: any) {
+      if (!api.isCancelled(err)) setError('Script refinement failed: ' + err.message);
+    } finally { endOp('script'); setLoading(false); }
+  };
 
   const handleGenerateScript = async (userNote?: string) => {
     if (!project) return;
@@ -1111,6 +1154,8 @@ const App: React.FC = () => {
                     onDiscardLookCandidates={(id) => setLookCandidates(prev => ({ ...prev, [id]: [] }))}
                     onLockConcept={handleLockConcept}
                     onUnlockConcept={handleUnlockConcept}
+                    onRefineConcept={handleRefineConcept}
+                    onUpdateConcept={handleUpdateConcept}
                     onUnlockScript={handleUnlockScript}
                     onUnlockCharacters={handleUnlockCharacters}
                     onUnlockEnvironments={handleUnlockEnvironments}
@@ -1129,6 +1174,9 @@ const App: React.FC = () => {
                       run: async () => { await opts.run(); return null; },
                     })}
                     onGenerateScript={handleGenerateScript}
+                    onRefineScript={handleRefineScript}
+                    onUpdateScene={handleUpdateScene}
+                    onUpdateShot={handleUpdateShot}
                     onGenerateConcepts={handleGenerateConcepts}
                     onCancelConcepts={handleCancelConcepts}
                     onCancelScript={() => abortOp('script')}

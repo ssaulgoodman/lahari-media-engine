@@ -59,13 +59,13 @@ export const generateConceptOptions = async (
   meaning: string,
   musicalStructure: any[],
   context?: string,
-  userNote?: string
+  userNote?: string,
+  /** If provided, generates ONE concept matching the director's vision instead of 3 preset directions. */
+  directorBrief?: string,
 ): Promise<{ concepts: any[]; prompt: string }> => {
   const client = getClient();
 
-  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
-
-SONG: ${title} (${language})
+  const songContext = `SONG: ${title} (${language})
 ${context ? `CONTEXT: ${context}` : ''}
 
 LYRICS:
@@ -75,7 +75,27 @@ MEANING:
 ${meaning}
 
 MUSICAL STRUCTURE:
-${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}
+${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}`;
+
+  let prompt: string;
+
+  if (directorBrief) {
+    // Path B: Director has a specific vision — generate ONE concept that realizes it
+    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+
+${songContext}
+
+DIRECTOR'S BRIEF:
+${directorBrief}
+${userNote ? `\nADDITIONAL NOTE: ${userNote}\n` : ''}
+Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their idea into a complete concept — don't override their intent, expand on it. Fill in all structured fields so the production pipeline can work with it.
+
+Use the generate_concepts tool. Return EXACTLY 1 concept in the array.`;
+  } else {
+    // Path A: Generate 3 preset directions
+    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+
+${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
 Generate EXACTLY 3 creative directions for a music video:
 1. Traditional/classical — rooted in culture, devotional storytelling
@@ -88,9 +108,11 @@ For each direction provide:
 - mood: one distinct emotional keyword (different per direction)
 - theme: the core narrative idea (1 sentence)
 - conceptDirection: traditional / modern / experimental
-- visualSuggestions: { artStyle, colorPalette }
+
+Visual style is decided in a separate phase — do NOT include art style or color palette here. Focus purely on narrative direction.
 
 Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
+  }
 
   const response = await client.messages.create({
     model: OPUS,
@@ -139,7 +161,132 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
   return { concepts: (toolBlock.input as any).concepts || [], prompt };
 };
 
+// ─── Refine Locked Concept ─────────────────────────────────────────
+
+export const refineConceptDirection = async (
+  currentConcept: any,
+  feedback: string
+): Promise<any> => {
+  const client = getClient();
+
+  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+
+CURRENT LOCKED CONCEPT:
+- Title: ${currentConcept.title || ''}
+- Deity: ${currentConcept.deity || ''}
+- Mood: ${currentConcept.mood || ''}
+- Theme: ${currentConcept.theme || ''}
+- Direction: ${currentConcept.conceptDirection || ''}
+
+DIRECTOR FEEDBACK:
+${feedback}
+
+Revise the concept incorporating the feedback. Keep the core identity intact — this is a refinement, not a replacement. Update only the fields that the feedback touches. If the feedback says "darker mood" just update mood, don't rewrite everything.
+
+Visual style is decided in a separate phase — do NOT include art style or color palette.
+
+Use the refine_concept tool.`;
+
+  const response = await client.messages.create({
+    model: SONNET,
+    max_tokens: 1024,
+    tools: [{
+      name: 'refine_concept',
+      description: 'Return the refined concept with all fields',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          title: { type: 'string' },
+          deity: { type: 'string' },
+          mood: { type: 'string' },
+          theme: { type: 'string' },
+          conceptDirection: { type: 'string' },
+          visualSuggestions: {
+            type: 'object',
+            properties: {
+              physicalDescription: { type: 'string' },
+              artStyle: { type: 'string' },
+              colorPalette: { type: 'string' }
+            },
+            required: ['artStyle', 'colorPalette']
+          }
+        },
+        required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'visualSuggestions']
+      }
+    }],
+    tool_choice: { type: 'tool', name: 'refine_concept' },
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('Concept refinement failed');
+  return toolBlock.input;
+};
+
 // ─── Script Planning (Stage 5) ──────────────────────────────────────
+
+// Shared tool schema for planScenes + refineScript
+const SCRIPT_TOOL = {
+  name: 'plan_music_video',
+  description: 'Plan the full music video structure — cast + environments + scenes + shots',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      cast: {
+        type: 'array',
+        description: 'All characters needed for this video',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Character name (e.g. "Goddess Mahalakshmi")' },
+            description: { type: 'string', description: 'Physical appearance + cultural identity for image generation. 2-3 sentences. Start with who they are in mythology. No art style.' }
+          },
+          required: ['name', 'description']
+        }
+      },
+      environments: {
+        type: 'array',
+        description: 'All distinct environments/locations needed for this video',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Environment name (e.g. "Vaikuntha Palace", "Cosmic Ocean")' },
+            description: { type: 'string', description: 'Physical space + cultural reference. 2 sentences. No art style.' }
+          },
+          required: ['name', 'description']
+        }
+      },
+      scenes: {
+        type: 'array',
+        description: 'One scene per musical section, following the structure exactly',
+        items: {
+          type: 'object',
+          properties: {
+            sectionLabel: { type: 'string', description: 'Musical section name (e.g. "Intro", "Verse 1", "Chorus")' },
+            startTime: { type: 'string', description: 'Start timestamp (e.g. "0:00")' },
+            endTime: { type: 'string', description: 'End timestamp (e.g. "0:30")' },
+            narrativeDescription: { type: 'string', description: 'What happens in this scene. 1-2 sentences.' },
+            shots: {
+              type: 'array',
+              description: 'Individual shots — one per clip slot.',
+              items: {
+                type: 'object',
+                properties: {
+                  direction: { type: 'string', description: '5-10 word creative idea' },
+                  castNames: { type: 'array', items: { type: 'string' }, description: 'Names of cast members in this shot' },
+                  environmentName: { type: 'string', description: 'Environment name (must match from environments list)' }
+                },
+                required: ['direction', 'castNames']
+              }
+            }
+          },
+          required: ['sectionLabel', 'startTime', 'endTime', 'narrativeDescription', 'shots']
+        }
+      }
+    },
+    required: ['cast', 'environments', 'scenes']
+  }
+};
 
 export interface ScriptInput {
   concept: any;
@@ -201,67 +348,7 @@ IMPORTANT — character and environment assignment:
   const response = await client.messages.create({
     model: SONNET,
     max_tokens: 8192,
-    tools: [{
-      name: 'plan_music_video',
-      description: 'Plan the full music video structure — cast + environments + scenes + shots',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          cast: {
-            type: 'array',
-            description: 'All characters needed for this video',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', description: 'Character name (e.g. "Goddess Mahalakshmi")' },
-                description: { type: 'string', description: 'Physical appearance + cultural identity for image generation. 2-3 sentences. Start with who they are in mythology. No art style.' }
-              },
-              required: ['name', 'description']
-            }
-          },
-          environments: {
-            type: 'array',
-            description: 'All distinct environments/locations needed for this video',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', description: 'Environment name (e.g. "Vaikuntha Palace", "Cosmic Ocean")' },
-                description: { type: 'string', description: 'Physical space + cultural reference. 2 sentences. No art style.' }
-              },
-              required: ['name', 'description']
-            }
-          },
-          scenes: {
-            type: 'array',
-            description: 'One scene per musical section, following the structure exactly',
-            items: {
-              type: 'object',
-              properties: {
-                sectionLabel: { type: 'string', description: 'Musical section name (e.g. "Intro", "Verse 1", "Chorus")' },
-                startTime: { type: 'string', description: 'Start timestamp (e.g. "0:00")' },
-                endTime: { type: 'string', description: 'End timestamp (e.g. "0:30")' },
-                narrativeDescription: { type: 'string', description: 'What happens in this scene. 1-2 sentences.' },
-                shots: {
-                  type: 'array',
-                  description: 'Individual shots — one per clip slot. Number of shots = ceil(scene duration / clip length).',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      direction: { type: 'string', description: '5-10 word creative idea (e.g. "deity reveals cosmic form")' },
-                      castNames: { type: 'array', items: { type: 'string' }, description: 'Names of cast members in this shot' },
-                      environmentName: { type: 'string', description: 'Name of the environment for this shot (must match an environment name from the environments list)' }
-                    },
-                    required: ['direction', 'castNames']
-                  }
-                }
-              },
-              required: ['sectionLabel', 'startTime', 'endTime', 'narrativeDescription', 'shots']
-            }
-          }
-        },
-        required: ['cast', 'environments', 'scenes']
-      }
-    }],
+    tools: [SCRIPT_TOOL],
     tool_choice: { type: 'tool', name: 'plan_music_video' },
     messages: [{ role: 'user', content: prompt }]
   });
@@ -287,6 +374,112 @@ IMPORTANT — character and environment assignment:
         scene.shots[i].duration = pacing;
       } else {
         // Last shot: whatever is left
+        const usedTime = (shotCount - 1) * pacing;
+        scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
+      }
+    }
+  }
+
+  return { ...data, prompt };
+};
+
+// ─── Refine Script (surgical edit based on feedback) ──────────────
+
+export const refineScript = async (
+  currentScript: { cast: any[]; environments: any[]; scenes: any[] },
+  feedback: string,
+  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number }
+): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
+  const client = getClient();
+  const pacing = context.basePacing || 8;
+
+  const currentJson = JSON.stringify({
+    cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
+    environments: currentScript.environments.map((e: any) => ({ name: e.name, description: e.description })),
+    scenes: currentScript.scenes.map((s: any) => ({
+      sectionLabel: s.sectionLabel || s.section_label,
+      startTime: s.startTime || s.start_time,
+      endTime: s.endTime || s.end_time,
+      narrativeDescription: s.narrativeDescription || s.narrative_description,
+      shots: (s.shots || []).map((sh: any) => ({
+        direction: sh.direction || sh.visual_prompt || '',
+        castNames: sh.castNames || sh.cast_names || [],
+        environmentName: sh.environmentName || sh.environment_name || '',
+      }))
+    }))
+  }, null, 2);
+
+  const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
+
+CONCEPT: ${context.concept.deity || 'Unknown'} — ${context.concept.theme}
+Mood: ${context.concept.mood}
+${context.concept.conceptDirection || ''}
+
+LYRICS:
+${context.lyrics}
+
+MEANING: ${context.meaning}
+
+MUSICAL STRUCTURE: ${context.musicalStructure}
+
+CLIP LENGTH: All shots are fixed at ${pacing} seconds.
+
+═══════════════════════════════════════
+CURRENT SCRIPT (your starting point):
+═══════════════════════════════════════
+${currentJson}
+
+═══════════════════════════════════════
+DIRECTOR'S FEEDBACK:
+═══════════════════════════════════════
+${feedback}
+
+═══════════════════════════════════════
+
+Your job is SURGICAL REFINEMENT, not rewriting from scratch. Think of yourself as an editor, not a new writer.
+
+REFINEMENT PRINCIPLES:
+1. PRESERVE what works. If the director says "fix scene 4", scenes 1-3 and 5+ must come back IDENTICAL — same narratives, same shots, same cast assignments, same environments.
+2. SCOPE your changes to what the feedback asks for. "More intimate in scene 4" means rethink scene 4's shots — don't touch the cast list or environments unless the feedback requires it.
+3. RESPECT the existing cast and environments. These may already have locked reference images. Do NOT rename characters or environments — their names are IDs in the system. You may add new ones if the feedback requires new characters or locations.
+4. MAINTAIN musical structure. Section labels and timestamps are fixed — they come from the audio analysis. Do not change them.
+5. Every shot MUST have castNames (characters visible) and environmentName (location). This is critical — the video model uses these to send reference images for consistency.
+
+CAST rules (same as original script):
+- Description = physical appearance for image generation. 2-3 sentences.
+- Include cultural context: "{name}, the {role} from {tradition}"
+- No art style in descriptions
+
+ENVIRONMENT rules:
+- Description = physical space. 2 sentences. Cultural reference.
+- No art style
+
+Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
+
+  const response = await client.messages.create({
+    model: OPUS,
+    max_tokens: 8192,
+    tools: [SCRIPT_TOOL],
+    tool_choice: { type: 'tool', name: 'plan_music_video' },
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') {
+    throw new Error('Claude did not return tool_use response');
+  }
+
+  const data = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
+  if (!data.environments) data.environments = [];
+
+  for (const scene of data.scenes) {
+    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    const shotCount = scene.shots.length;
+    if (shotCount === 0) continue;
+    for (let i = 0; i < shotCount; i++) {
+      if (i < shotCount - 1) {
+        scene.shots[i].duration = pacing;
+      } else {
         const usedTime = (shotCount - 1) * pacing;
         scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
       }

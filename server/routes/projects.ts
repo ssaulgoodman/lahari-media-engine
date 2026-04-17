@@ -9,7 +9,7 @@ import {
 } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
-import { summarizeMeaning, generateConceptOptions } from '../services/claude.js';
+import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 
 const router = Router();
@@ -282,7 +282,19 @@ const getFullProject = async (projectId: string) => {
     styleDescription: project.style_description,
     styleAssetUrl,
     styleGenerationPrompt: project.style_generation_prompt || undefined,
-    styleExploration: project.style_exploration ? JSON.parse(project.style_exploration) : null,
+    styleExploration: (() => {
+      if (!project.style_exploration) return null;
+      const se = JSON.parse(project.style_exploration);
+      // Fix legacy /storage/ paths → full Supabase URLs
+      const fixUrl = (url?: string) => {
+        if (!url) return url;
+        if (url.startsWith('/storage/')) return storageUrl(url.replace('/storage/', ''));
+        return url;
+      };
+      if (se.slots) se.slots = se.slots.map((s: any) => ({ ...s, imageUrl: fixUrl(s.imageUrl) }));
+      if (se.userSlot) se.userSlot = { ...se.userSlot, imageUrl: fixUrl(se.userSlot.imageUrl) };
+      return se;
+    })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
     videoModel: project.video_model || 'veo-3.1',
@@ -488,6 +500,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
   const lyrics = req.body.lyrics ?? project.lyrics ?? '';
   const context = req.body.context || undefined;
   const userNote = req.body.userNote || undefined;
+  const directorBrief = req.body.directorBrief || undefined;
   const title = project.title;
   const language = req.body.language || undefined;
   const musicalStructure = project.musical_structure ? JSON.parse(project.musical_structure) : [];
@@ -498,10 +511,10 @@ router.post('/:id/generate-concepts', async (req, res) => {
   }
 
   try {
-    console.log(`[${project.id}] Generating concept options${userNote ? ` with note: ${userNote}` : ''}...`);
+    console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief);
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -601,6 +614,50 @@ router.post('/:id/unlock-concept', async (req, res) => {
   const projectId = paramStr(req.params.id);
   await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });
   res.json(await getFullProject(projectId));
+});
+
+// Refine locked concept — Claude rewrites fields based on feedback. Non-destructive (no wipe).
+router.post('/:id/refine-concept', async (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!project.locked_concept) return res.status(400).json({ error: 'No locked concept to refine' });
+
+  const current = JSON.parse(project.locked_concept);
+
+  try {
+    const refined = await refineConceptDirection(current, feedback);
+    await updateRows('projects', { id: paramStr(req.params.id) }, {
+      locked_concept: JSON.stringify(refined),
+      updated_at: new Date().toISOString(),
+    });
+    res.json(await getFullProject(paramStr(req.params.id)));
+  } catch (err: any) {
+    res.status(500).json({ error: `Concept refinement failed: ${err.message}` });
+  }
+});
+
+// Update locked concept fields directly — artist edits inline. Non-destructive.
+router.patch('/:id/concept', async (req, res) => {
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!project.locked_concept) return res.status(400).json({ error: 'No locked concept to update' });
+
+  const current = JSON.parse(project.locked_concept);
+  const updates = req.body; // { mood?: string, theme?: string, deity?: string, ... }
+  const merged = { ...current, ...updates };
+  // Handle nested visualSuggestions
+  if (updates.visualSuggestions) {
+    merged.visualSuggestions = { ...current.visualSuggestions, ...updates.visualSuggestions };
+  }
+
+  await updateRows('projects', { id: paramStr(req.params.id) }, {
+    locked_concept: JSON.stringify(merged),
+    updated_at: new Date().toISOString(),
+  });
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
 // Update project settings
@@ -805,6 +862,19 @@ router.get('/:id/xray', async (req, res) => {
   }));
 
   res.json({ calls: enriched, currentContext: context });
+});
+
+// ─── Scene Updates ──────────────────────────────────────────────────
+
+router.patch('/:id/scenes/:sceneId', async (req, res) => {
+  const { narrativeDescription } = req.body;
+  const sceneId = paramStr(req.params.sceneId);
+  const updates: Record<string, any> = {};
+  if (narrativeDescription !== undefined) updates.narrative_description = narrativeDescription;
+  if (Object.keys(updates).length > 0) {
+    await updateRows('scenes', { id: sceneId }, updates);
+  }
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
 // ─── Shot Updates ───────────────────────────────────────────────────

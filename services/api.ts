@@ -72,7 +72,7 @@ export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal
 
 export const generateConcepts = async (
   projectId: string,
-  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string },
+  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string; directorBrief?: string },
   signal?: AbortSignal
 ) => {
   const res = await fetch(`${API}/projects/${projectId}/generate-concepts`, {
@@ -95,6 +95,24 @@ export const lockConcept = async (projectId: string, conceptIndex: number, opts?
 
 export const unlockConcept = async (projectId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/unlock-concept`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const refineConcept = async (projectId: string, feedback: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/refine-concept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+  });
+  return handleResponse(res);
+};
+
+export const updateConcept = async (projectId: string, updates: Record<string, any>) => {
+  const res = await fetch(`${API}/projects/${projectId}/concept`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
   return handleResponse(res);
 };
 
@@ -338,6 +356,25 @@ export const advanceEnvironments = async (projectId: string) => {
 };
 
 // ─── Script Generation ──────────────────────────────────────────────
+
+export const updateScene = async (projectId: string, sceneId: string, updates: { narrativeDescription?: string }) => {
+  const res = await fetch(`${API}/projects/${projectId}/scenes/${sceneId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  return handleResponse(res);
+};
+
+export const refineScript = async (projectId: string, feedback: string, signal?: AbortSignal) => {
+  const res = await fetch(`${API}/projects/${projectId}/refine-script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+    signal,
+  });
+  return handleResponse(res);
+};
 
 export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
   const body: Record<string, any> = {};

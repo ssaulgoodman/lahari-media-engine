@@ -6,7 +6,7 @@ import { selectAll, selectOne, insertRow, insertMany, updateRows, deleteRows, co
 import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '../storage.js';
 import { generateStyleOptions, generateCharacterLooks, buildCharacterPrompt, generateSingleStyleImage, buildStylePrompt, generateEnvironmentLooks, buildEnvironmentPrompt, generateShotStartFrame } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
-import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
+import { planScenes, refineScript, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
 import { extractLastFrame } from '../services/ffmpeg.js';
 import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
@@ -199,6 +199,9 @@ router.post('/:id/refine-style-direction', async (req, res) => {
     const t0 = Date.now();
     const refined = await refineStyleDirection(description, feedback, concept);
     const durationMs = Date.now() - t0;
+
+    // Clear the cached generation prompt so next visualize rebuilds from the refined description
+    await updateRows('projects', { id: project.id }, { style_generation_prompt: null });
 
     await logCall({
       projectId: project.id,
@@ -663,21 +666,54 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       styleDNA,
       { styleIdx, userRefIdx }
     );
-    await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt });
   }
+
+  const userNote = typeof note === 'string' && note.trim() ? note.trim() : undefined;
+
+  // If feedback provided and we have a generation prompt, ask Claude to rewrite
+  if (userNote && genPrompt) {
+    try {
+      let refBase64 = '';
+      let refMime = 'image/png';
+      if (env.reference_asset_id) {
+        const refAsset = await selectOne('assets', { id: env.reference_asset_id });
+        if (refAsset) {
+          refBase64 = await readAsBase64(refAsset.file_path);
+          refMime = mimeFromExt(refAsset.file_path);
+        }
+      }
+
+      const rewritten = await refineShotPrompt({
+        currentVisualPrompt: genPrompt,
+        currentMotionPrompt: '',
+        feedback: `[ENVIRONMENT LOOK REFINEMENT for ${env.name}] ${userNote}`,
+        failedImageBase64: refBase64,
+        failedImageMime: refMime,
+        styleDNA: styleDNA,
+        characterDescriptions: [],
+      });
+      genPrompt = rewritten.visualPrompt;
+      console.log(`[${project.id}] Claude rewrote generation prompt for env ${env.name}: ${genPrompt.substring(0, 100)}...`);
+    } catch (err: any) {
+      console.warn(`[${project.id}] Env prompt rewrite failed, using note as director note: ${err.message}`);
+      genPrompt += `\n\nDirector note: ${userNote}`;
+    }
+  }
+
+  // Save the (possibly rewritten) prompt
+  await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt });
 
   try {
     console.log(`[${project.id}] Generating environment looks for ${env.name}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
-    const userNote = typeof note === 'string' && note.trim() ? note.trim() : undefined;
     const imagePaths = await generateEnvironmentLooks(
       { name: env.name, description: env.description || '' },
       styleDNA,
       styleImagePath,
       project.aspect_ratio || '16:9',
       userRefImagePath,
-      userNote,
+      undefined, // feedback already baked into genPrompt by Claude
       genPrompt,
     );
     const durationMs = Date.now() - t0;
@@ -931,6 +967,163 @@ router.post('/:id/generate-script', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Refine Script (surgical edit) ─────────────────────────────────
+// Claude sees the current script + director feedback, returns the updated script.
+// Preserves existing cast/env references — only updates structure + assignments.
+
+router.post('/:id/refine-script', async (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const concept = JSON.parse(project.locked_concept || '{}');
+  const existingCast = await selectAll('cast_members', { project_id: project.id }, { orderBy: 'sort_order' });
+  const existingEnvs = await selectAll('environments', { project_id: project.id }, { orderBy: 'sort_order' });
+  const existingScenes = await selectAll('scenes', { project_id: project.id }, { orderBy: 'sort_order' });
+
+  // Build current script structure for Claude
+  const currentScript: any = {
+    cast: existingCast,
+    environments: existingEnvs,
+    scenes: [],
+  };
+  for (const scene of existingScenes) {
+    const shots = await selectAll('shots', { scene_id: scene.id }, { orderBy: 'sort_order' });
+    currentScript.scenes.push({
+      ...scene,
+      sectionLabel: scene.section_label,
+      startTime: scene.start_time,
+      endTime: scene.end_time,
+      narrativeDescription: scene.narrative_description,
+      shots: shots.map((sh: any) => ({
+        direction: sh.visual_prompt || sh.direction || '',
+        castNames: JSON.parse(sh.cast_ids || '[]').map((id: string) =>
+          existingCast.find((c: any) => c.id === id)?.name || id
+        ),
+        environmentName: sh.environment_id
+          ? existingEnvs.find((e: any) => e.id === sh.environment_id)?.name || ''
+          : '',
+      }))
+    });
+  }
+
+  try {
+    console.log(`[${project.id}] Refining script with feedback: ${feedback.substring(0, 100)}...`);
+    const t0 = Date.now();
+
+    const data = await refineScript(currentScript, feedback, {
+      concept,
+      videoMode: project.video_mode || 'montage',
+      lyrics: project.lyrics || '',
+      meaning: project.meaning || '',
+      musicalStructure: project.musical_structure || '',
+      basePacing: project.target_duration || 8,
+    });
+    const durationMs = Date.now() - t0;
+
+    // Build name→id maps for existing cast/envs (preserve references)
+    const castNameToId = new Map<string, string>();
+    for (const c of existingCast) castNameToId.set(c.name.toLowerCase(), c.id);
+    const envNameToId = new Map<string, string>();
+    for (const e of existingEnvs) envNameToId.set(e.name.toLowerCase(), e.id);
+
+    // Upsert cast — keep existing (with reference images), add new
+    const newCastNames = new Set(data.cast.map((c: any) => c.name.toLowerCase()));
+    for (const c of data.cast) {
+      if (!castNameToId.has(c.name.toLowerCase())) {
+        const id = uuidv4();
+        castNameToId.set(c.name.toLowerCase(), id);
+        const maxOrder = await maxVal('cast_members', 'sort_order', { project_id: project.id });
+        await insertRow('cast_members', {
+          id, project_id: project.id, name: c.name,
+          description: c.description || '', sort_order: maxOrder + 1,
+        });
+      } else {
+        // Update description if Claude changed it
+        const existingId = castNameToId.get(c.name.toLowerCase())!;
+        const existing = existingCast.find((ec: any) => ec.id === existingId);
+        if (existing && c.description && c.description !== existing.description) {
+          await updateRows('cast_members', { id: existingId }, { description: c.description });
+        }
+      }
+    }
+
+    // Upsert environments — same pattern
+    for (const e of data.environments) {
+      if (!envNameToId.has(e.name.toLowerCase())) {
+        const id = uuidv4();
+        envNameToId.set(e.name.toLowerCase(), id);
+        const maxOrder = await maxVal('environments', 'sort_order', { project_id: project.id });
+        await insertRow('environments', {
+          id, project_id: project.id, name: e.name,
+          description: e.description || '', sort_order: maxOrder + 1,
+        });
+      } else {
+        const existingId = envNameToId.get(e.name.toLowerCase())!;
+        const existing = existingEnvs.find((ee: any) => ee.id === existingId);
+        if (existing && e.description && e.description !== existing.description) {
+          await updateRows('environments', { id: existingId }, { description: e.description });
+        }
+      }
+    }
+
+    // Replace scenes + shots with the refined version
+    for (const s of existingScenes) {
+      await deleteRows('shots', { scene_id: s.id });
+    }
+    await deleteRows('scenes', { project_id: project.id });
+
+    for (let sIdx = 0; sIdx < data.scenes.length; sIdx++) {
+      const scene = data.scenes[sIdx];
+      const sceneId = uuidv4();
+      await insertRow('scenes', {
+        id: sceneId, project_id: project.id,
+        section_label: scene.sectionLabel, start_time: scene.startTime, end_time: scene.endTime,
+        narrative_description: scene.narrativeDescription, sort_order: sIdx,
+      });
+
+      for (let shIdx = 0; shIdx < (scene.shots || []).length; shIdx++) {
+        const shot = scene.shots[shIdx];
+        const castIds = (shot.castNames || [])
+          .map((n: string) => castNameToId.get(n.toLowerCase()))
+          .filter(Boolean);
+        const envId = shot.environmentName ? envNameToId.get(shot.environmentName.toLowerCase()) : null;
+
+        await insertRow('shots', {
+          id: uuidv4(), scene_id: sceneId,
+          visual_prompt: shot.direction, duration: shot.duration || project.target_duration || 8,
+          cast_ids: JSON.stringify(castIds),
+          environment_id: envId || null,
+          sort_order: shIdx, image_status: 'idle', video_status: 'idle',
+        });
+      }
+    }
+
+    await updateRows('projects', { id: project.id }, {
+      last_script_prompt: data.prompt,
+      updated_at: new Date().toISOString(),
+    });
+
+    await logCall({
+      projectId: project.id,
+      stage: 'refine-script',
+      model: 'claude-sonnet-4-6',
+      prompt: `Refine script: "${feedback.substring(0, 200)}"`,
+      contextChain: await buildContextChain(project.id),
+      responseSummary: `Refined: ${data.scenes.length} scenes, ${data.cast.length} cast, ${data.environments.length} envs`,
+      durationMs,
+      costEstimate: 0.02,
+    });
+
+    res.json(await getFullProject(paramStr(req.params.id)));
+  } catch (err: any) {
+    console.error(`[${project.id}] Script refine failed:`, err);
     res.status(500).json({ error: err.message });
   }
 });
