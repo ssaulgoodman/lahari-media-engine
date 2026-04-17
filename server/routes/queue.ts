@@ -47,7 +47,9 @@ router.post('/:queueId/start', async (req, res) => {
     const item = items.find(i => i.id === queueId);
     if (!item) return res.status(404).json({ error: 'Queue item not found' });
     if (item.lahari_project_id) {
-      // Already started — return existing project
+      // Already started — verify ownership before returning
+      const existing = await selectOne('projects', { id: item.lahari_project_id });
+      if (existing && existing.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
       const project = await getFullProject(item.lahari_project_id);
       if (project) return res.json({ project, queueItem: item });
     }
@@ -188,6 +190,7 @@ router.post('/publish/:projectId', upload.single('video'), async (req, res) => {
   const projectId: string = Array.isArray(rawId) ? rawId[0] : rawId;
   const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
   if (!req.file) return res.status(400).json({ error: 'Video file required (multipart field: video)' });
 
   try {

@@ -23,7 +23,17 @@ router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
   const row = await selectOne('projects', { id: projectId });
   if (!row) return res.status(404).json({ error: 'Project not found' });
-  if (row.user_id && row.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+  if (row.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+  next();
+});
+
+// Child scoping: verify shotId belongs to a scene in this project
+router.param('shotId', async (req, res, next, shotId) => {
+  const sid = Array.isArray(shotId) ? shotId[0] : shotId;
+  const shot = await selectOne('shots', { id: sid });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  if (!scene || scene.project_id !== paramStr(req.params.id)) return res.status(403).json({ error: 'Shot does not belong to this project' });
   next();
 });
 

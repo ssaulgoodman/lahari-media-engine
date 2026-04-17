@@ -15,14 +15,42 @@ import { logCall, getCalls, buildContextChain } from '../xray.js';
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 
-/** Verify the project belongs to the requesting user. Returns the project row or sends 403/404. */
-const verifyOwnership = async (req: any, res: any): Promise<any | null> => {
-  const projectId = paramStr(req.params.id);
+// Ownership check for all /:id/* routes — verify user owns the project
+router.param('id', async (req, res, next, id) => {
+  const projectId = Array.isArray(id) ? id[0] : id;
   const row = await selectOne('projects', { id: projectId });
-  if (!row) { res.status(404).json({ error: 'Project not found' }); return null; }
-  if (row.user_id && row.user_id !== req.userId) { res.status(403).json({ error: 'Access denied' }); return null; }
-  return row;
-};
+  if (!row) return res.status(404).json({ error: 'Project not found' });
+  if (row.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+  next();
+});
+
+// Child scoping: verify shotId belongs to a scene in this project
+router.param('shotId', async (req, res, next, shotId) => {
+  const sid = Array.isArray(shotId) ? shotId[0] : shotId;
+  const shot = await selectOne('shots', { id: sid });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  if (!scene || scene.project_id !== paramStr(req.params.id)) return res.status(403).json({ error: 'Shot does not belong to this project' });
+  next();
+});
+
+// Child scoping: verify memberId belongs to this project
+router.param('memberId', async (req, res, next, memberId) => {
+  const mid = Array.isArray(memberId) ? memberId[0] : memberId;
+  const member = await selectOne('cast_members', { id: mid });
+  if (!member) return res.status(404).json({ error: 'Cast member not found' });
+  if (member.project_id !== paramStr(req.params.id)) return res.status(403).json({ error: 'Cast member does not belong to this project' });
+  next();
+});
+
+// Child scoping: verify envId belongs to this project
+router.param('envId', async (req, res, next, envId) => {
+  const eid = Array.isArray(envId) ? envId[0] : envId;
+  const env = await selectOne('environments', { id: eid });
+  if (!env) return res.status(404).json({ error: 'Environment not found' });
+  if (env.project_id !== paramStr(req.params.id)) return res.status(403).json({ error: 'Environment does not belong to this project' });
+  next();
+});
 
 // Multer config: save audio files to storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
@@ -404,8 +432,6 @@ router.get('/', async (req, res) => {
 
 // Get single project (full state)
 router.get('/:id', async (req, res) => {
-  const owner = await verifyOwnership(req, res);
-  if (!owner) return;
   const project = await getFullProject(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
   res.json(project);
@@ -734,8 +760,6 @@ router.patch('/:id', async (req, res) => {
 
 // Delete project
 router.delete('/:id', async (req, res) => {
-  const owner = await verifyOwnership(req, res);
-  if (!owner) return;
   await deleteRows('projects', { id: paramStr(req.params.id) });
   res.json({ ok: true });
 });
