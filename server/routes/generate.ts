@@ -18,6 +18,23 @@ const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Body-ID scoping helpers — verify child belongs to the URL project
+const requireCastMember = async (projectId: string, memberId: string) => {
+  const row = await selectOne('cast_members', { id: memberId });
+  if (!row || row.project_id !== projectId) throw new Error('Cast member does not belong to this project');
+  return row;
+};
+const requireEnvironment = async (projectId: string, envId: string) => {
+  const row = await selectOne('environments', { id: envId });
+  if (!row || row.project_id !== projectId) throw new Error('Environment does not belong to this project');
+  return row;
+};
+const requireAsset = async (projectId: string, assetId: string) => {
+  const row = await selectOne('assets', { id: assetId });
+  if (!row || row.project_id !== projectId) throw new Error('Asset does not belong to this project');
+  return row;
+};
+
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
@@ -247,12 +264,12 @@ router.post('/:id/lock-style', async (req, res) => {
   if (!assetId) return res.status(400).json({ error: 'assetId required' });
 
   const projectId = paramStr(req.params.id);
+  const asset = await requireAsset(projectId, assetId);
 
   // Enrich style DNA from the locked image
   let enrichedDescription = styleDescription || '';
   try {
-    const asset = await selectOne('assets', { id: assetId });
-    if (asset) {
+    {
       console.log(`[${projectId}] Enriching style DNA...`);
       const t0 = Date.now();
       const imageBase64 = await readAsBase64(asset.file_path);
@@ -447,8 +464,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   const project = await selectOne('projects', { id: paramStr(req.params.id) });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const member = await selectOne('cast_members', { id: castMemberId });
-  if (!member) return res.status(404).json({ error: 'Cast member not found' });
+  const member = await requireCastMember(project.id, castMemberId);
 
   const styleDNA = project.style_description || 'Cinematic, photorealistic';
 
@@ -620,8 +636,11 @@ router.post('/:id/upload-character-reference', upload.single('image'), async (re
 });
 
 router.post('/:id/lock-character', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const { castMemberId, assetId } = req.body;
   if (!castMemberId || !assetId) return res.status(400).json({ error: 'castMemberId and assetId required' });
+  await requireCastMember(projectId, castMemberId);
+  await requireAsset(projectId, assetId);
 
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: assetId });
 
@@ -655,8 +674,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
   const project = await selectOne('projects', { id: paramStr(req.params.id) });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const env = await selectOne('environments', { id: environmentId });
-  if (!env) return res.status(404).json({ error: 'Environment not found' });
+  const env = await requireEnvironment(project.id, environmentId);
 
   const styleDNA = project.style_description || 'Cinematic, photorealistic';
 
@@ -817,8 +835,11 @@ router.post('/:id/upload-environment-reference', upload.single('image'), async (
 });
 
 router.post('/:id/lock-environment', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const { environmentId, assetId } = req.body;
   if (!environmentId || !assetId) return res.status(400).json({ error: 'environmentId and assetId required' });
+  await requireEnvironment(projectId, environmentId);
+  await requireAsset(projectId, assetId);
 
   await updateRows('environments', { id: environmentId }, { reference_asset_id: assetId });
 

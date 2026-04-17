@@ -52,6 +52,15 @@ router.param('envId', async (req, res, next, envId) => {
   next();
 });
 
+// Child scoping: verify sceneId belongs to this project
+router.param('sceneId', async (req, res, next, sceneId) => {
+  const sid = Array.isArray(sceneId) ? sceneId[0] : sceneId;
+  const scene = await selectOne('scenes', { id: sid });
+  if (!scene) return res.status(404).json({ error: 'Scene not found' });
+  if (scene.project_id !== paramStr(req.params.id)) return res.status(403).json({ error: 'Scene does not belong to this project' });
+  next();
+});
+
 // Multer config: save audio files to storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
