@@ -4,7 +4,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectOne, insertRow, insertMany, updateRows, deleteRows, countRows, maxVal, selectColumns, findShot, incrementColumn, getSB, T } from '../database.js';
 import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '../storage.js';
-import { generateStyleOptions, generateCharacterLooks, buildCharacterPrompt, generateSingleStyleImage, generateEnvironmentLooks, buildEnvironmentPrompt, generateShotStartFrame } from '../services/imagen.js';
+import { generateStyleOptions, generateCharacterLooks, buildCharacterPrompt, generateSingleStyleImage, buildStylePrompt, generateEnvironmentLooks, buildEnvironmentPrompt, generateShotStartFrame } from '../services/imagen.js';
 import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
 import { planScenes, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
 import { extractLastFrame } from '../services/ffmpeg.js';
@@ -139,12 +139,20 @@ router.post('/:id/visualize-style', async (req, res) => {
   const { prompt: stylePrompt } = req.body;
   if (!stylePrompt) return res.status(400).json({ error: 'prompt required' });
 
+  // Build the full generation prompt and save it for visibility
+  let genPrompt = project.style_generation_prompt as string | null;
+  if (!genPrompt) {
+    genPrompt = buildStylePrompt(stylePrompt, concept.deity || project.title);
+    await updateRows('projects', { id: project.id }, { style_generation_prompt: genPrompt });
+  }
+
   try {
     console.log(`[${project.id}] Visualizing style direction...`);
     const t0 = Date.now();
     const assetPath = await generateSingleStyleImage(
       stylePrompt,
-      concept.deity || project.title
+      concept.deity || project.title,
+      genPrompt,
     );
     const durationMs = Date.now() - t0;
 

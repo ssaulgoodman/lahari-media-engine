@@ -142,14 +142,22 @@ export const generateStyleOptions = async (
  * Generate a single style image from a complete style direction prompt.
  * Used by the brainstorm→visualize flow.
  */
+/**
+ * Build the default style visualization prompt from description + subject.
+ * Saved to `style_generation_prompt` on first gen, then editable by the artist.
+ */
+export const buildStylePrompt = (styleDescription: string, subject: string): string => {
+  return `Cinematic film still showcasing a specific visual style. ${styleDescription}. The scene evokes the world of ${subject}. Focus entirely on lighting, atmosphere, color, texture, and visual style. High production value, no text, no watermark.\n\nAvoid: overly AI/CGI look, excessive intricate details, generic fantasy aesthetic. Should feel like a real film frame.`;
+};
+
 export const generateSingleStyleImage = async (
   styleDescription: string,
-  subject: string
+  subject: string,
+  /** If set, this is the exact prompt to send (artist-edited). */
+  generationPrompt?: string,
 ): Promise<string> => {
-  const parts: ContentPart[] = [
-    { text: `Cinematic film still showcasing a specific visual style. ${styleDescription}. The scene evokes the world of ${subject}. Focus entirely on lighting, atmosphere, color, texture, and visual style. High production value, no text, no watermark.\n\nAvoid: overly AI/CGI look, excessive intricate details, generic fantasy aesthetic. Should feel like a real film frame.` }
-  ];
-
+  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject);
+  const parts: ContentPart[] = [{ text: prompt }];
   return generateImageWithRefs(parts);
 };
 

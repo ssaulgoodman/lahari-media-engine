@@ -281,6 +281,7 @@ const getFullProject = async (projectId: string) => {
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
     styleDescription: project.style_description,
     styleAssetUrl,
+    styleGenerationPrompt: project.style_generation_prompt || undefined,
     styleExploration: project.style_exploration ? JSON.parse(project.style_exploration) : null,
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
@@ -616,6 +617,7 @@ router.patch('/:id', async (req, res) => {
   if (styleDescription !== undefined) updates.style_description = styleDescription;
   if (colorPalette !== undefined) updates.color_palette = colorPalette;
   if (req.body.styleExploration !== undefined) updates.style_exploration = JSON.stringify(req.body.styleExploration);
+  if (req.body.styleGenerationPrompt !== undefined) updates.style_generation_prompt = req.body.styleGenerationPrompt || null;
 
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' });
 
