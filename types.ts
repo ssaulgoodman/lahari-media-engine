@@ -61,6 +61,8 @@ export interface VideoShot {
   imageStatus: GenerationStatus;
   endImageUrl?: string;
   endImageStatus: GenerationStatus;
+  endVisualPrompt?: string;
+  endUserFeedback?: string;
   extractedLastFrameUrl?: string;
   continuityFrom: 'cut' | 'prev_shot';
   refinedFromPrevFrame?: boolean;
@@ -69,6 +71,7 @@ export interface VideoShot {
   environmentId?: string;
   critique?: ShotCritique;
   attemptCount?: number;
+  promptsStale?: boolean;
   videoUrl?: string;
   videoStatus: GenerationStatus;
   useNextAsEndFrame: boolean;
@@ -104,6 +107,8 @@ export interface CastMember {
   id: string;
   name: string;
   description: string;
+  generationPrompt?: string;
+  promptsStale?: boolean;
   referenceAssetId?: string;
   referenceImageUrl?: string;
 }
@@ -112,6 +117,8 @@ export interface Environment {
   id: string;
   name: string;
   description: string;
+  generationPrompt?: string;
+  promptsStale?: boolean;
   referenceAssetId?: string;
   referenceImageUrl?: string;
 }
@@ -129,6 +136,7 @@ export interface ApiProject {
   lockedConcept: ConceptOption | null;
   styleDescription?: string;
   styleAssetUrl?: string;
+  styleGenerationPrompt?: string;
   styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
   colorPalette?: string;
   videoMode: VideoMode;

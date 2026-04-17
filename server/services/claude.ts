@@ -59,13 +59,13 @@ export const generateConceptOptions = async (
   meaning: string,
   musicalStructure: any[],
   context?: string,
-  userNote?: string
+  userNote?: string,
+  /** If provided, generates ONE concept matching the director's vision instead of 3 preset directions. */
+  directorBrief?: string,
 ): Promise<{ concepts: any[]; prompt: string }> => {
   const client = getClient();
 
-  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
-
-SONG: ${title} (${language})
+  const songContext = `SONG: ${title} (${language})
 ${context ? `CONTEXT: ${context}` : ''}
 
 LYRICS:
@@ -75,7 +75,27 @@ MEANING:
 ${meaning}
 
 MUSICAL STRUCTURE:
-${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}
+${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}`;
+
+  let prompt: string;
+
+  if (directorBrief) {
+    // Path B: Director has a specific vision — generate ONE concept that realizes it
+    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+
+${songContext}
+
+DIRECTOR'S BRIEF:
+${directorBrief}
+${userNote ? `\nADDITIONAL NOTE: ${userNote}\n` : ''}
+Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their idea into a complete concept — don't override their intent, expand on it. Fill in all structured fields so the production pipeline can work with it.
+
+Use the generate_concepts tool. Return EXACTLY 1 concept in the array.`;
+  } else {
+    // Path A: Generate 3 preset directions
+    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+
+${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
 Generate EXACTLY 3 creative directions for a music video:
 1. Traditional/classical — rooted in culture, devotional storytelling
@@ -88,9 +108,11 @@ For each direction provide:
 - mood: one distinct emotional keyword (different per direction)
 - theme: the core narrative idea (1 sentence)
 - conceptDirection: traditional / modern / experimental
-- visualSuggestions: { artStyle, colorPalette }
+
+Visual style is decided in a separate phase — do NOT include art style or color palette here. Focus purely on narrative direction.
 
 Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
+  }
 
   const response = await client.messages.create({
     model: OPUS,
@@ -139,7 +161,132 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
   return { concepts: (toolBlock.input as any).concepts || [], prompt };
 };
 
+// ─── Refine Locked Concept ─────────────────────────────────────────
+
+export const refineConceptDirection = async (
+  currentConcept: any,
+  feedback: string
+): Promise<any> => {
+  const client = getClient();
+
+  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+
+CURRENT LOCKED CONCEPT:
+- Title: ${currentConcept.title || ''}
+- Deity: ${currentConcept.deity || ''}
+- Mood: ${currentConcept.mood || ''}
+- Theme: ${currentConcept.theme || ''}
+- Direction: ${currentConcept.conceptDirection || ''}
+
+DIRECTOR FEEDBACK:
+${feedback}
+
+Revise the concept incorporating the feedback. Keep the core identity intact — this is a refinement, not a replacement. Update only the fields that the feedback touches. If the feedback says "darker mood" just update mood, don't rewrite everything.
+
+Visual style is decided in a separate phase — do NOT include art style or color palette.
+
+Use the refine_concept tool.`;
+
+  const response = await client.messages.create({
+    model: SONNET,
+    max_tokens: 1024,
+    tools: [{
+      name: 'refine_concept',
+      description: 'Return the refined concept with all fields',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          title: { type: 'string' },
+          deity: { type: 'string' },
+          mood: { type: 'string' },
+          theme: { type: 'string' },
+          conceptDirection: { type: 'string' },
+          visualSuggestions: {
+            type: 'object',
+            properties: {
+              physicalDescription: { type: 'string' },
+              artStyle: { type: 'string' },
+              colorPalette: { type: 'string' }
+            },
+            required: ['artStyle', 'colorPalette']
+          }
+        },
+        required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'visualSuggestions']
+      }
+    }],
+    tool_choice: { type: 'tool', name: 'refine_concept' },
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('Concept refinement failed');
+  return toolBlock.input;
+};
+
 // ─── Script Planning (Stage 5) ──────────────────────────────────────
+
+// Shared tool schema for planScenes + refineScript
+const SCRIPT_TOOL = {
+  name: 'plan_music_video',
+  description: 'Plan the full music video structure — cast + environments + scenes + shots',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      cast: {
+        type: 'array',
+        description: 'All characters needed for this video',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Character name (e.g. "Goddess Mahalakshmi")' },
+            description: { type: 'string', description: 'Physical appearance + cultural identity for image generation. 2-3 sentences. Start with who they are in mythology. No art style.' }
+          },
+          required: ['name', 'description']
+        }
+      },
+      environments: {
+        type: 'array',
+        description: 'All distinct environments/locations needed for this video',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Environment name (e.g. "Vaikuntha Palace", "Cosmic Ocean")' },
+            description: { type: 'string', description: 'Physical space + cultural reference. 2 sentences. No art style.' }
+          },
+          required: ['name', 'description']
+        }
+      },
+      scenes: {
+        type: 'array',
+        description: 'One scene per musical section, following the structure exactly',
+        items: {
+          type: 'object',
+          properties: {
+            sectionLabel: { type: 'string', description: 'Musical section name (e.g. "Intro", "Verse 1", "Chorus")' },
+            startTime: { type: 'string', description: 'Start timestamp (e.g. "0:00")' },
+            endTime: { type: 'string', description: 'End timestamp (e.g. "0:30")' },
+            narrativeDescription: { type: 'string', description: 'What happens in this scene. 1-2 sentences.' },
+            shots: {
+              type: 'array',
+              description: 'Individual shots — one per clip slot.',
+              items: {
+                type: 'object',
+                properties: {
+                  direction: { type: 'string', description: '5-10 word creative idea' },
+                  castNames: { type: 'array', items: { type: 'string' }, description: 'Names of cast members in this shot' },
+                  environmentName: { type: 'string', description: 'Environment name (must match from environments list)' }
+                },
+                required: ['direction', 'castNames']
+              }
+            }
+          },
+          required: ['sectionLabel', 'startTime', 'endTime', 'narrativeDescription', 'shots']
+        }
+      }
+    },
+    required: ['cast', 'environments', 'scenes']
+  }
+};
 
 export interface ScriptInput {
   concept: any;
@@ -191,72 +338,17 @@ ENVIRONMENT rules:
 SCENE rules:
 - One scene per musical section
 - narrativeDescription: what happens, 1-2 sentences
-- Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)`;
+- Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)
+
+IMPORTANT — character and environment assignment:
+- Every shot MUST have an environmentName from the environment list. The environment reference image is sent to the video model for visual consistency.
+- Every character who appears in a shot — even briefly (walks into frame, hand visible, background presence) — MUST be listed in castNames. Character reference images are sent to the video model to maintain appearance consistency.
+- Do NOT skip character/environment assignment. The video model uses these to keep the look consistent across shots.`;
 
   const response = await client.messages.create({
     model: SONNET,
     max_tokens: 8192,
-    tools: [{
-      name: 'plan_music_video',
-      description: 'Plan the full music video structure — cast + environments + scenes + shots',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          cast: {
-            type: 'array',
-            description: 'All characters needed for this video',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', description: 'Character name (e.g. "Goddess Mahalakshmi")' },
-                description: { type: 'string', description: 'Physical appearance + cultural identity for image generation. 2-3 sentences. Start with who they are in mythology. No art style.' }
-              },
-              required: ['name', 'description']
-            }
-          },
-          environments: {
-            type: 'array',
-            description: 'All distinct environments/locations needed for this video',
-            items: {
-              type: 'object',
-              properties: {
-                name: { type: 'string', description: 'Environment name (e.g. "Vaikuntha Palace", "Cosmic Ocean")' },
-                description: { type: 'string', description: 'Physical space + cultural reference. 2 sentences. No art style.' }
-              },
-              required: ['name', 'description']
-            }
-          },
-          scenes: {
-            type: 'array',
-            description: 'One scene per musical section, following the structure exactly',
-            items: {
-              type: 'object',
-              properties: {
-                sectionLabel: { type: 'string', description: 'Musical section name (e.g. "Intro", "Verse 1", "Chorus")' },
-                startTime: { type: 'string', description: 'Start timestamp (e.g. "0:00")' },
-                endTime: { type: 'string', description: 'End timestamp (e.g. "0:30")' },
-                narrativeDescription: { type: 'string', description: 'What happens in this scene. 1-2 sentences.' },
-                shots: {
-                  type: 'array',
-                  description: 'Individual shots — one per clip slot. Number of shots = ceil(scene duration / clip length).',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      direction: { type: 'string', description: '5-10 word creative idea (e.g. "deity reveals cosmic form")' },
-                      castNames: { type: 'array', items: { type: 'string' }, description: 'Names of cast members in this shot' },
-                      environmentName: { type: 'string', description: 'Name of the environment for this shot (must match an environment name from the environments list)' }
-                    },
-                    required: ['direction', 'castNames']
-                  }
-                }
-              },
-              required: ['sectionLabel', 'startTime', 'endTime', 'narrativeDescription', 'shots']
-            }
-          }
-        },
-        required: ['cast', 'environments', 'scenes']
-      }
-    }],
+    tools: [SCRIPT_TOOL],
     tool_choice: { type: 'tool', name: 'plan_music_video' },
     messages: [{ role: 'user', content: prompt }]
   });
@@ -282,6 +374,112 @@ SCENE rules:
         scene.shots[i].duration = pacing;
       } else {
         // Last shot: whatever is left
+        const usedTime = (shotCount - 1) * pacing;
+        scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
+      }
+    }
+  }
+
+  return { ...data, prompt };
+};
+
+// ─── Refine Script (surgical edit based on feedback) ──────────────
+
+export const refineScript = async (
+  currentScript: { cast: any[]; environments: any[]; scenes: any[] },
+  feedback: string,
+  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number }
+): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
+  const client = getClient();
+  const pacing = context.basePacing || 8;
+
+  const currentJson = JSON.stringify({
+    cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
+    environments: currentScript.environments.map((e: any) => ({ name: e.name, description: e.description })),
+    scenes: currentScript.scenes.map((s: any) => ({
+      sectionLabel: s.sectionLabel || s.section_label,
+      startTime: s.startTime || s.start_time,
+      endTime: s.endTime || s.end_time,
+      narrativeDescription: s.narrativeDescription || s.narrative_description,
+      shots: (s.shots || []).map((sh: any) => ({
+        direction: sh.direction || sh.visual_prompt || '',
+        castNames: sh.castNames || sh.cast_names || [],
+        environmentName: sh.environmentName || sh.environment_name || '',
+      }))
+    }))
+  }, null, 2);
+
+  const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
+
+CONCEPT: ${context.concept.deity || 'Unknown'} — ${context.concept.theme}
+Mood: ${context.concept.mood}
+${context.concept.conceptDirection || ''}
+
+LYRICS:
+${context.lyrics}
+
+MEANING: ${context.meaning}
+
+MUSICAL STRUCTURE: ${context.musicalStructure}
+
+CLIP LENGTH: All shots are fixed at ${pacing} seconds.
+
+═══════════════════════════════════════
+CURRENT SCRIPT (your starting point):
+═══════════════════════════════════════
+${currentJson}
+
+═══════════════════════════════════════
+DIRECTOR'S FEEDBACK:
+═══════════════════════════════════════
+${feedback}
+
+═══════════════════════════════════════
+
+Your job is SURGICAL REFINEMENT, not rewriting from scratch. Think of yourself as an editor, not a new writer.
+
+REFINEMENT PRINCIPLES:
+1. PRESERVE what works. If the director says "fix scene 4", scenes 1-3 and 5+ must come back IDENTICAL — same narratives, same shots, same cast assignments, same environments.
+2. SCOPE your changes to what the feedback asks for. "More intimate in scene 4" means rethink scene 4's shots — don't touch the cast list or environments unless the feedback requires it.
+3. RESPECT the existing cast and environments. These may already have locked reference images. Do NOT rename characters or environments — their names are IDs in the system. You may add new ones if the feedback requires new characters or locations.
+4. MAINTAIN musical structure. Section labels and timestamps are fixed — they come from the audio analysis. Do not change them.
+5. Every shot MUST have castNames (characters visible) and environmentName (location). This is critical — the video model uses these to send reference images for consistency.
+
+CAST rules (same as original script):
+- Description = physical appearance for image generation. 2-3 sentences.
+- Include cultural context: "{name}, the {role} from {tradition}"
+- No art style in descriptions
+
+ENVIRONMENT rules:
+- Description = physical space. 2 sentences. Cultural reference.
+- No art style
+
+Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
+
+  const response = await client.messages.create({
+    model: OPUS,
+    max_tokens: 8192,
+    tools: [SCRIPT_TOOL],
+    tool_choice: { type: 'tool', name: 'plan_music_video' },
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') {
+    throw new Error('Claude did not return tool_use response');
+  }
+
+  const data = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
+  if (!data.environments) data.environments = [];
+
+  for (const scene of data.scenes) {
+    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    const shotCount = scene.shots.length;
+    if (shotCount === 0) continue;
+    for (let i = 0; i < shotCount; i++) {
+      if (i < shotCount - 1) {
+        scene.shots[i].duration = pacing;
+      } else {
         const usedTime = (shotCount - 1) * pacing;
         scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
       }
@@ -330,12 +528,14 @@ ${shotList}
 
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: What we SEE in the frame. 1-2 sentences.
-  Include: composition, character physical details (from cast list), environment, action/pose.
-  Reference characters by their mythological identity.
+- visualPrompt: What we SEE in the START FRAME. 1-2 sentences.
+  Include: composition, action/pose, environment details.
+  Reference characters by name — their reference images are sent separately to the image and video models, so focus on WHAT they're DOING, not detailed physical description.
+  ONLY include characters listed in that shot's Cast field. If Cast is empty, no characters in the frame.
   Do NOT include art style, lighting, or color — the style system handles that.
 
-- motionPrompt: How the camera and characters MOVE. 1 sentence.
+- motionPrompt: How the camera and characters MOVE during the shot. 1 sentence.
+  If a character enters the frame mid-shot, describe that motion — their reference image is sent to the video model for appearance consistency.
   Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
 
 - continuityFrom: How this shot relates to the one before it.
@@ -597,6 +797,8 @@ export const refineShotPrompt = async (opts: {
   feedback: string;
   failedImageBase64: string;
   failedImageMime: string;
+  referenceImageBase64?: string;
+  referenceImageMime?: string;
   styleDNA: string;
   characterDescriptions: string[];
 }): Promise<{ visualPrompt: string; motionPrompt: string }> => {
@@ -606,31 +808,38 @@ export const refineShotPrompt = async (opts: {
     ? opts.failedImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
     : 'image/png';
 
-  const response = await client.messages.create({
-    model: SONNET,
-    max_tokens: 1024,
-    tools: [{
-      name: 'rewrite_shot_prompt',
-      description: 'Rewrite the shot prompt to fix the issues identified in the feedback',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in the frame.' },
-          motionPrompt: { type: 'string', description: 'Motion prompt (adjust only if the feedback requires it, otherwise keep the original).' }
-        },
-        required: ['visualPrompt', 'motionPrompt']
-      }
-    }],
-    tool_choice: { type: 'tool', name: 'rewrite_shot_prompt' },
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
-        { type: 'text', text: `You are a cinematographer fixing a shot that didn't come out right.
+  const contentBlocks: any[] = [];
+  const hasFailedImage = opts.failedImageBase64 && opts.failedImageBase64.length > 100;
+  if (hasFailedImage) {
+    contentBlocks.push(
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
+    );
+  }
 
-THE IMAGE ABOVE is the failed attempt. Study it carefully.
+  // Add user-uploaded reference image if provided
+  if (opts.referenceImageBase64 && opts.referenceImageMime) {
+    const refMediaType = opts.referenceImageMime.startsWith('image/')
+      ? opts.referenceImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+      : 'image/png';
+    contentBlocks.push(
+      { type: 'image', source: { type: 'base64', media_type: refMediaType, data: opts.referenceImageBase64 } },
+    );
+  }
 
-CURRENT PROMPT (what produced this image):
+  const refNote = opts.referenceImageBase64
+    ? '\n\nThe SECOND IMAGE is a reference the director uploaded — use it as visual guidance for the rewrite. Match its mood, composition, or style as indicated in the feedback.'
+    : '';
+
+  const imageContext = hasFailedImage
+    ? `THE FIRST IMAGE is the failed attempt. Study it carefully.${refNote}`
+    : `No image provided — rewrite the prompt based on the feedback alone.${refNote}`;
+
+  contentBlocks.push({
+    type: 'text', text: `You are a cinematographer refining a generation prompt.
+
+${imageContext}
+
+CURRENT PROMPT:
 Visual: ${opts.currentVisualPrompt}
 Motion: ${opts.currentMotionPrompt}
 
@@ -652,8 +861,28 @@ REWRITE the visual prompt to fix the issues. Techniques to consider:
 
 Do NOT just append the feedback. REWRITE the prompt from scratch, keeping what worked and fixing what didn't. Keep it 1-3 sentences — direct and visual.
 
-Only change the motion prompt if the feedback specifically mentions movement or camera motion.` }
-      ]
+Only change the motion prompt if the feedback specifically mentions movement or camera motion.`
+  });
+
+  const response = await client.messages.create({
+    model: SONNET,
+    max_tokens: 1024,
+    tools: [{
+      name: 'rewrite_shot_prompt',
+      description: 'Rewrite the shot prompt to fix the issues identified in the feedback',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in the frame.' },
+          motionPrompt: { type: 'string', description: 'Motion prompt (adjust only if the feedback requires it, otherwise keep the original).' }
+        },
+        required: ['visualPrompt', 'motionPrompt']
+      }
+    }],
+    tool_choice: { type: 'tool', name: 'rewrite_shot_prompt' },
+    messages: [{
+      role: 'user',
+      content: contentBlocks,
     }]
   });
 

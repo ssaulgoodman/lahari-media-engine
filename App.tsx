@@ -116,30 +116,65 @@ const App: React.FC = () => {
     }
   }, [error]);
 
-  // On mount: load the most recent project (if any)
-  useEffect(() => {
-    api.listProjects().then(projects => {
-      if (projects.length > 0) {
-        return api.getProject(projects[0].id);
-      }
-      return null;
-    }).then(p => {
-      if (p) {
-        setProject(p);
-        navigateToPhase(p);
-      }
-    }).catch(() => {}); // No projects yet, stay on upload
+  // Persist project + step to localStorage so refresh stays on the same page
+  const persistState = useCallback((projectId: string | null, step: AppStep) => {
+    if (projectId) localStorage.setItem('lahari:projectId', projectId);
+    else localStorage.removeItem('lahari:projectId');
+    localStorage.setItem('lahari:step', String(step));
   }, []);
+
+  // On mount: restore from localStorage, fall back to most recent project
+  useEffect(() => {
+    const savedId = localStorage.getItem('lahari:projectId');
+    const savedStepRaw = localStorage.getItem('lahari:step');
+    const savedStep = savedStepRaw !== null ? Number(savedStepRaw) as AppStep : null;
+
+    const load = async () => {
+      try {
+        if (savedId) {
+          const p = await api.getProject(savedId);
+          if (p) {
+            setProject(p);
+            if (savedStep !== null && savedStep >= AppStep.UPLOAD && savedStep <= AppStep.RENDER) {
+              setCurrentStep(savedStep);
+            } else {
+              navigateToPhase(p);
+            }
+            return;
+          }
+        }
+        // Fallback: load most recent project
+        const projects = await api.listProjects();
+        if (projects.length > 0) {
+          const p = await api.getProject(projects[0].id);
+          if (p) {
+            setProject(p);
+            navigateToPhase(p);
+          }
+        }
+      } catch {
+        // No projects yet, stay on upload
+      }
+    };
+    load();
+  }, []);
+
+  // Persist to localStorage whenever project or step changes
+  useEffect(() => {
+    persistState(project?.id || null, currentStep);
+  }, [project?.id, currentStep, persistState]);
 
   // Determine which step to show based on project phase
   const navigateToPhase = (p: ApiProject) => {
+    let step: AppStep;
     if ((p.status === 'characters_locked' || p.status === 'environments_locked') && p.scenes.length > 0) {
-      setCurrentStep(AppStep.STUDIO);
+      step = AppStep.STUDIO;
     } else if (p.conceptOptions.length > 0 || p.status === 'concept_locked' || p.status === 'scripted' || p.status === 'style_locked' || p.status === 'characters_locked' || p.status === 'environments_locked') {
-      setCurrentStep(AppStep.BLUEPRINT);
+      step = AppStep.BLUEPRINT;
     } else {
-      setCurrentStep(AppStep.UPLOAD);
+      step = AppStep.UPLOAD;
     }
+    setCurrentStep(step);
   };
 
   // ─── Upload & Analyze ───────────────────────────────────────────
@@ -179,7 +214,7 @@ const App: React.FC = () => {
     delete opsRef.current[key];
   }, []);
 
-  const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string; userNote?: string }) => {
+  const handleGenerateConcepts = async (opts?: { lyrics?: string; context?: string; language?: string; userNote?: string; directorBrief?: string }) => {
     if (!project) return;
     const signal = startOp('concepts');
     setLoading(true);
@@ -273,21 +308,42 @@ const App: React.FC = () => {
   // Destructive events happen when the user actively picks or regenerates
   // something (lock-concept with a different choice, generate-script re-run).
   const handleUnlockConcept = () => doUnlock(() => api.unlockConcept(project!.id));
+
+  const handleRefineConcept = async (feedback: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const p = await api.refineConcept(project.id, feedback);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Concept refinement failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateConcept = async (updates: Record<string, any>) => {
+    if (!project) return;
+    try {
+      const p = await api.updateConcept(project.id, updates);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Concept update failed: ${err.message}`);
+    }
+  };
+
   const handleUnlockScript = () => doUnlock(() => api.unlockScript(project!.id));
   const handleUnlockCharacters = () => doUnlock(() => api.unlockCharacters(project!.id));
   const handleUnlockEnvironments = () => doUnlock(() => api.unlockEnvironments(project!.id));
 
   const doUnlock = async (fn: () => Promise<any>) => {
     if (!project) return;
-    setLoading(true);
     setError(null);
     try {
       const p = await fn();
       setProject(p);
     } catch (err: any) {
       setError(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -369,6 +425,28 @@ const App: React.FC = () => {
   };
 
   // ─── Script Generation ──────────────────────────────────────────
+
+  const handleUpdateScene = async (sceneId: string, updates: { narrativeDescription?: string }) => {
+    if (!project) return;
+    // Optimistic update
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => s.id === sceneId ? { ...s, ...updates } : s)
+    } : prev);
+    api.updateScene(project.id, sceneId, updates).catch(console.error);
+  };
+
+  const handleRefineScript = async (feedback: string) => {
+    if (!project) return;
+    const signal = startOp('script');
+    setLoading(true); setError(null);
+    try {
+      const p = await api.refineScript(project.id, feedback, signal);
+      setProject(p);
+    } catch (err: any) {
+      if (!api.isCancelled(err)) setError('Script refinement failed: ' + err.message);
+    } finally { endOp('script'); setLoading(false); }
+  };
 
   const handleGenerateScript = async (userNote?: string) => {
     if (!project) return;
@@ -472,6 +550,36 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGenerateEndFrame = async (shotId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.generateEndFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`End frame generation failed: ${err.message}`);
+    }
+  };
+
+  const handleClearEndFrame = async (shotId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.clearEndFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Clear end frame failed: ${err.message}`);
+    }
+  };
+
+  const handleUploadEndFrame = async (shotId: string, file: File) => {
+    if (!project) return;
+    try {
+      const p = await api.uploadEndFrame(project.id, shotId, file);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Upload end frame failed: ${err.message}`);
+    }
+  };
+
   const handleRewriteShotPrompts = async (userNote?: string) => {
     if (!project) return;
     setLoading(true);
@@ -550,14 +658,27 @@ const App: React.FC = () => {
   const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
   const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
 
-  const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string) => {
+  const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
     setLoading(true);
     try {
-      const p = await api.refineShotPrompt(project.id, shotId, feedback);
+      const p = await api.refineShotPrompt(project.id, shotId, feedback, referenceImage);
       setProject(p);
     } catch (err: any) {
       setError(`Prompt refinement failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefineEndFramePrompt = async (shotId: string, feedback: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const p = await api.refineEndFramePrompt(project.id, shotId, feedback);
+      setProject(p);
+    } catch (err: any) {
+      setError(`End frame refinement failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -629,7 +750,7 @@ const App: React.FC = () => {
           };
         });
       } else {
-        setError(`Video generation failed: ${err.message}`);
+        setError(err.message);
         setProject(prev => {
           if (!prev) return prev;
           return {
@@ -997,6 +1118,17 @@ const App: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         <main id="main-content" className="flex-1 overflow-y-auto relative">
+          {/* Loading overlay — visible during project switch */}
+          {loading && !project && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#141418]/80 backdrop-blur-sm">
+              <div className="text-sm text-zinc-400 animate-pulse">Loading…</div>
+            </div>
+          )}
+          {loading && project && (
+            <div className="absolute top-3 right-4 z-50">
+              <div className="text-[11px] text-zinc-500 animate-pulse">Loading…</div>
+            </div>
+          )}
 
           <div className="relative z-10 w-full p-8">
             {/* Prompts library — full-page overlay over the current pipeline state. */}
@@ -1036,6 +1168,8 @@ const App: React.FC = () => {
                     onDiscardLookCandidates={(id) => setLookCandidates(prev => ({ ...prev, [id]: [] }))}
                     onLockConcept={handleLockConcept}
                     onUnlockConcept={handleUnlockConcept}
+                    onRefineConcept={handleRefineConcept}
+                    onUpdateConcept={handleUpdateConcept}
                     onUnlockScript={handleUnlockScript}
                     onUnlockCharacters={handleUnlockCharacters}
                     onUnlockEnvironments={handleUnlockEnvironments}
@@ -1054,6 +1188,9 @@ const App: React.FC = () => {
                       run: async () => { await opts.run(); return null; },
                     })}
                     onGenerateScript={handleGenerateScript}
+                    onRefineScript={handleRefineScript}
+                    onUpdateScene={handleUpdateScene}
+                    onUpdateShot={handleUpdateShot}
                     onGenerateConcepts={handleGenerateConcepts}
                     onCancelConcepts={handleCancelConcepts}
                     onCancelScript={() => abortOp('script')}
@@ -1090,6 +1227,10 @@ const App: React.FC = () => {
                     videoQueue={videoQueue}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
+                    onGenerateEndFrame={handleGenerateEndFrame}
+                    onClearEndFrame={handleClearEndFrame}
+                    onUploadEndFrame={handleUploadEndFrame}
+                    onRefineEndFramePrompt={handleRefineEndFramePrompt}
                     isLoading={loading}
                   />
                 </motion.div>

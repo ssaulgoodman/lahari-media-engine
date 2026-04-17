@@ -72,7 +72,7 @@ export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal
 
 export const generateConcepts = async (
   projectId: string,
-  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string },
+  opts?: { lyrics?: string; context?: string; language?: string; userNote?: string; directorBrief?: string },
   signal?: AbortSignal
 ) => {
   const res = await fetch(`${API}/projects/${projectId}/generate-concepts`, {
@@ -95,6 +95,24 @@ export const lockConcept = async (projectId: string, conceptIndex: number, opts?
 
 export const unlockConcept = async (projectId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/unlock-concept`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const refineConcept = async (projectId: string, feedback: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/refine-concept`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+  });
+  return handleResponse(res);
+};
+
+export const updateConcept = async (projectId: string, updates: Record<string, any>) => {
+  const res = await fetch(`${API}/projects/${projectId}/concept`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
   return handleResponse(res);
 };
 
@@ -249,7 +267,7 @@ export const addCastMember = async (projectId: string, name: string, description
   return handleResponse(res);
 };
 
-export const updateCastMember = async (projectId: string, memberId: string, updates: { name?: string; description?: string }) => {
+export const updateCastMember = async (projectId: string, memberId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => {
   const res = await fetch(`${API}/projects/${projectId}/cast/${memberId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -274,7 +292,7 @@ export const addEnvironment = async (projectId: string, name: string, descriptio
   return handleResponse(res);
 };
 
-export const updateEnvironment = async (projectId: string, envId: string, updates: { name?: string; description?: string }) => {
+export const updateEnvironment = async (projectId: string, envId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => {
   const res = await fetch(`${API}/projects/${projectId}/environments/${envId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -339,6 +357,25 @@ export const advanceEnvironments = async (projectId: string) => {
 
 // ─── Script Generation ──────────────────────────────────────────────
 
+export const updateScene = async (projectId: string, sceneId: string, updates: { narrativeDescription?: string }) => {
+  const res = await fetch(`${API}/projects/${projectId}/scenes/${sceneId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  return handleResponse(res);
+};
+
+export const refineScript = async (projectId: string, feedback: string, signal?: AbortSignal) => {
+  const res = await fetch(`${API}/projects/${projectId}/refine-script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
 export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
   const body: Record<string, any> = {};
   if (userNote) body.userNote = userNote;
@@ -364,7 +401,18 @@ export const writeShotPrompts = async (projectId: string, userNote?: string, sig
 
 // ─── Shot Image & Video ─────────────────────────────────────────────
 
-export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string, signal?: AbortSignal) => {
+export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string, referenceImage?: File, signal?: AbortSignal) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('referenceImage', referenceImage);
+    const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    return handleResponse(res);
+  }
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -386,6 +434,39 @@ export const usePrevLastFrame = async (projectId: string, shotId: string) => {
 
 export const clearShotFrame = async (projectId: string, shotId: string) => {
   const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const generateEndFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const refineEndFramePrompt = async (projectId: string, shotId: string, feedback: string, referenceImage?: File) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('referenceImage', referenceImage);
+    const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, { method: 'POST', body: form });
+    return handleResponse(res);
+  }
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+  });
+  return handleResponse(res);
+};
+
+export const clearEndFrame = async (projectId: string, shotId: string) => {
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-end-frame`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const uploadEndFrame = async (projectId: string, shotId: string, file: File) => {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/upload-end-frame`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 

@@ -2,10 +2,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../db.js';
-import { saveBuffer, STORAGE_ROOT_PATH, readAsBase64, mimeFromExt } from '../storage.js';
+import {
+  selectAll, selectOne, insertRow, insertMany,
+  updateRows, deleteRows, countRows, maxVal,
+  selectColumns, getSB, T,
+} from '../database.js';
+import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
-import { summarizeMeaning, generateConceptOptions } from '../services/claude.js';
+import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 
 const router = Router();
@@ -19,8 +23,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200
 // shared (same files on disk) so disk usage stays near-zero. Caller can
 // then run destructive operations on the new project while the original
 // stays frozen as a snapshot.
-const forkProject = (sourceId: string): string => {
-  const src: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(sourceId);
+const forkProject = async (sourceId: string): Promise<string> => {
+  const src: any = await selectOne('projects', { id: sourceId });
   if (!src) throw new Error('Source project not found');
 
   const newId = uuidv4();
@@ -28,11 +32,15 @@ const forkProject = (sourceId: string): string => {
   // compound ("X (1) (1) (1)"). Then find the next free index by scanning
   // existing titles. Artists can rename from the sidebar afterwards.
   const base = (src.title || 'Untitled').replace(/\s*\(\d+\)\s*$/, '').trim() || 'Untitled';
-  const siblings = db.prepare(
-    `SELECT title FROM projects WHERE title = ? OR title LIKE ?`
-  ).all(base, `${base} (%)`) as { title: string }[];
+  // Fetch siblings: title = base OR title LIKE 'base (%)'
+  const { data: siblings, error: sibErr } = await getSB()
+    .from(T.projects)
+    .select('title')
+    .or(`title.eq.${base},title.like.${base} (%)`);
+  if (sibErr) throw new Error(`DB fork siblings: ${sibErr.message}`);
+
   const usedIndices = new Set<number>();
-  for (const r of siblings) {
+  for (const r of (siblings || [])) {
     if (r.title === base) { usedIndices.add(0); continue; }
     const m = r.title.match(/\((\d+)\)\s*$/);
     if (m) usedIndices.add(parseInt(m[1], 10));
@@ -42,10 +50,10 @@ const forkProject = (sourceId: string): string => {
   const newTitle = `${base} (${n})`;
 
   // Pre-compute remaps so we can rewrite foreign keys.
-  const srcCast = db.prepare('SELECT * FROM cast_members WHERE project_id = ?').all(sourceId) as any[];
-  const srcEnvs = db.prepare('SELECT * FROM environments WHERE project_id = ?').all(sourceId) as any[];
-  const srcAssets = db.prepare('SELECT * FROM assets WHERE project_id = ?').all(sourceId) as any[];
-  const srcScenes = db.prepare('SELECT * FROM scenes WHERE project_id = ? ORDER BY sort_order').all(sourceId) as any[];
+  const srcCast = await selectAll('cast_members', { project_id: sourceId });
+  const srcEnvs = await selectAll('environments', { project_id: sourceId });
+  const srcAssets = await selectAll('assets', { project_id: sourceId });
+  const srcScenes = await selectAll('scenes', { project_id: sourceId }, { orderBy: 'sort_order' });
 
   const castMap = new Map<string, string>();
   srcCast.forEach(c => castMap.set(c.id, uuidv4()));
@@ -58,70 +66,130 @@ const forkProject = (sourceId: string): string => {
 
   const remapAsset = (oldId: string | null | undefined) => oldId ? (assetMap.get(oldId) || null) : null;
 
-  // Run everything in a single transaction so partial forks never leak.
-  const tx = db.transaction(() => {
-    // Project row — copy everything, remap style_asset_id, new id + parent.
-    db.prepare(`
-      INSERT INTO projects (
-        id, title, status, audio_path, lyrics, musical_structure, concept_options,
-        locked_concept, style_description, style_asset_id, color_palette, meaning,
-        video_mode, target_duration, cost_estimate, style_exploration,
-        video_model, aspect_ratio, video_resolution,
-        last_script_prompt, last_concept_prompt, last_write_shots_prompt,
-        parent_project_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `).run(
-      newId, newTitle, src.status, src.audio_path, src.lyrics, src.musical_structure,
-      src.concept_options, src.locked_concept, src.style_description, remapAsset(src.style_asset_id),
-      src.color_palette, src.meaning, src.video_mode, src.target_duration, src.cost_estimate,
-      src.style_exploration, src.video_model, src.aspect_ratio, src.video_resolution,
-      src.last_script_prompt, src.last_concept_prompt, src.last_write_shots_prompt,
-      sourceId,
-    );
+  // Project row — copy everything, remap style_asset_id, new id + parent.
+  const now = new Date().toISOString();
+  await insertRow('projects', {
+    id: newId,
+    title: newTitle,
+    status: src.status,
+    audio_path: src.audio_path,
+    lyrics: src.lyrics,
+    musical_structure: src.musical_structure,
+    concept_options: src.concept_options,
+    locked_concept: src.locked_concept,
+    style_description: src.style_description,
+    style_asset_id: remapAsset(src.style_asset_id),
+    color_palette: src.color_palette,
+    meaning: src.meaning,
+    video_mode: src.video_mode,
+    target_duration: src.target_duration,
+    cost_estimate: src.cost_estimate,
+    style_exploration: src.style_exploration,
+    video_model: src.video_model,
+    aspect_ratio: src.aspect_ratio,
+    video_resolution: src.video_resolution,
+    last_script_prompt: src.last_script_prompt,
+    last_concept_prompt: src.last_concept_prompt,
+    last_write_shots_prompt: src.last_write_shots_prompt,
+    parent_project_id: sourceId,
+    created_at: now,
+    updated_at: now,
+  });
 
-    // Assets — same file_path, new ids.
-    const insertAsset = db.prepare(`INSERT INTO assets (id, project_id, category, file_path, prompt, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`);
-    for (const a of srcAssets) insertAsset.run(assetMap.get(a.id), newId, a.category, a.file_path, a.prompt || null, a.metadata || null);
+  // Assets — same file_path, new ids.
+  if (srcAssets.length > 0) {
+    await insertMany('assets', srcAssets.map(a => ({
+      id: assetMap.get(a.id),
+      project_id: newId,
+      category: a.category,
+      file_path: a.file_path,
+      prompt: a.prompt || null,
+      metadata: a.metadata || null,
+      created_at: now,
+    })));
+  }
 
-    // Cast members.
-    const insertCast = db.prepare(`INSERT INTO cast_members (id, project_id, name, description, reference_asset_id, sort_order) VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const c of srcCast) insertCast.run(castMap.get(c.id), newId, c.name, c.description, remapAsset(c.reference_asset_id), c.sort_order);
+  // Cast members.
+  if (srcCast.length > 0) {
+    await insertMany('cast_members', srcCast.map(c => ({
+      id: castMap.get(c.id),
+      project_id: newId,
+      name: c.name,
+      description: c.description,
+      reference_asset_id: remapAsset(c.reference_asset_id),
+      sort_order: c.sort_order,
+    })));
+  }
 
-    // Environments.
-    const insertEnv = db.prepare(`INSERT INTO environments (id, project_id, name, description, reference_asset_id, sort_order) VALUES (?, ?, ?, ?, ?, ?)`);
-    for (const e of srcEnvs) insertEnv.run(envMap.get(e.id), newId, e.name, e.description, remapAsset(e.reference_asset_id), e.sort_order);
+  // Environments.
+  if (srcEnvs.length > 0) {
+    await insertMany('environments', srcEnvs.map(e => ({
+      id: envMap.get(e.id),
+      project_id: newId,
+      name: e.name,
+      description: e.description,
+      reference_asset_id: remapAsset(e.reference_asset_id),
+      sort_order: e.sort_order,
+    })));
+  }
 
-    // Scenes + shots.
-    const insertScene = db.prepare(`INSERT INTO scenes (id, project_id, section_label, start_time, end_time, lyrics, narrative_description, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-    const insertShot = db.prepare(`INSERT INTO shots (id, scene_id, visual_prompt, motion_prompt, duration, cast_ids, image_asset_id, video_asset_id, image_status, video_status, critique, attempt_count, use_next_as_end_frame, sort_order, end_image_asset_id, end_image_status, locked, user_feedback, environment_id, extracted_last_frame_asset_id, continuity_description, continuity_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // Scenes + shots.
+  if (srcScenes.length > 0) {
+    await insertMany('scenes', srcScenes.map(s => ({
+      id: sceneMap.get(s.id),
+      project_id: newId,
+      section_label: s.section_label,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      lyrics: s.lyrics,
+      narrative_description: s.narrative_description,
+      sort_order: s.sort_order,
+    })));
+
+    // Gather all shots across all source scenes
+    const allShotRows: Record<string, any>[] = [];
     for (const s of srcScenes) {
+      const shots = await selectAll('shots', { scene_id: s.id }, { orderBy: 'sort_order' });
       const newSceneId = sceneMap.get(s.id)!;
-      insertScene.run(newSceneId, newId, s.section_label, s.start_time, s.end_time, s.lyrics, s.narrative_description, s.sort_order);
-      const shots = db.prepare('SELECT * FROM shots WHERE scene_id = ? ORDER BY sort_order').all(s.id) as any[];
       for (const shot of shots) {
-        // Remap cast_ids JSON array.
         let newCastIds = '[]';
         try {
           const ids = JSON.parse(shot.cast_ids || '[]') as string[];
-          newCastIds = JSON.stringify(ids.map(id => castMap.get(id) || id).filter(Boolean));
+          newCastIds = JSON.stringify(ids.map((id: string) => castMap.get(id) || id).filter(Boolean));
         } catch {}
-        insertShot.run(
-          uuidv4(), newSceneId, shot.visual_prompt, shot.motion_prompt, shot.duration,
-          newCastIds, remapAsset(shot.image_asset_id), remapAsset(shot.video_asset_id),
-          shot.image_status, shot.video_status, shot.critique, shot.attempt_count,
-          shot.use_next_as_end_frame, shot.sort_order,
-          remapAsset(shot.end_image_asset_id), shot.end_image_status,
-          shot.locked, shot.user_feedback,
-          shot.environment_id ? (envMap.get(shot.environment_id) || null) : null,
-          remapAsset(shot.extracted_last_frame_asset_id),
-          shot.continuity_description, shot.continuity_from,
-        );
+        allShotRows.push({
+          id: uuidv4(),
+          scene_id: newSceneId,
+          visual_prompt: shot.visual_prompt,
+          motion_prompt: shot.motion_prompt,
+          duration: shot.duration,
+          cast_ids: newCastIds,
+          image_asset_id: remapAsset(shot.image_asset_id),
+          video_asset_id: remapAsset(shot.video_asset_id),
+          image_status: shot.image_status,
+          video_status: shot.video_status,
+          critique: shot.critique,
+          attempt_count: shot.attempt_count,
+          use_next_as_end_frame: shot.use_next_as_end_frame,
+          sort_order: shot.sort_order,
+          end_image_asset_id: remapAsset(shot.end_image_asset_id),
+          end_image_status: shot.end_image_status,
+          locked: shot.locked,
+          user_feedback: shot.user_feedback,
+          environment_id: shot.environment_id ? (envMap.get(shot.environment_id) || null) : null,
+          extracted_last_frame_asset_id: remapAsset(shot.extracted_last_frame_asset_id),
+          continuity_description: shot.continuity_description,
+          continuity_from: shot.continuity_from,
+        });
       }
     }
-    // Note: chat_messages and ai_calls are NOT copied — those belong to the original
-    // project's history. The fork starts with a clean audit log.
-  });
-  tx();
+    if (allShotRows.length > 0) {
+      await insertMany('shots', allShotRows);
+    }
+  }
+
+  // Note: chat_messages and ai_calls are NOT copied — those belong to the original
+  // project's history. The fork starts with a clean audit log.
 
   return newId;
 };
@@ -130,69 +198,82 @@ export { forkProject };
 
 // ─── Helper: build full project response ────────────────────────────
 
-const getFullProject = (projectId: string) => {
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+const getFullProject = async (projectId: string) => {
+  // Parallel fetch: project + cast + environments + scenes + chat — 5 queries instead of serial
+  const [project, cast, environments, scenes, chatMessages] = await Promise.all([
+    selectOne('projects', { id: projectId }),
+    selectAll('cast_members', { project_id: projectId }, { orderBy: 'sort_order' }),
+    selectAll('environments', { project_id: projectId }, { orderBy: 'sort_order' }),
+    selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' }),
+    selectColumns('chat_messages', 'role, text', { project_id: projectId }, { orderBy: 'id' }),
+  ]) as [any, any[], any[], any[], any[]];
   if (!project) return null;
 
-  const cast = db.prepare('SELECT * FROM cast_members WHERE project_id = ? ORDER BY sort_order').all(projectId);
-  const environments = db.prepare('SELECT * FROM environments WHERE project_id = ? ORDER BY sort_order').all(projectId) as any[];
-  const scenes = db.prepare('SELECT * FROM scenes WHERE project_id = ? ORDER BY sort_order').all(projectId) as any[];
-  const chatMessages = db.prepare('SELECT role, text FROM chat_messages WHERE project_id = ? ORDER BY id').all(projectId);
+  // Fetch ALL shots for this project's scenes in one query (not N queries per scene)
+  const sceneIds = scenes.map((s: any) => s.id);
+  const allShots = sceneIds.length > 0
+    ? await selectAll('shots', { scene_id: sceneIds }, { orderBy: 'sort_order' })
+    : [];
 
-  // Attach shots to scenes
+  // Collect every asset ID we need to resolve — one bulk fetch instead of N+1
+  const assetIds = new Set<string>();
+  for (const shot of allShots) {
+    if (shot.image_asset_id) assetIds.add(shot.image_asset_id);
+    if (shot.end_image_asset_id) assetIds.add(shot.end_image_asset_id);
+    if (shot.extracted_last_frame_asset_id) assetIds.add(shot.extracted_last_frame_asset_id);
+    if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
+  }
+  for (const c of cast) { if (c.reference_asset_id) assetIds.add(c.reference_asset_id); }
+  for (const e of environments) { if (e.reference_asset_id) assetIds.add(e.reference_asset_id); }
+  if (project.style_asset_id) assetIds.add(project.style_asset_id);
+
+  // Single bulk asset fetch — replaces 80+ individual selectOne calls
+  const assetMap = new Map<string, any>();
+  if (assetIds.size > 0) {
+    const assets = await selectAll('assets', { id: [...assetIds] });
+    for (const a of assets) assetMap.set(a.id, a);
+  }
+
+  const resolveUrl = (id: string | null | undefined) => {
+    if (!id) return undefined;
+    const a = assetMap.get(id);
+    return a ? storageUrl(a.file_path) : undefined;
+  };
+
+  // Group shots by scene
+  const shotsByScene = new Map<string, any[]>();
+  for (const shot of allShots) {
+    const arr = shotsByScene.get(shot.scene_id) || [];
+    arr.push(shot);
+    shotsByScene.set(shot.scene_id, arr);
+  }
+
   for (const scene of scenes) {
-    scene.shots = db.prepare('SELECT * FROM shots WHERE scene_id = ? ORDER BY sort_order').all(scene.id);
-    // Resolve shot image/video/end-frame asset paths to URLs
+    scene.shots = shotsByScene.get(scene.id) || [];
     for (const shot of scene.shots as any[]) {
-      if (shot.image_asset_id) {
-        const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.image_asset_id);
-        if (asset) shot.imageUrl = `/storage/${asset.file_path}`;
-      }
-      if (shot.end_image_asset_id) {
-        const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.end_image_asset_id);
-        if (asset) shot.endImageUrl = `/storage/${asset.file_path}`;
-      }
-      if (shot.extracted_last_frame_asset_id) {
-        const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.extracted_last_frame_asset_id);
-        if (asset) shot.extractedLastFrameUrl = `/storage/${asset.file_path}`;
-      }
-      if (shot.video_asset_id) {
-        const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(shot.video_asset_id);
-        if (asset) shot.videoUrl = `/storage/${asset.file_path}`;
-      }
+      shot.imageUrl = resolveUrl(shot.image_asset_id);
+      shot.endImageUrl = resolveUrl(shot.end_image_asset_id);
+      shot.extractedLastFrameUrl = resolveUrl(shot.extracted_last_frame_asset_id);
+      shot.videoUrl = resolveUrl(shot.video_asset_id);
       shot.castIds = JSON.parse(shot.cast_ids || '[]');
       shot.critique = shot.critique ? JSON.parse(shot.critique) : undefined;
     }
   }
 
-  // Resolve cast reference images
+  // Resolve cast + env + style from the same asset map
   for (const member of cast as any[]) {
-    if (member.reference_asset_id) {
-      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(member.reference_asset_id);
-      if (asset) member.referenceImageUrl = `/storage/${asset.file_path}`;
-    }
+    member.referenceImageUrl = resolveUrl(member.reference_asset_id);
   }
-
-  // Resolve environment reference images
   for (const env of environments) {
-    if (env.reference_asset_id) {
-      const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(env.reference_asset_id);
-      if (asset) env.referenceImageUrl = `/storage/${asset.file_path}`;
-    }
+    env.referenceImageUrl = resolveUrl(env.reference_asset_id);
   }
-
-  // Resolve style asset
-  let styleAssetUrl: string | undefined;
-  if (project.style_asset_id) {
-    const asset: any = db.prepare('SELECT file_path FROM assets WHERE id = ?').get(project.style_asset_id);
-    if (asset) styleAssetUrl = `/storage/${asset.file_path}`;
-  }
+  const styleAssetUrl = resolveUrl(project.style_asset_id);
 
   return {
     id: project.id,
     title: project.title,
     status: project.status,
-    audioPath: project.audio_path,
+    audioPath: project.audio_path ? storageUrl(project.audio_path) : null,
     lyrics: project.lyrics,
     meaning: project.meaning,
     musicalStructure: project.musical_structure ? JSON.parse(project.musical_structure) : [],
@@ -200,7 +281,20 @@ const getFullProject = (projectId: string) => {
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
     styleDescription: project.style_description,
     styleAssetUrl,
-    styleExploration: project.style_exploration ? JSON.parse(project.style_exploration) : null,
+    styleGenerationPrompt: project.style_generation_prompt || undefined,
+    styleExploration: (() => {
+      if (!project.style_exploration) return null;
+      const se = JSON.parse(project.style_exploration);
+      // Fix legacy /storage/ paths → full Supabase URLs
+      const fixUrl = (url?: string) => {
+        if (!url) return url;
+        if (url.startsWith('/storage/')) return storageUrl(url.replace('/storage/', ''));
+        return url;
+      };
+      if (se.slots) se.slots = se.slots.map((s: any) => ({ ...s, imageUrl: fixUrl(s.imageUrl) }));
+      if (se.userSlot) se.userSlot = { ...se.userSlot, imageUrl: fixUrl(se.userSlot.imageUrl) };
+      return se;
+    })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
     videoModel: project.video_model || 'veo-3.1',
@@ -214,6 +308,8 @@ const getFullProject = (projectId: string) => {
       id: c.id,
       name: c.name,
       description: c.description,
+      generationPrompt: c.generation_prompt || undefined,
+      promptsStale: !!c.prompts_stale,
       referenceAssetId: c.reference_asset_id,
       referenceImageUrl: c.referenceImageUrl,
     })),
@@ -221,6 +317,8 @@ const getFullProject = (projectId: string) => {
       id: e.id,
       name: e.name,
       description: e.description,
+      generationPrompt: e.generation_prompt || undefined,
+      promptsStale: !!e.prompts_stale,
       referenceAssetId: e.reference_asset_id,
       referenceImageUrl: e.referenceImageUrl,
     })),
@@ -243,6 +341,8 @@ const getFullProject = (projectId: string) => {
         continuityFrom: shot.continuity_from || 'cut',
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
+        endVisualPrompt: shot.end_visual_prompt || undefined,
+        endUserFeedback: shot.end_user_feedback || undefined,
         locked: !!shot.locked,
         userFeedback: shot.user_feedback || undefined,
         environmentId: shot.environment_id || undefined,
@@ -251,6 +351,7 @@ const getFullProject = (projectId: string) => {
         videoStatus: shot.video_status,
         critique: shot.critique,
         attemptCount: shot.attempt_count,
+        promptsStale: !!shot.prompts_stale,
         useNextAsEndFrame: !!shot.use_next_as_end_frame,
       }))
     })),
@@ -265,12 +366,14 @@ const getFullProject = (projectId: string) => {
 // ─── Routes ─────────────────────────────────────────────────────────
 
 // List all projects
-router.get('/', (_req, res) => {
-  const rows = db.prepare(`
-    SELECT id, title, status, created_at, updated_at, parent_project_id
-    FROM projects ORDER BY created_at DESC
-  `).all() as any[];
-  res.json(rows.map(r => ({
+router.get('/', async (_req, res) => {
+  const rows = await selectColumns(
+    'projects',
+    'id, title, status, created_at, updated_at, parent_project_id',
+    {},
+    { orderBy: 'created_at', ascending: false }
+  );
+  res.json(rows.map((r: any) => ({
     id: r.id,
     title: r.title,
     status: r.status,
@@ -281,8 +384,8 @@ router.get('/', (_req, res) => {
 });
 
 // Get single project (full state)
-router.get('/:id', (req, res) => {
-  const project = getFullProject(paramStr(req.params.id));
+router.get('/:id', async (req, res) => {
+  const project = await getFullProject(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
   res.json(project);
 });
@@ -294,22 +397,24 @@ router.post('/', upload.single('audio'), async (req, res) => {
 
   const projectId = uuidv4();
   const ext = path.extname(file.originalname).slice(1) || 'mp3';
-  const audioPath = saveBuffer(file.buffer, 'audio', ext);
+  const audioPath = await saveBuffer(file.buffer, 'audio', ext);
   const title = req.body.title || file.originalname.replace(/\.[^/.]+$/, '');
   const language = req.body.language || undefined;
   const context = req.body.context || undefined;
 
   // Create project in DB
-  db.prepare(`
-    INSERT INTO projects (id, title, status, audio_path)
-    VALUES (?, ?, 'analyzing', ?)
-  `).run(projectId, title, audioPath);
+  await insertRow('projects', {
+    id: projectId,
+    title,
+    status: 'analyzing',
+    audio_path: audioPath,
+  });
 
   // Run analysis (synchronous for simplicity — client shows spinner)
   try {
-    const audioBase64 = readAsBase64(audioPath);
+    const audioBase64 = await readAsBase64(audioPath);
     const audioMime = mimeFromExt(audioPath);
-    const audioRef = [{ type: 'audio' as const, label: 'Uploaded audio', url: `/storage/${audioPath}` }];
+    const audioRef = [{ type: 'audio' as const, label: 'Uploaded audio', url: storageUrl(audioPath) }];
 
     // Phase 1a: parallel lyrics + structure (audio analysis via Gemini)
     console.log(`[${projectId}] Analyzing: lyrics + structure...`);
@@ -374,51 +479,50 @@ router.post('/', upload.single('audio'), async (req, res) => {
     }
 
     // Save to DB — analysis only (concepts generated separately)
-    db.prepare(`
-      UPDATE projects SET
-        status = 'analyzed',
-        lyrics = ?,
-        musical_structure = ?,
-        meaning = ?,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(lyrics, JSON.stringify(musicalStructure), meaning, projectId);
+    await updateRows('projects', { id: projectId }, {
+      status: 'analyzed',
+      lyrics,
+      musical_structure: JSON.stringify(musicalStructure),
+      meaning,
+      updated_at: new Date().toISOString(),
+    });
 
-    res.json(getFullProject(projectId));
+    res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] Analysis failed:`, err);
-    db.prepare("UPDATE projects SET status = 'error', updated_at = datetime('now') WHERE id = ?").run(projectId);
+    await updateRows('projects', { id: projectId }, { status: 'error', updated_at: new Date().toISOString() });
     res.status(500).json({ error: err.message || 'Analysis failed' });
   }
 });
 
 // Generate concept options (separate from analysis)
 router.post('/:id/generate-concepts', async (req, res) => {
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(paramStr(req.params.id));
+  const project: any = await selectOne('projects', { id: paramStr(req.params.id) });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const lyrics = req.body.lyrics ?? project.lyrics ?? '';
   const context = req.body.context || undefined;
   const userNote = req.body.userNote || undefined;
+  const directorBrief = req.body.directorBrief || undefined;
   const title = project.title;
   const language = req.body.language || undefined;
   const musicalStructure = project.musical_structure ? JSON.parse(project.musical_structure) : [];
 
   // If user edited lyrics, save them
   if (req.body.lyrics && req.body.lyrics !== project.lyrics) {
-    db.prepare("UPDATE projects SET lyrics = ?, updated_at = datetime('now') WHERE id = ?").run(req.body.lyrics, paramStr(req.params.id));
+    await updateRows('projects', { id: paramStr(req.params.id) }, { lyrics: req.body.lyrics, updated_at: new Date().toISOString() });
   }
 
   try {
-    console.log(`[${project.id}] Generating concept options${userNote ? ` with note: ${userNote}` : ''}...`);
+    console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief);
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
     // Cache prompt for transparency
-    db.prepare('UPDATE projects SET last_concept_prompt = ? WHERE id = ?').run(result.prompt, paramStr(req.params.id));
+    await updateRows('projects', { id: paramStr(req.params.id) }, { last_concept_prompt: result.prompt });
 
     logCall({
       projectId: project.id,
@@ -432,14 +536,12 @@ router.post('/:id/generate-concepts', async (req, res) => {
       costEstimate: 0.01,
     });
 
-    db.prepare(`
-      UPDATE projects SET
-        concept_options = ?,
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(JSON.stringify(conceptOptions), paramStr(req.params.id));
+    await updateRows('projects', { id: paramStr(req.params.id) }, {
+      concept_options: JSON.stringify(conceptOptions),
+      updated_at: new Date().toISOString(),
+    });
 
-    res.json(getFullProject(paramStr(req.params.id)));
+    res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[${project.id}] Concept generation failed:`, err);
     logCall({
@@ -455,10 +557,10 @@ router.post('/:id/generate-concepts', async (req, res) => {
 });
 
 // Lock concept choice
-router.post('/:id/lock-concept', (req, res) => {
+router.post('/:id/lock-concept', async (req, res) => {
   const { conceptIndex, fork } = req.body;
   const sourceId = paramStr(req.params.id);
-  const srcProject: any = db.prepare('SELECT concept_options, locked_concept FROM projects WHERE id = ?').get(sourceId);
+  const srcProject: any = await selectOne('projects', { id: sourceId });
   if (!srcProject) return res.status(404).json({ error: 'Project not found' });
 
   const options = JSON.parse(srcProject.concept_options || '[]');
@@ -474,81 +576,152 @@ router.post('/:id/lock-concept', (req, res) => {
   // frozen as a snapshot.
   const prevLocked = srcProject.locked_concept ? JSON.parse(srcProject.locked_concept) : null;
   const switching = prevLocked && JSON.stringify(prevLocked) !== JSON.stringify(chosen);
-  const sceneCount = (db.prepare('SELECT COUNT(*) as n FROM scenes WHERE project_id = ?').get(sourceId) as any)?.n || 0;
+  const sceneCount = await countRows('scenes', { project_id: sourceId });
   const needsWipe = switching && sceneCount > 0;
 
-  const projectId = fork === true ? forkProject(sourceId) : sourceId;
+  const projectId = fork === true ? await forkProject(sourceId) : sourceId;
 
   if (needsWipe) {
-    db.prepare('DELETE FROM scenes WHERE project_id = ?').run(projectId);
-    db.prepare('DELETE FROM cast_members WHERE project_id = ?').run(projectId);
-    db.prepare('DELETE FROM environments WHERE project_id = ?').run(projectId);
-    db.prepare(`
-      UPDATE projects SET
-        style_asset_id = NULL, style_description = NULL, style_exploration = NULL,
-        last_script_prompt = NULL, last_write_shots_prompt = NULL
-      WHERE id = ?
-    `).run(projectId);
+    // Delete scenes — shots will be orphaned but scenes own the relationship.
+    // First get scene ids to delete their shots.
+    const scenesToDelete = await selectColumns('scenes', 'id', { project_id: projectId });
+    for (const s of scenesToDelete) {
+      await deleteRows('shots', { scene_id: s.id });
+    }
+    await deleteRows('scenes', { project_id: projectId });
+    await deleteRows('cast_members', { project_id: projectId });
+    await deleteRows('environments', { project_id: projectId });
+    await updateRows('projects', { id: projectId }, {
+      style_asset_id: null,
+      style_description: null,
+      style_exploration: null,
+      last_script_prompt: null,
+      last_write_shots_prompt: null,
+    });
   }
 
-  db.prepare(`
-    UPDATE projects SET
-      status = 'concept_locked',
-      locked_concept = ?,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(JSON.stringify(chosen), projectId);
+  await updateRows('projects', { id: projectId }, {
+    status: 'concept_locked',
+    locked_concept: JSON.stringify(chosen),
+    updated_at: new Date().toISOString(),
+  });
 
-  res.json(getFullProject(projectId));
+  res.json(await getFullProject(projectId));
 });
 
 // Unlock concept — pure navigation: reveal the concept options grid
 // without touching anything downstream. locked_concept stays so we know
 // what was previously chosen. The cascade-wipe only triggers if the user
 // then picks a DIFFERENT concept via /lock-concept (see that endpoint).
-router.post('/:id/unlock-concept', (req, res) => {
+router.post('/:id/unlock-concept', async (req, res) => {
   const projectId = paramStr(req.params.id);
-  db.prepare(`UPDATE projects SET status = 'analyzed', updated_at = datetime('now') WHERE id = ?`).run(projectId);
-  res.json(getFullProject(projectId));
+  await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });
+  res.json(await getFullProject(projectId));
+});
+
+// Refine locked concept — Claude rewrites fields based on feedback. Non-destructive (no wipe).
+router.post('/:id/refine-concept', async (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!project.locked_concept) return res.status(400).json({ error: 'No locked concept to refine' });
+
+  const current = JSON.parse(project.locked_concept);
+
+  try {
+    const projectId = paramStr(req.params.id);
+    const refined = await refineConceptDirection(current, feedback);
+    await updateRows('projects', { id: projectId }, {
+      locked_concept: JSON.stringify(refined),
+      updated_at: new Date().toISOString(),
+    });
+    // Concept change invalidates all downstream — script was built from old concept
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const s of scenes) {
+      await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
+    }
+    res.json(await getFullProject(projectId));
+  } catch (err: any) {
+    res.status(500).json({ error: `Concept refinement failed: ${err.message}` });
+  }
+});
+
+// Update locked concept fields directly — artist edits inline. Non-destructive.
+router.patch('/:id/concept', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const project = await selectOne('projects', { id: projectId });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (!project.locked_concept) return res.status(400).json({ error: 'No locked concept to update' });
+
+  const current = JSON.parse(project.locked_concept);
+  const updates = req.body;
+  const merged = { ...current, ...updates };
+  if (updates.visualSuggestions) {
+    merged.visualSuggestions = { ...current.visualSuggestions, ...updates.visualSuggestions };
+  }
+
+  await updateRows('projects', { id: projectId }, {
+    locked_concept: JSON.stringify(merged),
+    updated_at: new Date().toISOString(),
+  });
+  // Concept change invalidates downstream shots
+  const scenes = await selectAll('scenes', { project_id: projectId });
+  for (const s of scenes) {
+    await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
+  }
+  res.json(await getFullProject(projectId));
 });
 
 // Update project settings
-router.patch('/:id', (req, res) => {
+router.patch('/:id', async (req, res) => {
   const { title, videoMode, targetDuration, styleDescription, colorPalette, videoModel, aspectRatio, videoResolution } = req.body;
-  const sets: string[] = [];
-  const vals: any[] = [];
+  const updates: Record<string, any> = {};
 
-  if (title !== undefined) { sets.push('title = ?'); vals.push(title); }
-  if (videoMode !== undefined) { sets.push('video_mode = ?'); vals.push(videoMode); }
-  if (videoModel !== undefined) { sets.push('video_model = ?'); vals.push(videoModel); }
-  if (aspectRatio !== undefined) { sets.push('aspect_ratio = ?'); vals.push(aspectRatio); }
-  if (videoResolution !== undefined) { sets.push('video_resolution = ?'); vals.push(videoResolution); }
-  if (targetDuration !== undefined) { sets.push('target_duration = ?'); vals.push(targetDuration); }
-  if (styleDescription !== undefined) { sets.push('style_description = ?'); vals.push(styleDescription); }
-  if (colorPalette !== undefined) { sets.push('color_palette = ?'); vals.push(colorPalette); }
-  if (req.body.styleExploration !== undefined) { sets.push('style_exploration = ?'); vals.push(JSON.stringify(req.body.styleExploration)); }
+  if (title !== undefined) updates.title = title;
+  if (videoMode !== undefined) updates.video_mode = videoMode;
+  if (videoModel !== undefined) updates.video_model = videoModel;
+  if (aspectRatio !== undefined) updates.aspect_ratio = aspectRatio;
+  if (videoResolution !== undefined) updates.video_resolution = videoResolution;
+  if (targetDuration !== undefined) updates.target_duration = targetDuration;
+  if (styleDescription !== undefined) updates.style_description = styleDescription;
+  if (colorPalette !== undefined) updates.color_palette = colorPalette;
+  if (req.body.styleExploration !== undefined) updates.style_exploration = JSON.stringify(req.body.styleExploration);
+  if (req.body.styleGenerationPrompt !== undefined) updates.style_generation_prompt = req.body.styleGenerationPrompt || null;
 
-  if (sets.length === 0) return res.status(400).json({ error: 'No fields to update' });
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' });
 
-  sets.push("updated_at = datetime('now')");
-  vals.push(paramStr(req.params.id));
+  updates.updated_at = new Date().toISOString();
+  const projectId = paramStr(req.params.id);
+  await updateRows('projects', { id: projectId }, updates);
 
-  db.prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-  res.json(getFullProject(paramStr(req.params.id)));
+  // Staleness propagation: style_description change invalidates all downstream generation_prompts
+  if (styleDescription !== undefined) {
+    await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
+    await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
+    // Shots are also stale — style DNA feeds into frame + video gen
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const s of scenes) {
+      await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
+    }
+  }
+
+  res.json(await getFullProject(projectId));
 });
 
 // Delete project
-router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM projects WHERE id = ?').run(paramStr(req.params.id));
+router.delete('/:id', async (req, res) => {
+  await deleteRows('projects', { id: paramStr(req.params.id) });
   res.json({ ok: true });
 });
 
 // Fork — deep-copy a project as a new one. Used before destructive ops
 // so the original stays frozen as a snapshot.
-router.post('/:id/fork', (req, res) => {
+router.post('/:id/fork', async (req, res) => {
   try {
-    const newId = forkProject(paramStr(req.params.id));
-    res.json(getFullProject(newId));
+    const newId = await forkProject(paramStr(req.params.id));
+    res.json(await getFullProject(newId));
   } catch (err: any) {
     console.error('[fork] failed:', err);
     res.status(500).json({ error: err.message });
@@ -561,15 +734,15 @@ router.post('/:id/fork', (req, res) => {
 // leaving the original's analysis (and any downstream work) untouched.
 router.post('/:id/analyze-audio', async (req, res) => {
   const sourceId = paramStr(req.params.id);
-  const projectId = req.body?.fork === true ? forkProject(sourceId) : sourceId;
-  const project: any = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  const projectId = req.body?.fork === true ? await forkProject(sourceId) : sourceId;
+  const project: any = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file on this project' });
 
   try {
-    const audioBase64 = readAsBase64(project.audio_path);
+    const audioBase64 = await readAsBase64(project.audio_path);
     const audioMime = mimeFromExt(project.audio_path);
-    const audioRef = [{ type: 'audio' as const, label: 'Project audio', url: `/storage/${project.audio_path}` }];
+    const audioRef = [{ type: 'audio' as const, label: 'Project audio', url: storageUrl(project.audio_path) }];
 
     const t0 = Date.now();
     const [structureResult, meaningResult] = await Promise.allSettled([
@@ -613,11 +786,18 @@ router.post('/:id/analyze-audio', async (req, res) => {
       });
     }
 
-    db.prepare(
-      `UPDATE projects SET musical_structure = ?, meaning = ?, status = CASE WHEN status = 'uploaded' OR status = 'analyzing' THEN 'analyzed' ELSE status END, updated_at = datetime('now') WHERE id = ?`
-    ).run(JSON.stringify(musicalStructure), meaning, projectId);
+    // Conditional status update: only move to 'analyzed' if currently 'uploaded' or 'analyzing'
+    const statusUpdate: Record<string, any> = {
+      musical_structure: JSON.stringify(musicalStructure),
+      meaning,
+      updated_at: new Date().toISOString(),
+    };
+    if (project.status === 'uploaded' || project.status === 'analyzing') {
+      statusUpdate.status = 'analyzed';
+    }
+    await updateRows('projects', { id: projectId }, statusUpdate);
 
-    res.json(getFullProject(projectId));
+    res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] re-analysis failed:`, err);
     res.status(500).json({ error: err.message });
@@ -626,93 +806,172 @@ router.post('/:id/analyze-audio', async (req, res) => {
 
 // ─── Cast Management ────────────────────────────────────────────────
 
-router.post('/:id/cast', (req, res) => {
+router.post('/:id/cast', async (req, res) => {
   const { name, description } = req.body;
   const memberId = uuidv4();
-  const maxOrder: any = db.prepare('SELECT MAX(sort_order) as m FROM cast_members WHERE project_id = ?').get(paramStr(req.params.id));
-  db.prepare(`INSERT INTO cast_members (id, project_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)`)
-    .run(memberId, paramStr(req.params.id), name || 'New Character', description || '', (maxOrder?.m || 0) + 1);
-  res.json(getFullProject(paramStr(req.params.id)));
+  const maxOrder = await maxVal('cast_members', 'sort_order', { project_id: paramStr(req.params.id) });
+  await insertRow('cast_members', {
+    id: memberId,
+    project_id: paramStr(req.params.id),
+    name: name || 'New Character',
+    description: description || '',
+    sort_order: maxOrder + 1,
+  });
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
-router.put('/:id/cast/:memberId', (req, res) => {
-  const { name, description } = req.body;
-  if (name !== undefined) db.prepare('UPDATE cast_members SET name = ? WHERE id = ?').run(name, paramStr(req.params.memberId));
-  if (description !== undefined) db.prepare('UPDATE cast_members SET description = ? WHERE id = ?').run(description, paramStr(req.params.memberId));
-  res.json(getFullProject(paramStr(req.params.id)));
+router.put('/:id/cast/:memberId', async (req, res) => {
+  const { name, description, generationPrompt } = req.body;
+  const memberId = paramStr(req.params.memberId);
+  const projectId = paramStr(req.params.id);
+  const updates: Record<string, any> = {};
+  if (name !== undefined) updates.name = name;
+  if (description !== undefined) updates.description = description;
+  if (generationPrompt !== undefined) { updates.generation_prompt = generationPrompt || null; updates.prompts_stale = false; }
+  if (Object.keys(updates).length > 0) {
+    await updateRows('cast_members', { id: memberId }, updates);
+    // Cast description change → shots referencing this character are stale
+    if (description !== undefined) {
+      const scenes = await selectAll('scenes', { project_id: projectId });
+      for (const s of scenes) {
+        const shots = await selectAll('shots', { scene_id: s.id });
+        for (const shot of shots) {
+          const castIds = JSON.parse(shot.cast_ids || '[]');
+          if (castIds.includes(memberId)) {
+            await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+          }
+        }
+      }
+    }
+  }
+  res.json(await getFullProject(projectId));
 });
 
-router.delete('/:id/cast/:memberId', (req, res) => {
-  db.prepare('DELETE FROM cast_members WHERE id = ?').run(paramStr(req.params.memberId));
-  res.json(getFullProject(paramStr(req.params.id)));
+router.delete('/:id/cast/:memberId', async (req, res) => {
+  await deleteRows('cast_members', { id: paramStr(req.params.memberId) });
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
 // ─── Environment Management ──────────────────────────────────────────
 
-router.post('/:id/environments', (req, res) => {
+router.post('/:id/environments', async (req, res) => {
   const { name, description } = req.body;
   const envId = uuidv4();
-  const maxOrder: any = db.prepare('SELECT MAX(sort_order) as m FROM environments WHERE project_id = ?').get(paramStr(req.params.id));
-  db.prepare(`INSERT INTO environments (id, project_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)`)
-    .run(envId, paramStr(req.params.id), name || 'New Environment', description || '', (maxOrder?.m || 0) + 1);
-  res.json(getFullProject(paramStr(req.params.id)));
+  const maxOrder = await maxVal('environments', 'sort_order', { project_id: paramStr(req.params.id) });
+  await insertRow('environments', {
+    id: envId,
+    project_id: paramStr(req.params.id),
+    name: name || 'New Environment',
+    description: description || '',
+    sort_order: maxOrder + 1,
+  });
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
-router.put('/:id/environments/:envId', (req, res) => {
-  const { name, description } = req.body;
-  if (name !== undefined) db.prepare('UPDATE environments SET name = ? WHERE id = ?').run(name, paramStr(req.params.envId));
-  if (description !== undefined) db.prepare('UPDATE environments SET description = ? WHERE id = ?').run(description, paramStr(req.params.envId));
-  res.json(getFullProject(paramStr(req.params.id)));
+router.put('/:id/environments/:envId', async (req, res) => {
+  const { name, description, generationPrompt } = req.body;
+  const envId = paramStr(req.params.envId);
+  const projectId = paramStr(req.params.id);
+  const updates: Record<string, any> = {};
+  if (name !== undefined) updates.name = name;
+  if (description !== undefined) updates.description = description;
+  if (generationPrompt !== undefined) { updates.generation_prompt = generationPrompt || null; updates.prompts_stale = false; }
+  if (Object.keys(updates).length > 0) {
+    await updateRows('environments', { id: envId }, updates);
+    // Env description change → shots referencing this environment are stale
+    if (description !== undefined) {
+      const scenes = await selectAll('scenes', { project_id: projectId });
+      for (const s of scenes) {
+        const shots = await selectAll('shots', { scene_id: s.id });
+        for (const shot of shots) {
+          if (shot.environment_id === envId) {
+            await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+          }
+        }
+      }
+    }
+  }
+  res.json(await getFullProject(projectId));
 });
 
-router.delete('/:id/environments/:envId', (req, res) => {
-  db.prepare('DELETE FROM environments WHERE id = ?').run(paramStr(req.params.envId));
-  res.json(getFullProject(paramStr(req.params.id)));
+router.delete('/:id/environments/:envId', async (req, res) => {
+  await deleteRows('environments', { id: paramStr(req.params.envId) });
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
 // ─── X-Ray: AI Call Log ──────────────────────────────────────────────
 
-router.get('/:id/xray', (req, res) => {
-  const project: any = db.prepare('SELECT id FROM projects WHERE id = ?').get(paramStr(req.params.id));
+router.get('/:id/xray', async (req, res) => {
+  const project: any = await selectOne('projects', { id: paramStr(req.params.id) });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const calls = getCalls(paramStr(req.params.id));
-  const context = buildContextChain(paramStr(req.params.id));
+  const calls = await getCalls(paramStr(req.params.id));
+  const context = await buildContextChain(paramStr(req.params.id));
 
   // Resolve output asset IDs → URLs for image/video thumbnails
-  const enriched = calls.map(call => {
-    const outputAssets = call.outputAssetIds.map(assetId => {
-      const asset: any = db.prepare('SELECT id, file_path, category FROM assets WHERE id = ?').get(assetId);
-      return asset ? { id: asset.id, url: `/storage/${asset.file_path}`, category: asset.category } : { id: assetId };
-    });
+  const enriched = await Promise.all(calls.map(async (call) => {
+    const outputAssets = await Promise.all(call.outputAssetIds.map(async (assetId: string) => {
+      const asset: any = await selectOne('assets', { id: assetId });
+      return asset ? { id: asset.id, url: storageUrl(asset.file_path), category: asset.category } : { id: assetId };
+    }));
     return { ...call, outputAssets };
-  });
+  }));
 
   res.json({ calls: enriched, currentContext: context });
+});
+
+// ─── Scene Updates ──────────────────────────────────────────────────
+
+router.patch('/:id/scenes/:sceneId', async (req, res) => {
+  const { narrativeDescription } = req.body;
+  const sceneId = paramStr(req.params.sceneId);
+  const updates: Record<string, any> = {};
+  if (narrativeDescription !== undefined) updates.narrative_description = narrativeDescription;
+  if (Object.keys(updates).length > 0) {
+    await updateRows('scenes', { id: sceneId }, updates);
+    // Scene narrative change → shots in this scene are stale
+    if (narrativeDescription !== undefined) {
+      await updateRows('shots', { scene_id: sceneId }, { prompts_stale: true });
+    }
+  }
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
 // ─── Shot Updates ───────────────────────────────────────────────────
 
 // Clear the start frame on a shot — keeps the video (if any) intact.
 // Also unlocks the shot since a locked shot requires a start frame + video.
-router.post('/:id/shots/:shotId/clear-frame', (req, res) => {
+router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
-  db.prepare(`UPDATE shots SET image_asset_id = NULL, image_status = 'idle' WHERE id = ?`).run(shotId);
-  res.json(getFullProject(paramStr(req.params.id)));
+  await updateRows('shots', { id: shotId }, { image_asset_id: null, image_status: 'idle' });
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
-router.patch('/:id/shots/:shotId', (req, res) => {
-  const { visualPrompt, motionPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
+router.patch('/:id/shots/:shotId', async (req, res) => {
+  const { visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
+  const shotId = paramStr(req.params.shotId);
+
   // Manual edits to the prompt invalidate the auto-refresh chip — it meant
   // "this text was written by the vision rewrite", not "this text is current".
-  if (visualPrompt !== undefined) db.prepare('UPDATE shots SET visual_prompt = ?, refined_from_prev_frame = 0 WHERE id = ?').run(visualPrompt, req.params.shotId);
-  if (motionPrompt !== undefined) db.prepare('UPDATE shots SET motion_prompt = ?, refined_from_prev_frame = 0 WHERE id = ?').run(motionPrompt, req.params.shotId);
-  if (useNextAsEndFrame !== undefined) db.prepare('UPDATE shots SET use_next_as_end_frame = ? WHERE id = ?').run(useNextAsEndFrame ? 1 : 0, req.params.shotId);
-  if (userFeedback !== undefined) db.prepare('UPDATE shots SET user_feedback = ? WHERE id = ?').run(userFeedback || null, req.params.shotId);
-  if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
-    db.prepare('UPDATE shots SET continuity_from = ? WHERE id = ?').run(continuityFrom, req.params.shotId);
+  if (visualPrompt !== undefined) {
+    await updateRows('shots', { id: shotId }, { visual_prompt: visualPrompt, refined_from_prev_frame: 0 });
   }
-  res.json(getFullProject(paramStr(req.params.id)));
+  if (motionPrompt !== undefined) {
+    await updateRows('shots', { id: shotId }, { motion_prompt: motionPrompt, refined_from_prev_frame: 0 });
+  }
+  if (useNextAsEndFrame !== undefined) {
+    await updateRows('shots', { id: shotId }, { use_next_as_end_frame: useNextAsEndFrame ? 1 : 0 });
+  }
+  if (userFeedback !== undefined) {
+    await updateRows('shots', { id: shotId }, { user_feedback: userFeedback || null });
+  }
+  if (endVisualPrompt !== undefined) {
+    await updateRows('shots', { id: shotId }, { end_visual_prompt: endVisualPrompt || null });
+  }
+  if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
+    await updateRows('shots', { id: shotId }, { continuity_from: continuityFrom });
+  }
+  res.json(await getFullProject(paramStr(req.params.id)));
 });
 
 export { router as projectsRouter, getFullProject };

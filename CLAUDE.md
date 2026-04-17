@@ -16,10 +16,11 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 **Env vars required:**
 - `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
-- `FAL_KEY` — optional, only needed for Seedance 2.0 video gen
-- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for song catalog / queue
+- `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
+- `FAL_KEY` — deprecated, was for fal.ai Seedance. Now using Segmind instead
+- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `CORS_ORIGINS` — comma-separated in prod
-- **Vertex AI (for Veo)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the full service-account JSON as a single-line string). `server/index.ts` boot hook materializes that JSON to `/tmp/gcp-credentials.json` and sets `GOOGLE_APPLICATION_CREDENTIALS` so the `@google/genai` SDK auto-picks it up.
+- **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
 
@@ -28,9 +29,9 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 **Lahari Media Engine** — AI-powered music video production tool for devotional songs. Integrates with a shared Supabase song catalog (see `music_video_queue` table).
 
 - **Frontend**: React 19 + Vite (port 3002 dev). Tailwind via CDN.
-- **Backend**: Express 5 + SQLite via better-sqlite3 (port 3003 dev, 3001 in prod Docker).
-- **Storage**: Local `storage/{audio,images,videos}/` — persisted via Railway volume in prod.
-- **DB**: SQLite for Lahari's own state (projects, shots, assets). Supabase for the song catalog + music_video_queue.
+- **Backend**: Express 5 (port 3003 dev, 3001 in prod Docker). Stateless — no local storage or SQLite.
+- **Storage**: Supabase Storage bucket `lahari-assets`. Upload/download via `server/storage.ts`.
+- **DB**: Supabase Postgres (`lahari_*` prefixed tables) via `server/database.ts` async adapter. Song catalog + music_video_queue in same Supabase project.
 
 ### Pipeline (4 steps)
 
@@ -57,10 +58,12 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 | Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
 | Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
 | All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
-| Video (default) | Fast → `veo-3.0-fast-generate-001`; Std → `veo-3.0-generate-001` | veo.ts | **Vertex AI** (service-account) |
-| Video (optional) | Seedance 2.0 Fast / Standard via fal.ai | fal.ts | fal.ai API |
+| Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
+| Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
-**Veo via Vertex AI**: `veo.ts` auto-detects the transport via `isVertex()` which checks `GCP_PROJECT_ID`. When present, constructs a Vertex client (`new GoogleGenAI({ vertexai: true, project, location })`) and passes `generateAudio: false` (Vertex-only param — Developer API SDK throws on it). `VEO_MODELS` carries both `id` (Developer API) and `vertexId` (Vertex GA IDs); the correct one is picked per transport. Video download path also branches: Developer API uses `?key=`, Vertex mints a bearer token via `google-auth-library`.
+**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs. Seedance models accept `first_frame_url` + `last_frame_url` + up to 9 `reference_images`. All models support end-frame conditioning and ref images. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
+
+**Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
 
 ### Video workflow (redesigned)
 
@@ -83,12 +86,30 @@ Numbered inline images sent to Gemini 3 Pro Image:
 
 Priority: character identity > continuity > environment > style. Explicit note: when style text conflicts with style image, follow the image.
 
+### Generation prompt pattern (universal)
+
+Every generatable entity (characters, environments, shots, end frames) follows the same two-mode edit pattern:
+
+1. **Direct edit** — artist edits the `generation_prompt` field directly. What you see is what gets sent.
+2. **Refine** — artist writes feedback, Claude (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
+
+`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt.
+
+### Staleness detection
+
+When upstream fields change (style DNA, concept, scene narrative, cast/env description), downstream `prompts_stale` flags are set. UI shows amber "Outdated" indicator. No auto-overwrite — artist decides when to rewrite. Cleared on regenerate/refine. Only fires when going back — linear flow never triggers.
+
+### Pipeline anatomy
+
+Full step-by-step trace of every prompt, every dependency, every control point: **[`docs/pipeline-anatomy.md`](docs/pipeline-anatomy.md)**. Living doc — update as pipeline evolves.
+
 ### Database
 
-SQLite tables (see `server/db.ts`):
-- `projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage), `last_*_prompt` cached prompts, `style_exploration`
-- `scenes`, `shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`)
-- `cast_members`, `environments`, `assets`, `chat_messages`, `ai_calls`
+Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
+- `lahari_projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
+- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
+- `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
+- All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
 ### Fork system
 
@@ -131,7 +152,8 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Studio:**
 - `POST /api/projects/:id/shots/:shotId/generate-image`
 - `POST /api/projects/:id/shots/:shotId/generate-video` (accepts `promptOverride`)
-- `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback)
+- `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback, accepts multipart with referenceImage)
+- `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same pattern for end frame)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
 **Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
@@ -163,11 +185,11 @@ The `index.html` `<style>` block has a commented spec. Short version:
 
 ## Video models
 
-Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/veo.ts` (`VEO_MODELS`) and `server/services/fal.ts` (`FAL_VIDEO_MODELS`). Four keys:
-- `veo-3.1-fast` — 8s fixed, cheapest
-- `veo-3.1` — 4s/6s/8s variable, higher quality
-- `seedance-2.0-fast` — 5s/10s via fal.ai
-- `seedance-2.0` — 5s/10s via fal.ai, higher quality
+Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/segmind.ts` (`SEGMIND_MODELS`). All four models route through Segmind:
+- `veo-3.1-fast` — 8s fixed, $0.10/s, supports last frame
+- `veo-3.1` — 4s/6s/8s, $0.20/s, supports last frame
+- `seedance-2.0-fast` — 5s/10s, $0.146/s, supports last frame + up to 9 ref images
+- `seedance-2.0` — 5s/10s, $0.182/s, supports last frame + up to 9 ref images
 
 Pacing buttons in the Script phase are derived from the selected model's `durations`.
 

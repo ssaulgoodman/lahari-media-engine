@@ -69,7 +69,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         if (shots.length === 0) throw new Error("No videos generated yet.");
 
         setStatusText("Writing assets to memory...");
-        await ffmpeg.writeFile('audio.mp3', await fetchFile(`/storage/${project.audioPath}`));
+        await ffmpeg.writeFile('audio.mp3', await fetchFile(project.audioPath!));
 
         let fileList = '';
         for (let i = 0; i < shots.length; i++) {

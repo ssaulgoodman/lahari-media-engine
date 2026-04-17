@@ -1,0 +1,161 @@
+/**
+ * Segmind video generation service — unified provider for all video models.
+ * Simple REST API: POST JSON, get video binary back. No polling.
+ *
+ * Models: Veo 3.1 Fast, Veo 3.1, Seedance 2.0 Fast, Seedance 2.0
+ */
+import { saveBuffer, storageUrl } from '../storage.js';
+
+const SEGMIND_BASE = 'https://api.segmind.com/v1';
+
+const getApiKey = () => {
+  const key = process.env.SEGMIND_API_KEY;
+  if (!key) throw new Error('SEGMIND_API_KEY not set in .env');
+  return key;
+};
+
+// ─── Model registry ──────────────────────────────────────────────
+
+export const SEGMIND_MODELS = {
+  'veo-3.1-fast': {
+    endpoint: `${SEGMIND_BASE}/veo-3.1-fast`,
+    label: 'Veo 3.1 Fast',
+    family: 'veo',
+    durations: [8],
+    costPerSec: 0.10,
+    supportsLastFrame: true,
+    supportsRefs: true, // reference_images[] for consistency
+  },
+  'veo-3.1': {
+    endpoint: `${SEGMIND_BASE}/veo-3.1`,
+    label: 'Veo 3.1',
+    family: 'veo',
+    durations: [4, 6, 8],
+    costPerSec: 0.20,
+    supportsLastFrame: true,
+    supportsRefs: true, // reference_images[] for consistency
+  },
+  'seedance-2.0-fast': {
+    endpoint: `${SEGMIND_BASE}/seedance-2.0-fast`,
+    label: 'Seedance 2.0 Fast',
+    family: 'seedance',
+    durations: [5, 10],
+    costPerSec: 0.146,
+    supportsLastFrame: true,
+    supportsRefs: true, // up to 9 reference images
+  },
+  'seedance-2.0': {
+    endpoint: `${SEGMIND_BASE}/seedance-2.0`,
+    label: 'Seedance 2.0',
+    family: 'seedance',
+    durations: [5, 10],
+    costPerSec: 0.182,
+    supportsLastFrame: true,
+    supportsRefs: true,
+  },
+} as const;
+
+export type SegmindModelKey = keyof typeof SEGMIND_MODELS;
+
+// ─── Generate Video ──────────────────────────────────────────────
+
+export const generateSegmindVideo = async (
+  startImagePath: string,
+  motionPrompt: string,
+  opts?: {
+    endImagePath?: string;
+    referenceImagePaths?: string[];
+    resolution?: '720p' | '1080p';
+    aspectRatio?: '16:9' | '9:16';
+    durationSec?: number;
+    modelKey?: SegmindModelKey;
+  }
+): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
+  const modelKey: SegmindModelKey = opts?.modelKey || 'veo-3.1-fast';
+  const model = SEGMIND_MODELS[modelKey];
+  if (!model) throw new Error(`Unknown Segmind model: ${modelKey}`);
+
+  // Clamp duration to supported values
+  const durations = [...model.durations] as number[];
+  const requested = opts?.durationSec ?? durations[0];
+  const durationSec = durations.reduce<number>(
+    (best, d) => Math.abs(d - requested) < Math.abs(best - requested) ? d : best,
+    durations[0]
+  );
+
+  // Convert storage paths to public Supabase URLs
+  const startUrl = storageUrl(startImagePath);
+  const endUrl = opts?.endImagePath ? storageUrl(opts.endImagePath) : undefined;
+  const refUrls = (opts?.referenceImagePaths || []).map(p => storageUrl(p));
+
+  // Build request body — different param names for Veo vs Seedance
+  let body: Record<string, any>;
+
+  if (model.family === 'veo') {
+    body = {
+      prompt: motionPrompt || 'Cinematic camera movement',
+      image: startUrl,
+      duration: durationSec,
+      resolution: opts?.resolution || '720p',
+      aspect_ratio: opts?.aspectRatio || '16:9',
+      generate_audio: false,
+      seed: Math.floor(Math.random() * 1000000),
+    };
+    if (endUrl && model.supportsLastFrame) {
+      body.last_frame = endUrl;
+    }
+    if (refUrls.length && model.supportsRefs) {
+      body.reference_images = refUrls;
+    }
+  } else {
+    // Seedance family
+    body = {
+      prompt: motionPrompt || 'Cinematic camera movement',
+      first_frame_url: startUrl,
+      duration: durationSec,
+      resolution: opts?.resolution || '720p',
+      aspect_ratio: opts?.aspectRatio || '16:9',
+      generate_audio: false,
+      seed: Math.floor(Math.random() * 1000000),
+    };
+    if (endUrl && model.supportsLastFrame) {
+      body.last_frame_url = endUrl;
+    }
+    if (refUrls.length && model.supportsRefs) {
+      body.reference_images = refUrls.slice(0, 9);
+    }
+  }
+
+  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, refs=${refUrls.length}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+
+  const res = await fetch(model.endpoint, {
+    method: 'POST',
+    headers: {
+      'x-api-key': getApiKey(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.error(`[segmind] ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
+    throw new Error(`Segmind ${modelKey} failed (${res.status}): ${errText.slice(0, 200)}`);
+  }
+
+  // Segmind returns video binary directly
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length < 1000) {
+    // Suspiciously small — might be an error JSON
+    const text = buffer.toString('utf-8');
+    if (text.startsWith('{')) {
+      console.error(`[segmind] Got JSON instead of video: ${text.slice(0, 500)}`);
+      throw new Error(`Segmind ${modelKey} returned error: ${text.slice(0, 200)}`);
+    }
+  }
+
+  const videoPath = await saveBuffer(buffer, 'videos', 'mp4');
+  console.log(`[segmind] Video saved: ${videoPath} (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`);
+
+  return { videoPath, modelId: modelKey, durationSec };
+};

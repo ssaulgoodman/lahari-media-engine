@@ -29,7 +29,7 @@ interface Props {
   onGenerateImage: (sceneId: string, shotId: string) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string) => void;
   onLockShot: (sceneId: string, shotId: string) => void;
-  onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void;
+  onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void;
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
@@ -40,6 +40,10 @@ interface Props {
   onClearShotFrame?: (shotId: string) => void;
   onRevertVideo?: (shotId: string, assetId: string) => void | Promise<void>;
   onUseAsPrevEnd?: (shotId: string) => void | Promise<void>;
+  onGenerateEndFrame?: (shotId: string) => void | Promise<void>;
+  onClearEndFrame?: (shotId: string) => void | Promise<void>;
+  onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
   /** Shot IDs waiting for a bulk-frame worker (ordered — position = Nth in line). */
   frameQueue?: string[];
   /** Shot IDs waiting for a bulk-video worker (ordered). */
@@ -47,7 +51,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, frameQueue, videoQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onUploadEndFrame, onRefineEndFramePrompt, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
@@ -62,6 +66,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
   const [historyVersions, setHistoryVersions] = useState<VideoVersion[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState<string | null>(null);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const endFrameFileRef = React.useRef<HTMLInputElement>(null);
+  const [endFrameUploadTarget, setEndFrameUploadTarget] = useState<string | null>(null);
+  // Reference image attached to refine feedback (per shot)
+  const [refineImage, setRefineImage] = useState<Record<string, File>>({});
 
   const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
 
@@ -552,12 +562,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         {shot.locked ? (
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
                           </svg>
                         ) : (
                           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
                           </svg>
                         )}
                       </button>
@@ -572,7 +582,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       <div className="bg-black">
                         <ShotVideoPreview
                           videoUrl={shot.videoUrl}
-                          audioUrl={project?.audioPath ? `/storage/${project.audioPath}` : undefined}
+                          audioUrl={project?.audioPath ? project.audioPath : undefined}
                           globalStartSec={
                             parseTimeToSec(activeScene.startTime) +
                             activeScene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)
@@ -613,33 +623,199 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           )}
                         </div>
                         <div className="w-px bg-white/[0.06] flex-shrink-0" />
-                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/last">
-                          <div className="absolute top-2 left-2 z-20">
-                            <span className="text-[10px] bg-black/70 backdrop-blur text-emerald-300/80 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">End</span>
-                          </div>
-                          <img
-                            src={shot.extractedLastFrameUrl || shot.endImageUrl!}
-                            alt={`Shot ${shotIdx + 1} last frame`}
-                            onClick={() => setModalImage((shot.extractedLastFrameUrl || shot.endImageUrl)!)}
-                            className={`max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
-                          />
+                        <div className="flex-1 relative min-h-[120px] flex flex-col items-center justify-center group/last">
+                          {/* Both target end frame and extracted actual exist — stack them */}
+                          {shot.endImageUrl && shot.extractedLastFrameUrl ? (
+                            <div className="flex flex-col gap-1 w-full">
+                              <div className="relative flex items-center justify-center group/target">
+                                <div className="absolute top-2 left-2 z-20">
+                                  <span className="text-[10px] bg-black/70 backdrop-blur text-amber-300/80 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Target</span>
+                                </div>
+                                {!shot.locked && onClearEndFrame && (
+                                  <button
+                                    onClick={() => onClearEndFrame(shot.id)}
+                                    className="absolute top-2 right-2 z-20 opacity-0 group-hover/target:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                                    title="Remove target end frame"
+                                    aria-label="Remove target end frame"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                )}
+                                <img src={shot.endImageUrl} alt={`Shot ${shotIdx + 1} target end frame`} onClick={() => setModalImage(shot.endImageUrl!)} className="max-w-full max-h-[160px] h-auto w-auto cursor-zoom-in" />
+                              </div>
+                              <div className="relative flex items-center justify-center">
+                                <div className="absolute top-2 left-2 z-20">
+                                  <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Actual</span>
+                                </div>
+                                <img src={shot.extractedLastFrameUrl} alt={`Shot ${shotIdx + 1} actual last frame`} onClick={() => setModalImage(shot.extractedLastFrameUrl!)} className="max-w-full max-h-[160px] h-auto w-auto cursor-zoom-in" />
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="absolute top-2 left-2 z-20">
+                                <span className={`text-[10px] bg-black/70 backdrop-blur px-1.5 py-0.5 rounded uppercase tracking-wider font-mono ${shot.extractedLastFrameUrl ? 'text-zinc-300' : 'text-amber-300/80'}`}>
+                                  {shot.extractedLastFrameUrl ? 'Actual' : 'Target'}
+                                </span>
+                              </div>
+                              {!shot.extractedLastFrameUrl && shot.endImageUrl && !shot.locked && onClearEndFrame && (
+                                <button
+                                  onClick={() => onClearEndFrame(shot.id)}
+                                  className="absolute top-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                                  title="Remove target end frame"
+                                  aria-label="Remove target end frame"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                              )}
+                              <img
+                                src={shot.extractedLastFrameUrl || shot.endImageUrl!}
+                                alt={`Shot ${shotIdx + 1} last frame`}
+                                onClick={() => setModalImage((shot.extractedLastFrameUrl || shot.endImageUrl)!)}
+                                className={`max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
+                              />
+                            </>
+                          )}
                           {/* Action: use this frame as next shot's start */}
                           {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && onUsePrevLastFrame && (
                             <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 transition-opacity">
                               <button
                                 onClick={() => {
-                                  // Silent replace — easy to regen the frame if user regrets it.
                                   onUsePrevLastFrame(activeScene.shots[shotIdx + 1].id);
                                 }}
                                 className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
                                 title="Copy this frame directly as the next shot's start frame — skips image generation for seamless continuity"
                               >
-                                → Use for next shot
+                                Use for next shot
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
+                    ) : modelSupportsLastFrame && shot.imageUrl ? (
+                      // Pre-video with lastFrame support: side-by-side start + end frame slot
+                      <><div className="flex bg-[#141418]">
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/start">
+                          <div className="absolute top-2 left-2 z-20">
+                            <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span>
+                          </div>
+                          {!shot.locked && onClearShotFrame && (
+                            <button
+                              onClick={() => onClearShotFrame(shot.id)}
+                              className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                              title="Remove this start frame"
+                              aria-label="Remove start frame"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          )}
+                          {shotIdx > 0 && !activeScene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                            <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => onUseAsPrevEnd(shot.id)}
+                                className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
+                                title="Use this start frame as the previous shot's end keyframe."
+                              >
+                                Use as prev end
+                              </button>
+                            </div>
+                          )}
+                          <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
+                        </div>
+                        <div className="w-px bg-white/[0.06] flex-shrink-0" />
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/end">
+                          {shot.endImageUrl ? (
+                            <>
+                              <div className="absolute top-2 left-2 z-20">
+                                <span className="text-[10px] bg-black/70 backdrop-blur text-amber-300/80 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Target</span>
+                              </div>
+                              {!shot.locked && onClearEndFrame && (
+                                <button
+                                  onClick={() => onClearEndFrame(shot.id)}
+                                  className="absolute top-2 right-2 z-20 opacity-0 group-hover/end:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                                  title="Remove target end frame"
+                                  aria-label="Remove target end frame"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                              )}
+                              <img src={shot.endImageUrl} alt={`Shot ${shotIdx + 1} target end frame`} onClick={() => setModalImage(shot.endImageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in opacity-70" />
+                            </>
+                          ) : (
+                            <div className="w-full min-h-[120px] flex flex-col items-center justify-center gap-3">
+                              <span className="text-xs text-zinc-400">No end frame -- optional</span>
+                              <div className="flex items-center gap-2">
+                                {onGenerateEndFrame && (
+                                  <button
+                                    onClick={() => onGenerateEndFrame(shot.id)}
+                                    className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors"
+                                  >
+                                    Generate
+                                  </button>
+                                )}
+                                {onUploadEndFrame && (
+                                  <button
+                                    onClick={() => {
+                                      setEndFrameUploadTarget(shot.id);
+                                      endFrameFileRef.current?.click();
+                                    }}
+                                    className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors"
+                                  >
+                                    Upload
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* End frame prompt + refine section */}
+                      {!shot.locked && (shot.endImageUrl || shot.endVisualPrompt) && (
+                        <div className="px-4 py-3 border-t border-white/[0.04] space-y-2">
+                          <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">End frame prompt</div>
+                          <textarea
+                            value={shot.endVisualPrompt || shot.visualPrompt || ''}
+                            onChange={e => onUpdateShot(activeScene.id, shot.id, { endVisualPrompt: e.target.value } as any)}
+                            placeholder="Describe what this shot should end on…"
+                            className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
+                            style={{ height: 'auto', overflow: 'hidden' }}
+                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                          />
+                          <div className="flex items-center gap-2">
+                            {onGenerateEndFrame && (
+                              <button
+                                onClick={() => onGenerateEndFrame(shot.id)}
+                                className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
+                              >
+                                {shot.endImageUrl ? 'Regenerate end frame' : 'Generate end frame'}
+                              </button>
+                            )}
+                          </div>
+                          {/* Refine section — only when end frame exists */}
+                          {shot.endImageUrl && (
+                            <div className="pt-2 border-t border-white/[0.04] space-y-2">
+                              <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">Refine end frame</div>
+                              <div className="flex items-start gap-2">
+                                <textarea
+                                  id={`refine-end-${shot.id}`}
+                                  placeholder="What's wrong with this end frame? @mention characters…"
+                                  className="flex-1 surface-inset rounded-md p-2 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2rem]"
+                                />
+                                <button
+                                  onClick={() => {
+                                    const input = document.getElementById(`refine-end-${shot.id}`) as HTMLTextAreaElement;
+                                    if (input?.value.trim() && project) {
+                                      onRefineEndFramePrompt?.(shot.id, input.value);
+                                      input.value = '';
+                                    }
+                                  }}
+                                  className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0"
+                                >Refine</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      </>
                     ) : (
                       // Pre-video: just show the start frame full width (no confusing empty slot)
                       <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/start">
@@ -665,7 +841,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
                                   title="Use this start frame as the previous shot's end keyframe. Previous shot's video becomes stale — regen to land on this frame."
                                 >
-                                  ← Use as prev shot's end
+                                  Use as prev shot's end
                                 </button>
                               </div>
                             )}
@@ -673,7 +849,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           </>
                         ) : (
                           <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
-                            <span className="text-xs">No start frame — click &quot;Frame&quot; to generate</span>
+                            <span className="text-xs">No start frame -- click "Frame" to generate</span>
                           </div>
                         )}
                       </div>
@@ -695,10 +871,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                     )}
 
-                    {/* Error */}
-                    {isError && !isGenerating && (
-                      <div className="absolute bottom-2 left-2 right-2 bg-red-500/10 border border-red-500/20 rounded-md px-2 py-1 z-20">
-                        <p className="text-xs text-red-300">Generation failed</p>
+                    {/* Error — only show if there's no successful content already */}
+                    {isError && !isGenerating && !shot.videoUrl && (
+                      <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] flex items-center gap-2">
+                        <span className="text-xs text-red-300">Generation failed — click regen to retry</span>
                       </div>
                     )}
 
@@ -799,7 +975,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   {/* Prompts — full width below media */}
                   <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
 
-                    {/* Prompts — toggle between Image / Motion / Compiled */}
+                    {/* Prompts — toggle between Frame prompt / Motion prompt / Video prompt / Full chain */}
                     {(shot.locked || actionable) && (() => {
                       const activeTab = promptTab[shot.id] || 'image';
 
@@ -819,12 +995,14 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       }
                       if (shot.userFeedback && shot.imageUrl) compiledRefs.push({ label: 'Failed attempt', url: shot.imageUrl });
 
-                      const compiledText = [
-                        `Scene: ${shot.visualPrompt}`,
-                        `\nStyle: ${project?.styleDescription || '(none)'}`,
-                        shot.continuityFrom === 'prev_shot' ? '\nContinue visual flow from previous shot.' : '',
-                        shot.userFeedback ? `\nDirector note: ${shot.userFeedback}` : '',
-                      ].filter(Boolean).join('\n');
+                      // Mirror the exact prompt that generateShotStartFrame builds (server/services/imagen.ts)
+                      const compiledLines = [`Scene: ${shot.visualPrompt}`, '', `Style: ${project?.styleDescription || '(none)'}`, '', `Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${shot.continuityFrom === 'prev_shot' ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference image.`];
+                      if (shot.continuityFrom === 'prev_shot') {
+                        compiledLines.push('', 'Previous shot ended with: [auto-described from extracted frame]', 'This shot should begin from that exact continuity state.');
+                      }
+                      if (shot.userFeedback) compiledLines.push('', `Director note: ${shot.userFeedback}`);
+                      compiledLines.push('', 'Single cinematic frame. No text, no watermark.', 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.');
+                      const compiledText = compiledLines.join('\n');
 
                       // Mirror of the Veo prompt builder in generate.ts
                       const concept = project?.lockedConcept;
@@ -850,20 +1028,20 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           <div className="flex items-center gap-4">
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'image' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Image</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Frame prompt</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'motion' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Motion</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Motion prompt</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'video' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Video</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Video prompt</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'compiled' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-400'}`}
-                            >Compiled</button>
+                              className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Full chain</button>
                           </div>
 
                           {/* Reference chips — informational: these refs are attached to this call */}
@@ -884,11 +1062,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   {allRefs.map((ref, i) => (
                                     <div
                                       key={i}
-                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02]"
-                                      title={`${ref.label} — sent as a reference image to the model`}
+                                      className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
+                                      onClick={() => ref.url && setModalImage(ref.url)}
                                     >
                                       {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover" alt="" />}
                                       <span>{ref.label}</span>
+                                      {ref.url && (
+                                        <div className="hidden group-hover/ref:block fixed z-[200] pointer-events-none" style={{ transform: 'translate(-10%, -105%)' }}>
+                                          <img src={ref.url} className="w-44 h-44 object-cover rounded-lg shadow-xl border border-white/[0.1]" alt={ref.label} />
+                                          <div className="text-[10px] text-zinc-300 mt-1 text-center font-medium">{ref.label}</div>
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -898,9 +1082,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                           {activeTab === 'video' ? (
                             <div className="space-y-3">
-                              <div className="text-sm text-zinc-300">
-                                This is the full prompt sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame. Edit to override.
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame as keyframe
                               </div>
+                              <div className="text-[11px] text-zinc-400">Edit below to override the auto-generated prompt</div>
                               <textarea
                                 value={videoOverride[shot.id] ?? autoVeoPrompt}
                                 onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
@@ -915,7 +1100,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   disabled={!hasStartFrame || isGenerating}
                                   className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
                                 >
-                                  Regenerate with this custom prompt
+                                  Regenerate with this prompt
                                 </button>
                                 {videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
                                   <button
@@ -928,21 +1113,90 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               </div>
                             </div>
                           ) : activeTab === 'compiled' ? (
-                            <div className="space-y-3">
-                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
+                            <div className="space-y-4">
+                              {/* Inputs section */}
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Inputs &rarr; Gemini 3 Pro Image
+                              </div>
+
+                              {/* Reference images */}
                               {compiledRefs.length > 0 && (
-                                <div className="flex gap-2 flex-wrap">
+                                <div className="flex gap-2.5 flex-wrap">
                                   {compiledRefs.map((ref, i) => (
-                                    <div key={i} className="relative">
+                                    <div key={i} className="relative group/ref">
                                       {ref.url ? (
-                                        <img src={ref.url} className="w-14 h-14 object-cover rounded-md border border-white/[0.06]" alt={ref.label} />
+                                        <img
+                                          src={ref.url}
+                                          className="w-16 h-16 object-cover rounded-md border border-white/[0.06] cursor-zoom-in"
+                                          alt={ref.label}
+                                          onClick={() => ref.url && setModalImage(ref.url)}
+                                        />
                                       ) : (
-                                        <div className="w-14 h-14 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[11px] text-zinc-400">?</div>
+                                        <div className="w-16 h-16 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[11px] text-zinc-400">?</div>
                                       )}
-                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
+                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[10px] text-zinc-300 px-1 py-0.5 rounded-b-md truncate text-center font-mono">{ref.label}</div>
                                     </div>
                                   ))}
                                 </div>
+                              )}
+
+                              {/* Text prompt */}
+                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
+
+                              {/* Divider */}
+                              <div className="h-px bg-white/[0.06]" />
+
+                              {/* Output section */}
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Output &rarr; Start frame
+                              </div>
+                              {shot.imageUrl ? (
+                                <img
+                                  src={shot.imageUrl}
+                                  alt={`Shot ${shotIdx + 1} generated start frame`}
+                                  onClick={() => setModalImage(shot.imageUrl!)}
+                                  className="max-h-48 rounded-md border border-white/[0.06] cursor-zoom-in"
+                                />
+                              ) : (
+                                <div className="text-xs text-zinc-400">Not generated yet</div>
+                              )}
+
+                              {/* Video generation section */}
+                              <div className="h-px bg-white/[0.06] mt-2" />
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Start frame + prompt &rarr; {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} &rarr; Video
+                              </div>
+
+                              {/* Video refs (Seedance gets ref images, Veo gets them described in prompt) */}
+                              {(() => {
+                                const videoRefs: { label: string; url?: string }[] = [];
+                                if (shot.imageUrl) videoRefs.push({ label: 'Start keyframe', url: shot.imageUrl });
+                                if (shot.endImageUrl) videoRefs.push({ label: 'End keyframe', url: shot.endImageUrl });
+                                shotCast.forEach(c => { if (c.referenceImageUrl) videoRefs.push({ label: `${c.name} ref`, url: c.referenceImageUrl }); });
+                                if (shotEnv?.referenceImageUrl) videoRefs.push({ label: `${shotEnv.name} ref`, url: shotEnv.referenceImageUrl });
+                                return videoRefs.length > 0 ? (
+                                  <div className="flex gap-2 flex-wrap">
+                                    {videoRefs.map((ref, i) => (
+                                      <div key={i} className="relative group/ref">
+                                        {ref.url ? (
+                                          <img src={ref.url} className="w-12 h-12 object-cover rounded-md border border-white/[0.06] cursor-zoom-in" alt={ref.label} onClick={() => ref.url && setModalImage(ref.url)} />
+                                        ) : (
+                                          <div className="w-12 h-12 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[10px] text-zinc-400">?</div>
+                                        )}
+                                        <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[9px] text-zinc-300 px-0.5 py-px rounded-b-md truncate text-center">{ref.label}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
+
+                              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{autoVeoPrompt}</pre>
+
+                              {shot.videoUrl && (
+                                <>
+                                  <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Output &rarr; Video</div>
+                                  <video src={shot.videoUrl} className="max-h-48 rounded-md border border-white/[0.06]" controls muted />
+                                </>
                               )}
                             </div>
                           ) : shot.locked ? (
@@ -953,36 +1207,175 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                 id={activeTab === 'image' ? `prompt-${shot.id}` : undefined}
                                 value={promptText}
                                 onChange={(e) => onUpdateShot(activeScene.id, shot.id, activeTab === 'image' ? { visualPrompt: e.target.value } : { motionPrompt: e.target.value })}
-                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-28"
+                                className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[3rem]"
+                                style={{ height: 'auto', overflow: 'hidden' }}
+                                ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                               />
+                              {/* Direct regen — edit the prompt above, hit this button */}
+                              {activeTab === 'image' && (
+                                <div className="flex items-center gap-3 mt-2">
+                                  <button
+                                    onClick={() => onGenerateImage(activeScene.id, shot.id)}
+                                    disabled={isGenerating || (!actionable && !shot.locked)}
+                                    className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                                  >
+                                    {hasStartFrame ? 'Regenerate frame' : 'Generate frame'}
+                                  </button>
+                                  {hasStartFrame && <span className="text-[11px] text-zinc-400">with the prompt above + attached refs</span>}
+                                </div>
+                              )}
                               {hasStartFrame && (
-                                <div className="flex gap-2">
+                                <>
+                                <div className="h-px bg-white/[0.06] my-3" />
+                                <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">AI refine — describe what's wrong, Claude rewrites the prompt</div>
+                                <div className="relative flex gap-2">
                                   <AutoGrowTextarea
                                     id={`refine-${shot.id}`}
-                                    placeholder="What's wrong? e.g. 'face not crisp, lighting too flat'"
+                                    placeholder="What's wrong? e.g. 'face not crisp, @Arjun lighting too flat'"
                                     rows={1}
                                     className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                                    onChange={(e) => {
+                                      const val = (e.target as HTMLTextAreaElement).value;
+                                      const cursor = (e.target as HTMLTextAreaElement).selectionStart;
+                                      // Find the last @ before cursor
+                                      const before = val.slice(0, cursor);
+                                      const atIdx = before.lastIndexOf('@');
+                                      if (atIdx >= 0 && (atIdx === 0 || /\s/.test(before[atIdx - 1]))) {
+                                        const query = before.slice(atIdx + 1);
+                                        // Close if user typed a space after the query (completed mention)
+                                        if (/\s/.test(query)) {
+                                          setMentionOpen(null);
+                                          setMentionQuery('');
+                                        } else {
+                                          setMentionOpen(shot.id);
+                                          setMentionQuery(query.toLowerCase());
+                                        }
+                                      } else {
+                                        setMentionOpen(null);
+                                        setMentionQuery('');
+                                      }
+                                    }}
                                     onKeyDown={(e) => {
+                                      if (e.key === 'Escape' && mentionOpen === shot.id) {
+                                        setMentionOpen(null);
+                                        setMentionQuery('');
+                                        return;
+                                      }
                                       if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
                                         e.preventDefault();
+                                        setMentionOpen(null);
+                                        setMentionQuery('');
                                         onRefinePrompt(activeScene.id, shot.id, (e.target as HTMLTextAreaElement).value);
                                         (e.target as HTMLTextAreaElement).value = '';
                                       }
+                                    }}
+                                    onBlur={() => {
+                                      // Delay close so click on dropdown registers
+                                      setTimeout(() => { if (mentionOpen === shot.id) { setMentionOpen(null); setMentionQuery(''); } }, 200);
                                     }}
                                   />
                                   <button
                                     onClick={() => {
                                       const input = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
                                       if (input?.value.trim()) {
-                                        onRefinePrompt(activeScene.id, shot.id, input.value);
+                                        onRefinePrompt(activeScene.id, shot.id, input.value, refineImage[shot.id]);
                                         input.value = '';
+                                        setRefineImage(prev => { const n = { ...prev }; delete n[shot.id]; return n; });
                                       }
+                                      setMentionOpen(null);
+                                      setMentionQuery('');
                                     }}
                                     className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
-                                  >
-                                    Refine
+                                  >Refine{refineImage[shot.id] ? ' + img' : ''}
                                   </button>
+                                  <label
+                                    className={`px-2 py-2 ${refineImage[shot.id] ? 'bg-amber-500/20 text-amber-400' : 'bg-white/[0.06] text-zinc-400 hover:text-white'} hover:bg-white/[0.1] rounded-md transition-colors flex-shrink-0 self-start cursor-pointer`}
+                                    title={refineImage[shot.id] ? `Reference: ${refineImage[shot.id].name} (click to change)` : 'Upload a reference image with your feedback'}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) {
+                                        setRefineImage(prev => ({ ...prev, [shot.id]: file }));
+                                      }
+                                      e.target.value = '';
+                                    }} />
+                                  </label>
+                                  {refineImage[shot.id] && (
+                                    <button
+                                      onClick={() => setRefineImage(prev => { const n = { ...prev }; delete n[shot.id]; return n; })}
+                                      className="text-zinc-500 hover:text-zinc-300 text-[11px] self-start pt-2"
+                                      title="Remove attached image"
+                                    >&times;</button>
+                                  )}
+
+                                  {/* @mention picker dropdown */}
+                                  {mentionOpen === shot.id && (() => {
+                                    const castItems = (project?.cast || [])
+                                      .filter(c => !mentionQuery || c.name.toLowerCase().includes(mentionQuery))
+                                      .map(c => ({ name: c.name, thumb: c.referenceImageUrl, type: 'character' as const }));
+                                    const envItems = (project?.environments || [])
+                                      .filter(e => !mentionQuery || e.name.toLowerCase().includes(mentionQuery))
+                                      .map(e => ({ name: e.name, thumb: e.referenceImageUrl, type: 'environment' as const }));
+                                    const items = [...castItems, ...envItems];
+                                    if (items.length === 0) return null;
+                                    return (
+                                      <div
+                                        className="fixed z-[200] surface-raised rounded-lg shadow-xl border border-white/[0.08] max-h-[200px] overflow-y-auto w-64"
+                                        style={{
+                                          // Position above the textarea using its bounding rect
+                                          ...((() => {
+                                            const el = document.getElementById(`refine-${shot.id}`);
+                                            if (!el) return {};
+                                            const rect = el.getBoundingClientRect();
+                                            return { left: rect.left, bottom: window.innerHeight - rect.top + 4 };
+                                          })()),
+                                        }}
+                                      >
+                                        {items.map((item, i) => (
+                                          <button
+                                            key={`${item.type}-${i}`}
+                                            type="button"
+                                            className="w-full px-3 py-2 flex items-center gap-2 hover:bg-white/[0.04] cursor-pointer text-left"
+                                            onMouseDown={(e) => {
+                                              e.preventDefault(); // prevent blur
+                                              const textarea = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
+                                              if (!textarea) return;
+                                              const val = textarea.value;
+                                              const cursor = textarea.selectionStart;
+                                              const before = val.slice(0, cursor);
+                                              const atIdx = before.lastIndexOf('@');
+                                              if (atIdx < 0) return;
+                                              const newVal = val.slice(0, atIdx) + '@' + item.name + ' ' + val.slice(cursor);
+                                              // Use native setter to trigger React state if needed
+                                              const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+                                              if (nativeSetter) {
+                                                nativeSetter.call(textarea, newVal);
+                                                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                                              } else {
+                                                textarea.value = newVal;
+                                              }
+                                              const newCursor = atIdx + item.name.length + 2; // @ + name + space
+                                              textarea.setSelectionRange(newCursor, newCursor);
+                                              textarea.focus();
+                                              setMentionOpen(null);
+                                              setMentionQuery('');
+                                            }}
+                                          >
+                                            {item.thumb ? (
+                                              <img src={item.thumb} className="w-6 h-6 rounded object-cover flex-shrink-0" alt="" />
+                                            ) : (
+                                              <div className="w-6 h-6 rounded bg-white/[0.06] flex-shrink-0" />
+                                            )}
+                                            <span className="text-sm text-zinc-300 truncate">{item.name}</span>
+                                            <span className="text-[10px] uppercase text-zinc-400 ml-auto flex-shrink-0">{item.type === 'character' ? 'char' : 'env'}</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
+                              </>
                               )}
                             </>
                           )}
@@ -999,6 +1392,22 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
         );
       })}
       </div>
+
+      {/* Hidden file input for end frame upload */}
+      <input
+        ref={endFrameFileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && endFrameUploadTarget && onUploadEndFrame) {
+            onUploadEndFrame(endFrameUploadTarget, file);
+          }
+          setEndFrameUploadTarget(null);
+          if (endFrameFileRef.current) endFrameFileRef.current.value = '';
+        }}
+      />
 
       <AnimatePresence>
         {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}
