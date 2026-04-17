@@ -10,7 +10,6 @@ import { XRayPanel } from './components/XRayPanel';
 import { Dashboard } from './components/Dashboard';
 import { PromptsLibrary } from './components/PromptsLibrary';
 import { getVideoModel } from './constants/videoModels';
-import TimelineEditor from './components/timeline-editor/TimelineEditor';
 import * as api from './services/api';
 
 const PIPELINE_STEPS = [
@@ -1015,13 +1014,6 @@ const App: React.FC = () => {
 
   const isStudio = currentStep === AppStep.STUDIO;
 
-  // Standalone Timeline Editor preview page — not yet wired into the pipeline.
-  // Toggled via the header button; will later be embedded in StepRender.
-  const [showTimelineEditor, setShowTimelineEditor] = useState(false);
-  if (showTimelineEditor) {
-    return <TimelineEditor onExit={() => setShowTimelineEditor(false)} />;
-  }
-
   return (
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[999] focus:top-2 focus:left-2 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:rounded-md focus:text-sm">Skip to content</a>
@@ -1086,12 +1078,6 @@ const App: React.FC = () => {
               Prompts
             </button>
             {project && <div className="w-px h-4 bg-white/[0.06]" />}
-            <button
-              onClick={() => setShowTimelineEditor(true)}
-              className="text-[10px] text-zinc-600 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
-            >
-              Timeline
-            </button>
             {project && (
               <>
                 <span
