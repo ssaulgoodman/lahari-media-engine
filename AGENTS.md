@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for Claude Code when working in this repo.
+Guidance for Codex when working in this repo.
 
 ## Build & Run
 
@@ -17,7 +17,7 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 - `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
-- `FAL_KEY` — deprecated, removed. Was for fal.ai Seedance, now using Segmind
+- `FAL_KEY` — deprecated, was for fal.ai Seedance. Now using Segmind instead
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `CORS_ORIGINS` — comma-separated in prod
 - **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
@@ -37,15 +37,15 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 
 1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage, creates Lahari project.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
-   - Concept (Claude Opus, 3 options, regen with note)
-   - Script (Claude Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
-   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA)
+   - Concept (Codex Opus, 3 options, regen with note)
+   - Script (Codex Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
+   - Style (Codex brainstorm → Gemini 3 Pro Image visualize → Codex vision enrich DNA)
    - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
    - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
-   - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
+   - Auto-writes shot prompts (Codex Sonnet) with full context at the end.
 3. **Studio** (`Storyboard.tsx`) — Per-shot:
    - Generate start frame (Gemini 3 Pro Image with full ref chain)
-   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind, start keyframe only)
+   - Generate video (Veo 3.1 or Seedance 2.0 via fal.ai, start keyframe only)
    - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
    - Lock shot (requires start + video)
 4. **Render** (`StepRender.tsx`) — Client-side FFmpeg WASM stitches videos + audio.
@@ -55,8 +55,8 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Concept, style brainstorm | `Codex-opus-4-6` | Codex.ts | Anthropic API |
+| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `Codex-sonnet-4-6` | Codex.ts | Anthropic API |
 | All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
@@ -67,13 +67,13 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 
 ### Video workflow (redesigned)
 
-No end-frame prediction. Shot = start frame + motion prompt → video plays naturally → ffmpeg extracts real last frame. Next shot optionally uses that extracted frame as continuity reference (when Claude tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
+No end-frame prediction. Shot = start frame + motion prompt → video plays naturally → ffmpeg extracts real last frame. Next shot optionally uses that extracted frame as continuity reference (when Codex tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
 
 **Sequential gate:** Only shots with `continuity_from === 'prev_shot'` wait for previous shot's video. Hard-cut shots are independently actionable.
 
 **Bulk fan-out (throttled)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames** — a worker-pool that queues the rest. Sized for Vertex default ~60 RPM on Veo Fast and comfortable inside Tier-2 Gemini image RPM. Raise as Google auto-scales your quota.
 
-**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
+**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Codex Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
 ### Reference chain for shot start frame
 
@@ -91,7 +91,7 @@ Priority: character identity > continuity > environment > style. Explicit note: 
 Every generatable entity (characters, environments, shots, end frames) follows the same two-mode edit pattern:
 
 1. **Direct edit** — artist edits the `generation_prompt` field directly. What you see is what gets sent.
-2. **Refine** — artist writes feedback, Claude (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
+2. **Refine** — artist writes feedback, Codex (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
 
 `generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt.
 
@@ -127,7 +127,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 ### Launch Studio shortcut
 
-`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
+`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Codex batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
 
 **Supabase tables (read-only from Lahari):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
@@ -162,7 +162,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
 - `GET /api/admin/usage?hours=N` — aggregates `ai_calls` by model+stage with totals and error counts.
 - `GET /api/admin/errors?limit=N` — most recent error messages verbatim. Fastest way to tell what Veo (or anything) is rejecting.
-- Migration endpoint removed — was `POST /api/admin/migrate-to-supabase`, used once on 2026-04-16.
+- `POST /api/admin/restore` — multipart tarball upload → extract to `/app/storage`. Kept around for migrations.
 
 ### Queue completion writeback
 

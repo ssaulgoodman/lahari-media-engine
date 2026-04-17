@@ -16,7 +16,7 @@ const router = Router();
 
 // Helper: get route param as string (Express 5 returns string | string[])
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ─── Generate Style Options ─────────────────────────────────────────
 
@@ -1697,7 +1697,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
 // Clear end frame — removes the lastFrame constraint, video generates freely
 router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
-  await updateRows('shots', { id: shotId }, { end_image_asset_id: null, end_image_status: 'idle' });
+  await updateRows('shots', { id: shotId }, { end_image_asset_id: null, end_image_status: 'idle', video_status: 'stale' });
   res.json(await getFullProject(paramStr(req.params.id)));
 });
 
