@@ -17,14 +17,21 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 - `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
-- `FAL_KEY` — deprecated, removed. Was for fal.ai Seedance, now using Segmind
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
 - `CORS_ORIGINS` — comma-separated in prod
 - **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
 
-**Auth**: Supabase Auth with Google OAuth. Frontend uses anon key (`lib/supabase.ts`), backend verifies JWT via `requireAuth` middleware (`server/middleware/auth.ts`). All `/api/projects`, `/api/queue`, `/api/prompts` routes require auth. Admin routes use `x-admin-secret`. Health check is public. `user_id` column on `lahari_projects` — filtered on list, set on create/fork, checked via `verifyOwnership` + `router.param('id')`.
+**Auth**: Supabase Auth with Google OAuth (`contexts/AuthContext.tsx` + `lib/supabase.ts`). Backend verifies JWT via `requireAuth` middleware (`server/middleware/auth.ts`). All `/api/projects`, `/api/queue`, `/api/prompts` routes require auth. Admin routes use `x-admin-secret`. Health check is public.
+
+**Ownership scoping** (3 layers):
+1. **Project**: `router.param('id')` on both `projectsRouter` and `generateRouter` — verifies `user_id === req.userId`. No null-owner bypass.
+2. **URL child IDs**: `router.param('shotId')` (traces shot→scene→project), `router.param('sceneId')`, `router.param('memberId')`, `router.param('envId')` — all verify the child belongs to the URL project.
+3. **Body child IDs**: `requireCastMember()`, `requireEnvironment()`, `requireAsset()` helpers in generate.ts — validate body-supplied IDs against the URL project. Throw `ScopeError` with proper 403/404 status codes.
+
+Queue routes: `publish` checks `project.user_id`, `start` checks ownership before returning an existing linked project.
 
 **Optimistic UI**: Clear/remove/lock operations update React state instantly, then confirm with server. Reverts on failure. Covers: lock/unlock shot, clear start/end/extracted frames, delete cast, update project settings. AI generation calls are NOT optimistic (need server result).
 
@@ -110,7 +117,7 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
+- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
 - `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
@@ -208,4 +215,4 @@ Pacing buttons in the Script phase are derived from the selected model's `durati
 
 ## Deployment
 
-Railway, Dockerfile at repo root, persistent volume mounted at `/app/storage`. Push to deploy: `railway up --detach`. Project: `lahari-media-engine` (id `a2ef8e79-f9ae-4dce-80e0-114d80e0a575`).
+Railway, Dockerfile at repo root. Stateless — all storage via Supabase. Push to deploy: `railway up --detach`. Project: `lahari-media-engine` (id `a2ef8e79-f9ae-4dce-80e0-114d80e0a575`). Dockerfile hardcodes `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (anon key is public) for Vite build-time access. Uses `--legacy-peer-deps` for Remotion/designcombo peer dep conflict.
