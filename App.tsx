@@ -357,10 +357,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleUpdateConcept = async (updates: Record<string, any>) => {
     if (!project) return;
+    // Optimistic: merge updates into locked concept
+    const prevConcept = project.lockedConcept;
+    if (prevConcept) {
+      setProject(prev => prev ? { ...prev, lockedConcept: { ...prev.lockedConcept!, ...updates } } : prev);
+    }
     try {
-      const p = await api.updateConcept(project.id, updates);
-      setProject(p);
+      await api.updateConcept(project.id, updates);
     } catch (err: any) {
+      if (prevConcept) setProject(prev => prev ? { ...prev, lockedConcept: prevConcept } : prev);
       setError(`Concept update failed: ${err.message}`);
     }
   };
@@ -624,8 +629,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleClearEndFrame = async (shotId: string) => {
     if (!project) return;
     const shot = project.scenes.flatMap(s => s.shots).find(s => s.id === shotId);
-    const prev = { endImageUrl: shot?.endImageUrl, endImageStatus: shot?.endImageStatus };
-    updateShotOptimistic(shotId, { endImageUrl: undefined, endImageStatus: GenerationStatus.IDLE });
+    const prev = { endImageUrl: shot?.endImageUrl, endImageStatus: shot?.endImageStatus, videoStatus: shot?.videoStatus };
+    updateShotOptimistic(shotId, { endImageUrl: undefined, endImageStatus: GenerationStatus.IDLE, videoStatus: GenerationStatus.STALE });
     try {
       await api.clearEndFrame(project.id, shotId);
     } catch (err: any) {

@@ -468,8 +468,13 @@ export const AnalysisEditor: React.FC<Props> = ({
 
   const handleEnvLock = async (envId: string, assetId: string) => {
     try {
-      const p = await api.lockEnvironment(project.id, envId, assetId);
-      onSetProject?.(p);
+      await api.lockEnvironment(project.id, envId, assetId);
+      // Optimistic: set the reference on the environment
+      const lockedUrl = envLooks[envId]?.find(l => l.id === assetId)?.url;
+      onSetProject?.({
+        ...project,
+        environments: project.environments.map(e => e.id === envId ? { ...e, referenceImageUrl: lockedUrl || e.referenceImageUrl } : e),
+      });
       setEnvLooks(prev => ({ ...prev, [envId]: [] }));
     } catch (err: any) {
       console.error('Environment lock failed:', err);
@@ -2221,9 +2226,9 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                                 e.stopPropagation();
                                 const runDelete = async () => {
                                   try {
-                                    const updated = await api.deleteEnvironment(project.id, env.id);
-                                    if (activeEnvId === env.id) setActiveEnvId(updated.environments.find((x: any) => x.id !== env.id)?.id || null);
-                                    onSetProject?.(updated);
+                                    await api.deleteEnvironment(project.id, env.id);
+                                    if (activeEnvId === env.id) setActiveEnvId(project.environments.find(x => x.id !== env.id)?.id || null);
+                                    onSetProject?.({ ...project, environments: project.environments.filter(x => x.id !== env.id) });
                                   } catch {}
                                 };
                                 if (onConfirmDestructive) {
