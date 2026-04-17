@@ -2,8 +2,22 @@
  * Frontend API client — replaces direct Gemini SDK calls.
  * All AI work now happens on the server; this just makes HTTP calls.
  */
+import { supabase } from '../lib/supabase';
 
 const API = '/api';
+
+/** Get current auth token, or empty string if not signed in. */
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return {};
+  return { Authorization: `Bearer ${session.access_token}` };
+};
+
+/** Fetch with auth headers injected. */
+const authFetch = async (url: string, init?: RequestInit): Promise<Response> => {
+  const headers = { ...await getAuthHeaders(), ...(init?.headers || {}) };
+  return fetch(url, { ...init, headers });
+};
 
 const handleResponse = async (res: Response) => {
   if (!res.ok) {
@@ -21,12 +35,12 @@ export const isCancelled = (err: any) =>
 // ─── Projects ───────────────────────────────────────────────────────
 
 export const listProjects = async () => {
-  const res = await fetch(`${API}/projects`);
+  const res = await authFetch(`${API}/projects`);
   return handleResponse(res);
 };
 
 export const getProject = async (id: string) => {
-  const res = await fetch(`${API}/projects/${id}`);
+  const res = await authFetch(`${API}/projects/${id}`);
   return handleResponse(res);
 };
 
@@ -40,12 +54,12 @@ export const createProject = async (
   if (metadata?.context) form.append('context', metadata.context);
   if (metadata?.language) form.append('language', metadata.language);
 
-  const res = await fetch(`${API}/projects`, { method: 'POST', body: form });
+  const res = await authFetch(`${API}/projects`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 
 export const updateProject = async (id: string, updates: Record<string, any>) => {
-  const res = await fetch(`${API}/projects/${id}`, {
+  const res = await authFetch(`${API}/projects/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
@@ -54,12 +68,12 @@ export const updateProject = async (id: string, updates: Record<string, any>) =>
 };
 
 export const deleteProject = async (id: string) => {
-  const res = await fetch(`${API}/projects/${id}`, { method: 'DELETE' });
+  const res = await authFetch(`${API}/projects/${id}`, { method: 'DELETE' });
   return handleResponse(res);
 };
 
 export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${id}/analyze-audio`, {
+  const res = await authFetch(`${API}/projects/${id}/analyze-audio`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts || {}),
@@ -75,7 +89,7 @@ export const generateConcepts = async (
   opts?: { lyrics?: string; context?: string; language?: string; userNote?: string; directorBrief?: string },
   signal?: AbortSignal
 ) => {
-  const res = await fetch(`${API}/projects/${projectId}/generate-concepts`, {
+  const res = await authFetch(`${API}/projects/${projectId}/generate-concepts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(opts || {}),
@@ -85,7 +99,7 @@ export const generateConcepts = async (
 };
 
 export const lockConcept = async (projectId: string, conceptIndex: number, opts?: { fork?: boolean }) => {
-  const res = await fetch(`${API}/projects/${projectId}/lock-concept`, {
+  const res = await authFetch(`${API}/projects/${projectId}/lock-concept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ conceptIndex, ...(opts || {}) })
@@ -94,12 +108,12 @@ export const lockConcept = async (projectId: string, conceptIndex: number, opts?
 };
 
 export const unlockConcept = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/unlock-concept`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/unlock-concept`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const refineConcept = async (projectId: string, feedback: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/refine-concept`, {
+  const res = await authFetch(`${API}/projects/${projectId}/refine-concept`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ feedback }),
@@ -108,7 +122,7 @@ export const refineConcept = async (projectId: string, feedback: string) => {
 };
 
 export const updateConcept = async (projectId: string, updates: Record<string, any>) => {
-  const res = await fetch(`${API}/projects/${projectId}/concept`, {
+  const res = await authFetch(`${API}/projects/${projectId}/concept`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -117,14 +131,14 @@ export const updateConcept = async (projectId: string, updates: Record<string, a
 };
 
 export const forkProject = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/fork`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/fork`, { method: 'POST' });
   return handleResponse(res);
 };
 
 // ─── Style Generation & Lock ────────────────────────────────────────
 
 export const generateStyles = async (projectId: string, notes?: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/generate-styles`, {
+  const res = await authFetch(`${API}/projects/${projectId}/generate-styles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes })
@@ -133,7 +147,7 @@ export const generateStyles = async (projectId: string, notes?: string) => {
 };
 
 export const brainstormStyles = async (projectId: string, userNotes?: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/brainstorm-styles`, {
+  const res = await authFetch(`${API}/projects/${projectId}/brainstorm-styles`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userNotes }),
@@ -143,7 +157,7 @@ export const brainstormStyles = async (projectId: string, userNotes?: string, si
 };
 
 export const visualizeStyle = async (projectId: string, prompt: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/visualize-style`, {
+  const res = await authFetch(`${API}/projects/${projectId}/visualize-style`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt }),
@@ -153,7 +167,7 @@ export const visualizeStyle = async (projectId: string, prompt: string, signal?:
 };
 
 export const refineStyleDirection = async (projectId: string, description: string, feedback: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/refine-style-direction`, {
+  const res = await authFetch(`${API}/projects/${projectId}/refine-style-direction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ description, feedback }),
@@ -164,14 +178,14 @@ export const refineStyleDirection = async (projectId: string, description: strin
 
 // Unlocks are pure nav — no body, no options. Destructive events live on
 // the active mutation endpoints (lock-concept, generate-script, etc).
-const simplePost = (path: string) => fetch(`${API}${path}`, { method: 'POST' }).then(handleResponse);
+const simplePost = (path: string) => authFetch(`${API}${path}`, { method: 'POST' }).then(handleResponse);
 export const unlockStyle = (projectId: string) => simplePost(`/projects/${projectId}/unlock-style`);
 export const unlockScript = (projectId: string) => simplePost(`/projects/${projectId}/unlock-script`);
 export const unlockCharacters = (projectId: string) => simplePost(`/projects/${projectId}/unlock-characters`);
 export const unlockEnvironments = (projectId: string) => simplePost(`/projects/${projectId}/unlock-environments`);
 
 export const lockStyle = async (projectId: string, assetId: string, styleDescription?: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/lock-style`, {
+  const res = await authFetch(`${API}/projects/${projectId}/lock-style`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assetId, styleDescription })
@@ -182,7 +196,7 @@ export const lockStyle = async (projectId: string, assetId: string, styleDescrip
 export const analyzeStyleImage = async (projectId: string, imageFile: File) => {
   const form = new FormData();
   form.append('image', imageFile);
-  const res = await fetch(`${API}/projects/${projectId}/analyze-style-image`, {
+  const res = await authFetch(`${API}/projects/${projectId}/analyze-style-image`, {
     method: 'POST',
     body: form
   });
@@ -192,7 +206,7 @@ export const analyzeStyleImage = async (projectId: string, imageFile: File) => {
 export const uploadAndLockStyle = async (projectId: string, imageFile: File) => {
   const form = new FormData();
   form.append('image', imageFile);
-  const res = await fetch(`${API}/projects/${projectId}/upload-and-lock-style`, {
+  const res = await authFetch(`${API}/projects/${projectId}/upload-and-lock-style`, {
     method: 'POST',
     body: form
   });
@@ -215,14 +229,14 @@ export const generateLooks = async (
     form.append('image', refImage);
     form.append('castMemberId', castMemberId);
     if (feedback) form.append('feedback', feedback);
-    const res = await fetch(`${API}/projects/${projectId}/generate-looks`, {
+    const res = await authFetch(`${API}/projects/${projectId}/generate-looks`, {
       method: 'POST',
       body: form,
       signal,
     });
     return handleResponse(res);
   }
-  const res = await fetch(`${API}/projects/${projectId}/generate-looks`, {
+  const res = await authFetch(`${API}/projects/${projectId}/generate-looks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ castMemberId, feedback }),
@@ -235,7 +249,7 @@ export const uploadCharacterReference = async (projectId: string, castMemberId: 
   const form = new FormData();
   form.append('image', imageFile);
   form.append('castMemberId', castMemberId);
-  const res = await fetch(`${API}/projects/${projectId}/upload-character-reference`, { method: 'POST', body: form });
+  const res = await authFetch(`${API}/projects/${projectId}/upload-character-reference`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 
@@ -243,12 +257,12 @@ export const uploadEnvironmentReference = async (projectId: string, environmentI
   const form = new FormData();
   form.append('image', imageFile);
   form.append('environmentId', environmentId);
-  const res = await fetch(`${API}/projects/${projectId}/upload-environment-reference`, { method: 'POST', body: form });
+  const res = await authFetch(`${API}/projects/${projectId}/upload-environment-reference`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 
 export const lockCharacter = async (projectId: string, castMemberId: string, assetId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/lock-character`, {
+  const res = await authFetch(`${API}/projects/${projectId}/lock-character`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ castMemberId, assetId })
@@ -259,7 +273,7 @@ export const lockCharacter = async (projectId: string, castMemberId: string, ass
 // ─── Cast Management ────────────────────────────────────────────────
 
 export const addCastMember = async (projectId: string, name: string, description: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/cast`, {
+  const res = await authFetch(`${API}/projects/${projectId}/cast`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, description })
@@ -268,7 +282,7 @@ export const addCastMember = async (projectId: string, name: string, description
 };
 
 export const updateCastMember = async (projectId: string, memberId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => {
-  const res = await fetch(`${API}/projects/${projectId}/cast/${memberId}`, {
+  const res = await authFetch(`${API}/projects/${projectId}/cast/${memberId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
@@ -277,14 +291,14 @@ export const updateCastMember = async (projectId: string, memberId: string, upda
 };
 
 export const deleteCastMember = async (projectId: string, memberId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/cast/${memberId}`, { method: 'DELETE' });
+  const res = await authFetch(`${API}/projects/${projectId}/cast/${memberId}`, { method: 'DELETE' });
   return handleResponse(res);
 };
 
 // ─── Environment Management ─────────────────────────────────────────
 
 export const addEnvironment = async (projectId: string, name: string, description: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/environments`, {
+  const res = await authFetch(`${API}/projects/${projectId}/environments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, description })
@@ -293,7 +307,7 @@ export const addEnvironment = async (projectId: string, name: string, descriptio
 };
 
 export const updateEnvironment = async (projectId: string, envId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => {
-  const res = await fetch(`${API}/projects/${projectId}/environments/${envId}`, {
+  const res = await authFetch(`${API}/projects/${projectId}/environments/${envId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
@@ -302,7 +316,7 @@ export const updateEnvironment = async (projectId: string, envId: string, update
 };
 
 export const deleteEnvironment = async (projectId: string, envId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/environments/${envId}`, { method: 'DELETE' });
+  const res = await authFetch(`${API}/projects/${projectId}/environments/${envId}`, { method: 'DELETE' });
   return handleResponse(res);
 };
 
@@ -318,14 +332,14 @@ export const generateEnvironmentLook = async (
     form.append('image', refImage);
     form.append('environmentId', environmentId);
     if (note) form.append('note', note);
-    const res = await fetch(`${API}/projects/${projectId}/generate-environment-look`, {
+    const res = await authFetch(`${API}/projects/${projectId}/generate-environment-look`, {
       method: 'POST',
       body: form,
       signal,
     });
     return handleResponse(res);
   }
-  const res = await fetch(`${API}/projects/${projectId}/generate-environment-look`, {
+  const res = await authFetch(`${API}/projects/${projectId}/generate-environment-look`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ environmentId }),
@@ -335,7 +349,7 @@ export const generateEnvironmentLook = async (
 };
 
 export const lockEnvironment = async (projectId: string, environmentId: string, assetId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/lock-environment`, {
+  const res = await authFetch(`${API}/projects/${projectId}/lock-environment`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ environmentId, assetId })
@@ -346,19 +360,19 @@ export const lockEnvironment = async (projectId: string, environmentId: string, 
 // ─── Phase Advancement ──────────────────────────────────────────────
 
 export const advanceCharacters = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/advance-characters`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/advance-characters`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const advanceEnvironments = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/advance-environments`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/advance-environments`, { method: 'POST' });
   return handleResponse(res);
 };
 
 // ─── Script Generation ──────────────────────────────────────────────
 
 export const updateScene = async (projectId: string, sceneId: string, updates: { narrativeDescription?: string }) => {
-  const res = await fetch(`${API}/projects/${projectId}/scenes/${sceneId}`, {
+  const res = await authFetch(`${API}/projects/${projectId}/scenes/${sceneId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
@@ -367,7 +381,7 @@ export const updateScene = async (projectId: string, sceneId: string, updates: {
 };
 
 export const refineScript = async (projectId: string, feedback: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/refine-script`, {
+  const res = await authFetch(`${API}/projects/${projectId}/refine-script`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ feedback }),
@@ -380,7 +394,7 @@ export const generateScript = async (projectId: string, userNote?: string, opts?
   const body: Record<string, any> = {};
   if (userNote) body.userNote = userNote;
   if (opts?.fork) body.fork = true;
-  const res = await fetch(`${API}/projects/${projectId}/generate-script`, {
+  const res = await authFetch(`${API}/projects/${projectId}/generate-script`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -390,7 +404,7 @@ export const generateScript = async (projectId: string, userNote?: string, opts?
 };
 
 export const writeShotPrompts = async (projectId: string, userNote?: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/write-shot-prompts`, {
+  const res = await authFetch(`${API}/projects/${projectId}/write-shot-prompts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userNote ? { userNote } : {}),
@@ -406,14 +420,14 @@ export const refineShotPrompt = async (projectId: string, shotId: string, feedba
     const form = new FormData();
     form.append('feedback', feedback);
     form.append('referenceImage', referenceImage);
-    const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
+    const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
       method: 'POST',
       body: form,
       signal,
     });
     return handleResponse(res);
   }
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ feedback }),
@@ -423,22 +437,22 @@ export const refineShotPrompt = async (projectId: string, shotId: string, feedba
 };
 
 export const generateShotImage = async (projectId: string, shotId: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST', signal });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST', signal });
   return handleResponse(res);
 };
 
 export const usePrevLastFrame = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/use-prev-last-frame`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/use-prev-last-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const clearShotFrame = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-frame`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/clear-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const generateEndFrame = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 
@@ -447,10 +461,10 @@ export const refineEndFramePrompt = async (projectId: string, shotId: string, fe
     const form = new FormData();
     form.append('feedback', feedback);
     form.append('referenceImage', referenceImage);
-    const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, { method: 'POST', body: form });
+    const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, { method: 'POST', body: form });
     return handleResponse(res);
   }
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-end-frame-prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ feedback }),
@@ -459,24 +473,24 @@ export const refineEndFramePrompt = async (projectId: string, shotId: string, fe
 };
 
 export const clearEndFrame = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-end-frame`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/clear-end-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const clearExtractedFrame = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/clear-extracted-frame`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/clear-extracted-frame`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const uploadEndFrame = async (projectId: string, shotId: string, file: File) => {
   const form = new FormData();
   form.append('image', file);
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/upload-end-frame`, { method: 'POST', body: form });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/upload-end-frame`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 
 export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string, signal?: AbortSignal) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(promptOverride ? { promptOverride } : {}),
@@ -486,17 +500,17 @@ export const generateShotVideo = async (projectId: string, shotId: string, promp
 };
 
 export const useShotAsPrevEnd = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/use-as-prev-end`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/use-as-prev-end`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const getShotVideoHistory = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/video-history`);
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/video-history`);
   return handleResponse(res) as Promise<{ versions: Array<{ assetId: string; videoUrl: string; thumbnailUrl: string | null; createdAt: string; isCurrent: boolean }> }>;
 };
 
 export const revertShotVideo = async (projectId: string, shotId: string, assetId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/revert-video`, {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/revert-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assetId })
@@ -505,7 +519,7 @@ export const revertShotVideo = async (projectId: string, shotId: string, assetId
 };
 
 export const updateShot = async (projectId: string, shotId: string, updates: Record<string, any>) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}`, {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)
@@ -514,26 +528,26 @@ export const updateShot = async (projectId: string, shotId: string, updates: Rec
 };
 
 export const lockShot = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/lock`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/lock`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const unlockShot = async (projectId: string, shotId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/shots/${shotId}/unlock`, { method: 'POST' });
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/unlock`, { method: 'POST' });
   return handleResponse(res);
 };
 
 // ─── X-Ray ──────────────────────────────────────────────────────────
 
 export const getXRayCalls = async (projectId: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/xray`);
+  const res = await authFetch(`${API}/projects/${projectId}/xray`);
   return handleResponse(res);
 };
 
 // ─── Chat ───────────────────────────────────────────────────────────
 
 export const sendChatMessage = async (projectId: string, message: string) => {
-  const res = await fetch(`${API}/projects/${projectId}/chat`, {
+  const res = await authFetch(`${API}/projects/${projectId}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message })
@@ -547,22 +561,22 @@ export const listQueue = async (filters?: { status?: string; deity?: string }) =
   const params = new URLSearchParams();
   if (filters?.status) params.set('status', filters.status);
   if (filters?.deity) params.set('deity', filters.deity);
-  const res = await fetch(`${API}/queue?${params}`);
+  const res = await authFetch(`${API}/queue?${params}`);
   return handleResponse(res);
 };
 
 export const getQueueDeities = async (): Promise<string[]> => {
-  const res = await fetch(`${API}/queue/deities`);
+  const res = await authFetch(`${API}/queue/deities`);
   return handleResponse(res);
 };
 
 export const startProduction = async (queueId: string) => {
-  const res = await fetch(`${API}/queue/${queueId}/start`, { method: 'POST' });
+  const res = await authFetch(`${API}/queue/${queueId}/start`, { method: 'POST' });
   return handleResponse(res);
 };
 
 export const updateQueueItem = async (queueId: string, updates: Record<string, any>) => {
-  const res = await fetch(`${API}/queue/${queueId}`, {
+  const res = await authFetch(`${API}/queue/${queueId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates)

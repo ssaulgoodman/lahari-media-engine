@@ -26,6 +26,7 @@ import { generateRouter } from './routes/generate.js';
 import { queueRouter } from './routes/queue.js';
 import { adminRouter } from './routes/admin.js';
 import { promptsRouter } from './routes/prompts.js';
+import { requireAuth } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -41,12 +42,13 @@ app.use(express.json({ limit: '50mb' }));
 
 // Assets are served from Supabase Storage (public URLs).
 
-// API Routes
-app.use('/api/projects', projectsRouter);
-app.use('/api/projects', generateRouter);
-app.use('/api/queue', queueRouter);
+// Auth middleware on all project/queue/prompt routes
+app.use('/api/projects', requireAuth, projectsRouter);
+app.use('/api/projects', requireAuth, generateRouter);
+app.use('/api/queue', requireAuth, queueRouter);
+app.use('/api/prompts', requireAuth, promptsRouter);
+// Admin routes use their own x-admin-secret auth
 app.use('/api/admin', adminRouter);
-app.use('/api/prompts', promptsRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

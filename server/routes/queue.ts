@@ -90,6 +90,7 @@ router.post('/:queueId/start', async (req, res) => {
       status: 'analyzing',
       audio_path: audioPath,
       lyrics: lyrics || null,
+      user_id: req.userId,
     });
 
     // Link back to queue immediately (don't wait for analysis)

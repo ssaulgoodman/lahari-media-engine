@@ -18,6 +18,15 @@ const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Ownership check for all /:id/* routes — verify user owns the project
+router.param('id', async (req, res, next, id) => {
+  const projectId = Array.isArray(id) ? id[0] : id;
+  const row = await selectOne('projects', { id: projectId });
+  if (!row) return res.status(404).json({ error: 'Project not found' });
+  if (row.user_id && row.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+  next();
+});
+
 // ─── Generate Style Options ─────────────────────────────────────────
 
 router.post('/:id/generate-styles', async (req, res) => {

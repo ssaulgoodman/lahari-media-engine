@@ -15,6 +15,15 @@ import { logCall, getCalls, buildContextChain } from '../xray.js';
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 
+/** Verify the project belongs to the requesting user. Returns the project row or sends 403/404. */
+const verifyOwnership = async (req: any, res: any): Promise<any | null> => {
+  const projectId = paramStr(req.params.id);
+  const row = await selectOne('projects', { id: projectId });
+  if (!row) { res.status(404).json({ error: 'Project not found' }); return null; }
+  if (row.user_id && row.user_id !== req.userId) { res.status(403).json({ error: 'Access denied' }); return null; }
+  return row;
+};
+
 // Multer config: save audio files to storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
 
@@ -92,6 +101,7 @@ const forkProject = async (sourceId: string): Promise<string> => {
     last_concept_prompt: src.last_concept_prompt,
     last_write_shots_prompt: src.last_write_shots_prompt,
     style_generation_prompt: src.style_generation_prompt,
+    user_id: src.user_id,
     parent_project_id: sourceId,
     created_at: now,
     updated_at: now,
@@ -375,11 +385,11 @@ const getFullProject = async (projectId: string) => {
 // ─── Routes ─────────────────────────────────────────────────────────
 
 // List all projects
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   const rows = await selectColumns(
     'projects',
     'id, title, status, created_at, updated_at, parent_project_id',
-    {},
+    { user_id: req.userId },
     { orderBy: 'created_at', ascending: false }
   );
   res.json(rows.map((r: any) => ({
@@ -394,6 +404,8 @@ router.get('/', async (_req, res) => {
 
 // Get single project (full state)
 router.get('/:id', async (req, res) => {
+  const owner = await verifyOwnership(req, res);
+  if (!owner) return;
   const project = await getFullProject(paramStr(req.params.id));
   if (!project) return res.status(404).json({ error: 'Project not found' });
   res.json(project);
@@ -417,6 +429,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     title,
     status: 'analyzing',
     audio_path: audioPath,
+    user_id: req.userId,
   });
 
   // Run analysis (synchronous for simplicity — client shows spinner)
@@ -721,6 +734,8 @@ router.patch('/:id', async (req, res) => {
 
 // Delete project
 router.delete('/:id', async (req, res) => {
+  const owner = await verifyOwnership(req, res);
+  if (!owner) return;
   await deleteRows('projects', { id: paramStr(req.params.id) });
   res.json({ ok: true });
 });
