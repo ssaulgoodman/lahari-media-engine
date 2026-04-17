@@ -17,12 +17,27 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 - `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
-- `FAL_KEY` — deprecated, was for fal.ai Seedance. Now using Segmind instead
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
 - `CORS_ORIGINS` — comma-separated in prod
 - **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
+
+**Auth**: Supabase Auth with Google OAuth (`contexts/AuthContext.tsx` + `lib/supabase.ts`). Backend verifies JWT via `requireAuth` middleware (`server/middleware/auth.ts`). All `/api/projects`, `/api/queue`, `/api/prompts` routes require auth. Admin routes use `x-admin-secret`. Health check is public.
+
+**Ownership scoping** (3 layers):
+1. **Project**: `router.param('id')` on both `projectsRouter` and `generateRouter` — verifies `user_id === req.userId`. No null-owner bypass.
+2. **URL child IDs**: `router.param('shotId')` (traces shot→scene→project), `router.param('sceneId')`, `router.param('memberId')`, `router.param('envId')` — all verify the child belongs to the URL project.
+3. **Body child IDs**: `requireCastMember()`, `requireEnvironment()`, `requireAsset()` helpers in generate.ts — validate body-supplied IDs against the URL project. Throw `ScopeError` with proper 403/404 status codes.
+
+Queue routes: `publish` checks `project.user_id`, `start` checks ownership before returning an existing linked project.
+
+**Minimal responses + Optimistic UI**: Simple mutations return `{ ok: true }` (with `status` for phase changes) instead of the full project. Frontend applies changes optimistically and reverts on failure. This eliminates ~20 `getFullProject` round-trips.
+
+Minimal response endpoints: clear-frame, clear-end-frame, clear-extracted-frame, lock/unlock shot, PATCH shot/project/scene/concept, DELETE cast/environment, lock-character, lock-environment, advance-characters/environments, all unlocks.
+
+Full `getFullProject` still used for: all generate/refine endpoints (AI work), fork, analyze-audio, revert-video, GET /:id, queue start/publish.
 
 ## Architecture
 
@@ -37,15 +52,15 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 
 1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage, creates Lahari project.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
-   - Concept (Codex Opus, 3 options, regen with note)
-   - Script (Codex Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
-   - Style (Codex brainstorm → Gemini 3 Pro Image visualize → Codex vision enrich DNA)
+   - Concept (Claude Opus, 3 options, regen with note)
+   - Script (Claude Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
+   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA)
    - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
    - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
-   - Auto-writes shot prompts (Codex Sonnet) with full context at the end.
+   - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
 3. **Studio** (`Storyboard.tsx`) — Per-shot:
    - Generate start frame (Gemini 3 Pro Image with full ref chain)
-   - Generate video (Veo 3.1 or Seedance 2.0 via fal.ai, start keyframe only)
+   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind, start keyframe only)
    - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
    - Lock shot (requires start + video)
 4. **Render** (`StepRender.tsx`) — Client-side FFmpeg WASM stitches videos + audio.
@@ -55,8 +70,8 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, style brainstorm | `Codex-opus-4-6` | Codex.ts | Anthropic API |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `Codex-sonnet-4-6` | Codex.ts | Anthropic API |
+| Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
+| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
 | All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
@@ -67,13 +82,13 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 
 ### Video workflow (redesigned)
 
-No end-frame prediction. Shot = start frame + motion prompt → video plays naturally → ffmpeg extracts real last frame. Next shot optionally uses that extracted frame as continuity reference (when Codex tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
+No end-frame prediction. Shot = start frame + motion prompt → video plays naturally → ffmpeg extracts real last frame. Next shot optionally uses that extracted frame as continuity reference (when Claude tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
 
 **Sequential gate:** Only shots with `continuity_from === 'prev_shot'` wait for previous shot's video. Hard-cut shots are independently actionable.
 
 **Bulk fan-out (throttled, multi-pass)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames**. Both bulk handlers use a **multi-pass loop**: after each pass completes, project state is refreshed from the server and newly unblocked `prev_shot` items are picked up automatically. Failed shots (ERROR status) are excluded from automatic requeue — artist sees them in UI and can retry manually.
 
-**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Codex Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
+**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
 ### Reference chain for shot start frame
 
@@ -91,7 +106,7 @@ Priority: character identity > continuity > environment > style. Explicit note: 
 Every generatable entity (characters, environments, shots, end frames) follows the same two-mode edit pattern:
 
 1. **Direct edit** — artist edits the `generation_prompt` field directly. What you see is what gets sent.
-2. **Refine** — artist writes feedback, Codex (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
+2. **Refine** — artist writes feedback, Claude (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
 
 `generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt.
 
@@ -106,7 +121,7 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
+- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
 - `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
@@ -127,7 +142,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 ### Launch Studio shortcut
 
-`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Codex batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
+`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
 
 **Supabase tables (read-only from Lahari):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
@@ -156,7 +171,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same pattern for end frame)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
-**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
+**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/shots/:shotId/clear-end-frame`, `POST /api/projects/:id/shots/:shotId/clear-extracted-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
 
 **Admin diagnostics** (all behind `x-admin-secret: $ADMIN_UPLOAD_SECRET`):
 - `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
@@ -204,4 +219,4 @@ Pacing buttons in the Script phase are derived from the selected model's `durati
 
 ## Deployment
 
-Railway, Dockerfile at repo root, persistent volume mounted at `/app/storage`. Push to deploy: `railway up --detach`. Project: `lahari-media-engine` (id `a2ef8e79-f9ae-4dce-80e0-114d80e0a575`).
+Railway, Dockerfile at repo root. Stateless — all storage via Supabase. Push to deploy: `railway up --detach`. Project: `lahari-media-engine` (id `a2ef8e79-f9ae-4dce-80e0-114d80e0a575`). Dockerfile hardcodes `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` (anon key is public) for Vite build-time access. Uses `--legacy-peer-deps` for Remotion/designcombo peer dep conflict.
