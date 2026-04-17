@@ -404,6 +404,21 @@ Present in: concept prompt ([claude.ts:66](../server/services/claude.ts#L66)), s
 - Bulk shot prompts ([generate.ts](../server/routes/generate.ts) → `POST /:id/write-shot-prompts`) — still overwrites all manual edits
 **Remaining fix:** Add selective shot prompt regen ("rewrite prompts for selected shots only")
 
+### Staleness detection
+When an upstream field changes after downstream work exists, downstream entities get `prompts_stale = true`. The UI shows an amber "Outdated" indicator. The artist decides when to rewrite — no auto-overwrite.
+
+| Upstream change | Downstream marked stale |
+|---|---|
+| `style_description` edited | All cast_members + environments + all shots |
+| `locked_concept` edited/refined | All shots |
+| `scenes.narrative_description` edited | All shots in that scene |
+| `cast_members.description` edited | All shots referencing that cast member |
+| `environments.description` edited | All shots referencing that environment |
+
+Cleared when: generation_prompt is regenerated/refined, or artist edits the generation_prompt directly.
+
+**Only fires when going back** — linear flow (concept → script → style → chars → envs → studio) never triggers staleness. This is specifically for the "go back and tweak upstream" workflow.
+
 ### Template framing in generation prompts
 "Mid-shot portrait, eye-level, cinematic lighting" etc. are sensible defaults but not always right.
 **Fix (current):** Make visible and editable via generation_prompt.

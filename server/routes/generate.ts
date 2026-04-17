@@ -497,7 +497,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   }
 
   // Save the (possibly rewritten) prompt
-  await updateRows('cast_members', { id: castMemberId }, { generation_prompt: genPrompt });
+  await updateRows('cast_members', { id: castMemberId }, { generation_prompt: genPrompt, prompts_stale: false });
 
   const xrayPrompt = `Generate 3 looks for "${member.name}" | Prompt: ${genPrompt.substring(0, 150)}...`;
 
@@ -701,7 +701,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
   }
 
   // Save the (possibly rewritten) prompt
-  await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt });
+  await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt, prompts_stale: false });
 
   try {
     console.log(`[${project.id}] Generating environment looks for ${env.name}${userRefImagePath ? ' (with user ref)' : ''}...`);

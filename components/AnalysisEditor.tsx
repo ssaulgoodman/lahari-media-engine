@@ -2108,7 +2108,12 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
 
                       {/* Generation prompt — what actually gets sent to Gemini */}
                       <div>
-                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span></div>
+                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
+                          Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span>
+                          {activeMember.promptsStale && (
+                            <span className="text-amber-400/80 normal-case tracking-normal text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded">Outdated — style or upstream changed</span>
+                          )}
+                        </div>
                         {activeMember.generationPrompt ? (
                           <AutoGrowTextarea
                             key={`gen-prompt-${activeMember.id}`}
@@ -2511,7 +2516,12 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                         </div>
 
                         <div>
-                          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span></div>
+                          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
+                            Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span>
+                            {activeEnv.promptsStale && (
+                              <span className="text-amber-400/80 normal-case tracking-normal text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded">Outdated — style or upstream changed</span>
+                            )}
+                          </div>
                           {activeEnv.generationPrompt ? (
                             <AutoGrowTextarea
                               key={`env-gen-prompt-${activeEnv.id}`}

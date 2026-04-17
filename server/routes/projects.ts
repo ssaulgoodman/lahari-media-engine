@@ -309,6 +309,7 @@ const getFullProject = async (projectId: string) => {
       name: c.name,
       description: c.description,
       generationPrompt: c.generation_prompt || undefined,
+      promptsStale: !!c.prompts_stale,
       referenceAssetId: c.reference_asset_id,
       referenceImageUrl: c.referenceImageUrl,
     })),
@@ -317,6 +318,7 @@ const getFullProject = async (projectId: string) => {
       name: e.name,
       description: e.description,
       generationPrompt: e.generation_prompt || undefined,
+      promptsStale: !!e.prompts_stale,
       referenceAssetId: e.reference_asset_id,
       referenceImageUrl: e.referenceImageUrl,
     })),
@@ -349,6 +351,7 @@ const getFullProject = async (projectId: string) => {
         videoStatus: shot.video_status,
         critique: shot.critique,
         attemptCount: shot.attempt_count,
+        promptsStale: !!shot.prompts_stale,
         useNextAsEndFrame: !!shot.use_next_as_end_frame,
       }))
     })),
@@ -628,12 +631,18 @@ router.post('/:id/refine-concept', async (req, res) => {
   const current = JSON.parse(project.locked_concept);
 
   try {
+    const projectId = paramStr(req.params.id);
     const refined = await refineConceptDirection(current, feedback);
-    await updateRows('projects', { id: paramStr(req.params.id) }, {
+    await updateRows('projects', { id: projectId }, {
       locked_concept: JSON.stringify(refined),
       updated_at: new Date().toISOString(),
     });
-    res.json(await getFullProject(paramStr(req.params.id)));
+    // Concept change invalidates all downstream — script was built from old concept
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const s of scenes) {
+      await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
+    }
+    res.json(await getFullProject(projectId));
   } catch (err: any) {
     res.status(500).json({ error: `Concept refinement failed: ${err.message}` });
   }
@@ -641,23 +650,28 @@ router.post('/:id/refine-concept', async (req, res) => {
 
 // Update locked concept fields directly — artist edits inline. Non-destructive.
 router.patch('/:id/concept', async (req, res) => {
-  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  const projectId = paramStr(req.params.id);
+  const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.locked_concept) return res.status(400).json({ error: 'No locked concept to update' });
 
   const current = JSON.parse(project.locked_concept);
-  const updates = req.body; // { mood?: string, theme?: string, deity?: string, ... }
+  const updates = req.body;
   const merged = { ...current, ...updates };
-  // Handle nested visualSuggestions
   if (updates.visualSuggestions) {
     merged.visualSuggestions = { ...current.visualSuggestions, ...updates.visualSuggestions };
   }
 
-  await updateRows('projects', { id: paramStr(req.params.id) }, {
+  await updateRows('projects', { id: projectId }, {
     locked_concept: JSON.stringify(merged),
     updated_at: new Date().toISOString(),
   });
-  res.json(await getFullProject(paramStr(req.params.id)));
+  // Concept change invalidates downstream shots
+  const scenes = await selectAll('scenes', { project_id: projectId });
+  for (const s of scenes) {
+    await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
+  }
+  res.json(await getFullProject(projectId));
 });
 
 // Update project settings
@@ -679,8 +693,21 @@ router.patch('/:id', async (req, res) => {
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' });
 
   updates.updated_at = new Date().toISOString();
-  await updateRows('projects', { id: paramStr(req.params.id) }, updates);
-  res.json(await getFullProject(paramStr(req.params.id)));
+  const projectId = paramStr(req.params.id);
+  await updateRows('projects', { id: projectId }, updates);
+
+  // Staleness propagation: style_description change invalidates all downstream generation_prompts
+  if (styleDescription !== undefined) {
+    await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
+    await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
+    // Shots are also stale — style DNA feeds into frame + video gen
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const s of scenes) {
+      await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
+    }
+  }
+
+  res.json(await getFullProject(projectId));
 });
 
 // Delete project
@@ -795,14 +822,29 @@ router.post('/:id/cast', async (req, res) => {
 
 router.put('/:id/cast/:memberId', async (req, res) => {
   const { name, description, generationPrompt } = req.body;
+  const memberId = paramStr(req.params.memberId);
+  const projectId = paramStr(req.params.id);
   const updates: Record<string, any> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
-  if (generationPrompt !== undefined) updates.generation_prompt = generationPrompt || null;
+  if (generationPrompt !== undefined) { updates.generation_prompt = generationPrompt || null; updates.prompts_stale = false; }
   if (Object.keys(updates).length > 0) {
-    await updateRows('cast_members', { id: paramStr(req.params.memberId) }, updates);
+    await updateRows('cast_members', { id: memberId }, updates);
+    // Cast description change → shots referencing this character are stale
+    if (description !== undefined) {
+      const scenes = await selectAll('scenes', { project_id: projectId });
+      for (const s of scenes) {
+        const shots = await selectAll('shots', { scene_id: s.id });
+        for (const shot of shots) {
+          const castIds = JSON.parse(shot.cast_ids || '[]');
+          if (castIds.includes(memberId)) {
+            await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+          }
+        }
+      }
+    }
   }
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json(await getFullProject(projectId));
 });
 
 router.delete('/:id/cast/:memberId', async (req, res) => {
@@ -828,14 +870,28 @@ router.post('/:id/environments', async (req, res) => {
 
 router.put('/:id/environments/:envId', async (req, res) => {
   const { name, description, generationPrompt } = req.body;
+  const envId = paramStr(req.params.envId);
+  const projectId = paramStr(req.params.id);
   const updates: Record<string, any> = {};
   if (name !== undefined) updates.name = name;
   if (description !== undefined) updates.description = description;
-  if (generationPrompt !== undefined) updates.generation_prompt = generationPrompt || null;
+  if (generationPrompt !== undefined) { updates.generation_prompt = generationPrompt || null; updates.prompts_stale = false; }
   if (Object.keys(updates).length > 0) {
-    await updateRows('environments', { id: paramStr(req.params.envId) }, updates);
+    await updateRows('environments', { id: envId }, updates);
+    // Env description change → shots referencing this environment are stale
+    if (description !== undefined) {
+      const scenes = await selectAll('scenes', { project_id: projectId });
+      for (const s of scenes) {
+        const shots = await selectAll('shots', { scene_id: s.id });
+        for (const shot of shots) {
+          if (shot.environment_id === envId) {
+            await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+          }
+        }
+      }
+    }
   }
-  res.json(await getFullProject(paramStr(req.params.id)));
+  res.json(await getFullProject(projectId));
 });
 
 router.delete('/:id/environments/:envId', async (req, res) => {
@@ -873,6 +929,10 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
   if (narrativeDescription !== undefined) updates.narrative_description = narrativeDescription;
   if (Object.keys(updates).length > 0) {
     await updateRows('scenes', { id: sceneId }, updates);
+    // Scene narrative change → shots in this scene are stale
+    if (narrativeDescription !== undefined) {
+      await updateRows('shots', { scene_id: sceneId }, { prompts_stale: true });
+    }
   }
   res.json(await getFullProject(paramStr(req.params.id)));
 });

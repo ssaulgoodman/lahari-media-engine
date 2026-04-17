@@ -71,6 +71,7 @@ export interface VideoShot {
   environmentId?: string;
   critique?: ShotCritique;
   attemptCount?: number;
+  promptsStale?: boolean;
   videoUrl?: string;
   videoStatus: GenerationStatus;
   useNextAsEndFrame: boolean;
@@ -107,6 +108,7 @@ export interface CastMember {
   name: string;
   description: string;
   generationPrompt?: string;
+  promptsStale?: boolean;
   referenceAssetId?: string;
   referenceImageUrl?: string;
 }
@@ -116,6 +118,7 @@ export interface Environment {
   name: string;
   description: string;
   generationPrompt?: string;
+  promptsStale?: boolean;
   referenceAssetId?: string;
   referenceImageUrl?: string;
 }
