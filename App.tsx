@@ -799,6 +799,7 @@ const App: React.FC = () => {
       scene.shots.forEach((shot, idx) => {
         if (shot.imageUrl) return;
         if (shot.imageStatus === GenerationStatus.LOADING) return;
+        if (shot.imageStatus === GenerationStatus.ERROR) return;
         if (shot.continuityFrom === 'prev_shot' && idx > 0) {
           const prev = scene.shots[idx - 1];
           if (!prev?.videoUrl) return;
@@ -850,6 +851,7 @@ const App: React.FC = () => {
       scene.shots.forEach((shot, idx) => {
         if (!shot.imageUrl || shot.videoUrl) return;
         if (shot.videoStatus === GenerationStatus.LOADING) return;
+        if (shot.videoStatus === GenerationStatus.ERROR) return;
         if (shot.continuityFrom === 'prev_shot' && idx > 0) {
           const prev = scene.shots[idx - 1];
           if (!prev?.videoUrl) return;
