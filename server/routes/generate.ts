@@ -1200,6 +1200,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
           visual_prompt: p.visualPrompt || '',
           motion_prompt: p.motionPrompt || '',
           continuity_from: continuity,
+          prompts_stale: false,
         });
       }
 
@@ -1298,6 +1299,7 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       motion_prompt: result.motionPrompt,
       user_feedback: feedback,
       refined_from_prev_frame: 0,
+      prompts_stale: false,
     });
 
     const durationMs = Date.now() - t0;
@@ -1437,6 +1439,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       image_asset_id: assetId,
       image_status: 'success',
       user_feedback: null,
+      prompts_stale: false,
     });
 
     await logCall({
@@ -1952,6 +1955,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
             motion_prompt: refreshed.motionPrompt,
             refined_from_prev_frame: 1,
             continuity_description: null,
+            prompts_stale: false,
           });
           await logCall({
             projectId: project.id,

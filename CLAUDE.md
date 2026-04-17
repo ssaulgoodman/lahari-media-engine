@@ -93,14 +93,22 @@ Every generatable entity (characters, environments, shots, end frames) follows t
 1. **Direct edit** — artist edits the `generation_prompt` field directly. What you see is what gets sent.
 2. **Refine** — artist writes feedback, Claude (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
 
-`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt. The default templates include hardcoded framing instructions (e.g. "Mid-shot portrait, eye-level framing, cinematic lighting") — these are sensible defaults, editable by the artist. Future: generate per-character framing from story context via Claude.
+`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt.
+
+### Staleness detection
+
+When upstream fields change (style DNA, concept, scene narrative, cast/env description), downstream `prompts_stale` flags are set. UI shows amber "Outdated" indicator. No auto-overwrite — artist decides when to rewrite. Cleared on regenerate/refine. Only fires when going back — linear flow never triggers.
+
+### Pipeline anatomy
+
+Full step-by-step trace of every prompt, every dependency, every control point: **[`docs/pipeline-anatomy.md`](docs/pipeline-anatomy.md)**. Living doc — update as pipeline evolves.
 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
 - `lahari_projects` — core state incl. `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
-- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`)
-- `lahari_cast_members`, `lahari_environments`, `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
+- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
+- `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
 ### Fork system

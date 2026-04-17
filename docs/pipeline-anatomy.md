@@ -292,7 +292,7 @@ The locked concept is NOT frozen. Three ways to adjust:
 | **Artist control** | `userNote` on bulk gen. Individual shot prompts editable after. Individual refine with feedback. |
 | **Prompt visible** | Saved to `last_write_shots_prompt` |
 
-**Status:** Mostly fine. The OUTPUTS (individual visual/motion prompts) are the artist's workspace. Bulk regen is "start fresh with a nudge."
+**Status: DONE** — clears `prompts_stale` on each shot after writing. The OUTPUTS (individual visual/motion prompts) are the artist's workspace.
 
 **Gaps:**
 - [ ] Bulk regen overwrites ALL manual edits to individual shots — no selective regen
@@ -316,7 +316,7 @@ Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (re
 
 **Hardcoded in template:** "Preserve character identity from character references", "Render in the style of the style reference image", "Single cinematic frame. No text, no watermark."
 
-**Status:** Good. Prompt visible in "Full chain" tab.
+**Status: DONE** — clears `prompts_stale` on generate + refine. Prompt visible in "Full chain" tab.
 
 ---
 
@@ -380,7 +380,7 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 | **Output** | Rewritten visual_prompt + motion_prompt for next shot |
 | **Artist control** | Marks `refined_from_prev_frame`. Artist can override. |
 
-**Status:** Fine. Automatic but non-destructive — artist sees the flag and can undo.
+**Status: DONE** — clears `prompts_stale` on the refreshed shot. Automatic but non-destructive — artist sees the `refined_from_prev_frame` flag and can undo.
 
 ---
 
