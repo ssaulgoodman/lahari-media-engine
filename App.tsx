@@ -569,6 +569,16 @@ const App: React.FC = () => {
     }
   };
 
+  const handleClearExtractedFrame = async (shotId: string) => {
+    if (!project) return;
+    try {
+      const p = await api.clearExtractedFrame(project.id, shotId);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Clear extracted frame failed: ${err.message}`);
+    }
+  };
+
   const handleUploadEndFrame = async (shotId: string, file: File) => {
     if (!project) return;
     try {
@@ -1231,6 +1241,7 @@ const App: React.FC = () => {
                     onClearShotFrame={handleClearShotFrame}
                     onGenerateEndFrame={handleGenerateEndFrame}
                     onClearEndFrame={handleClearEndFrame}
+                    onClearExtractedFrame={handleClearExtractedFrame}
                     onUploadEndFrame={handleUploadEndFrame}
                     onRefineEndFramePrompt={handleRefineEndFramePrompt}
                     isLoading={loading}
