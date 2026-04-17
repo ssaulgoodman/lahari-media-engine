@@ -1089,7 +1089,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                       {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover" alt="" />}
                                       <span>{ref.label}</span>
                                       {ref.url && (
-                                        <div className="hidden group-hover/ref:block fixed z-[200] pointer-events-none" style={{ transform: 'translate(-10%, -105%)' }}>
+                                        <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
                                           <img src={ref.url} className="w-44 h-44 object-cover rounded-lg shadow-xl border border-white/[0.1]" alt={ref.label} />
                                           <div className="text-[10px] text-zinc-300 mt-1 text-center font-medium">{ref.label}</div>
                                         </div>
