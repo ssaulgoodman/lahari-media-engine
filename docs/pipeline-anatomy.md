@@ -294,9 +294,22 @@ The locked concept is NOT frozen. Three ways to adjust:
 
 **Status: DONE** — clears `prompts_stale` on each shot after writing. The OUTPUTS (individual visual/motion prompts) are the artist's workspace.
 
+**Critical insight — model-aware prompting:**
+The shot writer writes `visual_prompt` and `motion_prompt` with generic instructions ("1-2 sentences, what we see"). These go directly to Gemini/Veo with NO second LLM call to optimize them. The quality of every frame and video depends on how well Claude writes for these specific models.
+
+**Fix plan — model best practices injection:**
+- Define best practices per model in a single config — Gemini image gen techniques, Veo/Seedance motion prompt patterns
+- Inject into ALL prompt builders: `buildCharacterPrompt`, `buildEnvironmentPrompt`, `buildStylePrompt`, `generateShotStartFrame`, `generateShotEndFrame`, `writeShotPrompts` (shot writer), video prompt builder
+- Currently each has hardcoded boilerplate ("cinematic lighting", "no watermark", "avoid AI look") — extract into the shared config
+- One place to edit → flows everywhere. Team refines as they learn what works per model.
+- Future: auto-learn from prompt→output quality data (the autoresearch loop)
+- No extra LLM call needed — just better instructions to existing calls
+
 **Gaps:**
+- [ ] Shot writer is model-agnostic — needs model-specific best practices
 - [ ] Bulk regen overwrites ALL manual edits to individual shots — no selective regen
 - [ ] Could add "rewrite prompts for selected shots only"
+- [ ] UI: simplify to 2 tabs (Frame prompt + Video prompt) instead of 4
 
 ---
 
@@ -423,6 +436,31 @@ Cleared when: generation_prompt is regenerated/refined, or artist edits the gene
 "Mid-shot portrait, eye-level, cinematic lighting" etc. are sensible defaults but not always right.
 **Fix (current):** Make visible and editable via generation_prompt.
 **Fix (future):** Claude suggests per-entity framing based on story context.
+
+---
+
+---
+
+## Future: Assistant Director Agent
+
+All the edit/refine endpoints, staleness detection, and prompt templates documented above become **tools** for a persistent chat agent. The artist chats naturally — "make scene 3 warmer, Arjun should look older" — and the agent:
+
+1. Knows which fields to update (from this doc)
+2. Calls the right endpoints (`refineScript`, `updateCastMember`, etc.)
+3. Understands downstream impact (staleness graph)
+4. Offers to regenerate affected outputs
+5. Loads model best practices per target model
+
+The pipeline anatomy IS the agent's knowledge base. Every field mapping, every dependency, every prompt template we've documented is what the agent needs to make precise edits instead of vague suggestions.
+
+**Prerequisites (all done or in progress):**
+- [x] Every field mapped with source links
+- [x] Every dependency traced (staleness graph)
+- [x] generation_prompt pattern on all entities
+- [x] Direct edit + LLM refine on all entities
+- [x] Surgical script refine (not all-or-nothing)
+- [ ] Model best practices config (single source, flows everywhere)
+- [ ] Persistent chat per project (chat_messages table exists)
 
 ---
 
