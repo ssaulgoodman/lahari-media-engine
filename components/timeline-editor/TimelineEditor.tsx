@@ -40,8 +40,31 @@ const nextStartMs = () => {
   return max;
 };
 
+// Probe a video URL's real duration using a hidden <video> element. Used by
+// the seeder below; lets us build the full timeline state synchronously and
+// commit it via stateManager.updateState without touching the event bus.
+const probeDurationMs = (src: string): Promise<number> =>
+  new Promise((resolve) => {
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.muted = true;
+    const done = (ms: number) => {
+      v.onloadedmetadata = null;
+      v.onerror = null;
+      v.removeAttribute('src');
+      v.load();
+      resolve(ms);
+    };
+    v.onloadedmetadata = () => {
+      const d = v.duration;
+      done(isFinite(d) && d > 0 ? Math.round(d * 1000) : 5000);
+    };
+    v.onerror = () => done(5000);
+    v.src = src;
+  });
+
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
-// creates one when the timeline is empty).
+// creates one when the timeline is empty). Used by the manual-upload button.
 const addVideoClip = (src: string, name?: string) => {
   const id = generateId();
   const from = nextStartMs();
@@ -60,21 +83,6 @@ const addVideoClip = (src: string, name?: string) => {
   });
   return id;
 };
-
-// Wait until the newly-dispatched item lands in the store. The add-video
-// handler is async (it probes the video's real duration before committing),
-// so seeding multiple clips requires awaiting each one to keep display.from
-// values sequential.
-const waitForItem = (id: string, timeoutMs = 8000) =>
-  new Promise<void>((resolve) => {
-    const start = Date.now();
-    const check = () => {
-      if (useStore.getState().trackItemsMap[id]) return resolve();
-      if (Date.now() - start > timeoutMs) return resolve();
-      setTimeout(check, 30);
-    };
-    check();
-  });
 
 const tabBtn = (active: boolean): React.CSSProperties => ({
   background: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)',
@@ -110,6 +118,19 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
     );
     setStateManager(sm);
 
+    // The zustand store is module-level — on remount (project switch) it can
+    // still hold track items from the previous project's StateManager. Reset
+    // the store explicitly so a stale render doesn't show old clips before
+    // the seed effect finishes re-populating.
+    setState({
+      tracks: [],
+      trackItemIds: [],
+      trackItemsMap: {},
+      transitionIds: [],
+      transitionsMap: {},
+      activeIds: [],
+    });
+
     const sub = sm.subscribeToState((s: any) => {
       setState({
         tracks: s.tracks,
@@ -133,18 +154,88 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
     };
   }, [setStateManager, setState]);
 
-  // Seed with initialClips after the state manager is ready. Dispatches
-  // sequentially so each clip's display.from reads a fully-committed previous
-  // clip's display.to (probe-corrected duration).
+  // Seed with initialClips by probing durations ourselves and committing the
+  // full state via stateManager.updateState. This bypasses the global
+  // @designcombo/events bus, which under React 18 StrictMode (double-mount)
+  // would leak dispatches from sm1's IIFE into sm2's state and throw
+  // "Target track not found" because sm2 doesn't know sm1's track IDs.
+  //
+  // Re-seed trigger: URL signature change (regen, project switch). seededKeyRef
+  // prevents a stable prop reference from re-triggering on every render.
+  const seededKeyRef = useRef<string>('');
   useEffect(() => {
-    if (!stateManager || !initialClips?.length) return;
+    if (!stateManager) return;
+    const key = (initialClips ?? []).map((c) => c.src).join('|');
+    if (seededKeyRef.current === key) return;
+
     let cancelled = false;
     (async () => {
-      for (const clip of initialClips) {
-        if (cancelled) return;
-        const id = addVideoClip(clip.src, clip.name);
-        await waitForItem(id);
+      // Always hard-reset before seeding, even when there are no clips. This
+      // also wipes any stale state left by a previous mount (StrictMode or
+      // project switch) before we rebuild.
+      (stateManager as any).updateState(
+        {
+          tracks: [],
+          trackItemIds: [],
+          trackItemsMap: {},
+          transitionIds: [],
+          transitionsMap: {},
+        },
+        { kind: 'update', updateHistory: false },
+      );
+
+      if (!initialClips?.length) {
+        seededKeyRef.current = key;
+        return;
       }
+
+      // Probe all durations in parallel — much faster than serial and
+      // side-effect free.
+      const durations = await Promise.all(initialClips.map((c) => probeDurationMs(c.src)));
+      if (cancelled) return;
+      // If the stateManager we captured has been replaced (StrictMode
+      // cleanup during probe), bail — the new sm's seed effect will take
+      // over with its own capture.
+      if (useStore.getState().stateManager !== stateManager) return;
+
+      const trackId = generateId();
+      const trackItemIds: string[] = [];
+      const trackItemsMap: Record<string, any> = {};
+      let from = 0;
+      for (let i = 0; i < initialClips.length; i++) {
+        const clip = initialClips[i];
+        const dur = durations[i] || 5000;
+        const itemId = generateId();
+        trackItemIds.push(itemId);
+        trackItemsMap[itemId] = {
+          id: itemId,
+          type: 'video',
+          display: { from, to: from + dur },
+          details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
+          metadata: { resourceId: itemId },
+          trackId,
+          isMain: true,
+          duration: dur,
+          playbackRate: 1,
+          trim: { from: 0, to: dur },
+        };
+        from += dur;
+      }
+      const tracks = [{ id: trackId, type: 'video', items: trackItemIds, accepts: ['video'] }];
+
+      if (cancelled) return;
+      (stateManager as any).updateState(
+        {
+          tracks,
+          trackItemIds,
+          trackItemsMap,
+          transitionIds: [],
+          transitionsMap: {},
+          duration: from,
+        },
+        { kind: 'update', updateHistory: false },
+      );
+      seededKeyRef.current = key;
     })();
     return () => {
       cancelled = true;

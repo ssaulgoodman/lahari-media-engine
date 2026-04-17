@@ -23,7 +23,10 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
     if (!dragging) return;
     const move = (e: MouseEvent) => {
       const delta = e.clientX - startX;
-      const newPos = startPos + delta;
+      // startPos is scroll-relative (see `position` above: timeMsToUnits - scrollLeft).
+      // Add scrollLeft back before converting to absolute time so dragging while
+      // the timeline is scrolled seeks to the correct point.
+      const newPos = startPos + delta + scrollLeft;
       const time = unitsToTimeMs(newPos, scale.zoom);
       playerRef?.current?.seekTo((time * fps) / 1000);
     };
@@ -34,7 +37,7 @@ const Playhead: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => {
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
     };
-  }, [dragging, startX, startPos, scale.zoom, fps, playerRef]);
+  }, [dragging, startX, startPos, scale.zoom, fps, playerRef, scrollLeft]);
 
   return (
     <div

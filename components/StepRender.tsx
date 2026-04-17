@@ -1,7 +1,9 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import React, { useMemo } from 'react';
+// FFMPEG RENDER — temporarily disabled. Kept commented so we can restore once
+// the timeline editor becomes authoritative for the final stitch.
+// import { FFmpeg } from '@ffmpeg/ffmpeg';
+// import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { ApiProject } from '../types';
 import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
 
@@ -11,6 +13,7 @@ interface Props {
 }
 
 export const StepRender: React.FC<Props> = ({ project, onBack }) => {
+  /* ── FFMPEG RENDER (disabled) ────────────────────────────────────────────
   const [loaded, setLoaded] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -135,6 +138,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       setIsPublishing(false);
     }
   };
+  ────────────────────────────────────────────────────────────────────────── */
 
   // Shot videos that the timeline preview should seed with. Derived once from
   // the project; kept stable so the editor only auto-populates on mount.
@@ -150,100 +154,26 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 pb-32">
-        <div className="text-center space-y-2 mb-8">
-            <h2 className="text-2xl font-display font-medium text-white tracking-tight">Final Render</h2>
-            <p className="text-zinc-400 text-sm">Compile your masterpiece locally using FFmpeg WASM.</p>
+    <div className="max-w-5xl mx-auto space-y-6 pb-32">
+      <div className="text-center space-y-2 mb-4">
+        <h2 className="text-2xl font-display font-medium text-white tracking-tight">Final Render</h2>
+        <p className="text-zinc-400 text-sm">Arrange, trim, and preview your timeline. Stitching is temporarily disabled.</p>
+      </div>
+
+      {previewClips.length > 0 ? (
+        <div className="surface rounded-xl overflow-hidden" style={{ height: 'calc(100vh - 220px)', minHeight: 640 }}>
+          <TimelineEditor embedded initialClips={previewClips} />
         </div>
-
-        {previewClips.length > 0 && (
-          <div className="surface rounded-xl overflow-hidden" style={{ height: 640 }}>
-            <TimelineEditor embedded initialClips={previewClips} />
-          </div>
-        )}
-
-        <div className="surface rounded-xl p-8 space-y-8 text-center">
-            {!loaded ? (
-                <div className="py-12 flex flex-col items-center gap-4">
-                    <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
-                    <p className="text-zinc-400 text-sm">{statusText}</p>
-                </div>
-            ) : (
-                <div className="space-y-8">
-                    {/* Status Monitor */}
-                    <div className="surface-inset rounded-lg p-4 font-mono text-[11px] text-zinc-400 h-32 overflow-y-auto text-left">
-                        <p className="text-white mb-2">Status: {statusText}</p>
-                        <p ref={messageRef} className="opacity-50">...</p>
-                    </div>
-
-                    {!finalVideoUrl ? (
-                        <div className="flex flex-col items-center gap-4">
-                            <p className="text-sm text-zinc-400">
-                                Ready to stitch {project.scenes.flatMap(s => s.shots).filter(s => s.videoUrl).length} clips.
-                            </p>
-                            <button
-                                onClick={renderVideo}
-                                disabled={isRendering || !project.audioPath}
-                                className="bg-white text-black px-10 py-3 rounded-md font-semibold hover:bg-zinc-200 transition-all disabled:opacity-50 text-sm"
-                            >
-                                {isRendering ? 'Rendering...' : 'Start Render'}
-                            </button>
-                            {renderError && (
-                                <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">{renderError}</p>
-                            )}
-                            {isRendering && (
-                                <div className="w-full max-w-md h-1 bg-zinc-800 rounded-full overflow-hidden">
-                                    <div className="h-full bg-white transition-all duration-300" style={{ width: `${progress}%` }}></div>
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="aspect-video bg-black rounded-lg overflow-hidden border border-white/[0.08] shadow-2xl">
-                                <video src={finalVideoUrl} controls className="w-full h-full" />
-                            </div>
-                            <div className="flex flex-col items-center gap-4">
-                                <div className="flex justify-center gap-3 flex-wrap">
-                                    <a
-                                        href={finalVideoUrl}
-                                        download={`lahari_master_${Date.now()}.mp4`}
-                                        className="bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] px-6 py-2.5 rounded-md font-semibold transition-all flex items-center gap-2 text-sm"
-                                    >
-                                        Download Master
-                                    </a>
-                                    <button
-                                        onClick={publishToQueue}
-                                        disabled={isPublishing || !!publishResult}
-                                        className="bg-white text-black px-8 py-2.5 rounded-md font-semibold hover:bg-zinc-200 transition-all disabled:opacity-50 flex items-center gap-2 text-sm"
-                                        title="Upload to Lahari storage and mark the queue row as completed on Supabase"
-                                    >
-                                        {isPublishing ? 'Publishing…' : publishResult ? 'Published ✓' : 'Publish to queue'}
-                                    </button>
-                                    <button onClick={() => { setFinalVideoUrl(null); setFinalBlob(null); setPublishResult(null); }} className="text-zinc-400 hover:text-white px-6 py-2.5 text-sm transition-colors">
-                                        Discard & Retry
-                                    </button>
-                                </div>
-                                {publishResult && (
-                                    <div className="text-xs text-zinc-300 surface-inset rounded-md px-3 py-2 max-w-lg text-center">
-                                        {publishResult.queueRowUpdated
-                                            ? <>Queue row marked completed. Final URL: <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-white hover:text-zinc-300 underline underline-offset-2 decoration-white/40">{publishResult.videoUrl}</a></>
-                                            : <>Saved to <a href={publishResult.videoUrl} target="_blank" rel="noreferrer" className="text-white hover:text-zinc-300 underline underline-offset-2 decoration-white/40">{publishResult.videoUrl}</a>. No matching queue row found — this project wasn't started from the queue.</>
-                                        }
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-
-            <div className="pt-6 border-t border-white/[0.06] flex justify-between items-center">
-                <button onClick={onBack} className="text-zinc-400 hover:text-white text-sm transition-colors">Back to Studio</button>
-                <div className="text-[11px] text-zinc-400 font-mono">
-                    @ffmpeg/wasm
-                </div>
-            </div>
+      ) : (
+        <div className="surface rounded-xl p-8 text-center">
+          <p className="text-zinc-400 text-sm">No shot videos available yet. Generate videos in the Studio first.</p>
         </div>
+      )}
+
+      <div className="surface rounded-xl px-6 py-4 flex justify-between items-center">
+        <button onClick={onBack} className="text-zinc-400 hover:text-white text-sm transition-colors">Back to Studio</button>
+        <div className="text-[11px] text-zinc-400 font-mono">timeline-editor preview</div>
+      </div>
     </div>
   );
 };

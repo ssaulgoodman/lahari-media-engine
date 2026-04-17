@@ -38,7 +38,9 @@ const TransitionOverlay: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => 
     setPopoverPos({ top, left });
   }, [openCutId]);
 
-  // Re-measure if popover renders and we didn't have its height yet
+  // Re-measure if popover renders and we didn't have its height yet.
+  // No deps = runs every render; we bail out via functional setState when
+  // the position hasn't changed so React doesn't schedule another render.
   useEffect(() => {
     if (!openCutId || !popoverRef.current) return;
     const btn = buttonRefs.current[openCutId];
@@ -47,7 +49,7 @@ const TransitionOverlay: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => 
     const popoverHeight = popoverRef.current.offsetHeight;
     const left = Math.max(8, Math.min(rect.left + rect.width / 2 - POPOVER_WIDTH / 2, window.innerWidth - POPOVER_WIDTH - 8));
     const top = rect.top - popoverHeight - 6;
-    setPopoverPos({ top, left });
+    setPopoverPos((cur) => (cur && cur.top === top && cur.left === left ? cur : { top, left }));
   });
 
   // Close popover on click outside
