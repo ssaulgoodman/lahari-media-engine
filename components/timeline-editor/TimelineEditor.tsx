@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { dispatch } from '@designcombo/events';
 import StateManager, { ADD_VIDEO } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
 import Player from './Player';
 import Timeline from './Timeline';
+import EffectsPanel from './EffectsPanel';
 import useStore from './store';
 import useTimelineEvents from './use-timeline-events';
 
@@ -48,7 +49,7 @@ const addVideoClip = (src: string, name?: string) => {
   dispatch(ADD_VIDEO, {
     payload: {
       id,
-      display: { from, to: from + 5000 },
+      display: { from },
       type: 'video',
       details: { src, volume: 100, ...(name ? { name } : {}) },
       metadata: { resourceId: id },
@@ -75,9 +76,21 @@ const waitForItem = (id: string, timeoutMs = 8000) =>
     check();
   });
 
+const tabBtn = (active: boolean): React.CSSProperties => ({
+  background: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)',
+  border: active ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.06)',
+  color: active ? '#fff' : '#a1a1aa',
+  padding: '5px 12px',
+  borderRadius: 6,
+  fontSize: 12,
+  cursor: 'pointer',
+  transition: 'all 0.15s',
+});
+
 const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { playerRef, setStateManager, setState, stateManager } = useStore();
+  const [sidePanel, setSidePanel] = useState<'effects' | null>(null);
   useTimelineEvents();
 
   // Init the StateManager once.
@@ -155,6 +168,12 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
       <button style={toolbarBtn} onClick={() => fileInputRef.current?.click()}>
         Upload video
       </button>
+      <button
+        style={tabBtn(sidePanel === 'effects')}
+        onClick={() => setSidePanel((cur) => (cur === 'effects' ? null : 'effects'))}
+      >
+        Effects
+      </button>
     </>
   );
 
@@ -193,15 +212,28 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
           flex: 1,
           minHeight: 0,
           display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexDirection: 'row',
         }}
       >
-        <div style={{ width: '100%', maxWidth: 960, flex: 1, display: 'flex', padding: 16 }}>
-          {stateManager ? <Player /> : null}
+        {/* Main area: player + controls */}
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{ width: '100%', maxWidth: 960, flex: 1, display: 'flex', padding: 16 }}>
+            {stateManager ? <Player /> : null}
+          </div>
+          <div style={{ display: 'flex', gap: 8, padding: '16px 0' }}>{uploadControl}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, padding: '16px 0' }}>{uploadControl}</div>
+
+        {/* Side panel: Effects */}
+        {sidePanel === 'effects' && <EffectsPanel />}
       </div>
 
       {playerRef && stateManager && <Timeline />}

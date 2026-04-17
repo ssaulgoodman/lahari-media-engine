@@ -16,6 +16,8 @@
     "@designcombo/events": "^1.0.2",
     "@designcombo/state": "^5.5.8",
     "@designcombo/timeline": "^5.5.8",
+    "@designcombo/transitions": "^5.5.8",
+    "@designcombo/types": "^5.5.8",
     "@fal-ai/client": "^1.9.5",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",

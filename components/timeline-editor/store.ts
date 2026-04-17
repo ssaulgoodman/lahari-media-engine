@@ -24,9 +24,11 @@ interface ITimelineStore {
   setPlayerRef: (r: React.RefObject<PlayerRef> | null) => void;
   setScale: (s: ITimelineScaleState) => void;
   setState: (partial: Partial<ITimelineStore>) => void;
+  addTransition: (transition: ITransition) => void;
+  removeTransition: (transitionId: string) => void;
 }
 
-const useStore = create<ITimelineStore>((set) => ({
+const useStore = create<ITimelineStore>((set, get) => ({
   stateManager: null,
   timeline: null,
   playerRef: null,
@@ -46,6 +48,52 @@ const useStore = create<ITimelineStore>((set) => ({
   setPlayerRef: (playerRef) => set({ playerRef }),
   setScale: (scale) => set({ scale }),
   setState: (partial) => set(partial as any),
+
+  addTransition: (transition) => {
+    const { transitionIds, transitionsMap, stateManager } = get();
+    // Remove any existing transition between the same pair
+    const existingId = Object.keys(transitionsMap).find(
+      (id) =>
+        transitionsMap[id].fromId === transition.fromId &&
+        transitionsMap[id].toId === transition.toId,
+    );
+    const nextIds = existingId
+      ? transitionIds.filter((id) => id !== existingId)
+      : [...transitionIds];
+    const nextMap = { ...transitionsMap };
+    if (existingId) delete nextMap[existingId];
+
+    if (transition.kind !== 'none') {
+      nextIds.push(transition.id);
+      nextMap[transition.id] = transition;
+    }
+
+    set({ transitionIds: nextIds, transitionsMap: nextMap });
+
+    // Sync to state manager so undo/redo and timeline canvas stay in sync
+    if (stateManager) {
+      stateManager.updateState(
+        { transitionIds: nextIds, transitionsMap: nextMap },
+        { kind: 'update', updateHistory: true },
+      );
+    }
+  },
+
+  removeTransition: (transitionId) => {
+    const { transitionIds, transitionsMap, stateManager } = get();
+    const nextIds = transitionIds.filter((id) => id !== transitionId);
+    const nextMap = { ...transitionsMap };
+    delete nextMap[transitionId];
+
+    set({ transitionIds: nextIds, transitionsMap: nextMap });
+
+    if (stateManager) {
+      stateManager.updateState(
+        { transitionIds: nextIds, transitionsMap: nextMap },
+        { kind: 'update', updateHistory: true },
+      );
+    }
+  },
 }));
 
 export default useStore;
