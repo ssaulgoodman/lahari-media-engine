@@ -18,20 +18,25 @@ const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Body-ID scoping helpers — verify child belongs to the URL project
+// Body-ID scoping helpers — verify child belongs to the URL project.
+// Throw with a statusCode so catch blocks can return the right HTTP status.
+class ScopeError extends Error { statusCode: number; constructor(msg: string, code: number) { super(msg); this.statusCode = code; } }
 const requireCastMember = async (projectId: string, memberId: string) => {
   const row = await selectOne('cast_members', { id: memberId });
-  if (!row || row.project_id !== projectId) throw new Error('Cast member does not belong to this project');
+  if (!row) throw new ScopeError('Cast member not found', 404);
+  if (row.project_id !== projectId) throw new ScopeError('Cast member does not belong to this project', 403);
   return row;
 };
 const requireEnvironment = async (projectId: string, envId: string) => {
   const row = await selectOne('environments', { id: envId });
-  if (!row || row.project_id !== projectId) throw new Error('Environment does not belong to this project');
+  if (!row) throw new ScopeError('Environment not found', 404);
+  if (row.project_id !== projectId) throw new ScopeError('Environment does not belong to this project', 403);
   return row;
 };
 const requireAsset = async (projectId: string, assetId: string) => {
   const row = await selectOne('assets', { id: assetId });
-  if (!row || row.project_id !== projectId) throw new Error('Asset does not belong to this project');
+  if (!row) throw new ScopeError('Asset not found', 404);
+  if (row.project_id !== projectId) throw new ScopeError('Asset does not belong to this project', 403);
   return row;
 };
 
@@ -106,7 +111,7 @@ router.post('/:id/generate-styles', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -161,7 +166,7 @@ router.post('/:id/brainstorm-styles', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -218,7 +223,7 @@ router.post('/:id/visualize-style', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -253,7 +258,7 @@ router.post('/:id/refine-style-direction', async (req, res) => {
     res.json(refined);
   } catch (err: any) {
     console.error(`[${project.id}] Refine direction failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -405,7 +410,7 @@ router.post('/:id/upload-and-lock-style', upload.single('image'), async (req, re
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] upload-and-lock-style failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -446,7 +451,7 @@ router.post('/:id/analyze-style-image', upload.single('image'), async (req, res)
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -587,7 +592,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -631,7 +636,7 @@ router.post('/:id/upload-character-reference', upload.single('image'), async (re
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] upload-character-reference failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -789,7 +794,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -830,7 +835,7 @@ router.post('/:id/upload-environment-reference', upload.single('image'), async (
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] upload-environment-reference failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1007,7 +1012,7 @@ router.post('/:id/generate-script', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1164,7 +1169,7 @@ router.post('/:id/refine-script', async (req, res) => {
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[${project.id}] Script refine failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1274,7 +1279,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
     res.json(await getFullProject(project.id));
   } catch (err: any) {
     console.error(`[${project.id}] Write shot prompts failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1358,7 +1363,7 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[shot ${shot.id}] Prompt refinement failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1515,7 +1520,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       error: err.message,
     });
     await updateRows('shots', { id: shot.id }, { image_status: 'error' });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -1730,7 +1735,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[shot ${shot.id}] End frame prompt refinement failed:`, err);
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -2054,7 +2059,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       error: err.message,
     });
     await updateRows('shots', { id: shot.id }, { video_status: 'error' });
-    res.status(500).json({ error: err.message });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 
