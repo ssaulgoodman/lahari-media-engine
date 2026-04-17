@@ -91,6 +91,7 @@ const forkProject = async (sourceId: string): Promise<string> => {
     last_script_prompt: src.last_script_prompt,
     last_concept_prompt: src.last_concept_prompt,
     last_write_shots_prompt: src.last_write_shots_prompt,
+    style_generation_prompt: src.style_generation_prompt,
     parent_project_id: sourceId,
     created_at: now,
     updated_at: now,
@@ -116,6 +117,8 @@ const forkProject = async (sourceId: string): Promise<string> => {
       project_id: newId,
       name: c.name,
       description: c.description,
+      generation_prompt: c.generation_prompt,
+      prompts_stale: c.prompts_stale,
       reference_asset_id: remapAsset(c.reference_asset_id),
       sort_order: c.sort_order,
     })));
@@ -128,6 +131,8 @@ const forkProject = async (sourceId: string): Promise<string> => {
       project_id: newId,
       name: e.name,
       description: e.description,
+      generation_prompt: e.generation_prompt,
+      prompts_stale: e.prompts_stale,
       reference_asset_id: remapAsset(e.reference_asset_id),
       sort_order: e.sort_order,
     })));
@@ -180,6 +185,10 @@ const forkProject = async (sourceId: string): Promise<string> => {
           extracted_last_frame_asset_id: remapAsset(shot.extracted_last_frame_asset_id),
           continuity_description: shot.continuity_description,
           continuity_from: shot.continuity_from,
+          end_visual_prompt: shot.end_visual_prompt,
+          end_user_feedback: shot.end_user_feedback,
+          prompts_stale: shot.prompts_stale,
+          refined_from_prev_frame: shot.refined_from_prev_frame,
         });
       }
     }
@@ -943,7 +952,7 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
 // Also unlocks the shot since a locked shot requires a start frame + video.
 router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
-  await updateRows('shots', { id: shotId }, { image_asset_id: null, image_status: 'idle' });
+  await updateRows('shots', { id: shotId }, { image_asset_id: null, image_status: 'idle', locked: 0 });
   res.json(await getFullProject(paramStr(req.params.id)));
 });
 
