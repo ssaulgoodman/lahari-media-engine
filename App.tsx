@@ -1131,7 +1131,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
               const isAccessible =
                 step.id === AppStep.UPLOAD ||
                 (project && (step.id === AppStep.BLUEPRINT)) ||
-                (project && (project.status === 'characters_locked' || project.status === 'environments_locked') && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
+                (project && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status) && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
 
               return (
                 <button
