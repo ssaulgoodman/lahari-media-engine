@@ -1086,11 +1086,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                       className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
                                       onClick={() => ref.url && setModalImage(ref.url)}
                                     >
-                                      {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover" alt="" />}
+                                      {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />}
                                       <span>{ref.label}</span>
                                       {ref.url && (
                                         <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
-                                          <img src={ref.url} className="w-44 h-44 object-cover rounded-lg shadow-xl border border-white/[0.1]" alt={ref.label} />
+                                          <img src={ref.url} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt={ref.label} />
                                           <div className="text-[10px] text-zinc-300 mt-1 text-center font-medium">{ref.label}</div>
                                         </div>
                                       )}
