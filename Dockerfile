@@ -22,7 +22,7 @@ ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 RUN npm run build
 
 # Prune dev dependencies
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --legacy-peer-deps
 
 # Create storage directories
 RUN mkdir -p storage/audio storage/images storage/videos
