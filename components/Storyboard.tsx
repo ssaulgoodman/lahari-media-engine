@@ -1231,7 +1231,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     {mentionOpen === `prompt:${shot.id}` && (() => {
                                       const castItems = (project?.cast || []).filter(c => !mentionQuery || c.name.toLowerCase().includes(mentionQuery)).map(c => ({ name: c.name, thumb: c.referenceImageUrl, type: 'character' as const }));
                                       const envItems = (project?.environments || []).filter(e => !mentionQuery || e.name.toLowerCase().includes(mentionQuery)).map(e => ({ name: e.name, thumb: e.referenceImageUrl, type: 'environment' as const }));
-                                      const items = [...castItems, ...envItems];
+                                      const styleItem = project?.styleAssetUrl && (!mentionQuery || 'style'.includes(mentionQuery))
+                                        ? [{ name: 'Style', thumb: project.styleAssetUrl, type: 'style' as const }] : [];
+                                      const items = [...styleItem, ...castItems, ...envItems];
                                       if (items.length === 0) return null;
                                       return (
                                         <div className="absolute left-0 bottom-full mb-1 z-[200] bg-zinc-900 border border-white/[0.08] rounded-lg shadow-xl max-h-[200px] overflow-y-auto w-64">
@@ -1256,7 +1258,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                             >
                                               {item.thumb ? <img src={item.thumb} className="w-6 h-6 rounded object-cover flex-shrink-0" alt="" /> : <div className="w-6 h-6 rounded bg-white/[0.06] flex-shrink-0" />}
                                               <span className="text-sm text-zinc-300 truncate">{item.name}</span>
-                                              <span className="text-[10px] uppercase text-zinc-400 ml-auto flex-shrink-0">{item.type === 'character' ? 'char' : 'env'}</span>
+                                              <span className="text-[10px] uppercase text-zinc-400 ml-auto flex-shrink-0">{item.type === 'character' ? 'char' : item.type === 'environment' ? 'env' : 'style'}</span>
                                             </button>
                                           ))}
                                         </div>
