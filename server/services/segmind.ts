@@ -109,19 +109,25 @@ export const generateSegmindVideo = async (
     }
   } else {
     // Seedance family
+    // NOTE: Seedance frame URLs (first_frame_url/last_frame_url) and
+    // reference_images are mutually exclusive. When we have a start frame,
+    // we prioritize frame control and skip reference_images.
+    const useFrameMode = !!startUrl;
     body = {
       prompt: motionPrompt || 'Cinematic camera movement',
-      first_frame_url: startUrl,
       duration: durationSec,
       resolution: opts?.resolution || '720p',
       aspect_ratio: opts?.aspectRatio || '16:9',
       generate_audio: false,
       seed: Math.floor(Math.random() * 1000000),
     };
-    if (endUrl && model.supportsLastFrame) {
-      body.last_frame_url = endUrl;
+    if (useFrameMode) {
+      body.first_frame_url = startUrl;
+      if (endUrl && model.supportsLastFrame) {
+        body.last_frame_url = endUrl;
+      }
     }
-    if (refUrls.length && model.supportsRefs) {
+    if (!useFrameMode && refUrls.length && model.supportsRefs) {
       body.reference_images = refUrls.slice(0, 9);
     }
   }
