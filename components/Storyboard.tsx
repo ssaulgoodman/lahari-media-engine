@@ -239,7 +239,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                 Story
               </button>
               {contextPopover === 'story' && (
-                <div className="absolute top-full right-0 mt-2 w-96 surface rounded-xl p-4 shadow-xl z-30 space-y-2">
+                <div className="absolute top-full right-0 mt-2 w-96 bg-zinc-900 border border-white/[0.08] rounded-xl p-4 shadow-2xl z-30 space-y-2">
                   <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-400">
                     <span>Story</span>
                     {concept.deity && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.deity}</span></>}
@@ -266,7 +266,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                 Prompts
               </button>
               {contextPopover === 'prompts' && (
-                <div className="absolute top-full right-0 mt-2 w-[28rem] surface rounded-xl p-4 shadow-xl z-30 space-y-3">
+                <div className="absolute top-full right-0 mt-2 w-[28rem] bg-zinc-900 border border-white/[0.08] rounded-xl p-4 shadow-2xl z-30 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] uppercase tracking-wide text-zinc-400">Rewrite all shot prompts</span>
                     <button
