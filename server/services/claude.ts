@@ -870,8 +870,8 @@ Only change the motion prompt if the feedback specifically mentions movement or 
       input_schema: {
         type: 'object' as const,
         properties: {
-          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in the frame.' },
-          motionPrompt: { type: 'string', description: 'Motion prompt (adjust only if the feedback requires it, otherwise keep the original).' }
+          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 SHORT sentences max. Direct, visual, no fluff.' },
+          motionPrompt: { type: 'string', description: 'Motion/camera prompt. 1 sentence. Only change if feedback mentions movement, otherwise keep the original exactly.' }
         },
         required: ['visualPrompt', 'motionPrompt']
       }
