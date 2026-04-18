@@ -1165,10 +1165,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               }
                             };
 
+                            const canRefine = isFirstFrame || isEndFrame; // Video refine: future endpoint
                             const handleRefine = (feedback: string) => {
                               if (isFirstFrame) onRefinePrompt(activeScene.id, shot.id, feedback);
                               else if (isEndFrame) onRefineEndFramePrompt?.(shot.id, feedback);
-                              // Video refine: future endpoint
                             };
 
                             const generateLabel = isFirstFrame
@@ -1283,7 +1283,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                 )}
 
                                 {/* 4. Refine — plain text feedback, Claude rewrites the prompt */}
-                                {!shot.locked && (isFirstFrame ? hasStartFrame : true) && (
+                                {!shot.locked && canRefine && (
                                   <>
                                     <div className="h-px bg-white/[0.06] my-1" />
                                     <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">

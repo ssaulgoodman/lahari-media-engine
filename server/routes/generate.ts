@@ -1692,15 +1692,23 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
   if (!project) return res.status(404).json({ error: 'Project not found' });
   const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
-  if (!shot.end_image_asset_id) return res.status(400).json({ error: 'No end frame to refine — generate one first' });
-
-  const endImageAsset = await selectOne('assets', { id: shot.end_image_asset_id });
-  if (!endImageAsset) return res.status(400).json({ error: 'End frame asset not found' });
+  // End frame image is optional — refine can work from prompt + feedback alone
+  const endImageAsset = shot.end_image_asset_id
+    ? await selectOne('assets', { id: shot.end_image_asset_id })
+    : null;
 
   try {
     const t0 = Date.now();
-    const imageBase64 = await readAsBase64(endImageAsset.file_path);
-    const mime = mimeFromExt(endImageAsset.file_path);
+    const imageBase64 = endImageAsset ? await readAsBase64(endImageAsset.file_path) : '';
+    const mime = endImageAsset ? mimeFromExt(endImageAsset.file_path) : 'image/png';
+
+    // Get character descriptions for context
+    const castIds = JSON.parse(shot.cast_ids || '[]');
+    const castMembers = castIds.length > 0
+      ? await selectAll('cast_members', { project_id: project.id })
+      : [];
+    const shotCast = castMembers.filter((c: any) => castIds.includes(c.id));
+    const charDescs = shotCast.map((c: any) => `${c.name}: ${c.description || 'No description'}`);
 
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
@@ -1711,7 +1719,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
       styleDNA: project.style_description || 'Cinematic',
-      characterDescriptions: [],
+      characterDescriptions: charDescs,
     });
 
     // Save rewritten prompt — user sees it update, then generates separately
