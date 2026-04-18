@@ -73,6 +73,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [endFrameUploadTarget, setEndFrameUploadTarget] = useState<string | null>(null);
   // Reference image attached to refine feedback (per shot)
   const [refineImage, setRefineImage] = useState<Record<string, File>>({});
+  const [refineTarget, setRefineTarget] = useState<Record<string, 'start' | 'end'>>({});
 
   const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
 
@@ -789,8 +790,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           )}
                         </div>
                       </div>
-                      {/* End frame prompt + refine section */}
-                      {!shot.locked && (shot.endImageUrl || shot.endVisualPrompt) && (
+                      {/* End frame prompt + generate section */}
+                      {!shot.locked && hasVideo && modelSupportsLastFrame && (
                         <div className="px-4 py-3 border-t border-white/[0.04] space-y-2">
                           <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">End frame prompt</div>
                           <textarea
@@ -811,29 +812,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               </button>
                             )}
                           </div>
-                          {/* Refine section — only when end frame exists */}
-                          {shot.endImageUrl && (
-                            <div className="pt-2 border-t border-white/[0.04] space-y-2">
-                              <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">Refine end frame</div>
-                              <div className="flex items-start gap-2">
-                                <textarea
-                                  id={`refine-end-${shot.id}`}
-                                  placeholder="What's wrong with this end frame? @mention characters…"
-                                  className="flex-1 surface-inset rounded-md p-2 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2rem]"
-                                />
-                                <button
-                                  onClick={() => {
-                                    const input = document.getElementById(`refine-end-${shot.id}`) as HTMLTextAreaElement;
-                                    if (input?.value.trim() && project) {
-                                      onRefineEndFramePrompt?.(shot.id, input.value);
-                                      input.value = '';
-                                    }
-                                  }}
-                                  className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0"
-                                >Refine</button>
-                              </div>
-                            </div>
-                          )}
+                          {/* End frame refine moved to unified refine section below */}
                         </div>
                       )}
                       </>
@@ -1251,7 +1230,22 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               {hasStartFrame && (
                                 <>
                                 <div className="h-px bg-white/[0.06] my-3" />
-                                <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">AI refine — describe what's wrong, Claude rewrites the prompt</div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Refine</span>
+                                  <div className="flex items-center bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.06]">
+                                    <button
+                                      onClick={() => setRefineTarget(prev => ({ ...prev, [shot.id]: 'start' }))}
+                                      className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${(refineTarget[shot.id] || 'start') === 'start' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                                    >Start frame</button>
+                                    {hasVideo && modelSupportsLastFrame && (
+                                      <button
+                                        onClick={() => setRefineTarget(prev => ({ ...prev, [shot.id]: 'end' }))}
+                                        className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${refineTarget[shot.id] === 'end' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                                      >End frame</button>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-zinc-400/60">— describe what's wrong, Claude rewrites the prompt</span>
+                                </div>
                                 <div className="relative flex gap-2">
                                   <AutoGrowTextarea
                                     id={`refine-${shot.id}`}
@@ -1289,7 +1283,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                         e.preventDefault();
                                         setMentionOpen(null);
                                         setMentionQuery('');
-                                        onRefinePrompt(activeScene.id, shot.id, (e.target as HTMLTextAreaElement).value);
+                                        const val = (e.target as HTMLTextAreaElement).value;
+                                        if (refineTarget[shot.id] === 'end') {
+                                          onRefineEndFramePrompt?.(shot.id, val);
+                                        } else {
+                                          onRefinePrompt(activeScene.id, shot.id, val);
+                                        }
                                         (e.target as HTMLTextAreaElement).value = '';
                                       }
                                     }}
@@ -1302,7 +1301,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     onClick={() => {
                                       const input = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
                                       if (input?.value.trim()) {
-                                        onRefinePrompt(activeScene.id, shot.id, input.value, refineImage[shot.id]);
+                                        if (refineTarget[shot.id] === 'end') {
+                                          onRefineEndFramePrompt?.(shot.id, input.value);
+                                        } else {
+                                          onRefinePrompt(activeScene.id, shot.id, input.value, refineImage[shot.id]);
+                                        }
                                         input.value = '';
                                         setRefineImage(prev => { const n = { ...prev }; delete n[shot.id]; return n; });
                                       }
