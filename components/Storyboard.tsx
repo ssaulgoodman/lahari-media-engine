@@ -1142,16 +1142,16 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                             const currentPrompt = isFirstFrame ? (shot.visualPrompt || '')
                               : isEndFrame ? (shot.endVisualPrompt || '')
-                              : (shot.motionPrompt || '');
+                              : (videoOverride[shot.id] ?? autoVeoPrompt);
 
                             const promptPlaceholder = isFirstFrame ? 'Describe the visual scene…'
                               : isEndFrame ? 'Describe what this shot should end on…'
-                              : 'Camera movement and action…';
+                              : 'Video prompt — camera, motion, scene context…';
 
                             const handlePromptChange = (val: string) => {
                               if (isFirstFrame) onUpdateShot(activeScene.id, shot.id, { visualPrompt: val });
                               else if (isEndFrame) onUpdateShot(activeScene.id, shot.id, { endVisualPrompt: val } as any);
-                              else onUpdateShot(activeScene.id, shot.id, { motionPrompt: val });
+                              else setVideoOverride(prev => ({ ...prev, [shot.id]: val }));
                             };
 
                             const handleGenerate = () => {
@@ -1205,25 +1205,12 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   />
                                 )}
 
-                                {/* Video tab: also show the auto-built video prompt */}
-                                {isVideo && (
-                                  <>
-                                    <div className="h-px bg-white/[0.06]" />
-                                    <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
-                                      Video prompt — sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'}
-                                    </div>
-                                    <textarea
-                                      value={videoOverride[shot.id] ?? autoVeoPrompt}
-                                      onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
-                                      className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-32"
-                                    />
-                                    {videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
-                                      <button
-                                        onClick={() => setVideoOverride(prev => { const { [shot.id]: _, ...rest } = prev; return rest; })}
-                                        className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
-                                      >Reset to auto</button>
-                                    )}
-                                  </>
+                                {/* Video tab: reset to auto button */}
+                                {isVideo && videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
+                                  <button
+                                    onClick={() => setVideoOverride(prev => { const { [shot.id]: _, ...rest } = prev; return rest; })}
+                                    className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
+                                  >Reset to auto-generated prompt</button>
                                 )}
 
                                 {/* 3. Generate button */}
@@ -1238,7 +1225,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                 )}
 
                                 {/* 4. Refine — plain text feedback, Claude rewrites the prompt */}
-                                {hasResult && !shot.locked && (
+                                {!shot.locked && (isFirstFrame ? hasStartFrame : true) && (
                                   <>
                                     <div className="h-px bg-white/[0.06] my-1" />
                                     <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
