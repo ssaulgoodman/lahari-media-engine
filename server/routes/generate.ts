@@ -1326,6 +1326,9 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       images.push({ base64: refBase64, mime: refMime, label: 'User reference' });
     }
 
+    const scene = await selectOne('scenes', { id: shot.scene_id });
+    const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
+
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
@@ -1336,6 +1339,8 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
       styleDNA: project.style_description || 'Cinematic',
       characterDescriptions: charDescs,
+      sceneNarrative: scene?.narrative_description,
+      environmentDescription: env?.description,
     });
 
     // Update the shot prompts with the rewritten versions
@@ -1710,16 +1715,21 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
     const shotCast = castMembers.filter((c: any) => castIds.includes(c.id));
     const charDescs = shotCast.map((c: any) => `${c.name}: ${c.description || 'No description'}`);
 
+    const scene = await selectOne('scenes', { id: shot.scene_id });
+    const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
+
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: `[END FRAME REFINEMENT] ${feedback}`,
+      feedback: `[END FRAME — this is what the shot should land on] ${feedback}`,
       failedImageBase64: imageBase64,
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
       styleDNA: project.style_description || 'Cinematic',
       characterDescriptions: charDescs,
+      sceneNarrative: scene?.narrative_description,
+      environmentDescription: env?.description,
     });
 
     // Save rewritten prompt — user sees it update, then generates separately
@@ -1744,6 +1754,69 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[shot ${shot.id}] End frame prompt refinement failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+// Refine video prompt — Claude rewrites the motion prompt based on feedback
+router.post('/:id/shots/:shotId/refine-video-prompt', async (req, res) => {
+  const feedback = req.body?.feedback;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
+  const castIds = JSON.parse(shot.cast_ids || '[]');
+  const castMembers = castIds.length > 0 ? await selectAll('cast_members', { project_id: project.id }) : [];
+  const charDescs = castMembers.filter((c: any) => castIds.includes(c.id)).map((c: any) => `${c.name}: ${c.description || 'No description'}`);
+
+  try {
+    const t0 = Date.now();
+    // Pass the video/start frame as context if available
+    let imageBase64 = '';
+    let imageMime = 'image/png';
+    if (shot.image_asset_id) {
+      const imageAsset = await selectOne('assets', { id: shot.image_asset_id });
+      if (imageAsset) {
+        imageBase64 = await readAsBase64(imageAsset.file_path);
+        imageMime = mimeFromExt(imageAsset.file_path);
+      }
+    }
+
+    const result = await refineShotPrompt({
+      currentVisualPrompt: shot.visual_prompt || '',
+      currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
+      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action] ${feedback}`,
+      failedImageBase64: imageBase64,
+      failedImageMime: imageMime,
+      styleDNA: project.style_description || 'Cinematic',
+      characterDescriptions: charDescs,
+      sceneNarrative: scene?.narrative_description,
+      environmentDescription: env?.description,
+    });
+
+    await updateRows('shots', { id: shot.id }, {
+      motion_prompt: result.motionPrompt,
+    });
+
+    const durationMs = Date.now() - t0;
+    await logCall({
+      projectId: project.id,
+      stage: 'refine-video-prompt',
+      model: 'claude-sonnet-4-6',
+      prompt: `Refine video: "${feedback}" | Original motion: "${(shot.motion_prompt || '').substring(0, 80)}…"`,
+      contextChain: await buildContextChain(project.id),
+      responseSummary: `Rewritten motion: "${result.motionPrompt.substring(0, 100)}…"`,
+      durationMs,
+      costEstimate: 0.01,
+    });
+
+    res.json({ ok: true, motionPrompt: result.motionPrompt });
+  } catch (err: any) {
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });

@@ -801,6 +801,8 @@ export const refineShotPrompt = async (opts: {
   referenceImageMime?: string;
   styleDNA: string;
   characterDescriptions: string[];
+  sceneNarrative?: string;
+  environmentDescription?: string;
 }): Promise<{ visualPrompt: string; motionPrompt: string }> => {
   const client = getClient();
 
@@ -834,8 +836,11 @@ export const refineShotPrompt = async (opts: {
     ? `THE FIRST IMAGE is the failed attempt. Study it carefully.${refNote}`
     : `No image provided — rewrite the prompt based on the feedback alone.${refNote}`;
 
+  const sceneCtx = opts.sceneNarrative ? `\nSCENE NARRATIVE: ${opts.sceneNarrative}` : '';
+  const envCtx = opts.environmentDescription ? `\nENVIRONMENT: ${opts.environmentDescription}` : '';
+
   contentBlocks.push({
-    type: 'text', text: `You are a cinematographer refining a generation prompt.
+    type: 'text', text: `You are a cinematographer refining a generation prompt for a devotional music video.
 
 ${imageContext}
 
@@ -846,22 +851,14 @@ Motion: ${opts.currentMotionPrompt}
 DIRECTOR FEEDBACK (what's wrong):
 ${opts.feedback}
 
-STYLE DNA: ${opts.styleDNA}
+STYLE DNA: ${opts.styleDNA}${sceneCtx}${envCtx}
 
 CHARACTERS IN SCENE:
 ${opts.characterDescriptions.join('\n') || 'None specified'}
 
-REWRITE the visual prompt to fix the issues. Techniques to consider:
-- Face not crisp → specify "sharp facial detail, close-up framing" or "medium close-up"
-- Lighting too flat → specify lighting direction: "strong rim light from behind", "warm key light from left"
-- Wrong composition → specify camera: "low angle looking up", "bird's eye view", "tight close-up"
-- Style drift → reinforce the style DNA terms explicitly
-- Character doesn't match → add specific physical details from the character description
-- Too AI/generic → add grounding details: specific textures, materials, atmospheric effects
+REWRITE the visual prompt to fix the issues. Keep what worked, fix what didn't. 1-3 sentences, direct and visual.
 
-Do NOT just append the feedback. REWRITE the prompt from scratch, keeping what worked and fixing what didn't. Keep it 1-3 sentences — direct and visual.
-
-Only change the motion prompt if the feedback specifically mentions movement or camera motion.`
+Only change the motion prompt if the feedback specifically mentions movement or camera.`
   });
 
   const response = await client.messages.create({

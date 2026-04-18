@@ -529,6 +529,15 @@ export const revertShotEndFrame = async (projectId: string, shotId: string, asse
   return handleResponse(res);
 };
 
+export const refineVideoPrompt = async (projectId: string, shotId: string, feedback: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-video-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback }),
+  });
+  return handleResponse(res);
+};
+
 // Legacy — kept for backward compat, delegates to unified endpoint
 export const getShotVideoHistory = async (projectId: string, shotId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/video-history`);
