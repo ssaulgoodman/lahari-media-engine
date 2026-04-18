@@ -631,87 +631,47 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           )}
                         </div>
                         <div className="w-px bg-white/[0.06] flex-shrink-0" />
-                        <div className="flex-1 relative min-h-[120px] flex flex-col items-center justify-center group/last">
-                          {/* Both target end frame and extracted actual exist — stack them */}
-                          {shot.endImageUrl && shot.extractedLastFrameUrl ? (
-                            <div className="flex flex-col gap-1 w-full">
-                              <div className="relative flex items-center justify-center group/target">
+                        <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/last">
+                          {/* Show the latest last frame — extracted (from video) takes priority over target (artist-set).
+                              Previous versions live in the version history panel. */}
+                          {(() => {
+                            const lastFrameUrl = shot.extractedLastFrameUrl || shot.endImageUrl;
+                            const isExtracted = !!shot.extractedLastFrameUrl;
+                            const clearFn = isExtracted ? onClearExtractedFrame : onClearEndFrame;
+                            if (!lastFrameUrl) return <div className="text-xs text-zinc-400">No last frame yet</div>;
+                            return (
+                              <>
                                 <div className="absolute top-2 left-2 z-20">
-                                  <span className="text-[10px] bg-black/70 backdrop-blur text-amber-300/80 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Target</span>
+                                  <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
+                                    Last frame
+                                  </span>
                                 </div>
-                                {!shot.locked && onClearEndFrame && (
+                                {!shot.locked && clearFn && (
                                   <button
-                                    onClick={() => onClearEndFrame(shot.id)}
-                                    className="absolute top-2 right-2 z-20 opacity-0 group-hover/target:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
-                                    title="Remove target end frame"
-                                    aria-label="Remove target end frame"
+                                    onClick={() => clearFn(shot.id)}
+                                    className="absolute top-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
+                                    title="Remove last frame"
+                                    aria-label="Remove last frame"
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                                   </button>
                                 )}
-                                <img src={shot.endImageUrl} alt={`Shot ${shotIdx + 1} target end frame`} onClick={() => setModalImage(shot.endImageUrl!)} className="max-w-full max-h-[160px] h-auto w-auto cursor-zoom-in" />
-                              </div>
-                              <div className="relative flex items-center justify-center group/actual">
-                                <div className="absolute top-2 left-2 z-20">
-                                  <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Actual</span>
-                                </div>
-                                {!shot.locked && onClearExtractedFrame && (
-                                  <button
-                                    onClick={() => onClearExtractedFrame(shot.id)}
-                                    className="absolute top-2 right-2 z-20 opacity-0 group-hover/actual:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
-                                    title="Remove extracted last frame"
-                                    aria-label="Remove extracted last frame"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                  </button>
-                                )}
-                                <img src={shot.extractedLastFrameUrl} alt={`Shot ${shotIdx + 1} actual last frame`} onClick={() => setModalImage(shot.extractedLastFrameUrl!)} className="max-w-full max-h-[160px] h-auto w-auto cursor-zoom-in" />
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="absolute top-2 left-2 z-20">
-                                <span className={`text-[10px] bg-black/70 backdrop-blur px-1.5 py-0.5 rounded uppercase tracking-wider font-mono ${shot.extractedLastFrameUrl ? 'text-zinc-300' : 'text-amber-300/80'}`}>
-                                  {shot.extractedLastFrameUrl ? 'Actual' : 'Target'}
-                                </span>
-                              </div>
-                              {!shot.extractedLastFrameUrl && shot.endImageUrl && !shot.locked && onClearEndFrame && (
-                                <button
-                                  onClick={() => onClearEndFrame(shot.id)}
-                                  className="absolute top-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
-                                  title="Remove target end frame"
-                                  aria-label="Remove target end frame"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                </button>
-                              )}
-                              {shot.extractedLastFrameUrl && !shot.locked && onClearExtractedFrame && (
-                                <button
-                                  onClick={() => onClearExtractedFrame(shot.id)}
-                                  className="absolute top-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all"
-                                  title="Remove extracted last frame"
-                                  aria-label="Remove extracted last frame"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                </button>
-                              )}
-                              <img
-                                src={shot.extractedLastFrameUrl || shot.endImageUrl!}
-                                alt={`Shot ${shotIdx + 1} last frame`}
-                                onClick={() => setModalImage((shot.extractedLastFrameUrl || shot.endImageUrl)!)}
-                                className={`max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in ${!shot.extractedLastFrameUrl ? 'opacity-70' : ''}`}
-                              />
-                            </>
-                          )}
+                                <img
+                                  src={lastFrameUrl}
+                                  alt={`Shot ${shotIdx + 1} last frame`}
+                                  onClick={() => setModalImage(lastFrameUrl)}
+                                  className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in"
+                                />
+                              </>
+                            );
+                          })()}
                           {/* Action: use this frame as next shot's start */}
                           {activeScene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && onUsePrevLastFrame && (
                             <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 transition-opacity">
                               <button
-                                onClick={() => {
-                                  onUsePrevLastFrame(activeScene.shots[shotIdx + 1].id);
-                                }}
+                                onClick={() => onUsePrevLastFrame(activeScene.shots[shotIdx + 1].id)}
                                 className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors"
-                                title="Copy this frame directly as the next shot's start frame — skips image generation for seamless continuity"
+                                title="Copy this frame as the next shot's start frame"
                               >
                                 Use for next shot
                               </button>
@@ -754,7 +714,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           {shot.endImageUrl ? (
                             <>
                               <div className="absolute top-2 left-2 z-20">
-                                <span className="text-[10px] bg-black/70 backdrop-blur text-amber-300/80 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Target</span>
+                                <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Last frame</span>
                               </div>
                               {!shot.locked && onClearEndFrame && (
                                 <button
