@@ -1605,6 +1605,7 @@ router.post('/:id/shots/:shotId/use-as-prev-end', async (req, res) => {
   await updateRows('shots', { id: prevShot.id }, {
     end_image_asset_id: shot.image_asset_id,
     end_image_status: 'success', last_error: null,
+    end_visual_prompt: shot.visual_prompt || null,
     video_status: 'stale',
   });
 
