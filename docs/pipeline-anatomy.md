@@ -344,8 +344,14 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 | **Model** | Gemini 3 Pro Image (imagen.ts → `generateShotEndFrame`) |
 | **Input** | start frame + end_visual_prompt + motion_prompt + style + feedback |
 | **Output** | End frame image (target for video gen) |
-| **Artist control** | `end_visual_prompt` — visible, editable, LLM refine rewrites it |
+| **Artist control** | `end_visual_prompt` — visible, editable, LLM refine via unified toggle |
 | **generation_prompt** | `end_visual_prompt` on the shot |
+
+**Reverse chain:** "Use as prev shot's end" copies this shot's start frame image AND `visual_prompt` → prev shot's `end_image_asset_id` + `end_visual_prompt`. Prompt carries so the artist can refine/regenerate the end frame with context.
+
+**Unified refine:** Single refine section with Start/End frame toggle. Both route through the same input — toggle selects `onRefinePrompt` (start) or `onRefineEndFramePrompt` (end).
+
+**End frame prompt visibility:** Section shows whenever model supports last frame (not gated on existing end image). Artist can create an end frame from scratch by writing a prompt and clicking Generate.
 
 **Status:** Fixed.
 
@@ -362,6 +368,10 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 | **Output** | Video clip |
 | **Artist control** | Video prompt override tab (editable). Model selector. |
 | **generation_prompt** | Auto-built from motion_prompt + scene context + ref notes. Overrideable. |
+
+**Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. When start frame exists (always for shot gen), frame mode is used and reference images are skipped. Veo has no such limitation — accepts all inputs together.
+
+**Error transparency:** Generation errors saved to `last_error` column on shots. Shown in the shot card error banner with the actual error message.
 
 **Status:** Good. Override is visible in "Video prompt" tab.
 
