@@ -1326,6 +1326,9 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       images.push({ base64: refBase64, mime: refMime, label: 'User reference' });
     }
 
+    const scene = await selectOne('scenes', { id: shot.scene_id });
+    const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
+
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
@@ -1336,6 +1339,8 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
       styleDNA: project.style_description || 'Cinematic',
       characterDescriptions: charDescs,
+      sceneNarrative: scene?.narrative_description,
+      environmentDescription: env?.description,
     });
 
     // Update the shot prompts with the rewritten versions
@@ -1478,7 +1483,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 
     // Save asset
     const assetId = uuidv4();
-    await insertRow('assets', { id: assetId, project_id: project.id, category: 'shot_image', file_path: imagePath, prompt: shotPrompt });
+    await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_image', file_path: imagePath, prompt: shotPrompt });
 
     await updateRows('shots', { id: shot.id }, {
       image_asset_id: assetId,
@@ -1554,7 +1559,7 @@ router.post('/:id/shots/:shotId/use-prev-last-frame', async (req, res) => {
   // Sharing file_path avoids duplication on disk; the separate row keeps
   // provenance/ai_calls traceability clean.
   const newAssetId = uuidv4();
-  await insertRow('assets', { id: newAssetId, project_id: projectId, category: 'shot_image', file_path: sourceAsset.file_path });
+  await insertRow('assets', { id: newAssetId, project_id: projectId, shot_id: shotId, category: 'shot_image', file_path: sourceAsset.file_path });
 
   await updateRows('shots', { id: shotId }, {
     image_asset_id: newAssetId,
@@ -1605,6 +1610,7 @@ router.post('/:id/shots/:shotId/use-as-prev-end', async (req, res) => {
   await updateRows('shots', { id: prevShot.id }, {
     end_image_asset_id: shot.image_asset_id,
     end_image_status: 'success', last_error: null,
+    end_visual_prompt: shot.visual_prompt || null,
     video_status: 'stale',
   });
 
@@ -1691,26 +1697,39 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
   if (!project) return res.status(404).json({ error: 'Project not found' });
   const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
-  if (!shot.end_image_asset_id) return res.status(400).json({ error: 'No end frame to refine — generate one first' });
-
-  const endImageAsset = await selectOne('assets', { id: shot.end_image_asset_id });
-  if (!endImageAsset) return res.status(400).json({ error: 'End frame asset not found' });
+  // End frame image is optional — refine can work from prompt + feedback alone
+  const endImageAsset = shot.end_image_asset_id
+    ? await selectOne('assets', { id: shot.end_image_asset_id })
+    : null;
 
   try {
     const t0 = Date.now();
-    const imageBase64 = await readAsBase64(endImageAsset.file_path);
-    const mime = mimeFromExt(endImageAsset.file_path);
+    const imageBase64 = endImageAsset ? await readAsBase64(endImageAsset.file_path) : '';
+    const mime = endImageAsset ? mimeFromExt(endImageAsset.file_path) : 'image/png';
+
+    // Get character descriptions for context
+    const castIds = JSON.parse(shot.cast_ids || '[]');
+    const castMembers = castIds.length > 0
+      ? await selectAll('cast_members', { project_id: project.id })
+      : [];
+    const shotCast = castMembers.filter((c: any) => castIds.includes(c.id));
+    const charDescs = shotCast.map((c: any) => `${c.name}: ${c.description || 'No description'}`);
+
+    const scene = await selectOne('scenes', { id: shot.scene_id });
+    const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
 
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: `[END FRAME REFINEMENT] ${feedback}`,
+      feedback: `[END FRAME — this is what the shot should land on] ${feedback}`,
       failedImageBase64: imageBase64,
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
       styleDNA: project.style_description || 'Cinematic',
-      characterDescriptions: [],
+      characterDescriptions: charDescs,
+      sceneNarrative: scene?.narrative_description,
+      environmentDescription: env?.description,
     });
 
     // Save rewritten prompt — user sees it update, then generates separately
@@ -1735,6 +1754,87 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[shot ${shot.id}] End frame prompt refinement failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+// Refine video prompt — Claude rewrites the motion prompt based on feedback
+router.post('/:id/shots/:shotId/refine-video-prompt', async (req, res) => {
+  const feedback = req.body?.feedback;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  const project = await selectOne('projects', { id: paramStr(req.params.id) });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
+  const castIds = JSON.parse(shot.cast_ids || '[]');
+  const castMembers = castIds.length > 0 ? await selectAll('cast_members', { project_id: project.id }) : [];
+  const charDescs = castMembers.filter((c: any) => castIds.includes(c.id)).map((c: any) => `${c.name}: ${c.description || 'No description'}`);
+
+  try {
+    const t0 = Date.now();
+    // Pass the video/start frame as context if available
+    // Start frame as main context image
+    let startBase64 = '';
+    let startMime = 'image/png';
+    if (shot.image_asset_id) {
+      const imageAsset = await selectOne('assets', { id: shot.image_asset_id });
+      if (imageAsset) {
+        startBase64 = await readAsBase64(imageAsset.file_path);
+        startMime = mimeFromExt(imageAsset.file_path);
+      }
+    }
+    // End frame as reference image (if exists)
+    let endBase64: string | undefined;
+    let endMime: string | undefined;
+    const endAssetId = shot.end_image_asset_id || shot.extracted_last_frame_asset_id;
+    if (endAssetId) {
+      const endAsset = await selectOne('assets', { id: endAssetId });
+      if (endAsset) {
+        endBase64 = await readAsBase64(endAsset.file_path);
+        endMime = mimeFromExt(endAsset.file_path);
+      }
+    }
+
+    const endFrameNote = endBase64
+      ? '\n[SECOND IMAGE is the end frame — the video should transition from the first image to this one]'
+      : '';
+
+    const result = await refineShotPrompt({
+      currentVisualPrompt: shot.visual_prompt || '',
+      currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
+      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action]${endFrameNote} ${feedback}`,
+      failedImageBase64: startBase64,
+      failedImageMime: startMime,
+      referenceImageBase64: endBase64,
+      referenceImageMime: endMime,
+      styleDNA: project.style_description || 'Cinematic',
+      characterDescriptions: charDescs,
+      sceneNarrative: scene?.narrative_description,
+      environmentDescription: env?.description,
+    });
+
+    await updateRows('shots', { id: shot.id }, {
+      motion_prompt: result.motionPrompt,
+    });
+
+    const durationMs = Date.now() - t0;
+    await logCall({
+      projectId: project.id,
+      stage: 'refine-video-prompt',
+      model: 'claude-sonnet-4-6',
+      prompt: `Refine video: "${feedback}" | Original motion: "${(shot.motion_prompt || '').substring(0, 80)}…"`,
+      contextChain: await buildContextChain(project.id),
+      responseSummary: `Rewritten motion: "${result.motionPrompt.substring(0, 100)}…"`,
+      durationMs,
+      costEstimate: 0.01,
+    });
+
+    res.json({ ok: true, motionPrompt: result.motionPrompt });
+  } catch (err: any) {
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
@@ -1785,6 +1885,79 @@ router.post('/:id/shots/:shotId/unlock', async (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   await updateRows('shots', { id: shot.id }, { locked: 0 });
+  res.json({ ok: true });
+});
+
+// ─── Unified version history ────────────────────────────────────────
+// Returns all versions for a shot: first frames, end frames, and videos.
+// Each has its own category. Revert endpoints swap the active pointer.
+
+router.get('/:id/shots/:shotId/history', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot = await selectOne('shots', { id: shotId });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const [frames, endFrames, videos] = await Promise.all([
+    selectAll('assets', { shot_id: shotId, category: 'shot_image' }, { orderBy: 'created_at', ascending: false }),
+    selectAll('assets', { shot_id: shotId, category: 'shot_end_frame' }, { orderBy: 'created_at', ascending: false }),
+    selectAll('assets', { shot_id: shotId, category: 'shot_video' }, { orderBy: 'created_at', ascending: false }),
+  ]);
+
+  const mapAsset = (a: any, currentId: string | null) => ({
+    assetId: a.id,
+    url: storageUrl(a.file_path),
+    createdAt: a.created_at,
+    isCurrent: a.id === currentId,
+  });
+
+  res.json({
+    firstFrame: frames.map(a => mapAsset(a, shot.image_asset_id)),
+    lastFrame: endFrames.map(a => mapAsset(a, shot.end_image_asset_id)),
+    video: videos.map(a => {
+      let thumbId: string | null = null;
+      try { thumbId = JSON.parse(a.metadata || '{}').extracted_last_frame_asset_id || null; } catch {}
+      return {
+        ...mapAsset(a, shot.video_asset_id),
+        thumbnailUrl: thumbId ? storageUrl(frames.find((f: any) => f.id === thumbId)?.file_path || '') || null : null,
+      };
+    }),
+  });
+});
+
+router.post('/:id/shots/:shotId/revert-frame', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const { assetId } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId required' });
+
+  const asset = await selectOne('assets', { id: assetId });
+  if (!asset || asset.shot_id !== shotId || asset.category !== 'shot_image') {
+    return res.status(404).json({ error: 'Frame version not found for this shot' });
+  }
+
+  await updateRows('shots', { id: shotId }, {
+    image_asset_id: assetId,
+    image_status: 'success', last_error: null,
+  });
+
+  res.json({ ok: true });
+});
+
+router.post('/:id/shots/:shotId/revert-end-frame', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const { assetId } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId required' });
+
+  const asset = await selectOne('assets', { id: assetId });
+  if (!asset || asset.shot_id !== shotId || asset.category !== 'shot_end_frame') {
+    return res.status(404).json({ error: 'End frame version not found for this shot' });
+  }
+
+  await updateRows('shots', { id: shotId }, {
+    end_image_asset_id: assetId,
+    end_image_status: 'success', last_error: null,
+    video_status: 'stale',
+  });
+
   res.json({ ok: true });
 });
 

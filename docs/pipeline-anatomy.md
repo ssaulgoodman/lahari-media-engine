@@ -309,7 +309,7 @@ The shot writer writes `visual_prompt` and `motion_prompt` with generic instruct
 - [ ] Shot writer is model-agnostic — needs model-specific best practices
 - [ ] Bulk regen overwrites ALL manual edits to individual shots — no selective regen
 - [ ] Could add "rewrite prompts for selected shots only"
-- [ ] UI: simplify to 2 tabs (Frame prompt + Video prompt) instead of 4
+- [x] UI: simplified to 3 tabs (First frame / Last frame / Video) + Full chain diagnostic. Motion prompt merged into Video tab.
 
 ---
 
@@ -324,12 +324,14 @@ Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (re
 | **Model** | Gemini 3 Pro Image (imagen.ts → `generateShotStartFrame`) |
 | **Input** | visual_prompt + character refs + style image + env ref + continuity frame + feedback |
 | **Output** | Start frame image |
-| **Artist control** | Full — edit visual_prompt, refine with feedback + ref image upload |
+| **Artist control** | Full — edit visual_prompt in "First frame" tab, @mention cast/env/style, refine with plain text feedback |
 | **generation_prompt** | `visual_prompt` IS the prompt (plus refs chain) |
+
+**Refine context:** Claude Sonnet sees failed image + visual prompt + motion prompt + style DNA + scene narrative + environment description + cast descriptions. Output: 1-3 short sentences (visual), 1 sentence (motion, only if feedback mentions movement).
 
 **Hardcoded in template:** "Preserve character identity from character references", "Render in the style of the style reference image", "Single cinematic frame. No text, no watermark."
 
-**Status: DONE** — clears `prompts_stale` on generate + refine. Prompt visible in "Full chain" tab.
+**Status: DONE** — clears `prompts_stale` on generate + refine. Prompt visible in "First frame" tab + "Full chain" tab.
 
 ---
 
@@ -344,10 +346,16 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 | **Model** | Gemini 3 Pro Image (imagen.ts → `generateShotEndFrame`) |
 | **Input** | start frame + end_visual_prompt + motion_prompt + style + feedback |
 | **Output** | End frame image (target for video gen) |
-| **Artist control** | `end_visual_prompt` — visible, editable, LLM refine rewrites it |
+| **Artist control** | `end_visual_prompt` — visible/editable in "Last frame" tab, AI refine with feedback |
 | **generation_prompt** | `end_visual_prompt` on the shot |
 
-**Status:** Fixed.
+**Refine context:** Same as start frame — Claude sees end frame image (if exists) + end visual prompt + scene + env + cast + style. Works without existing end image (prompt-only refine).
+
+**Reverse chain:** "Use as prev shot's end" copies start frame image AND `visual_prompt` → prev shot's `end_image_asset_id` + `end_visual_prompt`.
+
+**Last frame tab:** Shows `endVisualPrompt` (editable), or "Extracted from video — no prompt" for ffmpeg frames. Generate end frame button. AI refine section. Artist can create an end frame from scratch.
+
+**Status: DONE.**
 
 ---
 
@@ -360,10 +368,18 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 | **Model** | Veo 3.1 / Seedance 2.0 via Segmind (segmind.ts) |
 | **Input** | start frame + motion prompt + ref images + end frame |
 | **Output** | Video clip |
-| **Artist control** | Video prompt override tab (editable). Model selector. |
-| **generation_prompt** | Auto-built from motion_prompt + scene context + ref notes. Overrideable. |
+| **Artist control** | "Video" tab: motion prompt (editable) + compiled video prompt (editable, overrideable). AI refine rewrites motion prompt. |
+| **generation_prompt** | Auto-built from motion_prompt + scene context + cast + mood. Overrideable in Video tab. |
 
-**Status:** Good. Override is visible in "Video prompt" tab.
+**Refine context:** Claude sees start frame + end frame (if exists) + motion prompt + scene + env + cast + style. Focus on camera movement, pacing, action. Output: rewrites motion prompt only.
+
+**Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Frame mode prioritized when start frame exists. Veo accepts all inputs together.
+
+**Error transparency:** `last_error` column on shots — saved on failure (truncated 500 chars), cleared on success. Shown in shot card error banner.
+
+**Version history:** `GET history` returns all versions for first frame, last frame, and video. Revert endpoints swap active pointers. Assets track `shot_id` + `category`.
+
+**Status: DONE.** All 3 tabs have unified toolkit: Refs → Prompt (@mention) → Generate → Refine.
 
 ---
 

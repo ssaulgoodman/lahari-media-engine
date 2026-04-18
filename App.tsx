@@ -766,6 +766,22 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const handleRefineVideoPrompt = async (shotId: string, feedback: string) => {
+    if (!project) return;
+    setLoading(true);
+    try {
+      const result = await api.refineVideoPrompt(project.id, shotId, feedback);
+      // Update motion prompt optimistically from response
+      if (result?.motionPrompt) {
+        updateShotOptimistic(shotId, { motionPrompt: result.motionPrompt });
+      }
+    } catch (err: any) {
+      setError(`Video prompt refinement failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUseAsPrevEnd = async (shotId: string) => {
     if (!project) return;
     try {
@@ -1348,6 +1364,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onClearExtractedFrame={handleClearExtractedFrame}
                     onUploadEndFrame={handleUploadEndFrame}
                     onRefineEndFramePrompt={handleRefineEndFramePrompt}
+                    onRefineVideoPrompt={handleRefineVideoPrompt}
+                    onSetProject={setProject}
                     isLoading={loading}
                   />
                 </motion.div>

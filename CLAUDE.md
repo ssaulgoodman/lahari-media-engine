@@ -59,10 +59,14 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
    - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
    - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
    - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
-3. **Studio** (`Storyboard.tsx`) — Per-shot:
-   - Generate start frame (Gemini 3 Pro Image with full ref chain)
-   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind, start keyframe only)
-   - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
+3. **Studio** (`Storyboard.tsx`) — Per-shot unified toolkit with 4 tabs:
+   - **First frame** — visual prompt + refs + generate (Gemini) + AI refine
+   - **Last frame** — end visual prompt + generate end frame + AI refine
+   - **Video** — motion prompt + compiled video prompt (editable) + generate (Veo/Seedance) + AI refine
+   - **Full chain** — read-only diagnostic view of the complete prompt chain
+   - All tabs follow same pattern: Refs → Prompt (with @mention) → Generate → Refine
+   - @mention picker in prompt area: type `@` to reference Style, characters, environments
+   - Version history panel with 3 tabs (First frame / Last frame / Clip) — revert to any previous generation
    - Lock shot (requires start + video)
 4. **Render** (`StepRender.tsx`) — Artist arranges shots + applies effects/transitions in the timeline editor (`components/timeline-editor/`). Render button POSTs the render-authoritative subset of the editor's zustand store to `/api/projects/:id/render`, which proxies to the sibling `remotion-renderer` service (Hono + Remotion SSR, own Docker image). Renderer runs `renderMedia()`, uploads the mp4 to Supabase Storage, and returns the public URL. Client then calls `/api/queue/publish-url/:projectId` to register the asset + mark the queue row completed. See `docs/remotion-renderer.md`.
 
@@ -72,12 +76,12 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
 | Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refineEndFramePrompt, refineVideoPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
 | All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
-**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs. Seedance models accept `first_frame_url` + `last_frame_url` + up to 9 `reference_images`. All models support end-frame conditioning and ref images. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
+**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs together. **Seedance constraint**: `first_frame_url` and `reference_images` are mutually exclusive — when start frame exists (always for shot gen), frame mode is used and reference_images are skipped. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
 
 **Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
 
@@ -102,14 +106,34 @@ Numbered inline images sent to Gemini 3 Pro Image:
 
 Priority: character identity > continuity > environment > style. Explicit note: when style text conflicts with style image, follow the image.
 
-### Generation prompt pattern (universal)
+### Unified prompt toolkit (Studio)
 
-Every generatable entity (characters, environments, shots, end frames) follows the same two-mode edit pattern:
+Every shot tab (First frame / Last frame / Video) follows the same pattern:
 
-1. **Direct edit** — artist edits the `generation_prompt` field directly. What you see is what gets sent.
-2. **Refine** — artist writes feedback, Claude (Sonnet) rewrites the `generation_prompt` from scratch. The rewritten prompt is saved and visible — artist can further edit before generating.
+1. **Ref chips** — context-aware references attached to this generation (cast, env, style, continuity, keyframes)
+2. **Prompt textarea** — editable, with `@mention` picker (type `@` → dropdown with Style, characters, environments). What you see is what gets sent.
+3. **Generate button** — tracks dirty state. Shows "Regenerate" when prompt unchanged, full label when edited.
+4. **Refine** — plain text feedback (no @mention). Claude (Sonnet) sees the current prompt + generated image + scene narrative + environment + cast descriptions + style DNA, rewrites the prompt. Output constrained to 1-3 short sentences (visual) / 1 sentence (motion).
 
-`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. After that, any edit or refine updates the saved prompt.
+Refine context per tab:
+- **First frame**: failed image + visual/motion prompt + scene + env + cast + style
+- **Last frame**: end frame image (if exists) + end visual prompt + scene + env + cast + style
+- **Video**: start frame + end frame (if exists) + motion prompt + scene + env + cast + style
+
+**Reverse chain**: "Use as prev shot's end" copies start frame image AND `visual_prompt` → prev shot's `end_image_asset_id` + `end_visual_prompt`.
+
+### Generation prompt pattern (Blueprint)
+
+Characters and environments follow the same two-mode pattern:
+
+1. **Direct edit** — artist edits the `generation_prompt` field directly.
+2. **Refine** — artist writes feedback, Claude rewrites `generation_prompt` from scratch.
+
+`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA.
+
+### Error transparency
+
+`last_error` column on `lahari_shots` — saved on image/video gen failure (truncated to 500 chars), cleared on success. Shown in the shot card error banner so the artist sees exactly what went wrong (e.g. Segmind model 404, RAI block).
 
 ### Staleness detection
 
@@ -168,9 +192,13 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Studio:**
 - `POST /api/projects/:id/shots/:shotId/generate-image`
 - `POST /api/projects/:id/shots/:shotId/generate-video` (accepts `promptOverride`)
-- `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback, accepts multipart with referenceImage)
-- `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same pattern for end frame)
+- `POST /api/projects/:id/shots/:shotId/generate-end-frame`
+- `POST /api/projects/:id/shots/:shotId/refine-prompt` (Claude rewrites visual prompt — sees failed image + scene + env + cast + style)
+- `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same context, end frame focus)
+- `POST /api/projects/:id/shots/:shotId/refine-video-prompt` (Claude rewrites motion prompt — sees start + end frames + scene + cast)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
+- `GET /api/projects/:id/shots/:shotId/history` (returns `{ firstFrame, lastFrame, video }` version arrays)
+- `POST /api/projects/:id/shots/:shotId/revert-frame` / `revert-end-frame` / `revert-video`
 
 **Render:**
 - `POST /api/projects/:id/render` — body: `{ timeline: { trackItemIds, trackItemsMap, transitionsMap, fps, size, durationMs } }`. Proxies to `remotion-renderer` (env `REMOTION_RENDERER_URL`, header `x-renderer-secret: $RENDERER_SHARED_SECRET`), which uploads the mp4 to Supabase and returns `{ videoUrl, storagePath, sizeBytes, durationInFrames, renderMs }`.
@@ -212,10 +240,28 @@ The `index.html` `<style>` block has a commented spec. Short version:
 Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/segmind.ts` (`SEGMIND_MODELS`). All four models route through Segmind:
 - `veo-3.1-fast` — 8s fixed, $0.10/s, supports last frame
 - `veo-3.1` — 4s/6s/8s, $0.20/s, supports last frame
-- `seedance-2.0-fast` — 5s/10s, $0.146/s, supports last frame + up to 9 ref images
-- `seedance-2.0` — 5s/10s, $0.182/s, supports last frame + up to 9 ref images
+- `seedance-2.0-fast` — 5s/10s, $0.146/s, frame URLs OR ref images (mutually exclusive)
+- `seedance-2.0` — 5s/10s, $0.182/s, frame URLs OR ref images (mutually exclusive)
 
 Pacing buttons in the Script phase are derived from the selected model's `durations`.
+
+### Version history
+
+Unified history panel with 3 tabs: First frame | Last frame | Clip. Each shows all past generations for that shot as horizontal thumbnails (latest first). Revert button swaps the active asset pointer — no data is lost. Assets track `shot_id` + `category` (`shot_image`, `shot_end_frame`, `shot_video`) for querying.
+
+Endpoints: `GET /:id/shots/:shotId/history` (returns all 3 categories), `POST revert-frame`, `POST revert-end-frame`, `POST revert-video`.
+
+## Future work
+
+- **UI polish** — glass surface system, shot card redesign (compact overview cards), spring animations. Reference design pinned.
+- **Infra: Supabase → Mumbai** (ap-south-1) + **Railway → Singapore** — artists are in India, current setup crosses the Pacific twice per query.
+- **Refine chat history** — multi-turn refinement (store conversation per shot/tab so Claude remembers prior attempts)
+- **Video refine endpoint** — done, but no chat history yet
+- **@mention in prompt area** — done for Studio tabs. Could extend to Blueprint refine sections.
+- **Render pipeline** — Maski building timeline editor with export. FFmpeg WASM stub commented out.
+- **Wire Runway Gen-4 Turbo** ($0.05/s) and/or **Kling 3.0** ($0.084/s) as direct-API models.
+- **X-Ray overhaul** — current panel is a log dump. Needs visual flow graph, prompt archaeology, cost dashboard.
+- **Assistant director agent** — persistent chat agent with access to all edit/refine endpoints as tools.
 
 ## Express 5 quirks
 
