@@ -1348,6 +1348,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onClearExtractedFrame={handleClearExtractedFrame}
                     onUploadEndFrame={handleUploadEndFrame}
                     onRefineEndFramePrompt={handleRefineEndFramePrompt}
+                    onSetProject={setProject}
                     isLoading={loading}
                   />
                 </motion.div>

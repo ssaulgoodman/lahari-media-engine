@@ -504,6 +504,32 @@ export const useShotAsPrevEnd = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
+export type VersionEntry = { assetId: string; url: string; createdAt: string; isCurrent: boolean; thumbnailUrl?: string | null };
+
+export const getShotHistory = async (projectId: string, shotId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/history`);
+  return handleResponse(res) as Promise<{ firstFrame: VersionEntry[]; lastFrame: VersionEntry[]; video: VersionEntry[] }>;
+};
+
+export const revertShotFrame = async (projectId: string, shotId: string, assetId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/revert-frame`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assetId })
+  });
+  return handleResponse(res);
+};
+
+export const revertShotEndFrame = async (projectId: string, shotId: string, assetId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/revert-end-frame`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assetId })
+  });
+  return handleResponse(res);
+};
+
+// Legacy — kept for backward compat, delegates to unified endpoint
 export const getShotVideoHistory = async (projectId: string, shotId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/video-history`);
   return handleResponse(res) as Promise<{ versions: Array<{ assetId: string; videoUrl: string; thumbnailUrl: string | null; createdAt: string; isCurrent: boolean }> }>;

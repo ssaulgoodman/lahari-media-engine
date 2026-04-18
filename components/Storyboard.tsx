@@ -5,10 +5,11 @@ import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { ShotVideoPreview } from './ShotVideoPreview';
-import { getShotVideoHistory } from '../services/api';
+import { getShotHistory, revertShotFrame, revertShotEndFrame } from '../services/api';
+import type { VersionEntry } from '../services/api';
 import { getVideoModel } from '../constants/videoModels';
 
-type VideoVersion = { assetId: string; videoUrl: string; thumbnailUrl: string | null; createdAt: string; isCurrent: boolean };
+type HistoryData = { firstFrame: VersionEntry[]; lastFrame: VersionEntry[]; video: VersionEntry[] };
 
 // "0:32" / "00:32" / "1:23:45" → seconds. Guards against undefined / junk.
 const parseTimeToSec = (t?: string): number => {
@@ -45,6 +46,7 @@ interface Props {
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
   onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onSetProject?: (project: ApiProject) => void;
   /** Shot IDs waiting for a bulk-frame worker (ordered — position = Nth in line). */
   frameQueue?: string[];
   /** Shot IDs waiting for a bulk-video worker (ordered). */
@@ -52,7 +54,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, frameQueue, videoQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onSetProject, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video' | 'compiled'>>({});
@@ -65,7 +67,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
   const contextBarRef = React.useRef<HTMLDivElement>(null);
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
-  const [historyVersions, setHistoryVersions] = useState<VideoVersion[]>([]);
+  const [historyData, setHistoryData] = useState<HistoryData>({ firstFrame: [], lastFrame: [], video: [] });
+  const [historyTab, setHistoryTab] = useState<'firstFrame' | 'lastFrame' | 'video'>('firstFrame');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [mentionOpen, setMentionOpen] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -80,12 +83,13 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
     if (!project) return;
     if (historyOpenFor === shotId) { setHistoryOpenFor(null); return; }
     setHistoryOpenFor(shotId);
+    setHistoryTab('firstFrame');
     setHistoryLoading(true);
     try {
-      const { versions } = await getShotVideoHistory(project.id, shotId);
-      setHistoryVersions(versions);
+      const data = await getShotHistory(project.id, shotId);
+      setHistoryData(data);
     } catch {
-      setHistoryVersions([]);
+      setHistoryData({ firstFrame: [], lastFrame: [], video: [] });
     } finally {
       setHistoryLoading(false);
     }
@@ -894,14 +898,27 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     )}
                   </div>
 
-                  {/* Version history panel — opens via the history button above.
-                      Lets the artist revert to an earlier generation when a
-                      regen produced something worse. Pointer swap only; files
-                      on disk are kept regardless. */}
+                  {/* Version history panel — tabbed: First frame | Last frame | Clip */}
                   {historyOpenFor === shot.id && (
                     <div className="px-5 py-3 border-t border-white/[0.06] bg-white/[0.02]">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] uppercase tracking-wider text-zinc-400">Version history</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] uppercase tracking-wider text-zinc-400">Version history</span>
+                          <div className="flex items-center bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.06]">
+                            <button
+                              onClick={() => setHistoryTab('firstFrame')}
+                              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${historyTab === 'firstFrame' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >First frame</button>
+                            <button
+                              onClick={() => setHistoryTab('lastFrame')}
+                              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${historyTab === 'lastFrame' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Last frame</button>
+                            <button
+                              onClick={() => setHistoryTab('video')}
+                              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${historyTab === 'video' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                            >Clip</button>
+                          </div>
+                        </div>
                         <button
                           onClick={() => setHistoryOpenFor(null)}
                           className="text-[11px] text-zinc-400 hover:text-white"
@@ -909,44 +926,61 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </div>
                       {historyLoading ? (
                         <div className="text-xs text-zinc-400 py-3">Loading…</div>
-                      ) : historyVersions.length === 0 ? (
-                        <div className="text-xs text-zinc-400 py-3">No previous versions yet — regenerate to build history.</div>
-                      ) : (
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                          {historyVersions.map((v, idx) => (
-                            <button
-                              key={v.assetId}
-                              disabled={v.isCurrent}
-                              onClick={async () => {
-                                await onRevertVideo?.(shot.id, v.assetId);
-                                setHistoryOpenFor(null);
-                              }}
-                              className={`flex-shrink-0 w-28 rounded-md overflow-hidden border transition-all text-left ${
-                                v.isCurrent
-                                  ? 'border-white/40 ring-1 ring-white/30'
-                                  : 'border-white/[0.08] hover:border-white/30 cursor-pointer'
-                              }`}
-                              title={v.isCurrent ? 'Current version' : 'Revert to this version'}
-                            >
-                              <div className="aspect-video bg-black flex items-center justify-center">
-                                {v.thumbnailUrl ? (
-                                  <img src={v.thumbnailUrl} alt={`v${historyVersions.length - idx}`} className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="text-[10px] text-zinc-500">no preview</span>
-                                )}
-                              </div>
-                              <div className="px-2 py-1.5">
-                                <div className="text-[11px] text-zinc-300 font-medium">
-                                  {v.isCurrent ? 'Current' : `Revert`}
+                      ) : (() => {
+                        const versions = historyData[historyTab];
+                        if (versions.length === 0) return (
+                          <div className="text-xs text-zinc-400 py-3">No versions yet — generate to build history.</div>
+                        );
+                        return (
+                          <div className="flex gap-2 overflow-x-auto pb-1">
+                            {versions.map((v, idx) => (
+                              <button
+                                key={v.assetId}
+                                disabled={v.isCurrent}
+                                onClick={async () => {
+                                  if (!project) return;
+                                  if (historyTab === 'firstFrame') {
+                                    await revertShotFrame(project.id, shot.id, v.assetId);
+                                  } else if (historyTab === 'lastFrame') {
+                                    await revertShotEndFrame(project.id, shot.id, v.assetId);
+                                  } else {
+                                    await onRevertVideo?.(shot.id, v.assetId);
+                                  }
+                                  // Refresh history + project
+                                  const data = await getShotHistory(project.id, shot.id);
+                                  setHistoryData(data);
+                                  try {
+                                    const p = await import('../services/api').then(m => m.getProject(project.id));
+                                    onSetProject?.(p);
+                                  } catch {}
+                                }}
+                                className={`flex-shrink-0 w-28 rounded-md overflow-hidden border transition-all text-left ${
+                                  v.isCurrent
+                                    ? 'border-white/40 ring-1 ring-white/30'
+                                    : 'border-white/[0.08] hover:border-white/30 cursor-pointer'
+                                }`}
+                                title={v.isCurrent ? 'Current version' : 'Revert to this version'}
+                              >
+                                <div className={`${historyTab === 'video' ? 'aspect-video' : 'aspect-square'} bg-black flex items-center justify-center`}>
+                                  {(historyTab === 'video' ? v.thumbnailUrl : v.url) ? (
+                                    <img src={(historyTab === 'video' ? v.thumbnailUrl : v.url)!} alt={`v${versions.length - idx}`} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-[10px] text-zinc-500">no preview</span>
+                                  )}
                                 </div>
-                                <div className="text-[10px] text-zinc-500 font-mono">
-                                  {new Date(v.createdAt + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                <div className="px-2 py-1.5">
+                                  <div className="text-[11px] text-zinc-300 font-medium">
+                                    {v.isCurrent ? 'Current' : 'Revert'}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-500 font-mono">
+                                    {new Date(v.createdAt + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
                                 </div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 

@@ -1478,7 +1478,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 
     // Save asset
     const assetId = uuidv4();
-    await insertRow('assets', { id: assetId, project_id: project.id, category: 'shot_image', file_path: imagePath, prompt: shotPrompt });
+    await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_image', file_path: imagePath, prompt: shotPrompt });
 
     await updateRows('shots', { id: shot.id }, {
       image_asset_id: assetId,
@@ -1554,7 +1554,7 @@ router.post('/:id/shots/:shotId/use-prev-last-frame', async (req, res) => {
   // Sharing file_path avoids duplication on disk; the separate row keeps
   // provenance/ai_calls traceability clean.
   const newAssetId = uuidv4();
-  await insertRow('assets', { id: newAssetId, project_id: projectId, category: 'shot_image', file_path: sourceAsset.file_path });
+  await insertRow('assets', { id: newAssetId, project_id: projectId, shot_id: shotId, category: 'shot_image', file_path: sourceAsset.file_path });
 
   await updateRows('shots', { id: shotId }, {
     image_asset_id: newAssetId,
@@ -1786,6 +1786,79 @@ router.post('/:id/shots/:shotId/unlock', async (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   await updateRows('shots', { id: shot.id }, { locked: 0 });
+  res.json({ ok: true });
+});
+
+// ─── Unified version history ────────────────────────────────────────
+// Returns all versions for a shot: first frames, end frames, and videos.
+// Each has its own category. Revert endpoints swap the active pointer.
+
+router.get('/:id/shots/:shotId/history', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot = await selectOne('shots', { id: shotId });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const [frames, endFrames, videos] = await Promise.all([
+    selectAll('assets', { shot_id: shotId, category: 'shot_image' }, { orderBy: 'created_at', ascending: false }),
+    selectAll('assets', { shot_id: shotId, category: 'shot_end_frame' }, { orderBy: 'created_at', ascending: false }),
+    selectAll('assets', { shot_id: shotId, category: 'shot_video' }, { orderBy: 'created_at', ascending: false }),
+  ]);
+
+  const mapAsset = (a: any, currentId: string | null) => ({
+    assetId: a.id,
+    url: storageUrl(a.file_path),
+    createdAt: a.created_at,
+    isCurrent: a.id === currentId,
+  });
+
+  res.json({
+    firstFrame: frames.map(a => mapAsset(a, shot.image_asset_id)),
+    lastFrame: endFrames.map(a => mapAsset(a, shot.end_image_asset_id)),
+    video: videos.map(a => {
+      let thumbId: string | null = null;
+      try { thumbId = JSON.parse(a.metadata || '{}').extracted_last_frame_asset_id || null; } catch {}
+      return {
+        ...mapAsset(a, shot.video_asset_id),
+        thumbnailUrl: thumbId ? storageUrl(frames.find((f: any) => f.id === thumbId)?.file_path || '') || null : null,
+      };
+    }),
+  });
+});
+
+router.post('/:id/shots/:shotId/revert-frame', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const { assetId } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId required' });
+
+  const asset = await selectOne('assets', { id: assetId });
+  if (!asset || asset.shot_id !== shotId || asset.category !== 'shot_image') {
+    return res.status(404).json({ error: 'Frame version not found for this shot' });
+  }
+
+  await updateRows('shots', { id: shotId }, {
+    image_asset_id: assetId,
+    image_status: 'success', last_error: null,
+  });
+
+  res.json({ ok: true });
+});
+
+router.post('/:id/shots/:shotId/revert-end-frame', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const { assetId } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId required' });
+
+  const asset = await selectOne('assets', { id: assetId });
+  if (!asset || asset.shot_id !== shotId || asset.category !== 'shot_end_frame') {
+    return res.status(404).json({ error: 'End frame version not found for this shot' });
+  }
+
+  await updateRows('shots', { id: shotId }, {
+    end_image_asset_id: assetId,
+    end_image_status: 'success', last_error: null,
+    video_status: 'stale',
+  });
+
   res.json({ ok: true });
 });
 
