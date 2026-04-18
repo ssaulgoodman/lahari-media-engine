@@ -5,50 +5,76 @@ export const TIMELINE_OFFSET_X = 40;
 export const SMALL_FONT_SIZE = 12;
 export const SECONDARY_FONT = 'sans-serif';
 export const FRAME_INTERVAL = 1000 / 60;
+// DOM id assigned to the ruler+timeline canvases so zoom-fit can measure the
+// visible width without plumbing refs down to the header.
+export const TIMELINE_CANVAS_ID = 'lahari-timeline-canvas';
 
-export const TIMELINE_ZOOM_LEVELS: ITimelineScaleState[] = (
-  [
-    { unit: 18000, zoom: 1 / 12000, segments: 5 },
-    { unit: 10800, zoom: 1 / 7200, segments: 3 },
-    { unit: 7200, zoom: 1 / 6000, segments: 2 },
-    { unit: 3600, zoom: 1 / 3000, segments: 1 },
-    { unit: 1800, zoom: 1 / 1200, segments: 2 },
-    { unit: 900, zoom: 1 / 600, segments: 3 },
-    { unit: 600, zoom: 1 / 450, segments: 2 },
-    { unit: 300, zoom: 1 / 240, segments: 5 },
-    { unit: 180, zoom: 1 / 150, segments: 3 },
-    { unit: 120, zoom: 1 / 120, segments: 10 },
-    { unit: 60, zoom: 1 / 90, segments: 5 },
-    { unit: 60, zoom: 1 / 60, segments: 5 },
-    { unit: 30, zoom: 1 / 30, segments: 2 },
-    { unit: 15, zoom: 1 / 15, segments: 3 },
-    { unit: 10, zoom: 1 / 10, segments: 2 },
-    { unit: 5, zoom: 1 / 5, segments: 5 },
-    { unit: 3, zoom: 1 / 3, segments: 3 },
-    { unit: 2, zoom: 1 / 2, segments: 5 },
-    { unit: 1, zoom: 1, segments: 5 },
-  ] as Omit<ITimelineScaleState, 'index'>[]
-).map((level, index) => ({ ...level, index }));
-
-const findIdx = (arr: ITimelineScaleState[], p: (v: ITimelineScaleState) => boolean) => {
-  let l = -1, r = arr.length - 1;
-  while (1 + l < r) {
-    const mid = l + ((r - l) >> 1);
-    p(arr[mid]) ? (r = mid) : (l = mid);
-  }
-  return r;
-};
+// Zoom steps tuned so unit*zoom stays on integer ratios — avoids fractional-
+// pixel gridlines and keeps the ruler legible at both extremes. Ordered from
+// most zoomed-out (index 0) to most zoomed-in (last). Mirrors the reference
+// sample's scale table.
+export const TIMELINE_ZOOM_LEVELS: ITimelineScaleState[] = [
+  { index: 0, unit: 18000, zoom: 1 / 18000, segments: 5 },
+  { index: 1, unit: 10800, zoom: 1 / 10800, segments: 5 },
+  { index: 2, unit: 7200, zoom: 1 / 7200, segments: 5 },
+  { index: 3, unit: 3600, zoom: 1 / 3600, segments: 5 },
+  { index: 4, unit: 1800, zoom: 1 / 1800, segments: 5 },
+  { index: 5, unit: 900, zoom: 1 / 900, segments: 5 },
+  { index: 6, unit: 600, zoom: 1 / 600, segments: 5 },
+  { index: 7, unit: 300, zoom: 1 / 300, segments: 5 },
+  { index: 8, unit: 180, zoom: 1 / 180, segments: 3 },
+  { index: 9, unit: 120, zoom: 1 / 120, segments: 10 },
+  { index: 10, unit: 60, zoom: 1 / 60, segments: 3 },
+  { index: 11, unit: 60, zoom: 1 / 60, segments: 4 },
+  { index: 12, unit: 30, zoom: 1 / 30, segments: 5 },
+];
 
 export function getNextZoomLevel(cur: ITimelineScaleState): ITimelineScaleState {
-  const idx = Math.min(TIMELINE_ZOOM_LEVELS.length - 1, findIdx(TIMELINE_ZOOM_LEVELS, (l) => l.zoom > cur.zoom));
-  return TIMELINE_ZOOM_LEVELS[idx];
+  const larger = TIMELINE_ZOOM_LEVELS.filter((l) => l.zoom > cur.zoom);
+  if (larger.length === 0) return cur;
+  return larger.reduce((prev, curr) => (curr.zoom < prev.zoom ? curr : prev));
 }
 
 export function getPreviousZoomLevel(cur: ITimelineScaleState): ITimelineScaleState {
-  const last = TIMELINE_ZOOM_LEVELS.at(-1);
-  const isLast = cur === last;
-  const nextIdx = findIdx(TIMELINE_ZOOM_LEVELS, (l) => l.zoom > cur.zoom);
-  return TIMELINE_ZOOM_LEVELS[Math.max(0, nextIdx - (isLast ? 1 : 2))];
+  const smaller = TIMELINE_ZOOM_LEVELS.filter((l) => l.zoom < cur.zoom);
+  if (smaller.length === 0) return cur;
+  return smaller.reduce((prev, curr) => (curr.zoom > prev.zoom ? curr : prev));
+}
+
+// Look up a preset zoom level by its index (0 = most zoomed out). Used by
+// the slider in the timeline header.
+export function getZoomByIndex(index: number): ITimelineScaleState {
+  const clamped = Math.max(0, Math.min(TIMELINE_ZOOM_LEVELS.length - 1, Math.round(index)));
+  return TIMELINE_ZOOM_LEVELS[clamped];
+}
+
+// Compute a zoom level where `totalLengthMs` fits exactly inside the visible
+// timeline canvas. Returns a custom (non-snapped) zoom so the whole timeline
+// is visible without scroll.
+export function getFitZoomLevel(
+  totalLengthMs: number,
+  currentZoom = 1,
+  scrollOffset = 16,
+): ITimelineScaleState {
+  const canvasEl = document.getElementById(TIMELINE_CANVAS_ID) as HTMLCanvasElement | null;
+  const visibleWidth = Math.max(
+    1,
+    (canvasEl?.offsetWidth ?? document.body.offsetWidth) - Math.max(0, scrollOffset),
+  );
+  const fullWidth = Math.max(1, (totalLengthMs / 1000) * 60 * PREVIEW_FRAME_WIDTH * currentZoom);
+  const targetZoom = currentZoom * (visibleWidth / fullWidth);
+  // Pick a reasonable `index` to seed sliders/buttons with. We use the first
+  // preset whose zoom exceeds our computed target.
+  const fitIndex = Math.max(
+    0,
+    TIMELINE_ZOOM_LEVELS.findIndex((l) => l.zoom > targetZoom),
+  );
+  return {
+    index: fitIndex,
+    zoom: targetZoom,
+    unit: 1 / targetZoom,
+    segments: 5,
+  };
 }
 
 export function formatTimelineUnit(units?: number): string {

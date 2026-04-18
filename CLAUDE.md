@@ -20,6 +20,7 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
 - `CORS_ORIGINS` — comma-separated in prod
+- `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` — URL of the `remotion-renderer` service (sibling deployment) and the shared HMAC-style secret used for `x-renderer-secret`. See `docs/remotion-renderer.md`.
 - **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
@@ -27,11 +28,11 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 **Auth**: Supabase Auth with Google OAuth (`contexts/AuthContext.tsx` + `lib/supabase.ts`). Backend verifies JWT via `requireAuth` middleware (`server/middleware/auth.ts`). All `/api/projects`, `/api/queue`, `/api/prompts` routes require auth. Admin routes use `x-admin-secret`. Health check is public.
 
 **Ownership scoping** (3 layers):
-1. **Project**: `router.param('id')` on both `projectsRouter` and `generateRouter` — verifies `user_id === req.userId`. No null-owner bypass.
+1. **Project**: `router.param('id')` on `projectsRouter`, `generateRouter`, and `renderRouter` — verifies `user_id === req.userId`. No null-owner bypass.
 2. **URL child IDs**: `router.param('shotId')` (traces shot→scene→project), `router.param('sceneId')`, `router.param('memberId')`, `router.param('envId')` — all verify the child belongs to the URL project.
 3. **Body child IDs**: `requireCastMember()`, `requireEnvironment()`, `requireAsset()` helpers in generate.ts — validate body-supplied IDs against the URL project. Throw `ScopeError` with proper 403/404 status codes.
 
-Queue routes: `publish` checks `project.user_id`, `start` checks ownership before returning an existing linked project.
+Queue routes: `publish` + `publish-url` check `project.user_id`, `start` checks ownership before returning an existing linked project.
 
 **Minimal responses + Optimistic UI**: Simple mutations return `{ ok: true }` (with `status` for phase changes) instead of the full project. Frontend applies changes optimistically and reverts on failure. This eliminates ~20 `getFullProject` round-trips.
 
@@ -63,7 +64,7 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
    - Generate video (Veo 3.1 or Seedance 2.0 via Segmind, start keyframe only)
    - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
    - Lock shot (requires start + video)
-4. **Render** (`StepRender.tsx`) — Client-side FFmpeg WASM stitches videos + audio.
+4. **Render** (`StepRender.tsx`) — Artist arranges shots + applies effects/transitions in the timeline editor (`components/timeline-editor/`). Render button POSTs the render-authoritative subset of the editor's zustand store to `/api/projects/:id/render`, which proxies to the sibling `remotion-renderer` service (Hono + Remotion SSR, own Docker image). Renderer runs `renderMedia()`, uploads the mp4 to Supabase Storage, and returns the public URL. Client then calls `/api/queue/publish-url/:projectId` to register the asset + mark the queue row completed. See `docs/remotion-renderer.md`.
 
 ### AI Models
 
@@ -171,7 +172,11 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same pattern for end frame)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
 
-**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/shots/:shotId/clear-end-frame`, `POST /api/projects/:id/shots/:shotId/clear-extracted-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (multipart — uploads final render, walks fork chain, marks owning queue row `completed`)
+**Render:**
+- `POST /api/projects/:id/render` — body: `{ timeline: { trackItemIds, trackItemsMap, transitionsMap, fps, size, durationMs } }`. Proxies to `remotion-renderer` (env `REMOTION_RENDERER_URL`, header `x-renderer-secret: $RENDERER_SHARED_SECRET`), which uploads the mp4 to Supabase and returns `{ videoUrl, storagePath, sizeBytes, durationInFrames, renderMs }`.
+- `POST /api/queue/publish-url/:projectId` — body: `{ videoUrl, storagePath }`. Registers the asset, walks the fork chain, marks the owning queue row `completed`. Shares `finalizePublish()` with the multipart variant.
+
+**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (re-run analysis), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/shots/:shotId/clear-end-frame`, `POST /api/projects/:id/shots/:shotId/clear-extracted-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (legacy multipart — uploads final render blob, walks fork chain, marks owning queue row `completed`; prefer `/publish-url` above)
 
 **Admin diagnostics** (all behind `x-admin-secret: $ADMIN_UPLOAD_SECRET`):
 - `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
@@ -181,15 +186,19 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 ### Queue completion writeback
 
-When a render finishes in `StepRender`, the "Publish to queue" button POSTs the final mp4 blob to `/api/queue/publish/:projectId`. The server:
+`StepRender` calls `renderTimeline()` → `/api/projects/:id/render` (main backend proxies to `remotion-renderer`, which writes the mp4 straight to Supabase Storage at `videos/<projectId>/...`) → `publishRenderUrl()` → `/api/queue/publish-url/:projectId`. Both publish endpoints (multipart `/publish/:projectId` and JSON `/publish-url/:projectId`) share `finalizePublish()` in `server/routes/queue.ts`:
 
-1. Saves the video to `/storage/videos/` and registers an `assets` row (category `final_render`).
+1. Registers an `assets` row (category `final_render`) pointing at the Supabase storage key.
 2. Walks up `parent_project_id` locally to collect the fork-lineage.
 3. Finds the Supabase `music_video_queue` row where `lahari_project_id` matches any id in that chain.
 4. Updates that row: `status = 'completed'`, `video_url = <public url>`, `lahari_project_id = <this fork's id>` (latest-completed-wins).
 5. Sets the local project's status to `'completed'` too.
 
 If you want to change the resolution policy later, swap step 4 for: first-completed-wins (skip if already completed), or explicit-promote-only (no auto-update).
+
+### Remotion renderer service
+
+Sibling deployment at `remotion-renderer/` — Hono + `@remotion/renderer` + headless Chromium. Rebuilds the timeline editor's Remotion composition server-side from the zustand store snapshot. Files under `remotion-renderer/src/timeline/` are hard-copied from `components/timeline-editor/` (keeps the renderer's Docker context self-contained) — re-run `cd remotion-renderer && npm run sync-timeline` after editing the upstream editor. `Composition.tsx` is prop-driven (`CompositionInput` interface), with a thin `StoreComposition` default export for the in-app `<Player>`. Full details: `docs/remotion-renderer.md`.
 
 ## Typography + color system
 

@@ -25,5 +25,6 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["reference(ignore)", "reference-sample", "remotion-renderer"]
 }

@@ -6,6 +6,7 @@ import Ruler from './Ruler';
 import Playhead from './Playhead';
 import TransitionOverlay from './TransitionOverlay';
 import { Audio, Image, Text, Video } from './items';
+import { TIMELINE_CANVAS_ID } from './utils';
 
 CanvasTimeline.registerItems({ Text, Image, Audio, Video });
 
@@ -79,7 +80,7 @@ const Timeline: React.FC = () => {
             ref={containerRef}
             style={{ position: 'absolute', top: 0, width: '100%', height: 240, color: '#fff', fontSize: 14 }}
           >
-            <canvas ref={canvasElRef} />
+            <canvas ref={canvasElRef} id={TIMELINE_CANVAS_ID} />
           </div>
           <TransitionOverlay scrollLeft={scrollLeft} />
         </div>

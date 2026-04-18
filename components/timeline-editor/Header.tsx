@@ -1,10 +1,16 @@
 import React from 'react';
 import { dispatch } from '@designcombo/events';
 import { TIMELINE_SCALE_CHANGED, LAYER_DELETE } from '@designcombo/state';
-import { ZoomIn, ZoomOut, Trash, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { Maximize2, ZoomIn, ZoomOut, Trash, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import useStore from './store';
 import { useCurrentPlayerFrame } from './use-current-frame';
-import { frameToTimeString, timeToString, getNextZoomLevel, getPreviousZoomLevel } from './utils';
+import {
+  frameToTimeString,
+  timeToString,
+  getFitZoomLevel,
+  getZoomByIndex,
+  TIMELINE_ZOOM_LEVELS,
+} from './utils';
 
 const btn: React.CSSProperties = {
   background: 'transparent',
@@ -109,21 +115,49 @@ const Header: React.FC = () => {
         </span>
       </div>
 
-      {/* Right: zoom */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      {/* Right: zoom — slider walks through the TIMELINE_ZOOM_LEVELS presets;
+          fit button snaps to a custom zoom that shows the entire timeline. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <ZoomOut size={13} style={{ color: '#71717a', flexShrink: 0 }} />
+        <input
+          type="range"
+          min={0}
+          max={TIMELINE_ZOOM_LEVELS.length - 1}
+          step={1}
+          value={
+            // When `fit` is active the scale.zoom is off-preset and index
+            // lookup returns -1. We clamp to the closest preset index so the
+            // thumb doesn't jump to 0.
+            scale.index >= 0
+              ? scale.index
+              : Math.max(
+                  0,
+                  TIMELINE_ZOOM_LEVELS.findIndex((l) => l.zoom >= scale.zoom),
+                )
+          }
+          onChange={(e) => {
+            const next = getZoomByIndex(parseInt(e.target.value, 10));
+            dispatch(TIMELINE_SCALE_CHANGED, { payload: { scale: next } });
+          }}
+          className="lahari-zoom-slider"
+          style={{
+            width: 100,
+            accentColor: '#a1a1aa',
+            cursor: 'pointer',
+          }}
+          title={`Zoom (${scale.index + 1}/${TIMELINE_ZOOM_LEVELS.length})`}
+        />
+        <ZoomIn size={13} style={{ color: '#71717a', flexShrink: 0 }} />
         <button
           style={btn}
-          onClick={() => dispatch(TIMELINE_SCALE_CHANGED, { payload: { scale: getPreviousZoomLevel(scale) } })}
-          title="Zoom out"
+          onClick={() =>
+            dispatch(TIMELINE_SCALE_CHANGED, {
+              payload: { scale: getFitZoomLevel(duration, scale.zoom) },
+            })
+          }
+          title="Fit to screen"
         >
-          <ZoomOut size={16} />
-        </button>
-        <button
-          style={btn}
-          onClick={() => dispatch(TIMELINE_SCALE_CHANGED, { payload: { scale: getNextZoomLevel(scale) } })}
-          title="Zoom in"
-        >
-          <ZoomIn size={16} />
+          <Maximize2 size={14} />
         </button>
       </div>
     </div>

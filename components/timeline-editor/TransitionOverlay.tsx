@@ -111,13 +111,31 @@ const TransitionOverlay: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => 
   if (cutPoints.length === 0) return null;
 
   const handleApply = (cut: CutPoint, transition: (typeof TRANSITIONS)[number]) => {
+    // Preserve the existing duration when swapping kinds so the user's
+    // tuning survives a palette click. Falls back to the preset default.
+    const existingMs = cut.existingTransition?.duration;
+    const durationMs = existingMs && existingMs > 0 ? existingMs : transition.duration * 1000;
     addTransition({
       id: generateId(), kind: transition.kind,
       fromId: cut.fromId, toId: cut.toId, trackId: cut.trackId,
-      type: 'transition', duration: transition.duration * 1000,
+      type: 'transition', duration: durationMs,
       ...(transition.direction ? { direction: transition.direction } : {}),
     } as ITransition);
-    setOpenCutId(null);
+  };
+
+  const handleDurationChange = (cut: CutPoint, durationMs: number) => {
+    if (!cut.existingTransition) return;
+    const prev = cut.existingTransition;
+    addTransition({
+      id: generateId(),
+      kind: prev.kind,
+      fromId: cut.fromId,
+      toId: cut.toId,
+      trackId: cut.trackId,
+      type: 'transition',
+      duration: Math.max(50, Math.round(durationMs)),
+      ...((prev as any).direction ? { direction: (prev as any).direction } : {}),
+    } as ITransition);
   };
 
   const handleRemove = (cut: CutPoint) => {
@@ -237,6 +255,44 @@ const TransitionOverlay: React.FC<{ scrollLeft: number }> = ({ scrollLeft }) => 
               </button>
             )}
           </div>
+
+          {/* Per-transition duration slider. Only shown once a kind is chosen
+              — duration has no meaning for a cut. Writes back via addTransition
+              which upserts the existing record in the store. */}
+          {openCut.existingTransition && (
+            <div
+              style={{
+                padding: '8px 12px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 11, color: '#a1a1aa', flexShrink: 0 }}>Duration</span>
+              <input
+                type="range"
+                min={100}
+                max={3000}
+                step={50}
+                value={openCut.existingTransition.duration || 500}
+                onChange={(e) => handleDurationChange(openCut, parseInt(e.target.value, 10))}
+                style={{ flex: 1, accentColor: '#a1a1aa', cursor: 'pointer' }}
+              />
+              <span
+                style={{
+                  fontSize: 11,
+                  color: '#e5e5e5',
+                  fontFamily: 'monospace',
+                  minWidth: 38,
+                  textAlign: 'right',
+                  flexShrink: 0,
+                }}
+              >
+                {((openCut.existingTransition.duration || 500) / 1000).toFixed(2)}s
+              </span>
+            </div>
+          )}
           <div
             style={{
               display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',

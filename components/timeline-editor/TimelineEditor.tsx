@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { dispatch } from '@designcombo/events';
 import StateManager, { ADD_VIDEO } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
+import { Upload, Sparkles } from 'lucide-react';
 import Player from './Player';
 import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
@@ -12,8 +13,13 @@ export type InitialClip = { src: string; name?: string };
 
 interface Props {
   onExit?: () => void;
-  // Pre-populate the timeline with these clips on mount, appended in order.
+  // Pre-populate the video track with these clips on mount, appended in order.
   initialClips?: InitialClip[];
+  // Pre-populate the audio track. Each clip starts at 0ms and plays for its
+  // full duration — typically just the project song. The timeline's total
+  // duration is max(video stack end, audio end) so audio past the videos is
+  // preserved.
+  initialAudioClips?: InitialClip[];
   // When true: fills its parent instead of 100vh, hides the top bar, and
   // the upload toolbar becomes a compact corner control. For embedding in
   // another page (e.g. StepRender) as a live preview.
@@ -30,37 +36,54 @@ const toolbarBtn: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-// Compute the next clip start position from what's already in the store.
+const sidebarBtn = (active: boolean): React.CSSProperties => ({
+  background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+  border: '1px solid ' + (active ? 'rgba(255,255,255,0.12)' : 'transparent'),
+  color: active ? '#fff' : '#a1a1aa',
+  width: 40,
+  height: 40,
+  borderRadius: 8,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  transition: 'all 0.15s',
+});
+
+// Compute the next video-clip start position from what's already in the store.
+// Audio items intentionally excluded — the song usually runs longer than the
+// video stack, and we don't want uploads to land after its tail.
 const nextStartMs = () => {
   const map = useStore.getState().trackItemsMap;
   let max = 0;
-  Object.values(map).forEach((it) => {
+  Object.values(map).forEach((it: any) => {
+    if (it?.type !== 'video') return;
     if (it?.display?.to != null && it.display.to > max) max = it.display.to;
   });
   return max;
 };
 
-// Probe a video URL's real duration using a hidden <video> element. Used by
-// the seeder below; lets us build the full timeline state synchronously and
+// Probe a media URL's real duration using a hidden element. Used by the
+// seeder below; lets us build the full timeline state synchronously and
 // commit it via stateManager.updateState without touching the event bus.
-const probeDurationMs = (src: string): Promise<number> =>
+const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<number> =>
   new Promise((resolve) => {
-    const v = document.createElement('video');
-    v.preload = 'metadata';
-    v.muted = true;
+    const el = document.createElement(kind) as HTMLMediaElement;
+    el.preload = 'metadata';
+    if (kind === 'video') (el as HTMLVideoElement).muted = true;
     const done = (ms: number) => {
-      v.onloadedmetadata = null;
-      v.onerror = null;
-      v.removeAttribute('src');
-      v.load();
+      el.onloadedmetadata = null;
+      el.onerror = null;
+      el.removeAttribute('src');
+      el.load();
       resolve(ms);
     };
-    v.onloadedmetadata = () => {
-      const d = v.duration;
+    el.onloadedmetadata = () => {
+      const d = el.duration;
       done(isFinite(d) && d > 0 ? Math.round(d * 1000) : 5000);
     };
-    v.onerror = () => done(5000);
-    v.src = src;
+    el.onerror = () => done(5000);
+    el.src = src;
   });
 
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
@@ -75,7 +98,7 @@ const addVideoClip = (src: string, name?: string) => {
       display: { from },
       type: 'video',
       details: { src, volume: 100, ...(name ? { name } : {}) },
-      metadata: { resourceId: id },
+      metadata: { resourceId: id, ...(name ? { displayName: name } : {}) },
     },
     options: existingTrack
       ? { targetTrackId: existingTrack.id, isNewTrack: false }
@@ -84,18 +107,7 @@ const addVideoClip = (src: string, name?: string) => {
   return id;
 };
 
-const tabBtn = (active: boolean): React.CSSProperties => ({
-  background: active ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.03)',
-  border: active ? '1px solid rgba(255,255,255,0.15)' : '1px solid rgba(255,255,255,0.06)',
-  color: active ? '#fff' : '#a1a1aa',
-  padding: '5px 12px',
-  borderRadius: 6,
-  fontSize: 12,
-  cursor: 'pointer',
-  transition: 'all 0.15s',
-});
-
-const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => {
+const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioClips, embedded }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { playerRef, setStateManager, setState, stateManager } = useStore();
   const [sidePanel, setSidePanel] = useState<'effects' | null>(null);
@@ -113,6 +125,7 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
       {
         acceptsMap: {
           video: ['video'],
+          audio: ['audio'],
         },
       },
     );
@@ -154,18 +167,20 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
     };
   }, [setStateManager, setState]);
 
-  // Seed with initialClips by probing durations ourselves and committing the
-  // full state via stateManager.updateState. This bypasses the global
-  // @designcombo/events bus, which under React 18 StrictMode (double-mount)
-  // would leak dispatches from sm1's IIFE into sm2's state and throw
-  // "Target track not found" because sm2 doesn't know sm1's track IDs.
+  // Seed with initialClips + initialAudioClips by probing durations ourselves
+  // and committing the full state via stateManager.updateState. This bypasses
+  // the global @designcombo/events bus, which under React 18 StrictMode
+  // (double-mount) would leak dispatches from sm1's IIFE into sm2's state and
+  // throw "Target track not found" because sm2 doesn't know sm1's track IDs.
   //
   // Re-seed trigger: URL signature change (regen, project switch). seededKeyRef
   // prevents a stable prop reference from re-triggering on every render.
   const seededKeyRef = useRef<string>('');
   useEffect(() => {
     if (!stateManager) return;
-    const key = (initialClips ?? []).map((c) => c.src).join('|');
+    const videoKey = (initialClips ?? []).map((c) => c.src).join('|');
+    const audioKey = (initialAudioClips ?? []).map((c) => c.src).join('|');
+    const key = `${videoKey}#${audioKey}`;
     if (seededKeyRef.current === key) return;
 
     let cancelled = false;
@@ -184,44 +199,84 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
         { kind: 'update', updateHistory: false },
       );
 
-      if (!initialClips?.length) {
+      if (!initialClips?.length && !initialAudioClips?.length) {
         seededKeyRef.current = key;
         return;
       }
 
       // Probe all durations in parallel — much faster than serial and
       // side-effect free.
-      const durations = await Promise.all(initialClips.map((c) => probeDurationMs(c.src)));
+      const [videoDurations, audioDurations] = await Promise.all([
+        Promise.all((initialClips ?? []).map((c) => probeMediaDurationMs(c.src, 'video'))),
+        Promise.all((initialAudioClips ?? []).map((c) => probeMediaDurationMs(c.src, 'audio'))),
+      ]);
       if (cancelled) return;
       // If the stateManager we captured has been replaced (StrictMode
       // cleanup during probe), bail — the new sm's seed effect will take
       // over with its own capture.
       if (useStore.getState().stateManager !== stateManager) return;
 
-      const trackId = generateId();
+      const videoTrackId = generateId();
+      const audioTrackId = generateId();
       const trackItemIds: string[] = [];
       const trackItemsMap: Record<string, any> = {};
-      let from = 0;
-      for (let i = 0; i < initialClips.length; i++) {
-        const clip = initialClips[i];
-        const dur = durations[i] || 5000;
+
+      // Video items appended sequentially on the video track.
+      const videoItemIds: string[] = [];
+      let videoEnd = 0;
+      (initialClips ?? []).forEach((clip, i) => {
+        const dur = videoDurations[i] || 5000;
         const itemId = generateId();
+        videoItemIds.push(itemId);
         trackItemIds.push(itemId);
         trackItemsMap[itemId] = {
           id: itemId,
           type: 'video',
-          display: { from, to: from + dur },
+          display: { from: videoEnd, to: videoEnd + dur },
           details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
-          metadata: { resourceId: itemId },
-          trackId,
+          metadata: { resourceId: itemId, ...(clip.name ? { displayName: clip.name } : {}) },
+          trackId: videoTrackId,
           isMain: true,
           duration: dur,
           playbackRate: 1,
           trim: { from: 0, to: dur },
         };
-        from += dur;
+        videoEnd += dur;
+      });
+
+      // Audio items each start at 0ms on a dedicated audio track (typically
+      // just the song). Parallel to the video track — not sequential.
+      const audioItemIds: string[] = [];
+      let maxAudioEnd = 0;
+      (initialAudioClips ?? []).forEach((clip, i) => {
+        const dur = audioDurations[i] || 5000;
+        const itemId = generateId();
+        audioItemIds.push(itemId);
+        trackItemIds.push(itemId);
+        trackItemsMap[itemId] = {
+          id: itemId,
+          type: 'audio',
+          display: { from: 0, to: dur },
+          details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
+          metadata: { resourceId: itemId, ...(clip.name ? { displayName: clip.name } : {}) },
+          trackId: audioTrackId,
+          isMain: false,
+          duration: dur,
+          playbackRate: 1,
+          trim: { from: 0, to: dur },
+        };
+        if (dur > maxAudioEnd) maxAudioEnd = dur;
+      });
+
+      const tracks: any[] = [];
+      if (videoItemIds.length) {
+        tracks.push({ id: videoTrackId, type: 'video', items: videoItemIds, accepts: ['video'] });
       }
-      const tracks = [{ id: trackId, type: 'video', items: trackItemIds, accepts: ['video'] }];
+      if (audioItemIds.length) {
+        tracks.push({ id: audioTrackId, type: 'audio', items: audioItemIds, accepts: ['audio'] });
+      }
+
+      const totalDuration = Math.max(videoEnd, maxAudioEnd) || 5000;
 
       if (cancelled) return;
       (stateManager as any).updateState(
@@ -231,7 +286,7 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
           trackItemsMap,
           transitionIds: [],
           transitionsMap: {},
-          duration: from,
+          duration: totalDuration,
         },
         { kind: 'update', updateHistory: false },
       );
@@ -240,33 +295,12 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
     return () => {
       cancelled = true;
     };
-  }, [stateManager, initialClips]);
+  }, [stateManager, initialClips, initialAudioClips]);
 
   const handleUpload = (files: File[]) => {
     if (!files[0]) return;
     addVideoClip(URL.createObjectURL(files[0]), files[0].name);
   };
-
-  const uploadControl = (
-    <>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="video/*"
-        style={{ display: 'none' }}
-        onChange={(e) => handleUpload(Array.from(e.target.files || []))}
-      />
-      <button style={toolbarBtn} onClick={() => fileInputRef.current?.click()}>
-        Upload video
-      </button>
-      <button
-        style={tabBtn(sidePanel === 'effects')}
-        onClick={() => setSidePanel((cur) => (cur === 'effects' ? null : 'effects'))}
-      >
-        Effects
-      </button>
-    </>
-  );
 
   return (
     <div
@@ -285,6 +319,7 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
             justifyContent: 'space-between',
             padding: '10px 16px',
             borderBottom: '1px solid rgba(255,255,255,0.06)',
+            flex: 'none',
           }}
         >
           <div style={{ color: '#e5e5e5', fontSize: 14, fontWeight: 500 }}>
@@ -298,6 +333,7 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
         </div>
       )}
 
+      {/* Upper half: vertical tool rail • viewer • (optional) effects panel */}
       <div
         style={{
           flex: 1,
@@ -306,27 +342,59 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, embedded }) => 
           flexDirection: 'row',
         }}
       >
-        {/* Main area: player + controls */}
+        {/* Left tool rail — Upload + Effects */}
+        <div
+          style={{
+            width: 56,
+            flexShrink: 0,
+            borderRight: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '12px 0',
+            gap: 6,
+          }}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            style={{ display: 'none' }}
+            onChange={(e) => handleUpload(Array.from(e.target.files || []))}
+          />
+          <button
+            style={sidebarBtn(false)}
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload video"
+          >
+            <Upload size={16} />
+          </button>
+          <button
+            style={sidebarBtn(sidePanel === 'effects')}
+            onClick={() => setSidePanel((cur) => (cur === 'effects' ? null : 'effects'))}
+            title="Effects"
+          >
+            <Sparkles size={16} />
+          </button>
+        </div>
+
+        {/* Viewer — fills all remaining horizontal space */}
         <div
           style={{
             flex: 1,
             minWidth: 0,
             display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
+            padding: 12,
           }}
         >
-          <div style={{ width: '100%', maxWidth: 960, flex: 1, display: 'flex', padding: 16 }}>
-            {stateManager ? <Player /> : null}
-          </div>
-          <div style={{ display: 'flex', gap: 8, padding: '16px 0' }}>{uploadControl}</div>
+          {stateManager ? <Player /> : null}
         </div>
 
-        {/* Side panel: Effects */}
+        {/* Effects panel (when toggled on) */}
         {sidePanel === 'effects' && <EffectsPanel />}
       </div>
 
+      {/* Full-width timeline below */}
       {playerRef && stateManager && <Timeline />}
     </div>
   );

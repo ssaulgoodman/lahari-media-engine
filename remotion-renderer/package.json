@@ -1,0 +1,32 @@
+{
+  "name": "remotion-renderer",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "tsc",
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "studio": "remotion studio src/entry.tsx",
+    "sync-timeline": "node scripts/sync-timeline.mjs"
+  },
+  "dependencies": {
+    "@designcombo/transitions": "^5.5.8",
+    "@designcombo/types": "^5.5.8",
+    "@hono/node-server": "^1.19.14",
+    "@remotion/bundler": "^4.0.448",
+    "@remotion/renderer": "^4.0.448",
+    "@supabase/supabase-js": "^2.45.0",
+    "hono": "^4.12.14",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.448"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.448",
+    "@types/node": "^20.11.17",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3"
+  }
+}

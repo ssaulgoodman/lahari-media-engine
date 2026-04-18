@@ -583,3 +583,82 @@ export const updateQueueItem = async (queueId: string, updates: Record<string, a
   });
   return handleResponse(res);
 };
+
+// ─── Remotion Renderer ──────────────────────────────────────────────
+
+// Render-authoritative subset of the timeline editor's zustand store. Pass
+// exactly this shape from useStore.getState() — UI fields (scale, scroll,
+// activeIds, playerRef, stateManager) MUST be dropped client-side.
+export interface TimelineRenderState {
+  trackItemIds: string[];
+  trackItemsMap: Record<string, any>;
+  transitionsMap: Record<string, any>;
+  fps: number;
+  size: { width: number; height: number };
+  durationMs: number;
+}
+
+export interface RenderResponse {
+  videoUrl: string;
+  storagePath: string;
+  sizeBytes: number;
+  durationInFrames: number;
+  width: number;
+  height: number;
+  renderMs: number;
+  proxyMs?: number;
+}
+
+export const renderTimeline = async (
+  projectId: string,
+  timeline: TimelineRenderState,
+  signal?: AbortSignal,
+): Promise<RenderResponse> => {
+  const res = await authFetch(`${API}/projects/${projectId}/render`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeline }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
+export const publishRenderUrl = async (
+  projectId: string,
+  videoUrl: string,
+  storagePath: string,
+) => {
+  const res = await authFetch(`${API}/queue/publish-url/${projectId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videoUrl, storagePath }),
+  });
+  return handleResponse(res);
+};
+
+// ─── Render history ────────────────────────────────────────────────
+
+export interface RenderHistoryItem {
+  assetId: string;
+  videoUrl: string;
+  storagePath: string;
+  createdAt: string;
+  isCurrent: boolean;
+}
+
+export const listRenders = async (
+  projectId: string,
+): Promise<{ renders: RenderHistoryItem[] }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/renders`);
+  return handleResponse(res);
+};
+
+export const deleteRender = async (
+  projectId: string,
+  assetId: string,
+): Promise<{ ok: true; clearedQueueVideoUrl: boolean }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/renders/${assetId}`, {
+    method: 'DELETE',
+  });
+  return handleResponse(res);
+};

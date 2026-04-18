@@ -181,6 +181,56 @@ router.patch('/:queueId', async (req, res) => {
 });
 
 /**
+ * Shared writeback for both publish variants. Inserts the assets row, walks
+ * the fork chain to find the originating queue row, and marks everything
+ * completed. Returns the full project so the client can refresh.
+ */
+const finalizePublish = async (
+  projectId: string,
+  videoPath: string,
+  videoUrl: string,
+) => {
+  const assetId = uuidv4();
+  await insertRow('assets', {
+    id: assetId,
+    project_id: projectId,
+    category: 'final_render',
+    file_path: videoPath,
+  });
+
+  const chain: string[] = [projectId];
+  let cur = projectId;
+  while (true) {
+    const row = await selectOne('projects', { id: cur });
+    if (!row?.parent_project_id) break;
+    chain.push(row.parent_project_id);
+    cur = row.parent_project_id;
+  }
+
+  const queueRow = await findQueueByProjectIds(chain);
+  if (queueRow) {
+    await updateQueueItem(queueRow.id, {
+      status: 'completed',
+      video_url: videoUrl,
+      lahari_project_id: projectId,
+    });
+  }
+
+  await updateRows('projects', { id: projectId }, {
+    status: 'completed',
+    updated_at: new Date().toISOString(),
+  });
+
+  return {
+    videoUrl,
+    videoPath,
+    queueRowUpdated: !!queueRow,
+    queueRowId: queueRow?.id || null,
+    project: await getFullProject(projectId),
+  };
+};
+
+/**
  * Publish a completed render — uploads the final video, saves it to
  * Supabase Storage, finds the originating queue row via fork-lineage walk,
  * and updates it with status='completed' + video_url.
@@ -196,43 +246,39 @@ router.post('/publish/:projectId', upload.single('video'), async (req, res) => {
   try {
     const videoPath = await saveBuffer(req.file.buffer, 'videos', 'mp4');
     const videoUrl = storageUrl(videoPath);
-
-    const assetId = uuidv4();
-    await insertRow('assets', { id: assetId, project_id: projectId, category: 'final_render', file_path: videoPath });
-
-    // Walk up the fork chain so we can find whichever queue row started this project tree.
-    const chain: string[] = [projectId];
-    let cur = projectId;
-    while (true) {
-      const row = await selectOne('projects', { id: cur });
-      if (!row?.parent_project_id) break;
-      chain.push(row.parent_project_id);
-      cur = row.parent_project_id;
-    }
-
-    const queueRow = await findQueueByProjectIds(chain);
-    if (queueRow) {
-      await updateQueueItem(queueRow.id, {
-        status: 'completed',
-        video_url: videoUrl,
-        lahari_project_id: projectId,
-      });
-    }
-
-    await updateRows('projects', { id: projectId }, {
-      status: 'completed',
-      updated_at: new Date().toISOString(),
-    });
-
-    res.json({
-      videoUrl,
-      videoPath,
-      queueRowUpdated: !!queueRow,
-      queueRowId: queueRow?.id || null,
-      project: await getFullProject(projectId),
-    });
+    const result = await finalizePublish(projectId, videoPath, videoUrl);
+    res.json(result);
   } catch (err: any) {
     console.error(`[queue/publish ${projectId}] failed:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Publish a render that's already in Supabase Storage (e.g. uploaded by the
+ * remotion-renderer service). Skips the buffer-upload hop — client just
+ * passes the storage key + public URL.
+ */
+router.post('/publish-url/:projectId', async (req, res) => {
+  const rawId = req.params.projectId;
+  const projectId: string = Array.isArray(rawId) ? rawId[0] : rawId;
+  const project = await selectOne('projects', { id: projectId });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  if (project.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
+
+  const { videoUrl, storagePath } = req.body ?? {};
+  if (!videoUrl || typeof videoUrl !== 'string') {
+    return res.status(400).json({ error: 'videoUrl is required' });
+  }
+  if (!storagePath || typeof storagePath !== 'string') {
+    return res.status(400).json({ error: 'storagePath is required' });
+  }
+
+  try {
+    const result = await finalizePublish(projectId, storagePath, videoUrl);
+    res.json(result);
+  } catch (err: any) {
+    console.error(`[queue/publish-url ${projectId}] failed:`, err);
     res.status(500).json({ error: err.message });
   }
 });

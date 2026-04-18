@@ -7,7 +7,8 @@ import {
   updateRows, deleteRows, countRows, maxVal,
   selectColumns, getSB, T,
 } from '../database.js';
-import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
+import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
+import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
@@ -955,6 +956,71 @@ router.put('/:id/environments/:envId', async (req, res) => {
 router.delete('/:id/environments/:envId', async (req, res) => {
   await deleteRows('environments', { id: paramStr(req.params.envId) });
   res.json({ ok: true });
+});
+
+// ─── Final-render history ───────────────────────────────────────────
+//
+// Every call to /render inserts a `final_render` asset row and keeps the mp4
+// at a unique timestamped path in Supabase Storage. These endpoints expose
+// that history so the artist can re-watch or prune old renders. Ownership is
+// enforced by the `router.param('id')` guard at the top of the file.
+
+router.get('/:id/renders', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const rows = await selectAll(
+    'assets',
+    { project_id: projectId, category: 'final_render' },
+    { orderBy: 'created_at', ascending: false },
+  );
+
+  // Mark which render matches the queue row's current `video_url`, so the UI
+  // can label it and refuse to delete it without confirmation.
+  const queueRow = await findQueueByProjectIds([projectId]);
+  const currentUrl = (queueRow as any)?.video_url || null;
+
+  const renders = rows.map((r: any) => {
+    const videoUrl = storageUrl(r.file_path);
+    return {
+      assetId: r.id,
+      videoUrl,
+      storagePath: r.file_path,
+      createdAt: r.created_at,
+      isCurrent: currentUrl != null && currentUrl === videoUrl,
+    };
+  });
+
+  res.json({ renders });
+});
+
+router.delete('/:id/renders/:assetId', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const assetId = paramStr(req.params.assetId);
+
+  const asset: any = await selectOne('assets', { id: assetId });
+  if (!asset || asset.project_id !== projectId || asset.category !== 'final_render') {
+    return res.status(404).json({ error: 'Render not found for this project' });
+  }
+
+  // If this asset is the one the queue row currently points at, clear the
+  // queue's video_url so we don't leave a dangling reference. The row stays
+  // `completed` — the artist may have more renders in the list.
+  const queueRow = await findQueueByProjectIds([projectId]);
+  const currentUrl = (queueRow as any)?.video_url || null;
+  const thisUrl = storageUrl(asset.file_path);
+  if (queueRow && currentUrl === thisUrl) {
+    await updateQueueItem(queueRow.id, { video_url: null });
+  }
+
+  // Remove the mp4 from Supabase Storage (failure here isn't fatal — the row
+  // removal below is the source of truth) and then drop the assets row.
+  try {
+    await deleteFile(asset.file_path);
+  } catch (err) {
+    console.warn(`[renders ${projectId}] storage delete failed for ${asset.file_path}:`, err);
+  }
+  await deleteRows('assets', { id: assetId });
+
+  res.json({ ok: true, clearedQueueVideoUrl: queueRow && currentUrl === thisUrl });
 });
 
 // ─── X-Ray: AI Call Log ──────────────────────────────────────────────

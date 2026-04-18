@@ -1,144 +1,69 @@
-
-import React, { useMemo } from 'react';
-// FFMPEG RENDER — temporarily disabled. Kept commented so we can restore once
-// the timeline editor becomes authoritative for the final stitch.
-// import { FFmpeg } from '@ffmpeg/ffmpeg';
-// import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiProject } from '../types';
 import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
+import useStore from './timeline-editor/store';
+import {
+  renderTimeline,
+  publishRenderUrl,
+  listRenders,
+  deleteRender,
+  type RenderResponse,
+  type RenderHistoryItem,
+} from '../services/api';
 
 interface Props {
   project: ApiProject;
   onBack: () => void;
 }
 
+type RenderPhase =
+  | { kind: 'idle' }
+  | { kind: 'rendering' }
+  | { kind: 'publishing'; videoUrl: string }
+  | { kind: 'done'; videoUrl: string; queueRowUpdated: boolean }
+  | { kind: 'error'; message: string };
+
 export const StepRender: React.FC<Props> = ({ project, onBack }) => {
-  /* ── FFMPEG RENDER (disabled) ────────────────────────────────────────────
-  const [loaded, setLoaded] = useState(false);
-  const [isRendering, setIsRendering] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusText, setStatusText] = useState("Initializing...");
-  const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null);
-  const [finalBlob, setFinalBlob] = useState<Blob | null>(null);
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishResult, setPublishResult] = useState<{ videoUrl: string; queueRowUpdated: boolean } | null>(null);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const ffmpegRef = useRef(new FFmpeg());
-  const messageRef = useRef<HTMLParagraphElement>(null);
+  const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<RenderHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
-  const load = async () => {
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-    const ffmpeg = ffmpegRef.current;
-
-    ffmpeg.on('log', ({ message }) => {
-      if (messageRef.current) messageRef.current.innerHTML = message;
-      console.log(message);
-    });
-
-    ffmpeg.on('progress', ({ progress, time }) => {
-       setProgress(Math.round(progress * 100));
-    });
-
+  // Load render history lazily when the panel opens, and again after a render
+  // completes so the newest entry appears without a manual refresh.
+  const refreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
     try {
-        await ffmpeg.load({
-            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
-        setLoaded(true);
-        setStatusText("Ready to Render");
-    } catch (e) {
-        console.error(e);
-        setStatusText("Failed to load FFmpeg. Check connection.");
+      const { renders } = await listRenders(project.id);
+      setHistory(renders);
+    } catch (err) {
+      console.error('[renders]', err);
+    } finally {
+      setHistoryLoading(false);
     }
-  };
+  }, [project.id]);
+
+  // Preload count once on mount so the header button shows "History (N)"
+  // before the panel is ever opened.
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
 
   useEffect(() => {
-    load();
-  }, []);
+    if (historyOpen) refreshHistory();
+  }, [historyOpen, refreshHistory]);
 
-  const renderVideo = async () => {
-    if (!project.audioPath) {
-        setRenderError('Audio file missing on this project.');
-        return;
-    }
-    setRenderError(null);
-
-    setIsRendering(true);
-    setFinalVideoUrl(null);
-    const ffmpeg = ffmpegRef.current;
-
+  const handleDeleteRender = async (item: RenderHistoryItem) => {
+    if (!confirm(item.isCurrent
+      ? 'Delete the CURRENT render? The queue row will lose its video link.'
+      : 'Delete this render permanently?')) return;
     try {
-        const shots = project.scenes.flatMap(s => s.shots).filter(s => s.videoUrl);
-        if (shots.length === 0) throw new Error("No videos generated yet.");
-
-        setStatusText("Writing assets to memory...");
-        await ffmpeg.writeFile('audio.mp3', await fetchFile(project.audioPath!));
-
-        let fileList = '';
-        for (let i = 0; i < shots.length; i++) {
-            const shot = shots[i];
-            const fileName = `clip_${i}.mp4`;
-            setStatusText(`Loading clip ${i + 1}/${shots.length}...`);
-            await ffmpeg.writeFile(fileName, await fetchFile(shot.videoUrl!));
-            fileList += `file '${fileName}'\n`;
-        }
-
-        await ffmpeg.writeFile('concat_list.txt', fileList);
-
-        setStatusText("Stitching video timeline...");
-        await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'concat_list.txt', '-c', 'copy', 'visual_track.mp4']);
-
-        setStatusText("Mastering audio mix...");
-        await ffmpeg.exec([
-            '-i', 'visual_track.mp4',
-            '-i', 'audio.mp3',
-            '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-map', '0:v:0',
-            '-map', '1:a:0',
-            '-shortest',
-            'out.mp4'
-        ]);
-
-        const data = await ffmpeg.readFile('out.mp4');
-        const blob = new Blob([data as any], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-        setFinalBlob(blob);
-        setFinalVideoUrl(url);
-        setStatusText("Render Complete!");
-
-    } catch (e: any) {
-        console.error(e);
-        setStatusText(`Error: ${e.message}`);
-    } finally {
-        setIsRendering(false);
+      await deleteRender(project.id, item.assetId);
+      setHistory((cur) => cur.filter((r) => r.assetId !== item.assetId));
+    } catch (err: any) {
+      alert(err?.message || 'Delete failed');
     }
   };
-
-  // Upload the final render to /storage and mark the owning queue row
-  // completed (latest-completed-wins: queue points at this fork now).
-  const publishToQueue = async () => {
-    if (!finalBlob) return;
-    setIsPublishing(true);
-    setRenderError(null);
-    try {
-      const form = new FormData();
-      form.append('video', new File([finalBlob], 'final.mp4', { type: 'video/mp4' }));
-      const res = await fetch(`/api/queue/publish/${project.id}`, { method: 'POST', body: form });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(body.error || `Publish failed: ${res.status}`);
-      }
-      const data = await res.json();
-      setPublishResult({ videoUrl: data.videoUrl, queueRowUpdated: data.queueRowUpdated });
-    } catch (e: any) {
-      console.error(e);
-      setRenderError(e.message);
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-  ────────────────────────────────────────────────────────────────────────── */
 
   // Shot videos that the timeline preview should seed with. Derived once from
   // the project; kept stable so the editor only auto-populates on mount.
@@ -147,32 +72,233 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       project.scenes
         .flatMap((s) => s.shots)
         .filter((s) => !!s.videoUrl)
-        .map((s) => ({ src: s.videoUrl!, name: `shot-${s.id}` })),
+        .map((s, i) => ({ src: s.videoUrl!, name: `v_${i + 1}` })),
     // Only re-seed if the set of video URLs actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],
   );
 
+  // Song audio lives on the editor's audio track. The renderer used to inject
+  // this server-side; now it travels through trackItemsMap like any other clip
+  // so the artist can trim, fade, or mute it in the preview.
+  const previewAudioClips = useMemo<InitialClip[]>(
+    () => (project.audioPath ? [{ src: project.audioPath, name: 'song' }] : []),
+    [project.audioPath],
+  );
+
+  const handleRender = async () => {
+    // Snapshot the render-authoritative subset of the timeline store. Anything
+    // not in this object (scale, scroll, activeIds, stateManager, playerRef,
+    // timeline, tracks, transitionIds) is UI-only and the renderer ignores it.
+    const s = useStore.getState();
+    if (s.trackItemIds.length === 0) {
+      setPhase({ kind: 'error', message: 'Timeline is empty — add clips first.' });
+      return;
+    }
+
+    setPhase({ kind: 'rendering' });
+    try {
+      const result: RenderResponse = await renderTimeline(project.id, {
+        trackItemIds: s.trackItemIds,
+        trackItemsMap: s.trackItemsMap,
+        transitionsMap: s.transitionsMap,
+        fps: s.fps,
+        size: s.size,
+        durationMs: s.duration,
+      });
+
+      setPhase({ kind: 'publishing', videoUrl: result.videoUrl });
+      const pub = await publishRenderUrl(
+        project.id,
+        result.videoUrl,
+        result.storagePath,
+      );
+      setPhase({
+        kind: 'done',
+        videoUrl: result.videoUrl,
+        queueRowUpdated: !!pub.queueRowUpdated,
+      });
+      // Keep history in sync if the panel is open; otherwise next open refetches.
+      if (historyOpen) refreshHistory();
+    } catch (e: any) {
+      console.error('[render]', e);
+      setPhase({ kind: 'error', message: e?.message || 'Render failed' });
+    }
+  };
+
+  const isBusy = phase.kind === 'rendering' || phase.kind === 'publishing';
+
+  // Neutralize the App-level <main>'s p-8 with -m-8 so this view can claim the
+  // full viewport below the header. h-[calc(100vh-3.5rem)] = 100vh minus the
+  // 56px global header so nothing else scrolls. The layout inside is a fixed
+  // compact top bar, a flex-1 editor body, and the timeline already nested
+  // inside TimelineEditor.
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-32">
-      <div className="text-center space-y-2 mb-4">
-        <h2 className="text-2xl font-display font-medium text-white tracking-tight">Final Render</h2>
-        <p className="text-zinc-400 text-sm">Arrange, trim, and preview your timeline. Stitching is temporarily disabled.</p>
+    <div className="-m-8 h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden bg-[#141418]">
+      {/* Compact top bar: Back + title on left, render button + status on right */}
+      <div className="flex items-center justify-between px-4 h-10 border-b border-white/[0.06] flex-none">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={onBack}
+            disabled={isBusy}
+            className="text-xs text-zinc-400 hover:text-white disabled:opacity-40 transition-colors"
+          >
+            ← Back
+          </button>
+          <div className="w-px h-4 bg-white/[0.06]" />
+          <span className="text-sm font-medium text-white whitespace-nowrap">Final Render</span>
+          <span className="text-[11px] text-zinc-500 truncate hidden md:inline">
+            Arrange, trim, preview. Hit Render to stitch to mp4.
+          </span>
+        </div>
+        <div className="flex items-center gap-3 flex-none">
+          {phase.kind === 'rendering' && (
+            <span className="text-[11px] text-zinc-400 font-mono">rendering…</span>
+          )}
+          {phase.kind === 'publishing' && (
+            <span className="text-[11px] text-zinc-400 font-mono">publishing…</span>
+          )}
+          <button
+            onClick={() => setHistoryOpen((o) => !o)}
+            className={`text-[11px] px-2 py-1 rounded-md transition-colors ${
+              historyOpen
+                ? 'bg-white/[0.1] text-white'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
+            }`}
+            title="Past renders"
+          >
+            History{history.length > 0 ? ` (${history.length})` : ''}
+          </button>
+          <button
+            onClick={handleRender}
+            disabled={isBusy || previewClips.length === 0}
+            className="px-3 py-1 rounded-md bg-white text-black text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {phase.kind === 'done' ? 'Render again' : 'Render'}
+          </button>
+        </div>
       </div>
 
-      {previewClips.length > 0 ? (
-        <div className="surface rounded-xl overflow-hidden" style={{ height: 'calc(100vh - 220px)', minHeight: 640 }}>
-          <TimelineEditor embedded initialClips={previewClips} />
-        </div>
-      ) : (
-        <div className="surface rounded-xl p-8 text-center">
-          <p className="text-zinc-400 text-sm">No shot videos available yet. Generate videos in the Studio first.</p>
-        </div>
-      )}
+      {/* Editor body: takes the rest of the viewport. Done/error banners
+          overlay at the bottom-right so they never push layout. */}
+      <div className="flex-1 min-h-0 relative">
+        {previewClips.length > 0 ? (
+          <TimelineEditor
+            embedded
+            initialClips={previewClips}
+            initialAudioClips={previewAudioClips}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center">
+            <p className="text-zinc-400 text-sm">
+              No shot videos available yet. Generate videos in the Studio first.
+            </p>
+          </div>
+        )}
 
-      <div className="surface rounded-xl px-6 py-4 flex justify-between items-center">
-        <button onClick={onBack} className="text-zinc-400 hover:text-white text-sm transition-colors">Back to Studio</button>
-        <div className="text-[11px] text-zinc-400 font-mono">timeline-editor preview</div>
+        {historyOpen && (
+          <div className="absolute top-3 right-3 w-80 max-h-[calc(100%-1.5rem)] bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl backdrop-blur-sm flex flex-col overflow-hidden z-10">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06] flex-none">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-white">Past renders</span>
+                {historyLoading && (
+                  <span className="text-[10px] text-zinc-500 font-mono">loading…</span>
+                )}
+              </div>
+              <button
+                onClick={() => setHistoryOpen(false)}
+                className="text-zinc-500 hover:text-white text-xs leading-none"
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {history.length === 0 && !historyLoading && (
+                <div className="text-[11px] text-zinc-500 px-2 py-4 text-center">
+                  No renders yet. Hit Render to make one.
+                </div>
+              )}
+              {history.map((item) => (
+                <div
+                  key={item.assetId}
+                  className={`rounded-md border p-2 space-y-1.5 ${
+                    item.isCurrent
+                      ? 'border-white/[0.18] bg-white/[0.04]'
+                      : 'border-white/[0.06] bg-black/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {new Date(item.createdAt).toLocaleString()}
+                    </span>
+                    {item.isCurrent && (
+                      <span className="text-[9px] text-emerald-400 font-mono uppercase tracking-wide">
+                        current
+                      </span>
+                    )}
+                  </div>
+                  <video src={item.videoUrl} controls preload="none" className="w-full rounded" />
+                  <div className="flex items-center justify-between gap-2">
+                    <a
+                      href={item.videoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[10px] text-zinc-400 hover:text-white underline truncate flex-1"
+                    >
+                      open ↗
+                    </a>
+                    <button
+                      onClick={() => handleDeleteRender(item)}
+                      className="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {phase.kind === 'done' && (
+          <div className="absolute bottom-4 right-4 max-w-sm bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl p-3 space-y-2 backdrop-blur-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-xs text-white">
+                Render complete{phase.queueRowUpdated ? ' — queue row marked completed.' : '.'}
+              </div>
+              <button
+                onClick={() => setPhase({ kind: 'idle' })}
+                className="text-zinc-500 hover:text-white text-xs leading-none"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+            <video src={phase.videoUrl} controls className="w-full rounded" />
+            <a
+              href={phase.videoUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block truncate text-zinc-300 hover:text-white text-[10px] font-mono underline"
+            >
+              {phase.videoUrl}
+            </a>
+          </div>
+        )}
+
+        {phase.kind === 'error' && (
+          <div className="absolute bottom-4 right-4 max-w-sm bg-red-900/40 border border-red-500/40 rounded-lg shadow-xl px-3 py-2 text-xs text-red-200 flex items-start justify-between gap-3">
+            <span>{phase.message}</span>
+            <button
+              onClick={() => setPhase({ kind: 'idle' })}
+              className="text-red-300 hover:text-white leading-none"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

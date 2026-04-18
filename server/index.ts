@@ -26,6 +26,7 @@ import { generateRouter } from './routes/generate.js';
 import { queueRouter } from './routes/queue.js';
 import { adminRouter } from './routes/admin.js';
 import { promptsRouter } from './routes/prompts.js';
+import { renderRouter } from './routes/render.js';
 import { requireAuth } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,7 @@ app.use(express.json({ limit: '50mb' }));
 // Auth middleware on all project/queue/prompt routes
 app.use('/api/projects', requireAuth, projectsRouter);
 app.use('/api/projects', requireAuth, generateRouter);
+app.use('/api/projects', requireAuth, renderRouter);
 app.use('/api/queue', requireAuth, queueRouter);
 app.use('/api/prompts', requireAuth, promptsRouter);
 // Admin routes use their own x-admin-secret auth

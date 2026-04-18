@@ -1,3 +1,6 @@
+// SYNCED FROM components/timeline-editor/Composition.tsx — re-run
+// `npm run sync-timeline` after editing the upstream file. Server-side build
+// removes the StoreComposition wrapper and the './store' import.
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence } from 'remotion';
 import {
@@ -16,7 +19,6 @@ import {
 import { ITrackItem, ITransition } from '@designcombo/types';
 import { buildFilterCSS, buildOpacityCSS } from './effects';
 import { groupTrackItems } from './track-items-utils';
-import useStore from './store';
 
 type ItemType = 'text' | 'image' | 'video' | 'audio';
 
@@ -340,19 +342,4 @@ export const Composition: React.FC<CompositionInput> = ({
   );
 };
 
-// Thin wrapper that pulls render-authoritative state from the zustand store.
-// Used by the in-app <Player>; the SSR renderer never imports this.
-const StoreComposition: React.FC = () => {
-  const { trackItemIds, trackItemsMap, transitionsMap, fps, size } = useStore();
-  return (
-    <Composition
-      trackItemIds={trackItemIds}
-      trackItemsMap={trackItemsMap}
-      transitionsMap={transitionsMap}
-      fps={fps}
-      size={size}
-    />
-  );
-};
-
-export default StoreComposition;
+export default Composition;
