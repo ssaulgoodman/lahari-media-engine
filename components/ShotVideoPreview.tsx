@@ -81,8 +81,8 @@ export const ShotVideoPreview: React.FC<Props> = ({ videoUrl, audioUrl, globalSt
       <video ref={videoRef} src={videoUrl} controls loop muted playsInline className="w-full h-auto" />
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
 
-      {/* Audio controls — bottom-left, visible on hover */}
-      <div className={`absolute bottom-2 left-2 flex items-center gap-1 transition-opacity ${hovering ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Audio controls — top-right, visible on hover (bottom-left overlaps native video controls) */}
+      <div className={`absolute top-2 right-2 flex items-center gap-1 transition-opacity ${hovering ? 'opacity-100' : 'opacity-0'}`}>
         {/* Video native audio (speaker icon) */}
         <button
           onClick={() => setVideoMuted(m => !m)}
