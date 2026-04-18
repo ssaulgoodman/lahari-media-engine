@@ -55,7 +55,7 @@ interface Props {
 export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
-  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'motion' | 'video' | 'compiled'>>({});
+  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video' | 'compiled'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
   const [bulkNote, setBulkNote] = useState('');
   // Set of expanded shot ids so multiple shots can be open at once across
@@ -73,7 +73,6 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [endFrameUploadTarget, setEndFrameUploadTarget] = useState<string | null>(null);
   // Reference image attached to refine feedback (per shot)
   const [refineImage, setRefineImage] = useState<Record<string, File>>({});
-  const [refineTarget, setRefineTarget] = useState<Record<string, 'start' | 'end'>>({});
 
   const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
 
@@ -790,31 +789,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           )}
                         </div>
                       </div>
-                      {/* End frame prompt + generate section */}
-                      {!shot.locked && hasVideo && modelSupportsLastFrame && (
-                        <div className="px-4 py-3 border-t border-white/[0.04] space-y-2">
-                          <div className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">End frame prompt</div>
-                          <textarea
-                            value={shot.endVisualPrompt || shot.visualPrompt || ''}
-                            onChange={e => onUpdateShot(activeScene.id, shot.id, { endVisualPrompt: e.target.value } as any)}
-                            placeholder="Describe what this shot should end on…"
-                            className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
-                            style={{ height: 'auto', overflow: 'hidden' }}
-                            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                          />
-                          <div className="flex items-center gap-2">
-                            {onGenerateEndFrame && (
-                              <button
-                                onClick={() => onGenerateEndFrame(shot.id)}
-                                className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 transition-colors"
-                              >
-                                {shot.endImageUrl ? 'Regenerate end frame' : 'Generate end frame'}
-                              </button>
-                            )}
-                          </div>
-                          {/* End frame refine moved to unified refine section below */}
-                        </div>
-                      )}
+                      {/* End frame prompt + generate now lives in the "Last frame" prompt tab */}
                       </>
                     ) : (
                       // Pre-video: just show the start frame full width (no confusing empty slot)
@@ -1024,7 +999,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       const autoVeoPrompt = veoParts.join('. ');
 
                       const promptText = activeTab === 'compiled' ? compiledText
-                        : activeTab === 'image' ? shot.visualPrompt : shot.motionPrompt;
+                        : activeTab === 'image' ? shot.visualPrompt
+                        : activeTab === 'endframe' ? (shot.endVisualPrompt || '')
+                        : shot.motionPrompt;
 
                       return (
                         <div className="space-y-3">
@@ -1032,15 +1009,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'image' }))}
                               className={`text-sm font-medium transition-colors ${activeTab === 'image' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                            >Frame prompt</button>
-                            <button
-                              onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'motion' }))}
-                              className={`text-sm font-medium transition-colors ${activeTab === 'motion' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                            >Motion prompt</button>
+                            >First frame</button>
+                            {modelSupportsLastFrame && (
+                              <button
+                                onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'endframe' }))}
+                                className={`text-sm font-medium transition-colors ${activeTab === 'endframe' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                              >Last frame</button>
+                            )}
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'video' }))}
                               className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                            >Video prompt</button>
+                            >Video</button>
                             <button
                               onClick={() => setPromptTab(prev => ({ ...prev, [shot.id]: 'compiled' }))}
                               className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
@@ -1083,12 +1062,62 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             );
                           })()}
 
-                          {activeTab === 'video' ? (
+                          {activeTab === 'endframe' ? (
                             <div className="space-y-3">
-                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
-                                Sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with the start frame as keyframe
+                              {shot.endVisualPrompt ? (
+                                <textarea
+                                  value={shot.endVisualPrompt}
+                                  onChange={e => onUpdateShot(activeScene.id, shot.id, { endVisualPrompt: e.target.value } as any)}
+                                  placeholder="Describe what this shot should end on…"
+                                  className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
+                                  style={{ height: 'auto', overflow: 'hidden' }}
+                                  ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                />
+                              ) : shot.extractedLastFrameUrl ? (
+                                <div className="surface-inset rounded-md p-3 text-sm text-zinc-400 italic">
+                                  Extracted from video — no prompt. Write one below to generate a specific end frame instead.
+                                </div>
+                              ) : (
+                                <textarea
+                                  value=""
+                                  onChange={e => onUpdateShot(activeScene.id, shot.id, { endVisualPrompt: e.target.value } as any)}
+                                  placeholder="Describe what this shot should end on…"
+                                  className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
+                                />
+                              )}
+                              <div className="flex items-center gap-2">
+                                {onGenerateEndFrame && (
+                                  <button
+                                    onClick={() => onGenerateEndFrame(shot.id)}
+                                    disabled={isGenerating || !shot.endVisualPrompt}
+                                    className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                                  >
+                                    {shot.endImageUrl ? 'Regenerate end frame' : 'Generate end frame'}
+                                  </button>
+                                )}
                               </div>
-                              <div className="text-[11px] text-zinc-400">Edit below to override the auto-generated prompt</div>
+                            </div>
+                          ) : activeTab === 'video' ? (
+                            <div className="space-y-3">
+                              {/* Motion prompt */}
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Motion prompt</div>
+                              {!shot.locked ? (
+                                <textarea
+                                  value={shot.motionPrompt || ''}
+                                  onChange={e => onUpdateShot(activeScene.id, shot.id, { motionPrompt: e.target.value })}
+                                  placeholder="Camera movement and action…"
+                                  className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2rem]"
+                                  style={{ height: 'auto', overflow: 'hidden' }}
+                                  ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                />
+                              ) : (
+                                <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{shot.motionPrompt || 'Cinematic camera movement'}</pre>
+                              )}
+                              <div className="h-px bg-white/[0.06]" />
+                              {/* Video prompt (auto-built, overrideable) */}
+                              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                Video prompt — sent to {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} with start frame
+                              </div>
                               <textarea
                                 value={videoOverride[shot.id] ?? autoVeoPrompt}
                                 onChange={e => setVideoOverride(prev => ({ ...prev, [shot.id]: e.target.value }))}
@@ -1103,7 +1132,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   disabled={!hasStartFrame || isGenerating}
                                   className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
                                 >
-                                  Regenerate with this prompt
+                                  {hasVideo ? 'Regenerate video' : 'Generate video'}
                                 </button>
                                 {videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
                                   <button
@@ -1207,9 +1236,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           ) : (
                             <>
                               <textarea
-                                id={activeTab === 'image' ? `prompt-${shot.id}` : undefined}
+                                id={`prompt-${shot.id}`}
                                 value={promptText}
-                                onChange={(e) => onUpdateShot(activeScene.id, shot.id, activeTab === 'image' ? { visualPrompt: e.target.value } : { motionPrompt: e.target.value })}
+                                onChange={(e) => onUpdateShot(activeScene.id, shot.id, { visualPrompt: e.target.value })}
                                 className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[3rem]"
                                 style={{ height: 'auto', overflow: 'hidden' }}
                                 ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
@@ -1230,21 +1259,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               {hasStartFrame && (
                                 <>
                                 <div className="h-px bg-white/[0.06] my-3" />
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Refine</span>
-                                  <div className="flex items-center bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.06]">
-                                    <button
-                                      onClick={() => setRefineTarget(prev => ({ ...prev, [shot.id]: 'start' }))}
-                                      className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${(refineTarget[shot.id] || 'start') === 'start' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                                    >Start frame</button>
-                                    {hasVideo && modelSupportsLastFrame && (
-                                      <button
-                                        onClick={() => setRefineTarget(prev => ({ ...prev, [shot.id]: 'end' }))}
-                                        className={`px-2 py-0.5 text-[11px] font-medium transition-colors ${refineTarget[shot.id] === 'end' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                                      >End frame</button>
-                                    )}
-                                  </div>
-                                  <span className="text-[11px] text-zinc-400/60">— describe what's wrong, Claude rewrites the prompt</span>
+                                <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
+                                  Refine {(promptTab[shot.id] || 'image') === 'endframe' ? 'last' : 'first'} frame — describe what's wrong, Claude rewrites the prompt
                                 </div>
                                 <div className="relative flex gap-2">
                                   <AutoGrowTextarea
@@ -1284,7 +1300,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                         setMentionOpen(null);
                                         setMentionQuery('');
                                         const val = (e.target as HTMLTextAreaElement).value;
-                                        if (refineTarget[shot.id] === 'end') {
+                                        if ((promptTab[shot.id] || 'image') === 'endframe') {
                                           onRefineEndFramePrompt?.(shot.id, val);
                                         } else {
                                           onRefinePrompt(activeScene.id, shot.id, val);
@@ -1301,7 +1317,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     onClick={() => {
                                       const input = document.getElementById(`refine-${shot.id}`) as HTMLTextAreaElement;
                                       if (input?.value.trim()) {
-                                        if (refineTarget[shot.id] === 'end') {
+                                        if ((promptTab[shot.id] || 'image') === 'endframe') {
                                           onRefineEndFramePrompt?.(shot.id, input.value);
                                         } else {
                                           onRefinePrompt(activeScene.id, shot.id, input.value, refineImage[shot.id]);
