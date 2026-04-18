@@ -1777,22 +1777,40 @@ router.post('/:id/shots/:shotId/refine-video-prompt', async (req, res) => {
   try {
     const t0 = Date.now();
     // Pass the video/start frame as context if available
-    let imageBase64 = '';
-    let imageMime = 'image/png';
+    // Start frame as main context image
+    let startBase64 = '';
+    let startMime = 'image/png';
     if (shot.image_asset_id) {
       const imageAsset = await selectOne('assets', { id: shot.image_asset_id });
       if (imageAsset) {
-        imageBase64 = await readAsBase64(imageAsset.file_path);
-        imageMime = mimeFromExt(imageAsset.file_path);
+        startBase64 = await readAsBase64(imageAsset.file_path);
+        startMime = mimeFromExt(imageAsset.file_path);
       }
     }
+    // End frame as reference image (if exists)
+    let endBase64: string | undefined;
+    let endMime: string | undefined;
+    const endAssetId = shot.end_image_asset_id || shot.extracted_last_frame_asset_id;
+    if (endAssetId) {
+      const endAsset = await selectOne('assets', { id: endAssetId });
+      if (endAsset) {
+        endBase64 = await readAsBase64(endAsset.file_path);
+        endMime = mimeFromExt(endAsset.file_path);
+      }
+    }
+
+    const endFrameNote = endBase64
+      ? '\n[SECOND IMAGE is the end frame — the video should transition from the first image to this one]'
+      : '';
 
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action] ${feedback}`,
-      failedImageBase64: imageBase64,
-      failedImageMime: imageMime,
+      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action]${endFrameNote} ${feedback}`,
+      failedImageBase64: startBase64,
+      failedImageMime: startMime,
+      referenceImageBase64: endBase64,
+      referenceImageMime: endMime,
       styleDNA: project.style_description || 'Cinematic',
       characterDescriptions: charDescs,
       sceneNarrative: scene?.narrative_description,
