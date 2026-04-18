@@ -76,6 +76,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [endFrameUploadTarget, setEndFrameUploadTarget] = useState<string | null>(null);
   // Reference image attached to refine feedback (per shot)
   const [refineImage, setRefineImage] = useState<Record<string, File>>({});
+  // Track if prompt was edited since last generate (per shot+tab)
+  const [promptDirty, setPromptDirty] = useState<Record<string, boolean>>({});
 
   const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
 
@@ -1190,37 +1192,93 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                   </div>
                                 )}
 
-                                {/* Prompt textarea */}
+                                {/* Prompt textarea with @mention support */}
                                 {shot.locked ? (
                                   <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{currentPrompt || '(empty)'}</pre>
                                 ) : (
-                                  <textarea
-                                    id={`prompt-${activeTab}-${shot.id}`}
-                                    value={currentPrompt}
-                                    onChange={e => handlePromptChange(e.target.value)}
-                                    placeholder={promptPlaceholder}
-                                    className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
-                                    style={{ height: 'auto', overflow: 'hidden' }}
-                                    ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
-                                  />
+                                  <div className="relative">
+                                    <textarea
+                                      id={`prompt-${activeTab}-${shot.id}`}
+                                      value={currentPrompt}
+                                      onChange={e => {
+                                        handlePromptChange(e.target.value);
+                                        setPromptDirty(prev => ({ ...prev, [`${activeTab}:${shot.id}`]: true }));
+                                        // @mention detection
+                                        const val = e.target.value;
+                                        const cursor = e.target.selectionStart;
+                                        const before = val.slice(0, cursor);
+                                        const atIdx = before.lastIndexOf('@');
+                                        if (atIdx >= 0 && (atIdx === 0 || /\s/.test(before[atIdx - 1]))) {
+                                          const query = before.slice(atIdx + 1);
+                                          if (/\s/.test(query)) { setMentionOpen(null); setMentionQuery(''); }
+                                          else { setMentionOpen(`prompt:${shot.id}`); setMentionQuery(query.toLowerCase()); }
+                                        } else { setMentionOpen(null); setMentionQuery(''); }
+                                      }}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Escape' && mentionOpen === `prompt:${shot.id}`) {
+                                          setMentionOpen(null); setMentionQuery('');
+                                        }
+                                      }}
+                                      onBlur={() => { setTimeout(() => { if (mentionOpen === `prompt:${shot.id}`) { setMentionOpen(null); setMentionQuery(''); } }, 200); }}
+                                      placeholder={promptPlaceholder}
+                                      className="w-full surface-inset rounded-md p-3 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none min-h-[2.5rem]"
+                                      style={{ height: 'auto', overflow: 'hidden' }}
+                                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                    />
+                                    {/* @mention dropdown */}
+                                    {mentionOpen === `prompt:${shot.id}` && (() => {
+                                      const castItems = (project?.cast || []).filter(c => !mentionQuery || c.name.toLowerCase().includes(mentionQuery)).map(c => ({ name: c.name, thumb: c.referenceImageUrl, type: 'character' as const }));
+                                      const envItems = (project?.environments || []).filter(e => !mentionQuery || e.name.toLowerCase().includes(mentionQuery)).map(e => ({ name: e.name, thumb: e.referenceImageUrl, type: 'environment' as const }));
+                                      const items = [...castItems, ...envItems];
+                                      if (items.length === 0) return null;
+                                      return (
+                                        <div className="absolute left-0 bottom-full mb-1 z-[200] bg-zinc-900 border border-white/[0.08] rounded-lg shadow-xl max-h-[200px] overflow-y-auto w-64">
+                                          {items.map((item, i) => (
+                                            <button key={`${item.type}-${i}`} type="button"
+                                              className="w-full px-3 py-2 flex items-center gap-2 hover:bg-white/[0.04] cursor-pointer text-left"
+                                              onMouseDown={e => {
+                                                e.preventDefault();
+                                                const textarea = document.getElementById(`prompt-${activeTab}-${shot.id}`) as HTMLTextAreaElement;
+                                                if (!textarea) return;
+                                                const val = textarea.value;
+                                                const cursor = textarea.selectionStart;
+                                                const before = val.slice(0, cursor);
+                                                const atIdx = before.lastIndexOf('@');
+                                                if (atIdx < 0) return;
+                                                const newVal = val.slice(0, atIdx) + '@' + item.name + ' ' + val.slice(cursor);
+                                                handlePromptChange(newVal);
+                                                setPromptDirty(prev => ({ ...prev, [`${activeTab}:${shot.id}`]: true }));
+                                                setMentionOpen(null); setMentionQuery('');
+                                                setTimeout(() => { textarea.focus(); const pos = atIdx + item.name.length + 2; textarea.setSelectionRange(pos, pos); }, 0);
+                                              }}
+                                            >
+                                              {item.thumb ? <img src={item.thumb} className="w-6 h-6 rounded object-cover flex-shrink-0" alt="" /> : <div className="w-6 h-6 rounded bg-white/[0.06] flex-shrink-0" />}
+                                              <span className="text-sm text-zinc-300 truncate">{item.name}</span>
+                                              <span className="text-[10px] uppercase text-zinc-400 ml-auto flex-shrink-0">{item.type === 'character' ? 'char' : 'env'}</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
                                 )}
 
                                 {/* Video tab: reset to auto button */}
                                 {isVideo && videoOverride[shot.id] && videoOverride[shot.id] !== autoVeoPrompt && (
                                   <button
-                                    onClick={() => setVideoOverride(prev => { const { [shot.id]: _, ...rest } = prev; return rest; })}
+                                    onClick={() => { setVideoOverride(prev => { const { [shot.id]: _, ...rest } = prev; return rest; }); setPromptDirty(prev => ({ ...prev, [`video:${shot.id}`]: true })); }}
                                     className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
                                   >Reset to auto-generated prompt</button>
                                 )}
 
-                                {/* 3. Generate button */}
+                                {/* 3. Generate button — only active when prompt was edited */}
                                 {!shot.locked && (
                                   <div className="flex items-center gap-3">
                                     <button
-                                      onClick={handleGenerate}
+                                      onClick={() => { handleGenerate(); setPromptDirty(prev => ({ ...prev, [`${activeTab}:${shot.id}`]: false })); }}
                                       disabled={!canGenerate}
                                       className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
-                                    >{generateLabel}</button>
+                                    >{hasResult && !promptDirty[`${activeTab}:${shot.id}`] ? 'Regenerate' : generateLabel}</button>
                                   </div>
                                 )}
 
