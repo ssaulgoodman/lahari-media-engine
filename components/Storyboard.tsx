@@ -894,8 +894,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
                     {/* Error — only show if there's no successful content already */}
                     {isError && !isGenerating && !shot.videoUrl && (
-                      <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] flex items-center gap-2">
+                      <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] space-y-1">
                         <span className="text-xs text-red-300">Generation failed — click regen to retry</span>
+                        {shot.lastError && (
+                          <p className="text-[11px] text-red-300/60 font-mono leading-snug break-all">{shot.lastError.slice(0, 200)}</p>
+                        )}
                       </div>
                     )}
 

@@ -76,6 +76,7 @@ export interface VideoShot {
   videoStatus: GenerationStatus;
   useNextAsEndFrame: boolean;
   error?: string;
+  lastError?: string;
 }
 
 export interface VideoScene {

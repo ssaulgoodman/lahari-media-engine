@@ -1482,7 +1482,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 
     await updateRows('shots', { id: shot.id }, {
       image_asset_id: assetId,
-      image_status: 'success',
+      image_status: 'success', last_error: null,
       user_feedback: null,
       prompts_stale: false,
     });
@@ -1519,7 +1519,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    await updateRows('shots', { id: shot.id }, { image_status: 'error' });
+    await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
@@ -1558,7 +1558,7 @@ router.post('/:id/shots/:shotId/use-prev-last-frame', async (req, res) => {
 
   await updateRows('shots', { id: shotId }, {
     image_asset_id: newAssetId,
-    image_status: 'success',
+    image_status: 'success', last_error: null,
     continuity_from: 'prev_shot',
   });
 
@@ -1604,7 +1604,7 @@ router.post('/:id/shots/:shotId/use-as-prev-end', async (req, res) => {
 
   await updateRows('shots', { id: prevShot.id }, {
     end_image_asset_id: shot.image_asset_id,
-    end_image_status: 'success',
+    end_image_status: 'success', last_error: null,
     video_status: 'stale',
   });
 
@@ -1657,7 +1657,7 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_end_frame', file_path: endFramePath });
     await updateRows('shots', { id: shotId }, {
       end_image_asset_id: assetId,
-      end_image_status: 'success',
+      end_image_status: 'success', last_error: null,
       end_user_feedback: null,
       video_status: 'stale',
     });
@@ -1677,7 +1677,7 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
 
     res.json(await getFullProject(projectId));
   } catch (err: any) {
-    await updateRows('shots', { id: shotId }, { end_image_status: 'error' });
+    await updateRows('shots', { id: shotId }, { end_image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status(500).json({ error: `End frame generation failed: ${err.message}` });
   }
 });
@@ -1763,7 +1763,7 @@ router.post('/:id/shots/:shotId/upload-end-frame', upload.single('image'), async
   const filePath = await saveBuffer(req.file.buffer, 'images', ext);
   const assetId = uuidv4();
   await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_end_frame', file_path: filePath });
-  await updateRows('shots', { id: shotId }, { end_image_asset_id: assetId, end_image_status: 'success', video_status: 'stale' });
+  await updateRows('shots', { id: shotId }, { end_image_asset_id: assetId, end_image_status: 'success', last_error: null, video_status: 'stale' });
 
   res.json(await getFullProject(projectId));
 });
@@ -1831,7 +1831,7 @@ router.post('/:id/shots/:shotId/revert-video', async (req, res) => {
   await updateRows('shots', { id: shotId }, {
     video_asset_id: asset.id,
     extracted_last_frame_asset_id: framePair,
-    video_status: 'success',
+    video_status: 'success', last_error: null,
   });
 
   res.json(await getFullProject(paramStr(req.params.id)));
@@ -1966,7 +1966,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
 
     await updateRows('shots', { id: shot.id }, {
       video_asset_id: assetId,
-      video_status: 'success',
+      video_status: 'success', last_error: null,
       extracted_last_frame_asset_id: extractedAssetId,
     });
 
@@ -2058,7 +2058,7 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    await updateRows('shots', { id: shot.id }, { video_status: 'error' });
+    await updateRows('shots', { id: shot.id }, { video_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });

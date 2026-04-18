@@ -409,6 +409,7 @@ const getFullProject = async (projectId: string) => {
         attemptCount: shot.attempt_count,
         promptsStale: !!shot.prompts_stale,
         useNextAsEndFrame: !!shot.use_next_as_end_frame,
+        lastError: shot.last_error || undefined,
       }))
     })),
     chatHistory: chatMessages,
