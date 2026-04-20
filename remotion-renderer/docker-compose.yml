@@ -1,0 +1,22 @@
+services:
+  remotion-renderer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lahari-remotion-renderer:latest
+    container_name: lahari-remotion-renderer
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3030
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3030/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

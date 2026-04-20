@@ -82,6 +82,20 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
   const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
 
+  // Solo-play: when any <video> on the page starts playing, pause every other
+  // one. `play` does not bubble, so we listen in the capture phase.
+  React.useEffect(() => {
+    const onPlay = (e: Event) => {
+      const target = e.target;
+      if (!(target instanceof HTMLVideoElement)) return;
+      document.querySelectorAll('video').forEach(v => {
+        if (v !== target && !v.paused) v.pause();
+      });
+    };
+    document.addEventListener('play', onPlay, true);
+    return () => document.removeEventListener('play', onPlay, true);
+  }, []);
+
   const openHistory = async (shotId: string) => {
     if (!project) return;
     if (historyOpenFor === shotId) { setHistoryOpenFor(null); return; }
