@@ -18,6 +18,13 @@ const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Parse "M:SS" or "MM:SS" to seconds
+const parseTimestamp = (t: string): number => {
+  if (!t || !t.includes(':')) return 0;
+  const parts = t.split(':').map(Number);
+  return parts[0] * 60 + (parts[1] || 0);
+};
+
 // Body-ID scoping helpers — verify child belongs to the URL project.
 // Throw with a statusCode so catch blocks can return the right HTTP status.
 class ScopeError extends Error { statusCode: number; constructor(msg: string, code: number) { super(msg); this.statusCode = code; } }
@@ -967,7 +974,14 @@ router.post('/:id/generate-script', async (req, res) => {
         sort_order: sIdx,
       });
 
-      for (let shIdx = 0; shIdx < (scene.shots || []).length; shIdx++) {
+      // Calculate per-shot durations: base pacing for all, last shot gets remainder (clamped)
+      const basePacing = project.target_duration || 8;
+      const sceneStartSec = parseTimestamp(scene.startTime);
+      const sceneEndSec = parseTimestamp(scene.endTime);
+      const sceneDuration = Math.max(0, sceneEndSec - sceneStartSec);
+      const shotCount = (scene.shots || []).length;
+
+      for (let shIdx = 0; shIdx < shotCount; shIdx++) {
         const shot = scene.shots[shIdx];
         const shotId = uuidv4();
         // Map castNames → castIds using the name→id lookup
@@ -976,13 +990,20 @@ router.post('/:id/generate-script', async (req, res) => {
         // Map environmentName → environmentId
         const envId = shot.environmentName ? (envNameToId[shot.environmentName] || null) : null;
 
+        // Last shot gets remainder, but clamped to 2× pacing so it doesn't exceed model limits
+        let duration = basePacing;
+        if (shIdx === shotCount - 1 && sceneDuration > 0) {
+          const remainder = sceneDuration - (shotCount - 1) * basePacing;
+          duration = Math.min(remainder, basePacing * 2);
+        }
+
         // Store direction as visual_prompt placeholder — writeShotPrompts will overwrite later
         await insertRow('shots', {
           id: shotId,
           scene_id: sceneId,
           visual_prompt: shot.direction || '',
           motion_prompt: '',  // motion_prompt left empty — writeShotPrompts fills it
-          duration: shot.duration || (project.target_duration || 8),
+          duration,
           cast_ids: JSON.stringify(castIds),
           use_next_as_end_frame: project.video_mode === 'cinematic' ? 1 : 0,
           sort_order: shIdx,

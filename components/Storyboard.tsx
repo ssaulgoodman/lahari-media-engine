@@ -476,9 +476,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         {(() => {
                           const sceneStartSec = parseTimeToSec(activeScene.startTime);
                           const shotOffset = activeScene.shots.slice(0, shotIdx).reduce((a, s) => a + (s.duration || 0), 0);
-                          return `${fmtTime(sceneStartSec + shotOffset)}`;
+                          return fmtTime(sceneStartSec + shotOffset);
                         })()}
-                        <span className="text-zinc-500 ml-0.5">{shot.duration}s</span>
+                        <span className="text-zinc-500 ml-1">[{shot.duration}s]</span>
                       </span>
 
                       {/* Progress dots */}
