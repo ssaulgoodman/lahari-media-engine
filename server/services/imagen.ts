@@ -180,14 +180,13 @@ export const buildCharacterPrompt = (
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
   let prompt = opts?.styleIdx
-    ? `Generate ONE cinematic character portrait in the visual style of Image ${opts.styleIdx}.`
+    ? `Generate ONE cinematic character portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
     : `Generate ONE cinematic character portrait.`;
   prompt += `\n\n${character.name} — ${character.description}`;
   if (opts?.userRefIdx) {
-    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography) while rendering in the project's visual style${opts.styleIdx ? ` (Image ${opts.styleIdx})` : ''}. The reference image is the source of truth for WHO this character is; the style image is the source of truth for HOW to render them.`;
+    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography). The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW to render them.`;
   }
   prompt += `\n\nMid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.`;
-  prompt += `\n\nStyle: ${styleDNA}`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
 Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
   return prompt;
@@ -275,14 +274,13 @@ export const buildEnvironmentPrompt = (
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
   let prompt = opts?.styleIdx
-    ? `Generate ONE cinematic environment shot in the visual style of Image ${opts.styleIdx}. No characters or figures.`
+    ? `Generate ONE cinematic environment shot. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach. No characters or figures.`
     : `Generate ONE cinematic environment shot. No characters or figures.`;
   prompt += `\n\n${environment.name} — ${environment.description}`;
   if (opts?.userRefIdx) {
-    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood while rendering in the project's visual style${opts.styleIdx ? ` (Image ${opts.styleIdx})` : ''}. The reference defines WHAT the place looks like; the style defines HOW it's rendered.`;
+    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood. The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW it's rendered.`;
   }
   prompt += `\n\nWide establishing shot, full environment visible, empty scene.`;
-  prompt += `\n\nStyle: ${styleDNA}`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
 Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
   return prompt;
@@ -418,9 +416,7 @@ export const generateShotStartFrame = async (opts: {
   // ── Scene + instructions ──
   let prompt = `Scene: ${opts.visualPrompt}
 
-Style: ${opts.styleDNA}
-
-Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference image. If the style text description below conflicts with the style reference image, follow the image — it is the ground truth for lighting, color palette, and visual texture.`;
+Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Match the visual style EXACTLY from the style reference image — same lighting, color palette, texture, and rendering approach. The style image is the ground truth.`;
 
   if (opts.continuityDescription) {
     prompt += `\n\nPrevious shot ended with: ${opts.continuityDescription}
@@ -477,9 +473,7 @@ export const generateShotEndFrame = async (opts: {
 
 Motion: ${opts.motionPrompt}
 
-Style: ${opts.styleDNA}
-
-Image 1 is the start frame of this shot. Generate the ending frame — what the camera sees after the motion described above. Same characters, same costumes, same environment, moments later.`;
+Image 1 is the start frame of this shot. Generate the ending frame — what the camera sees after the motion described above. Same characters, same costumes, same environment, moments later. Match the visual style exactly from the start frame.`;
 
   if (opts.userFeedback) {
     prompt += `\n\nDirector note: ${opts.userFeedback}`;
@@ -546,11 +540,9 @@ export const generateShotFramePair = async (opts: {
 
 Motion: ${opts.motionPrompt}
 
-Style: ${opts.styleDNA}
-
 Generate TWO images for this shot:
 
-IMAGE 1 — START FRAME: The opening moment of this shot. Preserve character identity from character references. Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference.
+IMAGE 1 — START FRAME: The opening moment of this shot. Preserve character identity from character references. Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Match the visual style EXACTLY from the style reference image.
 
 IMAGE 2 — END FRAME: The closing moment of this shot, after the motion described above. Same characters, same costumes, same environment as the start frame, moments later.`;
 
