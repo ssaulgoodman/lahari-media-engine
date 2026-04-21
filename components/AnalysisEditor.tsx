@@ -186,7 +186,7 @@ interface Props {
   onGenerateScript: (userNote?: string) => void;
   onRefineScript?: (feedback: string) => void;
   onUpdateScene?: (sceneId: string, updates: { narrativeDescription?: string }) => void;
-  onUpdateShot?: (sceneId: string, shotId: string, updates: { visualPrompt?: string; castIds?: string[]; environmentId?: string | null }) => void;
+  onUpdateShot?: (sceneId: string, shotId: string, updates: { visualPrompt?: string; castIds?: string[]; environmentId?: string | null; duration?: number }) => void;
   onGenerateConcepts?: (opts?: { userNote?: string; directorBrief?: string }) => void;
   onCancelConcepts?: () => void;
   onCancelScript?: () => void;
@@ -1489,7 +1489,43 @@ export const AnalysisEditor: React.FC<Props> = ({
                                     <div className="text-sm text-zinc-400 leading-relaxed">{realMotion}</div>
                                   )}
                                   <div className="text-[11px] text-zinc-400 flex gap-3 flex-wrap items-center">
-                                    <span className="font-mono">{shot.duration}s</span>
+                                    {/* Editable duration + split */}
+                                    <span className="flex items-center gap-1 font-mono">
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={30}
+                                        defaultValue={shot.duration}
+                                        onBlur={e => {
+                                          const val = parseInt(e.target.value);
+                                          if (val && val !== shot.duration && val > 0) {
+                                            onUpdateShot?.(scene.id, shot.id, { duration: val } as any);
+                                            setSavedFlash(shot.id);
+                                            setTimeout(() => setSavedFlash(null), 1500);
+                                          }
+                                        }}
+                                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                                        className="w-8 bg-transparent text-zinc-300 text-center border-b border-dashed border-white/[0.1] hover:border-white/[0.2] focus:border-white/[0.3] outline-none"
+                                      />
+                                      <span className="text-zinc-500">s</span>
+                                      {shot.duration > 4 && (
+                                        <button
+                                          onClick={async () => {
+                                            if (!project) return;
+                                            try {
+                                              const p = await api.splitShot(project.id, shot.id);
+                                              onSetProject?.(p);
+                                              setSavedFlash(shot.id);
+                                              setTimeout(() => setSavedFlash(null), 1500);
+                                            } catch (err: any) { console.error('Split failed:', err); }
+                                          }}
+                                          className="text-zinc-500 hover:text-zinc-300 transition-colors ml-1"
+                                          title={`Split into ${Math.floor(shot.duration / 2)}s + ${shot.duration - Math.floor(shot.duration / 2)}s`}
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="8 6 12 2 16 6"/><polyline points="8 18 12 22 16 18"/></svg>
+                                        </button>
+                                      )}
+                                    </span>
                                     {/* Cast multi-select */}
                                     <span className="flex items-center gap-1">
                                       <span className="text-zinc-500">Cast:</span>

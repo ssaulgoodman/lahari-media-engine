@@ -200,13 +200,20 @@ export const buildCharacterPrompt = (
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
   let prompt = opts?.styleIdx
-    ? `Generate ONE cinematic character portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
-    : `Generate ONE cinematic character portrait.`;
+    ? `Generate ONE cinematic character reference portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
+    : `Generate ONE cinematic character reference portrait.`;
   prompt += `\n\n${character.name} — ${character.description}`;
   if (opts?.userRefIdx) {
     prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography). The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW to render them.`;
   }
-  prompt += `\n\nMid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.`;
+  prompt += `\n\nThis is a REUSABLE CHARACTER REFERENCE — it will be used across many different shots and scenes.
+- Mid-shot portrait: upper body and face clearly visible
+- NEUTRAL POSE: hands relaxed at sides or in a natural resting position
+- Do NOT show the character holding anything, performing any action, or interacting with objects
+- Do NOT include props, weapons, lamps, offerings, or ritual items in hand
+- Focus on: face, skin, expression, costume, ornaments, jewelry, crown/headpiece, hair
+- Plain or softly blurred background — the character should be isolated for reuse
+- Eye-level framing, natural cinematic lighting`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
 Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
   return prompt;

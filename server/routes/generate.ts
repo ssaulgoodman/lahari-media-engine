@@ -1006,11 +1006,11 @@ router.post('/:id/generate-script', async (req, res) => {
         // Map environmentName → environmentId
         const envId = shot.environmentName ? (envNameToId[shot.environmentName] || null) : null;
 
-        // Last shot gets remainder, but clamped to 2× pacing so it doesn't exceed model limits
+        // Last shot gets remainder (with ceil pacing, remainder ≤ basePacing). Safety clamp at 2×.
         let duration = basePacing;
         if (shIdx === shotCount - 1 && sceneDuration > 0) {
           const remainder = sceneDuration - (shotCount - 1) * basePacing;
-          duration = Math.min(remainder, basePacing * 2);
+          duration = Math.max(1, Math.min(remainder, basePacing * 2));
         }
 
         // Store direction as visual_prompt placeholder — writeShotPrompts will overwrite later

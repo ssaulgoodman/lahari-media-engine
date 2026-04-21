@@ -327,10 +327,11 @@ MUSICAL STRUCTURE: ${input.musicalStructure}
 
 ═══ PACING RULES (CRITICAL — think through this before writing) ═══
 Base shot length: ${pacing} seconds.
-For each scene, calculate: number_of_shots = floor(scene_duration / ${pacing})
-The last shot absorbs any remainder (e.g. 25s scene at ${pacing}s pacing → ${Math.floor(25 / pacing)} shots, last one is ${25 - (Math.floor(25 / pacing) - 1) * pacing}s).
+For each scene, calculate: number_of_shots = ceil(scene_duration / ${pacing})
+Every shot is ${pacing}s except the LAST shot which gets the remainder.
 
-Example: 0:00–0:24 = 24s → ${Math.floor(24 / pacing)} shots. 0:24–1:00 = 36s → ${Math.floor(36 / pacing)} shots.
+Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
+Example: 24s scene at ${pacing}s → ceil(24/${pacing}) = ${Math.ceil(24 / pacing)} shots. 36s → ${Math.ceil(36 / pacing)} shots.
 
 BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots — no more, no fewer.
 ═══════════════════════════════════════════════════════════════════
@@ -339,7 +340,8 @@ Plan the full music video using the plan_music_video tool.
 
 CAST rules:
 - Include the deity and key mythological figures by their proper names
-- Description = physical appearance for image generation: face, skin tone, build, costume, ornaments, weapons/props. 2-3 sentences.
+- Description = REUSABLE physical identity for image generation: face, skin tone, build, costume, ornaments, crown/headpiece, jewelry. 2-3 sentences.
+- Do NOT include actions, props held in hands, or scene-specific details — these descriptions generate a neutral reference portrait reused across many shots
 - Include cultural context: "{name}, the {role} from {tradition}" — e.g. "Kolasura, an asura king from Vaishnavite mythology"
 - No art style in descriptions — just what the character looks like
 
@@ -391,9 +393,9 @@ IMPORTANT — character and environment assignment:
     for (const scene of candidate.scenes) {
       const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
       if (sceneDuration <= 0) continue;
-      const maxShots = Math.max(1, Math.floor(sceneDuration / pacing));
-      if ((scene.shots?.length || 0) > maxShots) {
-        errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but only ${maxShots} fit at ${pacing}s pacing.`);
+      const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
+      if ((scene.shots?.length || 0) !== expectedShots) {
+        errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} shots expected.`);
       }
       if ((scene.shots?.length || 0) === 0) {
         errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
@@ -418,7 +420,7 @@ IMPORTANT — character and environment assignment:
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\nRemember: shots per scene = floor(scene_duration / ${pacing}). Recount and fix.` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\nRemember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.` }
       ] },
     ];
   }
@@ -544,9 +546,9 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
     for (const scene of candidate.scenes) {
       const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
       if (sceneDuration <= 0) continue;
-      const maxShots = Math.max(1, Math.floor(sceneDuration / pacing));
-      if ((scene.shots?.length || 0) > maxShots) {
-        errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but only ${maxShots} fit at ${pacing}s pacing.`);
+      const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
+      if ((scene.shots?.length || 0) !== expectedShots) {
+        errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} expected.`);
       }
     }
 

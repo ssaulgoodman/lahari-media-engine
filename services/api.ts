@@ -505,6 +505,15 @@ export const deleteShotRef = async (projectId: string, shotId: string, assetId: 
   return handleResponse(res);
 };
 
+export const splitShot = async (projectId: string, shotId: string, splitAt?: number) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/split`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(splitAt ? { splitAt } : {}),
+  });
+  return handleResponse(res);
+};
+
 export const lockAllSceneShots = async (projectId: string, sceneId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/scenes/${sceneId}/lock-all`, { method: 'POST' });
   return handleResponse(res);
