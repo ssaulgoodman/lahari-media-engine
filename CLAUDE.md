@@ -30,7 +30,7 @@ Production is deployed on Railway: https://lahari-media-engine-production.up.rai
 **Ownership scoping** (3 layers):
 1. **Project**: `router.param('id')` on `projectsRouter`, `generateRouter`, and `renderRouter` — verifies `user_id === req.userId`. No null-owner bypass.
 2. **URL child IDs**: `router.param('shotId')` (traces shot→scene→project), `router.param('sceneId')`, `router.param('memberId')`, `router.param('envId')` — all verify the child belongs to the URL project.
-3. **Body child IDs**: `requireCastMember()`, `requireEnvironment()`, `requireAsset()` helpers in generate.ts — validate body-supplied IDs against the URL project. Throw `ScopeError` with proper 403/404 status codes.
+3. **Body child IDs**: `requireCastMember()`, `requireEnvironment()`, `requireAsset()` helpers in `scope-helpers.ts` — validate body-supplied IDs against the URL project. Throw `ScopeError` with proper 403/404 status codes. `requireAsset` walks the fork chain (parent_project_id) for legacy forked projects.
 
 Queue routes: `publish` + `publish-url` check `project.user_id`, `start` checks ownership before returning an existing linked project.
 
@@ -48,6 +48,22 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 - **Backend**: Express 5 (port 3003 dev, 3001 in prod Docker). Stateless — no local storage or SQLite.
 - **Storage**: Supabase Storage bucket `lahari-assets`. Upload/download via `server/storage.ts`.
 - **DB**: Supabase Postgres (`lahari_*` prefixed tables) via `server/database.ts` async adapter. Song catalog + music_video_queue in same Supabase project.
+
+### Backend route modules
+
+The generate router (`server/routes/generate.ts`) is a thin composition layer (247 lines) that owns param validators, unlocks, and mounts 5 extracted route modules:
+
+| Module | Lines | What |
+|--------|-------|------|
+| `generate.ts` | 247 | Router, `param('id'/'shotId'/'sceneId')` guards, phase unlocks, legacy generate-styles, chat, mounts |
+| `generate-style.ts` | 299 | Style brainstorm, visualize, refine, lock, upload-and-lock, analyze-style-image |
+| `generate-looks.ts` | 428 | Character + env look gen, upload refs, lock, advance phases |
+| `generate-script.ts` | 449 | Script gen (extended thinking + validation), refine, write-shot-prompts |
+| `generate-shots.ts` | 860 | All shot-level: image gen, end frame, refine prompts, clear/revert, lock/unlock, scene lock, refs, history, split |
+| `generate-video.ts` | 288 | Video gen (Segmind), revert-video, chained-shot refresh |
+| `scope-helpers.ts` | 59 | Shared: `paramStr`, `ScopeError`, `requireAsset/CastMember/Environment`, `parseTimestamp`, `atLeast` |
+
+All modules mount on the same router instance — param validators and scope helpers are inherited. Other routers: `projectsRouter` (projects.ts), `queueRouter` (queue.ts), `renderRouter` (render.ts), `promptsRouter` (prompts.ts).
 
 ### Pipeline (4 steps)
 
