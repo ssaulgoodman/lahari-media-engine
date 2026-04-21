@@ -450,7 +450,19 @@ export const AnalysisEditor: React.FC<Props> = ({
   }, [styleSlots, userSlot, project.id]);
 
   const canAccess = (phase: Phase) => phaseIndex(phase) <= phaseIndex(activePhase);
-  const isLockedPhase = (phase: Phase) => phaseIndex(phase) < phaseIndex(activePhase);
+  // A phase is "locked" only if the STATUS has advanced past it — not just data presence.
+  // This way unlock-concept (which reverts status but keeps lockedConcept data) correctly
+  // shows the concept as unlocked/editable.
+  const statusLockedPhase = (() => {
+    switch (project.status) {
+      case 'uploaded': case 'analyzing': case 'analyzed': case 'error': return 'concept';
+      case 'concept_locked': return 'script';
+      case 'scripted': return 'style';
+      case 'style_locked': return 'characters';
+      default: return 'environments';
+    }
+  })();
+  const isLockedPhase = (phase: Phase) => phaseIndex(phase) < phaseIndex(statusLockedPhase);
   const activeMember = project.cast.find(c => c.id === activeCastId);
   const activeLooks = activeCastId ? (lookCandidates[activeCastId] || []) : [];
   const activeEnv = project.environments.find(e => e.id === activeEnvId);
