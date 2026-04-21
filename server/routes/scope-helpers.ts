@@ -47,3 +47,6 @@ export const requireAsset = async (projectId: string, assetId: string) => {
   }
   throw new ScopeError('Asset does not belong to this project', 403);
 };
+
+export const PHASE_ORDER_SERVER = ['uploaded','analyzed','concept_locked','scripted','style_locked','characters_locked','environments_locked','in_production','completed'];
+export const atLeast = (cur: string, target: string) => PHASE_ORDER_SERVER.indexOf(cur) >= PHASE_ORDER_SERVER.indexOf(target);
