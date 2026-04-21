@@ -904,6 +904,16 @@ export const AnalysisEditor: React.FC<Props> = ({
         {/* ═══ CONCEPT ═══ */}
         {viewPhase === 'concept' && (
           <motion.div key="concept" {...phaseTransition} className="space-y-6">
+            {/* Analyzing banner — shown when analysis is running in background */}
+            {project.status === 'analyzing' && (
+              <div className="surface rounded-xl p-4 border border-amber-400/20 flex items-center gap-3">
+                <div className="w-4 h-4 border-2 border-zinc-600 border-t-amber-400 rounded-full animate-spin flex-shrink-0"></div>
+                <div>
+                  <p className="text-sm text-white font-medium">Analyzing audio...</p>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">Detecting musical structure and meaning. You can listen to the song while this runs.</p>
+                </div>
+              </div>
+            )}
             {isLockedPhase('concept') ? (
               <div className="rounded-xl p-6 border border-white/[0.06]">
                 <div className="flex items-center justify-between gap-3 mb-4">

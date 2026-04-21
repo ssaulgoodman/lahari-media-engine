@@ -165,86 +165,90 @@ router.post('/:queueId/start', async (req, res) => {
       });
     }
 
-    // If analysis is cached, skip AI calls entirely
+    // If analysis is cached, skip AI calls — respond immediately
     if (hasCachedAnalysis) {
       console.log(`[queue] Using cached analysis for ${item.song_name}`);
       const project = await getFullProject(projectId);
       return res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: item.lahari_project_id || projectId } });
     }
 
-    // Run audio analysis: musical structure (Gemini) + meaning (Claude).
-    const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
-    try {
-      const audioBase64 = await readAsBase64(audioPath);
-      const audioMime = mimeFromExt(audioPath);
-
-      const t0 = Date.now();
-      const [structureResult, meaningResult] = await Promise.allSettled([
-        detectStructure(audioBase64, audioMime),
-        lyrics ? summarizeMeaning(item.song_name || 'Untitled', 'Unknown', lyrics, '') : Promise.resolve(''),
-      ]);
-      const analysisMs = Date.now() - t0;
-
-      const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
-      const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
-
-      if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
-      if (meaningResult.status === 'rejected') console.warn(`[queue ${projectId}] meaning failed:`, meaningResult.reason);
-
-      await logCall({
-        projectId,
-        stage: 'detect-structure',
-        model: 'gemini-3-pro-preview',
-        prompt: 'Identify musical sections: label, startTime, endTime, energy level, description. Max 10 sections.',
-        referenceInputs: audioRef,
-        responseSummary: structureResult.status === 'fulfilled'
-          ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join('\n')
-          : 'FAILED',
-        durationMs: analysisMs,
-        costEstimate: 0.01,
-        error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
-      });
-
-      if (lyrics) {
-        await logCall({
-          projectId,
-          stage: 'summarize-meaning',
-          model: 'claude-sonnet-4-6',
-          prompt: `Summarize the meaning of "${item.song_name}": what it's about, who it addresses, emotional arc, cultural context.`,
-          responseSummary: meaning || 'FAILED',
-          durationMs: analysisMs,
-          costEstimate: 0.005,
-          error: meaningResult.status === 'rejected' ? String(meaningResult.reason) : undefined,
-        });
-      }
-
-      const structureJson = JSON.stringify(musicalStructure);
-      await updateRows('projects', { id: projectId }, {
-        status: 'analyzed',
-        musical_structure: structureJson,
-        meaning,
-        updated_at: new Date().toISOString(),
-      });
-
-      // Cache analysis on songs table for future users
-      if (lyrics || musicalStructure.length || meaning) {
-        await getSB().from('songs').update({
-          cached_lyrics: lyrics || null,
-          cached_structure: structureJson || null,
-          cached_meaning: meaning || null,
-        }).eq('id', item.song_id);
-        console.log(`[queue] Cached analysis on song ${item.song_id} for future use`);
-      }
-    } catch (err: any) {
-      console.error(`[queue ${projectId}] analysis failed:`, err);
-      await updateRows('projects', { id: projectId }, {
-        status: 'analyzed',
-        updated_at: new Date().toISOString(),
-      });
-    }
-
+    // Respond immediately with the project in 'analyzing' state — artist sees Blueprint right away.
+    // Analysis runs in the background; frontend polls for completion.
     const project = await getFullProject(projectId);
     res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: item.lahari_project_id || projectId } });
+
+    // ─── Background analysis (fire-and-forget after response) ───
+    const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
+    (async () => {
+      try {
+        const audioBase64 = await readAsBase64(audioPath);
+        const audioMime = mimeFromExt(audioPath);
+
+        const t0 = Date.now();
+        const [structureResult, meaningResult] = await Promise.allSettled([
+          detectStructure(audioBase64, audioMime),
+          lyrics ? summarizeMeaning(item.song_name || 'Untitled', 'Unknown', lyrics, '') : Promise.resolve(''),
+        ]);
+        const analysisMs = Date.now() - t0;
+
+        const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
+        const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
+
+        if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
+        if (meaningResult.status === 'rejected') console.warn(`[queue ${projectId}] meaning failed:`, meaningResult.reason);
+
+        await logCall({
+          projectId,
+          stage: 'detect-structure',
+          model: 'gemini-3-pro-preview',
+          prompt: 'Identify musical sections: label, startTime, endTime, energy level, description. Max 10 sections.',
+          referenceInputs: audioRef,
+          responseSummary: structureResult.status === 'fulfilled'
+            ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join('\n')
+            : 'FAILED',
+          durationMs: analysisMs,
+          costEstimate: 0.01,
+          error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
+        });
+
+        if (lyrics) {
+          await logCall({
+            projectId,
+            stage: 'summarize-meaning',
+            model: 'claude-sonnet-4-6',
+            prompt: `Summarize the meaning of "${item.song_name}": what it's about, who it addresses, emotional arc, cultural context.`,
+            responseSummary: meaning || 'FAILED',
+            durationMs: analysisMs,
+            costEstimate: 0.005,
+            error: meaningResult.status === 'rejected' ? String(meaningResult.reason) : undefined,
+          });
+        }
+
+        const structureJson = JSON.stringify(musicalStructure);
+        await updateRows('projects', { id: projectId }, {
+          status: 'analyzed',
+          musical_structure: structureJson,
+          meaning,
+          updated_at: new Date().toISOString(),
+        });
+
+        // Cache analysis on songs table for future users
+        if (lyrics || musicalStructure.length || meaning) {
+          await getSB().from('songs').update({
+            cached_lyrics: lyrics || null,
+            cached_structure: structureJson || null,
+            cached_meaning: meaning || null,
+          }).eq('id', item.song_id);
+          console.log(`[queue] Cached analysis on song ${item.song_id} for future use`);
+        }
+      } catch (err: any) {
+        console.error(`[queue ${projectId}] background analysis failed:`, err);
+        await updateRows('projects', { id: projectId }, {
+          status: 'analyzed',
+          updated_at: new Date().toISOString(),
+        });
+      }
+    })();
   } catch (err: any) {
     console.error('[queue] Start production failed:', err);
     res.status(500).json({ error: err.message });

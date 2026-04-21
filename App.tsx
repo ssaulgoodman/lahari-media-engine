@@ -1084,9 +1084,23 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     try {
       const result = await api.startProduction(queueId);
       setProject(result.project);
-      // Jump to Blueprint — audio + lyrics are already imported from Supabase,
-      // user should proceed to concept/script generation.
+      // Jump to Blueprint immediately — analysis runs in background
       setCurrentStep(AppStep.BLUEPRINT);
+      // Poll for analysis completion if still analyzing
+      if (result.project.status === 'analyzing') {
+        const projectId = result.project.id;
+        const poll = setInterval(async () => {
+          try {
+            const p = await api.getProject(projectId);
+            if (p.status !== 'analyzing') {
+              clearInterval(poll);
+              setProject(p);
+            }
+          } catch { /* ignore polling errors */ }
+        }, 3000);
+        // Safety: stop polling after 2 minutes
+        setTimeout(() => clearInterval(poll), 120000);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to start production');
     } finally {
