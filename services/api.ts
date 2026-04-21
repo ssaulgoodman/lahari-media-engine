@@ -342,7 +342,7 @@ export const generateEnvironmentLook = async (
   const res = await authFetch(`${API}/projects/${projectId}/generate-environment-look`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ environmentId }),
+    body: JSON.stringify({ environmentId, ...(note && { note }) }),
     signal,
   });
   return handleResponse(res);

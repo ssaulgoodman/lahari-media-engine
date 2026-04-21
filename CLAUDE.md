@@ -54,10 +54,10 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage, creates Lahari project.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
-   - Script (Claude Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
-   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA)
-   - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
-   - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
+   - Script (Claude Sonnet with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail.)
+   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to Gemini.)
+   - Characters — unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine. Description collapsed.
+   - Environments — same unified toolkit pattern as characters.
    - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
 3. **Studio** (`Storyboard.tsx`) — Per-shot unified toolkit with 4 tabs:
    - **First frame** — visual prompt + refs + generate (Gemini) + AI refine

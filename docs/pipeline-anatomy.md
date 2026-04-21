@@ -142,25 +142,21 @@ The locked concept is NOT frozen. Three ways to adjust:
 | **Prompt visible** | Yes (saved to `last_script_prompt`, toggle in UI) |
 | **generation_prompt** | No — complex system prompt, not artist-editable. But outputs (narratives, directions) are directly editable. |
 
-**Hardcoded assumptions:**
-- "music video director planning a {mode} for a devotional song"
-- CAST rules: "deity and key mythological figures", "cultural context"
-- ENVIRONMENT rules: "Only 2-3 key locations", "cultural reference"
-- All shots fixed at `basePacing` seconds (from video model)
+**Pacing enforcement (extended thinking + validation loop):**
+Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude reasons through pacing math before writing. After output, code validates: `shots.length <= floor(scene_duration / pacing)` for every scene. If validation fails, errors are sent back as `tool_result` in the same conversation — Claude self-corrects with full context. Max 3 attempts, hard fail if still wrong (no silent trimming). Last shot per scene absorbs remainder duration.
 
 **Two modes:**
 
-1. **Refine** (new, Claude Opus) — Claude sees the FULL current script + director's feedback. Prompt explicitly says "surgical refinement, not rewriting from scratch — think editor, not new writer." 5 preservation rules: keep unchanged scenes identical, scope changes, respect existing character/env names as IDs, maintain timestamps, always assign cast+env. Returns complete updated script. Preserves locked reference images. "Refine script" button + Enter key.
-2. **Regenerate** (existing, Claude Sonnet) — fresh generation from concept + lyrics, wipes everything. Destructive dialog with fork option.
+1. **Refine** (Claude Opus + extended thinking) — Claude sees the FULL current script + director's feedback. Surgical refinement with 5 preservation rules. Same validation loop.
+2. **Regenerate** (Claude Sonnet + extended thinking) — fresh generation from concept + lyrics. Same validation loop.
 
-**Source:** [`server/services/claude.ts` → `refineScript`](../server/services/claude.ts) · Route: [`server/routes/generate.ts` → `POST /:id/refine-script`](../server/routes/generate.ts)
+**Style image as ground truth:** Style DNA text removed from all Gemini image gen prompts. Gemini receives only the style reference image and is told to match it exactly.
 
 **Gaps (remaining):**
-- [ ] No manual scene/shot add/remove/reorder in script phase (drag-and-drop)
+- [ ] No manual scene/shot add/remove/reorder in script phase
 - [ ] Cast/env assignments per shot could use dropdown selector
-- [ ] "Devotional song" hardcoded in prompt
 
-**Status: DONE** — surgical refine + full regenerate both available.
+**Status: DONE** — pacing validated, extended thinking, validation loop.
 
 ---
 
@@ -236,24 +232,20 @@ The locked concept is NOT frozen. Three ways to adjust:
 | | |
 |---|---|
 | **Model** | Gemini 3 Pro Image (imagen.ts → `generateCharacterLooks`) |
-| **Input** | description + style DNA + style image + optional user ref image |
+| **Input** | description + style image (no style DNA text) + optional user ref image |
 | **Output** | 3 look variants → pick one → locked reference image |
-| **Artist control** | `generation_prompt` — visible, editable, LLM refine rewrites it |
+| **Artist control** | Unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine |
 | **generation_prompt** | Yes (saved to `cast_members.generation_prompt`) |
 
-**Default template includes:** "Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting."
+**Unified toolkit (matches Studio pattern):**
+- Ref chips showing style image with hover preview
+- Description collapsed into expandable detail (from script, editable)
+- Prompt textarea (editable, saves on blur)
+- Explicit Generate/Regenerate button
+- Refine section (plain text feedback → Claude rewrites prompt → artist reviews → then generates)
+- Style image is ground truth — no style DNA text in Gemini prompts
 
-**Changes made:**
-- `generation_prompt` visible and editable in UI (saves on blur with "Saved" flash)
-- Claude refine on feedback — rewrites the whole `generation_prompt`, not just appends "Director note"
-- If existing reference image exists, it's shown to Claude during refine for context
-- Three-section layout: Description (from script) → Generation Prompt (what gets sent) → Refine (LLM rewrites)
-
-**Status: DONE** — full generation_prompt pattern with Claude refine.
-
-**Remaining gaps:**
-- [ ] Template framing (mid-shot, eye-level, cinematic lighting) is generic — could be per-character
-- [ ] Future: Claude suggests framing based on character role in story
+**Status: DONE**
 
 ---
 
@@ -264,19 +256,12 @@ The locked concept is NOT frozen. Three ways to adjust:
 | | |
 |---|---|
 | **Model** | Gemini 3 Pro Image (imagen.ts → `generateEnvironmentLooks`) |
-| **Input** | description + style DNA + style image + optional user ref image |
+| **Input** | description + style image (no style DNA text) + optional user ref image |
 | **Output** | 3 look variants → pick one → locked reference image |
-| **Artist control** | `generation_prompt` — visible, editable, LLM refine rewrites it |
+| **Artist control** | Same unified toolkit as characters |
 | **generation_prompt** | Yes (saved to `environments.generation_prompt`) |
 
-**Default template includes:** "Wide establishing shot, full environment visible, empty scene."
-
-**Changes made:**
-- `generation_prompt` visible and editable in UI (matches character pattern)
-- Claude refine on feedback (was missing — feedback was just appended as "Director note")
-- Description + Generation Prompt + labels all match character layout
-
-**Status:** Fixed. Full parity with characters.
+**Status: DONE** — full parity with characters, same unified toolkit.
 
 ---
 

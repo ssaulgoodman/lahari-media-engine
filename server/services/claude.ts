@@ -507,32 +507,68 @@ ENVIRONMENT rules:
 
 Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
 
-  const response = await client.messages.create({
-    model: OPUS,
-    max_tokens: 8192,
-    tools: [SCRIPT_TOOL],
-    tool_choice: { type: 'tool', name: 'plan_music_video' },
-    messages: [{ role: 'user', content: prompt }]
-  });
+  console.log(`[refineScript] Extended thinking + validation loop (pacing=${pacing}s)`);
 
-  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
-  if (!toolBlock || toolBlock.type !== 'tool_use') {
-    throw new Error('Claude did not return tool_use response');
+  let messages: any[] = [{ role: 'user', content: prompt }];
+  let data: { cast: any[]; environments: any[]; scenes: any[] } | null = null;
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await client.messages.create({
+      model: OPUS,
+      max_tokens: 16384,
+      thinking: { type: 'enabled', budget_tokens: 8192 },
+      tools: [SCRIPT_TOOL],
+      messages,
+    });
+
+    const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+    if (!toolBlock || toolBlock.type !== 'tool_use') {
+      throw new Error('Claude did not return tool_use response');
+    }
+
+    const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
+    if (!candidate.environments) candidate.environments = [];
+
+    // Validate shot counts
+    const errors: string[] = [];
+    for (const scene of candidate.scenes) {
+      const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+      if (sceneDuration <= 0) continue;
+      const maxShots = Math.max(1, Math.floor(sceneDuration / pacing));
+      if ((scene.shots?.length || 0) > maxShots) {
+        errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but only ${maxShots} fit at ${pacing}s pacing.`);
+      }
+    }
+
+    if (errors.length === 0) {
+      data = candidate;
+      console.log(`[refineScript] Validation passed on attempt ${attempt}`);
+      break;
+    }
+
+    console.warn(`[refineScript] Attempt ${attempt} failed: ${errors.join('; ')}`);
+
+    if (attempt >= maxAttempts) {
+      console.error(`[refineScript] Failed after ${maxAttempts} attempts: ${errors.join('; ')}`);
+      throw new Error(`Script refinement failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try again.`);
+    }
+
+    messages = [
+      ...messages,
+      { role: 'assistant', content: response.content },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\nShots per scene = floor(scene_duration / ${pacing}). Fix and resubmit.` }
+      ] },
+    ];
   }
 
-  const data = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
-  if (!data.environments) data.environments = [];
+  if (!data) throw new Error('Script refinement failed');
 
+  // Assign durations
   for (const scene of data.scenes) {
     const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
     if (sceneDuration <= 0 || !scene.shots?.length) continue;
-
-    const maxShots = Math.max(1, Math.floor(sceneDuration / pacing));
-    if (scene.shots.length > maxShots) {
-      console.warn(`[refineScript] Scene "${scene.sectionLabel}" has ${scene.shots.length} shots but only fits ${maxShots} at ${pacing}s pacing. Trimming.`);
-      scene.shots = scene.shots.slice(0, maxShots);
-    }
-
     const shotCount = scene.shots.length;
     for (let i = 0; i < shotCount; i++) {
       if (i < shotCount - 1) {
