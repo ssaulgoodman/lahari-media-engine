@@ -1437,63 +1437,100 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     }
   }
 
-  const shotCastIds = JSON.parse(shot.cast_ids || '[]');
-  const cast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
-  const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
-
   const shotPrompt = shot.visual_prompt || '';
   const userFeedback = shot.user_feedback || undefined;
 
-  // Resolve style image path
-  let styleImagePath: string | undefined;
-  if (project.style_asset_id) {
-    const styleAsset = await selectOne('assets', { id: project.style_asset_id });
-    if (styleAsset) styleImagePath = styleAsset.file_path;
-  }
+  // ─── Ref resolution: frontend-controlled or legacy auto ───
+  // If req.body.refs is provided, the frontend controls exactly which refs go to Gemini.
+  // Each ref is { type: 'cast'|'env'|'style'|'start-frame'|'end-frame'|'continuity'|'uploaded', id?: string }
+  const frontendRefs: any[] | undefined = req.body?.refs;
 
-  // Resolve character reference images
-  const characterRefs: { name: string; imagePath: string }[] = [];
-  for (const c of activeCast) {
-    if (c.reference_asset_id) {
-      const asset = await selectOne('assets', { id: c.reference_asset_id });
-      if (asset) characterRefs.push({ name: c.name, imagePath: asset.file_path });
-    }
-  }
+  const resolveAssetPath = async (assetId: string): Promise<string | undefined> => {
+    const a = await selectOne('assets', { id: assetId });
+    return a?.file_path;
+  };
 
-  // Resolve environment reference
+  let characterRefs: { name: string; imagePath: string }[] = [];
   let environmentRef: { name: string; imagePath: string } | undefined;
-  if (shot.environment_id) {
-    const env = await selectOne('environments', { id: shot.environment_id });
-    if (env?.reference_asset_id) {
-      const asset = await selectOne('assets', { id: env.reference_asset_id });
-      if (asset) environmentRef = { name: env.name, imagePath: asset.file_path };
-    }
-  }
-
-  // Continuity lookup — only runs when Claude tagged this shot as continuing
-  // from the previous one. Hard-cut shots skip this entirely so they can
-  // generate in parallel without waiting for the previous shot's video.
+  let styleImagePath: string | undefined;
   let prevShotEndFramePath: string | undefined;
   let continuityDescription: string | undefined = shot.continuity_description || undefined;
-  if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
-    const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
-    const continuityAssetId = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
-    if (continuityAssetId) {
-      const asset = await selectOne('assets', { id: continuityAssetId });
-      if (asset) prevShotEndFramePath = asset.file_path;
-    }
+  let additionalRefs: { imagePath: string }[] = [];
 
-    // Vision-describe the extracted continuity frame once, cache on the shot.
-    if (prevShotEndFramePath && !continuityDescription) {
-      try {
-        const base64 = await readAsBase64(prevShotEndFramePath);
-        const mime = mimeFromExt(prevShotEndFramePath);
-        continuityDescription = await describeFrame(base64, mime);
-        await updateRows('shots', { id: shot.id }, { continuity_description: continuityDescription });
-        console.log(`[shot ${shot.id}] Continuity described: ${continuityDescription.substring(0, 100)}...`);
-      } catch (err: any) {
-        console.warn(`[shot ${shot.id}] Continuity description failed: ${err.message}`);
+  if (frontendRefs) {
+    // Frontend controls refs — resolve each one
+    const allCast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
+    const allEnvs = await selectAll('environments', { project_id: paramStr(req.params.id) });
+    for (const ref of frontendRefs) {
+      if (ref.type === 'cast' && ref.id) {
+        const c = allCast.find((m: any) => m.id === ref.id);
+        if (c?.reference_asset_id) {
+          const path = await resolveAssetPath(c.reference_asset_id);
+          if (path) characterRefs.push({ name: c.name, imagePath: path });
+        }
+      } else if (ref.type === 'env' && ref.id) {
+        const e = allEnvs.find((en: any) => en.id === ref.id);
+        if (e?.reference_asset_id) {
+          const path = await resolveAssetPath(e.reference_asset_id);
+          if (path) environmentRef = { name: e.name, imagePath: path };
+        }
+      } else if (ref.type === 'style') {
+        if (project.style_asset_id) styleImagePath = await resolveAssetPath(project.style_asset_id);
+      } else if (ref.type === 'start-frame' && shot.image_asset_id) {
+        const path = await resolveAssetPath(shot.image_asset_id);
+        if (path) additionalRefs.push({ imagePath: path });
+      } else if (ref.type === 'end-frame') {
+        const endAssetId = shot.end_image_asset_id || shot.extracted_last_frame_asset_id;
+        if (endAssetId) { const path = await resolveAssetPath(endAssetId); if (path) additionalRefs.push({ imagePath: path }); }
+      } else if (ref.type === 'continuity') {
+        if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+          const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
+          const cid = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
+          if (cid) prevShotEndFramePath = await resolveAssetPath(cid);
+        }
+      } else if (ref.type === 'uploaded' && ref.id) {
+        const path = await resolveAssetPath(ref.id);
+        if (path) additionalRefs.push({ imagePath: path });
       }
+    }
+  } else {
+    // Legacy: auto-resolve all refs from DB (backward compat for bulk gen etc.)
+    const shotCastIds = JSON.parse(shot.cast_ids || '[]');
+    const cast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
+    const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
+
+    if (project.style_asset_id) styleImagePath = await resolveAssetPath(project.style_asset_id);
+    for (const c of activeCast) {
+      if (c.reference_asset_id) {
+        const path = await resolveAssetPath(c.reference_asset_id);
+        if (path) characterRefs.push({ name: c.name, imagePath: path });
+      }
+    }
+    if (shot.environment_id) {
+      const env = await selectOne('environments', { id: shot.environment_id });
+      if (env?.reference_asset_id) {
+        const path = await resolveAssetPath(env.reference_asset_id);
+        if (path) environmentRef = { name: env.name, imagePath: path };
+      }
+    }
+    if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+      const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
+      const cid = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
+      if (cid) prevShotEndFramePath = await resolveAssetPath(cid);
+    }
+    const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
+    additionalRefs = shotRefAssets.map((a: any) => ({ imagePath: a.file_path }));
+  }
+
+  // Vision-describe continuity frame (shared by both paths)
+  if (prevShotEndFramePath && !continuityDescription) {
+    try {
+      const base64 = await readAsBase64(prevShotEndFramePath);
+      const mime = mimeFromExt(prevShotEndFramePath);
+      continuityDescription = await describeFrame(base64, mime);
+      await updateRows('shots', { id: shot.id }, { continuity_description: continuityDescription });
+    } catch (err: any) {
+      console.warn(`[shot ${shot.id}] Continuity description failed: ${err.message}`);
     }
   }
 
@@ -1501,19 +1538,13 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     await updateRows('shots', { id: shot.id }, { image_status: 'loading' });
     const t0 = Date.now();
 
-    console.log(`[shot ${shot.id}] Generating start frame with ${characterRefs.length} char refs, env: ${environmentRef?.name || 'none'}, prev end frame: ${prevShotEndFramePath ? 'yes' : 'no'}`);
+    console.log(`[shot ${shot.id}] Generating start frame with ${characterRefs.length} char refs, env: ${environmentRef?.name || 'none'}, continuity: ${prevShotEndFramePath ? 'yes' : 'no'}, extra: ${additionalRefs.length}`);
 
-    // If regenerating with feedback, pass the failed image so the model can
-    // see what went wrong and avoid the same issues.
     let failedImagePath: string | undefined;
     if (userFeedback && shot.image_asset_id) {
       const failedAsset = await selectOne('assets', { id: shot.image_asset_id });
       if (failedAsset) failedImagePath = failedAsset.file_path;
     }
-
-    // Fetch user-uploaded shot refs
-    const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
-    const additionalRefs = shotRefAssets.map((a: any) => ({ imagePath: a.file_path }));
 
     const imagePath = await generateShotStartFrame({
       visualPrompt: shotPrompt,
@@ -1686,15 +1717,50 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
   const imageAsset = await selectOne('assets', { id: shot.image_asset_id });
   if (!imageAsset) return res.status(400).json({ error: 'Start frame asset not found' });
 
-  const styleAsset = project.style_asset_id
-    ? await selectOne('assets', { id: project.style_asset_id })
-    : null;
-
   // If regenerating with feedback, pass the failed end frame
   let failedEndFramePath: string | undefined;
   if (shot.end_user_feedback && shot.end_image_asset_id) {
     const failedAsset = await selectOne('assets', { id: shot.end_image_asset_id });
     if (failedAsset) failedEndFramePath = failedAsset.file_path;
+  }
+
+  // ─── Ref resolution: frontend-controlled or legacy auto ───
+  const frontendRefs: any[] | undefined = req.body?.refs;
+  let startFramePath: string | undefined = imageAsset.file_path;
+  let styleImagePath: string | undefined;
+  let characterRefs: { name: string; imagePath: string }[] = [];
+  let environmentRef: { name: string; imagePath: string } | undefined;
+  let extraRefs: { imagePath: string }[] = [];
+
+  const resolveAsset = async (id: string) => { const a = await selectOne('assets', { id }); return a?.file_path; };
+
+  if (frontendRefs) {
+    const allCast = await selectAll('cast_members', { project_id: projectId });
+    const allEnvs = await selectAll('environments', { project_id: projectId });
+    // Only include start frame if explicitly in refs
+    startFramePath = undefined;
+    for (const ref of frontendRefs) {
+      if (ref.type === 'start-frame' && shot.image_asset_id) {
+        startFramePath = await resolveAsset(shot.image_asset_id);
+      } else if (ref.type === 'end-frame') {
+        const endAssetId = shot.end_image_asset_id || shot.extracted_last_frame_asset_id;
+        if (endAssetId) { const p = await resolveAsset(endAssetId); if (p) extraRefs.push({ imagePath: p }); }
+      } else if (ref.type === 'style' && project.style_asset_id) {
+        styleImagePath = await resolveAsset(project.style_asset_id);
+      } else if (ref.type === 'cast' && ref.id) {
+        const c = allCast.find((m: any) => m.id === ref.id);
+        if (c?.reference_asset_id) { const p = await resolveAsset(c.reference_asset_id); if (p) characterRefs.push({ name: c.name, imagePath: p }); }
+      } else if (ref.type === 'env' && ref.id) {
+        const e = allEnvs.find((en: any) => en.id === ref.id);
+        if (e?.reference_asset_id) { const p = await resolveAsset(e.reference_asset_id); if (p) environmentRef = { name: e.name, imagePath: p }; }
+      } else if (ref.type === 'uploaded' && ref.id) {
+        const p = await resolveAsset(ref.id);
+        if (p) extraRefs.push({ imagePath: p });
+      }
+    }
+  } else {
+    // Legacy: start frame + style only
+    if (project.style_asset_id) styleImagePath = await resolveAsset(project.style_asset_id);
   }
 
   try {
@@ -1703,11 +1769,14 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
 
     const { generateShotEndFrame } = await import('../services/imagen.js');
     const endFramePath = await generateShotEndFrame({
-      startFramePath: imageAsset.file_path,
+      startFramePath,
       visualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
       motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      styleImagePath: styleAsset?.file_path,
+      styleImagePath,
       styleDNA: project.style_description || 'Cinematic',
+      characterRefs: characterRefs.length > 0 ? characterRefs : undefined,
+      environmentRef,
+      additionalRefs: extraRefs.length > 0 ? extraRefs : undefined,
       userFeedback: shot.end_user_feedback || undefined,
       failedImagePath: failedEndFramePath,
     });
@@ -2180,25 +2249,46 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
     const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
 
-    // Collect character + environment reference images for consistency.
+    // Collect reference images — frontend-controlled or legacy auto
+    const videoFrontendRefs: any[] | undefined = req.body?.refs;
     const referenceImagePaths: string[] = [];
-    for (const c of activeCast) {
-      if (c.reference_asset_id && referenceImagePaths.length < 9) {
-        const refAsset = await selectOne('assets', { id: c.reference_asset_id });
-        if (refAsset) referenceImagePaths.push(refAsset.file_path);
+    const resolveVideoAsset = async (id: string) => { const a = await selectOne('assets', { id }); return a?.file_path; };
+
+    if (videoFrontendRefs) {
+      const allCast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
+      const allEnvs = await selectAll('environments', { project_id: paramStr(req.params.id) });
+      for (const ref of videoFrontendRefs) {
+        if (referenceImagePaths.length >= 9) break;
+        if (ref.type === 'cast' && ref.id) {
+          const c = allCast.find((m: any) => m.id === ref.id);
+          if (c?.reference_asset_id) { const p = await resolveVideoAsset(c.reference_asset_id); if (p) referenceImagePaths.push(p); }
+        } else if (ref.type === 'env' && ref.id) {
+          const e = allEnvs.find((en: any) => en.id === ref.id);
+          if (e?.reference_asset_id) { const p = await resolveVideoAsset(e.reference_asset_id); if (p) referenceImagePaths.push(p); }
+        } else if (ref.type === 'uploaded' && ref.id) {
+          const p = await resolveVideoAsset(ref.id); if (p) referenceImagePaths.push(p);
+        }
+        // style/start-frame/end-frame handled separately (start frame is mandatory input, end frame goes to endImagePath)
       }
-    }
-    if (shot.environment_id && referenceImagePaths.length < 9) {
-      const env = await selectOne('environments', { id: shot.environment_id });
-      if (env?.reference_asset_id) {
-        const envAsset = await selectOne('assets', { id: env.reference_asset_id });
-        if (envAsset) referenceImagePaths.push(envAsset.file_path);
+    } else {
+      // Legacy: auto-include all cast + env + user-uploaded refs
+      for (const c of activeCast) {
+        if (c.reference_asset_id && referenceImagePaths.length < 9) {
+          const refAsset = await selectOne('assets', { id: c.reference_asset_id });
+          if (refAsset) referenceImagePaths.push(refAsset.file_path);
+        }
       }
-    }
-    // User-uploaded shot refs
-    const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
-    for (const sra of shotRefAssets) {
-      if (referenceImagePaths.length < 9) referenceImagePaths.push(sra.file_path);
+      if (shot.environment_id && referenceImagePaths.length < 9) {
+        const env = await selectOne('environments', { id: shot.environment_id });
+        if (env?.reference_asset_id) {
+          const envAsset = await selectOne('assets', { id: env.reference_asset_id });
+          if (envAsset) referenceImagePaths.push(envAsset.file_path);
+        }
+      }
+      const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
+      for (const sra of shotRefAssets) {
+        if (referenceImagePaths.length < 9) referenceImagePaths.push(sra.file_path);
+      }
     }
 
     // End frame for reverse-chain (if the model supports it)

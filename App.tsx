@@ -616,11 +616,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleGenerateEndFrame = async (shotId: string) => {
+  const handleGenerateEndFrame = async (shotId: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.LOADING });
     try {
-      const p = await api.generateEndFrame(project.id, shotId);
+      const p = await api.generateEndFrame(project.id, shotId, refs);
       setProject(p);
     } catch (err: any) {
       updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.ERROR });
@@ -718,7 +718,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   // ─── Shot Image & Video ─────────────────────────────────────────
 
-  const handleGenerateImage = async (sceneId: string, shotId: string) => {
+  const handleGenerateImage = async (sceneId: string, shotId: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     const opKey = `image:${shotId}`;
     const signal = startOp(opKey);
@@ -733,7 +733,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       };
     });
     try {
-      const p = await api.generateShotImage(project.id, shotId, signal);
+      const p = await api.generateShotImage(project.id, shotId, refs, signal);
       setProject(p);
     } catch (err: any) {
       if (api.isCancelled(err)) {
@@ -860,7 +860,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleGenerateVideo = async (sceneId: string, shotId: string, promptOverride?: string) => {
+  const handleGenerateVideo = async (sceneId: string, shotId: string, promptOverride?: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     const opKey = `video:${shotId}`;
     const signal = startOp(opKey);
@@ -875,7 +875,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       };
     });
     try {
-      const p = await api.generateShotVideo(project.id, shotId, promptOverride, signal);
+      const p = await api.generateShotVideo(project.id, shotId, promptOverride, refs, signal);
       setProject(p);
     } catch (err: any) {
       if (api.isCancelled(err)) {

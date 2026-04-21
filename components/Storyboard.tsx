@@ -6,7 +6,7 @@ import { ImageModal } from './ImageModal';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { ShotVideoPreview } from './ShotVideoPreview';
 import { getShotHistory, revertShotFrame, revertShotEndFrame, lockAllSceneShots, unlockAllSceneShots } from '../services/api';
-import type { VersionEntry } from '../services/api';
+import type { VersionEntry, ShotRefInput } from '../services/api';
 import { getVideoModel } from '../constants/videoModels';
 
 type HistoryData = { firstFrame: VersionEntry[]; lastFrame: VersionEntry[]; video: VersionEntry[] };
@@ -33,8 +33,8 @@ interface Props {
   activeSceneIdx: number;
   onSceneChange: (idx: number) => void;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
-  onGenerateImage: (sceneId: string, shotId: string) => void;
-  onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string) => void;
+  onGenerateImage: (sceneId: string, shotId: string, refs?: import('../services/api').ShotRefInput[]) => void;
+  onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: import('../services/api').ShotRefInput[]) => void;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUpdateProject?: (updates: Record<string, any>) => void;
@@ -47,7 +47,7 @@ interface Props {
   onClearShotFrame?: (shotId: string) => void;
   onRevertVideo?: (shotId: string, assetId: string) => void | Promise<void>;
   onUseAsPrevEnd?: (shotId: string) => void | Promise<void>;
-  onGenerateEndFrame?: (shotId: string) => void | Promise<void>;
+  onGenerateEndFrame?: (shotId: string, refs?: import('../services/api').ShotRefInput[]) => void | Promise<void>;
   onClearEndFrame?: (shotId: string) => void | Promise<void>;
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
@@ -79,6 +79,65 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [historyData, setHistoryData] = useState<HistoryData>({ firstFrame: [], lastFrame: [], video: [] });
   const [refiningShots, setRefiningShots] = useState<Set<string>>(new Set());
   const [bulkRunning, setBulkRunning] = useState<'frames' | 'videos' | null>(null);
+  // Per-shot per-tab active ref list. Key = "tab:shotId". Null = use defaults (not yet initialized).
+  const [shotRefs, setShotRefs] = useState<Record<string, ShotRefInput[]>>({});
+
+  // Build default refs for a shot+tab combo
+  const getDefaultRefs = (shot: VideoShot, tab: 'image' | 'endframe' | 'video'): ShotRefInput[] => {
+    const refs: ShotRefInput[] = [];
+    const shotCast = (project?.cast || []).filter(c => (shot.castIds || []).includes(c.id));
+    const shotEnv = shot.environmentId ? project?.environments?.find(e => e.id === shot.environmentId) : null;
+
+    if (tab === 'image') {
+      shotCast.forEach(c => { if (c.referenceImageUrl) refs.push({ type: 'cast', id: c.id }); });
+      if (shotEnv?.referenceImageUrl) refs.push({ type: 'env', id: shotEnv.id });
+      if (project?.styleAssetUrl) refs.push({ type: 'style' });
+      if (shot.continuityFrom === 'prev_shot') refs.push({ type: 'continuity' });
+    } else if (tab === 'endframe') {
+      if (shot.imageUrl) refs.push({ type: 'start-frame' });
+      shotCast.forEach(c => { if (c.referenceImageUrl) refs.push({ type: 'cast', id: c.id }); });
+      if (shotEnv?.referenceImageUrl) refs.push({ type: 'env', id: shotEnv.id });
+      if (project?.styleAssetUrl) refs.push({ type: 'style' });
+    } else if (tab === 'video') {
+      shotCast.forEach(c => { if (c.referenceImageUrl) refs.push({ type: 'cast', id: c.id }); });
+      if (shotEnv?.referenceImageUrl) refs.push({ type: 'env', id: shotEnv.id });
+    }
+    // Include user-uploaded shot refs
+    (shot.refImages || []).forEach(r => refs.push({ type: 'uploaded', id: r.id }));
+    return refs;
+  };
+
+  // Get active refs for a shot+tab, initializing from defaults if needed
+  const getActiveRefs = (shot: VideoShot, tab: 'image' | 'endframe' | 'video'): ShotRefInput[] => {
+    const key = `${tab}:${shot.id}`;
+    if (shotRefs[key]) return shotRefs[key];
+    return getDefaultRefs(shot, tab);
+  };
+
+  const setActiveRefs = (shotId: string, tab: string, refs: ShotRefInput[]) => {
+    setShotRefs(prev => ({ ...prev, [`${tab}:${shotId}`]: refs }));
+  };
+
+  // Resolve a ref to display info (label + url)
+  const resolveRefDisplay = (ref: ShotRefInput, shot: VideoShot): { label: string; url?: string; removable: boolean } => {
+    if (ref.type === 'cast') {
+      const c = project?.cast?.find(m => m.id === ref.id);
+      return { label: c?.name || 'Character', url: c?.referenceImageUrl, removable: true };
+    }
+    if (ref.type === 'env') {
+      const e = project?.environments?.find(en => en.id === ref.id);
+      return { label: e?.name || 'Environment', url: e?.referenceImageUrl, removable: true };
+    }
+    if (ref.type === 'style') return { label: 'Style', url: project?.styleAssetUrl, removable: true };
+    if (ref.type === 'start-frame') return { label: 'Start frame', url: shot.imageUrl, removable: true };
+    if (ref.type === 'end-frame') return { label: 'End frame', url: shot.endImageUrl || shot.extractedLastFrameUrl, removable: true };
+    if (ref.type === 'continuity') return { label: 'Continuity', url: shot.extractedLastFrameUrl, removable: true };
+    if (ref.type === 'uploaded') {
+      const r = (shot.refImages || []).find(ri => ri.id === ref.id);
+      return { label: 'Ref', url: r?.url, removable: true };
+    }
+    return { label: '?', removable: false };
+  };
   const [historyTab, setHistoryTab] = useState<'firstFrame' | 'lastFrame' | 'video'>('firstFrame');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [mentionOpen, setMentionOpen] = useState<string | null>(null);
@@ -598,7 +657,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       {/* Sleek icon-only toolbar — tooltip carries the label.
                           Three 28px buttons, tight spacing, monochrome. */}
                       <button
-                        onClick={() => onGenerateImage(activeScene.id, shot.id)}
+                        onClick={() => onGenerateImage(activeScene.id, shot.id, getActiveRefs(shot, 'image'))}
                         disabled={isGenerating || (!actionable && !shot.locked)}
                         className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
                         title={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
@@ -612,7 +671,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                       </button>
 
                       <button
-                        onClick={() => onGenerateVideo(activeScene.id, shot.id)}
+                        onClick={() => onGenerateVideo(activeScene.id, shot.id, undefined, getActiveRefs(shot, 'video'))}
                         disabled={!canGenerateVideo && !shot.locked || isGenerating}
                         className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
                         title={hasVideo ? 'Regenerate video' : 'Generate video'}
@@ -1098,57 +1157,52 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           {/* ═══ UNIFIED TOOLKIT — same pattern for all tabs ═══ */}
 
                           {/* 1. Ref chips — context-aware per tab */}
-                          {!shot.locked && (() => {
-                            const tabRefs: { label: string; url?: string }[] = [];
-                            if (activeTab === 'image' || activeTab === 'endframe') {
-                              shotCast.forEach(c => { if (c.referenceImageUrl) tabRefs.push({ label: c.name, url: c.referenceImageUrl }); });
-                              if (shotEnv?.referenceImageUrl) tabRefs.push({ label: shotEnv.name, url: shotEnv.referenceImageUrl });
-                              if (project?.styleAssetUrl) tabRefs.push({ label: 'Style', url: project.styleAssetUrl });
-                              if (activeTab === 'endframe' && shot.imageUrl) tabRefs.push({ label: 'Start frame', url: shot.imageUrl });
-                            } else if (activeTab === 'video') {
-                              if (shot.imageUrl) tabRefs.push({ label: 'Start keyframe', url: shot.imageUrl });
-                              if (shot.endImageUrl) tabRefs.push({ label: 'End keyframe', url: shot.endImageUrl });
-                              shotCast.forEach(c => { if (c.referenceImageUrl) tabRefs.push({ label: c.name, url: c.referenceImageUrl }); });
-                              if (shotEnv?.referenceImageUrl) tabRefs.push({ label: shotEnv.name, url: shotEnv.referenceImageUrl });
-                            }
-                            const shotRefs = shot.refImages || [];
+                          {/* 1. Ref chips — artist-controlled, these are what get sent to generation */}
+                          {!shot.locked && activeTab !== 'compiled' && (() => {
+                            const tab = activeTab as 'image' | 'endframe' | 'video';
+                            const activeRefList = getActiveRefs(shot, tab);
                             const modelSpec = getVideoModel(project?.videoModel);
-                            // Show upload for image tab (always) and video tab (only if model supports refs with frames)
-                            const canUploadRef = activeTab === 'image' || activeTab === 'endframe' || (activeTab === 'video' && modelSpec.refsWithFrames);
-                            if (tabRefs.length === 0 && shotRefs.length === 0 && !canUploadRef) return null;
+                            const canUploadRef = tab === 'image' || tab === 'endframe' || (tab === 'video' && modelSpec.refsWithFrames);
+
                             return (
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[11px] text-zinc-500 mr-1" title="These references are auto-included from the shot's cast/env assignments in the script">Auto:</span>
-                                {tabRefs.map((ref, i) => (
-                                  <div key={i} className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
-                                    onClick={() => ref.url && setModalImage(ref.url)}>
-                                    {ref.url && <img src={ref.url} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />}
-                                    <span>{ref.label}</span>
-                                    {ref.url && (
-                                      <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
-                                        <img src={ref.url} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt={ref.label} />
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                                {/* User-uploaded shot refs */}
-                                {shotRefs.map((ref) => (
-                                  <div key={ref.id} className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-amber-400/30 text-zinc-300 bg-amber-400/[0.04] cursor-pointer"
-                                    onClick={() => setModalImage(ref.url)}>
-                                    <img src={ref.url} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />
-                                    <span>Ref</span>
-                                    <button
-                                      className="text-zinc-500 hover:text-red-400 transition-colors ml-0.5"
-                                      title="Remove reference"
-                                      onClick={(e) => { e.stopPropagation(); onDeleteShotRef?.(shot.id, ref.id); }}
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                    </button>
-                                    <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
-                                      <img src={ref.url} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt="Director ref" />
+                                <span className="text-[11px] text-zinc-500 mr-1">Refs:</span>
+                                {activeRefList.map((ref, i) => {
+                                  const display = resolveRefDisplay(ref, shot);
+                                  if (!display.url && ref.type !== 'continuity') return null; // skip refs without images
+                                  return (
+                                    <div key={`${ref.type}-${ref.id || i}`} className={`group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border text-zinc-300 cursor-pointer ${ref.type === 'uploaded' ? 'border-amber-400/30 bg-amber-400/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}
+                                      onClick={() => display.url && setModalImage(display.url)}>
+                                      {display.url && <img src={display.url} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />}
+                                      <span>{display.label}</span>
+                                      {display.removable && (
+                                        <button
+                                          className="text-zinc-500 hover:text-red-400 transition-colors ml-0.5"
+                                          title={`Remove ${display.label}`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveRefs(shot.id, tab, activeRefList.filter((_, idx) => idx !== i));
+                                            // Also unassign cast/env from shot if removing those
+                                            if (ref.type === 'cast' && ref.id) {
+                                              onUpdateShot(activeScene.id, shot.id, { castIds: (shot.castIds || []).filter(id => id !== ref.id) });
+                                            } else if (ref.type === 'env' && ref.id) {
+                                              onUpdateShot(activeScene.id, shot.id, { environmentId: null } as any);
+                                            } else if (ref.type === 'uploaded' && ref.id) {
+                                              onDeleteShotRef?.(shot.id, ref.id);
+                                            }
+                                          }}
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                        </button>
+                                      )}
+                                      {display.url && (
+                                        <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
+                                          <img src={display.url} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt={display.label} />
+                                        </div>
+                                      )}
                                     </div>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                                 {/* Upload ref button */}
                                 {canUploadRef && (
                                   <label className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-dashed border-white/[0.12] text-zinc-400 hover:text-zinc-300 hover:border-white/[0.2] bg-white/[0.01] cursor-pointer transition-colors" title="Upload a reference image for this shot">
@@ -1224,11 +1278,13 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             };
 
                             const handleGenerate = () => {
-                              if (isFirstFrame) onGenerateImage(activeScene.id, shot.id);
-                              else if (isEndFrame) onGenerateEndFrame?.(shot.id);
+                              const tab = activeTab as 'image' | 'endframe' | 'video';
+                              const refs = getActiveRefs(shot, tab);
+                              if (isFirstFrame) onGenerateImage(activeScene.id, shot.id, refs);
+                              else if (isEndFrame) onGenerateEndFrame?.(shot.id, refs);
                               else {
                                 const override = videoOverride[shot.id];
-                                onGenerateVideo(activeScene.id, shot.id, override && override !== autoVeoPrompt ? override : undefined);
+                                onGenerateVideo(activeScene.id, shot.id, override && override !== autoVeoPrompt ? override : undefined, refs);
                               }
                             };
 
@@ -1301,11 +1357,24 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     />
                                     {/* @mention dropdown */}
                                     {mentionOpen === `prompt:${shot.id}` && (() => {
-                                      const castItems = (project?.cast || []).filter(c => !mentionQuery || c.name.toLowerCase().includes(mentionQuery)).map(c => ({ name: c.name, thumb: c.referenceImageUrl, type: 'character' as const }));
-                                      const envItems = (project?.environments || []).filter(e => !mentionQuery || e.name.toLowerCase().includes(mentionQuery)).map(e => ({ name: e.name, thumb: e.referenceImageUrl, type: 'environment' as const }));
+                                      const tab = activeTab as 'image' | 'endframe' | 'video';
+                                      const currentRefs = getActiveRefs(shot, tab);
+                                      const hasCastRef = (id: string) => currentRefs.some(r => r.type === 'cast' && r.id === id);
+                                      const hasEnvRef = (id: string) => currentRefs.some(r => r.type === 'env' && r.id === id);
+                                      const hasRefType = (t: string) => currentRefs.some(r => r.type === t);
+
+                                      const castItems = (project?.cast || []).filter(c => !mentionQuery || c.name.toLowerCase().includes(mentionQuery)).map(c => ({ name: c.name, thumb: c.referenceImageUrl, type: 'character' as const, already: hasCastRef(c.id) }));
+                                      const envItems = (project?.environments || []).filter(e => !mentionQuery || e.name.toLowerCase().includes(mentionQuery)).map(e => ({ name: e.name, thumb: e.referenceImageUrl, type: 'environment' as const, already: hasEnvRef(e.id) }));
                                       const styleItem = project?.styleAssetUrl && (!mentionQuery || 'style'.includes(mentionQuery))
-                                        ? [{ name: 'Style', thumb: project.styleAssetUrl, type: 'style' as const }] : [];
-                                      const items = [...styleItem, ...castItems, ...envItems];
+                                        ? [{ name: 'Style', thumb: project.styleAssetUrl, type: 'style' as const, already: hasRefType('style') }] : [];
+                                      // Frame refs
+                                      type MentionItem = { name: string; thumb?: string; type: string; already: boolean };
+                                      const frameItems: MentionItem[] = [];
+                                      if (shot.imageUrl && (!mentionQuery || 'start frame'.includes(mentionQuery)) && !hasRefType('start-frame'))
+                                        frameItems.push({ name: 'Start frame', thumb: shot.imageUrl, type: 'start-frame', already: false });
+                                      if ((shot.endImageUrl || shot.extractedLastFrameUrl) && (!mentionQuery || 'end frame'.includes(mentionQuery)) && !hasRefType('end-frame'))
+                                        frameItems.push({ name: 'End frame', thumb: shot.endImageUrl || shot.extractedLastFrameUrl, type: 'end-frame', already: false });
+                                      const items: MentionItem[] = [...styleItem, ...frameItems, ...castItems, ...envItems];
                                       if (items.length === 0) return null;
                                       return (
                                         <div className="absolute left-0 bottom-full mb-1 z-[200] bg-zinc-900 border border-white/[0.08] rounded-lg shadow-xl max-h-[200px] overflow-y-auto w-64">
@@ -1325,16 +1394,39 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                                 handlePromptChange(newVal);
                                                 setPromptDirty(prev => ({ ...prev, [`${activeTab}:${shot.id}`]: true }));
                                                 setMentionOpen(null); setMentionQuery('');
-                                                // Actually assign the character/env to this shot so the ref image gets sent
+                                                // Add the ref to active refs list + assign to shot if needed
+                                                const curRefs = getActiveRefs(shot, tab);
                                                 if (item.type === 'character') {
                                                   const charObj = project?.cast?.find(c => c.name === item.name);
-                                                  if (charObj && !(shot.castIds || []).includes(charObj.id)) {
-                                                    onUpdateShot(activeScene.id, shot.id, { castIds: [...(shot.castIds || []), charObj.id] });
+                                                  if (charObj) {
+                                                    if (!curRefs.some(r => r.type === 'cast' && r.id === charObj.id)) {
+                                                      setActiveRefs(shot.id, tab, [...curRefs, { type: 'cast', id: charObj.id }]);
+                                                    }
+                                                    if (!(shot.castIds || []).includes(charObj.id)) {
+                                                      onUpdateShot(activeScene.id, shot.id, { castIds: [...(shot.castIds || []), charObj.id] });
+                                                    }
                                                   }
                                                 } else if (item.type === 'environment') {
                                                   const envObj = project?.environments?.find(en => en.name === item.name);
-                                                  if (envObj && shot.environmentId !== envObj.id) {
-                                                    onUpdateShot(activeScene.id, shot.id, { environmentId: envObj.id } as any);
+                                                  if (envObj) {
+                                                    if (!curRefs.some(r => r.type === 'env' && r.id === envObj.id)) {
+                                                      setActiveRefs(shot.id, tab, [...curRefs, { type: 'env', id: envObj.id }]);
+                                                    }
+                                                    if (shot.environmentId !== envObj.id) {
+                                                      onUpdateShot(activeScene.id, shot.id, { environmentId: envObj.id } as any);
+                                                    }
+                                                  }
+                                                } else if (item.type === 'style') {
+                                                  if (!curRefs.some(r => r.type === 'style')) {
+                                                    setActiveRefs(shot.id, tab, [...curRefs, { type: 'style' }]);
+                                                  }
+                                                } else if (item.type === 'start-frame') {
+                                                  if (!curRefs.some(r => r.type === 'start-frame')) {
+                                                    setActiveRefs(shot.id, tab, [...curRefs, { type: 'start-frame' }]);
+                                                  }
+                                                } else if (item.type === 'end-frame') {
+                                                  if (!curRefs.some(r => r.type === 'end-frame')) {
+                                                    setActiveRefs(shot.id, tab, [...curRefs, { type: 'end-frame' }]);
                                                   }
                                                 }
                                                 setTimeout(() => { textarea.focus(); const pos = atIdx + item.name.length + 2; textarea.setSelectionRange(pos, pos); }, 0);
@@ -1342,7 +1434,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                             >
                                               {item.thumb ? <img src={item.thumb} className="w-6 h-6 rounded object-cover flex-shrink-0" alt="" /> : <div className="w-6 h-6 rounded bg-white/[0.06] flex-shrink-0" />}
                                               <span className="text-sm text-zinc-300 truncate">{item.name}</span>
-                                              <span className="text-[10px] uppercase text-zinc-400 ml-auto flex-shrink-0">{item.type === 'character' ? 'char' : item.type === 'environment' ? 'env' : 'style'}</span>
+                                              <span className="text-[10px] uppercase text-zinc-400 ml-auto flex-shrink-0">{item.type === 'character' ? 'char' : item.type === 'environment' ? 'env' : item.type === 'start-frame' ? 'frame' : item.type === 'end-frame' ? 'frame' : 'style'}</span>
+                                              {(item as any).already && <span className="text-[9px] text-zinc-500">added</span>}
                                             </button>
                                           ))}
                                         </div>

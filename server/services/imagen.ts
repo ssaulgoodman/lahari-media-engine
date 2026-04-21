@@ -479,25 +479,53 @@ This shot should begin from that exact continuity state — matching pose, camer
  * where the camera/action ends up after the described motion.
  */
 export const generateShotEndFrame = async (opts: {
-  startFramePath: string;
+  startFramePath?: string;
   visualPrompt: string;
   motionPrompt: string;
   styleImagePath?: string;
   styleDNA: string;
+  characterRefs?: { name: string; imagePath: string }[];
+  environmentRef?: { name: string; imagePath: string };
+  additionalRefs?: { imagePath: string }[];
   userFeedback?: string;
   failedImagePath?: string;
 }): Promise<string> => {
   const parts: ContentPart[] = [];
   let imageIdx = 0;
 
-  imageIdx++;
-  parts.push({ text: `Image ${imageIdx} = Start frame of this shot` });
-  parts.push(await imagePartFromPath(opts.startFramePath));
+  if (opts.startFramePath) {
+    imageIdx++;
+    parts.push({ text: `Image ${imageIdx} = Start frame of this shot` });
+    parts.push(await imagePartFromPath(opts.startFramePath));
+  }
+
+  // Character refs (when artist explicitly adds them)
+  if (opts.characterRefs?.length) {
+    for (const ref of opts.characterRefs) {
+      imageIdx++;
+      parts.push({ text: `Image ${imageIdx} = Character: ${ref.name}` });
+      parts.push(await imagePartFromPath(ref.imagePath));
+    }
+  }
 
   if (opts.styleImagePath) {
     imageIdx++;
     parts.push({ text: `Image ${imageIdx} = Style reference` });
     parts.push(await imagePartFromPath(opts.styleImagePath));
+  }
+
+  if (opts.environmentRef) {
+    imageIdx++;
+    parts.push({ text: `Image ${imageIdx} = Environment reference: ${opts.environmentRef.name}` });
+    parts.push(await imagePartFromPath(opts.environmentRef.imagePath));
+  }
+
+  if (opts.additionalRefs?.length) {
+    for (const ref of opts.additionalRefs) {
+      imageIdx++;
+      parts.push({ text: `Image ${imageIdx} = Director reference` });
+      parts.push(await imagePartFromPath(ref.imagePath));
+    }
   }
 
   if (opts.failedImagePath && opts.userFeedback) {

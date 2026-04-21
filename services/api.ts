@@ -436,8 +436,15 @@ export const refineShotPrompt = async (projectId: string, shotId: string, feedba
   return handleResponse(res);
 };
 
-export const generateShotImage = async (projectId: string, shotId: string, signal?: AbortSignal) => {
-  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, { method: 'POST', signal });
+export type ShotRefInput = { type: 'cast' | 'env' | 'style' | 'start-frame' | 'end-frame' | 'continuity' | 'uploaded'; id?: string };
+
+export const generateShotImage = async (projectId: string, shotId: string, refs?: ShotRefInput[], signal?: AbortSignal) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(refs ? { refs } : {}),
+    signal,
+  });
   return handleResponse(res);
 };
 
@@ -451,8 +458,12 @@ export const clearShotFrame = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
-export const generateEndFrame = async (projectId: string, shotId: string) => {
-  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, { method: 'POST' });
+export const generateEndFrame = async (projectId: string, shotId: string, refs?: ShotRefInput[]) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(refs ? { refs } : {}),
+  });
   return handleResponse(res);
 };
 
@@ -524,11 +535,11 @@ export const unlockAllSceneShots = async (projectId: string, sceneId: string) =>
   return handleResponse(res);
 };
 
-export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string, signal?: AbortSignal) => {
+export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[], signal?: AbortSignal) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(promptOverride ? { promptOverride } : {}),
+    body: JSON.stringify({ ...(promptOverride ? { promptOverride } : {}), ...(refs ? { refs } : {}) }),
     signal,
   });
   return handleResponse(res);
