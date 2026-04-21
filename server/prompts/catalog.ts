@@ -41,8 +41,8 @@ export const PROMPT_CATALOG: PromptMeta[] = [
     stage: 'audio',
     model: 'gemini-3-pro-preview',
     modelLabel: 'Gemini 3 Pro',
-    triggeredBy: 'Fires once when the project is created from the queue.',
-    summary: 'Extracts timestamped lyrics from the audio file in the original language.',
+    triggeredBy: 'Queue start (fallback when no SRT), direct upload, or "Fill missing" button.',
+    summary: 'Extracts timestamped lyrics ([M:SS] format) from audio. Queue prefers SRT files; this is the fallback.',
     variables: [
       { name: 'language', description: 'Song language or "Detect automatically"' },
     ],
@@ -80,7 +80,7 @@ Return ONLY a JSON array.`,
     stage: 'audio',
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6',
-    triggeredBy: 'Fires after transcription lands.',
+    triggeredBy: 'Chains after lyrics are available (never in parallel with transcription).',
     summary: 'Writes a 150-word interpretive summary: theme, addressee, emotional arc, cultural context.',
     variables: [
       { name: 'title', description: 'Song title' },
@@ -173,6 +173,12 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`,
       { name: 'userNote', description: 'Optional director note' },
     ],
     template: `You are a music video director planning a {{videoMode}} for a devotional song.
+
+DIRECTOR STYLE (injected based on videoMode):
+- Montage: "dynamic cuts, varied angles, visual variety — each shot is a self-contained moment."
+  Shot directions written as standalone compositions, bold framing changes.
+- Cinematic: "smooth visual continuity — camera movement continues, characters transition between actions."
+  Shot directions written to flow into each other, visual momentum carries across cuts.
 
 [concept, lyrics, meaning, musical structure injected]
 
