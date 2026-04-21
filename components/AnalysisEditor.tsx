@@ -783,10 +783,10 @@ export const AnalysisEditor: React.FC<Props> = ({
               <motion.div
                 key="render-pop"
                 initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+                exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
                 transition={{ duration: 0.18 }}
-                className="overflow-hidden border-t border-white/[0.06]"
+                className="border-t border-white/[0.06]"
               >
                 <div className="flex items-stretch divide-x divide-white/[0.06]">
                   <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
