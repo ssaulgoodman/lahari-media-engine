@@ -144,7 +144,10 @@ The locked concept is NOT frozen. Three ways to adjust:
 | **generation_prompt** | No — complex system prompt, not artist-editable. But outputs (narratives, directions) are directly editable. |
 
 **Pacing enforcement (extended thinking + validation loop):**
-Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude reasons through pacing math before writing. After output, code validates: `shots.length <= floor(scene_duration / pacing)` for every scene. If validation fails, errors are sent back as `tool_result` in the same conversation — Claude self-corrects with full context. Max 3 attempts, hard fail if still wrong (no silent trimming). Last shot per scene absorbs remainder duration.
+Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude reasons through pacing math before writing. Shot count formula: `ceil(scene_duration / pacing)` — e.g. 21s at 8s → 3 shots (8+8+5), not 2 (8+13). Validation enforces EXACT count (not just max). If wrong, errors are sent back as `tool_result` in the same conversation — Claude self-corrects. Max 3 attempts, hard fail. Last shot gets the remainder.
+
+**Shot splitting + duration editing (post-script):**
+Artist can split any shot >4s in the script phase (↕ button). Creates a new shot with half the duration, empty prompt, same cast/env. Both halves marked stale. Duration is also directly editable per shot. Endpoint: `POST /:id/shots/:shotId/split`.
 
 **Director mode (Montage vs Cinematic):**
 Claude receives explicit guidance based on the chosen mode:
@@ -237,9 +240,10 @@ Claude receives explicit guidance based on the chosen mode:
 
 | | |
 |---|---|
-| **Model** | Gemini 3 Pro Image (imagen.ts → `generateCharacterLooks`) |
+| **Model** | Gemini 3 Pro Image (imagen.ts → `generateCharacterLooks`), fallback Nano Banana 2 on 503 |
 | **Input** | description + style image (no style DNA text) + optional user ref image |
-| **Output** | 3 look variants → pick one → locked reference image |
+| **Output** | 3 reusable neutral reference portraits → pick one → locked reference image |
+| **Key design** | Portraits are REUSABLE — neutral pose, no props in hands, no actions, plain/blurred background. Focus on identity: face, costume, ornaments, crown. |
 | **Artist control** | Unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine |
 | **generation_prompt** | Yes (saved to `cast_members.generation_prompt`) |
 

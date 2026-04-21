@@ -184,16 +184,18 @@ DIRECTOR STYLE (injected based on videoMode):
 
 ═══ PACING RULES (extended thinking reasons through this) ═══
 Base shot length: {{pacing}} seconds.
-For each scene: number_of_shots = floor(scene_duration / {{pacing}})
-The last shot absorbs any remainder.
-BEFORE writing shots for each scene, calculate its duration and shot count.
+For each scene: number_of_shots = ceil(scene_duration / {{pacing}})
+Every shot is {{pacing}}s except the LAST shot which gets the remainder.
+Example: 21s at 8s → ceil(21/8) = 3 shots (8+8+5).
 ═══════════════════════════════════════════════════════════════
 
 Uses extended thinking (8K budget) so Claude reasons through pacing math.
-Validation loop: if shot counts don't fit scene durations, errors are sent
-back as tool_result in the same conversation for self-correction (max 3 attempts).
+Validation loop: enforces EXACT shot count per scene (not just max).
+Errors sent back as tool_result for self-correction (max 3 attempts).
 
-CAST/ENVIRONMENT/SCENE rules same as before — see source.`,
+CAST rules: reusable physical identity — face, skin, costume, ornaments.
+No actions, no props in hands (these are for reference portraits, not scenes).
+ENVIRONMENT/SCENE rules same as before — see source.`,
     source: { file: 'server/services/claude.ts', lines: '303-415' },
   },
   {
@@ -319,7 +321,7 @@ Return ONLY the keywords. No quotes, no JSON, no markdown.`,
     model: 'gemini-3-pro-image-preview',
     modelLabel: 'Gemini 3 Pro Image',
     triggeredBy: "Fires 3× in parallel when you click 'Generate look' on a character.",
-    summary: 'Generates 3 cinematic character portraits using style + optional user reference as anchors.',
+    summary: 'Generates 3 reusable neutral character reference portraits — no props, no actions, plain background for reuse across shots.',
     variables: [
       { name: 'character.name', description: 'Character name' },
       { name: 'character.description', description: 'Physical + cultural description' },
@@ -328,15 +330,19 @@ Return ONLY the keywords. No quotes, no JSON, no markdown.`,
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userFeedback', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic character portrait. Match the visual style EXACTLY from Image 1 — same lighting, color palette, texture, and rendering approach.
+    template: `Generate ONE cinematic character REFERENCE portrait. Match the visual style EXACTLY from Image 1.
 
 {{character.name}} — {{character.description}}
 
 {{userRefImage ? "Image 2 is a reference the director provided — match its identity. The style image (Image 1) is HOW to render them." : ""}}
 
-Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
+This is a REUSABLE CHARACTER REFERENCE — used across many different shots and scenes.
+- Mid-shot portrait: upper body and face clearly visible
+- NEUTRAL POSE: hands relaxed, no props/weapons/lamps/offerings in hand
+- Focus on: face, skin, expression, costume, ornaments, jewelry, crown, hair
+- Plain or softly blurred background — character isolated for reuse
 
-(Style DNA text REMOVED — Gemini matches the style image directly. No conflicting keywords.)
+(Style DNA text REMOVED — Gemini matches the style image directly.)
 
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
 Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,

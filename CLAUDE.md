@@ -77,7 +77,7 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
 | Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
 | Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refineEndFramePrompt, refineVideoPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
-| All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
+| All image gen | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` (Nano Banana 2) | imagen.ts | Gemini Developer API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
@@ -95,16 +95,31 @@ No end-frame prediction. Shot = start frame + motion prompt → video plays natu
 
 **Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
+**Pacing**: Uses `ceil(scene_duration / pacing)` for shot count. A 21s scene at 8s pacing → 3 shots (8+8+5), not 2 (8+13). Validation enforces exact count via extended thinking + retry loop. Duration assignment: all shots get base pacing, last shot gets remainder (clamped at 2× pacing as safety net).
+
+**Shot splitting**: Artist can split any shot >4s in the script phase. Creates a new shot at `sort_order + 1`, divides duration in half, copies cast/env assignments, empty prompt (artist writes new direction). Both halves marked stale.
+
+**Shot editing in script phase**: Cast assignment (toggle buttons per character), environment (dropdown), duration (editable input), direction (contentEditable text). All changes trigger staleness and "Saved" flash.
+
+### Character generation
+
+Character look generation produces **reusable neutral reference portraits** — no props in hands, no actions, no scene-specific elements. Neutral pose, plain/blurred background. The portrait is used as identity reference across all shots. Script writer is also instructed to keep cast descriptions action-free (face, costume, ornaments, crown — no "holding a lamp").
+
+**Image gen fallback**: `gemini-3-pro-image-preview` (Nano Banana Pro) → `gemini-3.1-flash-image-preview` (Nano Banana 2) on 503/429/UNAVAILABLE. Only retries on capacity errors — bad prompts and auth errors propagate immediately.
+
 ### Reference chain for shot start frame
 
 Numbered inline images sent to Gemini 3 Pro Image:
 - `Image N = Character: {name}` for each cast ref
 - `Image N = Style reference`
 - `Image N = Environment reference: {name}`
+- `Image N = Director reference` (user-uploaded shot refs — composition, mood, or element references)
 - `Image N = Last-scene continuity reference` (only if continuity_from === prev_shot)
 - `Image N = PREVIOUS ATTEMPT (rejected). Problems: {feedback}` (only on regen with feedback)
 
-Priority: character identity > continuity > environment > style. Explicit note: when style text conflicts with style image, follow the image.
+Priority: character identity > continuity > environment > director refs > style. Explicit note: when style text conflicts with style image, follow the image.
+
+**Shot-level ref uploads**: Artist can upload reference images per shot via `+ Ref` button in the prompt area. Only shown when the video model supports refs alongside frames (`refsWithFrames` flag — Veo=true, Seedance=false). Refs are stored as `shot_ref` category assets and passed to both Gemini (image gen) and Segmind (video gen, up to 9 total).
 
 ### Unified prompt toolkit (Studio)
 
@@ -137,7 +152,20 @@ Characters and environments follow the same two-mode pattern:
 
 ### Staleness detection
 
-When upstream fields change (style DNA, concept, scene narrative, cast/env description), downstream `prompts_stale` flags are set. UI shows amber "Outdated" indicator. No auto-overwrite — artist decides when to rewrite. Cleared on regenerate/refine. Only fires when going back — linear flow never triggers.
+When upstream fields change, downstream `prompts_stale` flags are set. UI shows amber "Outdated" indicator. No auto-overwrite — artist decides when to rewrite. Cleared on regenerate/refine.
+
+| Change | What goes stale |
+|---|---|
+| Lock style | All cast + envs + all shots |
+| Edit scene narrative | All shots in that scene |
+| Edit cast description | Shots referencing that character |
+| Edit env description | Shots referencing that environment |
+| Change shot cast assignment | That shot |
+| Change shot environment | That shot |
+| Change shot duration | That shot |
+| Split shot | Both halves (original + new) |
+
+Linear flow never triggers staleness — only going back and changing upstream data.
 
 ### Pipeline anatomy
 
@@ -204,7 +232,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 - `POST /api/projects/:id/render` — body: `{ timeline: { trackItemIds, trackItemsMap, transitionsMap, fps, size, durationMs } }`. Proxies to `remotion-renderer` (env `REMOTION_RENDERER_URL`, header `x-renderer-secret: $RENDERER_SHARED_SECRET`), which uploads the mp4 to Supabase and returns `{ videoUrl, storagePath, sizeBytes, durationInFrames, renderMs }`.
 - `POST /api/queue/publish-url/:projectId` — body: `{ videoUrl, storagePath }`. Registers the asset, walks the fork chain, marks the owning queue row `completed`. Shares `finalizePublish()` with the multipart variant.
 
-**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId`, `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (fills missing analysis — transcribes lyrics if missing + structure in parallel → meaning chained after lyrics), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/shots/:shotId/clear-end-frame`, `POST /api/projects/:id/shots/:shotId/clear-extracted-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (legacy multipart — uploads final render blob, walks fork chain, marks owning queue row `completed`; prefer `/publish-url` above)
+**Utils:** `/api/projects/:id/chat`, `GET /api/projects/:id/xray`, `PATCH /api/projects/:id/shots/:shotId` (accepts visualPrompt, motionPrompt, castIds, environmentId, duration, continuityFrom, endVisualPrompt, userFeedback), `POST /api/projects/:id/shots/:shotId/split` (splits shot into two, divides duration, copies cast/env), `POST /api/projects/:id/shots/:shotId/upload-ref` (upload reference image for shot), `POST /api/projects/:id/shots/:shotId/delete-ref` (remove shot ref), `POST /api/projects/:id/scenes/:sceneId/lock-all` / `unlock-all` (batch lock/unlock all shots in scene), `POST /api/projects/:id/fork`, `POST /api/projects/:id/analyze-audio` (fills missing analysis — transcribes lyrics if missing + structure in parallel → meaning chained after lyrics), `POST /api/projects/:id/shots/:shotId/use-prev-last-frame`, `POST /api/projects/:id/shots/:shotId/clear-frame`, `POST /api/projects/:id/shots/:shotId/clear-end-frame`, `POST /api/projects/:id/shots/:shotId/clear-extracted-frame`, `POST /api/projects/:id/upload-and-lock-style`, `POST /api/projects/:id/upload-character-reference`, `POST /api/projects/:id/upload-environment-reference`, `POST /api/queue/publish/:projectId` (legacy multipart — uploads final render blob, walks fork chain, marks owning queue row `completed`; prefer `/publish-url` above)
 
 **Admin diagnostics** (all behind `x-admin-secret: $ADMIN_UPLOAD_SECRET`):
 - `GET /api/admin/env` — which env vars are set (values redacted). Primary tool for diagnosing Vertex/auth issues — confirms the running container sees `GCP_PROJECT_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, and whether the creds file was materialized.
