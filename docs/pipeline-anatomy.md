@@ -12,20 +12,27 @@ Living document. Updated as we refine each step. Go back to any step, trace the 
 
 ## Step 1: Audio Analysis
 
-Three sub-steps, each with its own LLM prompt:
+Three sub-steps, each with its own LLM prompt. Execution order: lyrics + structure in parallel → meaning (depends on lyrics).
+
+**Lyrics source priority (queue start):**
+1. SRT file from Supabase (`srt_verified_san` > `srt_verified_*` > `srt_turbo_scribe`)
+2. Fallback: audio transcription via Gemini
+
+SRT files are parsed to `[M:SS] text` format (timestamps preserved — same format as Gemini transcription output). This lets Claude align lyrics to musical sections during script writing.
 
 ### 1a: Transcribe Lyrics
 
-**Source:** [`server/services/gemini.ts:67`](../server/services/gemini.ts#L67) · Route: [`server/routes/projects.ts` → `POST /:id/analyze-audio`](../server/routes/projects.ts)
+**Source:** [`server/services/gemini.ts:67`](../server/services/gemini.ts#L67) · Route: [`server/routes/projects.ts` → `POST /:id/analyze-audio`](../server/routes/projects.ts) and [`server/routes/queue.ts` → `POST /:queueId/start`](../server/routes/queue.ts)
 
 | | |
 |---|---|
 | **Model** | Gemini 3 Pro (gemini.ts → `transcribeLyrics`) |
 | **Input** | Audio file + language hint (if provided) |
-| **Prompt** | `"Transcribe the lyrics of this audio. Language: {detect/provided}. Format: timestamp + lyrics. Original language ONLY."` |
-| **Output** | Timestamped lyrics text |
+| **Prompt** | `"Transcribe the lyrics of this audio. Language: {detect/provided}. Format: [M:SS] lyrics. Original language ONLY."` |
+| **Output** | Timestamped lyrics text (`[0:00] First line\n[0:15] Second line`) |
 | **Artist control** | Language hint at upload. Lyrics editable after in StepUpload. |
 | **Prompt visible** | No |
+| **When it runs** | Direct upload: always. Queue start: only if no SRT file found. Re-analysis: only if lyrics are missing. |
 
 ### 1b: Detect Musical Structure
 
@@ -52,22 +59,16 @@ Three sub-steps, each with its own LLM prompt:
 | **Output** | `meaning` — English summary |
 | **Artist control** | Context provided at upload. Meaning not directly editable (yet). |
 | **Prompt visible** | No |
+| **Dependency** | Requires lyrics — runs after 1a completes, never in parallel with it. |
 
-**Status:** Extraction steps — prompts are mechanical, not creative. Outputs are what matter.
+**"Fill missing" button:** UI shows which items are missing (Lyrics, Structure, Meaning) and runs only the missing steps. Lyrics + structure in parallel, then meaning chained after lyrics.
 
 **Gaps:**
 - [ ] Musical structure not editable after detection (can't add/remove/fix sections)
 - [ ] Meaning not editable after generation
 - [ ] If transcription gets language wrong, no way to correct and re-run with "this is Tamil"
-- [ ] Prompts not visible — low priority since these are extraction, not generation
 
-**Fix plan (low priority):**
-- Show all 3 prompts as read-only in a collapsible "How this was analyzed" section — transparency into the craft
-- Add "re-analyze" button with language override
-- Musical structure + meaning: display-only for now, outputs are solid
-- Future: editable structure/meaning if artists need to correct errors
-
-**Status: CLOSED** — outputs are good, lyrics editable, prompts shown as read-only context (low priority UI add).
+**Status: DONE** — lyrics from SRT or audio transcription, timestamps preserved, meaning properly chained.
 
 ---
 
@@ -145,7 +146,12 @@ The locked concept is NOT frozen. Three ways to adjust:
 **Pacing enforcement (extended thinking + validation loop):**
 Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude reasons through pacing math before writing. After output, code validates: `shots.length <= floor(scene_duration / pacing)` for every scene. If validation fails, errors are sent back as `tool_result` in the same conversation — Claude self-corrects with full context. Max 3 attempts, hard fail if still wrong (no silent trimming). Last shot per scene absorbs remainder duration.
 
-**Two modes:**
+**Director mode (Montage vs Cinematic):**
+Claude receives explicit guidance based on the chosen mode:
+- **Montage**: "dynamic cuts, varied angles, visual variety — each shot is a self-contained moment." Shot directions written as standalone compositions.
+- **Cinematic**: "smooth visual continuity — camera movement continues, characters transition between actions." Shot directions written to flow into each other. Backend sets `use_next_as_end_frame = 1` for chained continuity.
+
+**Two generation modes:**
 
 1. **Refine** (Claude Opus + extended thinking) — Claude sees the FULL current script + director's feedback. Surgical refinement with 5 preservation rules. Same validation loop.
 2. **Regenerate** (Claude Sonnet + extended thinking) — fresh generation from concept + lyrics. Same validation loop.
