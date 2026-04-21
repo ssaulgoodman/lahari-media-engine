@@ -51,7 +51,7 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 
 ### Pipeline (4 steps)
 
-1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage (SRT timestamps preserved in `[M:SS]` format; falls back to Gemini audio transcription if no SRT), creates Lahari project. Analysis: lyrics + structure in parallel → meaning chained after lyrics.
+1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage (SRT timestamps preserved in `[M:SS]` format; falls back to Gemini audio transcription if no SRT), creates Lahari project. **Instant navigation**: backend responds immediately with `status: 'analyzing'`, artist lands in Blueprint while analysis runs in background. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls entirely. **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently. No more 403 when another user's project exists.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Sonnet with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
@@ -174,7 +174,7 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
+- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage), `source_queue_id` (links project to queue item for multi-user support)
 - `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
@@ -197,8 +197,8 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 `handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
 
-**Supabase tables (read-only from Lahari):**
-- `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
+**Supabase tables (shared with other services):**
+- `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url` + `cached_lyrics`, `cached_structure`, `cached_meaning` (written by Lahari on first analysis, read on subsequent starts)
 - `files` — SRT files, etc. (Google Drive URLs)
 - `music_video_queue` (Lahari's domain table) — song_id, priority, status, lahari_project_id, video_url
 
@@ -206,7 +206,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 **Queue:**
 - `GET /api/queue` — list with joined song data
-- `POST /api/queue/:queueId/start` — pull audio + SRT, create Lahari project
+- `POST /api/queue/:queueId/start` — pull audio + SRT, create Lahari project (responds immediately, analysis runs in background). Uses `source_queue_id` to find existing project for this user. Caches analysis on `songs` table for future users.
 - `PATCH /api/queue/:queueId` — update status / video_url
 
 **Blueprint:**

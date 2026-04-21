@@ -15,8 +15,13 @@ Living document. Updated as we refine each step. Go back to any step, trace the 
 Three sub-steps, each with its own LLM prompt. Execution order: lyrics + structure in parallel → meaning (depends on lyrics).
 
 **Lyrics source priority (queue start):**
-1. SRT file from Supabase (`srt_verified_san` > `srt_verified_*` > `srt_turbo_scribe`)
-2. Fallback: audio transcription via Gemini
+1. Cached analysis from `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — skips all AI calls
+2. SRT file from Supabase (`srt_verified_san` > `srt_verified_*` > `srt_turbo_scribe`)
+3. Fallback: audio transcription via Gemini
+
+**Queue start is instant**: backend responds immediately with `status: 'analyzing'`, artist lands in Blueprint. Analysis runs fire-and-forget in background. Frontend polls every 3s until status changes. Results cached on `songs` table for future users.
+
+**Multi-user**: `source_queue_id` on projects. Multiple users can start the same queued song — each gets their own project. No 403 when another user's project exists.
 
 SRT files are parsed to `[M:SS] text` format (timestamps preserved — same format as Gemini transcription output). This lets Claude align lyrics to musical sections during script writing.
 

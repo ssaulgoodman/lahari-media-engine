@@ -41,8 +41,8 @@ export const PROMPT_CATALOG: PromptMeta[] = [
     stage: 'audio',
     model: 'gemini-3-pro-preview',
     modelLabel: 'Gemini 3 Pro',
-    triggeredBy: 'Queue start (fallback when no SRT), direct upload, or "Fill missing" button.',
-    summary: 'Extracts timestamped lyrics ([M:SS] format) from audio. Queue prefers SRT files; this is the fallback.',
+    triggeredBy: 'Queue start (fallback when no SRT and no cached analysis), direct upload, or "Fill missing" button.',
+    summary: 'Extracts timestamped lyrics ([M:SS] format) from audio. Queue checks cached analysis on songs table first, then SRT, then this fallback.',
     variables: [
       { name: 'language', description: 'Song language or "Detect automatically"' },
     ],
