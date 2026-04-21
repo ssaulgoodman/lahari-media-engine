@@ -174,39 +174,21 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`,
     ],
     template: `You are a music video director planning a {{videoMode}} for a devotional song.
 
-CONCEPT: {{concept.deity}} — {{concept.theme}}
-Mood: {{concept.mood}}
-{{concept.conceptDirection}}
+[concept, lyrics, meaning, musical structure injected]
 
-LYRICS:
-{{lyrics}}
+═══ PACING RULES (extended thinking reasons through this) ═══
+Base shot length: {{pacing}} seconds.
+For each scene: number_of_shots = floor(scene_duration / {{pacing}})
+The last shot absorbs any remainder.
+BEFORE writing shots for each scene, calculate its duration and shot count.
+═══════════════════════════════════════════════════════════════
 
-MEANING: {{meaning}}
+Uses extended thinking (8K budget) so Claude reasons through pacing math.
+Validation loop: if shot counts don't fit scene durations, errors are sent
+back as tool_result in the same conversation for self-correction (max 3 attempts).
 
-MUSICAL STRUCTURE: {{musicalStructure}}
-
-CLIP LENGTH: All shots are fixed at {{pacing}} seconds. You decide creative content, not duration.
-{{userNote ? "DIRECTOR NOTE (must follow): " + userNote : ""}}
-
-Plan the full music video using the plan_music_video tool.
-
-CAST rules:
-- Include the deity and key mythological figures by their proper names
-- Description = physical appearance for image generation: face, skin tone, build, costume, ornaments, weapons/props. 2-3 sentences.
-- Include cultural context: "{name}, the {role} from {tradition}" — e.g. "Kolasura, an asura king from Vaishnavite mythology"
-- No art style in descriptions — just what the character looks like
-
-ENVIRONMENT rules:
-- Only 2-3 key locations that define the visual world
-- Description = physical space: architecture, landscape, scale, lighting conditions, atmosphere. 2 sentences.
-- Include cultural reference: "inspired by {source}" — e.g. "inspired by Chola-era temple architecture"
-- No art style — just the place itself
-
-SCENE rules:
-- One scene per musical section
-- narrativeDescription: what happens, 1-2 sentences
-- Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)`,
-    source: { file: 'server/services/claude.ts', lines: '156-194' },
+CAST/ENVIRONMENT/SCENE rules same as before — see source.`,
+    source: { file: 'server/services/claude.ts', lines: '303-415' },
   },
   {
     id: 'brainstorm-style-directions',
@@ -299,7 +281,7 @@ Use the refine_direction tool.`,
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
     triggeredBy: 'Fires automatically after you lock a style image.',
-    summary: 'Claude sees the locked style image and writes a 30-50 word keyword DNA injected into all downstream image prompts.',
+    summary: 'Claude sees the locked style image and writes a 30-50 word keyword DNA. Used as context for Claude refine calls only — NOT sent to Gemini (style image is the ground truth for Gemini).',
     variables: [
       { name: 'image', description: 'The locked style reference image' },
       { name: 'shortDescription', description: 'The original text direction' },
@@ -340,21 +322,19 @@ Return ONLY the keywords. No quotes, no JSON, no markdown.`,
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userFeedback', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic character portrait in the visual style of Image 1.
+    template: `Generate ONE cinematic character portrait. Match the visual style EXACTLY from Image 1 — same lighting, color palette, texture, and rendering approach.
 
 {{character.name}} — {{character.description}}
 
-{{userRefImage ? "Image 2 is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography) while rendering in the project's visual style (Image 1). The reference image is the source of truth for WHO this character is; the style image is the source of truth for HOW to render them." : ""}}
+{{userRefImage ? "Image 2 is a reference the director provided — match its identity. The style image (Image 1) is HOW to render them." : ""}}
 
 Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
 
-Style: {{styleDNA}}
-
-{{userFeedback ? "Director note: " + userFeedback : ""}}
+(Style DNA text REMOVED — Gemini matches the style image directly. No conflicting keywords.)
 
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`,
-    source: { file: 'server/services/imagen.ts', lines: '160-205' },
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
+    source: { file: 'server/services/imagen.ts', lines: '177-194' },
   },
   {
     id: 'environment-look',
@@ -372,21 +352,19 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic environment shot in the visual style of Image 1. No characters or figures.
+    template: `Generate ONE cinematic environment shot. Match the visual style EXACTLY from Image 1. No characters or figures.
 
 {{environment.name}} — {{environment.description}}
 
-{{userRefImage ? "Image 2 is a reference the director provided for this environment — match its geography, architecture, and mood while rendering in the project's visual style (Image 1). The reference defines WHAT the place looks like; the style defines HOW it's rendered." : ""}}
+{{userRefImage ? "Image 2 is a reference — match its geography, architecture, mood. Style image (Image 1) is HOW it's rendered." : ""}}
 
 Wide establishing shot, full environment visible, empty scene.
 
-Style: {{styleDNA}}
-
-{{userNote ? "Director note: " + userNote : ""}}
+(Style DNA text REMOVED — Gemini matches the style image directly.)
 
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`,
-    source: { file: 'server/services/imagen.ts', lines: '238-277' },
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
+    source: { file: 'server/services/imagen.ts', lines: '272-288' },
   },
 
   // ─── Studio ───────────────────────────────────────────────────────
@@ -461,27 +439,19 @@ Match the IDs exactly.`,
     ],
     template: `Scene: {{visualPrompt}}
 
-Style: {{styleDNA}}
+Preserve character identity from character references. Match environment from environment reference. Match the visual style EXACTLY from the style reference image — the style image is the ground truth.
 
-Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. {{prevShotEndFrame ? "Continue visual flow from previous shot. " : ""}}Render in the style of the style reference image. If the style text description below conflicts with the style reference image, follow the image — it is the ground truth for lighting, color palette, and visual texture.
+(Style DNA text REMOVED — Gemini matches style image directly.)
 
-{{continuityDescription ? "Previous shot ended with: " + continuityDescription + "\\nThis shot should begin from that exact continuity state — matching pose, camera position, lighting, and mid-action beats — then transition into the scene described above." : ""}}
-
-{{userFeedback ? "Director note: " + userFeedback : ""}}
-
-Single cinematic frame. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a film still.
-
----
-Reference chain (numbered images sent alongside this prompt):
-  Image 1..N = Character: {name}  (one per cast member)
+Reference chain (numbered images):
+  Image 1..N = Character: {name}
   Image N+1 = Style reference
-  Image N+2 = Environment reference: {name}  (if set)
-  Image N+3 = Last-scene continuity reference  (if continuity = prev_shot)
-  Image N+4 = PREVIOUS ATTEMPT (rejected). Problems: {feedback}  (only on regen with feedback)
+  Image N+2 = Environment reference
+  Image N+3 = Continuity reference (if prev_shot)
+  Image N+4 = PREVIOUS ATTEMPT (if regen with feedback)
 
 Priority: character identity > continuity > environment > style.`,
-    source: { file: 'server/services/imagen.ts', lines: '310-388' },
+    source: { file: 'server/services/imagen.ts', lines: '366-435' },
   },
   {
     id: 'refine-shot-prompt',
@@ -499,34 +469,111 @@ Priority: character identity > continuity > environment > style.`,
       { name: 'styleDNA', description: 'Style keywords' },
       { name: 'characterDescriptions', description: 'Cast list for this shot' },
     ],
-    template: `You are a cinematographer fixing a shot that didn't come out right.
+    template: `You are a cinematographer refining a generation prompt for a devotional music video.
 
-THE IMAGE ABOVE is the failed attempt. Study it carefully.
+[Failed image shown as Image 1. Optional reference image as Image 2.]
 
-CURRENT PROMPT (what produced this image):
+CURRENT PROMPT:
 Visual: {{currentVisualPrompt}}
 Motion: {{currentMotionPrompt}}
 
-DIRECTOR FEEDBACK (what's wrong):
-{{feedback}}
+DIRECTOR FEEDBACK: {{feedback}}
 
 STYLE DNA: {{styleDNA}}
+SCENE NARRATIVE: {{sceneNarrative}}
+ENVIRONMENT: {{environmentDescription}}
+CHARACTERS: {{characterDescriptions}}
 
-CHARACTERS IN SCENE:
-{{characterDescriptions}}
+REWRITE the visual prompt. 1-3 SHORT sentences, direct and visual.
+Only change motion prompt if feedback mentions movement.
 
-REWRITE the visual prompt to fix the issues. Techniques to consider:
-- Face not crisp → specify "sharp facial detail, close-up framing" or "medium close-up"
-- Lighting too flat → specify lighting direction: "strong rim light from behind", "warm key light from left"
-- Wrong composition → specify camera: "low angle looking up", "bird's eye view", "tight close-up"
-- Style drift → reinforce the style DNA terms explicitly
-- Character doesn't match → add specific physical details from the character description
-- Too AI/generic → add grounding details: specific textures, materials, atmospheric effects
+Used for: first frame refine, end frame refine ([END FRAME] prefix),
+and video refine ([VIDEO/MOTION] prefix + start/end frames as context).
 
-Do NOT just append the feedback. REWRITE the prompt from scratch, keeping what worked and fixing what didn't. Keep it 1-3 sentences — direct and visual.
-
-Only change the motion prompt if the feedback specifically mentions movement or camera motion.`,
-    source: { file: 'server/services/claude.ts', lines: '594-656' },
+Output via rewrite_shot_prompt tool: { visualPrompt, motionPrompt }`,
+    source: { file: 'server/services/claude.ts', lines: '794-890' },
+  },
+  {
+    id: 'refine-end-frame-prompt',
+    name: 'Refine end frame prompt',
+    stage: 'studio',
+    model: 'claude-sonnet-4-6',
+    modelLabel: 'Claude Sonnet 4.6 (vision)',
+    triggeredBy: "Fires when you click 'Refine' on the Last frame tab.",
+    summary: 'Claude rewrites the end frame visual prompt based on feedback. Sees the end frame image (if exists) + scene + env + cast context.',
+    variables: [
+      { name: 'endVisualPrompt', description: 'Current end frame prompt' },
+      { name: 'feedback', description: 'Director feedback prefixed with [END FRAME]' },
+      { name: 'endFrameImage', description: 'Current end frame image (optional)' },
+      { name: 'styleDNA', description: 'Style keywords (for Claude context)' },
+      { name: 'characterDescriptions', description: 'Cast in this shot' },
+      { name: 'sceneNarrative', description: 'Scene context' },
+      { name: 'environmentDescription', description: 'Environment context' },
+    ],
+    template: `Same refineShotPrompt function with [END FRAME] prefix in feedback.
+Works without existing end image (prompt-only refine).
+Output: { visualPrompt, motionPrompt } — visualPrompt becomes end_visual_prompt.`,
+    source: { file: 'server/routes/generate.ts', lines: '1687-1759' },
+  },
+  {
+    id: 'refine-video-prompt',
+    name: 'Refine video/motion prompt',
+    stage: 'studio',
+    model: 'claude-sonnet-4-6',
+    modelLabel: 'Claude Sonnet 4.6 (vision)',
+    triggeredBy: "Fires when you click 'Refine' on the Video tab.",
+    summary: 'Claude rewrites the motion prompt based on feedback. Sees start frame + end frame (if exists) + scene + cast context.',
+    variables: [
+      { name: 'motionPrompt', description: 'Current motion prompt' },
+      { name: 'feedback', description: 'Director feedback prefixed with [VIDEO/MOTION REFINEMENT]' },
+      { name: 'startFrame', description: 'Start frame image' },
+      { name: 'endFrame', description: 'End frame image (optional — target or extracted)' },
+      { name: 'styleDNA', description: 'Style keywords (for Claude context)' },
+      { name: 'characterDescriptions', description: 'Cast in this shot' },
+      { name: 'sceneNarrative', description: 'Scene context' },
+      { name: 'environmentDescription', description: 'Environment context' },
+    ],
+    template: `Same refineShotPrompt function with [VIDEO/MOTION REFINEMENT] prefix.
+Start frame as main image, end frame as reference image.
+Output: motionPrompt rewritten. Visual prompt preserved.`,
+    source: { file: 'server/routes/generate.ts', lines: '1762-1825' },
+  },
+  {
+    id: 'refine-concept',
+    name: 'Refine locked concept',
+    stage: 'blueprint',
+    model: 'claude-sonnet-4-6',
+    modelLabel: 'Claude Sonnet 4.6',
+    triggeredBy: "Fires when you click 'Refine' on the locked concept.",
+    summary: 'Claude rewrites concept fields (theme, mood, conceptDirection) based on feedback while preserving deity and title.',
+    variables: [
+      { name: 'lockedConcept', description: 'Current locked concept JSON' },
+      { name: 'feedback', description: 'Director feedback' },
+    ],
+    template: `Refine the locked concept based on feedback. Keep deity and title.
+Rewrite: theme, mood, conceptDirection. Output via tool.`,
+    source: { file: 'server/services/claude.ts', lines: 'refineConceptDirection' },
+  },
+  {
+    id: 'refine-script',
+    name: 'Refine script (surgical edit)',
+    stage: 'blueprint',
+    model: 'claude-opus-4-6',
+    modelLabel: 'Claude Opus 4.6',
+    triggeredBy: "Fires when you click 'Refine script' and enter feedback.",
+    summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for pacing.',
+    variables: [
+      { name: 'currentScript', description: 'Full current script (cast, environments, scenes with shots)' },
+      { name: 'feedback', description: 'Director feedback' },
+      { name: 'concept', description: 'Locked concept' },
+      { name: 'lyrics', description: 'Full lyrics' },
+      { name: 'musicalStructure', description: 'Sections with timestamps' },
+      { name: 'pacing', description: 'Shot duration in seconds' },
+    ],
+    template: `Surgical refinement with 5 preservation rules. Extended thinking (8K budget) for pacing math.
+Validation loop: if shot counts wrong, errors sent back as tool_result.
+Same plan_music_video tool output.`,
+    source: { file: 'server/services/claude.ts', lines: '439-548' },
   },
   {
     id: 'chained-shot-refresh',
