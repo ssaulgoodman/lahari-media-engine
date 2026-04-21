@@ -186,7 +186,7 @@ interface Props {
   onGenerateScript: (userNote?: string) => void;
   onRefineScript?: (feedback: string) => void;
   onUpdateScene?: (sceneId: string, updates: { narrativeDescription?: string }) => void;
-  onUpdateShot?: (sceneId: string, shotId: string, updates: { visualPrompt?: string }) => void;
+  onUpdateShot?: (sceneId: string, shotId: string, updates: { visualPrompt?: string; castIds?: string[]; environmentId?: string | null }) => void;
   onGenerateConcepts?: (opts?: { userNote?: string; directorBrief?: string }) => void;
   onCancelConcepts?: () => void;
   onCancelScript?: () => void;
@@ -1488,16 +1488,54 @@ export const AnalysisEditor: React.FC<Props> = ({
                                   {realMotion && (
                                     <div className="text-sm text-zinc-400 leading-relaxed">{realMotion}</div>
                                   )}
-                                  <div className="text-[11px] text-zinc-400 flex gap-3 flex-wrap">
-                                    <span>{shot.duration}s</span>
-                                    {castNames.length > 0 ? (
-                                      <span><span className="text-zinc-400">Cast:</span> <span className="text-zinc-300">{castNames.join(', ')}</span></span>
-                                    ) : (
-                                      <span>No cast</span>
-                                    )}
-                                    {env && (
-                                      <span><span className="text-zinc-400">Env:</span> <span className="text-zinc-300">{env.name}</span></span>
-                                    )}
+                                  <div className="text-[11px] text-zinc-400 flex gap-3 flex-wrap items-center">
+                                    <span className="font-mono">{shot.duration}s</span>
+                                    {/* Cast multi-select */}
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-zinc-500">Cast:</span>
+                                      {project.cast.map(c => {
+                                        const active = (shot.castIds || []).includes(c.id);
+                                        return (
+                                          <button
+                                            key={c.id}
+                                            onClick={() => {
+                                              const current = shot.castIds || [];
+                                              const next = active ? current.filter(id => id !== c.id) : [...current, c.id];
+                                              onUpdateShot?.(scene.id, shot.id, { castIds: next });
+                                              setSavedFlash(shot.id);
+                                              setTimeout(() => setSavedFlash(null), 1500);
+                                            }}
+                                            className={`px-1.5 py-0.5 rounded transition-colors ${active ? 'bg-white/[0.1] text-zinc-200' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}
+                                          >
+                                            {c.name}
+                                          </button>
+                                        );
+                                      })}
+                                      {project.cast.length === 0 && (
+                                        <button onClick={() => setViewPhase('characters')} className="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">+ add</button>
+                                      )}
+                                    </span>
+                                    {/* Environment select */}
+                                    <span className="flex items-center gap-1">
+                                      <span className="text-zinc-500">Env:</span>
+                                      <select
+                                        value={shot.environmentId || ''}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          if (val === '__add__') { setViewPhase('environments'); return; }
+                                          onUpdateShot?.(scene.id, shot.id, { environmentId: val || null });
+                                          setSavedFlash(shot.id);
+                                          setTimeout(() => setSavedFlash(null), 1500);
+                                        }}
+                                        className="bg-transparent text-[11px] text-zinc-300 outline-none cursor-pointer appearance-none border-b border-dashed border-white/[0.1] hover:border-white/[0.2] px-1 py-0.5"
+                                      >
+                                        <option value="">None</option>
+                                        {project.environments.map(e => (
+                                          <option key={e.id} value={e.id}>{e.name}</option>
+                                        ))}
+                                        <option value="__add__">+ Add environment...</option>
+                                      </select>
+                                    </span>
                                     {shot.continuityFrom === 'prev_shot' && (
                                       <span className="text-amber-400/80">· continues</span>
                                     )}

@@ -1141,6 +1141,13 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
     await updateRows('shots', { id: shotId }, { continuity_from: continuityFrom });
   }
+  const { castIds, environmentId } = req.body;
+  if (castIds !== undefined) {
+    await updateRows('shots', { id: shotId }, { cast_ids: JSON.stringify(castIds) });
+  }
+  if (environmentId !== undefined) {
+    await updateRows('shots', { id: shotId }, { environment_id: environmentId || null });
+  }
   res.json({ ok: true });
 });
 
