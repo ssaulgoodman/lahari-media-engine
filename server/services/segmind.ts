@@ -146,7 +146,25 @@ export const generateSegmindVideo = async (
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     console.error(`[segmind] ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
-    throw new Error(`Segmind ${modelKey} failed (${res.status}): ${errText.slice(0, 200)}`);
+    // Classify errors so the artist sees actionable messages
+    const lower = errText.toLowerCase();
+    let userMessage: string;
+    if (lower.includes('safety settings') || lower.includes('blocked') || lower.includes('person/face')) {
+      userMessage = `Safety filter blocked this image — the AI flagged faces/people in the start frame. Try regenerating the start frame first, or switch to Seedance which has a different safety policy.`;
+    } else if (res.status === 404 || lower.includes('not_found') || lower.includes('not found')) {
+      userMessage = `Model ${modelKey} is temporarily unavailable on Segmind (404). This usually resolves in a few minutes — try again shortly.`;
+    } else if (res.status === 429 || lower.includes('rate limit') || lower.includes('quota')) {
+      userMessage = `Rate limited — too many requests. Wait a minute and retry.`;
+    } else if (lower.includes('mutually exclusive')) {
+      userMessage = `Seedance can't use reference images when a start frame is set. Refs are skipped automatically — this shouldn't happen. Report this bug.`;
+    } else {
+      userMessage = `${modelKey} failed (${res.status}). ${errText.slice(0, 150)}`;
+    }
+    const err = new Error(userMessage);
+    (err as any).segmindStatus = res.status;
+    (err as any).segmindRaw = errText.slice(0, 500);
+    (err as any).errorCategory = lower.includes('safety') || lower.includes('blocked') ? 'safety' : res.status === 404 ? 'model_unavailable' : 'unknown';
+    throw err;
   }
 
   // Segmind returns video binary directly
