@@ -633,22 +633,24 @@ export interface TimelineRenderState {
   durationMs: number;
 }
 
-export interface RenderResponse {
-  videoUrl: string;
-  storagePath: string;
-  sizeBytes: number;
-  durationInFrames: number;
-  width: number;
-  height: number;
-  renderMs: number;
-  proxyMs?: number;
+export type RenderStatus = 'idle' | 'rendering' | 'completed' | 'failed';
+
+export interface RenderStatusResponse {
+  renderId: string | null;
+  status: RenderStatus;
+  videoUrl: string | null;
+  error: string | null;
+  renderMs: number | null;
 }
 
-export const renderTimeline = async (
+// Kicks off an async render. Backend returns 202 immediately with a renderId;
+// the real result lands later via the renderer's callback. Poll
+// getRenderStatus() until status is 'completed' or 'failed'.
+export const startRender = async (
   projectId: string,
   timeline: TimelineRenderState,
   signal?: AbortSignal,
-): Promise<RenderResponse> => {
+): Promise<{ renderId: string; status: 'rendering' }> => {
   const res = await authFetch(`${API}/projects/${projectId}/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -658,16 +660,11 @@ export const renderTimeline = async (
   return handleResponse(res);
 };
 
-export const publishRenderUrl = async (
+export const getRenderStatus = async (
   projectId: string,
-  videoUrl: string,
-  storagePath: string,
-) => {
-  const res = await authFetch(`${API}/queue/publish-url/${projectId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ videoUrl, storagePath }),
-  });
+  signal?: AbortSignal,
+): Promise<RenderStatusResponse> => {
+  const res = await authFetch(`${API}/projects/${projectId}/render-status`, { signal });
   return handleResponse(res);
 };
 

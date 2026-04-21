@@ -185,7 +185,7 @@ router.patch('/:queueId', async (req, res) => {
  * the fork chain to find the originating queue row, and marks everything
  * completed. Returns the full project so the client can refresh.
  */
-const finalizePublish = async (
+export const finalizePublish = async (
   projectId: string,
   videoPath: string,
   videoUrl: string,

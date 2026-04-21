@@ -30,6 +30,7 @@ const T = {
   assets: 'lahari_assets',
   chat_messages: 'lahari_chat_messages',
   ai_calls: 'lahari_ai_calls',
+  renders: 'lahari_renders',
 } as const;
 
 type TableKey = keyof typeof T;

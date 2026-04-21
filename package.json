@@ -21,7 +21,8 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@google/genai": "^1.32.0",
-    "@remotion/player": "^4.0.448",
+    "@remotion/media": "4.0.448",
+    "@remotion/player": "4.0.448",
     "@supabase/supabase-js": "^2.103.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
@@ -34,7 +35,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-markdown": "^10.1.0",
-    "remotion": "^4.0.448",
+    "remotion": "4.0.448",
     "uuid": "^13.0.0",
     "zustand": "^5.0.12"
   },

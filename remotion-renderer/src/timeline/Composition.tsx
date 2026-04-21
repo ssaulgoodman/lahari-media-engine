@@ -2,7 +2,11 @@
 // `npm run sync-timeline` after editing the upstream file. Server-side build
 // removes the StoreComposition wrapper and the './store' import.
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence } from 'remotion';
+import { AbsoluteFill, Audio, Img, Sequence } from 'remotion';
+// @remotion/media's <Video> streams frames instead of downloading the whole MP4
+// per frame (which triggers frame_cache.rs panics on the SSR renderer). Works
+// in the browser <Player> too — native buffering, canvas-based draw.
+import { Video } from '@remotion/media';
 import {
   TransitionSeries,
   linearTiming,
@@ -99,9 +103,6 @@ const renderers: Record<ItemType, (item: ITrackItem, fps: number) => React.JSX.E
     //
     // muted — in the music-video pipeline the song track is the authoritative
     // audio; the per-clip video audio is just ambient noise baked in by Veo.
-    // pauseWhenBuffering — during a transition overlap two OffthreadVideos
-    // play simultaneously; holding one until it's decoded avoids a black
-    // flash or skip at the transition boundary.
     return (
       <Sequence
         key={item.id}
@@ -110,12 +111,11 @@ const renderers: Record<ItemType, (item: ITrackItem, fps: number) => React.JSX.E
         premountFor={fps * 2}
       >
         <AbsoluteFill style={{ pointerEvents: 'none', ...effectStyles(d) }}>
-          <OffthreadVideo
-            startFrom={(trim.from / 1000) * fps}
-            endAt={(trim.to / 1000) * fps || 1 / fps}
+          <Video
+            trimBefore={(trim.from / 1000) * fps}
+            trimAfter={(trim.to / 1000) * fps || 1 / fps}
             src={d.src}
             muted
-            pauseWhenBuffering
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </AbsoluteFill>
@@ -183,18 +183,14 @@ const transitionRenderers: Record<ItemType, (item: ITrackItem, fps: number) => R
     const { durationInFrames } = framesOf(item.display, fps);
     const trim = (item as any).trim || { from: 0, to: item.display.to - item.display.from };
     const d: any = item.details || {};
-    // Same flags as the standalone video renderer — see that branch for why.
-    // During a transition, TWO of these sequences are on screen at once, so
-    // pauseWhenBuffering is what actually prevents the mid-transition flicker.
     return (
       <TransitionSeries.Sequence key={item.id} durationInFrames={durationInFrames}>
         <AbsoluteFill style={{ pointerEvents: 'none', ...effectStyles(d) }}>
-          <OffthreadVideo
-            startFrom={(trim.from / 1000) * fps}
-            endAt={(trim.to / 1000) * fps || 1 / fps}
+          <Video
+            trimBefore={(trim.from / 1000) * fps}
+            trimAfter={(trim.to / 1000) * fps || 1 / fps}
             src={d.src}
             muted
-            pauseWhenBuffering
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </AbsoluteFill>

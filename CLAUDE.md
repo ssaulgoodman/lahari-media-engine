@@ -214,7 +214,14 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 ### Queue completion writeback
 
-`StepRender` calls `renderTimeline()` → `/api/projects/:id/render` (main backend proxies to `remotion-renderer`, which writes the mp4 straight to Supabase Storage at `videos/<projectId>/...`) → `publishRenderUrl()` → `/api/queue/publish-url/:projectId`. Both publish endpoints (multipart `/publish/:projectId` and JSON `/publish-url/:projectId`) share `finalizePublish()` in `server/routes/queue.ts`:
+Render is **async** because Railway's edge proxy kills HTTP requests after ~5 min but real renders take 15+ min. Every `/render` call creates a `lahari_renders` row (status: `rendering` → `completed` / `failed`), so stale callbacks from superseded jobs can't clobber fresh state. Flow:
+
+1. `StepRender` → `POST /api/projects/:id/render` — main backend inserts a `lahari_renders` row, returns `202 { renderId, status: 'rendering' }` immediately, fires fire-and-forget call to `remotion-renderer` with `{ renderId, projectId, timeline }`.
+2. Renderer responds `202` to main, runs the render in the background, uploads the mp4 to Supabase at `videos/<projectId>/...`.
+3. Renderer `POST`s result to `MAIN_BACKEND_URL/api/renders/callback/:renderId` (guarded by `x-renderer-secret`). On success: `finalizePublish()` + stamp the render row `status='completed'`, `video_url`, `storage_path`, `render_ms`. On failure: `status='failed'`, `error`. Already-finalized rows are idempotent — duplicate callbacks return `{ ok: true, alreadyFinalized: true }`.
+4. `StepRender` polls `GET /api/projects/:id/render-status` every 4s (returns the latest render row for the project) until `completed` or `failed`. Survives page reloads — on mount the component checks status and resumes polling if a render is in-flight.
+
+Legacy publish endpoints (multipart `/publish/:projectId` and JSON `/publish-url/:projectId`) still exist and share `finalizePublish()` in `server/routes/queue.ts`:
 
 1. Registers an `assets` row (category `final_render`) pointing at the Supabase storage key.
 2. Walks up `parent_project_id` locally to collect the fork-lineage.

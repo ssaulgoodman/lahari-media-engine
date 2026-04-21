@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@remotion/bundler": "4.0.448",
+    "@remotion/cli": "4.0.448",
+    "@remotion/media": "4.0.448",
+    "@remotion/renderer": "4.0.448",
+    "remotion": "4.0.448"
+  }
+}

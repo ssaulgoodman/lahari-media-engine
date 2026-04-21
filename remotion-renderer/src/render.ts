@@ -36,6 +36,7 @@ export const renderTimeline = async (
     serveUrl,
     id: 'LahariTimeline',
     inputProps: inputProps as unknown as Record<string, unknown>,
+    timeoutInMilliseconds: 120000,
   });
 
   const outputPath = path.join(tmpdir(), `lahari-render-${randomUUID()}.mp4`);
@@ -46,6 +47,14 @@ export const renderTimeline = async (
     codec: 'h264',
     outputLocation: outputPath,
     inputProps: inputProps as unknown as Record<string, unknown>,
+    // Supabase is still us-east — fetching OffthreadVideo segments from Asia-hosted
+    // Chromium regularly exceeds the 28s default. Bumped until Supabase moves to ap-south-1.
+    timeoutInMilliseconds: 120000,
+    // concurrency:1 — parallel workers race inside the Rust compositor's frame
+    // cache and trigger Option::unwrap() panics (frame_cache.rs:257). Serial
+    // rendering is slower but deterministic.
+    concurrency: 1,
+    chromiumOptions: { gl: 'swiftshader' },
     onProgress: onProgress
       ? ({ progress }) => onProgress(progress)
       : undefined,

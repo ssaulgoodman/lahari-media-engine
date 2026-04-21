@@ -1,13 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiProject } from '../types';
 import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
 import useStore from './timeline-editor/store';
 import {
-  renderTimeline,
-  publishRenderUrl,
+  startRender,
+  getRenderStatus,
   listRenders,
   deleteRender,
-  type RenderResponse,
   type RenderHistoryItem,
 } from '../services/api';
 
@@ -16,12 +15,16 @@ interface Props {
   onBack: () => void;
 }
 
+// Backend is authoritative for render state — the frontend just reflects what
+// /render-status reports. Polling while the job is 'rendering' lets the user
+// navigate away, come back, and still see progress/result.
 type RenderPhase =
   | { kind: 'idle' }
   | { kind: 'rendering' }
-  | { kind: 'publishing'; videoUrl: string }
-  | { kind: 'done'; videoUrl: string; queueRowUpdated: boolean }
+  | { kind: 'done'; videoUrl: string }
   | { kind: 'error'; message: string };
+
+const POLL_MS = 4000;
 
 export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
@@ -86,6 +89,64 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     [project.audioPath],
   );
 
+  // Poll render-status while a job is running. Cleared on unmount or when the
+  // job finishes. Declared at the component scope so both the initial
+  // status-check effect and handleRender can share one pollRef.
+  const pollRef = useRef<number | null>(null);
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const s = await getRenderStatus(project.id);
+        if (s.status === 'completed' && s.videoUrl) {
+          stopPolling();
+          setPhase({ kind: 'done', videoUrl: s.videoUrl });
+          refreshHistory();
+        } else if (s.status === 'failed') {
+          stopPolling();
+          setPhase({ kind: 'error', message: s.error || 'Render failed' });
+        }
+        // 'rendering' / 'idle' → keep waiting
+      } catch (err: any) {
+        console.error('[render-status]', err);
+      }
+    }, POLL_MS);
+  }, [project.id, refreshHistory, stopPolling]);
+
+  // On mount, check whether a render is already in-flight (user might have
+  // navigated away and come back) or recently completed.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await getRenderStatus(project.id);
+        if (cancelled) return;
+        if (s.status === 'rendering') {
+          setPhase({ kind: 'rendering' });
+          startPolling();
+        } else if (s.status === 'completed' && s.videoUrl) {
+          setPhase({ kind: 'done', videoUrl: s.videoUrl });
+        } else if (s.status === 'failed') {
+          setPhase({ kind: 'error', message: s.error || 'Render failed' });
+        }
+      } catch {
+        // Silent — if the status probe fails we just stay in idle and let
+        // the user kick off a render normally.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
+  }, [project.id, startPolling, stopPolling]);
+
   const handleRender = async () => {
     // Snapshot the render-authoritative subset of the timeline store. Anything
     // not in this object (scale, scroll, activeIds, stateManager, playerRef,
@@ -98,7 +159,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
 
     setPhase({ kind: 'rendering' });
     try {
-      const result: RenderResponse = await renderTimeline(project.id, {
+      await startRender(project.id, {
         trackItemIds: s.trackItemIds,
         trackItemsMap: s.trackItemsMap,
         transitionsMap: s.transitionsMap,
@@ -106,27 +167,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         size: s.size,
         durationMs: s.duration,
       });
-
-      setPhase({ kind: 'publishing', videoUrl: result.videoUrl });
-      const pub = await publishRenderUrl(
-        project.id,
-        result.videoUrl,
-        result.storagePath,
-      );
-      setPhase({
-        kind: 'done',
-        videoUrl: result.videoUrl,
-        queueRowUpdated: !!pub.queueRowUpdated,
-      });
-      // Keep history in sync if the panel is open; otherwise next open refetches.
-      if (historyOpen) refreshHistory();
+      startPolling();
     } catch (e: any) {
       console.error('[render]', e);
       setPhase({ kind: 'error', message: e?.message || 'Render failed' });
     }
   };
 
-  const isBusy = phase.kind === 'rendering' || phase.kind === 'publishing';
+  const isBusy = phase.kind === 'rendering';
 
   // Neutralize the App-level <main>'s p-8 with -m-8 so this view can claim the
   // full viewport below the header. h-[calc(100vh-3.5rem)] = 100vh minus the
@@ -154,9 +202,6 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         <div className="flex items-center gap-3 flex-none">
           {phase.kind === 'rendering' && (
             <span className="text-[11px] text-zinc-400 font-mono">rendering…</span>
-          )}
-          {phase.kind === 'publishing' && (
-            <span className="text-[11px] text-zinc-400 font-mono">publishing…</span>
           )}
           <button
             onClick={() => setHistoryOpen((o) => !o)}
@@ -265,7 +310,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           <div className="absolute bottom-4 right-4 max-w-sm bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl p-3 space-y-2 backdrop-blur-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="text-xs text-white">
-                Render complete{phase.queueRowUpdated ? ' — queue row marked completed.' : '.'}
+                Render complete.
               </div>
               <button
                 onClick={() => setPhase({ kind: 'idle' })}

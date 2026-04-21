@@ -27,6 +27,7 @@ import { queueRouter } from './routes/queue.js';
 import { adminRouter } from './routes/admin.js';
 import { promptsRouter } from './routes/prompts.js';
 import { renderRouter } from './routes/render.js';
+import { renderCallbackRouter } from './routes/render-callback.js';
 import { requireAuth } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,6 +52,8 @@ app.use('/api/queue', requireAuth, queueRouter);
 app.use('/api/prompts', requireAuth, promptsRouter);
 // Admin routes use their own x-admin-secret auth
 app.use('/api/admin', adminRouter);
+// Renderer callback — auth via x-renderer-secret, not a user JWT
+app.use('/api/renders', renderCallbackRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {
