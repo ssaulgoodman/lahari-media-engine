@@ -855,6 +855,50 @@ router.get('/:id/shots/:shotId/video-history', async (req, res) => {
 
 // revert-video + generate-video moved to generate-video.ts
 
+// ─── Split Shot ─────────────────────────────────────────────────────
+// Moved from projects.ts — logically belongs with other shot-admin routes.
+
+router.post('/:id/shots/:shotId/split', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot: any = await selectOne('shots', { id: shotId });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  const splitAt = req.body.splitAt || Math.floor(shot.duration / 2);
+  const firstDuration = Math.max(1, splitAt);
+  const secondDuration = Math.max(1, shot.duration - firstDuration);
+
+  // Update original shot duration + mark stale (prompt was for old duration)
+  await updateRows('shots', { id: shotId }, { duration: firstDuration, prompts_stale: true });
+
+  // Bump sort_order of all shots after this one in the scene
+  const laterShots = await getSB()
+    .from(T.shots)
+    .select('id, sort_order')
+    .eq('scene_id', shot.scene_id)
+    .gt('sort_order', shot.sort_order);
+  for (const ls of (laterShots.data || [])) {
+    await updateRows('shots', { id: ls.id }, { sort_order: ls.sort_order + 1 });
+  }
+
+  // Create new shot right after — empty prompt (artist writes a new direction), marked stale
+  const newId = uuidv4();
+  await insertRow('shots', {
+    id: newId,
+    scene_id: shot.scene_id,
+    visual_prompt: '',
+    motion_prompt: '',
+    duration: secondDuration,
+    cast_ids: shot.cast_ids || '[]',
+    environment_id: shot.environment_id || null,
+    continuity_from: 'cut',
+    sort_order: shot.sort_order + 1,
+    image_status: 'idle',
+    video_status: 'idle',
+    prompts_stale: true,
+  });
+
+  res.json(await getFullProject(paramStr(req.params.id)));
+});
 
 };
 
