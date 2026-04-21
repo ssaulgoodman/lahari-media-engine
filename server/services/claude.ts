@@ -319,7 +319,15 @@ MEANING: ${input.meaning}
 
 MUSICAL STRUCTURE: ${input.musicalStructure}
 
-CLIP LENGTH: All shots are fixed at ${pacing} seconds. You decide creative content, not duration.
+═══ PACING RULES (CRITICAL — think through this before writing) ═══
+Base shot length: ${pacing} seconds.
+For each scene, calculate: number_of_shots = floor(scene_duration / ${pacing})
+The last shot absorbs any remainder (e.g. 25s scene at ${pacing}s pacing → ${Math.floor(25 / pacing)} shots, last one is ${25 - (Math.floor(25 / pacing) - 1) * pacing}s).
+
+Example: 0:00–0:24 = 24s → ${Math.floor(24 / pacing)} shots. 0:24–1:00 = 36s → ${Math.floor(36 / pacing)} shots.
+
+BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots — no more, no fewer.
+═══════════════════════════════════════════════════════════════════
 ${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
 Plan the full music video using the plan_music_video tool.
 
@@ -336,44 +344,87 @@ ENVIRONMENT rules:
 - No art style — just the place itself
 
 SCENE rules:
-- One scene per musical section
+- One scene per musical section — follow the musical structure timestamps exactly
 - narrativeDescription: what happens, 1-2 sentences
 - Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)
 
 IMPORTANT — character and environment assignment:
-- Every shot MUST have an environmentName from the environment list. The environment reference image is sent to the video model for visual consistency.
-- Every character who appears in a shot — even briefly (walks into frame, hand visible, background presence) — MUST be listed in castNames. Character reference images are sent to the video model to maintain appearance consistency.
-- Do NOT skip character/environment assignment. The video model uses these to keep the look consistent across shots.`;
+- Every shot MUST have an environmentName from the environment list
+- Every character who appears in a shot MUST be listed in castNames
+- Do NOT skip character/environment assignment`;
 
-  const response = await client.messages.create({
-    model: SONNET,
-    max_tokens: 8192,
-    tools: [SCRIPT_TOOL],
-    tool_choice: { type: 'tool', name: 'plan_music_video' },
-    messages: [{ role: 'user', content: prompt }]
-  });
+  console.log(`[planScenes] Extended thinking + validation loop (pacing=${pacing}s)`);
 
-  // Extract tool_use result — guaranteed valid JSON
-  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
-  if (!toolBlock || toolBlock.type !== 'tool_use') {
-    throw new Error('Claude did not return tool_use response');
+  // ═══ CALL 1: Extended thinking — Claude reasons through pacing math then outputs ═══
+  let messages: any[] = [{ role: 'user', content: prompt }];
+  let data: { cast: any[]; environments: any[]; scenes: any[] } | null = null;
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await client.messages.create({
+      model: SONNET,
+      max_tokens: 16384,
+      thinking: { type: 'enabled', budget_tokens: 8192 },
+      tools: [SCRIPT_TOOL],
+      messages,
+    });
+
+    const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+    if (!toolBlock || toolBlock.type !== 'tool_use') {
+      throw new Error('Claude did not return tool_use response');
+    }
+
+    const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
+    if (!candidate.environments) candidate.environments = [];
+
+    // ═══ VALIDATE: Check shot counts fit scene durations ═══
+    const errors: string[] = [];
+    for (const scene of candidate.scenes) {
+      const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+      if (sceneDuration <= 0) continue;
+      const maxShots = Math.max(1, Math.floor(sceneDuration / pacing));
+      if ((scene.shots?.length || 0) > maxShots) {
+        errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but only ${maxShots} fit at ${pacing}s pacing.`);
+      }
+      if ((scene.shots?.length || 0) === 0) {
+        errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
+      }
+    }
+
+    if (errors.length === 0) {
+      data = candidate;
+      console.log(`[planScenes] Validation passed on attempt ${attempt}`);
+      break;
+    }
+
+    console.warn(`[planScenes] Attempt ${attempt} failed validation: ${errors.join('; ')}`);
+
+    if (attempt >= maxAttempts) {
+      console.error(`[planScenes] Failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
+      throw new Error(`Script generation failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try regenerating or adjust pacing.`);
+    }
+
+    // ═══ RETRY: Send validation errors back in the same conversation ═══
+    messages = [
+      ...messages,
+      { role: 'assistant', content: response.content },
+      { role: 'user', content: [
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\nRemember: shots per scene = floor(scene_duration / ${pacing}). Recount and fix.` }
+      ] },
+    ];
   }
 
-  const data = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
-  if (!data.environments) data.environments = [];
+  if (!data) throw new Error('Script generation failed after all attempts');
 
-  // Assign deterministic durations based on pacing
+  // ═══ Assign deterministic durations ═══
   for (const scene of data.scenes) {
     const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    if (sceneDuration <= 0 || !scene.shots?.length) continue;
     const shotCount = scene.shots.length;
-    if (shotCount === 0) continue;
-
-    // All shots get full pacing, last shot gets remainder
     for (let i = 0; i < shotCount; i++) {
       if (i < shotCount - 1) {
         scene.shots[i].duration = pacing;
       } else {
-        // Last shot: whatever is left
         const usedTime = (shotCount - 1) * pacing;
         scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
       }
@@ -422,7 +473,7 @@ MEANING: ${context.meaning}
 
 MUSICAL STRUCTURE: ${context.musicalStructure}
 
-CLIP LENGTH: All shots are fixed at ${pacing} seconds.
+SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = floor(scene_duration / ${pacing}). This is a HARD CONSTRAINT — do not exceed the shot budget for any scene. If the current script has too many shots in a scene, reduce them to fit.
 
 ═══════════════════════════════════════
 CURRENT SCRIPT (your starting point):
@@ -474,8 +525,15 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
   for (const scene of data.scenes) {
     const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    if (sceneDuration <= 0 || !scene.shots?.length) continue;
+
+    const maxShots = Math.max(1, Math.floor(sceneDuration / pacing));
+    if (scene.shots.length > maxShots) {
+      console.warn(`[refineScript] Scene "${scene.sectionLabel}" has ${scene.shots.length} shots but only fits ${maxShots} at ${pacing}s pacing. Trimming.`);
+      scene.shots = scene.shots.slice(0, maxShots);
+    }
+
     const shotCount = scene.shots.length;
-    if (shotCount === 0) continue;
     for (let i = 0; i < shotCount; i++) {
       if (i < shotCount - 1) {
         scene.shots[i].duration = pacing;
