@@ -306,7 +306,13 @@ export const planScenes = async (
   const client = getClient();
   const pacing = input.basePacing || 8;
 
+  const modeGuidance = input.videoMode === 'cinematic'
+    ? `DIRECTOR STYLE: Cinematic — smooth visual continuity between shots. Each shot should flow into the next (camera moves through space, characters transition between poses, lighting shifts gradually). Favor longer compositions, slow reveals, and connected movement. Shots within a scene share visual momentum.`
+    : `DIRECTOR STYLE: Montage — dynamic cuts, varied angles, visual variety. Each shot is a self-contained moment. Favor striking compositions, bold framing changes, and diverse perspectives. Hard cuts between shots are expected.`;
+
   const prompt = `You are a music video director planning a ${input.videoMode} for a devotional song.
+
+${modeGuidance}
 
 CONCEPT: ${input.concept.deity || 'Unknown'} — ${input.concept.theme}
 Mood: ${input.concept.mood}
@@ -347,6 +353,9 @@ SCENE rules:
 - One scene per musical section — follow the musical structure timestamps exactly
 - narrativeDescription: what happens, 1-2 sentences
 - Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)
+${input.videoMode === 'cinematic'
+  ? `- Cinematic mode: write shot directions that flow into each other — camera movement continues, characters transition between actions, visual momentum carries across cuts`
+  : `- Montage mode: write shot directions as standalone visual moments — each shot is a distinct composition, bold angle changes, fresh framing`}
 
 IMPORTANT — character and environment assignment:
 - Every shot MUST have an environmentName from the environment list

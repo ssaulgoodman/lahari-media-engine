@@ -5,7 +5,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile, findQueueByProjectIds } from '../services/supabase.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { detectStructure } from '../services/gemini.js';
+import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows } from '../database.js';
@@ -13,6 +13,32 @@ import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+
+/** Convert SRT subtitle format to timestamped lyrics matching Gemini's [M:SS] format */
+function parseSrtToTimestamped(srt: string): string {
+  const blocks = srt.trim().split(/\n\s*\n/);
+  const lines: string[] = [];
+  for (const block of blocks) {
+    const parts = block.trim().split('\n');
+    if (parts.length < 2) continue;
+    // Find the timestamp line (contains "-->")
+    const tsLine = parts.find(l => l.includes('-->'));
+    if (!tsLine) continue;
+    // Parse start time: "00:01:23,456 --> ..."
+    const match = tsLine.match(/(\d{1,2}):(\d{2}):(\d{2})/);
+    if (!match) continue;
+    const hours = parseInt(match[1]);
+    const mins = parseInt(match[2]);
+    const secs = parseInt(match[3]);
+    const totalMins = hours * 60 + mins;
+    const timestamp = `[${totalMins}:${secs.toString().padStart(2, '0')}]`;
+    // Text lines are everything after the timestamp line
+    const tsIdx = parts.indexOf(tsLine);
+    const text = parts.slice(tsIdx + 1).filter(l => l.trim()).join(' ');
+    if (text) lines.push(`${timestamp} ${text}`);
+  }
+  return lines.join('\n');
+}
 
 const router = Router();
 
@@ -74,13 +100,21 @@ router.post('/:queueId/start', async (req, res) => {
       try {
         const srtBuffer = await downloadFile(srtFile.storage_url);
         const srtText = srtBuffer.toString('utf-8');
-        lyrics = srtText
-          .split('\n')
-          .filter(line => line.trim() && !/^\d+$/.test(line.trim()) && !/-->/.test(line))
-          .join('\n')
-          .trim();
+        lyrics = parseSrtToTimestamped(srtText);
       } catch (e) {
         console.warn(`[queue] Failed to download SRT for ${item.song_name}:`, e);
+      }
+    }
+
+    // Fallback: transcribe from audio if no SRT lyrics
+    if (!lyrics) {
+      try {
+        const audioBase64 = await readAsBase64(audioPath);
+        const audioMime = mimeFromExt(audioPath);
+        lyrics = await transcribeLyrics(audioBase64, audioMime);
+        console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
+      } catch (e) {
+        console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);
       }
     }
 

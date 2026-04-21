@@ -606,7 +606,7 @@ export const AnalysisEditor: React.FC<Props> = ({
     { label: 'Meaning', present: !!project.meaning },
   ];
   const hasAnalysis = !!(project.meaning || project.musicalStructure?.length > 0 || project.lyrics);
-  const needsAnalysis = !project.meaning || !(project.musicalStructure?.length > 0);
+  const needsAnalysis = !project.lyrics || !project.meaning || !(project.musicalStructure?.length > 0);
   // Ready to launch if we have the creative foundations — don't gate strictly on
   // project.status because status can drift (fork, regen, old projects).
   const everyoneHasLook = project.cast.length > 0 && project.cast.every(c => !!c.referenceImageUrl);
@@ -799,7 +799,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                         className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
                       >
                         {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-                        {isAnalyzingAudio ? 'Analyzing…' : 'Run analysis'}
+                        {isAnalyzingAudio ? 'Analyzing…' : `Fill missing (${analysisItems.filter(i => !i.present).map(i => i.label).join(', ')})`}
                       </button>
                     </div>
                   )}
@@ -1175,38 +1175,50 @@ export const AnalysisEditor: React.FC<Props> = ({
             <div className="surface rounded-xl p-5">
               <div className="flex items-end gap-6 flex-wrap">
                 <div className="space-y-2">
-                  <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Director Mode</label>
+                  <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Style</label>
                   <div className="flex gap-1 surface-inset rounded-md p-0.5">
                     <button
                       onClick={() => onUpdateProject({ videoMode: 'montage' })}
                       className={`px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${project.videoMode === 'montage' ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
+                      title="Quick cuts, varied angles, visual variety — each shot is a self-contained moment"
                     >
                       Montage
                     </button>
                     <button
                       onClick={() => onUpdateProject({ videoMode: 'cinematic' })}
                       className={`px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${project.videoMode === 'cinematic' ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
+                      title="Smooth visual flow, shots connect to each other with continuity between frames"
                     >
                       Cinematic
                     </button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block" title={`${getVideoModel(project.videoModel).label} allows: ${getVideoModel(project.videoModel).durations.map(d => `${d}s`).join(', ')}`}>
-                    Pacing <span className="text-zinc-400 normal-case tracking-normal font-normal">· {getVideoModel(project.videoModel).label}</span>
-                  </label>
-                  <div className="flex gap-1 surface-inset rounded-md p-0.5">
-                    {getVideoModel(project.videoModel).durations.map(d => (
-                      <button
-                        key={d}
-                        onClick={() => onUpdateProject({ targetDuration: d })}
-                        className={`px-3 py-1.5 rounded text-[11px] font-mono transition-colors ${project.targetDuration === d ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
-                      >
-                        {d}s
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {(() => {
+                  const model = getVideoModel(project.videoModel);
+                  const durations = model.durations;
+                  // Single-duration models show inline text, multi-duration show buttons
+                  return durations.length === 1 ? (
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Shot length</label>
+                      <div className="px-3 py-1.5 text-[11px] font-mono text-zinc-300">{durations[0]}s <span className="text-zinc-500 font-sans">(fixed by {model.label})</span></div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Shot length</label>
+                      <div className="flex gap-1 surface-inset rounded-md p-0.5">
+                        {durations.map(d => (
+                          <button
+                            key={d}
+                            onClick={() => onUpdateProject({ targetDuration: d })}
+                            className={`px-3 py-1.5 rounded text-[11px] font-mono transition-colors ${project.targetDuration === d ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
+                          >
+                            {d}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center gap-2 ml-auto">
                   {project.scenes.length > 0 && (
                     <button

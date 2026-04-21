@@ -802,22 +802,48 @@ router.post('/:id/analyze-audio', async (req, res) => {
     const audioBase64 = await readAsBase64(project.audio_path);
     const audioMime = mimeFromExt(project.audio_path);
     const audioRef = [{ type: 'audio' as const, label: 'Project audio', url: storageUrl(project.audio_path) }];
-
     const t0 = Date.now();
-    const [structureResult, meaningResult] = await Promise.allSettled([
+
+    // Step 1: Transcribe lyrics (if missing) + detect structure — in parallel
+    const needsLyrics = !project.lyrics;
+    const [lyricsResult, structureResult] = await Promise.allSettled([
+      needsLyrics ? transcribeLyrics(audioBase64, audioMime) : Promise.resolve(project.lyrics as string),
       detectStructure(audioBase64, audioMime),
-      project.lyrics
-        ? summarizeMeaning(project.title || 'Untitled', 'Unknown', project.lyrics, '')
-        : Promise.resolve(''),
     ]);
+
+    const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
+    const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
+
+    if (lyricsResult.status === 'rejected') console.warn(`[${projectId}] lyrics transcription failed:`, lyricsResult.reason);
+    if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
+
+    // Step 2: Meaning — requires lyrics, so runs after step 1
+    let meaning = project.meaning || '';
+    let meaningError: string | undefined;
+    if (lyrics && !project.meaning) {
+      try {
+        meaning = await summarizeMeaning(project.title || 'Untitled', 'Unknown', lyrics, '');
+      } catch (e: any) {
+        console.warn(`[${projectId}] meaning failed:`, e);
+        meaningError = String(e);
+      }
+    }
     const analysisMs = Date.now() - t0;
 
-    const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
-    const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
-
-    if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
-    if (meaningResult.status === 'rejected') console.warn(`[${projectId}] meaning failed:`, meaningResult.reason);
-
+    // Log AI calls
+    if (needsLyrics) {
+      logCall({
+        projectId,
+        stage: 'transcribe',
+        model: 'gemini-3-pro-preview',
+        prompt: 'Transcribe lyrics from audio with timestamps.',
+        referenceInputs: audioRef,
+        responseSummary: lyrics ? `${lyrics.split('\n').length} lines` : 'FAILED',
+        durationMs: analysisMs,
+        costEstimate: 0.01,
+        error: lyricsResult.status === 'rejected' ? String(lyricsResult.reason) : undefined,
+      });
+    }
     logCall({
       projectId,
       stage: 'detect-structure',
@@ -831,17 +857,16 @@ router.post('/:id/analyze-audio', async (req, res) => {
       costEstimate: 0.01,
       error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
     });
-
-    if (project.lyrics) {
+    if (lyrics) {
       logCall({
         projectId,
         stage: 'summarize-meaning',
         model: 'claude-sonnet-4-6',
-        prompt: `Re-run: summarize meaning of "${project.title}".`,
+        prompt: `Summarize meaning of "${project.title}".`,
         responseSummary: meaning || 'FAILED',
         durationMs: analysisMs,
         costEstimate: 0.005,
-        error: meaningResult.status === 'rejected' ? String(meaningResult.reason) : undefined,
+        error: meaningError,
       });
     }
 
@@ -851,6 +876,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
       meaning,
       updated_at: new Date().toISOString(),
     };
+    if (lyrics && needsLyrics) statusUpdate.lyrics = lyrics;
     if (project.status === 'uploaded' || project.status === 'analyzing') {
       statusUpdate.status = 'analyzed';
     }
