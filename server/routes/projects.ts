@@ -1019,13 +1019,26 @@ router.get('/:id/renders', async (req, res) => {
     { orderBy: 'created_at', ascending: false },
   );
 
+  // The remotion-renderer uploads into its own bucket (via its SUPABASE_BUCKET
+  // env), so the mp4 may not live in this backend's `lahari-assets` bucket.
+  // `lahari_renders.video_url` is the authoritative URL the renderer returned;
+  // join on storage_path so the history shows URLs that actually load.
+  const renderRows = await selectAll(
+    'renders',
+    { project_id: projectId, status: 'completed' },
+  );
+  const urlByPath = new Map<string, string>();
+  for (const rr of renderRows as any[]) {
+    if (rr.storage_path && rr.video_url) urlByPath.set(rr.storage_path, rr.video_url);
+  }
+
   // Mark which render matches the queue row's current `video_url`, so the UI
   // can label it and refuse to delete it without confirmation.
   const queueRow = await findQueueByProjectIds([projectId]);
   const currentUrl = (queueRow as any)?.video_url || null;
 
   const renders = rows.map((r: any) => {
-    const videoUrl = storageUrl(r.file_path);
+    const videoUrl = urlByPath.get(r.file_path) ?? storageUrl(r.file_path);
     return {
       assetId: r.id,
       videoUrl,
@@ -1050,17 +1063,30 @@ router.delete('/:id/renders/:assetId', async (req, res) => {
   // If this asset is the one the queue row currently points at, clear the
   // queue's video_url so we don't leave a dangling reference. The row stays
   // `completed` — the artist may have more renders in the list.
+  //
+  // Compare against the renderer-provided URL stored on lahari_renders when
+  // available — the renderer can upload to a different bucket than this
+  // backend's default, so storageUrl(file_path) wouldn't match queue.video_url.
   const queueRow = await findQueueByProjectIds([projectId]);
   const currentUrl = (queueRow as any)?.video_url || null;
-  const thisUrl = storageUrl(asset.file_path);
+  const renderRow: any = await selectOne('renders', {
+    project_id: projectId, storage_path: asset.file_path, status: 'completed',
+  });
+  const thisUrl = renderRow?.video_url ?? storageUrl(asset.file_path);
   if (queueRow && currentUrl === thisUrl) {
     await updateQueueItem(queueRow.id, { video_url: null });
   }
 
   // Remove the mp4 from Supabase Storage (failure here isn't fatal — the row
   // removal below is the source of truth) and then drop the assets row.
+  //
+  // Renderer-uploaded renders live in a separate bucket (RENDER_STORAGE_BUCKET,
+  // default `videos`) to match the renderer's SUPABASE_BUCKET. Legacy assets
+  // with no matching `lahari_renders` row fall back to the default bucket.
+  const renderBucket = process.env.RENDER_STORAGE_BUCKET ?? 'videos';
+  const deleteBucket = renderRow ? renderBucket : undefined;
   try {
-    await deleteFile(asset.file_path);
+    await deleteFile(asset.file_path, deleteBucket);
   } catch (err) {
     console.warn(`[renders ${projectId}] storage delete failed for ${asset.file_path}:`, err);
   }

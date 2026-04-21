@@ -132,10 +132,12 @@ export const uploadFromTmp = async (
 };
 
 /**
- * Delete a file from Supabase Storage.
+ * Delete a file from Supabase Storage. `bucket` overrides the default
+ * `lahari-assets` — used when deleting renderer-uploaded mp4s that live
+ * in a separate renders bucket (e.g. `videos`).
  */
-export const deleteFile = async (key: string): Promise<void> => {
-  await getSB().storage.from(BUCKET).remove([key]);
+export const deleteFile = async (key: string, bucket: string = BUCKET): Promise<void> => {
+  await getSB().storage.from(bucket).remove([key]);
   _cache.delete(key);
 };
 
