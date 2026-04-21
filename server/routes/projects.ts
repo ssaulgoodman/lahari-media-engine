@@ -131,7 +131,14 @@ const forkProject = async (sourceId: string): Promise<string> => {
     video_mode: src.video_mode,
     target_duration: src.target_duration,
     cost_estimate: src.cost_estimate,
-    style_exploration: src.style_exploration,
+    style_exploration: (() => {
+      if (!src.style_exploration) return null;
+      // Remap assetId references inside style_exploration JSON
+      let se = JSON.parse(src.style_exploration);
+      if (se.slots) se.slots = se.slots.map((s: any) => ({ ...s, assetId: remapAsset(s.assetId) || s.assetId }));
+      if (se.userSlot?.assetId) se.userSlot = { ...se.userSlot, assetId: remapAsset(se.userSlot.assetId) || se.userSlot.assetId };
+      return JSON.stringify(se);
+    })(),
     video_model: src.video_model,
     aspect_ratio: src.aspect_ratio,
     video_resolution: src.video_resolution,
