@@ -11,12 +11,12 @@ import { extractLastFrame } from '../services/ffmpeg.js';
 import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
+import { paramStr, ScopeError, requireCastMember, requireEnvironment, requireAsset } from './scope-helpers.js';
 import { mountVideoRoutes } from './generate-video.js';
+import { mountStyleRoutes } from './generate-style.js';
 
 const router = Router();
 
-// Helper: get route param as string (Express 5 returns string | string[])
-const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Parse "M:SS" or "MM:SS" to seconds
@@ -26,43 +26,7 @@ const parseTimestamp = (t: string): number => {
   return parts[0] * 60 + (parts[1] || 0);
 };
 
-// Body-ID scoping helpers — verify child belongs to the URL project.
-// Throw with a statusCode so catch blocks can return the right HTTP status.
-class ScopeError extends Error { statusCode: number; constructor(msg: string, code: number) { super(msg); this.statusCode = code; } }
-const requireCastMember = async (projectId: string, memberId: string) => {
-  const row = await selectOne('cast_members', { id: memberId });
-  if (!row) throw new ScopeError('Cast member not found', 404);
-  if (row.project_id !== projectId) throw new ScopeError('Cast member does not belong to this project', 403);
-  return row;
-};
-const requireEnvironment = async (projectId: string, envId: string) => {
-  const row = await selectOne('environments', { id: envId });
-  if (!row) throw new ScopeError('Environment not found', 404);
-  if (row.project_id !== projectId) throw new ScopeError('Environment does not belong to this project', 403);
-  return row;
-};
-const requireAsset = async (projectId: string, assetId: string) => {
-  const row = await selectOne('assets', { id: assetId });
-  if (!row) throw new ScopeError('Asset not found', 404);
-  if (row.project_id === projectId) return row;
-  // Asset belongs to a different project — check if it's a parent in the fork chain.
-  // Forks share assets via file_path but old style_exploration JSON may reference parent IDs.
-  const project = await selectOne('projects', { id: projectId });
-  if (project?.parent_project_id) {
-    let parentId = project.parent_project_id;
-    for (let i = 0; i < 10 && parentId; i++) { // max 10 levels deep
-      if (row.project_id === parentId) {
-        // Copy the asset to this project so future references work directly
-        const newId = uuidv4();
-        await insertRow('assets', { id: newId, project_id: projectId, category: row.category, file_path: row.file_path, prompt: row.prompt, metadata: row.metadata });
-        return { ...row, id: newId, project_id: projectId };
-      }
-      const parent = await selectOne('projects', { id: parentId });
-      parentId = parent?.parent_project_id;
-    }
-  }
-  throw new ScopeError('Asset does not belong to this project', 403);
-};
+// Scope helpers imported from scope-helpers.ts — centralized for all generate routes
 
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
@@ -147,198 +111,9 @@ router.post('/:id/generate-styles', async (req, res) => {
   }
 });
 
-// ─── Brainstorm Style Directions (text only, no images) ─────────────
 
-router.post('/:id/brainstorm-styles', async (req, res) => {
-  const project = await selectOne('projects', { id: paramStr(req.params.id) });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+// brainstorm-styles, visualize-style, refine-style-direction, lock-style → generate-style.ts
 
-  const concept = JSON.parse(project.locked_concept || '{}');
-  const structure = JSON.parse(project.musical_structure || '[]');
-  const { userNotes } = req.body;
-
-  try {
-    console.log(`[${project.id}] Brainstorming style directions...`);
-    const t0 = Date.now();
-    // Build script summary for richer brainstorm context
-    const scenes = await selectColumns('scenes', 'section_label, narrative_description', { project_id: project.id }, { orderBy: 'sort_order', ascending: true });
-    const scriptSummary = scenes.length > 0
-      ? scenes.map((s: any) => `[${s.section_label}] ${s.narrative_description}`).join('\n')
-      : undefined;
-
-    const directions = await brainstormStyleDirections(
-      project.lyrics || '',
-      structure,
-      project.meaning || '',
-      concept,
-      userNotes,
-      scriptSummary
-    );
-    const durationMs = Date.now() - t0;
-
-    await logCall({
-      projectId: project.id,
-      stage: 'brainstorm-styles',
-      model: 'claude-opus-4-6',
-      prompt: `Brainstorm 4 style directions | Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood}${userNotes ? ` | User notes: ${userNotes}` : ''}`,
-      contextChain: await buildContextChain(project.id),
-      responseSummary: JSON.stringify(directions),
-      durationMs,
-      costEstimate: 0.01,
-    });
-
-    res.json({ directions });
-  } catch (err: any) {
-    console.error(`[${project.id}] Brainstorm failed:`, err);
-    await logCall({
-      projectId: project.id,
-      stage: 'brainstorm-styles',
-      model: 'claude-opus-4-6',
-      prompt: `Brainstorm 4 style directions`,
-      durationMs: 0,
-      error: err.message,
-    });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
-  }
-});
-
-// ─── Visualize a Single Style Direction (one image) ─────────────────
-
-router.post('/:id/visualize-style', async (req, res) => {
-  const project = await selectOne('projects', { id: paramStr(req.params.id) });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const concept = JSON.parse(project.locked_concept || '{}');
-  const { prompt: stylePrompt } = req.body;
-  if (!stylePrompt) return res.status(400).json({ error: 'prompt required' });
-
-  // Build the full generation prompt and save it for visibility
-  let genPrompt = project.style_generation_prompt as string | null;
-  if (!genPrompt) {
-    genPrompt = buildStylePrompt(stylePrompt, concept.deity || project.title);
-    await updateRows('projects', { id: project.id }, { style_generation_prompt: genPrompt });
-  }
-
-  try {
-    console.log(`[${project.id}] Visualizing style direction...`);
-    const t0 = Date.now();
-    const assetPath = await generateSingleStyleImage(
-      stylePrompt,
-      concept.deity || project.title,
-      genPrompt,
-    );
-    const durationMs = Date.now() - t0;
-
-    const assetId = uuidv4();
-    await insertRow('assets', { id: assetId, project_id: project.id, category: 'style', file_path: assetPath, prompt: stylePrompt });
-
-    await logCall({
-      projectId: project.id,
-      stage: 'visualize-style',
-      model: 'gemini-3-pro-image-preview',
-      prompt: stylePrompt,
-      contextChain: await buildContextChain(project.id),
-      responseSummary: `Generated style image`,
-      outputAssetIds: [assetId],
-      durationMs,
-      costEstimate: 0.01,
-    });
-
-    res.json({ assetId, url: storageUrl(assetPath) });
-  } catch (err: any) {
-    console.error(`[${project.id}] Visualize style failed:`, err);
-    await logCall({
-      projectId: project.id,
-      stage: 'visualize-style',
-      model: 'gemini-3-pro-image-preview',
-      prompt: stylePrompt,
-      durationMs: 0,
-      error: err.message,
-    });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
-  }
-});
-
-// ─── Refine Style Direction (text only) ─────────────────────────────
-
-router.post('/:id/refine-style-direction', async (req, res) => {
-  const project = await selectOne('projects', { id: paramStr(req.params.id) });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const concept = JSON.parse(project.locked_concept || '{}');
-  const { description, feedback } = req.body;
-
-  try {
-    const t0 = Date.now();
-    const refined = await refineStyleDirection(description, feedback, concept);
-    const durationMs = Date.now() - t0;
-
-    // Clear the cached generation prompt so next visualize rebuilds from the refined description
-    await updateRows('projects', { id: project.id }, { style_generation_prompt: null });
-
-    await logCall({
-      projectId: project.id,
-      stage: 'refine-style-direction',
-      model: 'claude-sonnet-4-6',
-      prompt: `Refine: "${description.substring(0, 100)}..." | Feedback: "${feedback}"`,
-      contextChain: await buildContextChain(project.id),
-      responseSummary: `${refined.title}: ${refined.description.substring(0, 150)}`,
-      durationMs,
-      costEstimate: 0.005,
-    });
-
-    res.json(refined);
-  } catch (err: any) {
-    console.error(`[${project.id}] Refine direction failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
-  }
-});
-
-// ─── Lock Style (with DNA enrichment) ───────────────────────────────
-
-router.post('/:id/lock-style', async (req, res) => {
-  const { assetId, styleDescription } = req.body;
-  if (!assetId) return res.status(400).json({ error: 'assetId required' });
-
-  const projectId = paramStr(req.params.id);
-  const asset = await requireAsset(projectId, assetId);
-
-  // Enrich style DNA from the locked image
-  let enrichedDescription = styleDescription || '';
-  try {
-    {
-      console.log(`[${projectId}] Enriching style DNA...`);
-      const t0 = Date.now();
-      const imageBase64 = await readAsBase64(asset.file_path);
-      const mimeType = mimeFromExt(asset.file_path);
-      enrichedDescription = await enrichStyleDNA(imageBase64, mimeType, styleDescription || '');
-      const durationMs = Date.now() - t0;
-
-      await logCall({
-        projectId,
-        stage: 'enrich-style-dna',
-        model: 'claude-sonnet-4-6',
-        prompt: `Enrich style DNA from locked image | Short desc: ${(styleDescription || '').substring(0, 100)}`,
-        referenceInputs: [{ type: 'image', label: 'Locked style image', url: storageUrl(asset.file_path) }],
-        contextChain: await buildContextChain(projectId),
-        responseSummary: enrichedDescription.substring(0, 300),
-        durationMs,
-        costEstimate: 0.01,
-      });
-    }
-  } catch (err) {
-    console.error('[lock-style] Style DNA enrichment failed, using short description:', err);
-  }
-
-  await updateRows('projects', { id: projectId }, {
-    status: 'style_locked',
-    style_asset_id: assetId,
-    style_description: enrichedDescription,
-    updated_at: new Date().toISOString(),
-  });
-
-  res.json(await getFullProject(projectId));
-});
 
 // ─── Phase unlock endpoints ─────────────────────────────────────────
 // All unlocks allow reverting by one step. Downstream-facing phases
@@ -394,98 +169,9 @@ router.post('/:id/unlock-environments', async (req, res) => {
   res.json({ ok: true, status: 'characters_locked' });
 });
 
-// ─── Upload + Lock Style Image (skip visualize) ─────────────────────
-// User uploads an image, we save it, analyze for style description,
-// and lock it as the project's style ref in one shot.
-router.post('/:id/upload-and-lock-style', upload.single('image'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Image required' });
-  const projectId = paramStr(req.params.id);
 
-  try {
-    // Save the uploaded image as a project asset
-    const ext = req.file.mimetype.includes('png') ? 'png' : req.file.mimetype.includes('jpeg') ? 'jpg' : 'png';
-    const filePath = await saveBuffer(req.file.buffer, 'images', ext);
-    const assetId = uuidv4();
-    await insertRow('assets', { id: assetId, project_id: projectId, category: 'style', file_path: filePath });
+// upload-and-lock-style, analyze-style-image → generate-style.ts
 
-    // Analyze for style description so downstream shot gen has something to reference
-    const t0 = Date.now();
-    let styleDesc = 'User-uploaded style reference';
-    try {
-      const imageBase64 = req.file.buffer.toString('base64');
-      styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
-    } catch (err: any) {
-      console.warn(`[${projectId}] style analysis failed, using default description:`, err.message);
-    }
-    const durationMs = Date.now() - t0;
-
-    await updateRows('projects', { id: projectId }, {
-      status: 'style_locked',
-      style_asset_id: assetId,
-      style_description: styleDesc,
-      updated_at: new Date().toISOString(),
-    });
-
-    await logCall({
-      projectId,
-      stage: 'upload-and-lock-style',
-      model: 'claude-sonnet-4-6',
-      prompt: 'User uploaded image directly as style — analyzed for description, locked as style ref.',
-      referenceInputs: [{ type: 'image', label: 'User-uploaded style', url: storageUrl(filePath) }],
-      contextChain: await buildContextChain(projectId),
-      responseSummary: styleDesc.substring(0, 200),
-      outputAssetIds: [assetId],
-      durationMs,
-      costEstimate: 0.01,
-    });
-
-    res.json(await getFullProject(projectId));
-  } catch (err: any) {
-    console.error(`[${projectId}] upload-and-lock-style failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
-  }
-});
-
-// ─── Analyze Uploaded Style Image ───────────────────────────────────
-
-router.post('/:id/analyze-style-image', upload.single('image'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Image required' });
-  const projectId = paramStr(req.params.id);
-  const prompt = 'Analyze uploaded style reference image for visual style description';
-
-  try {
-    const imageBase64 = req.file.buffer.toString('base64');
-    const t0 = Date.now();
-    const styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
-    const durationMs = Date.now() - t0;
-
-    await updateRows('projects', { id: projectId }, { style_description: styleDesc, updated_at: new Date().toISOString() });
-
-    await logCall({
-      projectId,
-      stage: 'analyze-style-image',
-      model: 'claude-sonnet-4-6',
-      prompt,
-      referenceInputs: [{ type: 'image', label: 'User-uploaded style reference' }],
-      contextChain: await buildContextChain(projectId),
-      responseSummary: styleDesc.substring(0, 200),
-      durationMs,
-      costEstimate: 0.01,
-    });
-
-    res.json({ styleDescription: styleDesc, project: await getFullProject(projectId) });
-  } catch (err: any) {
-    await logCall({
-      projectId,
-      stage: 'analyze-style-image',
-      model: 'claude-sonnet-4-6',
-      prompt,
-      durationMs: 0,
-      error: err.message,
-    });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
-  }
-});
 
 // ─── Generate Character Looks ───────────────────────────────────────
 
@@ -2216,6 +1902,7 @@ router.post('/:id/chat', async (req, res) => {
 });
 
 // ─── Mount extracted route modules ──────────────────────────────────
+mountStyleRoutes(router);
 mountVideoRoutes(router);
 
 export { router as generateRouter };

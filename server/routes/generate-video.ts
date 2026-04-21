@@ -11,8 +11,7 @@ import { extractLastFrame } from '../services/ffmpeg.js';
 import { refreshChainedShotPrompt } from '../services/claude.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
-
-const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
+import { paramStr } from './scope-helpers.js';
 
 /**
  * Mount video generation routes onto the given router.
