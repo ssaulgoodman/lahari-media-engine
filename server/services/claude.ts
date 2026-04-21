@@ -484,7 +484,7 @@ MEANING: ${context.meaning}
 
 MUSICAL STRUCTURE: ${context.musicalStructure}
 
-SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = floor(scene_duration / ${pacing}). This is a HARD CONSTRAINT — do not exceed the shot budget for any scene. If the current script has too many shots in a scene, reduce them to fit.
+SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
 
 ═══════════════════════════════════════
 CURRENT SCRIPT (your starting point):
@@ -569,7 +569,7 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\nShots per scene = floor(scene_duration / ${pacing}). Fix and resubmit.` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\nShots per scene = ceil(scene_duration / ${pacing}). Fix and resubmit.` }
       ] },
     ];
   }
