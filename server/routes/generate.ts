@@ -43,8 +43,24 @@ const requireEnvironment = async (projectId: string, envId: string) => {
 const requireAsset = async (projectId: string, assetId: string) => {
   const row = await selectOne('assets', { id: assetId });
   if (!row) throw new ScopeError('Asset not found', 404);
-  if (row.project_id !== projectId) throw new ScopeError('Asset does not belong to this project', 403);
-  return row;
+  if (row.project_id === projectId) return row;
+  // Asset belongs to a different project — check if it's a parent in the fork chain.
+  // Forks share assets via file_path but old style_exploration JSON may reference parent IDs.
+  const project = await selectOne('projects', { id: projectId });
+  if (project?.parent_project_id) {
+    let parentId = project.parent_project_id;
+    for (let i = 0; i < 10 && parentId; i++) { // max 10 levels deep
+      if (row.project_id === parentId) {
+        // Copy the asset to this project so future references work directly
+        const newId = uuidv4();
+        await insertRow('assets', { id: newId, project_id: projectId, category: row.category, file_path: row.file_path, prompt: row.prompt, metadata: row.metadata });
+        return { ...row, id: newId, project_id: projectId };
+      }
+      const parent = await selectOne('projects', { id: parentId });
+      parentId = parent?.parent_project_id;
+    }
+  }
+  throw new ScopeError('Asset does not belong to this project', 403);
 };
 
 // Ownership check for all /:id/* routes — verify user owns the project
