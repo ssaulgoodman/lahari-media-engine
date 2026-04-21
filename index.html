@@ -73,7 +73,11 @@
         -moz-osx-font-smoothing: grayscale;
       }
       h1, h2, h3, h4 { text-wrap: balance; }
+      p, span, label { text-wrap: pretty; }
       .font-mono, [class*="font-mono"] { font-variant-numeric: tabular-nums; }
+      /* Generated images: subtle inset outline so they don't bleed into dark bg */
+      img[src*="supabase"], img[alt*="Shot"], img[alt*="shot"], img[alt*="frame"],
+      .shot-image, .ref-image { outline: 1px solid rgba(255,255,255,0.06); outline-offset: -1px; border-radius: inherit; }
       ::selection {
         background: rgba(79, 70, 229, 0.3);
         color: white;
@@ -117,14 +121,20 @@
 
          Background: body is #141418 (warm near-black, slightly lifted from pure 950).
       */
-      /* Surface system */
+      /* Surface system — multi-layer shadows for depth instead of flat borders */
       .surface {
         background: rgba(255, 255, 255, 0.03);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+          0 1px 2px -1px rgba(0, 0, 0, 0.15),
+          0 2px 4px 0 rgba(0, 0, 0, 0.08);
       }
       .surface-raised {
         background: rgba(255, 255, 255, 0.05);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 8px rgba(0, 0, 0, 0.3);
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+          0 2px 4px -1px rgba(0, 0, 0, 0.2),
+          0 4px 12px 0 rgba(0, 0, 0, 0.25);
       }
       .surface-inset {
         background: rgba(0, 0, 0, 0.25);
