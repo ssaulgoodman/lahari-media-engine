@@ -291,6 +291,18 @@ const getFullProject = async (projectId: string) => {
     for (const a of assets) assetMap.set(a.id, a);
   }
 
+  // Fetch shot-level uploaded refs (not tracked by ID on shot row)
+  const shotIds = allShots.map((s: any) => s.id);
+  const shotRefAssets = shotIds.length > 0
+    ? (await getSB().from(T.assets).select('id, shot_id, file_path').eq('category', 'shot_ref').in('shot_id', shotIds).then(r => r.data || []))
+    : [];
+  const shotRefsByShot = new Map<string, { id: string; url: string }[]>();
+  for (const ref of shotRefAssets) {
+    const arr = shotRefsByShot.get(ref.shot_id) || [];
+    arr.push({ id: ref.id, url: storageUrl(ref.file_path) });
+    shotRefsByShot.set(ref.shot_id, arr);
+  }
+
   const resolveUrl = (id: string | null | undefined) => {
     if (!id) return undefined;
     const a = assetMap.get(id);
@@ -314,6 +326,7 @@ const getFullProject = async (projectId: string) => {
       shot.videoUrl = resolveUrl(shot.video_asset_id);
       shot.castIds = JSON.parse(shot.cast_ids || '[]');
       shot.critique = shot.critique ? JSON.parse(shot.critique) : undefined;
+      shot.refImages = shotRefsByShot.get(shot.id) || [];
     }
   }
 

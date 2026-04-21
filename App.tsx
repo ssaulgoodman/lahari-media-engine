@@ -662,6 +662,32 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const handleUploadShotRef = async (shotId: string, file: File) => {
+    if (!project) return;
+    try {
+      const result = await api.uploadShotRef(project.id, shotId, file);
+      // Optimistic: add the ref to the shot
+      updateShotOptimistic(shotId, {
+        refImages: [...(project.scenes.flatMap(s => s.shots).find(s => s.id === shotId)?.refImages || []), result.ref],
+      });
+    } catch (err: any) {
+      setError(`Upload ref failed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteShotRef = async (shotId: string, assetId: string) => {
+    if (!project) return;
+    const shot = project.scenes.flatMap(s => s.shots).find(s => s.id === shotId);
+    const prev = shot?.refImages || [];
+    updateShotOptimistic(shotId, { refImages: prev.filter(r => r.id !== assetId) });
+    try {
+      await api.deleteShotRef(project.id, shotId, assetId);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { refImages: prev });
+      setError(`Delete ref failed: ${err.message}`);
+    }
+  };
+
   const handleRewriteShotPrompts = async (userNote?: string) => {
     if (!project) return;
     setLoading(true);
@@ -1365,6 +1391,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onUploadEndFrame={handleUploadEndFrame}
                     onRefineEndFramePrompt={handleRefineEndFramePrompt}
                     onRefineVideoPrompt={handleRefineVideoPrompt}
+                    onUploadShotRef={handleUploadShotRef}
+                    onDeleteShotRef={handleDeleteShotRef}
                     onSetProject={setProject}
                     isLoading={loading}
                   />

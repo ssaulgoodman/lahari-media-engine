@@ -16,6 +16,8 @@ export interface VideoModelSpec {
   supportsLastFrame: boolean;
   /** Whether this model accepts reference images for consistency. */
   supportsRefs: boolean;
+  /** Whether refs work alongside start/end frames (Veo=true, Seedance=false due to mutual exclusivity). */
+  refsWithFrames: boolean;
 }
 
 export const VIDEO_MODELS: VideoModelSpec[] = [
@@ -27,6 +29,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     costPerSec: 0.10,
     supportsLastFrame: true,
     supportsRefs: true,
+    refsWithFrames: true,
   },
   {
     key: 'veo-3.1',
@@ -36,6 +39,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     costPerSec: 0.20,
     supportsLastFrame: true,
     supportsRefs: true,
+    refsWithFrames: true,
   },
   {
     key: 'seedance-2.0-fast',
@@ -46,6 +50,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     note: 'Up to 9 ref images',
     supportsLastFrame: true,
     supportsRefs: true,
+    refsWithFrames: false,
   },
   {
     key: 'seedance-2.0',
@@ -56,6 +61,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     note: 'Higher quality, up to 9 ref images',
     supportsLastFrame: true,
     supportsRefs: true,
+    refsWithFrames: false,
   },
 ];
 

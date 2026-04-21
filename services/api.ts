@@ -489,6 +489,32 @@ export const uploadEndFrame = async (projectId: string, shotId: string, file: Fi
   return handleResponse(res);
 };
 
+export const uploadShotRef = async (projectId: string, shotId: string, file: File): Promise<{ ok: true; ref: { id: string; url: string } }> => {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/upload-ref`, { method: 'POST', body: form });
+  return handleResponse(res);
+};
+
+export const deleteShotRef = async (projectId: string, shotId: string, assetId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/delete-ref`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assetId }),
+  });
+  return handleResponse(res);
+};
+
+export const lockAllSceneShots = async (projectId: string, sceneId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/scenes/${sceneId}/lock-all`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const unlockAllSceneShots = async (projectId: string, sceneId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/scenes/${sceneId}/unlock-all`, { method: 'POST' });
+  return handleResponse(res);
+};
+
 export const generateShotVideo = async (projectId: string, shotId: string, promptOverride?: string, signal?: AbortSignal) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-video`, {
     method: 'POST',

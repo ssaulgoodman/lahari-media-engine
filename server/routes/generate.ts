@@ -50,6 +50,14 @@ router.param('id', async (req, res, next, id) => {
 });
 
 // Child scoping: verify shotId belongs to a scene in this project
+router.param('sceneId', async (req, res, next, sceneId) => {
+  const sid = Array.isArray(sceneId) ? sceneId[0] : sceneId;
+  const scene = await selectOne('scenes', { id: sid });
+  if (!scene) return res.status(404).json({ error: 'Scene not found' });
+  if (scene.project_id !== paramStr(req.params.id)) return res.status(403).json({ error: 'Scene does not belong to this project' });
+  next();
+});
+
 router.param('shotId', async (req, res, next, shotId) => {
   const sid = Array.isArray(shotId) ? shotId[0] : shotId;
   const shot = await selectOne('shots', { id: sid });
@@ -1466,6 +1474,10 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       if (failedAsset) failedImagePath = failedAsset.file_path;
     }
 
+    // Fetch user-uploaded shot refs
+    const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
+    const additionalRefs = shotRefAssets.map((a: any) => ({ imagePath: a.file_path }));
+
     const imagePath = await generateShotStartFrame({
       visualPrompt: shotPrompt,
       styleDNA: project.style_description || 'Cinematic',
@@ -1477,6 +1489,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       userFeedback,
       failedImagePath,
       aspectRatio: project.aspect_ratio || '16:9',
+      additionalRefs: additionalRefs.length > 0 ? additionalRefs : undefined,
     });
 
     const durationMs = Date.now() - t0;
@@ -1868,6 +1881,32 @@ router.post('/:id/shots/:shotId/upload-end-frame', upload.single('image'), async
   res.json(await getFullProject(projectId));
 });
 
+// ─── Shot Reference Images ─────────────────────────────────────────
+
+router.post('/:id/shots/:shotId/upload-ref', upload.single('image'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  if (!req.file) return res.status(400).json({ error: 'Image file required' });
+
+  const ext = path.extname(req.file.originalname).slice(1) || 'png';
+  const filePath = await saveBuffer(req.file.buffer, 'images', ext);
+  const assetId = uuidv4();
+  await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_ref', file_path: filePath });
+  // Return the new ref so frontend can add it optimistically
+  res.json({ ok: true, ref: { id: assetId, url: storageUrl(filePath) } });
+});
+
+router.post('/:id/shots/:shotId/delete-ref', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { assetId } = req.body;
+  if (!assetId) return res.status(400).json({ error: 'assetId required' });
+  // Verify it belongs to this project + shot
+  const asset = await selectOne('assets', { id: assetId, project_id: projectId, category: 'shot_ref' });
+  if (!asset) return res.status(404).json({ error: 'Ref not found' });
+  await deleteRows('assets', { id: assetId });
+  res.json({ ok: true });
+});
+
 // ─── Lock Shot ───────────────────────────────────────────────────────
 
 router.post('/:id/shots/:shotId/lock', async (req, res) => {
@@ -1885,6 +1924,25 @@ router.post('/:id/shots/:shotId/unlock', async (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   await updateRows('shots', { id: shot.id }, { locked: 0 });
+  res.json({ ok: true });
+});
+
+// ─── Batch lock/unlock all shots in a scene ────────────────────────
+
+router.post('/:id/scenes/:sceneId/lock-all', async (req, res) => {
+  const sceneId = paramStr(req.params.sceneId);
+  const shots = await selectAll('shots', { scene_id: sceneId });
+  // Only lock shots that have both start frame + video
+  const lockable = shots.filter((s: any) => s.image_asset_id && s.video_asset_id && !s.locked);
+  for (const shot of lockable) {
+    await updateRows('shots', { id: shot.id }, { locked: 1 });
+  }
+  res.json({ ok: true, locked: lockable.length, skipped: shots.length - lockable.length });
+});
+
+router.post('/:id/scenes/:sceneId/unlock-all', async (req, res) => {
+  const sceneId = paramStr(req.params.sceneId);
+  await getSB().from(T.shots).update({ locked: 0 }).eq('scene_id', sceneId);
   res.json({ ok: true });
 });
 
@@ -2093,6 +2151,11 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
         const envAsset = await selectOne('assets', { id: env.reference_asset_id });
         if (envAsset) referenceImagePaths.push(envAsset.file_path);
       }
+    }
+    // User-uploaded shot refs
+    const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
+    for (const sra of shotRefAssets) {
+      if (referenceImagePaths.length < 9) referenceImagePaths.push(sra.file_path);
     }
 
     // End frame for reverse-chain (if the model supports it)

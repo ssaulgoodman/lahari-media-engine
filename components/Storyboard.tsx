@@ -5,7 +5,7 @@ import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { ShotVideoPreview } from './ShotVideoPreview';
-import { getShotHistory, revertShotFrame, revertShotEndFrame } from '../services/api';
+import { getShotHistory, revertShotFrame, revertShotEndFrame, lockAllSceneShots, unlockAllSceneShots } from '../services/api';
 import type { VersionEntry } from '../services/api';
 import { getVideoModel } from '../constants/videoModels';
 
@@ -47,6 +47,8 @@ interface Props {
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
   onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
   onRefineVideoPrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
+  onDeleteShotRef?: (shotId: string, assetId: string) => void | Promise<void>;
   onSetProject?: (project: ApiProject) => void;
   /** Shot IDs waiting for a bulk-frame worker (ordered — position = Nth in line). */
   frameQueue?: string[];
@@ -55,7 +57,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onSetProject, frameQueue, videoQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, isLoading }) => {
   const [showFrames, setShowFrames] = useState<Record<string, boolean>>({});
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video' | 'compiled'>>({});
@@ -219,24 +221,61 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
               const inProgress = sceneVideoCount > 0 && !done;
               const isActive = i === activeSceneIdx;
               const dotClass = done ? 'bg-white' : inProgress ? 'bg-amber-400/80' : sceneFrameCount > 0 ? 'bg-white/50' : 'bg-white/15';
+              const lockableShots = s.shots.filter(x => x.imageUrl && x.videoUrl);
+              const lockedCount = s.shots.filter(x => x.locked).length;
+              const allLocked = lockableShots.length > 0 && lockedCount === lockableShots.length;
               return (
-                <button
-                  key={s.id}
-                  onClick={() => {
-                    onSceneChange(i);
-                    const el = document.getElementById(`scene-${s.id}`);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors flex items-center gap-1.5 flex-shrink-0 border ${
-                    isActive
-                      ? 'bg-white/[0.08] text-white border-white/[0.12]'
-                      : 'bg-transparent text-zinc-300 border-white/[0.04] hover:bg-white/[0.04]'
-                  }`}
-                  title={`Scene ${i + 1} · ${s.shots.length} shot${s.shots.length === 1 ? '' : 's'} · ${sceneVideoCount}/${s.shots.length} videos`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-                  <span className="font-mono">S{i + 1}</span>
-                </button>
+                <div key={s.id} className="flex items-center gap-0 flex-shrink-0">
+                  <button
+                    onClick={() => {
+                      onSceneChange(i);
+                      const el = document.getElementById(`scene-${s.id}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className={`px-2.5 py-1 rounded-l-md text-[11px] font-medium transition-colors flex items-center gap-1.5 border border-r-0 ${
+                      isActive
+                        ? 'bg-white/[0.08] text-white border-white/[0.12]'
+                        : 'bg-transparent text-zinc-300 border-white/[0.04] hover:bg-white/[0.04]'
+                    }`}
+                    title={`Scene ${i + 1} · ${s.shots.length} shot${s.shots.length === 1 ? '' : 's'} · ${sceneVideoCount}/${s.shots.length} videos`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+                    <span className="font-mono">S{i + 1}</span>
+                  </button>
+                  {lockableShots.length > 0 && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!project) return;
+                        try {
+                          if (allLocked) {
+                            await unlockAllSceneShots(project.id, s.id);
+                            s.shots.forEach(sh => onUpdateShot(s.id, sh.id, { locked: false }));
+                          } else {
+                            const result = await lockAllSceneShots(project.id, s.id);
+                            s.shots.forEach(sh => {
+                              if (sh.imageUrl && sh.videoUrl) onUpdateShot(s.id, sh.id, { locked: true });
+                            });
+                          }
+                        } catch (err: any) {
+                          console.error('Scene lock/unlock failed:', err);
+                        }
+                      }}
+                      className={`px-1.5 py-1 rounded-r-md text-[11px] transition-colors border ${
+                        isActive ? 'border-white/[0.12]' : 'border-white/[0.04]'
+                      } ${allLocked ? 'text-white/60 hover:text-amber-400/80 bg-white/[0.04]' : 'text-zinc-500 hover:text-white/60 bg-transparent hover:bg-white/[0.04]'}`}
+                      title={allLocked ? `Unlock all ${lockedCount} shots in scene ${i + 1}` : `Lock ${lockableShots.length - lockedCount} ready shots in scene ${i + 1}`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        {allLocked ? (
+                          <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>
+                        ) : (
+                          <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>
+                        )}
+                      </svg>
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -1053,7 +1092,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               shotCast.forEach(c => { if (c.referenceImageUrl) tabRefs.push({ label: c.name, url: c.referenceImageUrl }); });
                               if (shotEnv?.referenceImageUrl) tabRefs.push({ label: shotEnv.name, url: shotEnv.referenceImageUrl });
                             }
-                            if (tabRefs.length === 0) return null;
+                            const shotRefs = shot.refImages || [];
+                            const modelSpec = getVideoModel(project?.videoModel);
+                            // Show upload for image tab (always) and video tab (only if model supports refs with frames)
+                            const canUploadRef = activeTab === 'image' || activeTab === 'endframe' || (activeTab === 'video' && modelSpec.refsWithFrames);
+                            if (tabRefs.length === 0 && shotRefs.length === 0 && !canUploadRef) return null;
                             return (
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[11px] text-zinc-400 mr-1">Refs:</span>
@@ -1069,6 +1112,36 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     )}
                                   </div>
                                 ))}
+                                {/* User-uploaded shot refs */}
+                                {shotRefs.map((ref) => (
+                                  <div key={ref.id} className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-amber-400/30 text-zinc-300 bg-amber-400/[0.04] cursor-pointer"
+                                    onClick={() => setModalImage(ref.url)}>
+                                    <img src={ref.url} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />
+                                    <span>Ref</span>
+                                    <button
+                                      className="text-zinc-500 hover:text-red-400 transition-colors ml-0.5"
+                                      title="Remove reference"
+                                      onClick={(e) => { e.stopPropagation(); onDeleteShotRef?.(shot.id, ref.id); }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </button>
+                                    <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
+                                      <img src={ref.url} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt="Director ref" />
+                                    </div>
+                                  </div>
+                                ))}
+                                {/* Upload ref button */}
+                                {canUploadRef && (
+                                  <label className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-dashed border-white/[0.12] text-zinc-400 hover:text-zinc-300 hover:border-white/[0.2] bg-white/[0.01] cursor-pointer transition-colors" title="Upload a reference image for this shot">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                    <span>Ref</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) onUploadShotRef?.(shot.id, file);
+                                      e.target.value = '';
+                                    }} />
+                                  </label>
+                                )}
                               </div>
                             );
                           })()}

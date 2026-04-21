@@ -8,7 +8,7 @@ import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
-import { selectOne, insertRow, updateRows } from '../database.js';
+import { selectOne, insertRow, updateRows, getSB, T } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
 
@@ -63,7 +63,9 @@ router.get('/deities', async (_req, res) => {
   }
 });
 
-// Start production — pull audio from Supabase, create Lahari project
+// Start production — pull audio from Supabase, create Lahari project.
+// Multi-user: each user gets their own project for the same queued song.
+// Analysis is cached on the songs table to avoid duplicate AI calls.
 router.post('/:queueId/start', async (req, res) => {
   try {
     const queueId = req.params.queueId;
@@ -72,12 +74,27 @@ router.post('/:queueId/start', async (req, res) => {
     const items = await listQueue();
     const item = items.find(i => i.id === queueId);
     if (!item) return res.status(404).json({ error: 'Queue item not found' });
-    if (item.lahari_project_id) {
-      // Already started — verify ownership before returning
-      const existing = await selectOne('projects', { id: item.lahari_project_id });
-      if (existing && existing.user_id !== req.userId) return res.status(403).json({ error: 'Access denied' });
-      const project = await getFullProject(item.lahari_project_id);
+
+    // Check if THIS user already has a project for this queue item
+    const { data: existingProjects } = await getSB()
+      .from(T.projects)
+      .select('id')
+      .eq('source_queue_id', queueId)
+      .eq('user_id', req.userId)
+      .limit(1);
+    if (existingProjects?.length) {
+      const project = await getFullProject(existingProjects[0].id);
       if (project) return res.json({ project, queueItem: item });
+    }
+
+    // Also check the legacy link (projects created before source_queue_id existed)
+    if (item.lahari_project_id) {
+      const existing = await selectOne('projects', { id: item.lahari_project_id });
+      if (existing && existing.user_id === req.userId) {
+        const project = await getFullProject(item.lahari_project_id);
+        if (project) return res.json({ project, queueItem: item });
+      }
+      // Different user's project — fall through to create a new one
     }
 
     // Get audio URL — prefer Supabase Storage, fall back to Google Drive
@@ -89,32 +106,40 @@ router.post('/:queueId/start', async (req, res) => {
     const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
     const audioPath = await saveBuffer(audioBuffer, 'audio', ext);
 
-    // Get SRT for lyrics
-    const files = await getSongFiles(item.song_id);
-    const srtFile = files.find(f => f.file_type === 'srt_verified_san')
-      || files.find(f => f.file_type.startsWith('srt_verified_'))
-      || files.find(f => f.file_type === 'srt_turbo_scribe');
+    // ─── Check for cached analysis on songs table ───
+    const { data: songRow } = await getSB()
+      .from('songs')
+      .select('cached_lyrics, cached_structure, cached_meaning')
+      .eq('id', item.song_id)
+      .single();
+    const cached = songRow || {} as any;
+    const hasCachedAnalysis = cached.cached_lyrics && cached.cached_structure && cached.cached_meaning;
 
-    let lyrics = '';
-    if (srtFile) {
-      try {
-        const srtBuffer = await downloadFile(srtFile.storage_url);
-        const srtText = srtBuffer.toString('utf-8');
-        lyrics = parseSrtToTimestamped(srtText);
-      } catch (e) {
-        console.warn(`[queue] Failed to download SRT for ${item.song_name}:`, e);
-      }
-    }
-
-    // Fallback: transcribe from audio if no SRT lyrics
+    // Get lyrics: cached → SRT → audio transcription
+    let lyrics = cached.cached_lyrics || '';
     if (!lyrics) {
-      try {
-        const audioBase64 = await readAsBase64(audioPath);
-        const audioMime = mimeFromExt(audioPath);
-        lyrics = await transcribeLyrics(audioBase64, audioMime);
-        console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
-      } catch (e) {
-        console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);
+      const files = await getSongFiles(item.song_id);
+      const srtFile = files.find(f => f.file_type === 'srt_verified_san')
+        || files.find(f => f.file_type.startsWith('srt_verified_'))
+        || files.find(f => f.file_type === 'srt_turbo_scribe');
+
+      if (srtFile) {
+        try {
+          const srtBuffer = await downloadFile(srtFile.storage_url);
+          lyrics = parseSrtToTimestamped(srtBuffer.toString('utf-8'));
+        } catch (e) {
+          console.warn(`[queue] Failed to download SRT for ${item.song_name}:`, e);
+        }
+      }
+      if (!lyrics) {
+        try {
+          const audioBase64 = await readAsBase64(audioPath);
+          const audioMime = mimeFromExt(audioPath);
+          lyrics = await transcribeLyrics(audioBase64, audioMime);
+          console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
+        } catch (e) {
+          console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);
+        }
       }
     }
 
@@ -123,17 +148,29 @@ router.post('/:queueId/start', async (req, res) => {
     await insertRow('projects', {
       id: projectId,
       title: item.song_name || 'Untitled',
-      status: 'analyzing',
+      status: hasCachedAnalysis ? 'analyzed' : 'analyzing',
       audio_path: audioPath,
       lyrics: lyrics || null,
+      musical_structure: cached.cached_structure || null,
+      meaning: cached.cached_meaning || '',
       user_id: req.userId,
+      source_queue_id: queueId,
     });
 
-    // Link back to queue immediately (don't wait for analysis)
-    await updateQueueItem(queueId, {
-      status: 'in_progress',
-      lahari_project_id: projectId,
-    });
+    // Link back to queue (first user sets the pointer; subsequent users don't overwrite)
+    if (!item.lahari_project_id) {
+      await updateQueueItem(queueId, {
+        status: 'in_progress',
+        lahari_project_id: projectId,
+      });
+    }
+
+    // If analysis is cached, skip AI calls entirely
+    if (hasCachedAnalysis) {
+      console.log(`[queue] Using cached analysis for ${item.song_name}`);
+      const project = await getFullProject(projectId);
+      return res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: item.lahari_project_id || projectId } });
+    }
 
     // Run audio analysis: musical structure (Gemini) + meaning (Claude).
     const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
@@ -181,12 +218,23 @@ router.post('/:queueId/start', async (req, res) => {
         });
       }
 
+      const structureJson = JSON.stringify(musicalStructure);
       await updateRows('projects', { id: projectId }, {
         status: 'analyzed',
-        musical_structure: JSON.stringify(musicalStructure),
+        musical_structure: structureJson,
         meaning,
         updated_at: new Date().toISOString(),
       });
+
+      // Cache analysis on songs table for future users
+      if (lyrics || musicalStructure.length || meaning) {
+        await getSB().from('songs').update({
+          cached_lyrics: lyrics || null,
+          cached_structure: structureJson || null,
+          cached_meaning: meaning || null,
+        }).eq('id', item.song_id);
+        console.log(`[queue] Cached analysis on song ${item.song_id} for future use`);
+      }
     } catch (err: any) {
       console.error(`[queue ${projectId}] analysis failed:`, err);
       await updateRows('projects', { id: projectId }, {
@@ -196,7 +244,7 @@ router.post('/:queueId/start', async (req, res) => {
     }
 
     const project = await getFullProject(projectId);
-    res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: projectId } });
+    res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: item.lahari_project_id || projectId } });
   } catch (err: any) {
     console.error('[queue] Start production failed:', err);
     res.status(500).json({ error: err.message });

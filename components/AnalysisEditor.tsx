@@ -361,6 +361,11 @@ export const AnalysisEditor: React.FC<Props> = ({
   // Single popover from the sticky context bar — only one open at a time.
   const [contextPopover, setContextPopover] = useState<'render' | 'analysis' | null>(null);
   const contextBarRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   useEffect(() => {
     if (!contextPopover) return;
     const onDown = (e: MouseEvent) => {
@@ -622,6 +627,62 @@ export const AnalysisEditor: React.FC<Props> = ({
           {/* Row 1: Title + chips + Launch */}
           <div className="flex items-center gap-3 h-12 px-4">
             <h2 className="text-base font-display font-medium text-white tracking-tight truncate flex-shrink-0 max-w-[180px]">{project.title || 'Blueprint'}</h2>
+
+            {/* Audio mini player — play/pause + seekable progress + time */}
+            {project.audioPath && (
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <audio
+                  ref={audioRef}
+                  src={project.audioPath}
+                  onEnded={() => setAudioPlaying(false)}
+                  onPause={() => setAudioPlaying(false)}
+                  onPlay={() => setAudioPlaying(true)}
+                  onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
+                  onTimeUpdate={() => {
+                    const el = audioRef.current;
+                    if (!el || !el.duration) return;
+                    setAudioCurrentTime(el.currentTime);
+                    setAudioProgress(el.currentTime / el.duration);
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    const el = audioRef.current;
+                    if (!el) return;
+                    if (el.paused) el.play().catch(() => {});
+                    else el.pause();
+                  }}
+                  className={`w-6 h-6 rounded flex items-center justify-center transition-colors flex-shrink-0 ${audioPlaying ? 'text-white' : 'text-zinc-400 hover:text-white'}`}
+                  title={audioPlaying ? 'Pause' : 'Play song'}
+                >
+                  {audioPlaying ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  )}
+                </button>
+                {/* Seekable progress bar */}
+                <div
+                  className="relative w-28 h-5 flex items-center cursor-pointer group"
+                  onClick={(e) => {
+                    const el = audioRef.current;
+                    if (!el || !el.duration) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    el.currentTime = pct * el.duration;
+                  }}
+                >
+                  <div className="absolute inset-x-0 h-1 rounded-full bg-white/[0.08]">
+                    <div className="h-full rounded-full bg-white/40 group-hover:bg-white/60 transition-colors" style={{ width: `${audioProgress * 100}%` }} />
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-zinc-400 tabular-nums w-[70px] text-right flex-shrink-0">
+                  {Math.floor(audioCurrentTime / 60)}:{String(Math.floor(audioCurrentTime % 60)).padStart(2, '0')}
+                  {audioDuration > 0 && <span className="text-zinc-500"> / {Math.floor(audioDuration / 60)}:{String(Math.floor(audioDuration % 60)).padStart(2, '0')}</span>}
+                </span>
+              </div>
+            )}
+
             <div className="w-px h-5 bg-white/[0.06] flex-shrink-0" />
 
             {/* Render chip */}

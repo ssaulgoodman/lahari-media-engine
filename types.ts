@@ -77,6 +77,7 @@ export interface VideoShot {
   useNextAsEndFrame: boolean;
   error?: string;
   lastError?: string;
+  refImages?: { id: string; url: string }[];
 }
 
 export interface VideoScene {
