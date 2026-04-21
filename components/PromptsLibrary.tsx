@@ -80,7 +80,11 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
     let aborted = false;
     (async () => {
       try {
-        const res = await fetch('/api/prompts');
+        const { supabase } = await import('../lib/supabase');
+        const { data: { session } } = await supabase.auth.getSession();
+        const headers: Record<string, string> = {};
+        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+        const res = await fetch('/api/prompts', { headers });
         const data = await res.json();
         if (!aborted) {
           setPrompts(data.prompts || []);
