@@ -157,6 +157,14 @@ export const mountStyleRoutes = (router: Router) => {
       res.json(refined);
     } catch (err: any) {
       console.error(`[${project.id}] Refine direction failed:`, err);
+      await logCall({
+        projectId: project.id,
+        stage: 'refine-style-direction',
+        model: 'claude-sonnet-4-6',
+        prompt: `Refine: "${(description || '').substring(0, 100)}..."`,
+        durationMs: 0,
+        error: err.message,
+      });
       res.status((err as any).statusCode || 500).json({ error: err.message });
     }
   });
@@ -172,26 +180,24 @@ export const mountStyleRoutes = (router: Router) => {
 
     let enrichedDescription = styleDescription || '';
     try {
-      {
-        console.log(`[${projectId}] Enriching style DNA...`);
-        const t0 = Date.now();
-        const imageBase64 = await readAsBase64(asset.file_path);
-        const mimeType = mimeFromExt(asset.file_path);
-        enrichedDescription = await enrichStyleDNA(imageBase64, mimeType, styleDescription || '');
-        const durationMs = Date.now() - t0;
+      console.log(`[${projectId}] Enriching style DNA...`);
+      const t0 = Date.now();
+      const imageBase64 = await readAsBase64(asset.file_path);
+      const mimeType = mimeFromExt(asset.file_path);
+      enrichedDescription = await enrichStyleDNA(imageBase64, mimeType, styleDescription || '');
+      const durationMs = Date.now() - t0;
 
-        await logCall({
-          projectId,
-          stage: 'enrich-style-dna',
-          model: 'claude-sonnet-4-6',
-          prompt: `Enrich style DNA from locked image | Short desc: ${(styleDescription || '').substring(0, 100)}`,
-          referenceInputs: [{ type: 'image', label: 'Locked style image', url: storageUrl(asset.file_path) }],
-          contextChain: await buildContextChain(projectId),
-          responseSummary: enrichedDescription.substring(0, 300),
-          durationMs,
-          costEstimate: 0.01,
-        });
-      }
+      await logCall({
+        projectId,
+        stage: 'enrich-style-dna',
+        model: 'claude-sonnet-4-6',
+        prompt: `Enrich style DNA from locked image | Short desc: ${(styleDescription || '').substring(0, 100)}`,
+        referenceInputs: [{ type: 'image', label: 'Locked style image', url: storageUrl(asset.file_path) }],
+        contextChain: await buildContextChain(projectId),
+        responseSummary: enrichedDescription.substring(0, 300),
+        durationMs,
+        costEstimate: 0.01,
+      });
     } catch (err) {
       console.error('[lock-style] Style DNA enrichment failed, using short description:', err);
     }

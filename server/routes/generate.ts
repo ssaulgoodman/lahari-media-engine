@@ -1,28 +1,19 @@
 import { Router } from 'express';
-import multer from 'multer';
-import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { selectAll, selectOne, insertRow, insertMany, updateRows, deleteRows, countRows, maxVal, selectColumns, findShot, incrementColumn, getSB, T } from '../database.js';
-import { readAsBase64, mimeFromExt, saveBase64, saveBuffer, storageUrl } from '../storage.js';
-import { generateStyleOptions, generateCharacterLooks, buildCharacterPrompt, generateSingleStyleImage, buildStylePrompt, generateEnvironmentLooks, buildEnvironmentPrompt, generateShotStartFrame } from '../services/imagen.js';
-import { critiqueShotImage, chatWithDirector, describeFrame } from '../services/gemini.js';
-import { planScenes, refineScript, writeShotPrompts, brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineShotPrompt, refreshChainedShotPrompt } from '../services/claude.js';
-import { extractLastFrame } from '../services/ffmpeg.js';
-import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
-import { getFullProject, forkProject } from './projects.js';
+import { selectOne, selectAll, insertRow, updateRows } from '../database.js';
+import { storageUrl } from '../storage.js';
+import { generateStyleOptions } from '../services/imagen.js';
+import { chatWithDirector } from '../services/gemini.js';
+import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
-import { paramStr, ScopeError, requireCastMember, requireEnvironment, requireAsset } from './scope-helpers.js';
-import { mountVideoRoutes } from './generate-video.js';
+import { paramStr } from './scope-helpers.js';
 import { mountStyleRoutes } from './generate-style.js';
 import { mountLooksRoutes } from './generate-looks.js';
 import { mountScriptRoutes } from './generate-script.js';
 import { mountShotRoutes } from './generate-shots.js';
+import { mountVideoRoutes } from './generate-video.js';
 
 const router = Router();
-
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-// Scope helpers imported from scope-helpers.ts — centralized for all generate routes
 
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
