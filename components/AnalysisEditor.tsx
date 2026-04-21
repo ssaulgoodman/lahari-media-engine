@@ -2095,29 +2095,48 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                       </div>
                     )}
 
-                    {/* Bottom — description (context) + generation prompt (source of truth) + refine */}
+                    {/* ═══ UNIFIED TOOLKIT — same pattern as Studio ═══ */}
                     <div className="px-5 py-4 space-y-3 border-t border-white/[0.06]">
-                      {/* Description — context from script, editable */}
-                      <div>
-                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Description <span className="normal-case tracking-normal">(from script)</span></div>
+                      {/* Description — collapsed context */}
+                      <details className="group">
+                        <summary className="text-[11px] uppercase tracking-wide text-zinc-500 cursor-pointer hover:text-zinc-400 flex items-center gap-1">
+                          <svg className="w-3 h-3 transition-transform group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                          Description (from script)
+                        </summary>
                         <div
                           key={`desc-${activeMember.id}`}
                           contentEditable
                           suppressContentEditableWarning
                           onBlur={(e) => onUpdateCast(activeMember.id, { description: e.currentTarget.textContent || '' })}
-                          className="text-sm text-zinc-400 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
+                          className="mt-1 text-sm text-zinc-400 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
                         >
                           {activeMember.description}
                         </div>
-                      </div>
+                      </details>
 
-                      {/* Generation prompt — what actually gets sent to Gemini */}
+                      {/* 1. Ref chips */}
+                      {project.styleAssetUrl && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] text-zinc-400 mr-1">Refs:</span>
+                          <div className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
+                            onClick={() => setModalImage(project.styleAssetUrl!)}>
+                            <img src={project.styleAssetUrl} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />
+                            <span>Style</span>
+                            <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
+                              <img src={project.styleAssetUrl} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt="Style" />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. Prompt — editable */}
                       <div>
                         <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
-                          Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span>
+                          Prompt
                           {activeMember.promptsStale && (
-                            <span className="text-amber-400/80 normal-case tracking-normal text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded">Outdated — style or upstream changed</span>
+                            <span className="text-amber-400/80 normal-case tracking-normal text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded">Outdated</span>
                           )}
+                          {savedFlash === `cast-prompt-${activeMember.id}` && <span className="text-[10px] text-emerald-400/70 normal-case">Saved</span>}
                         </div>
                         {activeMember.generationPrompt ? (
                           <AutoGrowTextarea
@@ -2132,31 +2151,55 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                               }
                             }}
                             rows={3}
-                            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                           />
                         ) : (
                           <div className="text-xs text-zinc-500 italic">Auto-generated on first look generation</div>
                         )}
-                        {savedFlash === `cast-prompt-${activeMember.id}` && <span className="text-[10px] text-emerald-400/70">Saved</span>}
                       </div>
 
-                      {/* Refine feedback — tell the LLM what to change */}
-                      <div>
-                        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Refine <span className="normal-case tracking-normal">(LLM rewrites the prompt)</span></div>
+                      {/* 3. Generate button */}
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => onGenerateLooks(activeMember.id)}
+                          disabled={looksLoading.has(activeMember.id)}
+                          className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                        >
+                          {activeMember.referenceImageUrl ? 'Regenerate looks' : 'Generate 3 looks'}
+                        </button>
+                      </div>
+
+                      {/* 4. Refine — plain text feedback */}
+                      <div className="h-px bg-white/[0.06]" />
+                      <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
+                        Refine — describe what's wrong, Claude rewrites the prompt
+                      </div>
+                      <div className="flex gap-2">
                         <AutoGrowTextarea
                           key={`feedback-${activeMember.id}`}
-                          placeholder="e.g. 'make him older, a man not a boy' — Claude will rewrite the generation prompt"
+                          id={`char-feedback-${activeMember.id}`}
+                          placeholder="e.g. 'make him older, more regal costume'"
                           rows={1}
-                          className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
-                          autoComplete="off"
+                          className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) {
+                            if (e.key === 'Enter' && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
                               e.preventDefault();
-                              onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value || undefined);
+                              onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value);
+                              (e.target as HTMLTextAreaElement).value = '';
                             }
                           }}
-                          id={`char-feedback-${activeMember.id}`}
                         />
+                        <button
+                          onClick={() => {
+                            const input = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLTextAreaElement;
+                            if (input?.value.trim()) {
+                              onGenerateLooks(activeMember.id, input.value);
+                              input.value = '';
+                            }
+                          }}
+                          disabled={looksLoading.has(activeMember.id)}
+                          className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
+                        >Refine</button>
                       </div>
                     </div>
                   </div>
@@ -2497,35 +2540,52 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                         </div>
                       )}
 
-                      {/* Bottom — description + generation prompt + refine */}
+                      {/* ═══ UNIFIED TOOLKIT — same pattern as characters ═══ */}
                       <div className="px-5 py-4 space-y-3 border-t border-white/[0.06]">
-                        <div>
-                          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Description <span className="normal-case tracking-normal">(from script)</span></div>
+                        {/* Description — collapsed context */}
+                        <details className="group">
+                          <summary className="text-[11px] uppercase tracking-wide text-zinc-500 cursor-pointer hover:text-zinc-400 flex items-center gap-1">
+                            <svg className="w-3 h-3 transition-transform group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+                            Description (from script)
+                          </summary>
                           <div
                             key={`env-desc-${activeEnv.id}`}
                             contentEditable
                             suppressContentEditableWarning
                             onBlur={async (e) => {
                               try {
-                                const res = await fetch(`/api/projects/${project.id}/environments/${activeEnv.id}`, {
-                                  method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ name: activeEnv.name, description: e.currentTarget.textContent || '' }),
-                                });
-                                if (res.ok) onSetProject?.(await res.json());
+                                await api.updateEnvironment(project.id, activeEnv.id, { name: activeEnv.name, description: e.currentTarget.textContent || '' });
                               } catch {}
                             }}
-                            className="text-sm text-zinc-400 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
+                            className="mt-1 text-sm text-zinc-400 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
                           >
                             {activeEnv.description}
                           </div>
-                        </div>
+                        </details>
 
+                        {/* 1. Ref chips */}
+                        {project.styleAssetUrl && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] text-zinc-400 mr-1">Refs:</span>
+                            <div className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
+                              onClick={() => setModalImage(project.styleAssetUrl!)}>
+                              <img src={project.styleAssetUrl} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />
+                              <span>Style</span>
+                              <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
+                                <img src={project.styleAssetUrl} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt="Style" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. Prompt — editable */}
                         <div>
                           <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
-                            Generation prompt <span className="normal-case tracking-normal">(what gets sent)</span>
+                            Prompt
                             {activeEnv.promptsStale && (
-                              <span className="text-amber-400/80 normal-case tracking-normal text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded">Outdated — style or upstream changed</span>
+                              <span className="text-amber-400/80 normal-case tracking-normal text-[10px] bg-amber-500/10 px-1.5 py-0.5 rounded">Outdated</span>
                             )}
+                            {savedFlash === `env-prompt-${activeEnv.id}` && <span className="text-[10px] text-emerald-400/70 normal-case">Saved</span>}
                           </div>
                           {activeEnv.generationPrompt ? (
                             <AutoGrowTextarea
@@ -2535,21 +2595,62 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                                 const val = e.target.value.trim();
                                 if (val && val !== activeEnv.generationPrompt) {
                                   try {
-                                    const res = await fetch(`/api/projects/${project.id}/environments/${activeEnv.id}`, {
-                                      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ generationPrompt: val }),
-                                    });
-                                    if (res.ok) { onSetProject?.(await res.json()); setSavedFlash(`env-prompt-${activeEnv.id}`); setTimeout(() => setSavedFlash(null), 1500); }
+                                    await api.updateEnvironment(project.id, activeEnv.id, { generationPrompt: val });
+                                    setSavedFlash(`env-prompt-${activeEnv.id}`);
+                                    setTimeout(() => setSavedFlash(null), 1500);
                                   } catch {}
                                 }
                               }}
                               rows={3}
-                              className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 font-mono leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                              className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                             />
                           ) : (
                             <div className="text-xs text-zinc-500 italic">Auto-generated on first look generation</div>
                           )}
-                          {savedFlash === `env-prompt-${activeEnv.id}` && <span className="text-[10px] text-emerald-400/70">Saved</span>}
+                        </div>
+
+                        {/* 3. Generate button */}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleEnvGenerate(activeEnv.id)}
+                            disabled={envGenerating.has(activeEnv.id)}
+                            className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
+                          >
+                            {activeEnv.referenceImageUrl ? 'Regenerate looks' : 'Generate 3 looks'}
+                          </button>
+                        </div>
+
+                        {/* 4. Refine — plain text feedback */}
+                        <div className="h-px bg-white/[0.06]" />
+                        <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
+                          Refine — describe what's wrong, Claude rewrites the prompt
+                        </div>
+                        <div className="flex gap-2">
+                          <AutoGrowTextarea
+                            key={`env-feedback-${activeEnv.id}`}
+                            id={`env-feedback-${activeEnv.id}`}
+                            placeholder="e.g. 'more ancient, add river in foreground'"
+                            rows={1}
+                            className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
+                                e.preventDefault();
+                                handleEnvGenerate(activeEnv.id, undefined, (e.target as HTMLTextAreaElement).value);
+                                (e.target as HTMLTextAreaElement).value = '';
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => {
+                              const input = document.getElementById(`env-feedback-${activeEnv.id}`) as HTMLTextAreaElement;
+                              if (input?.value.trim()) {
+                                handleEnvGenerate(activeEnv.id, undefined, input.value);
+                                input.value = '';
+                              }
+                            }}
+                            disabled={envGenerating.has(activeEnv.id)}
+                            className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
+                          >Refine</button>
                         </div>
                       </div>
                     </div>
