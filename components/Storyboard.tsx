@@ -21,6 +21,12 @@ const parseTimeToSec = (t?: string): number => {
   return parts[0] || 0;
 };
 
+const fmtTime = (sec: number): string => {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 interface Props {
   scenes: VideoScene[];
   project: ApiProject | null;
@@ -465,6 +471,16 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <span className="text-sm font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
 
+                      {/* Timestamp — absolute position in the song */}
+                      <span className="text-[11px] font-mono text-zinc-400 flex-shrink-0 tabular-nums">
+                        {(() => {
+                          const sceneStartSec = parseTimeToSec(activeScene.startTime);
+                          const shotOffset = activeScene.shots.slice(0, shotIdx).reduce((a, s) => a + (s.duration || 0), 0);
+                          return `${fmtTime(sceneStartSec + shotOffset)}`;
+                        })()}
+                        <span className="text-zinc-500 ml-0.5">{shot.duration}s</span>
+                      </span>
+
                       {/* Progress dots */}
                       <div className="flex items-center gap-1 flex-shrink-0">
                         {[1, 2, 3].map(step => (
@@ -474,9 +490,6 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                         ))}
                       </div>
 
-                      {/* Duration removed from the pill per artist feedback.
-                          Still visible in the expanded shot body where it
-                          matters (prompt tab / lock state). */}
                       {activeCastMembers.length > 0 && (
                         <span className="text-sm text-zinc-300 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
                       )}
