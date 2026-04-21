@@ -618,10 +618,12 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleGenerateEndFrame = async (shotId: string) => {
     if (!project) return;
+    updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.LOADING });
     try {
       const p = await api.generateEndFrame(project.id, shotId);
       setProject(p);
     } catch (err: any) {
+      updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.ERROR });
       setError(`End frame generation failed: ${err.message}`);
     }
   };

@@ -36,7 +36,7 @@ interface Props {
   onGenerateImage: (sceneId: string, shotId: string) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string) => void;
   onLockShot: (sceneId: string, shotId: string) => void;
-  onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void;
+  onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
@@ -77,6 +77,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const contextBarRef = React.useRef<HTMLDivElement>(null);
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
   const [historyData, setHistoryData] = useState<HistoryData>({ firstFrame: [], lastFrame: [], video: [] });
+  const [refiningShots, setRefiningShots] = useState<Set<string>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState<'frames' | 'videos' | null>(null);
   const [historyTab, setHistoryTab] = useState<'firstFrame' | 'lastFrame' | 'video'>('firstFrame');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [mentionOpen, setMentionOpen] = useState<string | null>(null);
@@ -376,20 +378,22 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
             Write prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
           </button>
           <button
-            onClick={() => onBulkGenerateFrames?.()}
-            disabled={!onBulkGenerateFrames || framesToFire === 0}
+            onClick={async () => { setBulkRunning('frames'); try { await onBulkGenerateFrames?.(); } finally { setBulkRunning(null); } }}
+            disabled={!onBulkGenerateFrames || framesToFire === 0 || bulkRunning !== null}
             className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
             title={framesToFire > 0 ? `Fire ${framesToFire} start frame${framesToFire === 1 ? '' : 's'} in parallel.` : 'All eligible frames generated.'}
           >
-            Frames <span className="text-zinc-400">({framesToFire})</span>
+            {bulkRunning === 'frames' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+            {bulkRunning === 'frames' ? 'Running…' : <>Frames <span className="text-zinc-400">({framesToFire})</span></>}
           </button>
           <button
-            onClick={() => onBulkGenerateVideos?.()}
-            disabled={!onBulkGenerateVideos || videosToFire === 0}
+            onClick={async () => { setBulkRunning('videos'); try { await onBulkGenerateVideos?.(); } finally { setBulkRunning(null); } }}
+            disabled={!onBulkGenerateVideos || videosToFire === 0 || bulkRunning !== null}
             className="text-[11px] bg-white text-black hover:bg-zinc-100 rounded-md px-2.5 py-1 font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
             title={videosToFire > 0 ? `Fire ${videosToFire} video${videosToFire === 1 ? '' : 's'} in parallel.` : 'Generate frames first.'}
           >
-            Videos <span className="opacity-70">({videosToFire})</span>
+            {bulkRunning === 'videos' && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+            {bulkRunning === 'videos' ? 'Running…' : <>Videos <span className="opacity-70">({videosToFire})</span></>}
           </button>
         </div>
       </div>
@@ -426,7 +430,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
           <div className="space-y-4">
             {activeScene.shots.map((shot, shotIdx) => {
               const actionable = isShotActionable(activeScene, shotIdx);
-              const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
+              const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
               const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR;
               const activeCastMembers = project?.cast.filter(c => shot.castIds?.includes(c.id)) || [];
               const hasStartFrame = !!shot.imageUrl;
@@ -801,9 +805,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                 {onGenerateEndFrame && (
                                   <button
                                     onClick={() => onGenerateEndFrame(shot.id)}
-                                    className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors"
+                                    disabled={shot.endImageStatus === 'loading'}
+                                    className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                                   >
-                                    Generate
+                                    {shot.endImageStatus === 'loading' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+                                    {shot.endImageStatus === 'loading' ? 'Generating…' : 'Generate'}
                                   </button>
                                 )}
                                 {onUploadEndFrame && (
@@ -1112,7 +1118,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                             if (tabRefs.length === 0 && shotRefs.length === 0 && !canUploadRef) return null;
                             return (
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[11px] text-zinc-400 mr-1">Refs:</span>
+                                <span className="text-[11px] text-zinc-500 mr-1" title="These references are auto-included from the shot's cast/env assignments in the script">Auto:</span>
                                 {tabRefs.map((ref, i) => (
                                   <div key={i} className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] text-zinc-300 bg-white/[0.02] cursor-pointer"
                                     onClick={() => ref.url && setModalImage(ref.url)}>
@@ -1226,11 +1232,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                               }
                             };
 
-                            const canRefine = true;
-                            const handleRefine = (feedback: string) => {
-                              if (isFirstFrame) onRefinePrompt(activeScene.id, shot.id, feedback);
-                              else if (isEndFrame) onRefineEndFramePrompt?.(shot.id, feedback);
-                              else if (isVideo) onRefineVideoPrompt?.(shot.id, feedback);
+                            const isRefining = refiningShots.has(`${activeTab}:${shot.id}`);
+                            const handleRefine = async (feedback: string) => {
+                              const key = `${activeTab}:${shot.id}`;
+                              setRefiningShots(prev => new Set(prev).add(key));
+                              try {
+                                if (isFirstFrame) await onRefinePrompt(activeScene.id, shot.id, feedback);
+                                else if (isEndFrame) await onRefineEndFramePrompt?.(shot.id, feedback);
+                                else if (isVideo) await onRefineVideoPrompt?.(shot.id, feedback);
+                              } finally {
+                                setRefiningShots(prev => { const next = new Set(prev); next.delete(key); return next; });
+                              }
                             };
 
                             const generateLabel = isFirstFrame
@@ -1313,6 +1325,18 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                                 handlePromptChange(newVal);
                                                 setPromptDirty(prev => ({ ...prev, [`${activeTab}:${shot.id}`]: true }));
                                                 setMentionOpen(null); setMentionQuery('');
+                                                // Actually assign the character/env to this shot so the ref image gets sent
+                                                if (item.type === 'character') {
+                                                  const charObj = project?.cast?.find(c => c.name === item.name);
+                                                  if (charObj && !(shot.castIds || []).includes(charObj.id)) {
+                                                    onUpdateShot(activeScene.id, shot.id, { castIds: [...(shot.castIds || []), charObj.id] });
+                                                  }
+                                                } else if (item.type === 'environment') {
+                                                  const envObj = project?.environments?.find(en => en.name === item.name);
+                                                  if (envObj && shot.environmentId !== envObj.id) {
+                                                    onUpdateShot(activeScene.id, shot.id, { environmentId: envObj.id } as any);
+                                                  }
+                                                }
                                                 setTimeout(() => { textarea.focus(); const pos = atIdx + item.name.length + 2; textarea.setSelectionRange(pos, pos); }, 0);
                                               }}
                                             >
@@ -1341,13 +1365,16 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                     <button
                                       onClick={() => { handleGenerate(); setPromptDirty(prev => ({ ...prev, [`${activeTab}:${shot.id}`]: false })); }}
                                       disabled={!canGenerate}
-                                      className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
-                                    >{hasResult && !promptDirty[`${activeTab}:${shot.id}`] ? 'Regenerate' : generateLabel}</button>
+                                      className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+                                    >
+                                      {isGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                                      {isGenerating ? 'Generating…' : hasResult && !promptDirty[`${activeTab}:${shot.id}`] ? 'Regenerate' : generateLabel}
+                                    </button>
                                   </div>
                                 )}
 
                                 {/* 4. Refine — plain text feedback, Claude rewrites the prompt */}
-                                {!shot.locked && canRefine && (
+                                {!shot.locked && (
                                   <>
                                     <div className="h-px bg-white/[0.06] my-1" />
                                     <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
@@ -1358,9 +1385,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                         id={`refine-${activeTab}-${shot.id}`}
                                         placeholder={isFirstFrame ? "e.g. 'face not crisp, lighting too flat'" : isEndFrame ? "e.g. 'should end with a wider shot'" : "e.g. 'camera too shaky, slow it down'"}
                                         rows={1}
-                                        className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
+                                        disabled={isRefining}
+                                        className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed disabled:opacity-50"
                                         onKeyDown={(e) => {
-                                          if (e.key === 'Enter' && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
+                                          if (e.key === 'Enter' && !e.shiftKey && !isRefining && (e.target as HTMLTextAreaElement).value.trim()) {
                                             e.preventDefault();
                                             handleRefine((e.target as HTMLTextAreaElement).value);
                                             (e.target as HTMLTextAreaElement).value = '';
@@ -1368,15 +1396,19 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                                         }}
                                       />
                                       <button
+                                        disabled={isRefining}
                                         onClick={() => {
                                           const input = document.getElementById(`refine-${activeTab}-${shot.id}`) as HTMLTextAreaElement;
-                                          if (input?.value.trim()) {
+                                          if (input?.value.trim() && !isRefining) {
                                             handleRefine(input.value);
                                             input.value = '';
                                           }
                                         }}
-                                        className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start"
-                                      >Refine</button>
+                                        className="px-3 py-2 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-white rounded-md text-xs font-medium transition-colors flex-shrink-0 self-start disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                                      >
+                                        {isRefining && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+                                        {isRefining ? 'Refining…' : 'Refine'}
+                                      </button>
                                     </div>
                                   </>
                                 )}

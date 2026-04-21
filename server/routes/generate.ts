@@ -1535,9 +1535,12 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     const assetId = uuidv4();
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_image', file_path: imagePath, prompt: shotPrompt });
 
+    // Only clear last_error if no other operation is in error state
+    const clearError = shot.end_image_status !== 'error' && shot.video_status !== 'error';
     await updateRows('shots', { id: shot.id }, {
       image_asset_id: assetId,
-      image_status: 'success', last_error: null,
+      image_status: 'success',
+      ...(clearError ? { last_error: null } : {}),
       user_feedback: null,
       prompts_stale: false,
     });
@@ -1711,9 +1714,12 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
 
     const assetId = uuidv4();
     await insertRow('assets', { id: assetId, project_id: projectId, shot_id: shotId, category: 'shot_end_frame', file_path: endFramePath });
+    const shotState = await selectOne('shots', { id: shotId });
+    const clearEndError = shotState?.image_status !== 'error' && shotState?.video_status !== 'error';
     await updateRows('shots', { id: shotId }, {
       end_image_asset_id: assetId,
-      end_image_status: 'success', last_error: null,
+      end_image_status: 'success',
+      ...(clearEndError ? { last_error: null } : {}),
       end_user_feedback: null,
       video_status: 'stale',
     });
@@ -2237,9 +2243,13 @@ router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     const videoMetadata = JSON.stringify({ extracted_last_frame_asset_id: extractedAssetId });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
 
+    // Only clear last_error if no other operation is in error state
+    const shotNow = await selectOne('shots', { id: shot.id });
+    const clearVideoError = shotNow?.image_status !== 'error' && shotNow?.end_image_status !== 'error';
     await updateRows('shots', { id: shot.id }, {
       video_asset_id: assetId,
-      video_status: 'success', last_error: null,
+      video_status: 'success',
+      ...(clearVideoError ? { last_error: null } : {}),
       extracted_last_frame_asset_id: extractedAssetId,
     });
 
