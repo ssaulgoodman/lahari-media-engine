@@ -1143,14 +1143,14 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   }
   const { castIds, environmentId } = req.body;
   if (castIds !== undefined) {
-    await updateRows('shots', { id: shotId }, { cast_ids: JSON.stringify(castIds) });
+    await updateRows('shots', { id: shotId }, { cast_ids: JSON.stringify(castIds), prompts_stale: true });
   }
   if (environmentId !== undefined) {
-    await updateRows('shots', { id: shotId }, { environment_id: environmentId || null });
+    await updateRows('shots', { id: shotId }, { environment_id: environmentId || null, prompts_stale: true });
   }
   const { duration } = req.body;
   if (duration !== undefined && typeof duration === 'number' && duration > 0) {
-    await updateRows('shots', { id: shotId }, { duration });
+    await updateRows('shots', { id: shotId }, { duration, prompts_stale: true });
   }
   res.json({ ok: true });
 });
@@ -1165,8 +1165,8 @@ router.post('/:id/shots/:shotId/split', async (req, res) => {
   const firstDuration = Math.max(1, splitAt);
   const secondDuration = Math.max(1, shot.duration - firstDuration);
 
-  // Update original shot duration
-  await updateRows('shots', { id: shotId }, { duration: firstDuration });
+  // Update original shot duration + mark stale (prompt was for old duration)
+  await updateRows('shots', { id: shotId }, { duration: firstDuration, prompts_stale: true });
 
   // Bump sort_order of all shots after this one in the scene
   const laterShots = await getSB()
@@ -1178,12 +1178,12 @@ router.post('/:id/shots/:shotId/split', async (req, res) => {
     await updateRows('shots', { id: ls.id }, { sort_order: ls.sort_order + 1 });
   }
 
-  // Create new shot right after
+  // Create new shot right after — empty prompt (artist writes a new direction), marked stale
   const newId = uuidv4();
   await insertRow('shots', {
     id: newId,
     scene_id: shot.scene_id,
-    visual_prompt: shot.visual_prompt || '',
+    visual_prompt: '',
     motion_prompt: '',
     duration: secondDuration,
     cast_ids: shot.cast_ids || '[]',
@@ -1192,6 +1192,7 @@ router.post('/:id/shots/:shotId/split', async (req, res) => {
     sort_order: shot.sort_order + 1,
     image_status: 'idle',
     video_status: 'idle',
+    prompts_stale: true,
   });
 
   res.json(await getFullProject(paramStr(req.params.id)));
