@@ -352,11 +352,17 @@ export const AnalysisEditor: React.FC<Props> = ({
     setPendingEnvRef(null);
   };
 
-  // Snap viewPhase back whenever an unlock (or forward lock) moves activePhase.
-  // Without this, the unlocked phase stays rendered as "locked" because
-  // viewPhase is stuck at its previous value.
+  // Snap viewPhase when an unlock moves activePhase backward.
+  // Forward progression (generation completing, locking) should NOT steal focus —
+  // the artist decides when to move to the next phase.
+  const prevActivePhase = useRef(activePhase);
   useEffect(() => {
-    setViewPhase(prev => prev === activePhase ? prev : activePhase);
+    const prev = prevActivePhase.current;
+    prevActivePhase.current = activePhase;
+    // Only snap on backward transitions (unlocks) — not forward
+    if (phaseIndex(activePhase) < phaseIndex(prev)) {
+      setViewPhase(activePhase);
+    }
   }, [activePhase]);
 
   // Single popover from the sticky context bar — only one open at a time.

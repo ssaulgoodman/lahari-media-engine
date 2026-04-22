@@ -96,7 +96,23 @@ const App: React.FC = () => {
 
 const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: any }; signOut: () => Promise<void> }> = ({ user, signOut }) => {
   const [currentStep, setCurrentStep] = useState<AppStep>(AppStep.UPLOAD);
-  const [project, setProject] = useState<ApiProject | null>(null);
+  const [project, setProjectRaw] = useState<ApiProject | null>(null);
+  const activeProjectId = React.useRef<string | null>(null);
+
+  // Guarded setter — drops stale updates from in-flight API calls
+  // when the user has already switched to a different project.
+  const setProject = React.useCallback((update: ApiProject | ((prev: ApiProject | null) => ApiProject | null) | null) => {
+    setProjectRaw(prev => {
+      const next = typeof update === 'function' ? update(prev) : update;
+      if (!next) { activeProjectId.current = null; return next; }
+      // Explicit project switch (navigation, start production) — always accept
+      if (!prev || next.id !== prev.id) { activeProjectId.current = next.id; return next; }
+      // Same project — accept if it matches the active one
+      if (next.id === activeProjectId.current) return next;
+      // Stale update for a different project — drop
+      return prev;
+    });
+  }, []);
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
