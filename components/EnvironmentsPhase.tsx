@@ -10,6 +10,10 @@ import { Phase, isLockedPhase } from './BlueprintContextBar';
 interface Props {
   project: ApiProject;
   isLoading: boolean;
+  envLooks: Record<string, { id: string; url: string }[]>;
+  envGenerating: Set<string>;
+  onSetEnvLooks: React.Dispatch<React.SetStateAction<Record<string, { id: string; url: string }[]>>>;
+  onSetEnvGenerating: React.Dispatch<React.SetStateAction<Set<string>>>;
   phaseTransition: Record<string, any>;
   onUnlockEnvironments?: () => void;
   onAdvanceEnvironments: () => void;
@@ -20,12 +24,10 @@ interface Props {
 }
 
 export const EnvironmentsPhase: React.FC<Props> = ({
-  project, isLoading, phaseTransition,
+  project, isLoading, envLooks, envGenerating, onSetEnvLooks, onSetEnvGenerating, phaseTransition,
   onUnlockEnvironments, onAdvanceEnvironments, onSetProject, onOpenModal, onConfirmDestructive, showActionError,
 }) => {
   const [activeEnvId, setActiveEnvId] = useState<string | null>(project.environments[0]?.id || null);
-  const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
-  const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
   const [envUploading, setEnvUploading] = useState<Set<string>>(new Set());
   const [pendingEnvRef, setPendingEnvRef] = useState<{ envId: string; file: File; previewUrl: string; note: string } | null>(null);
   const [envRefineImage, setEnvRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
@@ -39,15 +41,15 @@ export const EnvironmentsPhase: React.FC<Props> = ({
   // ─── Handlers ──────────────────────────────────────────────
 
   const handleEnvGenerate = async (envId: string, refImage?: File, note?: string) => {
-    setEnvGenerating(prev => new Set(prev).add(envId));
+    onSetEnvGenerating(prev => new Set(prev).add(envId));
     try {
       const result = await api.generateEnvironmentLook(project.id, envId, undefined, refImage, note);
-      setEnvLooks(prev => ({ ...prev, [envId]: result.looks || [] }));
+      onSetEnvLooks(prev => ({ ...prev, [envId]: result.looks || [] }));
       onSetProject?.(result.project);
     } catch (err: any) {
       showActionError(`Environment look generation failed: ${err.message}`);
     } finally {
-      setEnvGenerating(prev => { const s = new Set(prev); s.delete(envId); return s; });
+      onSetEnvGenerating(prev => { const s = new Set(prev); s.delete(envId); return s; });
     }
   };
 
@@ -59,7 +61,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
         ...project,
         environments: project.environments.map(e => e.id === envId ? { ...e, referenceImageUrl: lockedUrl || e.referenceImageUrl } : e),
       });
-      setEnvLooks(prev => ({ ...prev, [envId]: [] }));
+      onSetEnvLooks(prev => ({ ...prev, [envId]: [] }));
     } catch (err: any) {
       showActionError(`Environment lock failed: ${err.message}`);
     }
@@ -242,7 +244,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                               await api.unlockEnvironmentLook(project.id, activeEnv.id);
                               onSetProject?.({ ...project, environments: project.environments.map(e => e.id === activeEnv.id ? { ...e, referenceImageUrl: undefined } : e) });
                               const candidates = await api.getCandidates(project.id, 'environment', activeEnv.id);
-                              if (candidates.length > 0) setEnvLooks(prev => ({ ...prev, [activeEnv.id]: candidates }));
+                              if (candidates.length > 0) onSetEnvLooks(prev => ({ ...prev, [activeEnv.id]: candidates }));
                             } catch (err: any) { showActionError(`Unlock failed: ${err.message}`); }
                           }}
                           className="text-zinc-500 hover:text-amber-400/80 transition-colors"
@@ -347,7 +349,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                           <span className="text-[11px] uppercase tracking-wide text-zinc-400 flex-shrink-0">New candidates</span>
                           <span className="text-xs text-zinc-400">— pick one to replace the locked look, or</span>
                           <button
-                            onClick={() => setEnvLooks(prev => ({ ...prev, [activeEnv.id]: [] }))}
+                            onClick={() => onSetEnvLooks(prev => ({ ...prev, [activeEnv.id]: [] }))}
                             className="text-xs text-zinc-300 hover:text-white px-2 py-0.5 rounded-md hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 flex-shrink-0"
                             title="Discard these candidates and revert to the currently locked look"
                           >

@@ -56,6 +56,10 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
   const [modalImage, setModalImage] = useState<string | null>(null);
 
+  // Environment look candidates — lifted to orchestrator so they survive tab switches
+  const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
+  const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
+
   // Shared inline error feedback
   const [actionError, setActionError] = useState<string | null>(null);
   const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -183,6 +187,10 @@ export const AnalysisEditor: React.FC<Props> = ({
           <EnvironmentsPhase
             project={project}
             isLoading={isLoading}
+            envLooks={envLooks}
+            envGenerating={envGenerating}
+            onSetEnvLooks={setEnvLooks}
+            onSetEnvGenerating={setEnvGenerating}
             phaseTransition={phaseTransition}
             onUnlockEnvironments={onUnlockEnvironments}
             onAdvanceEnvironments={onAdvanceEnvironments}
