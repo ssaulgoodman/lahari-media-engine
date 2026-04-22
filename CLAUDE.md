@@ -158,7 +158,7 @@ Every shot tab (First frame / Last frame / Video) follows the same pattern:
 1. **Ref chips** — context-aware references attached to this generation (cast, env, style, continuity, keyframes)
 2. **Prompt textarea** — editable, with `@mention` picker (type `@` → dropdown with Style, characters, environments). What you see is what gets sent.
 3. **Generate button** — tracks dirty state. Shows "Regenerate" when prompt unchanged, full label when edited.
-4. **Refine** — plain text feedback (no @mention). Claude (Sonnet) sees the current prompt + generated image + scene narrative + environment + cast descriptions + style DNA, rewrites the prompt. Output constrained to 1-3 short sentences (visual) / 1 sentence (motion).
+4. **Refine** — text feedback + optional reference image (photo icon button). Claude (Sonnet) sees the current prompt + generated image + scene narrative + environment + cast descriptions + style DNA + artist's reference image (if attached), rewrites the prompt. Output constrained to 1-3 short sentences (visual) / 1 sentence (motion). Same image attach available on Blueprint character/environment refines.
 
 Refine context per tab:
 - **First frame**: failed image + visual/motion prompt + scene + env + cast + style
@@ -219,9 +219,15 @@ Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for t
 
 Fork deep-copies all DB rows under a new id with `parent_project_id = source`; asset file_paths are shared (zero disk bloat). Sidebar groups forks indented under parents with timestamps + delete. Helper: `forkProject(sourceId)` in `server/routes/projects.ts`. UI dialog: `DestructiveAction` state in `App.tsx` (`mode: 'fork'` for 3-button Fork/Overwrite/Cancel, `mode: 'simple'` for 2-button Confirm/Cancel).
 
-**Unlock vs. switch semantics (important):**
-- **All `unlock-*` endpoints are pure navigation** — they revert the phase marker only. No data is wiped. A user can unlock concept to browse alternatives without losing anything.
-- **Unlock button visibility** uses `isLockedPhase(phase)` (derived from project status), not exact status match. Buttons remain visible even when status has advanced past the phase. Backend still enforces sequential unlocking (unlock environments before characters).
+**Unlock system (two levels):**
+
+1. **Phase unlocks** (`unlock-script`, `unlock-style`, `unlock-characters`, `unlock-environments`) — pure rewind, allowed from any later status via `atLeast()`. Rewinds status to the previous phase. No data deleted. Artist can go back to tweak one thing without unwinding every later phase in sequence.
+
+2. **Individual look unlocks** (`unlock-character-look`, `unlock-environment-look`) — clears `reference_asset_id` on one cast member or environment. Fetches persisted candidates from DB so artist can pick a different one without regeneration. Marks dependent shots `prompts_stale`.
+
+**Look candidates are persisted**: saved as assets with category `character_candidate` / `environment_candidate` and metadata containing the entity ID. On unlock, candidates are fetched from DB — no API cost.
+
+**Unlock button visibility** uses `isLockedPhase(phase)` (derived from project status). Environments special-cased as terminal phase. Phase unlock pills show at top of phase tab; individual unlock padlock shows next to each "Locked" badge.
 - **Destructive events happen on the active mutation**:
   - `lock-concept` with `{ fork?: boolean }` — if the new concept differs from the previous `locked_concept` AND scenes exist, server wipes scenes/cast/environments/style (or does so on the fork).
   - `generate-script` with `{ fork?: boolean }` — on re-run (scenes already exist), wipes cast + scenes + prompts.
@@ -325,7 +331,8 @@ Endpoints: `GET /:id/shots/:shotId/history` (returns all 3 categories), `POST re
 
 ## Future work
 
-- **Unlock candidates (fix #2)** — look candidates lost on navigate away. Re-generate on unlock.
+- **AnalysisEditor.tsx breakup** — ~3000 lines, handles all 5 Blueprint phases. Next breakup candidate.
+- **Genre system** — extract bhakti-specific prompts into configurable presets. Enable fork for anime, short films, etc.
 - **App.tsx breakup** — extract `useProjectHandlers`, `useBulkGeneration` hooks. Not critical but growing.
 - **UI polish** — glass surface system, shot card redesign (compact overview cards), spring animations.
 - **Infra: Supabase → Mumbai** (ap-south-1) + **Railway → Singapore** — artists are in India, current setup crosses the Pacific twice per query.
