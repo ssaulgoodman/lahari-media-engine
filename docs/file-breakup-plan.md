@@ -30,18 +30,19 @@ Codex recommended a 2-pass approach (video first, then the rest). We did it in 5
 
 Shared feedback pattern (`hooks/useActionFeedback.ts` + `components/ActionFeedback.tsx`) ready for adoption during frontend extraction.
 
-## Frontend Breakup — NEXT
+## Frontend Breakup — DONE
 
-### `components/Storyboard.tsx` → 5-6 files
+Completed 2026-04-22. `Storyboard.tsx` went from 1546 lines to 233 lines (85% reduction).
 
-| New File | Responsibility | Approx Lines |
-|----------|---------------|-------------|
-| `ShotCard.tsx` | Single shot: header bar (chevron, timestamp, progress dots, cast names, queue status), frame display (start/end/video), lock/clear/use-as-prev overlay buttons | ~300 |
-| `RefChips.tsx` | Ref chip rendering, x-to-remove, upload button, active ref state management, `getDefaultRefs`, `getActiveRefs`, `resolveRefDisplay` | ~200 |
-| `PromptToolkit.tsx` | Per-tab prompt textarea with @mention picker, generate button (with loading), refine section (with loading), video override reset | ~350 |
-| `ShotVersionHistory.tsx` | History panel with 3 tabs, revert buttons, thumbnail strips | ~150 |
-| `StudioHeader.tsx` | Context bar: scene tabs with lock toggles, progress stats, story popover, bulk actions (frames/videos/rewrite), bulk note | ~250 |
-| `Storyboard.tsx` | Orchestrator: state management, scene iteration, shot expansion, passes data + handlers to children | ~300 |
+| File | Lines | What |
+|------|-------|------|
+| `Storyboard.tsx` | 233 | Orchestrator: state, ref helpers, scene loop, modal, solo-play |
+| `ShotCard.tsx` | 474 | Per-shot: header, media display (4 variants), overlays, composes PromptToolkit + ShotVersionHistory |
+| `PromptToolkit.tsx` | 448 | Prompt tabs, @mention picker, ref chips, generate button, refine section, full chain view |
+| `StudioHeader.tsx` | 266 | Scene pills with lock toggles, progress stats, story/prompts popovers, bulk actions |
+| `ShotVersionHistory.tsx` | 123 | Tabbed version history (First frame / Last frame / Clip) with revert |
+
+Note: `RefChips.tsx` was absorbed into `PromptToolkit.tsx` — the ref chips were part of the same extraction boundary as the prompt textarea and @mention picker. No separate file needed.
 
 ### `App.tsx` (~1400 lines) → consider later
 
@@ -62,7 +63,7 @@ Not critical yet but growing. Could extract:
 ## Priority
 
 1. ~~`generate.ts` first~~ — DONE
-2. `Storyboard.tsx` next — makes all future Studio UI work safer
+2. ~~`Storyboard.tsx` next~~ — DONE
 3. `App.tsx` later — it's big but mostly handler definitions that rarely change together
 
 ## What This Enables
@@ -118,14 +119,12 @@ My read: this breakup plan is correct in spirit and should be done. The current 
 7. **Do not introduce barrel files.**
    - Direct imports only. Easier grep, easier debugging, easier reviews.
 
-### Suggested Order (Frontend)
+### Execution Order (Frontend) — DONE
 
-1. Extract `PromptToolkit.tsx`
-2. Extract `RefChips.tsx`
-3. Extract `ShotVersionHistory.tsx`
-4. Extract `StudioHeader.tsx`
-5. Extract `ShotCard.tsx`
-6. Reduce `Storyboard.tsx` to orchestration only
+1. ~~Extract `PromptToolkit.tsx`~~ — absorbed RefChips too
+2. ~~Extract `ShotVersionHistory.tsx`~~
+3. ~~Extract `StudioHeader.tsx`~~
+4. ~~Extract `ShotCard.tsx`~~ — Storyboard reduced to orchestration
 
 ### Review Standard
 
