@@ -527,7 +527,7 @@ Output via rewrite_shot_prompt tool: { visualPrompt, motionPrompt }`,
     template: `Same refineShotPrompt function with [END FRAME] prefix in feedback.
 Works without existing end image (prompt-only refine).
 Output: { visualPrompt, motionPrompt } — visualPrompt becomes end_visual_prompt.`,
-    source: { file: 'server/routes/generate.ts', lines: '1687-1759' },
+    source: { file: 'server/routes/generate-shots.ts', lines: 'refine-end-frame-prompt endpoint' },
   },
   {
     id: 'refine-video-prompt',
@@ -550,7 +550,7 @@ Output: { visualPrompt, motionPrompt } — visualPrompt becomes end_visual_promp
     template: `Same refineShotPrompt function with [VIDEO/MOTION REFINEMENT] prefix.
 Start frame as main image, end frame as reference image.
 Output: motionPrompt rewritten. Visual prompt preserved.`,
-    source: { file: 'server/routes/generate.ts', lines: '1762-1825' },
+    source: { file: 'server/routes/generate-shots.ts', lines: 'refine-video-prompt endpoint' },
   },
   {
     id: 'refine-concept',
@@ -652,7 +652,7 @@ Rewrite both prompts. Keep the spirit of the draft, but:
     ],
     template: `{{motionPrompt}}. {{sceneNarrative}}. Characters: {{castNames}}. {{mood}} mood.
 {{continuityDescription ? "Starting state (from previous shot): " + continuityDescription : ""}}`,
-    source: { file: 'server/routes/generate.ts', lines: '1377-1393' },
+    source: { file: 'server/routes/generate-video.ts', lines: 'Veo prompt builder in generate-video endpoint' },
   },
 
   // ─── Utilities ────────────────────────────────────────────────────

@@ -137,7 +137,7 @@ The locked concept is NOT frozen. Three ways to adjust:
 
 ## Step 3: Script Generation
 
-**Source:** [`server/services/claude.ts:156`](../server/services/claude.ts#L156) · Route: [`server/routes/generate.ts:789`](../server/routes/generate.ts#L789) → `POST /:id/generate-script`
+**Source:** [`server/services/claude.ts:156`](../server/services/claude.ts#L156) · Route: `server/routes/generate-script.ts` → `POST /:id/generate-script`
 
 | | |
 |---|---|
@@ -180,7 +180,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ### 4a: Brainstorm
 
-**Source:** [`server/services/claude.ts:397`](../server/services/claude.ts#L397) · Route: [`server/routes/generate.ts:79`](../server/routes/generate.ts#L79) → `POST /:id/brainstorm-styles`
+**Source:** [`server/services/claude.ts:397`](../server/services/claude.ts#L397) · Route: `server/routes/generate-style.ts` → `POST /:id/brainstorm-styles`
 
 | | |
 |---|---|
@@ -194,7 +194,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ### 4b: Visualize
 
-**Source:** [`server/services/imagen.ts:149`](../server/services/imagen.ts#L149) (buildStylePrompt) · [`server/services/imagen.ts:153`](../server/services/imagen.ts#L153) (generateSingleStyleImage) · Route: [`server/routes/generate.ts:134`](../server/routes/generate.ts#L134) → `POST /:id/visualize-style`
+**Source:** [`server/services/imagen.ts:149`](../server/services/imagen.ts#L149) (buildStylePrompt) · [`server/services/imagen.ts:153`](../server/services/imagen.ts#L153) (generateSingleStyleImage) · Route: `server/routes/generate-style.ts` → `POST /:id/visualize-style`
 
 | | |
 |---|---|
@@ -215,7 +215,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ### 4c: Refine
 
-**Source:** [`server/services/claude.ts:479`](../server/services/claude.ts#L479) · Route: [`server/routes/generate.ts:191`](../server/routes/generate.ts#L191) → `POST /:id/refine-style-direction`
+**Source:** [`server/services/claude.ts:479`](../server/services/claude.ts#L479) · Route: `server/routes/generate-style.ts` → `POST /:id/refine-style-direction`
 
 | | |
 |---|---|
@@ -228,7 +228,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ### 4d: Lock + Enrich
 
-**Source:** [`server/services/claude.ts:528`](../server/services/claude.ts#L528) · Route: [`server/routes/generate.ts:223`](../server/routes/generate.ts#L223) → `POST /:id/lock-style`
+**Source:** [`server/services/claude.ts:528`](../server/services/claude.ts#L528) · Route: `server/routes/generate-style.ts` → `POST /:id/lock-style`
 
 | | |
 |---|---|
@@ -243,7 +243,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ## Step 5: Characters
 
-**Source:** [`server/services/imagen.ts:177`](../server/services/imagen.ts#L177) (buildCharacterPrompt) · [`server/services/imagen.ts:196`](../server/services/imagen.ts#L196) (generateCharacterLooks) · Route: [`server/routes/generate.ts:421`](../server/routes/generate.ts#L421) → `POST /:id/generate-looks`
+**Source:** [`server/services/imagen.ts:177`](../server/services/imagen.ts#L177) (buildCharacterPrompt) · [`server/services/imagen.ts:196`](../server/services/imagen.ts#L196) (generateCharacterLooks) · Route: `server/routes/generate-looks.ts` → `POST /:id/generate-looks`
 
 | | |
 |---|---|
@@ -268,7 +268,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ## Step 6: Environments
 
-**Source:** [`server/services/imagen.ts:272`](../server/services/imagen.ts#L272) (buildEnvironmentPrompt) · [`server/services/imagen.ts:291`](../server/services/imagen.ts#L291) (generateEnvironmentLooks) · Route: [`server/routes/generate.ts:629`](../server/routes/generate.ts#L629) → `POST /:id/generate-environment-look`
+**Source:** [`server/services/imagen.ts:272`](../server/services/imagen.ts#L272) (buildEnvironmentPrompt) · [`server/services/imagen.ts:291`](../server/services/imagen.ts#L291) (generateEnvironmentLooks) · Route: `server/routes/generate-looks.ts` → `POST /:id/generate-environment-look`
 
 | | |
 |---|---|
@@ -284,7 +284,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 ## Step 7: Shot Prompts (Bulk Write)
 
-**Source:** [`server/services/claude.ts:301`](../server/services/claude.ts#L301) · Route: [`server/routes/generate.ts:943`](../server/routes/generate.ts#L943) → `POST /:id/write-shot-prompts`
+**Source:** [`server/services/claude.ts:301`](../server/services/claude.ts#L301) · Route: `server/routes/generate-script.ts` → `POST /:id/write-shot-prompts`
 
 | | |
 |---|---|
@@ -317,9 +317,9 @@ The shot writer writes `visual_prompt` and `motion_prompt` with generic instruct
 
 ## Step 8: Frame Generation (per shot)
 
-**Source:** [`server/services/imagen.ts:364`](../server/services/imagen.ts#L364) · Route: [`server/routes/generate.ts:1132`](../server/routes/generate.ts#L1132) → `POST /:id/shots/:shotId/generate-image`
+**Source:** [`server/services/imagen.ts:364`](../server/services/imagen.ts#L364) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
 
-Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (refineShotPrompt) · Route: [`server/routes/generate.ts:1049`](../server/routes/generate.ts#L1049) → `POST /:id/shots/:shotId/refine-prompt`
+Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (refineShotPrompt) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-prompt`
 
 | | |
 |---|---|
@@ -339,9 +339,9 @@ Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (re
 
 ## Step 9: End Frame (per shot)
 
-**Source:** [`server/services/imagen.ts:448`](../server/services/imagen.ts#L448) · Route: [`server/routes/generate.ts:1376`](../server/routes/generate.ts#L1376) → `POST /:id/shots/:shotId/generate-end-frame`
+**Source:** [`server/services/imagen.ts:448`](../server/services/imagen.ts#L448) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-end-frame`
 
-Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L1445) → `POST /:id/shots/:shotId/refine-end-frame-prompt`
+Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-end-frame-prompt`
 
 | | |
 |---|---|
@@ -363,7 +363,7 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 
 ## Step 10: Video Generation (per shot)
 
-**Source:** [`server/services/segmind.ts:62`](../server/services/segmind.ts#L62) · Route: [`server/routes/generate.ts:1594`](../server/routes/generate.ts#L1594) → `POST /:id/shots/:shotId/generate-video`
+**Source:** [`server/services/segmind.ts:62`](../server/services/segmind.ts#L62) · Route: `server/routes/generate-video.ts` → `POST /:id/shots/:shotId/generate-video`
 
 | | |
 |---|---|
@@ -402,7 +402,7 @@ Refine: Route: [`server/routes/generate.ts:1445`](../server/routes/generate.ts#L
 
 ## Step 12: Chained Shot Prompt Refresh
 
-**Source:** [`server/services/claude.ts:712`](../server/services/claude.ts#L712) · Triggered automatically after video gen in [`server/routes/generate.ts`](../server/routes/generate.ts)
+**Source:** [`server/services/claude.ts:712`](../server/services/claude.ts#L712) · Triggered automatically after video gen in `server/routes/generate-video.ts`
 
 | | |
 |---|---|
@@ -432,7 +432,7 @@ Present in: concept prompt ([claude.ts:66](../server/services/claude.ts#L66)), s
 ### "All or nothing" regeneration
 - ~~Script~~ — **FIXED**: surgical refine via Claude Opus (keeps unchanged scenes, preserves cast/env refs)
 - Concept — **FIXED**: direct edit + LLM refine on locked concept (no wipe)
-- Bulk shot prompts ([generate.ts](../server/routes/generate.ts) → `POST /:id/write-shot-prompts`) — still overwrites all manual edits
+- Bulk shot prompts (`generate-script.ts` → `POST /:id/write-shot-prompts`) — still overwrites all manual edits
 **Remaining fix:** Add selective shot prompt regen ("rewrite prompts for selected shots only")
 
 ### Staleness detection
