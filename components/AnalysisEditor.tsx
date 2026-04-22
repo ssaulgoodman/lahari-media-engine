@@ -436,6 +436,9 @@ export const AnalysisEditor: React.FC<Props> = ({
   // Environment look state
   const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
   const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
+  // Refine reference images for character/env
+  const [charRefineImage, setCharRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [envRefineImage, setEnvRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const [scriptNote, setScriptNote] = useState('');
   const [showScriptPrompt, setShowScriptPrompt] = useState(false);
   const [conceptNote, setConceptNote] = useState('');
@@ -2326,11 +2329,20 @@ export const AnalysisEditor: React.FC<Props> = ({
                         </button>
                       </div>
 
-                      {/* 4. Refine — plain text feedback */}
+                      {/* 4. Refine — feedback + optional reference image */}
                       <div className="h-px bg-white/[0.06]" />
                       <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
                         Refine — describe what's wrong, Claude rewrites the prompt
                       </div>
+                      {charRefineImage && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <img src={charRefineImage.previewUrl} className="w-10 h-10 rounded object-cover border border-white/[0.08]" alt="Reference" />
+                          <span className="text-[11px] text-zinc-400">Reference attached</span>
+                          <button onClick={() => { URL.revokeObjectURL(charRefineImage.previewUrl); setCharRefineImage(null); }} className="text-zinc-500 hover:text-red-400 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <AutoGrowTextarea
                           key={`feedback-${activeMember.id}`}
@@ -2341,17 +2353,23 @@ export const AnalysisEditor: React.FC<Props> = ({
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
                               e.preventDefault();
-                              onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value);
+                              onGenerateLooks(activeMember.id, (e.target as HTMLTextAreaElement).value, charRefineImage?.file);
                               (e.target as HTMLTextAreaElement).value = '';
+                              if (charRefineImage) { URL.revokeObjectURL(charRefineImage.previewUrl); setCharRefineImage(null); }
                             }
                           }}
                         />
+                        <label className="px-2 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white rounded-md transition-colors flex-shrink-0 self-start cursor-pointer flex items-center" title="Attach a reference image">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                          <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setCharRefineImage({ file: f, previewUrl: URL.createObjectURL(f) }); e.target.value = ''; }} />
+                        </label>
                         <button
                           onClick={() => {
                             const input = document.getElementById(`char-feedback-${activeMember.id}`) as HTMLTextAreaElement;
                             if (input?.value.trim()) {
-                              onGenerateLooks(activeMember.id, input.value);
+                              onGenerateLooks(activeMember.id, input.value, charRefineImage?.file);
                               input.value = '';
+                              if (charRefineImage) { URL.revokeObjectURL(charRefineImage.previewUrl); setCharRefineImage(null); }
                             }
                           }}
                           disabled={looksLoading.has(activeMember.id)}
@@ -2761,11 +2779,20 @@ export const AnalysisEditor: React.FC<Props> = ({
                           </button>
                         </div>
 
-                        {/* 4. Refine — plain text feedback */}
+                        {/* 4. Refine — feedback + optional reference image */}
                         <div className="h-px bg-white/[0.06]" />
                         <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
                           Refine — describe what's wrong, Claude rewrites the prompt
                         </div>
+                        {envRefineImage && (
+                          <div className="flex items-center gap-2 mb-2">
+                            <img src={envRefineImage.previewUrl} className="w-10 h-10 rounded object-cover border border-white/[0.08]" alt="Reference" />
+                            <span className="text-[11px] text-zinc-400">Reference attached</span>
+                            <button onClick={() => { URL.revokeObjectURL(envRefineImage.previewUrl); setEnvRefineImage(null); }} className="text-zinc-500 hover:text-red-400 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          </div>
+                        )}
                         <div className="flex gap-2">
                           <AutoGrowTextarea
                             key={`env-feedback-${activeEnv.id}`}
@@ -2776,17 +2803,23 @@ export const AnalysisEditor: React.FC<Props> = ({
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' && !e.shiftKey && (e.target as HTMLTextAreaElement).value.trim()) {
                                 e.preventDefault();
-                                handleEnvGenerate(activeEnv.id, undefined, (e.target as HTMLTextAreaElement).value);
+                                handleEnvGenerate(activeEnv.id, envRefineImage?.file, (e.target as HTMLTextAreaElement).value);
                                 (e.target as HTMLTextAreaElement).value = '';
+                                if (envRefineImage) { URL.revokeObjectURL(envRefineImage.previewUrl); setEnvRefineImage(null); }
                               }
                             }}
                           />
+                          <label className="px-2 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white rounded-md transition-colors flex-shrink-0 self-start cursor-pointer flex items-center" title="Attach a reference image">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) setEnvRefineImage({ file: f, previewUrl: URL.createObjectURL(f) }); e.target.value = ''; }} />
+                          </label>
                           <button
                             onClick={() => {
                               const input = document.getElementById(`env-feedback-${activeEnv.id}`) as HTMLTextAreaElement;
                               if (input?.value.trim()) {
-                                handleEnvGenerate(activeEnv.id, undefined, input.value);
+                                handleEnvGenerate(activeEnv.id, envRefineImage?.file, input.value);
                                 input.value = '';
+                                if (envRefineImage) { URL.revokeObjectURL(envRefineImage.previewUrl); setEnvRefineImage(null); }
                               }
                             }}
                             disabled={envGenerating.has(activeEnv.id)}
