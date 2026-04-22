@@ -577,7 +577,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
 });
 
 // Refine video prompt — Claude rewrites the motion prompt based on feedback
-router.post('/:id/shots/:shotId/refine-video-prompt', async (req, res) => {
+router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceImage'), async (req, res) => {
   const feedback = req.body?.feedback;
   if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
 
@@ -617,18 +617,27 @@ router.post('/:id/shots/:shotId/refine-video-prompt', async (req, res) => {
       }
     }
 
-    const endFrameNote = endBase64
+    // User-attached reference image takes the reference slot; end frame note is text-only if both exist
+    const userRefBase64 = req.file ? req.file.buffer.toString('base64') : undefined;
+    const userRefMime = req.file ? (req.file.mimetype || 'image/png') : undefined;
+    const refBase64 = userRefBase64 || endBase64;
+    const refMime = userRefMime || endMime;
+
+    const endFrameNote = endBase64 && !userRefBase64
       ? '\n[SECOND IMAGE is the end frame — the video should transition from the first image to this one]'
+      : '';
+    const userRefNote = userRefBase64
+      ? '\n[SECOND IMAGE is a reference image from the director — use it to guide the refinement]'
       : '';
 
     const result = await refineShotPrompt({
       currentVisualPrompt: shot.visual_prompt || '',
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action]${endFrameNote} ${feedback}`,
+      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action]${endFrameNote}${userRefNote} ${feedback}`,
       failedImageBase64: startBase64,
       failedImageMime: startMime,
-      referenceImageBase64: endBase64,
-      referenceImageMime: endMime,
+      referenceImageBase64: refBase64,
+      referenceImageMime: refMime,
       styleDNA: project.style_description || 'Cinematic',
       characterDescriptions: charDescs,
       sceneNarrative: scene?.narrative_description,

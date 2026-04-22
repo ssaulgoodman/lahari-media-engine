@@ -797,11 +797,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleRefineEndFramePrompt = async (shotId: string, feedback: string) => {
+  const handleRefineEndFramePrompt = async (shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
     setLoading(true);
     try {
-      const p = await api.refineEndFramePrompt(project.id, shotId, feedback);
+      const p = await api.refineEndFramePrompt(project.id, shotId, feedback, referenceImage);
       setProject(p);
     } catch (err: any) {
       setError(`End frame refinement failed: ${err.message}`);
@@ -810,11 +810,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleRefineVideoPrompt = async (shotId: string, feedback: string) => {
+  const handleRefineVideoPrompt = async (shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
     setLoading(true);
     try {
-      const result = await api.refineVideoPrompt(project.id, shotId, feedback);
+      const result = await api.refineVideoPrompt(project.id, shotId, feedback, referenceImage);
       // Update motion prompt optimistically from response
       if (result?.motionPrompt) {
         updateShotOptimistic(shotId, { motionPrompt: result.motionPrompt });

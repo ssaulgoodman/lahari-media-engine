@@ -599,7 +599,14 @@ export const revertShotEndFrame = async (projectId: string, shotId: string, asse
   return handleResponse(res);
 };
 
-export const refineVideoPrompt = async (projectId: string, shotId: string, feedback: string) => {
+export const refineVideoPrompt = async (projectId: string, shotId: string, feedback: string, referenceImage?: File) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('referenceImage', referenceImage);
+    const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-video-prompt`, { method: 'POST', body: form });
+    return handleResponse(res);
+  }
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-video-prompt`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
