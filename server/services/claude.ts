@@ -1061,6 +1061,7 @@ Apply the director's feedback to the motion prompt. This prompt goes to a video 
 export const refreshChainedShotPrompt = async (opts: {
   prevFrameBase64: string;
   prevFrameMime: string;
+  shotDirection: string;
   currentVisualPrompt: string;
   currentMotionPrompt: string;
   characterNames: string[];
@@ -1073,13 +1074,14 @@ export const refreshChainedShotPrompt = async (opts: {
 
   const castNote = opts.characterNames.length ? `\nCharacters: ${opts.characterNames.join(', ')}` : '';
   const envNote = opts.environmentName ? `\nEnvironment: ${opts.environmentName}` : '';
+  const directionNote = opts.shotDirection ? `\nSHOT INTENT: ${opts.shotDirection}` : '';
 
   const response = await client.messages.create({
     model: SONNET,
     max_tokens: 1024,
     tools: [{
       name: 'rewrite_chained_shot',
-      description: 'Rewrite the next shot\'s prompts so it flows from the previous frame.',
+      description: 'Rewrite the next shot\'s prompts so it flows from the previous frame while honoring the shot intent.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -1096,14 +1098,14 @@ export const refreshChainedShotPrompt = async (opts: {
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.prevFrameBase64 } },
         { type: 'text', text: `The image is the last frame of the previous shot.
 
-The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened.
-
+The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened while honoring the shot's intent.
+${directionNote}
 DRAFT PROMPTS (rewrite these):
 Visual: ${opts.currentVisualPrompt}
 Motion: ${opts.currentMotionPrompt}
 ${castNote}${envNote}
 
-Keep the draft's intent. Rewrite so the first moment matches the frame. Visual: 1-3 sentences. Motion: 1-2 sentences.` }
+Keep the shot intent. Rewrite so the first moment matches the frame — same characters, same state, natural continuation. Visual: 1-3 sentences. Motion: 1-2 sentences.` }
       ]
     }]
   });

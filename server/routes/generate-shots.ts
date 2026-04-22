@@ -866,11 +866,13 @@ router.post('/:id/shots/:shotId/split', async (req, res) => {
     await updateRows('shots', { id: ls.id }, { sort_order: ls.sort_order + 1 });
   }
 
-  // Create new shot right after — empty prompt (artist writes a new direction), marked stale
+  // Create new shot right after — empty prompt (artist writes new prompts), marked stale
+  // direction copied from original — same creative beat, split in time
   const newId = uuidv4();
   await insertRow('shots', {
     id: newId,
     scene_id: shot.scene_id,
+    direction: shot.direction || '',
     visual_prompt: '',
     motion_prompt: '',
     duration: secondDuration,

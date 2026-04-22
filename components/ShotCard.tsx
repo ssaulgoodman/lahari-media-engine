@@ -244,6 +244,13 @@ export const ShotCard: React.FC<ShotCardProps> = ({
 
       {/* Body — collapses when not expanded */}
       {isExpanded && <>
+      {/* Shot intent — the creative beat from script gen */}
+      {shot.direction && shot.direction !== shot.visualPrompt && (
+        <div className="px-4 py-1.5 border-t border-white/[0.04] bg-white/[0.01]">
+          <span className="text-[11px] text-zinc-500 uppercase tracking-wide mr-2">Beat:</span>
+          <span className="text-xs text-zinc-400 italic">{shot.direction}</span>
+        </div>
+      )}
       {/* Media: Video or Frames */}
       <div className="relative">
         {shot.videoUrl && !showFrames ? (

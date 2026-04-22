@@ -208,6 +208,7 @@ export const mountVideoRoutes = (router: Router) => {
             const refreshed = await refreshChainedShotPrompt({
               prevFrameBase64,
               prevFrameMime,
+              shotDirection: nextShot.direction || '',
               currentVisualPrompt: nextShot.visual_prompt || '',
               currentMotionPrompt: nextShot.motion_prompt || 'Cinematic camera movement',
               characterNames: nextCast.map((c: any) => c.name),

@@ -132,12 +132,14 @@ router.post('/:id/generate-script', async (req, res) => {
           duration = Math.max(1, Math.min(remainder, basePacing * 2));
         }
 
-        // Store direction as visual_prompt placeholder — writeShotPrompts will overwrite later
+        // direction = shot's creative intent (preserved permanently)
+        // visual_prompt starts as direction placeholder — writeShotPrompts overwrites with start-frame description
         await insertRow('shots', {
           id: shotId,
           scene_id: sceneId,
+          direction: shot.direction || '',
           visual_prompt: shot.direction || '',
-          motion_prompt: '',  // motion_prompt left empty — writeShotPrompts fills it
+          motion_prompt: '',
           duration,
           cast_ids: JSON.stringify(castIds),
           use_next_as_end_frame: project.video_mode === 'cinematic' ? 1 : 0,
@@ -321,6 +323,7 @@ router.post('/:id/refine-script', async (req, res) => {
 
         await insertRow('shots', {
           id: uuidv4(), scene_id: sceneId,
+          direction: shot.direction || '',
           visual_prompt: shot.direction, duration,
           cast_ids: JSON.stringify(castIds),
           environment_id: envId || null,
@@ -380,7 +383,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         const shotCastNames = cast.filter((c: any) => shotCastIds.includes(c.id)).map((c: any) => c.name);
         allShots.push({
           id: shot.id,
-          direction: shot.visual_prompt || '',  // was stored as direction placeholder
+          direction: shot.direction || shot.visual_prompt || '',
           duration: shot.duration,
           castNames: shotCastNames,
           sceneNarrative: scene.narrative_description || '',

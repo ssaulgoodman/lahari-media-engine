@@ -54,6 +54,7 @@ export interface ShotCritique {
 export interface VideoShot {
   id: string;
   duration: number;
+  direction?: string;
   visualPrompt: string;
   motionPrompt: string;
   castIds: string[];
