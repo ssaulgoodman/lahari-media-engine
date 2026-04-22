@@ -22,7 +22,7 @@ export function useActionFeedback() {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
-  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const run = useCallback(async <T,>(
     fn: () => Promise<T>,

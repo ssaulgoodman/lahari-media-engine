@@ -406,7 +406,7 @@ export const AnalysisEditor: React.FC<Props> = ({
 
   // Shared inline error feedback — surfaces async failures to the artist
   const [actionError, setActionError] = useState<string | null>(null);
-  const actionErrorTimer = useRef<ReturnType<typeof setTimeout>>();
+  const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showActionError = (msg: string) => {
     setActionError(msg);
     clearTimeout(actionErrorTimer.current);
