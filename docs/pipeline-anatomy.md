@@ -141,7 +141,7 @@ The locked concept is NOT frozen. Three ways to adjust:
 
 | | |
 |---|---|
-| **Model** | Claude Sonnet (claude.ts → `planScenes`) |
+| **Model** | Claude Opus (claude.ts → `planScenes`) |
 | **Input** | locked_concept + lyrics + meaning + musicalStructure + videoMode + pacing + minShotDuration + `userNote` |
 | **Output** | `cast[]` + `environments[]` + `scenes[shots[]]` |
 | **Artist control** | Direct edit (scene narratives + shot directions inline, saves on blur with "Saved" flash). LLM refine. Full regenerate. Prompt viewable via toggle. |
@@ -153,8 +153,11 @@ Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude
 
 **Model-aware duration**: Prompt includes `minShotDuration` (from `getModelMinDuration()`) as informational context — Claude doesn't distort shot count because of it. At video generation time, Segmind picks the smallest model duration >= shot duration. Render timeline handles trimming.
 
+**Shot `direction` field:**
+Each shot's creative intent (e.g. "Priya breaks down at her desk, surrenders her pride") is preserved in a dedicated `direction` column. Script gen writes it alongside `visual_prompt` (which starts as a copy). When `writeShotPrompts` later overwrites `visual_prompt` with a start-frame description, the original intent survives in `direction`. Used by `writeShotPrompts` (as input), `refreshChainedShotPrompt` (as context), and shown in Studio as a read-only "Beat" line.
+
 **Shot splitting (post-script):**
-Artist can split any shot >4s in the script phase (↕ button). Creates a new shot with half the duration, empty prompt, same cast/env. Both halves marked stale. Duration is **read-only** — only changeable via pacing selection (regenerates script), split button, or model change. Endpoint: `POST /:id/shots/:shotId/split`.
+Artist can split any shot >4s in the script phase (↕ button). Creates a new shot with half the duration, empty prompt, same cast/env, same `direction`. Both halves marked stale. Duration is **read-only** — only changeable via pacing selection (regenerates script), split button, or model change. Endpoint: `POST /:id/shots/:shotId/split`.
 
 **Director mode (Montage vs Cinematic):**
 Claude receives explicit guidance based on the chosen mode:
@@ -164,7 +167,7 @@ Claude receives explicit guidance based on the chosen mode:
 **Two generation modes:**
 
 1. **Refine** (Claude Opus + extended thinking) — Claude sees the FULL current script + director's feedback. Surgical refinement with 5 preservation rules. Same validation loop.
-2. **Regenerate** (Claude Sonnet + extended thinking) — fresh generation from concept + lyrics. Same validation loop.
+2. **Regenerate** (Claude Opus + extended thinking) — fresh generation from concept + lyrics. Same validation loop.
 
 **Style image as ground truth:** Style DNA text removed from all Gemini image gen prompts. Gemini receives only the style reference image and is told to match it exactly.
 
@@ -288,7 +291,7 @@ Claude receives explicit guidance based on the chosen mode:
 
 | | |
 |---|---|
-| **Model** | Claude Sonnet (claude.ts → `writeShotPrompts`) |
+| **Model** | Claude Opus (claude.ts → `writeShotPrompts`) |
 | **Input** | All shots with direction + cast + scene context + style DNA + optional `userNote` |
 | **Output** | `visual_prompt` + `motion_prompt` + `continuityFrom` per shot |
 | **Artist control** | `userNote` on bulk gen. Individual shot prompts editable after. Individual refine with feedback. |
@@ -319,7 +322,7 @@ Claude writes `visual_prompt` (start frame for Gemini image gen) and `motion_pro
 
 **Source:** [`server/services/imagen.ts:364`](../server/services/imagen.ts#L364) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
 
-Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (refineShotPrompt) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-prompt`
+Refine: [`server/services/claude.ts`](../server/services/claude.ts) (`refineFramePrompt`) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-prompt`
 
 | | |
 |---|---|
@@ -329,7 +332,7 @@ Refine: [`server/services/claude.ts:601`](../server/services/claude.ts#L601) (re
 | **Artist control** | Full — edit visual_prompt in "First frame" tab, @mention cast/env/style, refine with plain text feedback |
 | **generation_prompt** | `visual_prompt` IS the prompt (plus refs chain) |
 
-**Refine context:** Claude Sonnet sees failed image + visual prompt + motion prompt + style DNA + scene narrative + environment description + cast descriptions. Output: 1-3 short sentences (visual), 1 sentence (motion, only if feedback mentions movement).
+**Refine context:** Claude Sonnet sees failed image + director's feedback + current prompt + optional reference image. No style/scene/character context — Claude applies the director's edit to the prompt text. Output: rewritten `visualPrompt` (1-3 sentences). Uses `refineFramePrompt`.
 
 **Hardcoded in template:** "Preserve character identity from character references", "Render in the style of the style reference image", "Single cinematic frame. No text, no watermark."
 
@@ -351,7 +354,7 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | **Artist control** | `end_visual_prompt` — visible/editable in "Last frame" tab, AI refine with feedback |
 | **generation_prompt** | `end_visual_prompt` on the shot |
 
-**Refine context:** Same as start frame — Claude sees end frame image (if exists) + end visual prompt + scene + env + cast + style. Works without existing end image (prompt-only refine).
+**Refine context:** Same as start frame — `refineFramePrompt` with `[END FRAME]` prefix. Claude sees end frame image (if exists) + director's feedback + current prompt. No style/scene/character context. Works without existing end image (prompt-only refine).
 
 **Reverse chain:** "Use as prev shot's end" copies start frame image AND `visual_prompt` → prev shot's `end_image_asset_id` + `end_visual_prompt`.
 
@@ -373,7 +376,7 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | **Artist control** | "Video" tab: motion prompt (editable, overrideable). AI refine rewrites motion prompt. |
 | **generation_prompt** | `motionPrompt` only + ref labels when ref images attached. No mood, scene narrative, or cast names — the start frame already shows all of that. Overrideable in Video tab. |
 
-**Refine context:** Claude sees start frame + end frame (if exists) + motion prompt + scene + env + cast + style. Output: rewrites motion prompt only.
+**Refine context:** `refineMotionPrompt` — Claude sees start frame + end frame (if exists) + shot visual prompt (context) + director's feedback + current motion prompt + optional reference image. No style/scene/character context. Output: rewritten `motionPrompt` only.
 
 **Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Frame mode prioritized when start frame exists. Veo accepts all inputs together.
 
@@ -407,11 +410,11 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | | |
 |---|---|
 | **Model** | Claude Sonnet vision (claude.ts → `refreshChainedShotPrompt`) |
-| **Input** | Extracted last frame + next shot's current prompts |
+| **Input** | Extracted last frame + next shot's `direction` (intent) + current visual/motion prompts + character names + environment name |
 | **Output** | Rewritten visual_prompt + motion_prompt for next shot |
 | **Artist control** | Marks `refined_from_prev_frame`. Artist can override. |
 
-**Status: DONE** — clears `prompts_stale` on the refreshed shot. Automatic but non-destructive — artist sees the `refined_from_prev_frame` flag and can undo.
+**Status: DONE** — clears `prompts_stale` on the refreshed shot. Automatic but non-destructive — artist sees the `refined_from_prev_frame` flag and can undo. Uses `direction` field to honor the shot's creative intent while adjusting for visual continuity. No style/mood/scene narrative — just frame + drafts + intent + names.
 
 ---
 

@@ -109,13 +109,13 @@ No end-frame prediction. Shot = start frame + motion prompt (video instruction) 
 
 **Bulk fan-out (throttled, multi-pass)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames**. Both bulk handlers use a **multi-pass loop**: after each pass completes, project state is refreshed from the server and newly unblocked `prev_shot` items are picked up automatically. Failed shots (ERROR status) are excluded from automatic requeue — artist sees them in UI and can retry manually.
 
-**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
+**Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet sees the extracted last frame + the shot's `direction` (creative intent) + current draft prompts + character/env names, and rewrites `visual_prompt` / `motion_prompt` to flow from what actually happened while honoring the shot's intent. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
 **Pacing**: Uses `ceil(scene_duration / pacing)` for shot count. A 21s scene at 8s pacing → 3 shots (8+8+5), not 2 (8+13). Validation enforces exact count via extended thinking + retry loop. Duration assignment: all shots get base pacing, last shot gets remainder (clamped at 2× pacing as safety net). Both first-gen and refine paths use identical ceil+remainder logic.
 
 **Model-aware durations**: Claude's prompt includes the video model's minimum clip length (via `getModelMinDuration()` from `segmind.ts`) as informational context — it doesn't distort shot count. At video generation time, Segmind picks the smallest model duration >= shot duration (e.g. 5s shot on Veo Fast → sends 8s). If shot exceeds all model durations, the largest is used. Render timeline handles trimming.
 
-**Shot splitting**: Artist can split any shot >4s in the script phase. Creates a new shot at `sort_order + 1`, divides duration in half, copies cast/env assignments, empty prompt (artist writes new direction). Both halves marked stale.
+**Shot splitting**: Artist can split any shot >4s in the script phase. Creates a new shot at `sort_order + 1`, divides duration in half, copies cast/env/direction, empty prompt (artist writes new visual/motion). Both halves marked stale.
 
 **Shot editing in script phase**: Cast assignment (toggle buttons per character), environment (custom dropdown), direction (contentEditable text). Duration is **read-only** — only changeable via pacing selection (regenerates script), split button, or model change. All changes trigger staleness and "Saved" flash.
 
@@ -226,7 +226,7 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
 - `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage), `source_queue_id` (links project to queue item for multi-user support)
-- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
+- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
