@@ -1063,30 +1063,28 @@ export const refreshChainedShotPrompt = async (opts: {
   prevFrameMime: string;
   currentVisualPrompt: string;
   currentMotionPrompt: string;
-  styleDNA: string;
-  characterDescriptions: string[];
+  characterNames: string[];
   environmentName?: string;
-  sceneNarrative?: string;
-  sceneLyrics?: string;
-  mood?: string;
-  shotDuration: number;
 }): Promise<{ visualPrompt: string; motionPrompt: string }> => {
   const client = getClient();
   const mediaType = opts.prevFrameMime.startsWith('image/')
     ? opts.prevFrameMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
     : 'image/png';
 
+  const castNote = opts.characterNames.length ? `\nCharacters: ${opts.characterNames.join(', ')}` : '';
+  const envNote = opts.environmentName ? `\nEnvironment: ${opts.environmentName}` : '';
+
   const response = await client.messages.create({
     model: SONNET,
     max_tokens: 1024,
     tools: [{
       name: 'rewrite_chained_shot',
-      description: 'Rewrite the next shot\'s visual + motion prompts so it begins from the frame shown.',
+      description: 'Rewrite the next shot\'s prompts so it flows from the previous frame.',
       input_schema: {
         type: 'object' as const,
         properties: {
-          visualPrompt: { type: 'string', description: 'Start-frame prompt for image model. 1-3 sentences. What we see — must flow from the previous frame shown.' },
-          motionPrompt: { type: 'string', description: 'Video instruction for video model. 1-2 sentences. What happens during this shot, starting from the previous frame\'s state.' }
+          visualPrompt: { type: 'string', description: 'Start-frame prompt. 1-3 sentences. Must flow from the frame shown.' },
+          motionPrompt: { type: 'string', description: 'Video instruction. 1-2 sentences. Action + camera from the frame shown.' }
         },
         required: ['visualPrompt', 'motionPrompt']
       }
@@ -1096,28 +1094,16 @@ export const refreshChainedShotPrompt = async (opts: {
       role: 'user',
       content: [
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.prevFrameBase64 } },
-        { type: 'text', text: `You are a cinematographer chaining two shots seamlessly.
+        { type: 'text', text: `The image is the last frame of the previous shot.
 
-THE IMAGE ABOVE is the last frame of the PREVIOUS shot — literally where we end up.
+The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened.
 
-THE NEXT SHOT was drafted blind (before the previous shot was rendered). Now that we can see the actual ending frame, rewrite the next shot's prompts so the continuity is grounded in what really happened.
-
-CURRENT (draft) NEXT-SHOT PROMPT:
+DRAFT PROMPTS (rewrite these):
 Visual: ${opts.currentVisualPrompt}
 Motion: ${opts.currentMotionPrompt}
+${castNote}${envNote}
 
-NEXT SHOT DURATION: ${opts.shotDuration}s
-${opts.sceneNarrative ? `SCENE NARRATIVE: ${opts.sceneNarrative}` : ''}
-${opts.sceneLyrics ? `LYRICS AT THIS MOMENT: ${opts.sceneLyrics}` : ''}
-${opts.mood ? `MOOD: ${opts.mood}` : ''}
-STYLE DNA: ${opts.styleDNA}
-${opts.environmentName ? `ENVIRONMENT: ${opts.environmentName}` : ''}
-${opts.characterDescriptions.length ? `CHARACTERS IN THIS SHOT:\n${opts.characterDescriptions.join('\n')}` : ''}
-
-Rewrite both prompts. Keep the spirit of the draft, but:
-- Start from the actual frame shown (composition, lighting, character pose, environment).
-- Describe a natural continuation — camera can move or cut tight, but the first moment of this shot must match the frame.
-- Keep it 1-3 sentences, direct and visual. No meta-commentary.` }
+Keep the draft's intent. Rewrite so the first moment matches the frame. Visual: 1-3 sentences. Motion: 1-2 sentences.` }
       ]
     }]
   });

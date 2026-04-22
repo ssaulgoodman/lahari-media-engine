@@ -572,42 +572,26 @@ Same plan_music_video tool output.`,
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
     triggeredBy: 'Fires automatically after a shot\'s video lands, when the next shot is tagged "prev_shot".',
-    summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so the handoff is grounded in what really happened.",
+    summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so continuity flows from what actually happened. Minimal inputs: frame + draft prompts + character/env names.",
     variables: [
       { name: 'prevFrame', description: "Extracted last frame of the previous shot's video" },
-      { name: 'currentVisualPrompt', description: "Next shot's current visual prompt" },
-      { name: 'currentMotionPrompt', description: "Next shot's current motion prompt" },
-      { name: 'styleDNA', description: 'Style keywords' },
-      { name: 'characterDescriptions', description: 'Cast in the next shot' },
-      { name: 'environmentName', description: 'Next shot environment (optional)' },
-      { name: 'sceneNarrative', description: 'Next scene narrative (optional)' },
-      { name: 'sceneLyrics', description: 'Lyrics for this moment (optional)' },
-      { name: 'mood', description: 'Concept mood (optional)' },
-      { name: 'shotDuration', description: 'Shot duration in seconds' },
+      { name: 'currentVisualPrompt', description: "Next shot's draft visual prompt" },
+      { name: 'currentMotionPrompt', description: "Next shot's draft motion prompt" },
+      { name: 'characterNames', description: 'Character names (for prompt references)' },
+      { name: 'environmentName', description: 'Environment name (optional)' },
     ],
-    template: `You are a cinematographer chaining two shots seamlessly.
+    template: `The image is the last frame of the previous shot.
 
-THE IMAGE ABOVE is the last frame of the PREVIOUS shot — literally where we end up.
+The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened.
 
-THE NEXT SHOT was drafted blind (before the previous shot was rendered). Now that we can see the actual ending frame, rewrite the next shot's prompts so the continuity is grounded in what really happened.
-
-CURRENT (draft) NEXT-SHOT PROMPT:
+DRAFT PROMPTS (rewrite these):
 Visual: {{currentVisualPrompt}}
 Motion: {{currentMotionPrompt}}
+{{characterNames ? "Characters: " + characterNames : ""}}
+{{environmentName ? "Environment: " + environmentName : ""}}
 
-NEXT SHOT DURATION: {{shotDuration}}s
-{{sceneNarrative ? "SCENE NARRATIVE: " + sceneNarrative : ""}}
-{{sceneLyrics ? "LYRICS AT THIS MOMENT: " + sceneLyrics : ""}}
-{{mood ? "MOOD: " + mood : ""}}
-STYLE DNA: {{styleDNA}}
-{{environmentName ? "ENVIRONMENT: " + environmentName : ""}}
-{{characterDescriptions ? "CHARACTERS IN THIS SHOT:\\n" + characterDescriptions : ""}}
-
-Rewrite both prompts. Keep the spirit of the draft, but:
-- Start from the actual frame shown (composition, lighting, character pose, environment).
-- Describe a natural continuation — camera can move or cut tight, but the first moment of this shot must match the frame.
-- Keep it 1-3 sentences, direct and visual. No meta-commentary.`,
-    source: { file: 'server/services/claude.ts', lines: '676-745' },
+Keep the draft's intent. Rewrite so the first moment matches the frame. Visual: 1-3 sentences. Motion: 1-2 sentences.`,
+    source: { file: 'server/services/claude.ts', lines: 'refreshChainedShotPrompt' },
   },
   {
     id: 'shot-video-assembly',

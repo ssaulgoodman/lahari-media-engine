@@ -210,13 +210,8 @@ export const mountVideoRoutes = (router: Router) => {
               prevFrameMime,
               currentVisualPrompt: nextShot.visual_prompt || '',
               currentMotionPrompt: nextShot.motion_prompt || 'Cinematic camera movement',
-              styleDNA: project.style_description || 'Cinematic',
-              characterDescriptions: nextCast.map((c: any) => `${c.name}: ${c.description || ''}`),
+              characterNames: nextCast.map((c: any) => c.name),
               environmentName: nextEnv?.name,
-              sceneNarrative: scene?.narrative_description || undefined,
-              sceneLyrics: scene?.lyrics || undefined,
-              mood: concept.mood || undefined,
-              shotDuration: nextShot.duration,
             });
             await updateRows('shots', { id: nextShot.id }, {
               visual_prompt: refreshed.visualPrompt,
