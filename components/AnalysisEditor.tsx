@@ -2307,7 +2307,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                             className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                           />
                         ) : (
-                          <div className="text-xs text-zinc-500 italic">Auto-generated on first look generation</div>
+                          <div className="text-xs text-zinc-500 italic">Built from description + style on first generate. Editable after.</div>
                         )}
                       </div>
 
@@ -2727,7 +2727,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                               className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20"
                             />
                           ) : (
-                            <div className="text-xs text-zinc-500 italic">Auto-generated on first look generation</div>
+                            <div className="text-xs text-zinc-500 italic">Built from description + style on first generate. Editable after.</div>
                           )}
                         </div>
 
