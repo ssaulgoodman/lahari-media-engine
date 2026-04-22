@@ -128,15 +128,16 @@ export const ShotCard: React.FC<ShotCardProps> = ({
     if (shot.userFeedback) compiledLines.push('', `Director note: ${shot.userFeedback}`);
     compiledLines.push('', 'Single cinematic frame. No text, no watermark.', 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.');
 
-    const concept = project.lockedConcept;
-    const castNamesStr = shotCast.map(c => c.name).join(', ');
-    const mood = concept?.mood || 'Cinematic';
-    const narrativeBrief = (scene.narrativeDescription || '').length > 120 ? scene.narrativeDescription.substring(0, 120) + '...' : scene.narrativeDescription;
-    const veoParts = [shot.motionPrompt || 'Cinematic camera movement'];
-    if (narrativeBrief) veoParts.push(narrativeBrief);
-    if (castNamesStr) veoParts.push(`Characters: ${castNamesStr}`);
-    veoParts.push(`${mood} mood`);
-    if (shot.continuityFrom === 'prev_shot' && (shot as any).continuityDescription) veoParts.push(`Starting state (from previous shot): ${(shot as any).continuityDescription}`);
+    // Video prompt: action + motion only. Start frame shows the visual state.
+    // Ref labels added only when ref images are actually attached.
+    const veoParts: string[] = [];
+    if (shot.visualPrompt) veoParts.push(shot.visualPrompt);
+    if (shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement') veoParts.push(shot.motionPrompt);
+    const castWithRefs = shotCast.filter(c => c.referenceImageUrl);
+    const refLabels: string[] = [];
+    castWithRefs.forEach(c => refLabels.push(`Maintain ${c.name}'s appearance from reference`));
+    if (shotEnv?.referenceImageUrl) refLabels.push(`Maintain ${shotEnv.name} setting from reference`);
+    if (refLabels.length) veoParts.push(refLabels.join('. '));
 
     return { compiledRefs, compiledText: compiledLines.join('\n'), autoVeoPrompt: veoParts.join('. ') };
   };

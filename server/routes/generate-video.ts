@@ -73,40 +73,20 @@ export const mountVideoRoutes = (router: Router) => {
       await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
       const t0 = Date.now();
 
-      // Build Veo prompt: motion description + brief scene context.
-      const motionDesc = shot.motion_prompt || 'Cinematic camera movement';
-      const castNames = activeCast.map((c: any) => c.name).join(', ');
-      const mood = concept.mood || 'Cinematic';
-
-      const veoPromptParts = [motionDesc];
-      if (shot.visual_prompt) {
-        const visualBrief = shot.visual_prompt.length > 150
-          ? shot.visual_prompt.substring(0, 150) + '...'
-          : shot.visual_prompt;
-        veoPromptParts.push(visualBrief);
+      // Build Veo prompt — action + motion only.
+      // The start frame already shows the visual state, style, mood, and characters.
+      // Text should tell Veo what to ANIMATE, not re-describe what's visible.
+      // Character/env ref labels are added only when ref images are actually attached.
+      const veoPromptParts: string[] = [];
+      if (shot.visual_prompt) veoPromptParts.push(shot.visual_prompt);
+      if (shot.motion_prompt && shot.motion_prompt !== 'Cinematic camera movement') {
+        veoPromptParts.push(shot.motion_prompt);
       }
-      if (castNames) veoPromptParts.push(`Characters: ${castNames}`);
-      veoPromptParts.push(`${mood} mood`);
-
-      const refNotes: string[] = [];
-      activeCast.forEach((c: any) => {
-        if (c.reference_asset_id) refNotes.push(`Reference image: ${c.name} (character — match their appearance)`);
-      });
-      if (shot.environment_id) {
-        const env = await selectOne('environments', { id: shot.environment_id });
-        if (env?.reference_asset_id) refNotes.push(`Reference image: ${env.name} (environment — match this setting)`);
-      }
-      if (refNotes.length) veoPromptParts.push(refNotes.join('. '));
-      if (shot.continuity_from === 'prev_shot' && shot.continuity_description) {
-        veoPromptParts.push(`Starting state (from previous shot): ${shot.continuity_description}`);
-      }
-
-      const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
 
       const videoModelKey = (project.video_model || 'veo-3.1-fast') as SegmindModelKey;
       const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
 
-      console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 100)}...`);
+      // veoPrompt is finalized after ref resolution below
 
       const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
       const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
@@ -157,6 +137,22 @@ export const mountVideoRoutes = (router: Router) => {
         const endAsset = await selectOne('assets', { id: shot.end_image_asset_id });
         if (endAsset) endImagePath = endAsset.file_path;
       }
+
+      // Add ref labels only when ref images are actually being sent
+      if (referenceImagePaths.length > 0 && modelSpec.supportsRefs) {
+        const refLabels: string[] = [];
+        // Figure out which refs resolved — label them so Veo knows what the images are
+        const castWithRefs = activeCast.filter((c: any) => c.reference_asset_id);
+        castWithRefs.forEach((c: any) => refLabels.push(`Maintain ${c.name}'s appearance from reference`));
+        if (shot.environment_id) {
+          const env = await selectOne('environments', { id: shot.environment_id });
+          if (env?.reference_asset_id) refLabels.push(`Maintain ${env.name} setting from reference`);
+        }
+        if (refLabels.length) veoPromptParts.push(refLabels.join('. '));
+      }
+
+      const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
+      console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
       const result = await generateSegmindVideo(imageAsset.file_path, veoPrompt, {
         endImagePath,
