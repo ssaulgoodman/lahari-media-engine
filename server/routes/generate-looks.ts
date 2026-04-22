@@ -128,7 +128,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     const looks: { id: string; url: string }[] = [];
     for (let i = 0; i < imagePaths.length; i++) {
       const assetId = uuidv4();
-      await insertRow('assets', { id: assetId, project_id: project.id, category: 'character', file_path: imagePaths[i], prompt: `Look ${i + 1} for ${member.name}` });
+      await insertRow('assets', { id: assetId, project_id: project.id, category: 'character_candidate', file_path: imagePaths[i], prompt: `Look ${i + 1} for ${member.name}`, metadata: JSON.stringify({ castMemberId }) });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
     }
 
@@ -218,6 +218,34 @@ router.post('/:id/lock-character', async (req, res) => {
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: assetId });
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
+  res.json({ ok: true });
+});
+
+// ─── Get candidates for a character or environment ────────────────
+router.get('/:id/candidates/:entityType/:entityId', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const entityType = req.params.entityType as string; // 'character' or 'environment'
+  const entityId = req.params.entityId as string;
+  const category = entityType === 'character' ? 'character_candidate' : 'environment_candidate';
+  const metaKey = entityType === 'character' ? 'castMemberId' : 'environmentId';
+
+  const allAssets = await selectAll('assets', { project_id: projectId, category });
+  const candidates = allAssets
+    .filter((a: any) => {
+      try { return JSON.parse(a.metadata || '{}')[metaKey] === entityId; } catch { return false; }
+    })
+    .map((a: any) => ({ id: a.id, url: storageUrl(a.file_path) }));
+
+  res.json({ candidates });
+});
+
+// ─── Unlock individual character look ─────────────────────────────
+router.post('/:id/unlock-character-look', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { castMemberId } = req.body;
+  if (!castMemberId) return res.status(400).json({ error: 'castMemberId required' });
+  await requireCastMember(projectId, castMemberId);
+  await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: null });
   res.json({ ok: true });
 });
 
@@ -330,7 +358,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     const looks: { id: string; url: string }[] = [];
     for (let i = 0; i < imagePaths.length; i++) {
       const assetId = uuidv4();
-      await insertRow('assets', { id: assetId, project_id: project.id, category: 'environment', file_path: imagePaths[i], prompt: `Environment look ${i + 1} for ${env.name}` });
+      await insertRow('assets', { id: assetId, project_id: project.id, category: 'environment_candidate', file_path: imagePaths[i], prompt: `Environment look ${i + 1} for ${env.name}`, metadata: JSON.stringify({ environmentId: env.id }) });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
     }
 
@@ -416,6 +444,16 @@ router.post('/:id/lock-environment', async (req, res) => {
   await updateRows('environments', { id: environmentId }, { reference_asset_id: assetId });
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
+  res.json({ ok: true });
+});
+
+// ─── Unlock individual environment look ───────────────────────────
+router.post('/:id/unlock-environment-look', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { environmentId } = req.body;
+  if (!environmentId) return res.status(400).json({ error: 'environmentId required' });
+  await requireEnvironment(projectId, environmentId);
+  await updateRows('environments', { id: environmentId }, { reference_asset_id: null });
   res.json({ ok: true });
 });
 

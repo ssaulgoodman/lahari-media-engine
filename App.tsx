@@ -1355,6 +1355,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     isLoading={loading}
                     looksLoading={looksLoading}
                     lookCandidates={lookCandidates}
+                    onSetLookCandidates={(id, candidates) => setLookCandidates(prev => ({ ...prev, [id]: candidates }))}
                     onDiscardLookCandidates={(id) => setLookCandidates(prev => ({ ...prev, [id]: [] }))}
                     onLockConcept={handleLockConcept}
                     onUnlockConcept={handleUnlockConcept}

@@ -174,6 +174,7 @@ interface Props {
   isLoading: boolean;
   looksLoading: Set<string>;
   lookCandidates: Record<string, { id: string; url: string }[]>;
+  onSetLookCandidates?: (castMemberId: string, candidates: { id: string; url: string }[]) => void;
   onDiscardLookCandidates?: (castMemberId: string) => void;
   onLockConcept: (index: number) => void;
   onLockStyle: (assetId: string, styleDescription?: string) => void;
@@ -263,7 +264,7 @@ interface StyleSlot {
 // EnvironmentCard removed — environments now use sidebar+detail layout inline
 
 export const AnalysisEditor: React.FC<Props> = ({
-  project, isLoading, looksLoading, lookCandidates, onDiscardLookCandidates,
+  project, isLoading, looksLoading, lookCandidates, onSetLookCandidates, onDiscardLookCandidates,
   onLockConcept, onLockStyle, onUnlockStyle,
   onGenerateLooks, onLockCharacter, onAddCast, onUpdateCast, onDeleteCast,
   onGenerateScript, onRefineScript, onUpdateScene, onUpdateShot, onGenerateConcepts, onCancelConcepts, onCancelScript, onUnlockConcept, onRefineConcept, onUpdateConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject, onConfirmDestructive,
@@ -2076,9 +2077,24 @@ export const AnalysisEditor: React.FC<Props> = ({
                           className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 w-auto"
                         />
                         {activeMember.referenceImageUrl && (
-                          <span className="text-xs text-zinc-400 flex items-center gap-1 flex-shrink-0">
+                          <span className="text-xs text-zinc-400 flex items-center gap-1.5 flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
                             Locked
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await api.unlockCharacterLook(project.id, activeMember.id);
+                                  onSetProject?.({ ...project, cast: project.cast.map(c => c.id === activeMember.id ? { ...c, referenceImageUrl: undefined } : c) });
+                                  // Fetch persisted candidates from DB
+                                  const candidates = await api.getCandidates(project.id, 'character', activeMember.id);
+                                  if (candidates.length > 0) onSetLookCandidates?.(activeMember.id, candidates);
+                                } catch (err: any) { showActionError(`Unlock failed: ${err.message}`); }
+                              }}
+                              className="text-zinc-500 hover:text-amber-400/80 transition-colors"
+                              title="Unlock — browse previous candidates"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                            </button>
                           </span>
                         )}
                       </div>
@@ -2495,9 +2511,24 @@ export const AnalysisEditor: React.FC<Props> = ({
                             className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 w-auto"
                           />
                           {activeEnv.referenceImageUrl && (
-                            <span className="text-xs text-zinc-400 flex items-center gap-1 flex-shrink-0">
+                            <span className="text-xs text-zinc-400 flex items-center gap-1.5 flex-shrink-0">
                               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-white" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>
                               Locked
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await api.unlockEnvironmentLook(project.id, activeEnv.id);
+                                    onSetProject?.({ ...project, environments: project.environments.map(e => e.id === activeEnv.id ? { ...e, referenceImageUrl: undefined } : e) });
+                                    // Fetch persisted candidates from DB
+                                    const candidates = await api.getCandidates(project.id, 'environment', activeEnv.id);
+                                    if (candidates.length > 0) setEnvLooks(prev => ({ ...prev, [activeEnv.id]: candidates }));
+                                  } catch (err: any) { showActionError(`Unlock failed: ${err.message}`); }
+                                }}
+                                className="text-zinc-500 hover:text-amber-400/80 transition-colors"
+                                title="Unlock and regenerate — pick a different look"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                              </button>
                             </span>
                           )}
                         </div>

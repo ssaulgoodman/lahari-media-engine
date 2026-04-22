@@ -270,6 +270,21 @@ export const lockCharacter = async (projectId: string, castMemberId: string, ass
   return handleResponse(res);
 };
 
+export const getCandidates = async (projectId: string, entityType: 'character' | 'environment', entityId: string): Promise<{ id: string; url: string }[]> => {
+  const res = await authFetch(`${API}/projects/${projectId}/candidates/${entityType}/${entityId}`);
+  const data = await handleResponse(res);
+  return data.candidates || [];
+};
+
+export const unlockCharacterLook = async (projectId: string, castMemberId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/unlock-character-look`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ castMemberId })
+  });
+  return handleResponse(res);
+};
+
 // ─── Cast Management ────────────────────────────────────────────────
 
 export const addCastMember = async (projectId: string, name: string, description: string) => {
@@ -353,6 +368,15 @@ export const lockEnvironment = async (projectId: string, environmentId: string, 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ environmentId, assetId })
+  });
+  return handleResponse(res);
+};
+
+export const unlockEnvironmentLook = async (projectId: string, environmentId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/unlock-environment-look`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ environmentId })
   });
   return handleResponse(res);
 };
