@@ -57,6 +57,13 @@ export const SEGMIND_MODELS = {
 
 export type SegmindModelKey = keyof typeof SEGMIND_MODELS;
 
+/** Smallest valid duration for a given model (or default model). */
+export const getModelMinDuration = (modelKey?: string): number => {
+  const model = SEGMIND_MODELS[(modelKey || 'veo-3.1-fast') as SegmindModelKey];
+  if (!model) return 4;
+  return Math.min(...model.durations);
+};
+
 // ─── Generate Video ──────────────────────────────────────────────
 
 export const generateSegmindVideo = async (
@@ -75,13 +82,11 @@ export const generateSegmindVideo = async (
   const model = SEGMIND_MODELS[modelKey];
   if (!model) throw new Error(`Unknown Segmind model: ${modelKey}`);
 
-  // Clamp duration to supported values
-  const durations = [...model.durations] as number[];
+  // Pick the smallest model duration >= shot duration. If shot exceeds all
+  // model durations, use the largest. The render timeline handles trimming.
+  const durations = [...model.durations].sort((a, b) => a - b);
   const requested = opts?.durationSec ?? durations[0];
-  const durationSec = durations.reduce<number>(
-    (best, d) => Math.abs(d - requested) < Math.abs(best - requested) ? d : best,
-    durations[0]
-  );
+  const durationSec = durations.find(d => d >= requested) ?? durations[durations.length - 1];
 
   // Convert storage paths to public Supabase URLs
   const startUrl = storageUrl(startImagePath);

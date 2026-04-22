@@ -170,6 +170,7 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`,
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds (default 8)' },
+      { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
       { name: 'userNote', description: 'Optional director note' },
     ],
     template: `You are a music video director planning a {{videoMode}} for a devotional song.
@@ -187,6 +188,8 @@ Base shot length: {{pacing}} seconds.
 For each scene: number_of_shots = ceil(scene_duration / {{pacing}})
 Every shot is {{pacing}}s except the LAST shot which gets the remainder.
 Example: 21s at 8s → ceil(21/8) = 3 shots (8+8+5).
+Minimum shot duration: {{minShotDuration}}s — video model can't generate shorter clips.
+If remainder < minShotDuration, merge into previous shot.
 ═══════════════════════════════════════════════════════════════
 
 Uses extended thinking (8K budget) so Claude reasons through pacing math.

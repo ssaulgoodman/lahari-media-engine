@@ -301,10 +301,11 @@ const parseTimestamp = (t: string): number => {
 };
 
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; userNote?: string }
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = input.basePacing || 8;
+  const minDuration = input.minShotDuration || 4;
 
   const modeGuidance = input.videoMode === 'cinematic'
     ? `DIRECTOR STYLE: Cinematic — smooth visual continuity between shots. Each shot should flow into the next (camera moves through space, characters transition between poses, lighting shifts gradually). Favor longer compositions, slow reveals, and connected movement. Shots within a scene share visual momentum.`
@@ -332,6 +333,8 @@ Every shot is ${pacing}s except the LAST shot which gets the remainder.
 
 Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
 Example: 24s scene at ${pacing}s → ceil(24/${pacing}) = ${Math.ceil(24 / pacing)} shots. 36s → ${Math.ceil(36 / pacing)} shots.
+
+Minimum shot duration: ${minDuration}s. No shot can be shorter than this — the video model cannot generate clips shorter than ${minDuration}s. If a scene's remainder would be shorter, merge it into the previous shot instead of creating a tiny clip.
 
 BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots — no more, no fewer.
 ═══════════════════════════════════════════════════════════════════
@@ -450,10 +453,11 @@ IMPORTANT — character and environment assignment:
 export const refineScript = async (
   currentScript: { cast: any[]; environments: any[]; scenes: any[] },
   feedback: string,
-  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number }
+  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = context.basePacing || 8;
+  const minDuration = context.minShotDuration || 4;
 
   const currentJson = JSON.stringify({
     cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
@@ -485,6 +489,7 @@ MEANING: ${context.meaning}
 MUSICAL STRUCTURE: ${context.musicalStructure}
 
 SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
+Minimum shot duration: ${minDuration}s. No shot can be shorter than this — the video model cannot generate clips shorter than ${minDuration}s. If a scene's remainder would be shorter, merge it into the previous shot.
 
 ═══════════════════════════════════════
 CURRENT SCRIPT (your starting point):

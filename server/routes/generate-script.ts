@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, selectColumns, insertRow, updateRows, deleteRows, incrementColumn, maxVal } from '../database.js';
 import { storageUrl, readAsBase64, mimeFromExt } from '../storage.js';
 import { planScenes, refineScript, writeShotPrompts } from '../services/claude.js';
+import { getModelMinDuration } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, parseTimestamp } from './scope-helpers.js';
@@ -40,6 +41,7 @@ router.post('/:id/generate-script', async (req, res) => {
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 8,
+      minShotDuration: getModelMinDuration(project.video_model),
       userNote,
     });
     const durationMs = Date.now() - t0;
@@ -231,6 +233,7 @@ router.post('/:id/refine-script', async (req, res) => {
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 8,
+      minShotDuration: getModelMinDuration(project.video_model),
     });
     const durationMs = Date.now() - t0;
 
