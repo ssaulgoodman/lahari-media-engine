@@ -70,11 +70,11 @@ All modules mount on the same router instance — param validators and scope hel
 1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → creates Lahari project immediately (title + queue link only), responds instantly. **Everything runs in background**: audio download from Supabase Storage, SRT parsing (`[M:SS]` timestamps preserved), Gemini audio transcription fallback, structure detection, meaning summarization. Project starts as `status: 'analyzing'`; background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls (still need audio download). **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently.
 2. **Blueprint** (7 components, orchestrated by `AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
-   - Script (Claude Sonnet with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
+   - Script (Claude Opus with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
    - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to Gemini.)
    - Characters — unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine. Description collapsed.
    - Environments — same unified toolkit pattern as characters.
-   - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
+   - Auto-writes shot prompts (Claude Opus) with full context at the end.
 3. **Studio** (5 components, orchestrated by `Storyboard.tsx`) — Per-shot unified toolkit with 4 tabs:
    - **First frame** — visual prompt + refs + generate (Gemini) + AI refine
    - **Last frame** — end visual prompt + generate end frame + AI refine
@@ -91,8 +91,8 @@ All modules mount on the same router instance — param validators and scope hel
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refineEndFramePrompt, refineVideoPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Concept, script, style brainstorm, shot prompts | `claude-opus-4-6` | claude.ts | Anthropic API |
+| Meaning, style refine/enrich, refineFramePrompt, refineMotionPrompt, refineScript, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
 | All image gen | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` (Nano Banana 2) | imagen.ts | Gemini Developer API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |

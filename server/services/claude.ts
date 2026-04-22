@@ -376,7 +376,7 @@ IMPORTANT — character and environment assignment:
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const response = await client.messages.create({
-      model: SONNET,
+      model: OPUS,
       max_tokens: 16384,
       thinking: { type: 'enabled', budget_tokens: 8192 },
       tools: [SCRIPT_TOOL],
@@ -659,7 +659,7 @@ Match the IDs exactly.`;
 
   // Build tool schema with exact shot IDs
   const response = await client.messages.create({
-    model: SONNET,
+    model: OPUS,
     max_tokens: 16384,
     tools: [{
       name: 'write_shot_prompts',
