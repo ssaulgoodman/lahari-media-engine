@@ -188,8 +188,7 @@ Base shot length: {{pacing}} seconds.
 For each scene: number_of_shots = ceil(scene_duration / {{pacing}})
 Every shot is {{pacing}}s except the LAST shot which gets the remainder.
 Example: 21s at 8s → ceil(21/8) = 3 shots (8+8+5).
-Minimum shot duration: {{minShotDuration}}s — video model can't generate shorter clips.
-If remainder < minShotDuration, merge into previous shot.
+Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
 ═══════════════════════════════════════════════════════════════
 
 Uses extended thinking (8K budget) so Claude reasons through pacing math.

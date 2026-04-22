@@ -334,7 +334,7 @@ Every shot is ${pacing}s except the LAST shot which gets the remainder.
 Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
 Example: 24s scene at ${pacing}s → ceil(24/${pacing}) = ${Math.ceil(24 / pacing)} shots. 36s → ${Math.ceil(36 / pacing)} shots.
 
-Minimum shot duration: ${minDuration}s. No shot can be shorter than this — the video model cannot generate clips shorter than ${minDuration}s. If a scene's remainder would be shorter, merge it into the previous shot instead of creating a tiny clip.
+Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.
 
 BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots — no more, no fewer.
 ═══════════════════════════════════════════════════════════════════
@@ -489,7 +489,7 @@ MEANING: ${context.meaning}
 MUSICAL STRUCTURE: ${context.musicalStructure}
 
 SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
-Minimum shot duration: ${minDuration}s. No shot can be shorter than this — the video model cannot generate clips shorter than ${minDuration}s. If a scene's remainder would be shorter, merge it into the previous shot.
+Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.
 
 ═══════════════════════════════════════
 CURRENT SCRIPT (your starting point):
