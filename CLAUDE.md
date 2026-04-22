@@ -91,8 +91,8 @@ All modules mount on the same router instance — param validators and scope hel
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, script, style brainstorm, shot prompts | `claude-opus-4-6` | claude.ts | Anthropic API |
-| Meaning, style refine/enrich, refineFramePrompt, refineMotionPrompt, refineScript, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Concept, script, script refine, style brainstorm, shot prompts | `claude-opus-4-6` | claude.ts | Anthropic API |
+| Meaning, style refine/enrich, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
 | All image gen | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` (Nano Banana 2) | imagen.ts | Gemini Developer API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
