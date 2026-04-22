@@ -1,0 +1,474 @@
+/**
+ * ShotCard — extracted from Storyboard.tsx.
+ * Single shot: expandable header, media display (video/frames), overlays,
+ * version history, and prompt toolkit wiring.
+ */
+import React, { useState, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
+import { ShotVideoPreview } from './ShotVideoPreview';
+import { PromptToolkit } from './PromptToolkit';
+import { ShotVersionHistory } from './ShotVersionHistory';
+import type { ShotRefInput } from '../services/api';
+
+// "0:32" / "00:32" / "1:23:45" → seconds.
+const parseTimeToSec = (t?: string): number => {
+  if (!t) return 0;
+  const parts = t.split(':').map(Number);
+  if (parts.some(n => Number.isNaN(n))) return 0;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return parts[0] || 0;
+};
+
+const fmtTime = (sec: number): string => {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
+interface ShotCardProps {
+  project: ApiProject;
+  shot: VideoShot;
+  scene: VideoScene;
+  shotIdx: number;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  actionable: boolean;
+  modelSupportsLastFrame: boolean;
+
+  // History
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  onCloseHistory: () => void;
+
+  // Prompt toolkit state (parent-owned)
+  activeTab: 'image' | 'endframe' | 'video' | 'compiled';
+  onTabChange: (tab: 'image' | 'endframe' | 'video' | 'compiled') => void;
+  videoOverride?: string;
+  onVideoOverrideChange: (v: string | undefined) => void;
+  getActiveRefs: (shot: VideoShot, tab: 'image' | 'endframe' | 'video') => ShotRefInput[];
+  setActiveRefs: (shotId: string, tab: string, refs: ShotRefInput[]) => void;
+  resolveRefDisplay: (ref: ShotRefInput, shot: VideoShot) => { label: string; url?: string; removable: boolean };
+  isRefining: boolean;
+  onRefineStart: (key: string) => void;
+  onRefineEnd: (key: string) => void;
+
+  // Queue position
+  frameQueue?: string[];
+  videoQueue?: string[];
+
+  // Callbacks
+  onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
+  onGenerateImage: (sceneId: string, shotId: string, refs?: ShotRefInput[]) => void;
+  onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
+  onLockShot: (sceneId: string, shotId: string) => void;
+  onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void | Promise<void>;
+  onGenerateEndFrame?: (shotId: string, refs?: ShotRefInput[]) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onRefineVideoPrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onCancelShotImage?: (shotId: string) => void;
+  onCancelShotVideo?: (shotId: string) => void;
+  onUsePrevLastFrame?: (shotId: string) => void;
+  onClearShotFrame?: (shotId: string) => void;
+  onRevertVideo?: (shotId: string, assetId: string) => void | Promise<void>;
+  onUseAsPrevEnd?: (shotId: string) => void | Promise<void>;
+  onClearEndFrame?: (shotId: string) => void | Promise<void>;
+  onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
+  onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
+  onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
+  onDeleteShotRef?: (shotId: string, assetId: string) => void | Promise<void>;
+  onSetProject?: (project: ApiProject) => void;
+  setModalImage: (url: string | null) => void;
+}
+
+export const ShotCard: React.FC<ShotCardProps> = ({
+  project, shot, scene, shotIdx, isExpanded, onToggleExpand, actionable, modelSupportsLastFrame,
+  historyOpen, onToggleHistory, onCloseHistory,
+  activeTab, onTabChange, videoOverride, onVideoOverrideChange,
+  getActiveRefs, setActiveRefs, resolveRefDisplay,
+  isRefining, onRefineStart, onRefineEnd,
+  frameQueue, videoQueue,
+  onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt,
+  onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
+  onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
+  onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
+  onUploadEndFrame, onUploadShotRef, onDeleteShotRef, onSetProject, setModalImage,
+}) => {
+  // Local state
+  const [showFrames, setShowFrames] = useState(false);
+  const endFrameFileRef = useRef<HTMLInputElement>(null);
+
+  const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
+  const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR;
+  const activeCastMembers = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
+  const hasStartFrame = !!shot.imageUrl;
+  const hasVideo = !!shot.videoUrl;
+  const canGenerateVideo = hasStartFrame && !isGenerating;
+  const canLock = hasStartFrame && hasVideo && !shot.locked;
+  const progress = shot.locked ? 3 : hasVideo ? 2 : hasStartFrame ? 1 : 0;
+
+  // Build compiled data for PromptToolkit
+  const buildCompiledData = () => {
+    const compiledRefs: { label: string; url?: string }[] = [];
+    const shotCast = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
+    shotCast.forEach(c => { if (c.referenceImageUrl) compiledRefs.push({ label: c.name, url: c.referenceImageUrl }); });
+    if (project.styleAssetUrl) compiledRefs.push({ label: 'Style', url: project.styleAssetUrl });
+    const shotEnv = project.environments.find(e => e.id === shot.environmentId);
+    if (shotEnv?.referenceImageUrl) compiledRefs.push({ label: shotEnv.name, url: shotEnv.referenceImageUrl });
+    if (shot.continuityFrom === 'prev_shot') {
+      const prevShot = scene.shots[shotIdx - 1];
+      if (prevShot?.extractedLastFrameUrl) compiledRefs.push({ label: 'Continuity', url: prevShot.extractedLastFrameUrl });
+      else if (prevShot?.endImageUrl) compiledRefs.push({ label: 'Continuity', url: prevShot.endImageUrl });
+    }
+    if (shot.userFeedback && shot.imageUrl) compiledRefs.push({ label: 'Failed attempt', url: shot.imageUrl });
+
+    const compiledLines = [`Scene: ${shot.visualPrompt}`, '', `Style: ${project.styleDescription || '(none)'}`, '', `Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${shot.continuityFrom === 'prev_shot' ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference image.`];
+    if (shot.continuityFrom === 'prev_shot') compiledLines.push('', 'Previous shot ended with: [auto-described from extracted frame]', 'This shot should begin from that exact continuity state.');
+    if (shot.userFeedback) compiledLines.push('', `Director note: ${shot.userFeedback}`);
+    compiledLines.push('', 'Single cinematic frame. No text, no watermark.', 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.');
+
+    const concept = project.lockedConcept;
+    const castNamesStr = shotCast.map(c => c.name).join(', ');
+    const mood = concept?.mood || 'Cinematic';
+    const narrativeBrief = (scene.narrativeDescription || '').length > 120 ? scene.narrativeDescription.substring(0, 120) + '...' : scene.narrativeDescription;
+    const veoParts = [shot.motionPrompt || 'Cinematic camera movement'];
+    if (narrativeBrief) veoParts.push(narrativeBrief);
+    if (castNamesStr) veoParts.push(`Characters: ${castNamesStr}`);
+    veoParts.push(`${mood} mood`);
+    if (shot.continuityFrom === 'prev_shot' && (shot as any).continuityDescription) veoParts.push(`Starting state (from previous shot): ${(shot as any).continuityDescription}`);
+
+    return { compiledRefs, compiledText: compiledLines.join('\n'), autoVeoPrompt: veoParts.join('. ') };
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: shotIdx * 0.03 }}
+      className={`rounded-xl overflow-hidden border transition-all ${
+        !actionable ? 'opacity-40 border-white/[0.03]'
+          : shot.locked ? 'border-white/[0.08]'
+          : 'border-white/[0.05]'
+      }`}
+    >
+      {/* Header — click to expand/collapse */}
+      <div
+        className={`px-4 py-2.5 flex items-center gap-3 bg-white/[0.01] ${isExpanded ? '' : 'hover:bg-white/[0.03] cursor-pointer'}`}
+        onClick={(e) => {
+          const tag = (e.target as HTMLElement).closest('button, select, input, textarea, a');
+          if (tag) return;
+          onToggleExpand();
+        }}
+      >
+        {/* Chevron */}
+        <svg
+          xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          className={`text-zinc-400 flex-shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          aria-hidden="true"
+        ><polyline points="9 18 15 12 9 6"/></svg>
+
+        {/* Left: shot info */}
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <span className="text-sm font-medium text-white flex-shrink-0">{shotIdx + 1}</span>
+          <span className="text-[11px] font-mono text-zinc-400 flex-shrink-0 tabular-nums">
+            {fmtTime(parseTimeToSec(scene.startTime) + scene.shots.slice(0, shotIdx).reduce((a, s) => a + (s.duration || 0), 0))}
+            <span className="text-zinc-500 ml-1">[{shot.duration}s]</span>
+          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {[1, 2, 3].map(step => (
+              <div key={step} className={`w-1.5 h-1.5 rounded-full transition-colors ${step <= progress ? 'bg-white' : 'bg-white/[0.1]'}`} />
+            ))}
+          </div>
+          {activeCastMembers.length > 0 && (
+            <span className="text-sm text-zinc-300 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
+          )}
+          {shotIdx > 0 && (
+            <button
+              onClick={() => onUpdateShot(scene.id, shot.id, { continuityFrom: shot.continuityFrom === 'prev_shot' ? 'cut' : 'prev_shot' } as any)}
+              className={`text-[11px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
+                shot.continuityFrom === 'prev_shot' ? 'text-amber-400/80 bg-amber-500/10' : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+              }`}
+            >
+              {shot.continuityFrom === 'prev_shot' ? 'chain' : 'cut'}
+            </button>
+          )}
+          {shot.videoStatus === GenerationStatus.STALE && (
+            <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 flex-shrink-0" title="The previous video is out of sync with the end keyframe set by the next shot.">stale</span>
+          )}
+          {shot.refinedFromPrevFrame && (
+            <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0" title="Prompt was auto-rewritten by Claude after seeing the previous shot's actual last frame.">refined</span>
+          )}
+          {(() => {
+            const framePos = frameQueue?.indexOf(shot.id) ?? -1;
+            const videoPos = videoQueue?.indexOf(shot.id) ?? -1;
+            if (framePos < 0 && videoPos < 0) return null;
+            const kind = framePos >= 0 ? 'frame' : 'video';
+            const pos = framePos >= 0 ? framePos + 1 : videoPos + 1;
+            const ordinal = pos === 1 ? '1st' : pos === 2 ? '2nd' : pos === 3 ? '3rd' : `${pos}th`;
+            return <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0 font-mono" title={`Queued for bulk ${kind} generation — ${ordinal} in line.`}>queued · {ordinal}</span>;
+          })()}
+          {!actionable && !shot.imageUrl && (
+            <span className="text-[11px] uppercase tracking-wide text-zinc-400 flex-shrink-0" title="Waiting on previous shot's video (continuity chain)">queued</span>
+          )}
+        </div>
+
+        {/* Right: actions toolbar */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {shot.videoUrl && (
+            <div className="flex gap-px bg-white/[0.04] rounded overflow-hidden mr-2">
+              <button onClick={() => setShowFrames(false)} className={`text-[11px] px-2 py-1 font-medium transition-colors ${!showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`} title="Show video">Video</button>
+              <button onClick={() => setShowFrames(true)} className={`text-[11px] px-2 py-1 font-medium transition-colors ${showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`} title="Show start + end frames">Frames</button>
+            </div>
+          )}
+          {shot.videoUrl && (
+            <button onClick={onToggleHistory} className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${historyOpen ? 'text-white bg-white/[0.1]' : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'}`} title="Version history" aria-label="Version history">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+            </button>
+          )}
+          <button onClick={() => onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'))} disabled={isGenerating || (!actionable && !shot.locked)} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'} aria-label={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+          </button>
+          <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo && !shot.locked || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </button>
+          <button onClick={() => onLockShot(scene.id, shot.id)} disabled={isGenerating || (!shot.locked && !canLock)} className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${shot.locked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : canLock ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-30`} title={shot.locked ? 'Unlock shot' : canLock ? 'Lock shot' : 'Generate start frame + video first to lock'} aria-label={shot.locked ? 'Unlock shot' : 'Lock shot'}>
+            {shot.locked ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Body — collapses when not expanded */}
+      {isExpanded && <>
+      {/* Media: Video or Frames */}
+      <div className="relative">
+        {shot.videoUrl && !showFrames ? (
+          <div className="bg-black">
+            <ShotVideoPreview
+              videoUrl={shot.videoUrl}
+              audioUrl={project.audioPath ? project.audioPath : undefined}
+              globalStartSec={parseTimeToSec(scene.startTime) + scene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)}
+              durationSec={shot.duration}
+            />
+          </div>
+        ) : hasVideo && (shot.extractedLastFrameUrl || shot.endImageUrl) ? (
+          <div className="flex bg-[#141418]">
+            <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/start">
+              <div className="absolute top-2 left-2 z-20"><span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span></div>
+              {shot.imageUrl && !shot.locked && onClearShotFrame && (
+                <button onClick={() => onClearShotFrame(shot.id)} className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all" title="Remove this start frame" aria-label="Remove start frame">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
+              {shot.imageUrl && shotIdx > 0 && !scene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                  <button onClick={() => onUseAsPrevEnd(shot.id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Use this start frame as the previous shot's end keyframe.">← Use as prev shot's end</button>
+                </div>
+              )}
+              {shot.imageUrl && <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />}
+            </div>
+            <div className="w-px bg-white/[0.06] flex-shrink-0" />
+            <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/last">
+              {(() => {
+                const lastFrameUrl = shot.extractedLastFrameUrl || shot.endImageUrl;
+                const isExtracted = !!shot.extractedLastFrameUrl;
+                const clearFn = isExtracted ? onClearExtractedFrame : onClearEndFrame;
+                if (!lastFrameUrl) return <div className="text-xs text-zinc-400">No last frame yet</div>;
+                return (
+                  <>
+                    <div className="absolute top-2 left-2 z-20"><span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Last frame</span></div>
+                    {!shot.locked && clearFn && (
+                      <button onClick={() => clearFn(shot.id)} className="absolute top-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all" title="Remove last frame" aria-label="Remove last frame">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    )}
+                    <img src={lastFrameUrl} alt={`Shot ${shotIdx + 1} last frame`} onClick={() => setModalImage(lastFrameUrl)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
+                  </>
+                );
+              })()}
+              {scene.shots[shotIdx + 1] && shot.extractedLastFrameUrl && onUsePrevLastFrame && (
+                <div className="absolute bottom-2 right-2 z-20 opacity-0 group-hover/last:opacity-100 transition-opacity">
+                  <button onClick={() => onUsePrevLastFrame(scene.shots[shotIdx + 1].id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Copy this frame as the next shot's start frame">Use for next shot</button>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : modelSupportsLastFrame && shot.imageUrl ? (
+          <><div className="flex bg-[#141418]">
+            <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/start">
+              <div className="absolute top-2 left-2 z-20"><span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span></div>
+              {!shot.locked && onClearShotFrame && (
+                <button onClick={() => onClearShotFrame(shot.id)} className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all" title="Remove this start frame" aria-label="Remove start frame">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
+              {shotIdx > 0 && !scene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                  <button onClick={() => onUseAsPrevEnd(shot.id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Use this start frame as the previous shot's end keyframe.">Use as prev end</button>
+                </div>
+              )}
+              <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in" />
+            </div>
+            <div className="w-px bg-white/[0.06] flex-shrink-0" />
+            <div className="flex-1 relative min-h-[120px] flex items-center justify-center group/end">
+              {shot.endImageUrl ? (
+                <>
+                  <div className="absolute top-2 left-2 z-20"><span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Last frame</span></div>
+                  {!shot.locked && onClearEndFrame && (
+                    <button onClick={() => onClearEndFrame(shot.id)} className="absolute top-2 right-2 z-20 opacity-0 group-hover/end:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all" title="Remove target end frame" aria-label="Remove target end frame">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  )}
+                  <img src={shot.endImageUrl} alt={`Shot ${shotIdx + 1} target end frame`} onClick={() => setModalImage(shot.endImageUrl!)} className="max-w-full max-h-[360px] h-auto w-auto cursor-zoom-in opacity-70" />
+                </>
+              ) : (
+                <div className="w-full min-h-[120px] flex flex-col items-center justify-center gap-3">
+                  <span className="text-xs text-zinc-400">No end frame -- optional</span>
+                  <div className="flex items-center gap-2">
+                    {onGenerateEndFrame && (
+                      <button onClick={() => onGenerateEndFrame(shot.id)} disabled={shot.endImageStatus === 'loading'} className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                        {shot.endImageStatus === 'loading' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+                        {shot.endImageStatus === 'loading' ? 'Generating…' : 'Generate'}
+                      </button>
+                    )}
+                    {onUploadEndFrame && (
+                      <button onClick={() => endFrameFileRef.current?.click()} className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-2.5 py-1 transition-colors">Upload</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div></>
+        ) : (
+          <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/start">
+            {shot.imageUrl ? (
+              <>
+                <div className="absolute top-2 left-2 z-20"><span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">Start</span></div>
+                {!shot.locked && onClearShotFrame && (
+                  <button onClick={() => onClearShotFrame(shot.id)} className="absolute top-2 right-2 z-20 opacity-0 group-hover/start:opacity-100 w-6 h-6 rounded-full bg-black/70 backdrop-blur text-zinc-300 hover:text-white hover:bg-black/90 flex items-center justify-center transition-all" title="Remove this start frame" aria-label="Remove start frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                )}
+                {shotIdx > 0 && !scene.shots[shotIdx - 1]?.locked && onUseAsPrevEnd && modelSupportsLastFrame && (
+                  <div className="absolute bottom-2 left-2 z-20 opacity-0 group-hover/start:opacity-100 transition-opacity">
+                    <button onClick={() => onUseAsPrevEnd(shot.id)} className="text-[11px] bg-white/90 text-black px-2 py-1 rounded-md font-medium hover:bg-white transition-colors" title="Use this start frame as the previous shot's end keyframe.">Use as prev shot's end</button>
+                  </div>
+                )}
+                <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-w-full max-h-[480px] h-auto w-auto cursor-zoom-in" />
+              </>
+            ) : (
+              <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
+                <span className="text-xs">No start frame -- click "Frame" to generate</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Critique score */}
+        {shot.critique && !isGenerating && (
+          <div className="absolute top-2 left-2 z-20">
+            <div className={`px-2 py-1 rounded-md text-[11px] font-medium border ${shot.critique.score >= 7 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/20' : shot.critique.score >= 5 ? 'bg-amber-500/20 text-amber-300 border-amber-500/20' : 'bg-red-500/20 text-red-300 border-red-500/20'}`}>
+              {shot.critique.score}/10
+              {shot.attemptCount && shot.attemptCount > 1 && <span className="text-[11px] opacity-60 ml-1">R{shot.attemptCount}</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {isError && !isGenerating && !shot.videoUrl && (
+          <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] space-y-1">
+            <span className="text-xs text-red-300">Generation failed — click regen to retry</span>
+            {shot.lastError && <p className="text-[11px] text-red-300/60 font-mono leading-snug break-all">{shot.lastError.slice(0, 200)}</p>}
+          </div>
+        )}
+
+        {/* Loading overlay */}
+        {isGenerating && (
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-30 gap-3">
+            <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+            <span className="text-[11px] text-zinc-400 font-medium">
+              {shot.imageStatus === GenerationStatus.LOADING ? 'Generating frame' : shot.videoStatus === GenerationStatus.LOADING ? 'Generating video' : 'Processing'}
+            </span>
+            <div className="w-24 h-0.5 bg-white/[0.06] rounded-full overflow-hidden"><div className="h-full bg-white/30 rounded-full animate-shimmer" style={{ width: '40%' }} /></div>
+            {(shot.imageStatus === GenerationStatus.LOADING && onCancelShotImage) || (shot.videoStatus === GenerationStatus.LOADING && onCancelShotVideo) ? (
+              <button onClick={() => { if (shot.imageStatus === GenerationStatus.LOADING) onCancelShotImage?.(shot.id); else if (shot.videoStatus === GenerationStatus.LOADING) onCancelShotVideo?.(shot.id); }} className="text-[11px] bg-white/[0.08] hover:bg-white/[0.14] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1 transition-colors">Stop</button>
+            ) : null}
+          </div>
+        )}
+
+        {/* Not actionable overlay */}
+        {!actionable && !isGenerating && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+            <span className="text-xs text-zinc-400">Waiting on previous shot's video (continuity)</span>
+          </div>
+        )}
+      </div>
+
+      {/* Version history panel */}
+      {historyOpen && (
+        <ShotVersionHistory
+          projectId={project.id}
+          shotId={shot.id}
+          onRevertVideo={onRevertVideo}
+          onSetProject={onSetProject}
+          onClose={onCloseHistory}
+        />
+      )}
+
+      {/* Prompts */}
+      <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
+        {(shot.locked || actionable) && (() => {
+          const { compiledRefs, compiledText, autoVeoPrompt } = buildCompiledData();
+          return (
+            <PromptToolkit
+              project={project}
+              shot={shot}
+              scene={scene}
+              shotIdx={shotIdx}
+              activeTab={activeTab}
+              onTabChange={onTabChange}
+              videoOverride={videoOverride}
+              onVideoOverrideChange={onVideoOverrideChange}
+              getActiveRefs={getActiveRefs}
+              setActiveRefs={setActiveRefs}
+              resolveRefDisplay={resolveRefDisplay}
+              isRefining={isRefining}
+              onRefineStart={onRefineStart}
+              onRefineEnd={onRefineEnd}
+              isGenerating={isGenerating}
+              hasStartFrame={hasStartFrame}
+              hasVideo={hasVideo}
+              actionable={actionable}
+              modelSupportsLastFrame={modelSupportsLastFrame}
+              autoVeoPrompt={autoVeoPrompt}
+              compiledRefs={compiledRefs}
+              compiledText={compiledText}
+              onGenerateImage={onGenerateImage}
+              onGenerateVideo={onGenerateVideo}
+              onGenerateEndFrame={onGenerateEndFrame}
+              onRefinePrompt={onRefinePrompt}
+              onRefineEndFramePrompt={onRefineEndFramePrompt}
+              onRefineVideoPrompt={onRefineVideoPrompt}
+              onUploadShotRef={onUploadShotRef}
+              onDeleteShotRef={onDeleteShotRef}
+              onUpdateShot={onUpdateShot}
+              setModalImage={setModalImage}
+            />
+          );
+        })()}
+      </div>
+      </>}
+
+      {/* Hidden file input for end frame upload */}
+      <input ref={endFrameFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (file && onUploadEndFrame) onUploadEndFrame(shot.id, file);
+        if (endFrameFileRef.current) endFrameFileRef.current.value = '';
+      }} />
+    </motion.div>
+  );
+};
