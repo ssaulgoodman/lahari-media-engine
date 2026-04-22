@@ -300,7 +300,7 @@ export const AnalysisEditor: React.FC<Props> = ({
       const updated = await api.uploadCharacterReference(project.id, castMemberId, file);
       onSetProject?.(updated);
     } catch (err: any) {
-      console.error('Character upload failed:', err);
+      showActionError(`Character upload failed: ${err.message}`);
     } finally {
       setCastUploading(prev => { const next = new Set(prev); next.delete(castMemberId); return next; });
     }
@@ -328,7 +328,7 @@ export const AnalysisEditor: React.FC<Props> = ({
       const updated = await api.uploadEnvironmentReference(project.id, environmentId, file);
       onSetProject?.(updated);
     } catch (err: any) {
-      console.error('Environment upload failed:', err);
+      showActionError(`Environment upload failed: ${err.message}`);
     } finally {
       setEnvUploading(prev => { const next = new Set(prev); next.delete(environmentId); return next; });
     }
@@ -404,13 +404,22 @@ export const AnalysisEditor: React.FC<Props> = ({
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
 
+  // Shared inline error feedback — surfaces async failures to the artist
+  const [actionError, setActionError] = useState<string | null>(null);
+  const actionErrorTimer = useRef<ReturnType<typeof setTimeout>>();
+  const showActionError = (msg: string) => {
+    setActionError(msg);
+    clearTimeout(actionErrorTimer.current);
+    actionErrorTimer.current = setTimeout(() => setActionError(null), 8000);
+  };
+
   const handleRerunAnalysis = async () => {
     setIsAnalyzingAudio(true);
     try {
       const updated = await api.analyzeAudio(project.id);
       onSetProject?.(updated);
     } catch (err: any) {
-      console.error('Re-analysis failed:', err);
+      showActionError(`Analysis failed: ${err.message}`);
     } finally {
       setIsAnalyzingAudio(false);
     }
@@ -477,7 +486,7 @@ export const AnalysisEditor: React.FC<Props> = ({
       setEnvLooks(prev => ({ ...prev, [envId]: result.looks || [] }));
       onSetProject?.(result.project);
     } catch (err: any) {
-      console.error('Environment look gen failed:', err);
+      showActionError(`Environment look generation failed: ${err.message}`);
     } finally {
       setEnvGenerating(prev => { const s = new Set(prev); s.delete(envId); return s; });
     }
@@ -494,7 +503,7 @@ export const AnalysisEditor: React.FC<Props> = ({
       });
       setEnvLooks(prev => ({ ...prev, [envId]: [] }));
     } catch (err: any) {
-      console.error('Environment lock failed:', err);
+      showActionError(`Environment lock failed: ${err.message}`);
     }
   };
 
@@ -509,7 +518,7 @@ export const AnalysisEditor: React.FC<Props> = ({
         description: d.description,
       })));
     } catch (err: any) {
-      console.error('Brainstorm failed:', err);
+      showActionError(`Style brainstorm failed: ${err.message}`);
     } finally {
       setIsBrainstorming(false);
     }
@@ -532,7 +541,7 @@ export const AnalysisEditor: React.FC<Props> = ({
       const result = await api.visualizeStyle(project.id, slot.description);
       update({ isGenerating: false, imageUrl: result.url, assetId: result.assetId });
     } catch (err: any) {
-      console.error('Visualize failed:', err);
+      showActionError(`Style visualize failed: ${err.message}`);
       update({ isGenerating: false });
     }
   };
@@ -553,7 +562,7 @@ export const AnalysisEditor: React.FC<Props> = ({
         assetId: undefined,
       } : s));
     } catch (err: any) {
-      console.error('Refine failed:', err);
+      showActionError(`Style refine failed: ${err.message}`);
       setStyleSlots(prev => prev.map((s, i) => i === index ? { ...s, isRefining: false } : s));
     }
   };
@@ -563,6 +572,8 @@ export const AnalysisEditor: React.FC<Props> = ({
     setIsLocking(true);
     try {
       await onLockStyle(slot.assetId, slot.description);
+    } catch (err: any) {
+      showActionError(`Style lock failed: ${err.message}`);
     } finally {
       setIsLocking(false);
     }
@@ -581,7 +592,7 @@ export const AnalysisEditor: React.FC<Props> = ({
         imageUrl: prev.imageUrl || URL.createObjectURL(file),
       }));
     } catch (err: any) {
-      console.error('Upload analysis failed:', err);
+      showActionError(`Style image analysis failed: ${err.message}`);
     }
   };
 
@@ -592,7 +603,7 @@ export const AnalysisEditor: React.FC<Props> = ({
       const updated = await api.uploadAndLockStyle(project.id, uploadedStyleFile);
       onSetProject?.(updated);
     } catch (err: any) {
-      console.error('Direct lock failed:', err);
+      showActionError(`Style lock failed: ${err.message}`);
     } finally {
       setIsLocking(false);
     }
@@ -910,6 +921,16 @@ export const AnalysisEditor: React.FC<Props> = ({
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Action error banner */}
+      {actionError && (
+        <div className="mb-4 px-4 py-2.5 rounded-lg border border-red-500/20 bg-red-500/[0.06] flex items-start gap-2 text-sm text-red-400 cursor-pointer" onClick={() => setActionError(null)}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 mt-0.5 flex-shrink-0">
+            <path fillRule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+          </svg>
+          <span>{actionError}</span>
+        </div>
+      )}
 
       {/* Phase Content */}
       <AnimatePresence mode="wait">
@@ -1502,7 +1523,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                                               onSetProject?.(p);
                                               setSavedFlash(shot.id);
                                               setTimeout(() => setSavedFlash(null), 1500);
-                                            } catch (err: any) { console.error('Split failed:', err); }
+                                            } catch (err: any) { showActionError(`Shot split failed: ${err.message}`); }
                                           }}
                                           className="text-zinc-500 hover:text-zinc-300 transition-colors ml-1"
                                           title={`Split into ${Math.floor(shot.duration / 2)}s + ${shot.duration - Math.floor(shot.duration / 2)}s`}
@@ -2426,7 +2447,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                                     await api.deleteEnvironment(project.id, env.id);
                                     if (activeEnvId === env.id) setActiveEnvId(project.environments.find(x => x.id !== env.id)?.id || null);
                                     onSetProject?.({ ...project, environments: project.environments.filter(x => x.id !== env.id) });
-                                  } catch {}
+                                  } catch (err: any) { showActionError(`Delete failed: ${err.message}`); }
                                 };
                                 if (onConfirmDestructive) {
                                   onConfirmDestructive({
@@ -2503,7 +2524,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                               try {
                                 const updated = await api.updateEnvironment(project.id, activeEnv.id, { name: e.target.value });
                                 onSetProject?.(updated);
-                              } catch {}
+                              } catch (err: any) { showActionError(`Save failed: ${err.message}`); }
                             }}
                             className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 w-auto"
                           />
@@ -2709,7 +2730,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                             onBlur={async (e) => {
                               try {
                                 await api.updateEnvironment(project.id, activeEnv.id, { name: activeEnv.name, description: e.currentTarget.textContent || '' });
-                              } catch {}
+                              } catch (err: any) { showActionError(`Save failed: ${err.message}`); }
                             }}
                             className="mt-1 text-sm text-zinc-400 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -mx-1"
                           >
@@ -2752,7 +2773,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                                     await api.updateEnvironment(project.id, activeEnv.id, { generationPrompt: val });
                                     setSavedFlash(`env-prompt-${activeEnv.id}`);
                                     setTimeout(() => setSavedFlash(null), 1500);
-                                  } catch {}
+                                  } catch (err: any) { showActionError(`Save failed: ${err.message}`); }
                                 }
                               }}
                               rows={3}
