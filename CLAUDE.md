@@ -78,7 +78,7 @@ All modules mount on the same router instance — param validators and scope hel
 3. **Studio** (5 components, orchestrated by `Storyboard.tsx`) — Per-shot unified toolkit with 4 tabs:
    - **First frame** — visual prompt + refs + generate (Gemini) + AI refine
    - **Last frame** — end visual prompt + generate end frame + AI refine
-   - **Video** — motion prompt + compiled video prompt (editable) + generate (Veo/Seedance) + AI refine
+   - **Video** — motion prompt (editable, the video instruction sent to Veo) + generate (Veo/Seedance) + AI refine
    - **Full chain** — read-only diagnostic view of the complete prompt chain
    - All tabs follow same pattern: Refs → Prompt (with @mention) → Generate → Refine
    - @mention picker in prompt area: type `@` to reference Style, characters, environments
@@ -103,7 +103,7 @@ All modules mount on the same router instance — param validators and scope hel
 
 ### Video workflow (redesigned)
 
-No end-frame prediction. Shot = start frame + motion prompt → video plays naturally → ffmpeg extracts real last frame. Next shot optionally uses that extracted frame as continuity reference (when Claude tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
+No end-frame prediction. Shot = start frame + motion prompt (video instruction) → Veo animates → ffmpeg extracts real last frame. The video prompt is just `motionPrompt` + ref labels (when ref images attached) — no mood, scene narrative, or cast names. The start frame already shows all of that. Next shot optionally uses the extracted frame as continuity reference (when Claude tagged `continuity_from = 'prev_shot'`). Most shots are hard cuts and generate in parallel.
 
 **Sequential gate:** Only shots with `continuity_from === 'prev_shot'` wait for previous shot's video. Hard-cut shots are independently actionable.
 
@@ -176,7 +176,7 @@ Every shot tab (First frame / Last frame / Video) follows the same pattern:
 4. **Refine** — text feedback + optional reference image (photo icon button). Claude (Sonnet) sees the current prompt + generated image + scene narrative + environment + cast descriptions + style DNA + artist's reference image (if attached), rewrites the prompt. Output constrained to 1-3 short sentences (visual) / 1 sentence (motion). Same image attach available on Blueprint character/environment refines.
 
 Refine context per tab:
-- **First frame**: failed image + visual/motion prompt + scene + env + cast + style
+- **First frame**: failed image + visual prompt + scene + env + cast + style
 - **Last frame**: end frame image (if exists) + end visual prompt + scene + env + cast + style
 - **Video**: start frame + end frame (if exists) + motion prompt + scene + env + cast + style
 

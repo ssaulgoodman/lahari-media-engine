@@ -297,7 +297,7 @@ Claude receives explicit guidance based on the chosen mode:
 **Status: DONE** — clears `prompts_stale` on each shot after writing. The OUTPUTS (individual visual/motion prompts) are the artist's workspace.
 
 **Critical insight — model-aware prompting:**
-The shot writer writes `visual_prompt` and `motion_prompt` with generic instructions ("1-2 sentences, what we see"). These go directly to Gemini/Veo with NO second LLM call to optimize them. The quality of every frame and video depends on how well Claude writes for these specific models.
+Claude writes `visual_prompt` (start frame for Gemini image gen) and `motion_prompt` (video instruction for Veo). Each is purpose-built for its downstream model. Claude knows: visualPrompt describes the still frame for the image model; motionPrompt tells the video model what to animate (the model already sees the start frame). No second LLM call — quality depends on how well Claude writes for these specific models.
 
 **Fix plan — model best practices injection:**
 - Define best practices per model in a single config — Gemini image gen techniques, Veo/Seedance motion prompt patterns
@@ -370,10 +370,10 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | **Model** | Veo 3.1 / Seedance 2.0 via Segmind (segmind.ts) |
 | **Input** | start frame + motion prompt + ref images + end frame |
 | **Output** | Video clip |
-| **Artist control** | "Video" tab: motion prompt (editable) + compiled video prompt (editable, overrideable). AI refine rewrites motion prompt. |
-| **generation_prompt** | Auto-built from motion_prompt + scene context + cast + mood. Overrideable in Video tab. |
+| **Artist control** | "Video" tab: motion prompt (editable, overrideable). AI refine rewrites motion prompt. |
+| **generation_prompt** | `motionPrompt` only + ref labels when ref images attached. No mood, scene narrative, or cast names — the start frame already shows all of that. Overrideable in Video tab. |
 
-**Refine context:** Claude sees start frame + end frame (if exists) + motion prompt + scene + env + cast + style. Focus on camera movement, pacing, action. Output: rewrites motion prompt only.
+**Refine context:** Claude sees start frame + end frame (if exists) + motion prompt + scene + env + cast + style. Output: rewrites motion prompt only.
 
 **Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Frame mode prioritized when start frame exists. Veo accepts all inputs together.
 
