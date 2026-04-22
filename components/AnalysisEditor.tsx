@@ -7,6 +7,7 @@ import { ImageModal } from './ImageModal';
 import { Markdown } from './Markdown';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
+import { Dropdown } from './Dropdown';
 
 // StyleRow must live at module scope (not inside AnalysisEditor's body) —
 // otherwise every parent re-render creates a new component reference and
@@ -800,67 +801,56 @@ export const AnalysisEditor: React.FC<Props> = ({
                 className="border-t border-white/[0.06]"
               >
                 <div className="flex items-stretch divide-x divide-white/[0.06]">
-                  <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+                  <div className="flex-1 px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Aspect</div>
-                    <div className="relative">
-                      <select
-                        value={project.aspectRatio || '16:9'}
-                        onChange={e => onUpdateProject({ aspectRatio: e.target.value })}
-                        disabled={hasGeneratedMedia}
-                        title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
-                        className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer disabled:opacity-50 appearance-none pr-5"
-                      >
-                        <option value="16:9">16:9 — landscape</option>
-                        <option value="9:16">9:16 — portrait</option>
-                        <option value="1:1">1:1 — square</option>
-                      </select>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-                    </div>
-                  </label>
-                  <label className="flex-1 px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+                    <Dropdown
+                      value={project.aspectRatio || '16:9'}
+                      onChange={v => onUpdateProject({ aspectRatio: v })}
+                      disabled={hasGeneratedMedia}
+                      title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
+                      options={[
+                        { value: '16:9', label: '16:9 — landscape' },
+                        { value: '9:16', label: '9:16 — portrait' },
+                        { value: '1:1', label: '1:1 — square' },
+                      ]}
+                    />
+                  </div>
+                  <div className="flex-1 px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
-                    <div className="relative">
-                      <select
-                        value={project.videoResolution || '720p'}
-                        onChange={e => onUpdateProject({ videoResolution: e.target.value })}
-                        className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none pr-5"
-                      >
-                        <option value="720p">720p (HD)</option>
-                        <option value="1080p">1080p (Full HD)</option>
-                      </select>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-                    </div>
-                  </label>
-                  <label className="flex-[1.5] px-5 py-3 space-y-1 hover:bg-white/[0.01] transition-colors cursor-pointer group">
+                    <Dropdown
+                      value={project.videoResolution || '720p'}
+                      onChange={v => onUpdateProject({ videoResolution: v })}
+                      options={[
+                        { value: '720p', label: '720p (HD)' },
+                        { value: '1080p', label: '1080p (Full HD)' },
+                      ]}
+                    />
+                  </div>
+                  <div className="flex-[1.5] px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
-                    <div className="relative">
-                      <select
-                        value={project.videoModel || VIDEO_MODELS[0].key}
-                        onChange={e => {
-                          const newModel = getVideoModel(e.target.value);
-                          const currentModel = getVideoModel(project.videoModel);
-                          const shotCount = project.scenes.reduce((acc, s) => acc + s.shots.length, 0);
-                          const hasVideos = project.scenes.some(s => s.shots.some((sh: any) => sh.videoUrl));
-                          const durationMismatch = shotCount > 0 && !newModel.durations.some(d => currentModel.durations.includes(d));
+                    <Dropdown
+                      value={project.videoModel || VIDEO_MODELS[0].key}
+                      onChange={v => {
+                        const newModel = getVideoModel(v);
+                        const currentModel = getVideoModel(project.videoModel);
+                        const shotCount = project.scenes.reduce((acc, s) => acc + s.shots.length, 0);
+                        const hasVideos = project.scenes.some(s => s.shots.some((sh: any) => sh.videoUrl));
+                        const durationMismatch = shotCount > 0 && !newModel.durations.some(d => currentModel.durations.includes(d));
 
-                          if (hasVideos && durationMismatch) {
-                            const ok = window.confirm(
-                              `Switching from ${currentModel.label} (${currentModel.durations.join('/')}s) to ${newModel.label} (${newModel.durations.join('/')}s).\n\nExisting shot durations will be clamped to the nearest supported value. Already-generated videos won't change, but new generations will use the new durations.\n\nContinue?`
-                            );
-                            if (!ok) return;
-                          }
+                        if (hasVideos && durationMismatch) {
+                          const ok = window.confirm(
+                            `Switching from ${currentModel.label} (${currentModel.durations.join('/')}s) to ${newModel.label} (${newModel.durations.join('/')}s).\n\nExisting shot durations will be clamped to the nearest supported value. Already-generated videos won't change, but new generations will use the new durations.\n\nContinue?`
+                          );
+                          if (!ok) return;
+                        }
 
-                          const updates: Record<string, any> = { videoModel: e.target.value };
-                          if (!newModel.durations.includes(project.targetDuration)) updates.targetDuration = newModel.durations[0];
-                          onUpdateProject(updates);
-                        }}
-                        className="w-full bg-transparent text-sm text-zinc-300 outline-none cursor-pointer appearance-none truncate pr-5"
-                      >
-                        {VIDEO_MODELS.map(m => (<option key={m.key} value={m.key}>{m.label} · {m.durations.join('/')}s · ${m.costPerSec.toFixed(2)}/s</option>))}
-                      </select>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="absolute right-0 top-1/2 -translate-y-1/2 text-zinc-400 group-hover:text-zinc-300 transition-colors pointer-events-none" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-                    </div>
-                  </label>
+                        const updates: Record<string, any> = { videoModel: v };
+                        if (!newModel.durations.includes(project.targetDuration)) updates.targetDuration = newModel.durations[0];
+                        onUpdateProject(updates);
+                      }}
+                      options={VIDEO_MODELS.map(m => ({ value: m.key, label: `${m.label} · ${m.durations.join('/')}s · $${m.costPerSec.toFixed(2)}/s` }))}
+                    />
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -1560,23 +1550,21 @@ export const AnalysisEditor: React.FC<Props> = ({
                                     {/* Environment select */}
                                     <span className="flex items-center gap-1">
                                       <span className="text-zinc-500">Env:</span>
-                                      <select
+                                      <Dropdown
                                         value={shot.environmentId || ''}
-                                        onChange={e => {
-                                          const val = e.target.value;
-                                          if (val === '__add__') { setViewPhase('environments'); return; }
-                                          onUpdateShot?.(scene.id, shot.id, { environmentId: val || null });
+                                        onChange={v => {
+                                          if (v === '__add__') { setViewPhase('environments'); return; }
+                                          onUpdateShot?.(scene.id, shot.id, { environmentId: v || null });
                                           setSavedFlash(shot.id);
                                           setTimeout(() => setSavedFlash(null), 1500);
                                         }}
-                                        className="bg-transparent text-[11px] text-zinc-300 outline-none cursor-pointer appearance-none border-b border-dashed border-white/[0.1] hover:border-white/[0.2] px-1 py-0.5"
-                                      >
-                                        <option value="">None</option>
-                                        {project.environments.map(e => (
-                                          <option key={e.id} value={e.id}>{e.name}</option>
-                                        ))}
-                                        <option value="__add__">+ Add environment...</option>
-                                      </select>
+                                        size="xs"
+                                        options={[
+                                          { value: '', label: 'None' },
+                                          ...project.environments.map(e => ({ value: e.id, label: e.name })),
+                                          { value: '__add__', label: '+ Add environment...', divider: true },
+                                        ]}
+                                      />
                                     </span>
                                     {shot.continuityFrom === 'prev_shot' && (
                                       <span className="text-amber-400/80">· continues</span>
