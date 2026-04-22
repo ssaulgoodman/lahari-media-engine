@@ -638,15 +638,16 @@ ${shotList}
 
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: What we SEE in the START FRAME. 1-2 sentences.
-  Include: composition, action/pose, environment details.
-  Reference characters by name — their reference images are sent separately to the image and video models, so focus on WHAT they're DOING, not detailed physical description.
+- visualPrompt: What the IMAGE MODEL generates as the start frame. 1-2 sentences.
+  This prompt goes to Gemini alongside character/environment reference images and a style reference. Gemini renders a single cinematic frame from it.
+  Include: composition, character pose/action, environment details.
+  Reference characters by name — their reference images are sent separately, so focus on WHAT they're DOING, not physical description.
   ONLY include characters listed in that shot's Cast field. If Cast is empty, no characters in the frame.
-  Do NOT include art style, lighting, or color — the style system handles that.
+  Do NOT include art style, lighting, or color — the style image handles that.
 
-- motionPrompt: How the camera and characters MOVE during the shot. 1 sentence.
-  If a character enters the frame mid-shot, describe that motion — their reference image is sent to the video model for appearance consistency.
+- motionPrompt: Video model instruction. Sent directly to Veo alongside the start frame image. The model already SEES the frame — just tell it what to animate. Keep it crisp: action + camera in 1 sentence.
   Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
+  Example: "Handheld track following Priya through the market, she pauses at a stall and turns"
 
 - continuityFrom: How this shot relates to the one before it.
   - 'cut' = HARD CUT. This shot is visually independent — different angle/subject/framing/environment, or the first shot of a scene. Most shots should be 'cut'.
@@ -672,8 +673,8 @@ Match the IDs exactly.`;
               type: 'object',
               properties: {
                 id: { type: 'string', description: 'Shot ID — must match exactly' },
-                visualPrompt: { type: 'string', description: 'What we see. 1-2 sentences. Characters + environment + action.' },
-                motionPrompt: { type: 'string', description: 'Camera + character movement. 1 sentence.' },
+                visualPrompt: { type: 'string', description: 'Start frame for image model. 1-2 sentences. Composition + character pose + environment.' },
+                motionPrompt: { type: 'string', description: 'Video instruction for video model. 1-2 sentences. What happens during the shot — action, camera, change.' },
                 continuityFrom: { type: 'string', enum: ['cut', 'prev_shot'], description: "'cut' for hard cut (default, most shots), 'prev_shot' for continuous flow from previous shot" }
               },
               required: ['id', 'visualPrompt', 'motionPrompt', 'continuityFrom']
@@ -980,8 +981,8 @@ Only change the motion prompt if the feedback specifically mentions movement or 
       input_schema: {
         type: 'object' as const,
         properties: {
-          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 SHORT sentences max. Direct, visual, no fluff.' },
-          motionPrompt: { type: 'string', description: 'Motion/camera prompt. 1 sentence. Only change if feedback mentions movement, otherwise keep the original exactly.' }
+          visualPrompt: { type: 'string', description: 'Rewritten start-frame prompt for image model. 1-3 SHORT sentences. Composition + pose + environment.' },
+          motionPrompt: { type: 'string', description: 'Rewritten video instruction for video model. 1-2 sentences. What happens during the shot. Only change if feedback mentions action/movement, otherwise keep the original.' }
         },
         required: ['visualPrompt', 'motionPrompt']
       }
@@ -1036,8 +1037,8 @@ export const refreshChainedShotPrompt = async (opts: {
       input_schema: {
         type: 'object' as const,
         properties: {
-          visualPrompt: { type: 'string', description: 'Rewritten visual prompt. 1-3 sentences. What we see in THIS shot\'s frame — must flow naturally from the previous frame shown.' },
-          motionPrompt: { type: 'string', description: 'Motion prompt for this shot. 1 sentence. Movement that starts from the previous frame\'s state.' }
+          visualPrompt: { type: 'string', description: 'Start-frame prompt for image model. 1-3 sentences. What we see — must flow from the previous frame shown.' },
+          motionPrompt: { type: 'string', description: 'Video instruction for video model. 1-2 sentences. What happens during this shot, starting from the previous frame\'s state.' }
         },
         required: ['visualPrompt', 'motionPrompt']
       }

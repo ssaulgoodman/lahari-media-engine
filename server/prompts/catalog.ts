@@ -415,12 +415,12 @@ SHOTS:
 
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: What we SEE in the frame. 1-2 sentences.
-  Include: composition, character physical details (from cast list), environment, action/pose.
-  Reference characters by their mythological identity.
-  Do NOT include art style, lighting, or color — the style system handles that.
+- visualPrompt: Start frame for image model. 1-2 sentences.
+  Composition, character pose, environment. Characters by name (ref images sent separately).
+  No art style, lighting, or color — style system handles that.
 
-- motionPrompt: How the camera and characters MOVE. 1 sentence.
+- motionPrompt: Video model instruction. Sent directly to Veo with the start frame. 1 sentence.
+  The model sees the frame — just say what to animate: action + camera.
   Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
 
 - continuityFrom: How this shot relates to the one before it.
@@ -536,7 +536,7 @@ Output: { visualPrompt, motionPrompt } — visualPrompt becomes end_visual_promp
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
     triggeredBy: "Fires when you click 'Refine' on the Video tab.",
-    summary: 'Claude rewrites the motion prompt based on feedback. Sees start frame + end frame (if exists) + scene + cast context.',
+    summary: 'Claude rewrites the video instruction (motionPrompt) based on feedback. Sees start frame + end frame (if exists) + scene + cast context.',
     variables: [
       { name: 'motionPrompt', description: 'Current motion prompt' },
       { name: 'feedback', description: 'Director feedback prefixed with [VIDEO/MOTION REFINEMENT]' },
@@ -642,16 +642,12 @@ Rewrite both prompts. Keep the spirit of the draft, but:
     model: 'veo-3.1-* / seedance-2.0-*',
     modelLabel: 'Video model (Veo or Seedance)',
     triggeredBy: "Fires when you click the play icon on a shot or 'Generate all videos'.",
-    summary: "Assembled inline from motion + scene brief + cast + mood + (optional) continuity description. Artist can override via the Video prompt tab.",
+    summary: "motionPrompt only — the video instruction. Ref labels appended only when character/env reference images are actually attached. Artist can override via the Video prompt tab.",
     variables: [
-      { name: 'motionPrompt', description: "Shot's motion prompt" },
-      { name: 'sceneNarrative', description: 'Scene narrative (truncated to 120 chars)' },
-      { name: 'castNames', description: 'Comma-separated cast names in this shot' },
-      { name: 'mood', description: 'Concept mood' },
-      { name: 'continuityDescription', description: 'Optional — injected only when shot is tagged prev_shot' },
+      { name: 'motionPrompt', description: "Shot's video instruction (action + camera)" },
+      { name: 'refLabels', description: 'Auto-appended when ref images attached, e.g. "Maintain Priya\'s appearance from reference"' },
     ],
-    template: `{{motionPrompt}}. {{sceneNarrative}}. Characters: {{castNames}}. {{mood}} mood.
-{{continuityDescription ? "Starting state (from previous shot): " + continuityDescription : ""}}`,
+    template: `{{motionPrompt}}. {{refLabels}}`,
     source: { file: 'server/routes/generate-video.ts', lines: 'Veo prompt builder in generate-video endpoint' },
   },
 

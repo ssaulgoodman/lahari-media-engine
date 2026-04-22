@@ -128,10 +128,9 @@ export const ShotCard: React.FC<ShotCardProps> = ({
     if (shot.userFeedback) compiledLines.push('', `Director note: ${shot.userFeedback}`);
     compiledLines.push('', 'Single cinematic frame. No text, no watermark.', 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.');
 
-    // Video prompt: action + motion only. Start frame shows the visual state.
+    // Video prompt: motionPrompt is the video instruction. Start frame shows the scene.
     // Ref labels added only when ref images are actually attached.
     const veoParts: string[] = [];
-    if (shot.visualPrompt) veoParts.push(shot.visualPrompt);
     if (shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement') veoParts.push(shot.motionPrompt);
     const castWithRefs = shotCast.filter(c => c.referenceImageUrl);
     const refLabels: string[] = [];

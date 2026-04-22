@@ -73,12 +73,10 @@ export const mountVideoRoutes = (router: Router) => {
       await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
       const t0 = Date.now();
 
-      // Build Veo prompt — action + motion only.
-      // The start frame already shows the visual state, style, mood, and characters.
-      // Text should tell Veo what to ANIMATE, not re-describe what's visible.
-      // Character/env ref labels are added only when ref images are actually attached.
+      // Build Veo prompt — motionPrompt is the video instruction.
+      // The start frame already shows the visual scene. Text just tells Veo what to animate.
+      // Ref labels added only when ref images are actually attached.
       const veoPromptParts: string[] = [];
-      if (shot.visual_prompt) veoPromptParts.push(shot.visual_prompt);
       if (shot.motion_prompt && shot.motion_prompt !== 'Cinematic camera movement') {
         veoPromptParts.push(shot.motion_prompt);
       }
