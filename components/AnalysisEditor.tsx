@@ -1489,24 +1489,9 @@ export const AnalysisEditor: React.FC<Props> = ({
                                     <div className="text-sm text-zinc-400 leading-relaxed">{realMotion}</div>
                                   )}
                                   <div className="text-[11px] text-zinc-400 flex gap-3 flex-wrap items-center">
-                                    {/* Editable duration + split */}
+                                    {/* Duration (read-only) + split */}
                                     <span className="flex items-center gap-1 font-mono">
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        max={30}
-                                        defaultValue={shot.duration}
-                                        onBlur={e => {
-                                          const val = parseInt(e.target.value);
-                                          if (val && val !== shot.duration && val > 0) {
-                                            onUpdateShot?.(scene.id, shot.id, { duration: val } as any);
-                                            setSavedFlash(shot.id);
-                                            setTimeout(() => setSavedFlash(null), 1500);
-                                          }
-                                        }}
-                                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                                        className="w-8 bg-transparent text-zinc-300 text-center border-b border-dashed border-white/[0.1] hover:border-white/[0.2] focus:border-white/[0.3] outline-none"
-                                      />
+                                      <span className="text-zinc-300">{shot.duration}</span>
                                       <span className="text-zinc-500">s</span>
                                       {shot.duration > 4 && (
                                         <button
