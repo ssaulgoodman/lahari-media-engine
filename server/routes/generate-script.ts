@@ -295,16 +295,30 @@ router.post('/:id/refine-script', async (req, res) => {
         narrative_description: scene.narrativeDescription, sort_order: sIdx,
       });
 
-      for (let shIdx = 0; shIdx < (scene.shots || []).length; shIdx++) {
+      // Calculate per-shot durations: base pacing for all, last shot gets remainder (clamped)
+      const basePacing = project.target_duration || 8;
+      const sceneStartSec = parseTimestamp(scene.startTime);
+      const sceneEndSec = parseTimestamp(scene.endTime);
+      const sceneDuration = Math.max(0, sceneEndSec - sceneStartSec);
+      const shotCount = (scene.shots || []).length;
+
+      for (let shIdx = 0; shIdx < shotCount; shIdx++) {
         const shot = scene.shots[shIdx];
         const castIds = (shot.castNames || [])
           .map((n: string) => castNameToId.get(n.toLowerCase()))
           .filter(Boolean);
         const envId = shot.environmentName ? envNameToId.get(shot.environmentName.toLowerCase()) : null;
 
+        // Last shot gets remainder (with ceil pacing, remainder ≤ basePacing). Safety clamp at 2×.
+        let duration = basePacing;
+        if (shIdx === shotCount - 1 && sceneDuration > 0) {
+          const remainder = sceneDuration - (shotCount - 1) * basePacing;
+          duration = Math.max(1, Math.min(remainder, basePacing * 2));
+        }
+
         await insertRow('shots', {
           id: uuidv4(), scene_id: sceneId,
-          visual_prompt: shot.direction, duration: shot.duration || project.target_duration || 8,
+          visual_prompt: shot.direction, duration,
           cast_ids: JSON.stringify(castIds),
           environment_id: envId || null,
           sort_order: shIdx, image_status: 'idle', video_status: 'idle',

@@ -1386,7 +1386,7 @@ export const AnalysisEditor: React.FC<Props> = ({
                 <div className="p-5 flex justify-between items-center border-b border-white/[0.06]">
                   <h3 className="text-sm font-medium text-white">Script Breakdown</h3>
                   <div className="flex items-center gap-3">
-                    {onUnlockScript && project.status === 'scripted' && (
+                    {onUnlockScript && isLockedPhase('script') && (
                       <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
                     )}
                     <button
@@ -1937,7 +1937,7 @@ export const AnalysisEditor: React.FC<Props> = ({
         {/* ═══ CHARACTERS ═══ */}
         {viewPhase === 'characters' && (
           <motion.div key="characters" {...phaseTransition} className="space-y-6">
-            {onUnlockCharacters && project.status === 'characters_locked' && (
+            {onUnlockCharacters && isLockedPhase('characters') && (
               <div className="flex justify-end">
                 <UnlockPill onClick={onUnlockCharacters} disabled={isLoading} label="Unlock characters" />
               </div>
@@ -2385,7 +2385,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
         {/* ═══ ENVIRONMENTS ═══ */}
         {viewPhase === 'environments' && (
           <motion.div key="environments" {...phaseTransition} className="space-y-6">
-            {onUnlockEnvironments && project.status === 'environments_locked' && (
+            {onUnlockEnvironments && isLockedPhase('environments') && (
               <div className="flex justify-end">
                 <UnlockPill onClick={onUnlockEnvironments} disabled={isLoading} label="Unlock environments" />
               </div>

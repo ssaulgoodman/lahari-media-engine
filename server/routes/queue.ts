@@ -101,11 +101,6 @@ router.post('/:queueId/start', async (req, res) => {
     const audioUrl = (item as any).audio_url;
     if (!audioUrl) return res.status(400).json({ error: 'No audio file available for this song. Upload audio first.' });
 
-    // Download audio
-    const audioBuffer = await downloadFile(audioUrl);
-    const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
-    const audioPath = await saveBuffer(audioBuffer, 'audio', ext);
-
     // ─── Check for cached analysis on songs table ───
     const { data: songRow } = await getSB()
       .from('songs')
@@ -115,42 +110,14 @@ router.post('/:queueId/start', async (req, res) => {
     const cached = songRow || {} as any;
     const hasCachedAnalysis = cached.cached_lyrics && cached.cached_structure && cached.cached_meaning;
 
-    // Get lyrics: cached → SRT → audio transcription
-    let lyrics = cached.cached_lyrics || '';
-    if (!lyrics) {
-      const files = await getSongFiles(item.song_id);
-      const srtFile = files.find(f => f.file_type === 'srt_verified_san')
-        || files.find(f => f.file_type.startsWith('srt_verified_'))
-        || files.find(f => f.file_type === 'srt_turbo_scribe');
-
-      if (srtFile) {
-        try {
-          const srtBuffer = await downloadFile(srtFile.storage_url);
-          lyrics = parseSrtToTimestamped(srtBuffer.toString('utf-8'));
-        } catch (e) {
-          console.warn(`[queue] Failed to download SRT for ${item.song_name}:`, e);
-        }
-      }
-      if (!lyrics) {
-        try {
-          const audioBase64 = await readAsBase64(audioPath);
-          const audioMime = mimeFromExt(audioPath);
-          lyrics = await transcribeLyrics(audioBase64, audioMime);
-          console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
-        } catch (e) {
-          console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);
-        }
-      }
-    }
-
-    // Create Lahari project
+    // Create project immediately — artist navigates to Blueprint right away.
+    // Audio download, SRT, transcription, and analysis all run in the background.
     const projectId = uuidv4();
     await insertRow('projects', {
       id: projectId,
       title: item.song_name || 'Untitled',
       status: hasCachedAnalysis ? 'analyzed' : 'analyzing',
-      audio_path: audioPath,
-      lyrics: lyrics || null,
+      lyrics: cached.cached_lyrics || null,
       musical_structure: cached.cached_structure || null,
       meaning: cached.cached_meaning || '',
       user_id: req.userId,
@@ -165,24 +132,61 @@ router.post('/:queueId/start', async (req, res) => {
       });
     }
 
-    // If analysis is cached, skip AI calls — respond immediately
-    if (hasCachedAnalysis) {
-      console.log(`[queue] Using cached analysis for ${item.song_name}`);
-      const project = await getFullProject(projectId);
-      return res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: item.lahari_project_id || projectId } });
-    }
-
-    // Respond immediately with the project in 'analyzing' state — artist sees Blueprint right away.
-    // Analysis runs in the background; frontend polls for completion.
+    // If analysis is cached, we still need audio in background but can skip AI calls
     const project = await getFullProject(projectId);
     res.json({ project, queueItem: { ...item, status: 'in_progress', lahari_project_id: item.lahari_project_id || projectId } });
 
-    // ─── Background analysis (fire-and-forget after response) ───
-    const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
+    // ─── Background: audio download + SRT + transcription + analysis ───
     (async () => {
       try {
+        // Download audio first — needed for analysis and playback
+        const audioBuffer = await downloadFile(audioUrl);
+        const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
+        const audioPath = await saveBuffer(audioBuffer, 'audio', ext);
+
+        // Save audio path on project immediately so player works
+        await updateRows('projects', { id: projectId }, { audio_path: audioPath });
+
+        // If analysis is fully cached, we're done — just needed the audio download
+        if (hasCachedAnalysis) {
+          console.log(`[queue] Using cached analysis for ${item.song_name}, audio downloaded in background`);
+          return;
+        }
+
+        // Get lyrics: SRT → audio transcription
+        let lyrics = '';
+        const files = await getSongFiles(item.song_id);
+        const srtFile = files.find(f => f.file_type === 'srt_verified_san')
+          || files.find(f => f.file_type.startsWith('srt_verified_'))
+          || files.find(f => f.file_type === 'srt_turbo_scribe');
+
+        if (srtFile) {
+          try {
+            const srtBuffer = await downloadFile(srtFile.storage_url);
+            lyrics = parseSrtToTimestamped(srtBuffer.toString('utf-8'));
+          } catch (e) {
+            console.warn(`[queue] Failed to download SRT for ${item.song_name}:`, e);
+          }
+        }
+        if (!lyrics) {
+          try {
+            const audioBase64 = await readAsBase64(audioPath);
+            const audioMime = mimeFromExt(audioPath);
+            lyrics = await transcribeLyrics(audioBase64, audioMime);
+            console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
+          } catch (e) {
+            console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);
+          }
+        }
+
+        // Save lyrics immediately so analysis can use them
+        if (lyrics) {
+          await updateRows('projects', { id: projectId }, { lyrics });
+        }
+
         const audioBase64 = await readAsBase64(audioPath);
         const audioMime = mimeFromExt(audioPath);
+        const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
 
         const t0 = Date.now();
         const [structureResult, meaningResult] = await Promise.allSettled([
@@ -227,6 +231,7 @@ router.post('/:queueId/start', async (req, res) => {
         const structureJson = JSON.stringify(musicalStructure);
         await updateRows('projects', { id: projectId }, {
           status: 'analyzed',
+          lyrics: lyrics || null,
           musical_structure: structureJson,
           meaning,
           updated_at: new Date().toISOString(),

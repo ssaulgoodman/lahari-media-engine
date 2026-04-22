@@ -57,8 +57,9 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
 
   // Build or reuse the generation prompt. First gen auto-builds from template;
   // subsequent gens use the saved (possibly artist-edited) prompt.
+  // When prompts_stale is set (style/description changed upstream), force a rebuild.
   let genPrompt = member.generation_prompt as string | null;
-  if (!genPrompt) {
+  if (!genPrompt || member.prompts_stale) {
     const styleIdx = styleImagePath ? 1 : undefined;
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
@@ -66,6 +67,9 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       styleDNA,
       { styleIdx, userRefIdx }
     );
+    if (member.prompts_stale) {
+      await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
+    }
   }
 
   // If feedback provided and we have a generation prompt, ask Claude to rewrite
@@ -257,9 +261,10 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     await insertRow('assets', { id: refAssetId, project_id: project.id, category: 'environment_user_ref', file_path: userRefImagePath });
   }
 
-  // Build or reuse generation prompt
+  // Build or reuse generation prompt.
+  // When prompts_stale is set (style/description changed upstream), force a rebuild.
   let genPrompt = env.generation_prompt as string | null;
-  if (!genPrompt) {
+  if (!genPrompt || env.prompts_stale) {
     const styleIdx = styleImagePath ? 1 : undefined;
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
@@ -267,6 +272,9 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       styleDNA,
       { styleIdx, userRefIdx }
     );
+    if (env.prompts_stale) {
+      await updateRows('environments', { id: env.id }, { prompts_stale: 0 });
+    }
   }
 
   const userNote = typeof note === 'string' && note.trim() ? note.trim() : undefined;

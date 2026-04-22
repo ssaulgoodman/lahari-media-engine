@@ -6,7 +6,7 @@ import { generateStyleOptions } from '../services/imagen.js';
 import { chatWithDirector } from '../services/gemini.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
-import { paramStr } from './scope-helpers.js';
+import { paramStr, atLeast } from './scope-helpers.js';
 import { mountStyleRoutes } from './generate-style.js';
 import { mountLooksRoutes } from './generate-looks.js';
 import { mountScriptRoutes } from './generate-script.js';
