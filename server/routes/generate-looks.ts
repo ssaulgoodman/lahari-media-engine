@@ -17,6 +17,22 @@ import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast 
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Mark shots stale when a character or environment reference changes
+const markDependentShotsStale = async (projectId: string, type: 'cast' | 'env', entityId: string) => {
+  const scenes = await selectAll('scenes', { project_id: projectId });
+  for (const s of scenes) {
+    const shots = await selectAll('shots', { scene_id: s.id });
+    for (const shot of shots) {
+      if (type === 'cast') {
+        const castIds = JSON.parse(shot.cast_ids || '[]');
+        if (castIds.includes(entityId)) await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+      } else {
+        if (shot.environment_id === entityId) await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+      }
+    }
+  }
+};
+
 export const mountLooksRoutes = (router: Router) => {
 
 // ─── Generate Character Looks ───────────────────────────────────────
@@ -216,6 +232,7 @@ router.post('/:id/lock-character', async (req, res) => {
   await requireAsset(projectId, assetId);
 
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: assetId });
+  await markDependentShotsStale(projectId, 'cast', castMemberId);
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
   res.json({ ok: true });
@@ -246,6 +263,7 @@ router.post('/:id/unlock-character-look', async (req, res) => {
   if (!castMemberId) return res.status(400).json({ error: 'castMemberId required' });
   await requireCastMember(projectId, castMemberId);
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: null });
+  await markDependentShotsStale(projectId, 'cast', castMemberId);
   res.json({ ok: true });
 });
 
@@ -442,6 +460,7 @@ router.post('/:id/lock-environment', async (req, res) => {
   await requireAsset(projectId, assetId);
 
   await updateRows('environments', { id: environmentId }, { reference_asset_id: assetId });
+  await markDependentShotsStale(projectId, 'env', environmentId);
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
   res.json({ ok: true });
@@ -454,6 +473,7 @@ router.post('/:id/unlock-environment-look', async (req, res) => {
   if (!environmentId) return res.status(400).json({ error: 'environmentId required' });
   await requireEnvironment(projectId, environmentId);
   await updateRows('environments', { id: environmentId }, { reference_asset_id: null });
+  await markDependentShotsStale(projectId, 'env', environmentId);
   res.json({ ok: true });
 });
 
