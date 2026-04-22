@@ -478,6 +478,29 @@ export const AnalysisEditor: React.FC<Props> = ({
   const activeEnv = project.environments.find(e => e.id === activeEnvId);
   const activeEnvLooks = activeEnvId ? (envLooks[activeEnvId] || []) : [];
 
+  // Auto-generate fresh environment candidates when environments phase is unlocked
+  const prevStatusRef = useRef(project.status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = project.status;
+    // Detect unlock: status went from environments_locked/in_production back to characters_locked
+    if ((prev === 'environments_locked' || prev === 'in_production') && project.status === 'characters_locked') {
+      const lockedEnvs = project.environments.filter(e => e.referenceImageUrl);
+      lockedEnvs.forEach(e => {
+        // Fire generation — handleEnvGenerate not yet defined, so inline it
+        setEnvGenerating(prev => new Set(prev).add(e.id));
+        api.generateEnvironmentLook(project.id, e.id).then(result => {
+          setEnvLooks(prev => ({ ...prev, [e.id]: result.looks || [] }));
+          onSetProject?.(result.project);
+        }).catch(err => {
+          showActionError(`Environment look generation failed: ${err.message}`);
+        }).finally(() => {
+          setEnvGenerating(prev => { const s = new Set(prev); s.delete(e.id); return s; });
+        });
+      });
+    }
+  }, [project.status]);
+
   // ─── Environment Handlers ──────────────────────────────────────
 
   const handleEnvGenerate = async (envId: string, refImage?: File, note?: string) => {

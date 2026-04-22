@@ -371,7 +371,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   };
 
   const handleUnlockScript = () => doUnlock(() => api.unlockScript(project!.id));
-  const handleUnlockCharacters = () => doUnlock(() => api.unlockCharacters(project!.id));
+  const handleUnlockCharacters = async () => {
+    if (!project) return;
+    await doUnlock(() => api.unlockCharacters(project.id));
+    // Auto-generate fresh candidates for all characters that had a locked reference
+    const lockedCast = project.cast.filter(c => c.referenceImageUrl);
+    for (const c of lockedCast) {
+      handleGenerateLooks(c.id);
+    }
+  };
   const handleUnlockEnvironments = () => doUnlock(() => api.unlockEnvironments(project!.id));
 
   const doUnlock = async (fn: () => Promise<any>) => {
