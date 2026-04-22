@@ -468,66 +468,31 @@ Priority: character identity > continuity > environment > style.`,
     source: { file: 'server/services/imagen.ts', lines: '366-435' },
   },
   {
-    id: 'refine-shot-prompt',
-    name: 'Refine shot prompt (with feedback)',
+    id: 'refine-frame-prompt',
+    name: 'Refine frame prompt (first frame, end frame, character look, env look)',
     stage: 'studio',
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
-    triggeredBy: 'Fires when you add feedback on a shot and click Refine.',
-    summary: 'Claude sees the failed image + feedback and rewrites the visual + motion prompts to fix the issues.',
+    triggeredBy: 'Fires when you click Refine on First frame or Last frame tab, or refine a character/env look.',
+    summary: 'Director says what to change, Claude applies it to the current prompt. No scene/style/character context — just feedback + current prompt + optional images.',
     variables: [
-      { name: 'currentVisualPrompt', description: 'Current visual prompt' },
-      { name: 'currentMotionPrompt', description: 'Current motion prompt' },
-      { name: 'feedback', description: 'Director feedback on what went wrong' },
-      { name: 'failedImage', description: 'The rejected image' },
-      { name: 'styleDNA', description: 'Style keywords' },
-      { name: 'characterDescriptions', description: 'Cast list for this shot' },
+      { name: 'feedback', description: 'What the director wants changed' },
+      { name: 'currentPrompt', description: 'The prompt being rewritten' },
+      { name: 'failedImage', description: 'The result from the current prompt (optional)' },
+      { name: 'referenceImage', description: 'Director\'s reference image (optional)' },
     ],
-    template: `You are a cinematographer refining a generation prompt for a devotional music video.
+    template: `WHAT THE DIRECTOR WANTS CHANGED:
+{{feedback}}
 
-[Failed image shown as Image 1. Optional reference image as Image 2.]
+Image 1: result from current prompt. Image 2: director's reference (if attached).
 
 CURRENT PROMPT:
-Visual: {{currentVisualPrompt}}
-Motion: {{currentMotionPrompt}}
+{{currentPrompt}}
 
-DIRECTOR FEEDBACK: {{feedback}}
+Apply the feedback. Keep what works. 1-3 sentences.
 
-STYLE DNA: {{styleDNA}}
-SCENE NARRATIVE: {{sceneNarrative}}
-ENVIRONMENT: {{environmentDescription}}
-CHARACTERS: {{characterDescriptions}}
-
-REWRITE the visual prompt. 1-3 SHORT sentences, direct and visual.
-Only change motion prompt if feedback mentions movement.
-
-Used for: first frame refine, end frame refine ([END FRAME] prefix),
-and video refine ([VIDEO/MOTION] prefix + start/end frames as context).
-
-Output via rewrite_shot_prompt tool: { visualPrompt, motionPrompt }`,
-    source: { file: 'server/services/claude.ts', lines: '794-890' },
-  },
-  {
-    id: 'refine-end-frame-prompt',
-    name: 'Refine end frame prompt',
-    stage: 'studio',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6 (vision)',
-    triggeredBy: "Fires when you click 'Refine' on the Last frame tab.",
-    summary: 'Claude rewrites the end frame visual prompt based on feedback. Sees the end frame image (if exists) + scene + env + cast context.',
-    variables: [
-      { name: 'endVisualPrompt', description: 'Current end frame prompt' },
-      { name: 'feedback', description: 'Director feedback prefixed with [END FRAME]' },
-      { name: 'endFrameImage', description: 'Current end frame image (optional)' },
-      { name: 'styleDNA', description: 'Style keywords (for Claude context)' },
-      { name: 'characterDescriptions', description: 'Cast in this shot' },
-      { name: 'sceneNarrative', description: 'Scene context' },
-      { name: 'environmentDescription', description: 'Environment context' },
-    ],
-    template: `Same refineShotPrompt function with [END FRAME] prefix in feedback.
-Works without existing end image (prompt-only refine).
-Output: { visualPrompt, motionPrompt } — visualPrompt becomes end_visual_prompt.`,
-    source: { file: 'server/routes/generate-shots.ts', lines: 'refine-end-frame-prompt endpoint' },
+Output via rewrite_frame_prompt tool: { visualPrompt }`,
+    source: { file: 'server/services/claude.ts', lines: 'refineFramePrompt' },
   },
   {
     id: 'refine-video-prompt',
@@ -536,21 +501,30 @@ Output: { visualPrompt, motionPrompt } — visualPrompt becomes end_visual_promp
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
     triggeredBy: "Fires when you click 'Refine' on the Video tab.",
-    summary: 'Claude rewrites the video instruction (motionPrompt) based on feedback. Sees start frame + end frame (if exists) + scene + cast context.',
+    summary: 'Director says what to change about the animation. Claude rewrites the motion prompt. Sees start frame + end frame + shot description — no style/scene/character context.',
     variables: [
-      { name: 'motionPrompt', description: 'Current motion prompt' },
-      { name: 'feedback', description: 'Director feedback prefixed with [VIDEO/MOTION REFINEMENT]' },
-      { name: 'startFrame', description: 'Start frame image' },
-      { name: 'endFrame', description: 'End frame image (optional — target or extracted)' },
-      { name: 'styleDNA', description: 'Style keywords (for Claude context)' },
-      { name: 'characterDescriptions', description: 'Cast in this shot' },
-      { name: 'sceneNarrative', description: 'Scene context' },
-      { name: 'environmentDescription', description: 'Environment context' },
+      { name: 'feedback', description: 'What the director wants changed' },
+      { name: 'currentMotionPrompt', description: 'Current video instruction' },
+      { name: 'shotVisualPrompt', description: 'What happens in this shot (context)' },
+      { name: 'startFrame', description: 'Start frame image (context, not a failure)' },
+      { name: 'endFrame', description: 'End frame image (optional — where shot should land)' },
+      { name: 'referenceImage', description: 'Director\'s reference image (optional)' },
     ],
-    template: `Same refineShotPrompt function with [VIDEO/MOTION REFINEMENT] prefix.
-Start frame as main image, end frame as reference image.
-Output: motionPrompt rewritten. Visual prompt preserved.`,
-    source: { file: 'server/routes/generate-shots.ts', lines: 'refine-video-prompt endpoint' },
+    template: `WHAT THE DIRECTOR WANTS CHANGED:
+{{feedback}}
+
+Image 1: start frame. Image 2: end frame (if exists). Image 3: director ref (if attached).
+
+WHAT HAPPENS IN THIS SHOT:
+{{shotVisualPrompt}}
+
+CURRENT MOTION PROMPT:
+{{currentMotionPrompt}}
+
+Apply the feedback. 1-2 sentences, action + camera.
+
+Output via rewrite_motion_prompt tool: { motionPrompt }`,
+    source: { file: 'server/services/claude.ts', lines: 'refineMotionPrompt' },
   },
   {
     id: 'refine-concept',

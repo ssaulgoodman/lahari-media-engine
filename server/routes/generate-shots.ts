@@ -13,7 +13,7 @@ import { selectOne, selectAll, insertRow, updateRows, deleteRows, findShot, incr
 import { readAsBase64, mimeFromExt, saveBuffer, storageUrl } from '../storage.js';
 import { generateShotStartFrame } from '../services/imagen.js';
 import { SEGMIND_MODELS } from '../services/segmind.js';
-import { refineShotPrompt } from '../services/claude.js';
+import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -67,24 +67,18 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
     const scene = await selectOne('scenes', { id: shot.scene_id });
     const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
 
-    const result = await refineShotPrompt({
-      currentVisualPrompt: shot.visual_prompt || '',
-      currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: feedback + refImageNote,
+    const result = await refineFramePrompt({
+      currentPrompt: shot.visual_prompt || '',
+      feedback,
       failedImageBase64: imageBase64,
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
-      styleDNA: project.style_description || 'Cinematic',
-      characterDescriptions: charDescs,
-      sceneNarrative: scene?.narrative_description,
-      environmentDescription: env?.description,
     });
 
-    // Update the shot prompts with the rewritten versions
+    // Update the visual prompt with the rewritten version
     await updateRows('shots', { id: shot.id }, {
       visual_prompt: result.visualPrompt,
-      motion_prompt: result.motionPrompt,
       user_feedback: feedback,
       refined_from_prev_frame: 0,
       prompts_stale: false,
@@ -536,18 +530,13 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
     const scene = await selectOne('scenes', { id: shot.scene_id });
     const env = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
 
-    const result = await refineShotPrompt({
-      currentVisualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
-      currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: `[END FRAME — this is what the shot should land on] ${feedback}`,
+    const result = await refineFramePrompt({
+      currentPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
+      feedback: `[END FRAME — what the shot should land on] ${feedback}`,
       failedImageBase64: imageBase64,
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
-      styleDNA: project.style_description || 'Cinematic',
-      characterDescriptions: charDescs,
-      sceneNarrative: scene?.narrative_description,
-      environmentDescription: env?.description,
     });
 
     // Save rewritten prompt — user sees it update, then generates separately
@@ -617,31 +606,19 @@ router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceIm
       }
     }
 
-    // User-attached reference image takes the reference slot; end frame note is text-only if both exist
     const userRefBase64 = req.file ? req.file.buffer.toString('base64') : undefined;
     const userRefMime = req.file ? (req.file.mimetype || 'image/png') : undefined;
-    const refBase64 = userRefBase64 || endBase64;
-    const refMime = userRefMime || endMime;
 
-    const endFrameNote = endBase64 && !userRefBase64
-      ? '\n[SECOND IMAGE is the end frame — the video should transition from the first image to this one]'
-      : '';
-    const userRefNote = userRefBase64
-      ? '\n[SECOND IMAGE is a reference image from the director — use it to guide the refinement]'
-      : '';
-
-    const result = await refineShotPrompt({
-      currentVisualPrompt: shot.visual_prompt || '',
+    const result = await refineMotionPrompt({
       currentMotionPrompt: shot.motion_prompt || 'Cinematic camera movement',
-      feedback: `[VIDEO/MOTION REFINEMENT — focus on camera movement, pacing, and action]${endFrameNote}${userRefNote} ${feedback}`,
-      failedImageBase64: startBase64,
-      failedImageMime: startMime,
-      referenceImageBase64: refBase64,
-      referenceImageMime: refMime,
-      styleDNA: project.style_description || 'Cinematic',
-      characterDescriptions: charDescs,
-      sceneNarrative: scene?.narrative_description,
-      environmentDescription: env?.description,
+      shotVisualPrompt: shot.visual_prompt || '',
+      feedback,
+      startFrameBase64: startBase64,
+      startFrameMime: startMime,
+      endFrameBase64: endBase64,
+      endFrameMime: endMime,
+      referenceImageBase64: userRefBase64,
+      referenceImageMime: userRefMime,
     });
 
     await updateRows('shots', { id: shot.id }, {

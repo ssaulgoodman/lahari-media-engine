@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { generateCharacterLooks, buildCharacterPrompt, generateEnvironmentLooks, buildEnvironmentPrompt } from '../services/imagen.js';
-import { refineShotPrompt } from '../services/claude.js';
+import { refineFramePrompt } from '../services/claude.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
@@ -107,16 +107,13 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       const userRefBase64 = userRefImagePath ? await readAsBase64(userRefImagePath) : undefined;
       const userRefMime = userRefImagePath ? mimeFromExt(userRefImagePath) : undefined;
 
-      const rewritten = await refineShotPrompt({
-        currentVisualPrompt: genPrompt,
-        currentMotionPrompt: '',
-        feedback: `[CHARACTER LOOK REFINEMENT for ${member.name}]${userRefBase64 ? ' [SECOND IMAGE is a reference from the director — match this look]' : ''} ${feedback}`,
+      const rewritten = await refineFramePrompt({
+        currentPrompt: genPrompt,
+        feedback: `[CHARACTER LOOK for ${member.name}] ${feedback}`,
         failedImageBase64: refBase64,
         failedImageMime: refMime,
         referenceImageBase64: userRefBase64,
         referenceImageMime: userRefMime,
-        styleDNA: styleDNA,
-        characterDescriptions: [`${member.name}: ${member.description || ''}`],
       });
       genPrompt = rewritten.visualPrompt;
       console.log(`[${project.id}] Claude rewrote generation prompt for ${member.name}: ${genPrompt.substring(0, 100)}...`);
@@ -348,16 +345,13 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       const userEnvRefBase64 = userRefImagePath ? await readAsBase64(userRefImagePath) : undefined;
       const userEnvRefMime = userRefImagePath ? mimeFromExt(userRefImagePath) : undefined;
 
-      const rewritten = await refineShotPrompt({
-        currentVisualPrompt: genPrompt,
-        currentMotionPrompt: '',
-        feedback: `[ENVIRONMENT LOOK REFINEMENT for ${env.name}]${userEnvRefBase64 ? ' [SECOND IMAGE is a reference from the director — match this environment]' : ''} ${userNote}`,
+      const rewritten = await refineFramePrompt({
+        currentPrompt: genPrompt,
+        feedback: `[ENVIRONMENT LOOK for ${env.name}] ${userNote}`,
         failedImageBase64: refBase64,
         failedImageMime: refMime,
         referenceImageBase64: userEnvRefBase64,
         referenceImageMime: userEnvRefMime,
-        styleDNA: styleDNA,
-        characterDescriptions: [],
       });
       genPrompt = rewritten.visualPrompt;
       console.log(`[${project.id}] Claude rewrote generation prompt for env ${env.name}: ${genPrompt.substring(0, 100)}...`);

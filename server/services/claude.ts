@@ -902,104 +902,152 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.` }
  * Claude sees the failed image, the current prompt, and the user's feedback,
  * then rewrites the visual prompt to fix the issues. Full rewrite, not append.
  */
-export const refineShotPrompt = async (opts: {
-  currentVisualPrompt: string;
-  currentMotionPrompt: string;
+// ─── Refine Frame Prompt (first frame or end frame) ──────────────────
+//
+// The image model generated a bad frame. The director says what's wrong.
+// Claude rewrites the prompt so the next generation fixes it.
+
+export const refineFramePrompt = async (opts: {
+  currentPrompt: string;
   feedback: string;
-  failedImageBase64: string;
-  failedImageMime: string;
+  failedImageBase64?: string;
+  failedImageMime?: string;
   referenceImageBase64?: string;
   referenceImageMime?: string;
-  styleDNA: string;
-  characterDescriptions: string[];
-  sceneNarrative?: string;
-  environmentDescription?: string;
-}): Promise<{ visualPrompt: string; motionPrompt: string }> => {
+}): Promise<{ visualPrompt: string }> => {
   const client = getClient();
-
-  const mediaType = opts.failedImageMime.startsWith('image/')
-    ? opts.failedImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-    : 'image/png';
-
   const contentBlocks: any[] = [];
+
+  // Failed image — what went wrong
   const hasFailedImage = opts.failedImageBase64 && opts.failedImageBase64.length > 100;
   if (hasFailedImage) {
-    contentBlocks.push(
-      { type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } },
-    );
+    const mediaType = (opts.failedImageMime?.startsWith('image/') ? opts.failedImageMime : 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.failedImageBase64 } });
   }
 
-  // Add user-uploaded reference image if provided
+  // Director's reference image
   if (opts.referenceImageBase64 && opts.referenceImageMime) {
-    const refMediaType = opts.referenceImageMime.startsWith('image/')
-      ? opts.referenceImageMime as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
-      : 'image/png';
-    contentBlocks.push(
-      { type: 'image', source: { type: 'base64', media_type: refMediaType, data: opts.referenceImageBase64 } },
-    );
+    const refMediaType = (opts.referenceImageMime.startsWith('image/') ? opts.referenceImageMime : 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: refMediaType, data: opts.referenceImageBase64 } });
   }
 
-  const refNote = opts.referenceImageBase64
-    ? '\n\nThe SECOND IMAGE is a reference the director uploaded — use it as visual guidance for the rewrite. Match its mood, composition, or style as indicated in the feedback.'
-    : '';
-
-  const imageContext = hasFailedImage
-    ? `THE FIRST IMAGE is the failed attempt. Study it carefully.${refNote}`
-    : `No image provided — rewrite the prompt based on the feedback alone.${refNote}`;
-
-  const sceneCtx = opts.sceneNarrative ? `\nSCENE NARRATIVE: ${opts.sceneNarrative}` : '';
-  const envCtx = opts.environmentDescription ? `\nENVIRONMENT: ${opts.environmentDescription}` : '';
+  const imageNote = hasFailedImage
+    ? `Image 1: the result from the current prompt.${opts.referenceImageBase64 ? '\nImage 2: director\'s reference — incorporate what they want from this.' : ''}`
+    : opts.referenceImageBase64 ? 'Image 1: director\'s reference — incorporate what they want from this.' : '';
 
   contentBlocks.push({
-    type: 'text', text: `You are a cinematographer refining a generation prompt for a devotional music video.
-
-${imageContext}
-
-CURRENT PROMPT:
-Visual: ${opts.currentVisualPrompt}
-Motion: ${opts.currentMotionPrompt}
-
-DIRECTOR FEEDBACK (what's wrong):
+    type: 'text', text: `WHAT THE DIRECTOR WANTS CHANGED:
 ${opts.feedback}
+${imageNote ? `\n${imageNote}` : ''}
+CURRENT PROMPT:
+${opts.currentPrompt}
 
-STYLE DNA: ${opts.styleDNA}${sceneCtx}${envCtx}
-
-CHARACTERS IN SCENE:
-${opts.characterDescriptions.join('\n') || 'None specified'}
-
-REWRITE the visual prompt to fix the issues. Keep what worked, fix what didn't. 1-3 sentences, direct and visual.
-
-Only change the motion prompt if the feedback specifically mentions movement or camera.`
+Apply the director's feedback to the current prompt. Keep what works, change what they asked for. 1-3 sentences. This prompt goes to an image model — just describe what should be in the frame.`
   });
 
   const response = await client.messages.create({
     model: SONNET,
     max_tokens: 1024,
     tools: [{
-      name: 'rewrite_shot_prompt',
-      description: 'Rewrite the shot prompt to fix the issues identified in the feedback',
+      name: 'rewrite_frame_prompt',
+      description: 'Apply director feedback to the frame prompt',
       input_schema: {
         type: 'object' as const,
         properties: {
-          visualPrompt: { type: 'string', description: 'Rewritten start-frame prompt for image model. 1-3 SHORT sentences. Composition + pose + environment.' },
-          motionPrompt: { type: 'string', description: 'Rewritten video instruction for video model. 1-2 sentences. What happens during the shot. Only change if feedback mentions action/movement, otherwise keep the original.' }
+          visualPrompt: { type: 'string', description: 'Rewritten prompt. 1-3 sentences.' },
         },
-        required: ['visualPrompt', 'motionPrompt']
+        required: ['visualPrompt']
       }
     }],
-    tool_choice: { type: 'tool', name: 'rewrite_shot_prompt' },
-    messages: [{
-      role: 'user',
-      content: contentBlocks,
-    }]
+    tool_choice: { type: 'tool', name: 'rewrite_frame_prompt' },
+    messages: [{ role: 'user', content: contentBlocks }]
   });
 
   const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
-  if (!toolBlock || toolBlock.type !== 'tool_use') {
-    throw new Error('Claude did not return rewritten prompt');
+  if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('Claude did not return rewritten prompt');
+  return toolBlock.input as { visualPrompt: string };
+};
+
+// ─── Refine Video Prompt (motion/action) ──────────────────────────────
+//
+// The director wants to change what happens during the shot.
+// Claude rewrites the motion prompt — the instruction sent to Veo
+// alongside the start frame image.
+
+export const refineMotionPrompt = async (opts: {
+  currentMotionPrompt: string;
+  shotVisualPrompt: string;
+  feedback: string;
+  startFrameBase64?: string;
+  startFrameMime?: string;
+  endFrameBase64?: string;
+  endFrameMime?: string;
+  referenceImageBase64?: string;
+  referenceImageMime?: string;
+}): Promise<{ motionPrompt: string }> => {
+  const client = getClient();
+  const contentBlocks: any[] = [];
+  const imageLabels: string[] = [];
+
+  // Start frame — what Veo animates from
+  if (opts.startFrameBase64 && opts.startFrameBase64.length > 100) {
+    const mediaType = (opts.startFrameMime?.startsWith('image/') ? opts.startFrameMime : 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.startFrameBase64 } });
+    imageLabels.push('Start frame — the video animates from this');
   }
 
-  return toolBlock.input as { visualPrompt: string; motionPrompt: string };
+  // End frame — where the shot lands
+  if (opts.endFrameBase64 && opts.endFrameMime) {
+    const mediaType = (opts.endFrameMime.startsWith('image/') ? opts.endFrameMime : 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.endFrameBase64 } });
+    imageLabels.push('End frame — where the shot should land');
+  }
+
+  // Director's reference
+  if (opts.referenceImageBase64 && opts.referenceImageMime) {
+    const mediaType = (opts.referenceImageMime.startsWith('image/') ? opts.referenceImageMime : 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+    contentBlocks.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: opts.referenceImageBase64 } });
+    imageLabels.push('Director\'s reference');
+  }
+
+  const imageNote = imageLabels.length > 0
+    ? imageLabels.map((l, i) => `Image ${i + 1}: ${l}`).join('\n')
+    : '';
+
+  contentBlocks.push({
+    type: 'text', text: `WHAT THE DIRECTOR WANTS CHANGED:
+${opts.feedback}
+${imageNote ? `\n${imageNote}` : ''}
+WHAT HAPPENS IN THIS SHOT:
+${opts.shotVisualPrompt}
+
+CURRENT MOTION PROMPT:
+${opts.currentMotionPrompt}
+
+Apply the director's feedback to the motion prompt. This prompt goes to a video model alongside the start frame — it tells the model what to animate. 1-2 sentences, action + camera.`
+  });
+
+  const response = await client.messages.create({
+    model: SONNET,
+    max_tokens: 1024,
+    tools: [{
+      name: 'rewrite_motion_prompt',
+      description: 'Apply director feedback to the motion prompt',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          motionPrompt: { type: 'string', description: 'Rewritten motion prompt. 1-2 sentences. Action + camera.' },
+        },
+        required: ['motionPrompt']
+      }
+    }],
+    tool_choice: { type: 'tool', name: 'rewrite_motion_prompt' },
+    messages: [{ role: 'user', content: contentBlocks }]
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('Claude did not return rewritten prompt');
+  return toolBlock.input as { motionPrompt: string };
 };
 
 // ─── Refresh Chained Shot Prompt from Prev Frame (vision) ────────────
