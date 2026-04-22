@@ -112,12 +112,16 @@ router.post('/:id/generate-styles', async (req, res) => {
 // user can browse options again, but don't wipe any data. Destructive
 // events happen when the user actively picks/regenerates something new
 // (e.g. lock-concept with a different choice, generate-script re-run).
+// Pure rewind unlocks — allowed from any phase at or past the target.
+// No data deleted. Destruction only happens on the next active mutation
+// (e.g. lock-concept with a different choice, generate-script re-run).
+
 router.post('/:id/unlock-script', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (project.status !== 'scripted') {
-    return res.status(400).json({ error: `Cannot unlock script from status "${project.status}". Unlock later phases first.` });
+  if (!atLeast(project.status, 'scripted')) {
+    return res.status(400).json({ error: `Script is not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'concept_locked', updated_at: new Date().toISOString() });
   res.json({ ok: true, status: 'concept_locked' });
@@ -127,8 +131,8 @@ router.post('/:id/unlock-style', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (project.status !== 'style_locked') {
-    return res.status(400).json({ error: `Cannot unlock style from status "${project.status}". Unlock later phases first.` });
+  if (!atLeast(project.status, 'style_locked')) {
+    return res.status(400).json({ error: `Style is not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'scripted', updated_at: new Date().toISOString() });
   res.json({ ok: true, status: 'scripted' });
@@ -138,8 +142,8 @@ router.post('/:id/unlock-characters', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (project.status !== 'characters_locked') {
-    return res.status(400).json({ error: `Cannot unlock characters from status "${project.status}". Unlock later phases first.` });
+  if (!atLeast(project.status, 'characters_locked')) {
+    return res.status(400).json({ error: `Characters are not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'style_locked', updated_at: new Date().toISOString() });
   res.json({ ok: true, status: 'style_locked' });
@@ -149,8 +153,8 @@ router.post('/:id/unlock-environments', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const project = await selectOne('projects', { id: projectId });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (project.status !== 'environments_locked' && project.status !== 'in_production') {
-    return res.status(400).json({ error: `Cannot unlock environments from status "${project.status}".` });
+  if (!atLeast(project.status, 'environments_locked')) {
+    return res.status(400).json({ error: `Environments are not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'characters_locked', updated_at: new Date().toISOString() });
   res.json({ ok: true, status: 'characters_locked' });
