@@ -51,17 +51,17 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 
 ### Backend route modules
 
-The generate router (`server/routes/generate.ts`) is a thin composition layer (247 lines) that owns param validators, unlocks, and mounts 5 extracted route modules:
+The generate router (`server/routes/generate.ts`) is a thin composition layer that owns param validators, unlocks, and mounts 5 extracted route modules:
 
-| Module | Lines | What |
-|--------|-------|------|
-| `generate.ts` | 247 | Router, `param('id'/'shotId'/'sceneId')` guards, phase unlocks, legacy generate-styles, chat, mounts |
-| `generate-style.ts` | 299 | Style brainstorm, visualize, refine, lock, upload-and-lock, analyze-style-image |
-| `generate-looks.ts` | 428 | Character + env look gen, upload refs, lock, advance phases |
-| `generate-script.ts` | 449 | Script gen (extended thinking + validation), refine, write-shot-prompts |
-| `generate-shots.ts` | 860 | All shot-level: image gen, end frame, refine prompts, clear/revert, lock/unlock, scene lock, refs, history, split |
-| `generate-video.ts` | 288 | Video gen (Segmind), revert-video, chained-shot refresh |
-| `scope-helpers.ts` | 59 | Shared: `paramStr`, `ScopeError`, `requireAsset/CastMember/Environment`, `parseTimestamp`, `atLeast` |
+| Module | What |
+|--------|------|
+| `generate.ts` | Router, `param('id'/'shotId'/'sceneId')` guards, phase unlocks, legacy generate-styles, chat, mounts |
+| `generate-style.ts` | Style brainstorm, visualize, refine, lock, upload-and-lock, analyze-style-image |
+| `generate-looks.ts` | Character + env look gen, upload refs, lock, advance phases |
+| `generate-script.ts` | Script gen (extended thinking + validation), refine, write-shot-prompts |
+| `generate-shots.ts` | All shot-level: image gen, end frame, refine prompts, clear/revert, lock/unlock, scene lock, refs, history, split (largest module) |
+| `generate-video.ts` | Video gen (Segmind), revert-video, chained-shot refresh |
+| `scope-helpers.ts` | Shared: `paramStr`, `ScopeError`, `requireAsset/CastMember/Environment`, `parseTimestamp`, `atLeast` |
 
 All modules mount on the same router instance — param validators and scope helpers are inherited. Other routers: `projectsRouter` (projects.ts), `queueRouter` (queue.ts), `renderRouter` (render.ts), `promptsRouter` (prompts.ts).
 
