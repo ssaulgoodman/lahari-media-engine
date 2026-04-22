@@ -55,3 +55,94 @@ Not critical yet but growing. Could extract:
 - Changes to video gen don't risk breaking style lock
 - Loading states, disabled states, and error handling can be audited per-file
 - New features (chat history, video fallback) can be added to the right file without scrolling past 2000 lines of unrelated code
+
+## Codex Notes
+
+My read: this breakup plan is correct in spirit and should be done. The current failure mode is not "bad engineers making mistakes," it is oversized files making end-to-end correctness hard to hold in working memory. The plan should stay refactor-only at first.
+
+### How I Would Execute It
+
+1. **Break up `server/routes/generate.ts` first.**
+   - This is the higher-risk file because auth/scope bugs, stale-flag bugs, and generation wiring bugs are harder to see than UI regressions.
+   - I would keep `generate.ts` as the thin composition layer: auth + param validators + scope helpers + mounted sub-routers.
+   - I would avoid moving ownership/scope helpers into multiple files. Keep them centralized so future auth fixes happen in one place.
+
+2. **Do the backend split in two passes, not one.**
+   - Pass 1: extract `generate-video.ts` only. This is the cleanest seam.
+   - Pass 2: extract style / looks / shots once the first split is stable.
+   - Reason: if the first extraction goes well, the pattern is proven and the next three are safer.
+
+3. **For `generate-shots.ts`, expect one more split later.**
+   - The proposed `~800` lines is better than `~2400`, but still not ideal.
+   - That is acceptable as an intermediate state.
+   - Likely later split:
+     - `generate-script.ts`
+     - `generate-shot-images.ts`
+     - `generate-shot-admin.ts` (clear/revert/lock/unlock/split/refs)
+
+4. **For `Storyboard.tsx`, extract the volatile state surfaces first.**
+   - First: `PromptToolkit.tsx`
+   - Second: `RefChips.tsx`
+   - Third: `ShotVersionHistory.tsx`
+   - Then: `ShotCard.tsx` / `StudioHeader.tsx`
+   - Reason: prompt/ref state is where subtle bugs have already shipped.
+
+5. **Keep state ownership high until the seams are proven.**
+   - `Storyboard.tsx` should remain the state orchestrator at first.
+   - Child components should stay mostly presentational + callback driven.
+   - Do not rush local state down into extracted components during the first pass.
+
+6. **Add a smoke-test checklist to every extraction PR.**
+   - Open existing project
+   - Expand/collapse shots
+   - Switch all shot tabs
+   - Add/remove refs
+   - Use @mention in prompt
+   - Generate / refine / lock / unlock
+   - Trigger one failure path
+   - Verify optimistic updates revert on error
+
+### Extra Rules I Would Add
+
+7. **No opportunistic cleanup inside breakup PRs.**
+   - No renames for style.
+   - No new abstractions unless the move requires them.
+   - No changing API response shapes.
+   - No "while we're here" feature work.
+
+8. **Preserve function names where possible.**
+   - That makes review easier because moved logic is easier to diff mentally.
+
+9. **Prefer one-directional dependencies.**
+   - Extracted UI pieces should depend on shared types/utils, not on each other in a tangled way.
+   - Extracted route modules should depend on shared helpers, not cross-call each other casually.
+
+10. **Do not introduce barrel files.**
+    - Direct imports only. Easier grep, easier debugging, easier reviews.
+
+### Suggested Order
+
+**Backend**
+1. Extract `generate-video.ts`
+2. Extract `generate-style.ts`
+3. Extract `generate-looks.ts`
+4. Extract `generate-shots.ts`
+5. Re-evaluate whether `generate-shots.ts` needs a second breakup
+
+**Frontend**
+1. Extract `PromptToolkit.tsx`
+2. Extract `RefChips.tsx`
+3. Extract `ShotVersionHistory.tsx`
+4. Extract `StudioHeader.tsx`
+5. Extract `ShotCard.tsx`
+6. Reduce `Storyboard.tsx` to orchestration only
+
+### Review Standard
+
+I would review each stage against one simple question:
+
+**Did this change only reduce file complexity, or did it also quietly alter behavior?**
+
+If the answer is "only structure changed," the breakup is good.
+
+— Codex

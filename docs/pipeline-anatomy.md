@@ -19,7 +19,7 @@ Three sub-steps, each with its own LLM prompt. Execution order: lyrics + structu
 2. SRT file from Supabase (`srt_verified_san` > `srt_verified_*` > `srt_turbo_scribe`)
 3. Fallback: audio transcription via Gemini
 
-**Queue start is instant**: backend responds immediately with `status: 'analyzing'`, artist lands in Blueprint. Analysis runs fire-and-forget in background. Frontend polls every 3s until status changes. Results cached on `songs` table for future users.
+**Queue start is fully async**: project created immediately (title + queue link only), backend responds instantly. Audio download, SRT parsing, transcription, and analysis ALL run in the background. Project always starts as `status: 'analyzing'` — background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls every 3s until status changes. Results cached on `songs` table for future users.
 
 **Multi-user**: `source_queue_id` on projects. Multiple users can start the same queued song — each gets their own project. No 403 when another user's project exists.
 
@@ -142,17 +142,19 @@ The locked concept is NOT frozen. Three ways to adjust:
 | | |
 |---|---|
 | **Model** | Claude Sonnet (claude.ts → `planScenes`) |
-| **Input** | locked_concept + lyrics + meaning + musicalStructure + videoMode + pacing + `userNote` |
+| **Input** | locked_concept + lyrics + meaning + musicalStructure + videoMode + pacing + minShotDuration + `userNote` |
 | **Output** | `cast[]` + `environments[]` + `scenes[shots[]]` |
 | **Artist control** | Direct edit (scene narratives + shot directions inline, saves on blur with "Saved" flash). LLM refine. Full regenerate. Prompt viewable via toggle. |
 | **Prompt visible** | Yes (saved to `last_script_prompt`, toggle in UI) |
 | **generation_prompt** | No — complex system prompt, not artist-editable. But outputs (narratives, directions) are directly editable. |
 
 **Pacing enforcement (extended thinking + validation loop):**
-Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude reasons through pacing math before writing. Shot count formula: `ceil(scene_duration / pacing)` — e.g. 21s at 8s → 3 shots (8+8+5), not 2 (8+13). Validation enforces EXACT count (not just max). If wrong, errors are sent back as `tool_result` in the same conversation — Claude self-corrects. Max 3 attempts, hard fail. Last shot gets the remainder.
+Both `planScenes` and `refineScript` use extended thinking (8K budget) so Claude reasons through pacing math before writing. Shot count formula: `ceil(scene_duration / pacing)` — e.g. 21s at 8s → 3 shots (8+8+5), not 2 (8+13). Validation enforces EXACT count (not just max). If wrong, errors are sent back as `tool_result` in the same conversation — Claude self-corrects. Max 3 attempts, hard fail. Last shot gets the remainder. Both first-gen and refine paths use identical ceil+remainder logic for DB insertion.
 
-**Shot splitting + duration editing (post-script):**
-Artist can split any shot >4s in the script phase (↕ button). Creates a new shot with half the duration, empty prompt, same cast/env. Both halves marked stale. Duration is also directly editable per shot. Endpoint: `POST /:id/shots/:shotId/split`.
+**Model-aware duration**: Prompt includes `minShotDuration` (from `getModelMinDuration()`) as informational context — Claude doesn't distort shot count because of it. At video generation time, Segmind picks the smallest model duration >= shot duration. Render timeline handles trimming.
+
+**Shot splitting (post-script):**
+Artist can split any shot >4s in the script phase (↕ button). Creates a new shot with half the duration, empty prompt, same cast/env. Both halves marked stale. Duration is **read-only** — only changeable via pacing selection (regenerates script), split button, or model change. Endpoint: `POST /:id/shots/:shotId/split`.
 
 **Director mode (Montage vs Cinematic):**
 Claude receives explicit guidance based on the chosen mode:

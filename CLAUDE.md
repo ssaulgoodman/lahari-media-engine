@@ -67,7 +67,7 @@ All modules mount on the same router instance — param validators and scope hel
 
 ### Pipeline (4 steps)
 
-1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage (SRT timestamps preserved in `[M:SS]` format; falls back to Gemini audio transcription if no SRT), creates Lahari project. **Instant navigation**: backend responds immediately with `status: 'analyzing'`, artist lands in Blueprint while analysis runs in background. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls entirely. **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently. No more 403 when another user's project exists.
+1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → creates Lahari project immediately (title + queue link only), responds instantly. **Everything runs in background**: audio download from Supabase Storage, SRT parsing (`[M:SS]` timestamps preserved), Gemini audio transcription fallback, structure detection, meaning summarization. Project starts as `status: 'analyzing'`; background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls (still need audio download). **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Sonnet with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
@@ -97,7 +97,7 @@ All modules mount on the same router instance — param validators and scope hel
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
-**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs together. **Seedance constraint**: `first_frame_url` and `reference_images` are mutually exclusive — when start frame exists (always for shot gen), frame mode is used and reference_images are skipped. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
+**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs together. **Seedance constraint**: `first_frame_url` and `reference_images` are mutually exclusive — when start frame exists (always for shot gen), frame mode is used and reference_images are skipped. `ffmpeg.ts` provides `extractLastFrame` (provider-independent). **Duration rounding**: `generateSegmindVideo` picks the smallest model duration >= shot duration (not nearest). A 5s shot on Veo Fast (8s only) sends 8s. `getModelMinDuration()` helper returns the floor for a given model key.
 
 **Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
 
@@ -111,11 +111,13 @@ No end-frame prediction. Shot = start frame + motion prompt → video plays natu
 
 **Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
-**Pacing**: Uses `ceil(scene_duration / pacing)` for shot count. A 21s scene at 8s pacing → 3 shots (8+8+5), not 2 (8+13). Validation enforces exact count via extended thinking + retry loop. Duration assignment: all shots get base pacing, last shot gets remainder (clamped at 2× pacing as safety net).
+**Pacing**: Uses `ceil(scene_duration / pacing)` for shot count. A 21s scene at 8s pacing → 3 shots (8+8+5), not 2 (8+13). Validation enforces exact count via extended thinking + retry loop. Duration assignment: all shots get base pacing, last shot gets remainder (clamped at 2× pacing as safety net). Both first-gen and refine paths use identical ceil+remainder logic.
+
+**Model-aware durations**: Claude's prompt includes the video model's minimum clip length (via `getModelMinDuration()` from `segmind.ts`) as informational context — it doesn't distort shot count. At video generation time, Segmind picks the smallest model duration >= shot duration (e.g. 5s shot on Veo Fast → sends 8s). If shot exceeds all model durations, the largest is used. Render timeline handles trimming.
 
 **Shot splitting**: Artist can split any shot >4s in the script phase. Creates a new shot at `sort_order + 1`, divides duration in half, copies cast/env assignments, empty prompt (artist writes new direction). Both halves marked stale.
 
-**Shot editing in script phase**: Cast assignment (toggle buttons per character), environment (dropdown), duration (editable input), direction (contentEditable text). All changes trigger staleness and "Saved" flash.
+**Shot editing in script phase**: Cast assignment (toggle buttons per character), environment (custom dropdown), direction (contentEditable text). Duration is **read-only** — only changeable via pacing selection (regenerates script), split button, or model change. All changes trigger staleness and "Saved" flash.
 
 ### Character generation
 
@@ -160,11 +162,17 @@ Characters and environments follow the same two-mode pattern:
 1. **Direct edit** — artist edits the `generation_prompt` field directly.
 2. **Refine** — artist writes feedback, Claude rewrites `generation_prompt` from scratch.
 
-`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA.
+`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. When `prompts_stale` is true (style or description changed upstream), the prompt is force-rebuilt from template on next generation — the stale flag is cleared after rebuild.
 
 ### Error transparency
 
 `last_error` column on `lahari_shots` — saved on image/video gen failure (truncated to 500 chars), cleared on success. Shown in the shot card error banner so the artist sees exactly what went wrong (e.g. Segmind model 404, RAI block).
+
+**Blueprint action feedback**: All async actions in `AnalysisEditor.tsx` surface errors via a dismissible red banner below the sticky context bar (auto-clears after 8s). No more silent `console.error` or empty `catch {}` patterns. Shared feedback hooks in `hooks/useActionFeedback.ts` (`useActionFeedback` for single actions, `useKeyedActionFeedback` for per-item lists) + `components/ActionFeedback.tsx` (`ActionError`, `ActionSpinner`) — ready for adoption during Storyboard breakup.
+
+### Custom Dropdown
+
+`components/Dropdown.tsx` — replaces all native `<select>` elements for cross-platform dark UI consistency. Native selects render with OS theme (white on Windows). Custom dropdown matches our surface styles. Features: keyboard navigation (Arrow Up/Down, Enter/Space, Escape, Tab), ARIA roles (combobox/listbox/option), divider support, size variants (`sm`/`xs`), disabled state. Used for: aspect ratio, resolution, video model, environment picker in script shot cards.
 
 ### Staleness detection
 
@@ -201,6 +209,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 **Unlock vs. switch semantics (important):**
 - **All `unlock-*` endpoints are pure navigation** — they revert the phase marker only. No data is wiped. A user can unlock concept to browse alternatives without losing anything.
+- **Unlock button visibility** uses `isLockedPhase(phase)` (derived from project status), not exact status match. Buttons remain visible even when status has advanced past the phase. Backend still enforces sequential unlocking (unlock environments before characters).
 - **Destructive events happen on the active mutation**:
   - `lock-concept` with `{ fork?: boolean }` — if the new concept differs from the previous `locked_concept` AND scenes exist, server wipes scenes/cast/environments/style (or does so on the fork).
   - `generate-script` with `{ fork?: boolean }` — on re-run (scenes already exist), wipes cast + scenes + prompts.
