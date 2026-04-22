@@ -111,12 +111,14 @@ router.post('/:queueId/start', async (req, res) => {
     const hasCachedAnalysis = cached.cached_lyrics && cached.cached_structure && cached.cached_meaning;
 
     // Create project immediately — artist navigates to Blueprint right away.
-    // Audio download, SRT, transcription, and analysis all run in the background.
+    // Always start as 'analyzing' — background block promotes to 'analyzed'
+    // once audio is downloaded (cached) or full analysis completes (non-cached).
+    // This ensures the client poll loop fires and picks up audio_path.
     const projectId = uuidv4();
     await insertRow('projects', {
       id: projectId,
       title: item.song_name || 'Untitled',
-      status: hasCachedAnalysis ? 'analyzed' : 'analyzing',
+      status: 'analyzing',
       lyrics: cached.cached_lyrics || null,
       musical_structure: cached.cached_structure || null,
       meaning: cached.cached_meaning || '',
@@ -138,21 +140,31 @@ router.post('/:queueId/start', async (req, res) => {
 
     // ─── Background: audio download + SRT + transcription + analysis ───
     (async () => {
+      // Download audio first — needed for analysis and playback.
+      // If this fails, the project is unusable — set error status.
+      let audioPath: string;
       try {
-        // Download audio first — needed for analysis and playback
         const audioBuffer = await downloadFile(audioUrl);
         const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
-        const audioPath = await saveBuffer(audioBuffer, 'audio', ext);
-
-        // Save audio path on project immediately so player works
+        audioPath = await saveBuffer(audioBuffer, 'audio', ext);
         await updateRows('projects', { id: projectId }, { audio_path: audioPath });
+      } catch (err: any) {
+        console.error(`[queue ${projectId}] audio download failed:`, err);
+        await updateRows('projects', { id: projectId }, {
+          status: 'error',
+          updated_at: new Date().toISOString(),
+        });
+        return;
+      }
 
-        // If analysis is fully cached, we're done — just needed the audio download
-        if (hasCachedAnalysis) {
-          console.log(`[queue] Using cached analysis for ${item.song_name}, audio downloaded in background`);
-          return;
-        }
+      // If analysis is fully cached, promote to analyzed now that audio is attached
+      if (hasCachedAnalysis) {
+        await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });
+        console.log(`[queue] Using cached analysis for ${item.song_name}, audio downloaded in background`);
+        return;
+      }
 
+      try {
         // Get lyrics: SRT → audio transcription
         let lyrics = '';
         const files = await getSongFiles(item.song_id);
