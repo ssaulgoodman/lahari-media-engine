@@ -75,7 +75,7 @@ All modules mount on the same router instance — param validators and scope hel
    - Characters — unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine. Description collapsed.
    - Environments — same unified toolkit pattern as characters.
    - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
-3. **Studio** (`Storyboard.tsx`) — Per-shot unified toolkit with 4 tabs:
+3. **Studio** (5 components, orchestrated by `Storyboard.tsx`) — Per-shot unified toolkit with 4 tabs:
    - **First frame** — visual prompt + refs + generate (Gemini) + AI refine
    - **Last frame** — end visual prompt + generate end frame + AI refine
    - **Video** — motion prompt + compiled video prompt (editable) + generate (Veo/Seedance) + AI refine
@@ -139,6 +139,18 @@ Priority: character identity > continuity > environment > director refs > style.
 
 **Shot-level ref uploads**: Artist can upload reference images per shot via `+ Ref` button in the prompt area. Only shown when the video model supports refs alongside frames (`refsWithFrames` flag — Veo=true, Seedance=false). Refs are stored as `shot_ref` category assets and passed to both Gemini (image gen) and Segmind (video gen, up to 9 total).
 
+### Frontend Studio components
+
+The Studio UI is split into 5 components (was a single 1546-line `Storyboard.tsx`):
+
+| Component | What |
+|-----------|------|
+| `Storyboard.tsx` | Orchestrator: state management, ref helpers, scene loop, modal, solo-play |
+| `ShotCard.tsx` | Per-shot: expandable header, media display (4 layout variants), overlays, composes PromptToolkit + ShotVersionHistory |
+| `PromptToolkit.tsx` | Prompt tabs, @mention picker, ref chips, generate button, refine section, full chain view |
+| `StudioHeader.tsx` | Scene pills with lock toggles, progress stats, story/prompts popovers, bulk actions |
+| `ShotVersionHistory.tsx` | Tabbed version history (First frame / Last frame / Clip) with revert |
+
 ### Unified prompt toolkit (Studio)
 
 Every shot tab (First frame / Last frame / Video) follows the same pattern:
@@ -168,7 +180,7 @@ Characters and environments follow the same two-mode pattern:
 
 `last_error` column on `lahari_shots` — saved on image/video gen failure (truncated to 500 chars), cleared on success. Shown in the shot card error banner so the artist sees exactly what went wrong (e.g. Segmind model 404, RAI block).
 
-**Blueprint action feedback**: All async actions in `AnalysisEditor.tsx` surface errors via a dismissible red banner below the sticky context bar (auto-clears after 8s). No more silent `console.error` or empty `catch {}` patterns. Shared feedback hooks in `hooks/useActionFeedback.ts` (`useActionFeedback` for single actions, `useKeyedActionFeedback` for per-item lists) + `components/ActionFeedback.tsx` (`ActionError`, `ActionSpinner`) — ready for adoption during Storyboard breakup.
+**Blueprint action feedback**: All async actions in `AnalysisEditor.tsx` surface errors via a dismissible red banner below the sticky context bar (auto-clears after 8s). No more silent `console.error` or empty `catch {}` patterns. Shared feedback hooks in `hooks/useActionFeedback.ts` (`useActionFeedback` for single actions, `useKeyedActionFeedback` for per-item lists) + `components/ActionFeedback.tsx` (`ActionError`, `ActionSpinner`) — available for adoption in Studio components.
 
 ### Custom Dropdown
 
@@ -313,15 +325,17 @@ Endpoints: `GET /:id/shots/:shotId/history` (returns all 3 categories), `POST re
 
 ## Future work
 
-- **UI polish** — glass surface system, shot card redesign (compact overview cards), spring animations. Reference design pinned.
+- **Unlock candidates (fix #2)** — look candidates lost on navigate away. Re-generate on unlock.
+- **App.tsx breakup** — extract `useProjectHandlers`, `useBulkGeneration` hooks. Not critical but growing.
+- **UI polish** — glass surface system, shot card redesign (compact overview cards), spring animations.
 - **Infra: Supabase → Mumbai** (ap-south-1) + **Railway → Singapore** — artists are in India, current setup crosses the Pacific twice per query.
 - **Refine chat history** — multi-turn refinement (store conversation per shot/tab so Claude remembers prior attempts)
-- **Video refine endpoint** — done, but no chat history yet
-- **@mention in prompt area** — done for Studio tabs. Could extend to Blueprint refine sections.
+- **Video auto-fallback** — Veo RAI block → Seedance + ffmpeg trim. Error classification done, retry logic needed.
 - **Render pipeline** — Maski building timeline editor with export. FFmpeg WASM stub commented out.
 - **Wire Runway Gen-4 Turbo** ($0.05/s) and/or **Kling 3.0** ($0.084/s) as direct-API models.
 - **X-Ray overhaul** — current panel is a log dump. Needs visual flow graph, prompt archaeology, cost dashboard.
 - **Assistant director agent** — persistent chat agent with access to all edit/refine endpoints as tools.
+- **Persistent error logging** — DB table for all 4xx/5xx responses (Railway wipes logs on redeploy).
 
 ## Express 5 quirks
 
