@@ -429,7 +429,6 @@ export const AnalysisEditor: React.FC<Props> = ({
   // Environment look state
   const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
   const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
-  const [promptPreview, setPromptPreview] = useState<string | null>(null); // entity id
   const [scriptNote, setScriptNote] = useState('');
   const [showScriptPrompt, setShowScriptPrompt] = useState(false);
   const [conceptNote, setConceptNote] = useState('');
@@ -2094,12 +2093,6 @@ export const AnalysisEditor: React.FC<Props> = ({
                             Locked
                           </span>
                         )}
-                        <button
-                          onClick={() => setPromptPreview(prev => prev === activeMember.id ? null : activeMember.id)}
-                          className="text-[11px] text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-md hover:bg-white/[0.04] flex-shrink-0"
-                        >
-                          {promptPreview === activeMember.id ? 'Hide prompt' : 'View prompt'}
-                        </button>
                       </div>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <input
@@ -2191,32 +2184,6 @@ export const AnalysisEditor: React.FC<Props> = ({
                       </div>
                     )}
 
-                    {/* Prompt preview */}
-                    {promptPreview === activeMember.id && (
-                      <div className="px-5 py-3 border-b border-white/[0.06] flex items-start gap-3">
-                        {project.styleAssetUrl && (
-                          <div className="relative flex-shrink-0">
-                            <img src={project.styleAssetUrl} className="w-12 h-12 object-cover rounded border border-white/[0.06]" alt="Style ref" />
-                            <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 text-center rounded-b">Style</div>
-                          </div>
-                        )}
-                        <pre className="flex-1 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{
-`Generate ONE cinematic character portrait in the visual style of Image 1.
-
-${activeMember.name} — ${activeMember.description || '(no description)'}
-
-Mid-shot character portrait, upper body and face visible, detailed costume and ornaments. Eye-level framing, natural cinematic lighting.
-
-Style: ${project.styleDescription || '(none)'}
-
-One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.
-
-→ Model: gemini-3-pro-image-preview · aspect ${project.aspectRatio || '16:9'}
-→ 3 parallel calls, same prompt`
-                        }</pre>
-                      </div>
-                    )}
 
                     {/* Hero area — new candidates take priority over locked, so a regen
                         is always visible. The locked look is preserved in the DB until the
@@ -2545,12 +2512,6 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                               Locked
                             </span>
                           )}
-                          <button
-                            onClick={() => setPromptPreview(prev => prev === activeEnv.id ? null : activeEnv.id)}
-                            className="text-[11px] text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-md hover:bg-white/[0.04] flex-shrink-0"
-                          >
-                            {promptPreview === activeEnv.id ? 'Hide prompt' : 'View prompt'}
-                          </button>
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           <input
@@ -2638,31 +2599,6 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
                       )}
 
                       {/* Prompt preview */}
-                      {promptPreview === activeEnv.id && (
-                        <div className="px-5 py-3 border-b border-white/[0.06] flex items-start gap-3">
-                          {project.styleAssetUrl && (
-                            <div className="relative flex-shrink-0">
-                              <img src={project.styleAssetUrl} className="w-12 h-12 object-cover rounded border border-white/[0.06]" alt="Style ref" />
-                              <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[11px] text-zinc-400 text-center rounded-b">Style</div>
-                            </div>
-                          )}
-                          <pre className="flex-1 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{
-`Generate ONE cinematic environment shot in the visual style of Image 1. No characters or figures.
-
-${activeEnv.name} — ${activeEnv.description || '(no description)'}
-
-Wide establishing shot, full environment visible, empty scene.
-
-Style: ${project.styleDescription || '(none)'}
-
-One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.
-
-→ Model: gemini-3-pro-image-preview · aspect ${project.aspectRatio || '16:9'}
-→ 3 parallel calls, same prompt`
-                          }</pre>
-                        </div>
-                      )}
 
                       {/* Hero area — same regen-priority pattern as cast: new candidates show
                           on top of the locked look so a regen is always visible. Locked stays
