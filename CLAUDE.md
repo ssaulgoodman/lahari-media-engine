@@ -68,7 +68,7 @@ All modules mount on the same router instance — param validators and scope hel
 ### Pipeline (4 steps)
 
 1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → creates Lahari project immediately (title + queue link only), responds instantly. **Everything runs in background**: audio download from Supabase Storage, SRT parsing (`[M:SS]` timestamps preserved), Gemini audio transcription fallback, structure detection, meaning summarization. Project starts as `status: 'analyzing'`; background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls (still need audio download). **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently.
-2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
+2. **Blueprint** (7 components, orchestrated by `AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Sonnet with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
    - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to Gemini.)
@@ -150,6 +150,21 @@ The Studio UI is split into 5 components (was a single 1546-line `Storyboard.tsx
 | `PromptToolkit.tsx` | Prompt tabs, @mention picker, ref chips, generate button, refine section, full chain view |
 | `StudioHeader.tsx` | Scene pills with lock toggles, progress stats, story/prompts popovers, bulk actions |
 | `ShotVersionHistory.tsx` | Tabbed version history (First frame / Last frame / Clip) with revert |
+
+### Frontend Blueprint components
+
+The Blueprint UI is split into 7 components (was a single 2858-line `AnalysisEditor.tsx`):
+
+| Component | What |
+|-----------|------|
+| `AnalysisEditor.tsx` | Orchestrator: state (viewPhase, envLooks, envGenerating, actionError), phase switch, modal |
+| `BlueprintContextBar.tsx` | Sticky header: title, audio player, render/analysis popovers, phase tabs, launch button. Exports shared helpers: `Phase`, `PHASE_ORDER`, `phaseIndex`, `getActivePhase`, `isLockedPhase` |
+| `ConceptPhase.tsx` | Concept options, lock, director brief, custom vision mode, refine |
+| `ScriptPhase.tsx` | Director mode toggle, pacing, scene/shot cards with inline editing, split |
+| `StylePhase.tsx` | Style brainstorm, visualize, refine, lock, upload. `StyleRow` at module scope |
+| `CharactersPhase.tsx` | Cast sidebar + detail panel: generate/lock/refine/upload, per-entity unlock |
+| `EnvironmentsPhase.tsx` | Env sidebar + detail panel: generate/lock/refine/upload, per-entity unlock |
+| `UnlockPill.tsx` | Shared unlock button used across all phases |
 
 ### Unified prompt toolkit (Studio)
 
@@ -331,7 +346,6 @@ Endpoints: `GET /:id/shots/:shotId/history` (returns all 3 categories), `POST re
 
 ## Future work
 
-- **AnalysisEditor.tsx breakup** — ~3000 lines, handles all 5 Blueprint phases. Next breakup candidate.
 - **Genre system** — extract bhakti-specific prompts into configurable presets. Enable fork for anime, short films, etc.
 - **App.tsx breakup** — extract `useProjectHandlers`, `useBulkGeneration` hooks. Not critical but growing.
 - **UI polish** — glass surface system, shot card redesign (compact overview cards), spring animations.

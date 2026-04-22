@@ -60,11 +60,31 @@ Not critical yet but growing. Could extract:
 5. **One PR per file group.** Don't mix Storyboard breakup with generate.ts breakup.
 6. **Adopt `useActionFeedback` / `useKeyedActionFeedback`** in each extracted component. Wire error display inline instead of bubbling to parent. This is the main integration point from the fix-list work.
 
+## Blueprint Breakup — DONE
+
+Completed 2026-04-22. `AnalysisEditor.tsx` went from 2858 lines to 202 lines (93% reduction).
+
+| File | Lines | What |
+|------|-------|------|
+| `AnalysisEditor.tsx` | 202 | Orchestrator: state (viewPhase, envLooks, envGenerating, actionError), phase switch, modal |
+| `BlueprintContextBar.tsx` | 410 | Sticky header, audio player, render/analysis popovers, phase tabs, launch button. Exports `Phase`, `getActivePhase`, `isLockedPhase` |
+| `ConceptPhase.tsx` | 365 | Concept options, lock, director brief, custom vision, refine |
+| `ScriptPhase.tsx` | 375 | Director mode, pacing, scene/shot cards with inline editing, split |
+| `StylePhase.tsx` | 641 | Brainstorm, visualize, refine, lock, upload. `StyleRow` at module scope |
+| `CharactersPhase.tsx` | 513 | Cast sidebar + detail panel, generate/lock/refine/upload, per-entity unlock |
+| `EnvironmentsPhase.tsx` | 550 | Env sidebar + detail panel, generate/lock/refine/upload, per-entity unlock |
+| `UnlockPill.tsx` | 17 | Shared unlock button |
+
+**Regression caught in review**: `envLooks`/`envGenerating` were initially local to `EnvironmentsPhase`, causing candidates to disappear on tab switch. Fixed by lifting both to orchestrator (same pattern as character `lookCandidates`/`looksLoading`).
+
+**Decision**: Characters and Environments kept as separate files despite structural similarity. A future unification pass can merge them into a shared `LooksPhase` component once both are proven stable.
+
 ## Priority
 
 1. ~~`generate.ts` first~~ — DONE
 2. ~~`Storyboard.tsx` next~~ — DONE
-3. `App.tsx` later — it's big but mostly handler definitions that rarely change together
+3. ~~`AnalysisEditor.tsx`~~ — DONE
+4. `App.tsx` later — it's big but mostly handler definitions that rarely change together
 
 ## What This Enables
 
