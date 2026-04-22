@@ -55,8 +55,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   // Scroll focused option into view
   useEffect(() => {
     if (!open || focusIdx < 0) return;
-    const list = listRef.current;
-    const item = list?.children[focusIdx] as HTMLElement | undefined;
+    const item = listRef.current?.querySelector(`#${listId}-${focusIdx}`) as HTMLElement | undefined;
     item?.scrollIntoView?.({ block: 'nearest' });
   }, [open, focusIdx]);
 
