@@ -103,12 +103,18 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
         }
       }
 
+      // If artist attached an image, send it as reference alongside feedback
+      const userRefBase64 = userRefImagePath ? await readAsBase64(userRefImagePath) : undefined;
+      const userRefMime = userRefImagePath ? mimeFromExt(userRefImagePath) : undefined;
+
       const rewritten = await refineShotPrompt({
         currentVisualPrompt: genPrompt,
         currentMotionPrompt: '',
-        feedback: `[CHARACTER LOOK REFINEMENT for ${member.name}] ${feedback}`,
+        feedback: `[CHARACTER LOOK REFINEMENT for ${member.name}]${userRefBase64 ? ' [SECOND IMAGE is a reference from the director — match this look]' : ''} ${feedback}`,
         failedImageBase64: refBase64,
         failedImageMime: refMime,
+        referenceImageBase64: userRefBase64,
+        referenceImageMime: userRefMime,
         styleDNA: styleDNA,
         characterDescriptions: [`${member.name}: ${member.description || ''}`],
       });
@@ -338,12 +344,18 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
         }
       }
 
+      // If artist attached an image, send it as reference alongside feedback
+      const userEnvRefBase64 = userRefImagePath ? await readAsBase64(userRefImagePath) : undefined;
+      const userEnvRefMime = userRefImagePath ? mimeFromExt(userRefImagePath) : undefined;
+
       const rewritten = await refineShotPrompt({
         currentVisualPrompt: genPrompt,
         currentMotionPrompt: '',
-        feedback: `[ENVIRONMENT LOOK REFINEMENT for ${env.name}] ${userNote}`,
+        feedback: `[ENVIRONMENT LOOK REFINEMENT for ${env.name}]${userEnvRefBase64 ? ' [SECOND IMAGE is a reference from the director — match this environment]' : ''} ${userNote}`,
         failedImageBase64: refBase64,
         failedImageMime: refMime,
+        referenceImageBase64: userEnvRefBase64,
+        referenceImageMime: userEnvRefMime,
         styleDNA: styleDNA,
         characterDescriptions: [],
       });
