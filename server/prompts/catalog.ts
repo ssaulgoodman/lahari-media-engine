@@ -583,8 +583,10 @@ Rewrite: theme, mood, conceptDirection. Output via tool.`,
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds' },
+      { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
     ],
     template: `Surgical refinement with 5 preservation rules. Extended thinking (8K budget) for pacing math.
+Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
 Validation loop: if shot counts wrong, errors sent back as tool_result.
 Same plan_music_video tool output.`,
     source: { file: 'server/services/claude.ts', lines: '439-548' },
