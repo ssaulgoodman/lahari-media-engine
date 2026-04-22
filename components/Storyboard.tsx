@@ -6,11 +6,11 @@ import { ImageModal } from './ImageModal';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { ShotVideoPreview } from './ShotVideoPreview';
 import { PromptToolkit } from './PromptToolkit';
-import { getShotHistory, revertShotFrame, revertShotEndFrame, lockAllSceneShots, unlockAllSceneShots } from '../services/api';
-import type { VersionEntry, ShotRefInput } from '../services/api';
+import { ShotVersionHistory } from './ShotVersionHistory';
+import { lockAllSceneShots, unlockAllSceneShots } from '../services/api';
+import type { ShotRefInput } from '../services/api';
 import { getVideoModel } from '../constants/videoModels';
 
-type HistoryData = { firstFrame: VersionEntry[]; lastFrame: VersionEntry[]; video: VersionEntry[] };
 
 // "0:32" / "00:32" / "1:23:45" → seconds. Guards against undefined / junk.
 const parseTimeToSec = (t?: string): number => {
@@ -77,7 +77,6 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
   const contextBarRef = React.useRef<HTMLDivElement>(null);
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
-  const [historyData, setHistoryData] = useState<HistoryData>({ firstFrame: [], lastFrame: [], video: [] });
   const [refiningShots, setRefiningShots] = useState<Set<string>>(new Set());
   const [bulkRunning, setBulkRunning] = useState<'frames' | 'videos' | null>(null);
   // Per-shot per-tab active ref list. Key = "tab:shotId". Null = use defaults (not yet initialized).
@@ -139,8 +138,6 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
     }
     return { label: '?', removable: false };
   };
-  const [historyTab, setHistoryTab] = useState<'firstFrame' | 'lastFrame' | 'video'>('firstFrame');
-  const [historyLoading, setHistoryLoading] = useState(false);
   const endFrameFileRef = React.useRef<HTMLInputElement>(null);
   const [endFrameUploadTarget, setEndFrameUploadTarget] = useState<string | null>(null);
   // Reference image attached to refine feedback (per shot)
@@ -162,20 +159,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
     return () => document.removeEventListener('play', onPlay, true);
   }, []);
 
-  const openHistory = async (shotId: string) => {
-    if (!project) return;
-    if (historyOpenFor === shotId) { setHistoryOpenFor(null); return; }
-    setHistoryOpenFor(shotId);
-    setHistoryTab('firstFrame');
-    setHistoryLoading(true);
-    try {
-      const data = await getShotHistory(project.id, shotId);
-      setHistoryData(data);
-    } catch {
-      setHistoryData({ firstFrame: [], lastFrame: [], video: [] });
-    } finally {
-      setHistoryLoading(false);
-    }
+  const toggleHistory = (shotId: string) => {
+    setHistoryOpenFor(prev => prev === shotId ? null : shotId);
   };
 
   // Auto-expand the first actionable unlocked shot the first time a project
@@ -638,7 +623,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                           after a regen they didn't like. */}
                       {shot.videoUrl && (
                         <button
-                          onClick={() => openHistory(shot.id)}
+                          onClick={() => toggleHistory(shot.id)}
                           className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${historyOpenFor === shot.id ? 'text-white bg-white/[0.1]' : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'}`}
                           title="Version history — revert to an earlier generation"
                           aria-label="Version history"
@@ -989,90 +974,15 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                     )}
                   </div>
 
-                  {/* Version history panel — tabbed: First frame | Last frame | Clip */}
-                  {historyOpenFor === shot.id && (
-                    <div className="px-5 py-3 border-t border-white/[0.06] bg-white/[0.02]">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-3">
-                          <span className="text-[11px] uppercase tracking-wider text-zinc-400">Version history</span>
-                          <div className="flex items-center bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.06]">
-                            <button
-                              onClick={() => setHistoryTab('firstFrame')}
-                              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${historyTab === 'firstFrame' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                            >First frame</button>
-                            <button
-                              onClick={() => setHistoryTab('lastFrame')}
-                              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${historyTab === 'lastFrame' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                            >Last frame</button>
-                            <button
-                              onClick={() => setHistoryTab('video')}
-                              className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${historyTab === 'video' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                            >Clip</button>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setHistoryOpenFor(null)}
-                          className="text-[11px] text-zinc-400 hover:text-white"
-                        >Close</button>
-                      </div>
-                      {historyLoading ? (
-                        <div className="text-xs text-zinc-400 py-3">Loading…</div>
-                      ) : (() => {
-                        const versions = historyData[historyTab];
-                        if (versions.length === 0) return (
-                          <div className="text-xs text-zinc-400 py-3">No versions yet — generate to build history.</div>
-                        );
-                        return (
-                          <div className="flex gap-2 overflow-x-auto pb-1">
-                            {versions.map((v, idx) => (
-                              <button
-                                key={v.assetId}
-                                disabled={v.isCurrent}
-                                onClick={async () => {
-                                  if (!project) return;
-                                  if (historyTab === 'firstFrame') {
-                                    await revertShotFrame(project.id, shot.id, v.assetId);
-                                  } else if (historyTab === 'lastFrame') {
-                                    await revertShotEndFrame(project.id, shot.id, v.assetId);
-                                  } else {
-                                    await onRevertVideo?.(shot.id, v.assetId);
-                                  }
-                                  // Refresh history + project
-                                  const data = await getShotHistory(project.id, shot.id);
-                                  setHistoryData(data);
-                                  try {
-                                    const p = await import('../services/api').then(m => m.getProject(project.id));
-                                    onSetProject?.(p);
-                                  } catch {}
-                                }}
-                                className={`flex-shrink-0 w-28 rounded-md overflow-hidden border transition-all text-left ${
-                                  v.isCurrent
-                                    ? 'border-white/40 ring-1 ring-white/30'
-                                    : 'border-white/[0.08] hover:border-white/30 cursor-pointer'
-                                }`}
-                                title={v.isCurrent ? 'Current version' : 'Revert to this version'}
-                              >
-                                <div className={`${historyTab === 'video' ? 'aspect-video' : 'aspect-square'} bg-black flex items-center justify-center`}>
-                                  {(historyTab === 'video' ? v.thumbnailUrl : v.url) ? (
-                                    <img src={(historyTab === 'video' ? v.thumbnailUrl : v.url)!} alt={`v${versions.length - idx}`} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <span className="text-[10px] text-zinc-500">no preview</span>
-                                  )}
-                                </div>
-                                <div className="px-2 py-1.5">
-                                  <div className="text-[11px] text-zinc-300 font-medium">
-                                    {v.isCurrent ? 'Current' : 'Revert'}
-                                  </div>
-                                  <div className="text-[10px] text-zinc-500 font-mono">
-                                    {new Date(v.createdAt + 'Z').toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                  </div>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </div>
+                  {/* Version history panel */}
+                  {historyOpenFor === shot.id && project && (
+                    <ShotVersionHistory
+                      projectId={project.id}
+                      shotId={shot.id}
+                      onRevertVideo={onRevertVideo}
+                      onSetProject={onSetProject}
+                      onClose={() => setHistoryOpenFor(null)}
+                    />
                   )}
 
                   {/* Prompts — full width below media */}
