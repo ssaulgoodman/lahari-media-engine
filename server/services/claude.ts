@@ -65,17 +65,28 @@ export const generateConceptOptions = async (
 ): Promise<{ concepts: any[]; prompt: string }> => {
   const client = getClient();
 
+  // Interpret musical structure into a useful signal for concept generation
+  const sections = (musicalStructure || []).slice(0, 8);
+  const sectionCount = sections.length;
+  const labels = sections.map((s: any) => (s.label || '').toLowerCase());
+  const hasChorus = labels.some(l => l.includes('chorus') || l.includes('refrain'));
+  const hasVerseBridge = labels.some(l => l.includes('verse')) && labels.some(l => l.includes('bridge'));
+  const isChantOrStotra = sectionCount <= 2 || (!hasChorus && !hasVerseBridge && labels.every(l => l.includes('verse') || l.includes('chant') || l.includes('shloka') || l.includes('stotra') || !l));
+
+  const structureSignal = isChantOrStotra
+    ? `SONG TYPE: Devotional chant / stotra / shloka — simple repeating structure (${sectionCount} section${sectionCount !== 1 ? 's' : ''}), no verse-chorus-bridge dynamics. This is meditative, not narrative. Concepts should honor this — avoid imposing a dramatic plot arc or modern story structure on a devotional chant. Think visual meditation, not screenplay.`
+    : `SONG TYPE: Multi-section composition (${sectionCount} sections: ${labels.join(', ')}). Has dynamic structure — concepts can explore narrative arcs, dramatic shifts, and emotional builds.`;
+
   const songContext = `SONG: ${title} (${language})
 ${context ? `CONTEXT: ${context}` : ''}
+
+${structureSignal}
 
 LYRICS:
 ${(lyrics || '').substring(0, 4000)}
 
 MEANING:
-${meaning}
-
-MUSICAL STRUCTURE:
-${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}`;
+${meaning}`;
 
   let prompt: string;
 
@@ -92,15 +103,23 @@ Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their 
 
 Use the generate_concepts tool. Return EXACTLY 1 concept in the array.`;
   } else {
-    // Path A: Generate 3 preset directions
+    // Path A: Generate 3 directions — adapted to song type
+    const directionGuidance = isChantOrStotra
+      ? `Generate EXACTLY 3 creative directions for a music video. This is a devotional chant — all 3 directions should honor its meditative, sacred nature. Don't force a dramatic plot or modern story structure.
+
+1. Classical devotional — traditional iconography, temple/sacred space, direct darshan
+2. Contemplative/atmospheric — nature, elemental imagery, meditative visual journey
+3. Artistically elevated — same devotional core, but with a distinctive visual approach (e.g. single continuous shot, abstract symbolism, painterly textures)`
+      : `Generate EXACTLY 3 creative directions for a music video:
+1. Traditional/classical — rooted in culture, devotional storytelling
+2. Modern/contemporary — fresh visual language, cinematic realism
+3. Bold/experimental — unexpected, artistic, boundary-pushing`;
+
     prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
 
 ${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
-Generate EXACTLY 3 creative directions for a music video:
-1. Traditional/classical — rooted in culture, devotional storytelling
-2. Modern/contemporary — fresh visual language, cinematic realism
-3. Bold/experimental — unexpected, artistic, boundary-pushing
+${directionGuidance}
 
 For each direction provide:
 - title: 2-4 word creative title
