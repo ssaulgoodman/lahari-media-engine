@@ -104,7 +104,7 @@ router.post('/:queueId/start', async (req, res) => {
     // ─── Check for cached analysis on songs table ───
     const { data: songRow } = await getSB()
       .from('songs')
-      .select('cached_lyrics, cached_structure, cached_meaning')
+      .select('cached_lyrics, cached_structure, cached_meaning, cached_song_type, cached_is_narrative, cached_is_meditative')
       .eq('id', item.song_id)
       .single();
     const cached = songRow || {} as any;
@@ -122,6 +122,9 @@ router.post('/:queueId/start', async (req, res) => {
       lyrics: cached.cached_lyrics || null,
       musical_structure: cached.cached_structure || null,
       meaning: cached.cached_meaning || '',
+      song_type: cached.cached_song_type || null,
+      is_narrative: cached.cached_is_narrative ?? null,
+      is_meditative: cached.cached_is_meditative ?? null,
       image_model: 'gemini-3-pro',
       user_id: req.userId,
       source_queue_id: queueId,
@@ -185,7 +188,7 @@ router.post('/:queueId/start', async (req, res) => {
           try {
             const audioBase64 = await readAsBase64(audioPath);
             const audioMime = mimeFromExt(audioPath);
-            lyrics = await transcribeLyrics(audioBase64, audioMime);
+            lyrics = await transcribeLyrics(audioBase64, audioMime, item.original_language);
             console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
           } catch (e) {
             console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);
@@ -204,7 +207,7 @@ router.post('/:queueId/start', async (req, res) => {
         const t0 = Date.now();
         const [structureResult, meaningResult] = await Promise.allSettled([
           detectStructure(audioBase64, audioMime),
-          lyrics ? summarizeMeaning(item.song_name || 'Untitled', 'Unknown', lyrics, '') : Promise.resolve(''),
+          lyrics ? summarizeMeaning(item.song_name || 'Untitled', item.original_language || 'Unknown', lyrics, '') : Promise.resolve(''),
         ]);
         const analysisMs = Date.now() - t0;
 
@@ -262,6 +265,9 @@ router.post('/:queueId/start', async (req, res) => {
           await getSB().from('songs').update({
             cached_lyrics: lyrics || null,
             cached_structure: structureJson || null,
+            cached_song_type: songType !== 'unknown' ? songType : null,
+            cached_is_narrative: isNarrative,
+            cached_is_meditative: isMeditative,
             cached_meaning: meaning || null,
           }).eq('id', item.song_id);
           console.log(`[queue] Cached analysis on song ${item.song_id} for future use`);
