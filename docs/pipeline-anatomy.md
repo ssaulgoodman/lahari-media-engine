@@ -47,10 +47,12 @@ SRT files are parsed to `[M:SS] text` format (timestamps preserved — same form
 |---|---|
 | **Model** | Gemini 3 Pro (gemini.ts → `detectStructure`) |
 | **Input** | Audio file |
-| **Prompt** | `"Identify the musical sections. Max 10. For each: label, startTime, endTime, energy, description."` |
-| **Output** | `musicalStructure[]` — sections with timestamps + energy levels |
+| **Prompt** | Analyze audio → sections (label/time/energy/description) + `songType` (enum: stotra, chant, bhajan, kirtan, song, unknown) + `isNarrative` (boolean) + `isMeditative` (boolean) |
+| **Output** | `{ sections[], songType, isNarrative, isMeditative }` — structure + classification stored on project |
 | **Artist control** | None before. Structure visible after but not editable. |
 | **Prompt visible** | No |
+
+**Song classification**: Gemini classifies the song from what it hears — not from lyrics or heuristics. The `songType` enum covers devotional forms (stotra, chant, bhajan, kirtan) plus a general `song` category. Boolean axes `isNarrative` and `isMeditative` are independent — a bhajan can be both. Classification flows to concept generation as context.
 
 ### 1c: Summarize Meaning
 
@@ -84,23 +86,19 @@ SRT files are parsed to `[M:SS] text` format (timestamps preserved — same form
 | | |
 |---|---|
 | **Model** | Claude Opus (claude.ts → `generateConceptOptions`) |
-| **Input** | title + language + lyrics + meaning + musicalStructure + optional `userNote` |
+| **Input** | title + language + lyrics + meaning + musicalStructure + songType + isNarrative + isMeditative + optional `userNote` |
 | **Output** | 3 concept options (title, deity, mood, theme). `visualSuggestions` removed from UI — visual style decided in Style phase. |
 | **Artist control** | `userNote` appended as "DIRECTOR NOTE". Pick from 3 options. |
 | **Prompt visible** | No (saved to `last_concept_prompt` but not exposed in UI) |
 | **generation_prompt** | No |
 
-**Hardcoded assumptions:**
-- "visionary film director specializing in Indian mythological and devotional cinema"
-- Forces exactly 3 options: traditional / modern / experimental
-- Artist must pick one — can't write their own concept
+**Song-type-aware concepts:** Claude receives `SONG TYPE (from audio analysis): stotra, meditative` as context. No hardcoded direction labels — Claude adapts all 3 directions to the song's nature. A stotra gets contemplative concepts, a kirtan gets energetic ones. Musical structure included as human-readable summary.
 
 **Two paths to a concept:**
 
-**Path A: Preset directions** (current)
-- Artist clicks "Generate concepts" → Opus generates 3 directions (traditional/modern/experimental) → artist picks one
+**Path A: Preset directions**
+- Artist clicks "Generate concepts" → Opus generates 3 directions adapted to song type → artist picks one
 - Good when artist wants inspiration or doesn't have a strong vision yet
-- Hardcoded "devotional cinema" framing in the prompt
 
 **Path B: Director's brief** (new)
 - Artist writes freeform text: "dreamy underwater sequence, Vishnu on cosmic ocean, deep blues and golds, slow and meditative"

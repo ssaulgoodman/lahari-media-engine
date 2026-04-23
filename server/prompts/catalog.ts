@@ -62,17 +62,23 @@ Return ONLY the transcription.`,
   },
   {
     id: 'detect-structure',
-    name: 'Detect musical structure',
+    name: 'Detect musical structure + classify song',
     stage: 'audio',
     model: 'gemini-3-pro-preview',
     modelLabel: 'Gemini 3 Pro',
     triggeredBy: 'Fires in parallel with transcription at project creation.',
-    summary: 'Identifies musical sections (Intro, Verse, Chorus, etc.) with timestamps and energy levels.',
+    summary: 'Identifies musical sections + classifies the song type from audio. Returns sections array, songType enum (stotra/chant/bhajan/kirtan/song/unknown), isNarrative boolean, isMeditative boolean. Classification flows to concept generation.',
     variables: [],
-    template: `Identify the musical sections of this audio. Keep it SHORT — max 10 sections.
-For each: label (Intro/Verse/Chorus/Bridge/Interlude/Outro), startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), and a 5-word description.
-Return ONLY a JSON array.`,
-    source: { file: 'server/services/gemini.ts', lines: '95-131' },
+    template: `Analyze this audio and return a JSON object with four fields:
+
+1. "sections" — array of musical sections (max 10). Each: label, startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.
+
+2. "songType" — one of: stotra, chant, bhajan, kirtan, song, unknown.
+
+3. "isNarrative" — true if the song tells a story or has a dramatic arc.
+
+4. "isMeditative" — true if the song is contemplative, steady, inward-focused.`,
+    source: { file: 'server/services/gemini.ts', lines: 'detectStructure' },
   },
   {
     id: 'summarize-meaning',
@@ -114,46 +120,36 @@ Under 150 words. Write in English.`,
     model: 'claude-opus-4-6',
     modelLabel: 'Claude Opus 4.6',
     triggeredBy: "Fires when you click 'Generate concept' on the Concept phase.",
-    summary: 'Proposes 3 creative directions — traditional / modern / experimental — with deity, mood, theme, visual suggestions.',
+    summary: 'Proposes 3 creative directions adapted to the song type. Receives songType + isNarrative + isMeditative from audio analysis — no hardcoded direction labels.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'language', description: 'Song language' },
       { name: 'lyrics', description: 'Full lyrics (truncated to 4000 chars)' },
       { name: 'meaning', description: 'Meaning summary' },
-      { name: 'musicalStructure', description: 'Section breakdown (JSON, first 8 sections)' },
+      { name: 'musicalStructure', description: 'Human-readable section summary' },
+      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'isNarrative', description: 'Has dramatic arc?' },
+      { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'context', description: 'Optional song context' },
       { name: 'userNote', description: 'Optional director note to steer the concepts' },
     ],
     template: `You are a visionary film director specializing in Indian mythological and devotional cinema.
 
 SONG: {{title}} ({{language}})
-{{context ? "CONTEXT: " + context : ""}}
+SONG TYPE (from audio analysis): {{songType}}, {{traits}}
+
+MUSICAL STRUCTURE:
+{{musicalStructure}}
 
 LYRICS:
 {{lyrics}}
 
 MEANING:
 {{meaning}}
-
-MUSICAL STRUCTURE:
-{{musicalStructure}}
 {{userNote ? "DIRECTOR NOTE (must follow): " + userNote : ""}}
 
-Generate EXACTLY 3 creative directions for a music video:
-1. Traditional/classical — rooted in culture, devotional storytelling
-2. Modern/contemporary — fresh visual language, cinematic realism
-3. Bold/experimental — unexpected, artistic, boundary-pushing
-
-For each direction provide:
-- title: 2-4 word creative title
-- deity: the primary divine figure
-- mood: one distinct emotional keyword (different per direction)
-- theme: the core narrative idea (1 sentence)
-- conceptDirection: traditional / modern / experimental
-- visualSuggestions: { artStyle, colorPalette }
-
-Use the generate_concepts tool. Return EXACTLY 3 concepts.`,
-    source: { file: 'server/services/claude.ts', lines: '55-93' },
+Generate EXACTLY 3 creative directions for a music video. Each should offer a genuinely different visual approach, but all must respect the song's nature — read the SONG TYPE and MEANING carefully.`,
+    source: { file: 'server/services/claude.ts', lines: 'generateConceptOptions' },
   },
   {
     id: 'plan-scenes',
