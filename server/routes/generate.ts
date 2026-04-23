@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows } from '../database.js';
 import { storageUrl } from '../storage.js';
-import { generateStyleOptions } from '../services/imagen.js';
 import { chatWithDirector } from '../services/gemini.js';
+import { getImageService, getStyleOptionsModelName } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, atLeast } from './scope-helpers.js';
@@ -56,7 +56,8 @@ router.post('/:id/generate-styles', async (req, res) => {
   try {
     console.log(`[${project.id}] Generating style options...`);
     const t0 = Date.now();
-    const styles = await generateStyleOptions(
+    const imageService = getImageService(project.image_model);
+    const styles = await imageService.generateStyleOptions(
       concept.deity || project.title,
       notes || project.style_description
     );
@@ -73,7 +74,7 @@ router.post('/:id/generate-styles', async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-styles',
-      model: 'imagen-4.0-generate-001',
+      model: getStyleOptionsModelName(project.image_model),
       prompt,
       contextChain: await buildContextChain(project.id),
       responseSummary: `Generated ${styles.length} style images: ${assetIds.map(a => a.style).join(', ')}`,
@@ -88,7 +89,7 @@ router.post('/:id/generate-styles', async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-styles',
-      model: 'imagen-4.0-generate-001',
+      model: getStyleOptionsModelName(project.image_model),
       prompt,
       contextChain: await buildContextChain(project.id),
       durationMs: 0,

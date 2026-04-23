@@ -129,6 +129,7 @@ const forkProject = async (sourceId: string): Promise<string> => {
     color_palette: src.color_palette,
     meaning: src.meaning,
     video_mode: src.video_mode,
+    image_model: src.image_model,
     target_duration: src.target_duration,
     cost_estimate: src.cost_estimate,
     style_exploration: (() => {
@@ -374,6 +375,7 @@ const getFullProject = async (projectId: string) => {
     })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
+    imageModel: project.image_model || 'gemini-3-pro',
     videoModel: project.video_model || 'veo-3.1',
     aspectRatio: project.aspect_ratio || '16:9',
     videoResolution: project.video_resolution || '720p',
@@ -486,6 +488,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     title,
     status: 'analyzing',
     audio_path: audioPath,
+    image_model: 'gemini-3-pro',
     user_id: req.userId,
   });
 
@@ -755,11 +758,12 @@ router.patch('/:id/concept', async (req, res) => {
 
 // Update project settings
 router.patch('/:id', async (req, res) => {
-  const { title, videoMode, targetDuration, styleDescription, colorPalette, videoModel, aspectRatio, videoResolution } = req.body;
+  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, videoModel, aspectRatio, videoResolution } = req.body;
   const updates: Record<string, any> = {};
 
   if (title !== undefined) updates.title = title;
   if (videoMode !== undefined) updates.video_mode = videoMode;
+  if (imageModel !== undefined) updates.image_model = imageModel;
   if (videoModel !== undefined) updates.video_model = videoModel;
   if (aspectRatio !== undefined) updates.aspect_ratio = aspectRatio;
   if (videoResolution !== undefined) updates.video_resolution = videoResolution;

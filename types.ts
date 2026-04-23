@@ -143,6 +143,7 @@ export interface ApiProject {
   styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
   colorPalette?: string;
   videoMode: VideoMode;
+  imageModel: string;
   videoModel: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
   videoResolution: '720p' | '1080p';

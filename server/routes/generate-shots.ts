@@ -11,10 +11,10 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows, deleteRows, findShot, incrementColumn, getSB, T } from '../database.js';
 import { readAsBase64, mimeFromExt, saveBuffer, storageUrl } from '../storage.js';
-import { generateShotStartFrame } from '../services/imagen.js';
 import { SEGMIND_MODELS } from '../services/segmind.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
+import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -233,7 +233,8 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       if (failedAsset) failedImagePath = failedAsset.file_path;
     }
 
-    const imagePath = await generateShotStartFrame({
+    const imageService = getImageService(project.image_model);
+    const imagePath = await imageService.generateShotStartFrame({
       visualPrompt: shotPrompt,
       styleDNA: project.style_description || 'Cinematic',
       styleImagePath,
@@ -266,7 +267,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-shot-start-frame',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: shotPrompt,
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style ref', url: storageUrl(styleImagePath) }] : []),
@@ -290,7 +291,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-shot-start-frame',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: shotPrompt,
       durationMs: 0,
       error: err.message,
@@ -454,8 +455,8 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     await updateRows('shots', { id: shotId }, { end_image_status: 'loading' });
     const t0 = Date.now();
 
-    const { generateShotEndFrame } = await import('../services/imagen.js');
-    const endFramePath = await generateShotEndFrame({
+    const imageService = getImageService(project.image_model);
+    const endFramePath = await imageService.generateShotEndFrame({
       startFramePath,
       visualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
       motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
@@ -484,7 +485,7 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     await logCall({
       projectId,
       stage: 'generate-end-frame',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: `End frame for shot: ${(shot.end_visual_prompt || shot.visual_prompt || '').substring(0, 100)}`,
       referenceInputs: [{ type: 'image', label: 'Start frame', url: storageUrl(imageAsset.file_path) }],
       outputAssetIds: [assetId],
@@ -889,4 +890,3 @@ router.post('/:id/shots/:shotId/split', async (req, res) => {
 });
 
 };
-

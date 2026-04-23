@@ -9,8 +9,9 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { generateCharacterLooks, buildCharacterPrompt, generateEnvironmentLooks, buildEnvironmentPrompt } from '../services/imagen.js';
+import { buildCharacterPrompt, buildEnvironmentPrompt } from '../services/imagen.js';
 import { refineFramePrompt } from '../services/claude.js';
+import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
@@ -129,10 +130,11 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   const xrayPrompt = `Generate 3 looks for "${member.name}" | Prompt: ${genPrompt.substring(0, 150)}...`;
 
   try {
-    console.log(`[${project.id}] Generating looks for ${member.name} via gemini-3-pro-image-preview${userRefImagePath ? ' (with user ref)' : ''}...`);
+    const imageService = getImageService(project.image_model);
+    console.log(`[${project.id}] Generating looks for ${member.name} via ${getImageGenerationModelName(project.image_model)}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
-    const imagePaths = await generateCharacterLooks(
+    const imagePaths = await imageService.generateCharacterLooks(
       { name: member.name, description: member.description || '' },
       styleDNA,
       styleImagePath,
@@ -154,7 +156,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-looks',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: xrayPrompt,
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
@@ -173,7 +175,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-looks',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: xrayPrompt,
       contextChain: await buildContextChain(project.id),
       durationMs: 0,
@@ -365,10 +367,11 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
   await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt, prompts_stale: false });
 
   try {
-    console.log(`[${project.id}] Generating environment looks for ${env.name}${userRefImagePath ? ' (with user ref)' : ''}...`);
+    const imageService = getImageService(project.image_model);
+    console.log(`[${project.id}] Generating environment looks for ${env.name} via ${getImageGenerationModelName(project.image_model)}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
-    const imagePaths = await generateEnvironmentLooks(
+    const imagePaths = await imageService.generateEnvironmentLooks(
       { name: env.name, description: env.description || '' },
       styleDNA,
       styleImagePath,
@@ -389,7 +392,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     await logCall({
       projectId: project.id,
       stage: 'generate-environment-look',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: `Generate 3 environment looks for "${env.name}" — ${(env.description || '').substring(0, 100)}`,
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
@@ -408,7 +411,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     await logCall({
       projectId: project.id,
       stage: 'generate-environment-look',
-      model: 'gemini-3-pro-image-preview',
+      model: getImageGenerationModelName(project.image_model),
       prompt: `Generate environment looks for "${env.name}"`,
       durationMs: 0,
       error: err.message,
@@ -497,4 +500,3 @@ router.post('/:id/advance-environments', async (req, res) => {
 });
 
 };
-

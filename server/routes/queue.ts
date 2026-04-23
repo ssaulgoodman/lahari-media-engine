@@ -122,6 +122,7 @@ router.post('/:queueId/start', async (req, res) => {
       lyrics: cached.cached_lyrics || null,
       musical_structure: cached.cached_structure || null,
       meaning: cached.cached_meaning || '',
+      image_model: 'gemini-3-pro',
       user_id: req.userId,
       source_queue_id: queueId,
     });

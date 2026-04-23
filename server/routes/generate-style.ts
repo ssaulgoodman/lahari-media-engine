@@ -7,8 +7,9 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectColumns, insertRow, updateRows } from '../database.js';
 import { readAsBase64, mimeFromExt, saveBuffer, storageUrl } from '../storage.js';
-import { generateSingleStyleImage, buildStylePrompt } from '../services/imagen.js';
+import { buildStylePrompt } from '../services/imagen.js';
 import { brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle } from '../services/claude.js';
+import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireAsset } from './scope-helpers.js';
@@ -90,7 +91,8 @@ export const mountStyleRoutes = (router: Router) => {
     try {
       console.log(`[${project.id}] Visualizing style direction...`);
       const t0 = Date.now();
-      const assetPath = await generateSingleStyleImage(
+      const imageService = getImageService(project.image_model);
+      const assetPath = await imageService.generateSingleStyleImage(
         stylePrompt,
         concept.deity || project.title,
         genPrompt,
@@ -103,7 +105,7 @@ export const mountStyleRoutes = (router: Router) => {
       await logCall({
         projectId: project.id,
         stage: 'visualize-style',
-        model: 'gemini-3-pro-image-preview',
+        model: getImageGenerationModelName(project.image_model),
         prompt: stylePrompt,
         contextChain: await buildContextChain(project.id),
         responseSummary: `Generated style image`,
@@ -118,7 +120,7 @@ export const mountStyleRoutes = (router: Router) => {
       await logCall({
         projectId: project.id,
         stage: 'visualize-style',
-        model: 'gemini-3-pro-image-preview',
+        model: getImageGenerationModelName(project.image_model),
         prompt: stylePrompt,
         durationMs: 0,
         error: err.message,

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ApiProject } from '../types';
 import * as api from '../services/api';
 import { Markdown } from './Markdown';
+import { IMAGE_MODELS, getImageModel } from '../constants/imageModels';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
 import { Dropdown } from './Dropdown';
 
@@ -120,8 +121,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
 
   const aspectLabel = project.aspectRatio || '16:9';
   const resLabel = project.videoResolution || '720p';
+  const imageLabel = getImageModel(project.imageModel || IMAGE_MODELS[0].key).label;
   const modelLabel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key).label;
-  const renderSummary = `${aspectLabel} · ${resLabel} · ${modelLabel}`;
+  const renderSummary = `${aspectLabel} · ${resLabel} · ${imageLabel} · ${modelLabel}`;
   const analysisItems = [
     { label: 'Lyrics', present: !!project.lyrics },
     { label: 'Structure', present: project.musicalStructure?.length > 0 },
@@ -308,6 +310,17 @@ export const BlueprintContextBar: React.FC<Props> = ({
                         { value: '720p', label: '720p (HD)' },
                         { value: '1080p', label: '1080p (Full HD)' },
                       ]}
+                    />
+                  </div>
+                  <div className="flex-[1.25] px-5 py-3 space-y-1">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Image model</div>
+                    <Dropdown
+                      value={project.imageModel || IMAGE_MODELS[0].key}
+                      onChange={v => onUpdateProject({ imageModel: v })}
+                      options={IMAGE_MODELS.map(m => ({
+                        value: m.key,
+                        label: m.note ? `${m.label} · ${m.note}` : m.label,
+                      }))}
                     />
                   </div>
                   <div className="flex-[1.5] px-5 py-3 space-y-1">
