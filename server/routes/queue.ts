@@ -208,7 +208,11 @@ router.post('/:queueId/start', async (req, res) => {
         ]);
         const analysisMs = Date.now() - t0;
 
-        const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
+        const structureData = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
+        const musicalStructure = Array.isArray(structureData) ? structureData : structureData.sections;
+        const songType = Array.isArray(structureData) ? 'unknown' : (structureData.songType || 'unknown');
+        const isNarrative = Array.isArray(structureData) ? false : (structureData.isNarrative ?? false);
+        const isMeditative = Array.isArray(structureData) ? false : (structureData.isMeditative ?? false);
         const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
 
         if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
@@ -246,6 +250,9 @@ router.post('/:queueId/start', async (req, res) => {
           status: 'analyzed',
           lyrics: lyrics || null,
           musical_structure: structureJson,
+          song_type: songType,
+          is_narrative: isNarrative,
+          is_meditative: isMeditative,
           meaning,
           updated_at: new Date().toISOString(),
         });

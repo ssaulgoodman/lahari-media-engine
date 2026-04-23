@@ -95,39 +95,69 @@ Return ONLY the transcription.` }
 export const detectStructure = async (
   audioBase64: string,
   mimeType: string
-): Promise<any[]> => {
+): Promise<{ sections: any[]; songType: string; isNarrative: boolean; isMeditative: boolean }> => {
   const ai = getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: { parts: [
       { inlineData: { mimeType, data: audioBase64 } },
-      { text: `Identify the musical sections of this audio. Keep it SHORT — max 10 sections.
-For each: label (Intro/Verse/Chorus/Bridge/Interlude/Outro), startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), and a 5-word description.
-Return ONLY a JSON array.` }
+      { text: `Analyze this audio and return a JSON object with four fields:
+
+1. "sections" — array of musical sections (max 10). Each: label (Intro/Verse/Chorus/Bridge/Interlude/Outro), startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.
+
+2. "songType" — classify what you HEAR. One of: chant, stotra, bhajan, kirtan, film-song, narrative, unknown.
+   - chant: repetitive devotional recitation, minimal melody
+   - stotra: Sanskrit/sacred verse recitation with simple melodic structure
+   - bhajan: devotional song with verse-chorus or verse-refrain pattern
+   - kirtan: call-and-response devotional singing, building energy
+   - film-song: cinematic/produced devotional song, multiple distinct sections
+   - narrative: multi-section composition with clear dramatic arc
+   - unknown: doesn't fit the above
+
+3. "isNarrative" — true if the song tells a story or has a dramatic arc with distinct emotional shifts. false if it's meditative, repetitive, or maintains a steady devotional mood.
+
+4. "isMeditative" — true if the song is contemplative, steady, inward-focused. false if it's energetic, dynamic, or dramatic.
+
+Return ONLY the JSON object.` }
     ]},
     config: {
       responseMimeType: 'application/json',
       maxOutputTokens: 4096,
       responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            label: { type: Type.STRING },
-            startTime: { type: Type.STRING },
-            endTime: { type: Type.STRING },
-            energyLevel: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
-            description: { type: Type.STRING }
+        type: Type.OBJECT,
+        properties: {
+          sections: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                label: { type: Type.STRING },
+                startTime: { type: Type.STRING },
+                endTime: { type: Type.STRING },
+                energyLevel: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
+                description: { type: Type.STRING }
+              },
+              required: ['label', 'startTime', 'endTime']
+            }
           },
-          required: ['label', 'startTime', 'endTime']
-        }
+          songType: { type: Type.STRING, enum: ['chant', 'stotra', 'bhajan', 'kirtan', 'film-song', 'narrative', 'unknown'] },
+          isNarrative: { type: Type.BOOLEAN },
+          isMeditative: { type: Type.BOOLEAN }
+        },
+        required: ['sections', 'songType', 'isNarrative', 'isMeditative']
       }
     }
   });
-  if (!response.text) return [];
+  if (!response.text) return { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
   const parsed = safeParseJSON(response.text);
-  // Handle both array and wrapped object responses
-  return Array.isArray(parsed) ? parsed : (parsed.musicalStructure || []);
+  // Handle both new object format and legacy array format
+  if (Array.isArray(parsed)) return { sections: parsed, songType: 'unknown', isNarrative: false, isMeditative: false };
+  return {
+    sections: parsed.sections || parsed.musicalStructure || [],
+    songType: parsed.songType || 'unknown',
+    isNarrative: parsed.isNarrative ?? false,
+    isMeditative: parsed.isMeditative ?? false,
+  };
 };
 
 

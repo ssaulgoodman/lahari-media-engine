@@ -62,25 +62,30 @@ export const generateConceptOptions = async (
   userNote?: string,
   /** If provided, generates ONE concept matching the director's vision instead of 3 preset directions. */
   directorBrief?: string,
+  /** Gemini's classification: chant, stotra, bhajan, kirtan, film-song, narrative, unknown. */
+  songType?: string,
+  isNarrative?: boolean,
+  isMeditative?: boolean,
 ): Promise<{ concepts: any[]; prompt: string }> => {
   const client = getClient();
 
-  // Interpret musical structure into a useful signal for concept generation
-  const sections = (musicalStructure || []).slice(0, 8);
-  const sectionCount = sections.length;
-  const labels = sections.map((s: any) => (s.label || '').toLowerCase());
-  const hasChorus = labels.some(l => l.includes('chorus') || l.includes('refrain'));
-  const hasVerseBridge = labels.some(l => l.includes('verse')) && labels.some(l => l.includes('bridge'));
-  const isChantOrStotra = sectionCount <= 2 || (!hasChorus && !hasVerseBridge && labels.every(l => l.includes('verse') || l.includes('chant') || l.includes('shloka') || l.includes('stotra') || !l));
+  const typeLabel = songType && songType !== 'unknown' ? songType : null;
+  const traits = [
+    isNarrative ? 'narrative (has dramatic arc)' : null,
+    isMeditative ? 'meditative (contemplative, inward)' : null,
+  ].filter(Boolean);
+  const songTypeSignal = typeLabel || traits.length
+    ? `SONG TYPE (from audio analysis): ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
+    : '';
 
-  const structureSignal = isChantOrStotra
-    ? `SONG TYPE: Devotional chant / stotra / shloka — simple repeating structure (${sectionCount} section${sectionCount !== 1 ? 's' : ''}), no verse-chorus-bridge dynamics. This is meditative, not narrative. Concepts should honor this — avoid imposing a dramatic plot arc or modern story structure on a devotional chant. Think visual meditation, not screenplay.`
-    : `SONG TYPE: Multi-section composition (${sectionCount} sections: ${labels.join(', ')}). Has dynamic structure — concepts can explore narrative arcs, dramatic shifts, and emotional builds.`;
+  const structureSummary = (musicalStructure || []).slice(0, 8).map((s: any) =>
+    `${s.label || 'Section'} [${s.startTime}–${s.endTime}]${s.energyLevel ? ` (${s.energyLevel})` : ''}${s.description ? `: ${s.description}` : ''}`
+  ).join('\n');
 
   const songContext = `SONG: ${title} (${language})
 ${context ? `CONTEXT: ${context}` : ''}
-
-${structureSignal}
+${songTypeSignal}
+${structureSummary ? `\nMUSICAL STRUCTURE:\n${structureSummary}` : ''}
 
 LYRICS:
 ${(lyrics || '').substring(0, 4000)}
@@ -103,23 +108,11 @@ Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their 
 
 Use the generate_concepts tool. Return EXACTLY 1 concept in the array.`;
   } else {
-    // Path A: Generate 3 directions — adapted to song type
-    const directionGuidance = isChantOrStotra
-      ? `Generate EXACTLY 3 creative directions for a music video. This is a devotional chant — all 3 directions should honor its meditative, sacred nature. Don't force a dramatic plot or modern story structure.
-
-1. Classical devotional — traditional iconography, temple/sacred space, direct darshan
-2. Contemplative/atmospheric — nature, elemental imagery, meditative visual journey
-3. Artistically elevated — same devotional core, but with a distinctive visual approach (e.g. single continuous shot, abstract symbolism, painterly textures)`
-      : `Generate EXACTLY 3 creative directions for a music video:
-1. Traditional/classical — rooted in culture, devotional storytelling
-2. Modern/contemporary — fresh visual language, cinematic realism
-3. Bold/experimental — unexpected, artistic, boundary-pushing`;
-
     prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
 
 ${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
-${directionGuidance}
+Generate EXACTLY 3 creative directions for a music video. Each should offer a genuinely different visual approach, but all must respect the song's nature — read the SONG TYPE and MEANING carefully.
 
 For each direction provide:
 - title: 2-4 word creative title

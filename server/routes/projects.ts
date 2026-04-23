@@ -355,6 +355,9 @@ const getFullProject = async (projectId: string) => {
     lyrics: project.lyrics,
     meaning: project.meaning,
     musicalStructure: project.musical_structure ? JSON.parse(project.musical_structure) : [],
+    songType: project.song_type || null,
+    isNarrative: project.is_narrative ?? null,
+    isMeditative: project.is_meditative ?? null,
     conceptOptions: project.concept_options ? JSON.parse(project.concept_options) : [],
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
     styleDescription: project.style_description,
@@ -508,7 +511,11 @@ router.post('/', upload.single('audio'), async (req, res) => {
     const phase1Duration = Date.now() - t0Phase1;
 
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
-    const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
+    const structureData = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
+    const musicalStructure = Array.isArray(structureData) ? structureData : structureData.sections;
+    const songType = Array.isArray(structureData) ? 'unknown' : (structureData.songType || 'unknown');
+    const isNarrative = Array.isArray(structureData) ? false : (structureData.isNarrative ?? false);
+    const isMeditative = Array.isArray(structureData) ? false : (structureData.isMeditative ?? false);
 
     if (lyricsResult.status === 'rejected') console.warn('[lyrics] Failed:', lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn('[structure] Failed:', structureResult.reason);
@@ -565,6 +572,9 @@ router.post('/', upload.single('audio'), async (req, res) => {
       status: 'analyzed',
       lyrics,
       musical_structure: JSON.stringify(musicalStructure),
+      song_type: songType,
+      is_narrative: isNarrative,
+      is_meditative: isMeditative,
       meaning,
       updated_at: new Date().toISOString(),
     });
@@ -599,7 +609,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined);
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -836,7 +846,11 @@ router.post('/:id/analyze-audio', async (req, res) => {
     ]);
 
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
-    const musicalStructure = structureResult.status === 'fulfilled' ? structureResult.value : [];
+    const structureData2 = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
+    const musicalStructure = Array.isArray(structureData2) ? structureData2 : structureData2.sections;
+    const songType2 = Array.isArray(structureData2) ? 'unknown' : (structureData2.songType || 'unknown');
+    const isNarrative2 = Array.isArray(structureData2) ? false : (structureData2.isNarrative ?? false);
+    const isMeditative2 = Array.isArray(structureData2) ? false : (structureData2.isMeditative ?? false);
 
     if (lyricsResult.status === 'rejected') console.warn(`[${projectId}] lyrics transcription failed:`, lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
@@ -897,6 +911,9 @@ router.post('/:id/analyze-audio', async (req, res) => {
     // Conditional status update: only move to 'analyzed' if currently 'uploaded' or 'analyzing'
     const statusUpdate: Record<string, any> = {
       musical_structure: JSON.stringify(musicalStructure),
+      song_type: songType2,
+      is_narrative: isNarrative2,
+      is_meditative: isMeditative2,
       meaning,
       updated_at: new Date().toISOString(),
     };
