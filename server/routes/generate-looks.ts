@@ -52,8 +52,6 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
 
   const member = await requireCastMember(project.id, castMemberId);
 
-  const styleDNA = project.style_description || 'Cinematic, photorealistic';
-
   // Resolve style image path for visual ref
   let styleImagePath: string | undefined;
   if (project.style_asset_id) {
@@ -81,7 +79,6 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
       { name: member.name, description: member.description || '' },
-      styleDNA,
       { styleIdx, userRefIdx }
     );
     if (member.prompts_stale) {
@@ -136,7 +133,6 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
 
     const imagePaths = await imageService.generateCharacterLooks(
       { name: member.name, description: member.description || '' },
-      styleDNA,
       styleImagePath,
       undefined, // feedback already baked into genPrompt by Claude
       project.aspect_ratio || '16:9',
@@ -295,8 +291,6 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
 
   const env = await requireEnvironment(project.id, environmentId);
 
-  const styleDNA = project.style_description || 'Cinematic, photorealistic';
-
   let styleImagePath: string | undefined;
   if (project.style_asset_id) {
     const styleAsset = await selectOne('assets', { id: project.style_asset_id });
@@ -320,7 +314,6 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
       { name: env.name, description: env.description || '' },
-      styleDNA,
       { styleIdx, userRefIdx }
     );
     if (env.prompts_stale) {
@@ -373,7 +366,6 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
 
     const imagePaths = await imageService.generateEnvironmentLooks(
       { name: env.name, description: env.description || '' },
-      styleDNA,
       styleImagePath,
       project.aspect_ratio || '16:9',
       userRefImagePath,

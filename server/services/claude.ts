@@ -633,7 +633,7 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { styleDNA: string; cast: { name: string; description: string }[]; concept: any; lyrics: string; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean },
+  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = getClient();

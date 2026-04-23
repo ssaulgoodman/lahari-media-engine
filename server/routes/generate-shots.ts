@@ -236,7 +236,6 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     const imageService = getImageService(project.image_model);
     const imagePath = await imageService.generateShotStartFrame({
       visualPrompt: shotPrompt,
-      styleDNA: project.style_description || 'Cinematic',
       styleImagePath,
       characterRefs,
       environmentRef,
@@ -461,7 +460,6 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
       visualPrompt: shot.end_visual_prompt || shot.visual_prompt || '',
       motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
       styleImagePath,
-      styleDNA: project.style_description || 'Cinematic',
       characterRefs: characterRefs.length > 0 ? characterRefs : undefined,
       environmentRef,
       additionalRefs: extraRefs.length > 0 ? extraRefs : undefined,

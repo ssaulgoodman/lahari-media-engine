@@ -196,7 +196,6 @@ export const generateSingleStyleImage = async (
  */
 export const buildCharacterPrompt = (
   character: { name: string; description: string },
-  styleDNA: string,
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
   let prompt = opts?.styleIdx
@@ -221,7 +220,6 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
 
 export const generateCharacterLooks = async (
   character: { name: string; description: string },
-  styleDNA: string,
   styleImagePath?: string,
   userFeedback?: string,
   aspectRatio: string = '16:9',
@@ -254,7 +252,7 @@ export const generateCharacterLooks = async (
     prompt = generationPrompt;
     if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   } else {
-    prompt = buildCharacterPrompt(character, styleDNA, { styleIdx, userRefIdx });
+    prompt = buildCharacterPrompt(character, { styleIdx, userRefIdx });
     if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   }
 
@@ -297,7 +295,6 @@ export const generateCharacterLooks = async (
  */
 export const buildEnvironmentPrompt = (
   environment: { name: string; description: string },
-  styleDNA: string,
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
   let prompt = opts?.styleIdx
@@ -315,7 +312,6 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should f
 
 export const generateEnvironmentLooks = async (
   environment: { name: string; description: string },
-  styleDNA: string,
   styleImagePath?: string,
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
@@ -346,7 +342,7 @@ export const generateEnvironmentLooks = async (
     prompt = generationPrompt;
     if (userNote) prompt += `\n\nDirector note: ${userNote}`;
   } else {
-    prompt = buildEnvironmentPrompt(environment, styleDNA, { styleIdx, userRefIdx });
+    prompt = buildEnvironmentPrompt(environment, { styleIdx, userRefIdx });
     if (userNote) prompt += `\n\nDirector note: ${userNote}`;
   }
 
@@ -388,7 +384,6 @@ export const generateEnvironmentLooks = async (
  */
 export const generateShotStartFrame = async (opts: {
   visualPrompt: string;
-  styleDNA: string;
   styleImagePath?: string;
   characterRefs: { name: string; imagePath: string }[];
   environmentRef?: { name: string; imagePath: string };
@@ -483,7 +478,6 @@ export const generateShotEndFrame = async (opts: {
   visualPrompt: string;
   motionPrompt: string;
   styleImagePath?: string;
-  styleDNA: string;
   characterRefs?: { name: string; imagePath: string }[];
   environmentRef?: { name: string; imagePath: string };
   additionalRefs?: { imagePath: string }[];
@@ -563,7 +557,6 @@ Image 1 is the start frame of this shot. Generate the ending frame — what the 
 export const generateShotFramePair = async (opts: {
   visualPrompt: string;
   motionPrompt: string;
-  styleDNA: string;
   styleImagePath?: string;
   characterRefs: { name: string; imagePath: string }[];
   environmentRef?: { name: string; imagePath: string };
@@ -645,7 +638,6 @@ IMAGE 2 — END FRAME: The closing moment of this shot, after the motion describ
       visualPrompt: opts.visualPrompt,
       motionPrompt: opts.motionPrompt,
       styleImagePath: opts.styleImagePath,
-      styleDNA: opts.styleDNA,
     });
     return { startFramePath: images[0], endFramePath };
   }

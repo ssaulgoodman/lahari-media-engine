@@ -177,7 +177,6 @@ export const generateSingleStyleImage = async (
 
 export const generateCharacterLooks = async (
   character: { name: string; description: string },
-  styleDNA: string,
   styleImagePath?: string,
   userFeedback?: string,
   aspectRatio: string = '16:9',
@@ -187,7 +186,7 @@ export const generateCharacterLooks = async (
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-  let prompt = generationPrompt || buildCharacterPrompt(character, styleDNA, { styleIdx, userRefIdx });
+  let prompt = generationPrompt || buildCharacterPrompt(character, { styleIdx, userRefIdx });
   if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
 
   const refs: RefImage[] = [];
@@ -199,7 +198,6 @@ export const generateCharacterLooks = async (
 
 export const generateEnvironmentLooks = async (
   environment: { name: string; description: string },
-  styleDNA: string,
   styleImagePath?: string,
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
@@ -209,7 +207,7 @@ export const generateEnvironmentLooks = async (
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-  let prompt = generationPrompt || buildEnvironmentPrompt(environment, styleDNA, { styleIdx, userRefIdx });
+  let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx });
   if (userNote) prompt += `\n\nDirector note: ${userNote}`;
 
   const refs: RefImage[] = [];
@@ -221,7 +219,6 @@ export const generateEnvironmentLooks = async (
 
 export const generateShotStartFrame = async (opts: {
   visualPrompt: string;
-  styleDNA: string;
   styleImagePath?: string;
   characterRefs: { name: string; imagePath: string }[];
   environmentRef?: { name: string; imagePath: string };
@@ -264,7 +261,6 @@ export const generateShotEndFrame = async (opts: {
   visualPrompt: string;
   motionPrompt: string;
   styleImagePath?: string;
-  styleDNA: string;
   characterRefs?: { name: string; imagePath: string }[];
   environmentRef?: { name: string; imagePath: string };
   additionalRefs?: { imagePath: string }[];

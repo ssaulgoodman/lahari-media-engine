@@ -403,10 +403,8 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
     for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
       const batch = allShots.slice(i, i + BATCH_SIZE);
       const result = await writeShotPrompts(batch, {
-        styleDNA: project.style_description,
         cast: cast.map((c: any) => ({ name: c.name, description: c.description })),
         concept,
-        lyrics: project.lyrics || '',
         userNote,
         songType: project.song_type || undefined,
         isNarrative: project.is_narrative ?? undefined,
@@ -472,4 +470,3 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
 });
 
 };
-

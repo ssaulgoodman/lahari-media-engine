@@ -338,7 +338,6 @@ Return ONLY the keywords. No quotes, no JSON, no markdown.`,
     variables: [
       { name: 'character.name', description: 'Character name' },
       { name: 'character.description', description: 'Physical + cultural description' },
-      { name: 'styleDNA', description: 'Injected style keywords' },
       { name: 'styleImage', description: 'Locked style reference (Image N)' },
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userFeedback', description: 'Optional director note' },
@@ -372,7 +371,6 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
     variables: [
       { name: 'environment.name', description: 'Environment name' },
       { name: 'environment.description', description: 'Spatial description' },
-      { name: 'styleDNA', description: 'Injected style keywords' },
       { name: 'styleImage', description: 'Locked style reference (Image N)' },
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userNote', description: 'Optional director note' },
@@ -403,45 +401,51 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
     summary: 'Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot).',
     variables: [
       { name: 'shots', description: 'List of shots with id, direction, duration, cast, scene context' },
-      { name: 'styleDNA', description: 'Style keywords' },
       { name: 'cast', description: 'Character descriptions' },
-      { name: 'concept', description: 'Locked concept' },
+      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'isNarrative', description: 'Has dramatic arc?' },
+      { name: 'isMeditative', description: 'Contemplative/inward?' },
+      { name: 'concept', description: 'Used only for mood anchor' },
       { name: 'userNote', description: 'Optional director note' },
       { name: 'previousBatchTail', description: 'Tail of previous batch for continuity context' },
     ],
-    template: `You are a cinematographer writing shot-by-shot prompts for a devotional music video.
+    template: `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
-STYLE DNA (for context, do NOT include in prompts):
-{{styleDNA}}
+SONG TYPE: {{songType}}, {{traits}}
+Mood: {{concept.mood}}
 
 CHARACTERS:
 {{castList}}
 
-CONCEPT: {{concept.deity}} — {{concept.theme}}. Mood: {{concept.mood}}.
 {{userNote ? "USER DIRECTION (apply to this rewrite): " + userNote : ""}}
 {{previousBatchTail ? "PREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\\n..." : ""}}
 
-SHOTS:
+SHOTS TO WRITE:
 {{shotList}}
+{{isMeditative ? "MEDITATIVE CINEMATOGRAPHY:\\n- Favor stillness, patience, and negative space. Let the frame breathe.\\n- Resist the urge to fill every shot with spectacle. A still face, a trembling hand, a single flame can carry more weight than divine radiance.\\n- Show sacred presence through atmosphere and reaction, not only through literal divine manifestation.\\n- When the divine appears, keep it grounded — earned through the devotee's state, not inserted as a visual effect." : ""}}
 
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: Start frame for image model. 1-2 sentences.
-  Composition, character pose, environment. Characters by name (ref images sent separately).
-  No art style, lighting, or color — style system handles that.
+- visualPrompt: The start frame. 1-2 sentences. This goes to an image model alongside character/environment/style reference IMAGES — so the model already knows the art style, the character faces, the environment. Your job is to describe WHAT we see: the composition, the spatial relationship, what the character is doing, where they are in the space. Write it like you're describing a photograph to a painter who already knows the palette.
+  ONLY include characters listed in that shot's Cast field.
+  Do NOT include art style, lighting adjectives, or color — the style reference image handles all of that.
 
-- motionPrompt: Video model instruction. Sent directly to Veo with the start frame. 1 sentence.
-  The model sees the frame — just say what to animate: action + camera.
-  Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
+- motionPrompt: The video instruction. 1 sentence. The video model receives the start frame image and this text — it already SEES the frame. Tell it what changes: character action, camera movement, environmental shift. Be specific about the camera verb (static hold, slow push-in, gentle pan, tracking shot, pull-back). A shot where nothing moves except a flame is a valid choice.
 
-- continuityFrom: How this shot relates to the one before it.
-  - 'cut' = HARD CUT. This shot is visually independent — different angle/subject/framing/environment, or the first shot of a scene. Most shots should be 'cut'.
-  - 'prev_shot' = CONTINUOUS. This shot visually flows from the previous one — same subject in same/adjacent framing, camera continuation, or an unbroken motion beat. Only mark 'prev_shot' when the cut is genuinely invisible.
+- continuityFrom: 'cut' or 'prev_shot'.
+  Use 'cut' when the shot is a new composition — different subject, framing, angle, or environment. This is the default.
+  Use 'prev_shot' only when the camera or action genuinely continues from the previous frame — same subject, same or adjacent framing, unbroken motion. Use it for dramatic effect: a reveal, a slow transformation, a sustained gaze. Don't use it just because two shots share a location.
+  The first shot of a scene is ALWAYS 'cut'.
 
-  Use 'prev_shot' sparingly — music videos are mostly hard cuts. The first shot of a scene is ALWAYS 'cut'.
+SEQUENCE THINKING:
+Before writing each shot, look at what you wrote for the previous 2-3 shots. Ask:
+- Am I repeating a camera verb? (If the last shot was a dolly in, don't dolly in again.)
+- Am I stuck at one shot scale? (If the last two were close-ups, go wide or medium.)
+- Does this shot ADVANCE the emotional arc, or just restate the previous beat in a new image?
+- Would a hard cut feel better here, or would continuity from the previous shot create a more powerful moment?
 
 Match the IDs exactly.`,
-    source: { file: 'server/services/claude.ts', lines: '296-347' },
+    source: { file: 'server/services/claude.ts', lines: '634-722' },
   },
   {
     id: 'shot-start-frame',
@@ -453,7 +457,6 @@ Match the IDs exactly.`,
     summary: "Generates the shot's start frame using the full reference chain: characters → style → environment → continuity.",
     variables: [
       { name: 'visualPrompt', description: "Shot's visual prompt" },
-      { name: 'styleDNA', description: 'Injected style keywords' },
       { name: 'styleImage', description: 'Locked style ref' },
       { name: 'characterRefs', description: 'One per cast member' },
       { name: 'environmentRef', description: "Locked environment ref if shot has one" },
@@ -583,9 +586,10 @@ Same plan_music_video tool output.`,
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
     triggeredBy: 'Fires automatically after a shot\'s video lands, when the next shot is tagged "prev_shot".',
-    summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so continuity flows from what actually happened. Minimal inputs: frame + draft prompts + character/env names.",
+    summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so continuity flows from what actually happened while preserving the shot's intended beat.",
     variables: [
       { name: 'prevFrame', description: "Extracted last frame of the previous shot's video" },
+      { name: 'shotDirection', description: "Next shot's preserved intent / beat" },
       { name: 'currentVisualPrompt', description: "Next shot's draft visual prompt" },
       { name: 'currentMotionPrompt', description: "Next shot's draft motion prompt" },
       { name: 'characterNames', description: 'Character names (for prompt references)' },
@@ -593,7 +597,10 @@ Same plan_music_video tool output.`,
     ],
     template: `The image is the last frame of the previous shot.
 
-The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened.
+The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened while honoring the shot's intent.
+
+SHOT INTENT:
+{{shotDirection}}
 
 DRAFT PROMPTS (rewrite these):
 Visual: {{currentVisualPrompt}}
@@ -601,7 +608,7 @@ Motion: {{currentMotionPrompt}}
 {{characterNames ? "Characters: " + characterNames : ""}}
 {{environmentName ? "Environment: " + environmentName : ""}}
 
-Keep the draft's intent. Rewrite so the first moment matches the frame. Visual: 1-3 sentences. Motion: 1-2 sentences.`,
+Keep the shot intent. Rewrite so the first moment matches the frame — same characters, same state, natural continuation. Visual: 1-3 sentences. Motion: 1-2 sentences.`,
     source: { file: 'server/services/claude.ts', lines: 'refreshChainedShotPrompt' },
   },
   {
