@@ -662,45 +662,43 @@ export const writeShotPrompts = async (
     ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
     : '';
 
-  const prompt = `You are a cinematographer turning a director's shot list into image and video prompts. The director decided WHAT happens — you decide HOW it looks and moves.
+  const meditativeGuidance = context.isMeditative ? `
+MEDITATIVE CINEMATOGRAPHY:
+- Favor stillness, patience, and negative space. Let the frame breathe.
+- Resist the urge to fill every shot with spectacle. A still face, a trembling hand, a single flame can carry more weight than divine radiance.
+- Show sacred presence through atmosphere and reaction, not only through literal divine manifestation.
+- When the divine appears, keep it grounded — earned through the devotee's state, not inserted as a visual effect.` : '';
+
+  const prompt = `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
 ${songTypeSignal}
-
-STYLE DNA (for context, do NOT include in prompts):
-${context.styleDNA}
+Mood: ${context.concept.mood || 'Cinematic'}
 
 CHARACTERS:
 ${castList}
-
-CONCEPT: ${context.concept.deity || ''} — ${context.concept.theme}. Mood: ${context.concept.mood}.
 ${userNoteBlock}${tailContext}
-SHOTS:
+SHOTS TO WRITE:
 ${shotList}
-
+${meditativeGuidance}
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: What the IMAGE MODEL generates as the start frame. 1-2 sentences.
-  Gemini receives this text alongside character/environment/style reference images and renders a single cinematic frame.
-  Include: composition (wide/medium/close), character pose/action, environment details.
-  Reference characters by name — their reference images handle identity.
+- visualPrompt: The start frame. 1-2 sentences. This goes to an image model alongside character/environment/style reference IMAGES — so the model already knows the art style, the character faces, the environment. Your job is to describe WHAT we see: the composition, the spatial relationship, what the character is doing, where they are in the space. Write it like you're describing a photograph to a painter who already knows the palette.
   ONLY include characters listed in that shot's Cast field.
-  Do NOT include art style, lighting, or color — the style image handles that.
+  Do NOT include art style, lighting adjectives, or color — the style reference image handles all of that.
 
-- motionPrompt: Video model instruction. Sent to Veo alongside the start frame. The model already SEES the frame — tell it what to animate. 1 sentence: action + camera.
-  Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
-  Example: "Static hold, only the flame flickers and shadows dance on the stone wall"
+- motionPrompt: The video instruction. 1 sentence. The video model receives the start frame image and this text — it already SEES the frame. Tell it what changes: character action, camera movement, environmental shift. Be specific about the camera verb (static hold, slow push-in, gentle pan, tracking shot, pull-back). A shot where nothing moves except a flame is a valid choice.
 
-CINEMATOGRAPHY RULES:
-- Vary your shot types across the sequence. Don't repeat the same framing — alternate wide, medium, and close-up. If the last shot was a close-up, go wide or medium next.
-- Vary camera movement. If you wrote "dolly in" for one shot, don't write "dolly in" for the next. Mix: static holds, pans, tracking shots, push-ins, pull-backs. Static shots are powerful — use them.
-- Match the energy. Low-energy sections → stillness, wide framing, slow or no movement. High-energy sections → tighter framing, faster movement, more action.
-- Each shot should feel like a distinct composition, not a continuation of the same camera setup.
+- continuityFrom: 'cut' or 'prev_shot'.
+  Use 'cut' when the shot is a new composition — different subject, framing, angle, or environment. This is the default.
+  Use 'prev_shot' only when the camera or action genuinely continues from the previous frame — same subject, same or adjacent framing, unbroken motion. Use it for dramatic effect: a reveal, a slow transformation, a sustained gaze. Don't use it just because two shots share a location.
+  The first shot of a scene is ALWAYS 'cut'.
 
-- continuityFrom: How this shot relates to the one before it.
-  - 'cut' = HARD CUT. This shot is visually independent — different angle/subject/framing/environment, or the first shot of a scene. Most shots should be 'cut'.
-  - 'prev_shot' = CONTINUOUS. This shot visually flows from the previous one — same subject in same/adjacent framing, camera continuation, or an unbroken motion beat. Only mark 'prev_shot' when the cut is genuinely invisible.
-
-  Use 'prev_shot' sparingly — music videos are mostly hard cuts. The first shot of a scene is ALWAYS 'cut'.
+SEQUENCE THINKING:
+Before writing each shot, look at what you wrote for the previous 2-3 shots. Ask:
+- Am I repeating a camera verb? (If the last shot was a dolly in, don't dolly in again.)
+- Am I stuck at one shot scale? (If the last two were close-ups, go wide or medium.)
+- Does this shot ADVANCE the emotional arc, or just restate the previous beat in a new image?
+- Would a hard cut feel better here, or would continuity from the previous shot create a more powerful moment?
 
 Match the IDs exactly.`;
 
