@@ -429,12 +429,16 @@ For EACH shot, write using the write_shot_prompts tool:
 - visualPrompt: The start frame. 1-2 sentences. This goes to an image model alongside character/environment/style reference IMAGES — so the model already knows the art style, the character faces, the environment. Your job is to describe WHAT we see: the composition, the spatial relationship, what the character is doing, where they are in the space. Write it like you're describing a photograph to a painter who already knows the palette.
   ONLY include characters listed in that shot's Cast field.
   Do NOT include art style, lighting adjectives, or color — the style reference image handles all of that.
+  Honor the scene's real geography. Do not casually invent a corridor, doorway, courtyard, riverbank, or other spatial feature unless the shot direction or scene context clearly calls for it.
+  Avoid overly schematic composition language like "left third," "right third," "perfect symmetry," or diagram-like blocking unless that exact formal composition is the dramatic point.
 
 - motionPrompt: The video instruction. 1 sentence. The video model receives the start frame image and this text — it already SEES the frame. Tell it what changes: character action, camera movement, environmental shift. Be specific about the camera verb (static hold, slow push-in, gentle pan, tracking shot, pull-back). A shot where nothing moves except a flame is a valid choice.
+  Prefer the simplest truthful motion. Do not reach for a dolly, pan, or push-in unless it adds something specific to the beat.
 
 - continuityFrom: 'cut' or 'prev_shot'.
   Use 'cut' when the shot is a new composition — different subject, framing, angle, or environment. This is the default.
   Use 'prev_shot' only when the camera or action genuinely continues from the previous frame — same subject, same or adjacent framing, unbroken motion. Use it for dramatic effect: a reveal, a slow transformation, a sustained gaze. Don't use it just because two shots share a location.
+  If this shot is a direct intensification of the previous moment — for example moving from a face to a detail, or from stillness to a subtle recognition within the same space — strongly consider 'prev_shot'.
   The first shot of a scene is ALWAYS 'cut'.
 
 SEQUENCE THINKING:
@@ -443,6 +447,7 @@ Before writing each shot, look at what you wrote for the previous 2-3 shots. Ask
 - Am I stuck at one shot scale? (If the last two were close-ups, go wide or medium.)
 - Does this shot ADVANCE the emotional arc, or just restate the previous beat in a new image?
 - Would a hard cut feel better here, or would continuity from the previous shot create a more powerful moment?
+- Am I honoring the real spatial world of the scene, or have I lazily invented a prettier but less truthful location detail?
 
 Match the IDs exactly.`,
     source: { file: 'server/services/claude.ts', lines: '634-722' },
