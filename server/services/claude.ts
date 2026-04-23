@@ -313,19 +313,30 @@ const parseTimestamp = (t: string): number => {
 };
 
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string }
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = input.basePacing || 8;
   const minDuration = input.minShotDuration || 4;
 
-  const modeGuidance = input.videoMode === 'cinematic'
-    ? `DIRECTOR STYLE: Cinematic — smooth visual continuity between shots. Each shot should flow into the next (camera moves through space, characters transition between poses, lighting shifts gradually). Favor longer compositions, slow reveals, and connected movement. Shots within a scene share visual momentum.`
-    : `DIRECTOR STYLE: Montage — dynamic cuts, varied angles, visual variety. Each shot is a self-contained moment. Favor striking compositions, bold framing changes, and diverse perspectives. Hard cuts between shots are expected.`;
+  // Song type signal
+  const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
+  const traits = [
+    input.isNarrative ? 'narrative' : null,
+    input.isMeditative ? 'meditative' : null,
+  ].filter(Boolean);
+  const songTypeSignal = typeLabel || traits.length
+    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
+    : '';
 
-  const prompt = `You are a music video director planning a ${input.videoMode} for a devotional song.
+  const modeGuidance = input.videoMode === 'cinematic'
+    ? `DIRECTOR STYLE: Cinematic — fewer, more sustained moments. Stronger continuity between shots, deeper immersion. Each scene builds and breathes.`
+    : `DIRECTOR STYLE: Montage — rhythmic, many discrete moments. Broader coverage of the emotional and spiritual world. Each shot is its own beat.`;
+
+  const prompt = `You are a music video director. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
 
 ${modeGuidance}
+${songTypeSignal}
 
 CONCEPT: ${input.concept.deity || 'Unknown'} — ${input.concept.theme}
 Mood: ${input.concept.mood}
@@ -340,39 +351,42 @@ MUSICAL STRUCTURE: ${input.musicalStructure}
 
 ═══ PACING RULES (CRITICAL — think through this before writing) ═══
 Base shot length: ${pacing} seconds.
-For each scene, calculate: number_of_shots = ceil(scene_duration / ${pacing})
+For each scene: number_of_shots = ceil(scene_duration / ${pacing})
 Every shot is ${pacing}s except the LAST shot which gets the remainder.
 
 Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
-Example: 24s scene at ${pacing}s → ceil(24/${pacing}) = ${Math.ceil(24 / pacing)} shots. 36s → ${Math.ceil(36 / pacing)} shots.
 
-Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.
+Video model minimum clip length: ${minDuration}s. Shots shorter than this get padded — don't adjust shot count to avoid it.
 
-BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots — no more, no fewer.
+BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots.
 ═══════════════════════════════════════════════════════════════════
 ${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
 Plan the full music video using the plan_music_video tool.
 
 CAST rules:
-- Include the deity and key mythological figures by their proper names
-- Description = REUSABLE physical identity for image generation: face, skin tone, build, costume, ornaments, crown/headpiece, jewelry. 2-3 sentences.
-- Do NOT include actions, props held in hands, or scene-specific details — these descriptions generate a neutral reference portrait reused across many shots
-- Include cultural context: "{name}, the {role} from {tradition}" — e.g. "Kolasura, an asura king from Vaishnavite mythology"
-- No art style in descriptions — just what the character looks like
+- Include the deity and key figures by their proper names
+- Description = REUSABLE physical identity: face, skin tone, build, costume, ornaments, crown/headpiece, jewelry. 2-3 sentences.
+- Do NOT include actions, props in hands, or scene-specific details — this generates a neutral reference portrait reused across shots
+- Include cultural context: "{name}, the {role} from {tradition}"
+- No art style — just what the character looks like
 
 ENVIRONMENT rules:
 - Only 2-3 key locations that define the visual world
-- Description = physical space: architecture, landscape, scale, lighting conditions, atmosphere. 2 sentences.
-- Include cultural reference: "inspired by {source}" — e.g. "inspired by Chola-era temple architecture"
+- Description = physical space: architecture, landscape, scale, lighting, atmosphere. 2 sentences.
+- Include cultural reference: "inspired by {source}"
 - No art style — just the place itself
 
 SCENE rules:
 - One scene per musical section — follow the musical structure timestamps exactly
-- narrativeDescription: what happens, 1-2 sentences
-- Each shot: direction (5-10 word creative idea), castNames (from cast list), environmentName (from environment list)
-${input.videoMode === 'cinematic'
-  ? `- Cinematic mode: write shot directions that flow into each other — camera movement continues, characters transition between actions, visual momentum carries across cuts`
-  : `- Montage mode: write shot directions as standalone visual moments — each shot is a distinct composition, bold angle changes, fresh framing`}
+- narrativeDescription: what happens in this scene, 1-2 sentences
+- Each shot needs a direction: WHAT HAPPENS in this moment (the narrative beat, the action, the emotional shift). NOT camera directions — those come later.
+  Good: "Ganesha receives the offering, his expression softens"
+  Good: "Devotee prostrates before the idol, hands trembling"
+  Good: "Each sacred name reveals a different facet of Ganesha's presence in the temple space"
+  Good: "The devotee's offering becomes the bridge between human longing and divine grace"
+  Bad: "Slow dolly in on Ganesha" (that's camera work, not direction)
+  Bad: "Wide establishing shot of temple" (that's framing, not action)
+${input.isMeditative ? '\n- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs.' : ''}
 
 IMPORTANT — character and environment assignment:
 - Every shot MUST have an environmentName from the environment list
@@ -615,7 +629,7 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { styleDNA: string; cast: { name: string; description: string }[]; concept: any; lyrics: string; userNote?: string },
+  context: { styleDNA: string; cast: { name: string; description: string }[]; concept: any; lyrics: string; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = getClient();
@@ -626,7 +640,6 @@ export const writeShotPrompts = async (
 
   const castList = context.cast.map(c => `${c.name}: ${c.description}`).join('\n');
 
-  // If we have tail from previous batch, include as read-only context
   const tailContext = previousBatchTail?.length
     ? `\nPREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\n${previousBatchTail.map(t => `[${t.id}]: visual: "${t.visualPrompt}" | motion: "${t.motionPrompt}"`).join('\n')}\n`
     : '';
@@ -635,7 +648,19 @@ export const writeShotPrompts = async (
     ? `\nUSER DIRECTION (apply to this rewrite): ${context.userNote}\n`
     : '';
 
-  const prompt = `You are a cinematographer writing shot-by-shot prompts for a devotional music video.
+  // Song type signal
+  const typeLabel = context.songType && context.songType !== 'unknown' ? context.songType : null;
+  const traits = [
+    context.isNarrative ? 'narrative' : null,
+    context.isMeditative ? 'meditative' : null,
+  ].filter(Boolean);
+  const songTypeSignal = typeLabel || traits.length
+    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
+    : '';
+
+  const prompt = `You are a cinematographer turning a director's shot list into image and video prompts. The director decided WHAT happens — you decide HOW it looks and moves.
+
+${songTypeSignal}
 
 STYLE DNA (for context, do NOT include in prompts):
 ${context.styleDNA}
@@ -651,15 +676,21 @@ ${shotList}
 For EACH shot, write using the write_shot_prompts tool:
 
 - visualPrompt: What the IMAGE MODEL generates as the start frame. 1-2 sentences.
-  This prompt goes to Gemini alongside character/environment reference images and a style reference. Gemini renders a single cinematic frame from it.
-  Include: composition, character pose/action, environment details.
-  Reference characters by name — their reference images are sent separately, so focus on WHAT they're DOING, not physical description.
-  ONLY include characters listed in that shot's Cast field. If Cast is empty, no characters in the frame.
+  Gemini receives this text alongside character/environment/style reference images and renders a single cinematic frame.
+  Include: composition (wide/medium/close), character pose/action, environment details.
+  Reference characters by name — their reference images handle identity.
+  ONLY include characters listed in that shot's Cast field.
   Do NOT include art style, lighting, or color — the style image handles that.
 
-- motionPrompt: Video model instruction. Sent directly to Veo alongside the start frame image. The model already SEES the frame — just tell it what to animate. Keep it crisp: action + camera in 1 sentence.
+- motionPrompt: Video model instruction. Sent to Veo alongside the start frame. The model already SEES the frame — tell it what to animate. 1 sentence: action + camera.
   Example: "Slow dolly in as Mahalakshmi raises her abhaya mudra, lotus petals drift across frame"
-  Example: "Handheld track following Priya through the market, she pauses at a stall and turns"
+  Example: "Static hold, only the flame flickers and shadows dance on the stone wall"
+
+CINEMATOGRAPHY RULES:
+- Vary your shot types across the sequence. Don't repeat the same framing — alternate wide, medium, and close-up. If the last shot was a close-up, go wide or medium next.
+- Vary camera movement. If you wrote "dolly in" for one shot, don't write "dolly in" for the next. Mix: static holds, pans, tracking shots, push-ins, pull-backs. Static shots are powerful — use them.
+- Match the energy. Low-energy sections → stillness, wide framing, slow or no movement. High-energy sections → tighter framing, faster movement, more action.
+- Each shot should feel like a distinct composition, not a continuation of the same camera setup.
 
 - continuityFrom: How this shot relates to the one before it.
   - 'cut' = HARD CUT. This shot is visually independent — different angle/subject/framing/environment, or the first shot of a scene. Most shots should be 'cut'.

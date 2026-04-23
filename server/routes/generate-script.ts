@@ -43,6 +43,9 @@ router.post('/:id/generate-script', async (req, res) => {
       basePacing: project.target_duration || 8,
       minShotDuration: getModelMinDuration(project.video_model),
       userNote,
+      songType: project.song_type || undefined,
+      isNarrative: project.is_narrative ?? undefined,
+      isMeditative: project.is_meditative ?? undefined,
     });
     const durationMs = Date.now() - t0;
 
@@ -405,6 +408,9 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         concept,
         lyrics: project.lyrics || '',
         userNote,
+        songType: project.song_type || undefined,
+        isNarrative: project.is_narrative ?? undefined,
+        isMeditative: project.is_meditative ?? undefined,
       }, previousBatchTail);
       const prompts = result.shots;
       batchPrompts.push(
