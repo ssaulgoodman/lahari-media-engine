@@ -105,13 +105,12 @@ export const detectStructure = async (
 
 1. "sections" — array of musical sections (max 10). Each: label (Intro/Verse/Chorus/Bridge/Interlude/Outro), startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.
 
-2. "songType" — classify what you HEAR. One of: chant, stotra, bhajan, kirtan, film-song, narrative, unknown.
-   - chant: repetitive devotional recitation, minimal melody
-   - stotra: Sanskrit/sacred verse recitation with simple melodic structure
-   - bhajan: devotional song with verse-chorus or verse-refrain pattern
-   - kirtan: call-and-response devotional singing, building energy
-   - film-song: cinematic/produced devotional song, multiple distinct sections
-   - narrative: multi-section composition with clear dramatic arc
+2. "songType" — classify what you HEAR. One of: stotra, chant, bhajan, kirtan, song, unknown.
+   - stotra: sacred verse recitation, simple melodic structure (covers shloka, stuti)
+   - chant: repetitive mantra recitation, minimal melody
+   - bhajan: devotional song, lyrical, verse-refrain pattern
+   - kirtan: call-and-response communal singing, builds energy
+   - song: produced devotional song, full arrangement, dynamic sections
    - unknown: doesn't fit the above
 
 3. "isNarrative" — true if the song tells a story or has a dramatic arc with distinct emotional shifts. false if it's meditative, repetitive, or maintains a steady devotional mood.
@@ -140,7 +139,7 @@ Return ONLY the JSON object.` }
               required: ['label', 'startTime', 'endTime']
             }
           },
-          songType: { type: Type.STRING, enum: ['chant', 'stotra', 'bhajan', 'kirtan', 'film-song', 'narrative', 'unknown'] },
+          songType: { type: Type.STRING, enum: ['stotra', 'chant', 'bhajan', 'kirtan', 'song', 'unknown'] },
           isNarrative: { type: Type.BOOLEAN },
           isMeditative: { type: Type.BOOLEAN }
         },
