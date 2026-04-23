@@ -100,6 +100,29 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     }
   }, []);
 
+  // Force-download a cross-origin video: fetch the bytes, wrap in an object
+  // URL, and synthesize an <a download>. Using the raw Supabase URL with
+  // `download` attribute doesn't trigger a save because the response isn't
+  // same-origin and lacks `Content-Disposition: attachment`.
+  const triggerDownload = useCallback(async (videoUrl: string) => {
+    try {
+      const res = await fetch(videoUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      const safeTitle = (project.title || 'render').replace(/[^a-z0-9-_]+/gi, '_');
+      a.download = `${safeTitle}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(href), 10_000);
+    } catch (err) {
+      console.error('[auto-download]', err);
+    }
+  }, [project.title]);
+
   const startPolling = useCallback(() => {
     stopPolling();
     pollRef.current = window.setInterval(async () => {
@@ -109,6 +132,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           stopPolling();
           setPhase({ kind: 'done', videoUrl: s.videoUrl });
           refreshHistory();
+          triggerDownload(s.videoUrl);
         } else if (s.status === 'failed') {
           stopPolling();
           setPhase({ kind: 'error', message: s.error || 'Render failed' });
@@ -118,7 +142,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         console.error('[render-status]', err);
       }
     }, POLL_MS);
-  }, [project.id, refreshHistory, stopPolling]);
+  }, [project.id, refreshHistory, stopPolling, triggerDownload]);
 
   // On mount, check whether a render is already in-flight (user might have
   // navigated away and come back) or recently completed.
@@ -131,11 +155,11 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         if (s.status === 'rendering') {
           setPhase({ kind: 'rendering' });
           startPolling();
-        } else if (s.status === 'completed' && s.videoUrl) {
-          setPhase({ kind: 'done', videoUrl: s.videoUrl });
-        } else if (s.status === 'failed') {
-          setPhase({ kind: 'error', message: s.error || 'Render failed' });
         }
+        // Skip 'completed' / 'failed' on mount — those are terminal states
+        // from a past session. The done/error banner should only surface for
+        // renders the user kicked off (or was polling through) in the current
+        // session. Past renders still show up in the History panel.
       } catch {
         // Silent — if the status probe fails we just stay in idle and let
         // the user kick off a render normally.

@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { dispatch } from '@designcombo/events';
-import StateManager, { ADD_VIDEO } from '@designcombo/state';
+import StateManager, { ADD_VIDEO, TIMELINE_SCALE_CHANGED } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
+import { getFitZoomLevel } from './utils';
 import { Upload, Sparkles } from 'lucide-react';
 import Player from './Player';
 import Timeline from './Timeline';
@@ -156,12 +157,118 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
     const durSub = sm.subscribeToDuration(({ duration }: any) => setState({ duration }));
     const scaleSub = sm.subscribeToScale(({ scale }: any) => setState({ scale }));
     const activeSub = sm.subscribeToActiveIds(({ activeIds }: any) => setState({ activeIds }));
+    // Trim/drag on canvas fires timing-only updates — subscribeToState doesn't
+    // cover them, so without these subscriptions the zustand trackItemsMap
+    // keeps the pre-trim ranges and both the Player and the /render payload
+    // play/export the full clip.
+    //
+    // Re-entrancy guard: our own pack-write re-fires this subscription.
+    let packing = false;
+    const timingSub = sm.subscribeToUpdateTrackItemTiming(
+      ({ trackItemsMap, changedTrimIds, changedDisplayIds }: any) => {
+        setState({ trackItemsMap });
+        if (packing) return;
+        // Only repack when a trim actually happened. Delete and other
+        // structural mutations also fan out timing events (sometimes with a
+        // pre-mutation snapshot of the map), and blindly writing back would
+        // resurrect the deleted item.
+        const isTrim =
+          (changedTrimIds && changedTrimIds.length > 0) ||
+          (changedDisplayIds && changedDisplayIds.length > 0);
+        if (!isTrim) return;
+
+      // Trim reflow: trimming is the only timing edit we do, and both
+      // directions need the same treatment:
+      //   - inward  → shrinks the item, leaves a gap, we close it
+      //   - outward → grows the item past its neighbor; @designcombo's
+      //               collision logic hoists it to a brand-new track. We
+      //               fold that back in and just let the width push the
+      //               next clip further right.
+      //
+      // Strategy: pool every video/image item (across any auto-created
+      // tracks), sort by from, pack end-to-end into a single video track.
+      // Audio/transition tracks are left alone.
+      //
+      // Direct updateState rather than EDIT_OBJECT — the latter recomputes
+      // display from playbackRate and corrupts pure translations.
+      const s = sm.getState() as any;
+      const tracks: any[] = s.tracks || [];
+      const map: Record<string, any> = s.trackItemsMap || {};
+
+      const videoTracks = tracks.filter((t) => t.type === 'video' || t.type === 'image');
+      if (videoTracks.length === 0) return;
+      const mainTrack = videoTracks[0];
+
+      const pooled = videoTracks
+        .flatMap((t) => (t.items as string[]).map((id) => map[id]).filter(Boolean))
+        .sort((a, b) => (a.display?.from ?? 0) - (b.display?.from ?? 0));
+
+      const nextMap: Record<string, any> = { ...map };
+      let changed = videoTracks.length > 1; // more than one video track means we need to fold
+      let cursor = 0;
+      const packedIds: string[] = [];
+      for (const it of pooled) {
+        const from = it.display?.from ?? 0;
+        const to = it.display?.to ?? 0;
+        const width = to - from;
+        const needsMove = from !== cursor || it.trackId !== mainTrack.id;
+        if (needsMove) {
+          nextMap[it.id] = {
+            ...it,
+            display: { from: cursor, to: cursor + width },
+            trackId: mainTrack.id,
+          };
+          changed = true;
+        }
+        packedIds.push(it.id);
+        cursor += width;
+      }
+
+      if (!changed) return;
+
+      // Drop the ghost tracks; keep the canonical one with every packed id.
+      const nextTracks = tracks
+        .filter((t) => t === mainTrack || (t.type !== 'video' && t.type !== 'image'))
+        .map((t) => (t === mainTrack ? { ...t, items: packedIds } : t));
+
+      // Total duration = max(video end, audio/other end).
+      let totalDuration = 0;
+      Object.values(nextMap).forEach((it: any) => {
+        const to = it?.display?.to ?? 0;
+        if (to > totalDuration) totalDuration = to;
+      });
+
+      packing = true;
+      try {
+        (sm as any).updateState(
+          {
+            trackItemsMap: nextMap,
+            tracks: nextTracks,
+            duration: totalDuration || 5000,
+          },
+          { kind: 'update', updateHistory: false },
+        );
+      } finally {
+        queueMicrotask(() => {
+          packing = false;
+        });
+      }
+    });
+    const itemDetailsSub = sm.subscribeToUpdateItemDetails(({ trackItemsMap }: any) =>
+      setState({ trackItemsMap }),
+    );
+    const trackItemSub = sm.subscribeToUpdateTrackItem(({ trackItemsMap }: any) =>
+      setState({ trackItemsMap }),
+    );
 
     return () => {
       sub.unsubscribe();
       durSub.unsubscribe();
       scaleSub.unsubscribe();
       activeSub.unsubscribe();
+      timingSub.unsubscribe();
+      itemDetailsSub.unsubscribe();
+      trackItemSub.unsubscribe();
       sm.purge();
       setStateManager(null as any);
     };
@@ -291,6 +398,23 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
         { kind: 'update', updateHistory: false },
       );
       seededKeyRef.current = key;
+
+      // Fit-to-screen after the timeline canvas has rendered. getFitZoomLevel
+      // reads the canvas element's width, so we have to wait a frame for the
+      // DOM to flush. Two rAFs is belt-and-suspenders — the first lets React
+      // commit, the second lets layout settle.
+      if (totalDuration > 0 && (videoItemIds.length || audioItemIds.length)) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (cancelled) return;
+            if (useStore.getState().stateManager !== stateManager) return;
+            const currentZoom = useStore.getState().scale?.zoom ?? 1 / 90;
+            dispatch(TIMELINE_SCALE_CHANGED, {
+              payload: { scale: getFitZoomLevel(totalDuration, currentZoom) },
+            });
+          });
+        });
+      }
     })();
     return () => {
       cancelled = true;
