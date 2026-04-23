@@ -158,7 +158,7 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
     model: 'claude-opus-4-6',
     modelLabel: 'Claude Opus 4.6',
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
-    summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions.',
+    summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Uses song type + meditative/narrative signals to keep devotional songs from drifting into generic plot logic.',
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'concept', description: 'Locked concept (deity, theme, mood)' },
@@ -167,15 +167,18 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds (default 8)' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
+      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'isNarrative', description: 'Has dramatic arc?' },
+      { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `You are a music video director planning a {{videoMode}} for a devotional song.
+    template: `You are a music video director. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
 
-DIRECTOR STYLE (injected based on videoMode):
-- Montage: "dynamic cuts, varied angles, visual variety — each shot is a self-contained moment."
-  Shot directions written as standalone compositions, bold framing changes.
-- Cinematic: "smooth visual continuity — camera movement continues, characters transition between actions."
-  Shot directions written to flow into each other, visual momentum carries across cuts.
+DIRECTOR STYLE:
+- Montage: "rhythmic, many discrete moments, broader coverage of the emotional and spiritual world."
+- Cinematic: "fewer, more sustained moments, stronger continuity, deeper immersion."
+
+SONG TYPE (from audio analysis): {{songType}}, {{traits}}
 
 [concept, lyrics, meaning, musical structure injected]
 
@@ -193,7 +196,19 @@ Errors sent back as tool_result for self-correction (max 3 attempts).
 
 CAST rules: reusable physical identity — face, skin, costume, ornaments.
 No actions, no props in hands (these are for reference portraits, not scenes).
-ENVIRONMENT/SCENE rules same as before — see source.`,
+SCENE rules:
+- Each shot direction should describe WHAT HAPPENS in the moment, not framing or camera movement
+- Good: "Ganesha receives the offering, his expression softens"
+- Good: "Devotee prostrates before the idol, hands trembling"
+- Good: "Each sacred name reveals a different facet of Ganesha's presence in the temple space"
+- Good: "The devotee's offering becomes the bridge between human longing and divine grace"
+- Bad: "Slow dolly in on Ganesha"
+- Bad: "Wide establishing shot of temple"
+{{isMeditative ? "- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs." : ""}}
+- Avoid mechanical alternation between two visual worlds unless the song truly demands it
+- Not every sacred name or attribute needs a literal illustration
+- Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields
+- Build progression across the scene: invocation -> deepening presence -> surrender`,
     source: { file: 'server/services/claude.ts', lines: '303-415' },
   },
   {

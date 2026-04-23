@@ -387,6 +387,10 @@ SCENE rules:
   Bad: "Slow dolly in on Ganesha" (that's camera work, not direction)
   Bad: "Wide establishing shot of temple" (that's framing, not action)
 ${input.isMeditative ? '\n- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs.' : ''}
+- Avoid mechanical alternation between two visual worlds unless the song truly demands it. Let some beats bridge the human and divine, or move from one into the other.
+- Not every sacred name or attribute needs a literal illustration. Some should be felt through atmosphere, ritual action, emotional change, silence, or presence.
+- Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields. Use overt visual effects only when they feel earned by the song.
+- Build progression across the scene: invocation -> deepening presence -> surrender. Each shot should advance the same spiritual movement, not just restate it in a new image.
 
 IMPORTANT — character and environment assignment:
 - Every shot MUST have an environmentName from the environment list
