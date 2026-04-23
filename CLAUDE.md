@@ -51,7 +51,7 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 
 ### Backend route modules
 
-The generate router (`server/routes/generate.ts`) is a thin composition layer that owns param validators, unlocks, and mounts 5 extracted route modules:
+The generate router (`server/routes/generate.ts`) is a thin composition layer that owns param validators, unlocks, and mounts the extracted route modules:
 
 | Module | What |
 |--------|------|
@@ -173,7 +173,7 @@ Every shot tab (First frame / Last frame / Video) follows the same pattern:
 1. **Ref chips** — context-aware references attached to this generation (cast, env, style, continuity, keyframes)
 2. **Prompt textarea** — editable, with `@mention` picker (type `@` → dropdown with Style, characters, environments). What you see is what gets sent.
 3. **Generate button** — tracks dirty state. Shows "Regenerate" when prompt unchanged, full label when edited.
-4. **Refine** — text feedback + optional reference image (photo icon button). Claude (Sonnet) sees the current prompt + generated image + scene narrative + environment + cast descriptions + style DNA + artist's reference image (if attached), rewrites the prompt. Output constrained to 1-3 short sentences (visual) / 1 sentence (motion). Same image attach available on Blueprint character/environment refines.
+4. **Refine** — text feedback + optional reference image (photo icon button). Claude (Sonnet) sees the current prompt plus the relevant images for that task and rewrites the prompt. Frame refine uses the current prompt + failed/generated image + optional director reference. Video refine uses current motion prompt + shot visual prompt + start frame + optional end frame/reference. Same image attach pattern is available on Blueprint character/environment refines.
 
 Refine context per tab:
 - **First frame**: failed image + visual prompt + scene + env + cast + style
@@ -189,7 +189,7 @@ Characters and environments follow the same two-mode pattern:
 1. **Direct edit** — artist edits the `generation_prompt` field directly.
 2. **Refine** — artist writes feedback, Claude rewrites `generation_prompt` from scratch.
 
-`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description + style DNA. When `prompts_stale` is true (style or description changed upstream), the prompt is force-rebuilt from template on next generation — the stale flag is cleared after rebuild.
+`generation_prompt` is the single source of truth. On first gen, it's auto-built from a default template (`buildCharacterPrompt` / `buildEnvironmentPrompt` in `imagen.ts`) + description, with the locked style image used as the visual ground truth during generation. When `prompts_stale` is true (style or description changed upstream), the prompt is force-rebuilt from template on next generation — the stale flag is cleared after rebuild.
 
 ### Error transparency
 

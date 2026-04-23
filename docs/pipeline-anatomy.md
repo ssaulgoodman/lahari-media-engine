@@ -135,7 +135,7 @@ The locked concept is NOT frozen. Three ways to adjust:
 
 ## Step 3: Script Generation
 
-**Source:** [`server/services/claude.ts:156`](../server/services/claude.ts#L156) · Route: `server/routes/generate-script.ts` → `POST /:id/generate-script`
+**Source:** [`server/services/claude.ts` → `planScenes`](../server/services/claude.ts) · Route: `server/routes/generate-script.ts` → `POST /:id/generate-script`
 
 | | |
 |---|---|
@@ -158,9 +158,10 @@ Each shot's creative intent (e.g. "Priya breaks down at her desk, surrenders her
 Artist can split any shot >4s in the script phase (↕ button). Creates a new shot with half the duration, empty prompt, same cast/env, same `direction`. Both halves marked stale. Duration is **read-only** — only changeable via pacing selection (regenerates script), split button, or model change. Endpoint: `POST /:id/shots/:shotId/split`.
 
 **Director mode (Montage vs Cinematic):**
-Claude receives explicit guidance based on the chosen mode:
-- **Montage**: "dynamic cuts, varied angles, visual variety — each shot is a self-contained moment." Shot directions written as standalone compositions.
-- **Cinematic**: "smooth visual continuity — camera movement continues, characters transition between actions." Shot directions written to flow into each other. Backend sets `use_next_as_end_frame = 1` for chained continuity.
+Claude receives explicit structural guidance based on the chosen mode:
+- **Montage**: rhythmic, many discrete moments, broader coverage of the emotional and spiritual world
+- **Cinematic**: fewer, more sustained moments, stronger continuity, deeper immersion
+`planScenes` is told to decide **what happens**, not camera movement. Backend still sets `use_next_as_end_frame = 1` for cinematic continuity handling.
 
 **Two generation modes:**
 
@@ -285,28 +286,30 @@ Claude receives explicit guidance based on the chosen mode:
 
 ## Step 7: Shot Prompts (Bulk Write)
 
-**Source:** [`server/services/claude.ts:301`](../server/services/claude.ts#L301) · Route: `server/routes/generate-script.ts` → `POST /:id/write-shot-prompts`
+**Source:** [`server/services/claude.ts` → `writeShotPrompts`](../server/services/claude.ts) · Route: `server/routes/generate-script.ts` → `POST /:id/write-shot-prompts`
 
 | | |
 |---|---|
 | **Model** | Claude Opus (claude.ts → `writeShotPrompts`) |
-| **Input** | All shots with direction + cast + scene context + style DNA + optional `userNote` |
+| **Input** | All shots with direction + duration + cast + scene narrative + scene lyrics + songType/isNarrative/isMeditative + optional `userNote` + previousBatchTail |
 | **Output** | `visual_prompt` + `motion_prompt` + `continuityFrom` per shot |
 | **Artist control** | `userNote` on bulk gen. Individual shot prompts editable after. Individual refine with feedback. |
 | **Prompt visible** | Saved to `last_write_shots_prompt` |
 
 **Status: DONE** — clears `prompts_stale` on each shot after writing. The OUTPUTS (individual visual/motion prompts) are the artist's workspace.
 
-**Critical insight — model-aware prompting:**
-Claude writes `visual_prompt` (start frame for Gemini image gen) and `motion_prompt` (video instruction for Veo). Each is purpose-built for its downstream model. Claude knows: visualPrompt describes the still frame for the image model; motionPrompt tells the video model what to animate (the model already sees the start frame). No second LLM call — quality depends on how well Claude writes for these specific models.
+**Current prompt contract:**
+Claude writes:
+- `visual_prompt` = start-frame description for the image model
+- `motion_prompt` = action + camera instruction for the video model
+- `continuity_from` = `cut` vs `prev_shot`
 
-**Fix plan — model best practices injection:**
-- Define best practices per model in a single config — Gemini image gen techniques, Veo/Seedance motion prompt patterns
-- Inject into ALL prompt builders: `buildCharacterPrompt`, `buildEnvironmentPrompt`, `buildStylePrompt`, `generateShotStartFrame`, `generateShotEndFrame`, `writeShotPrompts` (shot writer), video prompt builder
-- Currently each has hardcoded boilerplate ("cinematic lighting", "no watermark", "avoid AI look") — extract into the shared config
-- One place to edit → flows everywhere. Team refines as they learn what works per model.
-- Future: auto-learn from prompt→output quality data (the autoresearch loop)
-- No extra LLM call needed — just better instructions to existing calls
+The prompt now stays intentionally lean:
+- no style DNA
+- no full lyrics dump
+- no heavy concept block beyond mood + song-type signal
+- meditative guidance only when `isMeditative = true`
+- explicit sequence-thinking checks to avoid repeated camera verbs / scales and to choose continuity deliberately
 
 **Gaps:**
 - [ ] Shot writer is model-agnostic — needs model-specific best practices
@@ -318,7 +321,7 @@ Claude writes `visual_prompt` (start frame for Gemini image gen) and `motion_pro
 
 ## Step 8: Frame Generation (per shot)
 
-**Source:** [`server/services/imagen.ts:364`](../server/services/imagen.ts#L364) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
+**Source:** [`server/services/imagen.ts` → `generateShotStartFrame`](../server/services/imagen.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
 
 Refine: [`server/services/claude.ts`](../server/services/claude.ts) (`refineFramePrompt`) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-prompt`
 
@@ -330,7 +333,7 @@ Refine: [`server/services/claude.ts`](../server/services/claude.ts) (`refineFram
 | **Artist control** | Full — edit visual_prompt in "First frame" tab, @mention cast/env/style, refine with plain text feedback |
 | **generation_prompt** | `visual_prompt` IS the prompt (plus refs chain) |
 
-**Refine context:** Claude Sonnet sees failed image + director's feedback + current prompt + optional reference image. No style/scene/character context — Claude applies the director's edit to the prompt text. Output: rewritten `visualPrompt` (1-3 sentences). Uses `refineFramePrompt`.
+**Refine context:** Claude Sonnet sees failed/generated image + director's feedback + current prompt + optional reference image. No extra style/scene/character dump — Claude applies the edit directly to the prompt text. Output: rewritten `visualPrompt` (1-3 sentences). Uses `refineFramePrompt`.
 
 **Hardcoded in template:** "Preserve character identity from character references", "Render in the style of the style reference image", "Single cinematic frame. No text, no watermark."
 
@@ -340,19 +343,19 @@ Refine: [`server/services/claude.ts`](../server/services/claude.ts) (`refineFram
 
 ## Step 9: End Frame (per shot)
 
-**Source:** [`server/services/imagen.ts:448`](../server/services/imagen.ts#L448) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-end-frame`
+**Source:** [`server/services/imagen.ts` → `generateShotEndFrame`](../server/services/imagen.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-end-frame`
 
 Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-end-frame-prompt`
 
 | | |
 |---|---|
 | **Model** | Gemini 3 Pro Image (imagen.ts → `generateShotEndFrame`) |
-| **Input** | start frame + end_visual_prompt + motion_prompt + style + feedback |
+| **Input** | start frame + end_visual_prompt + motion_prompt + style image + optional refs + feedback |
 | **Output** | End frame image (target for video gen) |
 | **Artist control** | `end_visual_prompt` — visible/editable in "Last frame" tab, AI refine with feedback |
 | **generation_prompt** | `end_visual_prompt` on the shot |
 
-**Refine context:** Same as start frame — `refineFramePrompt` with `[END FRAME]` prefix. Claude sees end frame image (if exists) + director's feedback + current prompt. No style/scene/character context. Works without existing end image (prompt-only refine).
+**Refine context:** Same refine helper as start frame. Claude sees the end frame image (if it exists) + director feedback + current prompt + optional reference image. Works without an existing end image (prompt-only refine).
 
 **Reverse chain:** "Use as prev shot's end" copies start frame image AND `visual_prompt` → prev shot's `end_image_asset_id` + `end_visual_prompt`.
 
@@ -483,4 +486,4 @@ The pipeline anatomy IS the agent's knowledge base. Every field mapping, every d
 
 ---
 
-*Last updated: 2026-04-17*
+*Last updated: 2026-04-23*

@@ -1,5 +1,7 @@
 # Prompt Bible — Lahari Media Engine
 
+> Historical prompt notes. Some examples here still reflect older style-DNA-heavy payloads and pre-cleanup prompt contracts. For the current prompt source of truth, use [`server/prompts/catalog.ts`](../server/prompts/catalog.ts) and the living pipeline trace in [`docs/pipeline-anatomy.md`](./pipeline-anatomy.md).
+
 Every AI prompt in the pipeline, in execution order. Edit here, then inject back into code.
 
 ---

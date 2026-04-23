@@ -1,5 +1,7 @@
 # Lahari Media Engine — Pipeline Schematic
 
+> Historical design notes. Some prompt payload examples and style-DNA references in this file are older than the current runtime. For the current end-to-end pipeline, use [`docs/pipeline-anatomy.md`](./pipeline-anatomy.md). For current prompt contracts, use [`server/prompts/catalog.ts`](../server/prompts/catalog.ts).
+
 Every AI call, its inputs, outputs, what gets saved, and how data flows between stages.
 
 ---
