@@ -380,6 +380,12 @@ export const BlueprintContextBar: React.FC<Props> = ({
                       </button>
                     </div>
                   )}
+                  {songTypeLabel && (
+                    <div>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Song classification</h4>
+                      <span className="text-sm text-white">{songTypeLabel}</span>
+                    </div>
+                  )}
                   {project.meaning && (
                     <div>
                       <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Meaning</h4>
