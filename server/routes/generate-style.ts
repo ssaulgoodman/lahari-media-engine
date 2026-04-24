@@ -6,9 +6,9 @@ import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectColumns, insertRow, updateRows } from '../database.js';
-import { readAsBase64, mimeFromExt, saveBuffer, storageUrl } from '../storage.js';
+import { saveBuffer, storageUrl } from '../storage.js';
 import { buildStylePrompt } from '../services/imagen.js';
-import { brainstormStyleDirections, refineStyleDirection, enrichStyleDNA, analyzeImageStyle } from '../services/claude.js';
+import { brainstormStyleDirections, refineStyleDirection, analyzeImageStyle } from '../services/claude.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -25,7 +25,6 @@ export const mountStyleRoutes = (router: Router) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const concept = JSON.parse(project.locked_concept || '{}');
-    const structure = JSON.parse(project.musical_structure || '[]');
     const { userNotes } = req.body;
 
     try {
@@ -38,7 +37,6 @@ export const mountStyleRoutes = (router: Router) => {
 
       const directions = await brainstormStyleDirections(
         project.lyrics || '',
-        structure,
         project.meaning || '',
         concept,
         userNotes,
@@ -82,11 +80,9 @@ export const mountStyleRoutes = (router: Router) => {
     const { prompt: stylePrompt } = req.body;
     if (!stylePrompt) return res.status(400).json({ error: 'prompt required' });
 
-    let genPrompt = project.style_generation_prompt as string | null;
-    if (!genPrompt) {
-      genPrompt = buildStylePrompt(stylePrompt, concept.deity || project.title);
-      await updateRows('projects', { id: project.id }, { style_generation_prompt: genPrompt });
-    }
+    // Build prompt fresh per slot — no project-level cache.
+    // Each direction gets its own prompt from its own description.
+    const genPrompt = buildStylePrompt(stylePrompt, concept.deity || project.title);
 
     try {
       console.log(`[${project.id}] Visualizing style direction...`);
@@ -178,36 +174,12 @@ export const mountStyleRoutes = (router: Router) => {
     if (!assetId) return res.status(400).json({ error: 'assetId required' });
 
     const projectId = paramStr(req.params.id);
-    const asset = await requireAsset(projectId, assetId);
-
-    let enrichedDescription = styleDescription || '';
-    try {
-      console.log(`[${projectId}] Enriching style DNA...`);
-      const t0 = Date.now();
-      const imageBase64 = await readAsBase64(asset.file_path);
-      const mimeType = mimeFromExt(asset.file_path);
-      enrichedDescription = await enrichStyleDNA(imageBase64, mimeType, styleDescription || '');
-      const durationMs = Date.now() - t0;
-
-      await logCall({
-        projectId,
-        stage: 'enrich-style-dna',
-        model: 'claude-sonnet-4-6',
-        prompt: `Enrich style DNA from locked image | Short desc: ${(styleDescription || '').substring(0, 100)}`,
-        referenceInputs: [{ type: 'image', label: 'Locked style image', url: storageUrl(asset.file_path) }],
-        contextChain: await buildContextChain(projectId),
-        responseSummary: enrichedDescription.substring(0, 300),
-        durationMs,
-        costEstimate: 0.01,
-      });
-    } catch (err) {
-      console.error('[lock-style] Style DNA enrichment failed, using short description:', err);
-    }
+    await requireAsset(projectId, assetId);
 
     await updateRows('projects', { id: projectId }, {
       status: 'style_locked',
       style_asset_id: assetId,
-      style_description: enrichedDescription,
+      style_description: styleDescription || '',
       updated_at: new Date().toISOString(),
     });
 
