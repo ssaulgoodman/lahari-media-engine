@@ -164,10 +164,18 @@ export const generateStyleOptions = async (
  */
 /**
  * Build the default style visualization prompt from description + subject.
- * Saved to `style_generation_prompt` on first gen, then editable by the artist.
+ * Produces a reusable style reference frame — not a scene, character portrait, or poster.
  */
 export const buildStylePrompt = (styleDescription: string, subject: string): string => {
-  return `Cinematic film still showcasing a specific visual style. ${styleDescription}. The scene evokes the world of ${subject}. Focus entirely on lighting, atmosphere, color, texture, and visual style. High production value, no text, no watermark.\n\nAvoid: overly AI/CGI look, excessive intricate details, generic fantasy aesthetic. Should feel like a real film frame.`;
+  return `Create one reusable visual style reference frame for an Indian devotional music video about ${subject}. ${styleDescription}
+
+The image should demonstrate the style system clearly: lighting behavior, color palette, texture or medium, rendering approach, and atmosphere. Use a devotional visual motif or environment detail, but keep the focus on style rather than story.
+
+It may be photographic, painterly, illustrated, miniature-inspired, or mixed-media if the style direction calls for it. High production value, no text, no watermark.
+
+Do not make a character portrait, storyboard frame, poster, collage, or narrative scene. Keep the composition clean enough that the visual treatment is easy to read and reuse downstream.
+
+Avoid: generic AI fantasy, muddy over-detailing, random divine VFX, incoherent cultural references.`;
 };
 
 export const generateSingleStyleImage = async (
