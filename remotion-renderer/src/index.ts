@@ -5,6 +5,7 @@ import { unlink } from 'node:fs/promises';
 import { renderTimeline } from './render';
 import { uploadRender } from './storage';
 import { shutdownPosthog, track, trackError } from './posthog';
+import { runBootBenchmark } from './benchmark';
 import type { TimelineRenderProps } from './Video';
 
 const app = new Hono();
@@ -219,4 +220,7 @@ const port = Number(process.env.PORT ?? 3030);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[remotion-renderer] listening on :${info.port}`);
   void pingMainBackend();
+  // Gated so local `npm run dev` doesn't pay the ~15s bundle cost every restart.
+  // docker-compose sets this in .env / environment block for prod containers.
+  if (process.env.RUN_BOOT_BENCHMARK === '1') void runBootBenchmark();
 });

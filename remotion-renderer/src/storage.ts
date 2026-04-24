@@ -34,7 +34,12 @@ export const uploadRender = async (
     contentType: 'video/mp4',
     upsert: false,
   });
-  if (error) throw new Error(`Supabase upload failed: ${error.message}`);
+  if (error) {
+    console.error('[storage] upload failed', { key, sizeBytes: buf.byteLength, error });
+    throw new Error(
+      `Supabase upload failed (${buf.byteLength} bytes): ${JSON.stringify(error)}`,
+    );
+  }
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(key);
   return { path: key, publicUrl: data.publicUrl, sizeBytes: buf.byteLength };

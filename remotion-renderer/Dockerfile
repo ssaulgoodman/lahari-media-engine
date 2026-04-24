@@ -33,6 +33,7 @@ RUN npx remotion browser ensure
 
 ENV NODE_ENV=production
 ENV PORT=3030
+ENV RUN_BOOT_BENCHMARK=1
 EXPOSE 3030
 
 CMD ["npm", "start"]

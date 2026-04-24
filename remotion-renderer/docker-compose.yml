@@ -13,6 +13,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3030
+      RUN_BOOT_BENCHMARK: "1"
     shm_size: "1gb"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3030/health"]

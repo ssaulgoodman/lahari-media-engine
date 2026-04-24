@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
     "studio": "remotion studio src/entry.tsx",
-    "sync-timeline": "node scripts/sync-timeline.mjs"
+    "sync-timeline": "node scripts/sync-timeline.mjs",
+    "benchmark": "remotion benchmark src/entry.tsx LahariTimeline"
   },
   "dependencies": {
     "@designcombo/transitions": "^5.5.8",
