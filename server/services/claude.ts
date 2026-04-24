@@ -401,7 +401,8 @@ IMPORTANT — character and environment assignment:
     const response = await client.messages.create({
       model: OPUS,
       max_tokens: 16384,
-      thinking: { type: 'enabled', budget_tokens: 8192 },
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'high' } as any,
       tools: [SCRIPT_TOOL],
       messages,
     });
@@ -556,7 +557,8 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
     const response = await client.messages.create({
       model: OPUS,
       max_tokens: 16384,
-      thinking: { type: 'enabled', budget_tokens: 8192 },
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'high' } as any,
       tools: [SCRIPT_TOOL],
       messages,
     });
