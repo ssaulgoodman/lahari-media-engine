@@ -105,7 +105,7 @@ export const mountStyleRoutes = (router: Router) => {
         projectId: project.id,
         stage: 'visualize-style',
         model: getImageGenerationModelName(project.image_model),
-        prompt: stylePrompt,
+        prompt: genPrompt,
         contextChain: await buildContextChain(project.id),
         responseSummary: `Generated style image`,
         outputAssetIds: [assetId],
