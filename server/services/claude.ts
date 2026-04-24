@@ -807,19 +807,21 @@ ${userNotes ? `USER DIRECTION: All 4 must be variations within this preference:\
 
 Propose 4 distinct visual style directions using the propose_style_directions tool.
 
-Each direction should feel like a different film — different DP, era, artistic movement.
+Each direction must produce a visibly different reference image: vary color temperature, medium/rendering approach, lighting behavior, and artistic/cultural reference.
+Do not let all four directions collapse into warm, dark, temple-chiaroscuro variants.
+Photographic, painterly, illustrated, miniature-inspired, or mixed-media directions are all welcome if specific and culturally respectful.
 
-For each: a title (2-5 words) and description (2 short punchy sentences, keyword-heavy).
+For each: a title (2-5 words) and description (2 short punchy sentences, concrete and compact).
 
 Description covers ONLY transferable visual treatment: lighting, color palette, texture/medium, cultural references.
 Do NOT describe characters, scenes, environments, or narrative.
 These descriptions will be used as image generation prompts — be concrete, not literary.
 
 QUALITY GUIDELINES for the image generation downstream:
-- Avoid overly AI/CGI/fantasy look — should feel cinematic and grounded
+- Avoid overly AI/CGI/fantasy look — should feel cinematic or painterly, grounded and intentional
 - Avoid excessive intricate details that muddy the image — every element should have clear intention
-- If stylized, it should be tasteful and deliberate, not generic digital art
-- Think film stills, not concept art`;
+- If stylized, it should be tasteful and deliberate, not generic digital art or AI slop
+- Think intentional reference image, not generic concept art`;
 
   const response = await client.messages.create({
     model: OPUS,
@@ -836,7 +838,7 @@ QUALITY GUIDELINES for the image generation downstream:
               type: 'object',
               properties: {
                 title: { type: 'string', description: 'Short evocative label (2-5 words, e.g. "Baroque Candlelight")' },
-                description: { type: 'string', description: '2 short punchy sentences, keyword-heavy. Cover: lighting, color palette, texture/medium, cultural references. No characters — purely visual STYLE.' }
+                description: { type: 'string', description: '2 short punchy sentences, concrete and compact. Cover: lighting, color palette, texture/medium, cultural references. No characters — purely visual STYLE.' }
               },
               required: ['title', 'description']
             }
