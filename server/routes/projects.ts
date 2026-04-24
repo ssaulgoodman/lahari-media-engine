@@ -358,6 +358,7 @@ const getFullProject = async (projectId: string) => {
     songType: project.song_type || null,
     isNarrative: project.is_narrative ?? null,
     isMeditative: project.is_meditative ?? null,
+    analysisStep: project.analysis_step || null,
     conceptOptions: project.concept_options ? JSON.parse(project.concept_options) : [],
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
     styleDescription: project.style_description,

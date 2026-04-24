@@ -144,18 +144,22 @@ router.post('/:queueId/start', async (req, res) => {
 
     // ─── Background: audio download + SRT + transcription + analysis ───
     (async () => {
+      const setStep = (step: string) => updateRows('projects', { id: projectId }, { analysis_step: step });
+
       // Download audio first — needed for analysis and playback.
       // If this fails, the project is unusable — set error status.
       let audioPath: string;
       try {
+        await setStep('Downloading audio');
         const audioBuffer = await downloadFile(audioUrl);
         const ext = audioUrl.includes('.wav') ? 'wav' : audioUrl.includes('.m4a') ? 'm4a' : 'wav';
         audioPath = await saveBuffer(audioBuffer, 'audio', ext);
-        await updateRows('projects', { id: projectId }, { audio_path: audioPath });
+        await updateRows('projects', { id: projectId }, { audio_path: audioPath, analysis_step: 'Audio ready' });
       } catch (err: any) {
         console.error(`[queue ${projectId}] audio download failed:`, err);
         await updateRows('projects', { id: projectId }, {
           status: 'error',
+          analysis_step: 'Audio download failed',
           updated_at: new Date().toISOString(),
         });
         return;
@@ -163,7 +167,7 @@ router.post('/:queueId/start', async (req, res) => {
 
       // If analysis is fully cached, promote to analyzed now that audio is attached
       if (hasCachedAnalysis) {
-        await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });
+        await updateRows('projects', { id: projectId }, { status: 'analyzed', analysis_step: null, updated_at: new Date().toISOString() });
         console.log(`[queue] Using cached analysis for ${item.song_name}, audio downloaded in background`);
         return;
       }
@@ -177,6 +181,7 @@ router.post('/:queueId/start', async (req, res) => {
           || files.find(f => f.file_type === 'srt_turbo_scribe');
 
         if (srtFile) {
+          await setStep('Reading lyrics from SRT');
           try {
             const srtBuffer = await downloadFile(srtFile.storage_url);
             lyrics = parseSrtToTimestamped(srtBuffer.toString('utf-8'));
@@ -185,6 +190,7 @@ router.post('/:queueId/start', async (req, res) => {
           }
         }
         if (!lyrics) {
+          await setStep('Transcribing lyrics from audio');
           try {
             const audioBase64 = await readAsBase64(audioPath);
             const audioMime = mimeFromExt(audioPath);
@@ -200,6 +206,7 @@ router.post('/:queueId/start', async (req, res) => {
           await updateRows('projects', { id: projectId }, { lyrics });
         }
 
+        await setStep('Detecting structure + summarizing meaning');
         const audioBase64 = await readAsBase64(audioPath);
         const audioMime = mimeFromExt(audioPath);
         const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
@@ -251,6 +258,7 @@ router.post('/:queueId/start', async (req, res) => {
         const structureJson = JSON.stringify(musicalStructure);
         await updateRows('projects', { id: projectId }, {
           status: 'analyzed',
+          analysis_step: null,
           lyrics: lyrics || null,
           musical_structure: structureJson,
           song_type: songType,
@@ -276,6 +284,7 @@ router.post('/:queueId/start', async (req, res) => {
         console.error(`[queue ${projectId}] background analysis failed:`, err);
         await updateRows('projects', { id: projectId }, {
           status: 'analyzed',
+          analysis_step: null,
           updated_at: new Date().toISOString(),
         });
       }

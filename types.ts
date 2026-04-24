@@ -148,6 +148,7 @@ export interface ApiProject {
   songType?: string;
   isNarrative?: boolean;
   isMeditative?: boolean;
+  analysisStep?: string;
   imageModel: string;
   videoModel: string;
   aspectRatio: '16:9' | '9:16' | '1:1';

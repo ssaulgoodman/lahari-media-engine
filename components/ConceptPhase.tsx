@@ -37,8 +37,8 @@ export const ConceptPhase: React.FC<Props> = ({
         <div className="surface rounded-xl p-4 border border-amber-400/20 flex items-center gap-3">
           <div className="w-4 h-4 border-2 border-zinc-600 border-t-amber-400 rounded-full animate-spin flex-shrink-0"></div>
           <div>
-            <p className="text-sm text-white font-medium">Analyzing audio...</p>
-            <p className="text-[11px] text-zinc-400 mt-0.5">Detecting musical structure and meaning. You can listen to the song while this runs.</p>
+            <p className="text-sm text-white font-medium">{project.analysisStep || 'Analyzing audio'}...</p>
+            <p className="text-[11px] text-zinc-400 mt-0.5">{project.audioPath ? 'You can listen to the song while this runs.' : 'Downloading audio and preparing analysis.'}</p>
           </div>
         </div>
       )}
