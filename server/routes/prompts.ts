@@ -12,7 +12,6 @@ const STAGE_AI_CALL_MAP: Record<string, string[]> = {
   'plan-scenes':             ['script', 'generate-script'],
   'brainstorm-style-directions': ['style-brainstorm', 'brainstorm-styles'],
   'refine-style-direction':  ['style-refine'],
-  'enrich-style-dna':        ['style-enrich', 'analyze-style-image'],
   'character-look':          ['character-look', 'generate-looks'],
   'environment-look':        ['environment-look', 'generate-environment-look'],
   'write-shot-prompts':      ['write-shot-prompts', 'shot-prompts'],
