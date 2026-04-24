@@ -365,16 +365,29 @@ export const PromptToolkit: React.FC<PromptToolkitProps> = ({
               <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
                 Refine — describe what's wrong, Claude rewrites the prompt
               </div>
-              {/* Attached reference image preview */}
-              {refineImage && (
-                <div className="flex items-center gap-2">
-                  <img src={refineImage.previewUrl} className="w-10 h-10 rounded object-cover border border-white/[0.08]" alt="Reference" />
-                  <span className="text-[11px] text-zinc-400">Reference attached</span>
-                  <button onClick={() => { URL.revokeObjectURL(refineImage.previewUrl); setRefineImage(null); }} className="text-zinc-500 hover:text-red-400 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                </div>
-              )}
+              {/* Context images Claude will see */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {(() => {
+                  const contextUrl = isFirstFrame ? shot.imageUrl
+                    : isEndFrame ? (shot.endImageUrl || shot.extractedLastFrameUrl)
+                    : shot.imageUrl; // video tab: start frame as context
+                  return contextUrl ? (
+                    <div className="flex items-center gap-1.5">
+                      <img src={contextUrl} className="w-8 h-8 rounded object-cover border border-white/[0.08] opacity-70" alt="Current" />
+                      <span className="text-[10px] text-zinc-500">{isVideo ? 'Start frame' : 'Current'}</span>
+                    </div>
+                  ) : null;
+                })()}
+                {refineImage && (
+                  <div className="flex items-center gap-1.5">
+                    <img src={refineImage.previewUrl} className="w-8 h-8 rounded object-cover border border-amber-400/30" alt="Reference" />
+                    <span className="text-[10px] text-zinc-400">Your ref</span>
+                    <button onClick={() => { URL.revokeObjectURL(refineImage.previewUrl); setRefineImage(null); }} className="text-zinc-500 hover:text-red-400 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-2">
                 <AutoGrowTextarea
                   id={`refine-${activeTab}-${shot.id}`}
