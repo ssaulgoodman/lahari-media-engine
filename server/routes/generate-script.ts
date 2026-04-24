@@ -327,7 +327,7 @@ router.post('/:id/refine-script', async (req, res) => {
         await insertRow('shots', {
           id: uuidv4(), scene_id: sceneId,
           direction: shot.direction || '',
-          visual_prompt: shot.direction, duration,
+          visual_prompt: '', motion_prompt: '', duration,
           cast_ids: JSON.stringify(castIds),
           environment_id: envId || null,
           sort_order: shIdx, image_status: 'idle', video_status: 'idle',
