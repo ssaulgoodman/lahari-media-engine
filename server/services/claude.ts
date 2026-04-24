@@ -783,9 +783,21 @@ export const brainstormStyleDirections = async (
   meaning: string,
   concept: any,
   userNotes?: string,
-  scriptSummary?: string
+  scriptSummary?: string,
+  songType?: string,
+  isNarrative?: boolean,
+  isMeditative?: boolean,
 ): Promise<{ title: string; description: string }[]> => {
   const client = getClient();
+
+  const typeLabel = songType && songType !== 'unknown' ? songType : null;
+  const traits = [
+    isNarrative ? 'narrative' : null,
+    isMeditative ? 'meditative' : null,
+  ].filter(Boolean);
+  const songTypeSignal = typeLabel || traits.length
+    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
+    : '';
 
   const prompt = `You are a Director of Photography designing the visual language for an Indian devotional music video.
 
@@ -795,6 +807,7 @@ These descriptions will be used as prompts for Gemini image generation.
 SONG: ${concept.deity || 'Unknown'} — ${concept.theme || 'Unknown'}
 Mood: ${concept.mood || 'Unknown'}
 Language: ${concept.language || 'Unknown'}
+${songTypeSignal}
 
 LYRICS:
 ${(lyrics || '').substring(0, 3000)}

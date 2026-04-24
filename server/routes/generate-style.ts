@@ -40,7 +40,10 @@ export const mountStyleRoutes = (router: Router) => {
         project.meaning || '',
         concept,
         userNotes,
-        scriptSummary
+        scriptSummary,
+        project.song_type || undefined,
+        project.is_narrative ?? undefined,
+        project.is_meditative ?? undefined,
       );
       const durationMs = Date.now() - t0;
 
