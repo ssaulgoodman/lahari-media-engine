@@ -1,8 +1,10 @@
 # Based on https://www.remotion.dev/docs/docker — Chromium + ffmpeg + Node.
 FROM node:22-bookworm-slim
 
-# Install Chromium runtime libs (Remotion uses headless Chromium for rendering)
-# and ffmpeg for the encode pass.
+# Install Chromium runtime libs (Remotion uses headless Chromium for rendering),
+# ffmpeg for the encode pass, and Python (Modal/RunPod handlers are ~30-line
+# Python scripts that shell out to `tsx src/render-job.ts`). CapRover/local
+# never execute Python — `CMD ["npm", "start"]` below stays the default entry.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg \
@@ -12,8 +14,14 @@ RUN apt-get update && \
       libxcomposite1 libxdamage1 libxrandr2 libgbm1 libxss1 \
       libasound2 libnspr4 libpangocairo-1.0-0 libcups2 \
       libxshmfence1 libglib2.0-0 libgtk-3-0 \
+      python3 python3-pip \
       wget xdg-utils && \
     rm -rf /var/lib/apt/lists/*
+
+# Modal & RunPod Python SDKs. --break-system-packages opts out of Debian 12's
+# PEP 668 lock so pip can install into the system interpreter; safe in a
+# container image. In its own layer so it caches across source changes.
+RUN pip3 install --break-system-packages --no-cache-dir modal runpod
 
 WORKDIR /app
 

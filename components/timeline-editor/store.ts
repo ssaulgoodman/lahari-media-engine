@@ -19,11 +19,30 @@ interface ITimelineStore {
   trackItemsMap: Record<string, ITrackItem>;
   activeIds: string[];
   size: { width: number; height: number };
+  // Mirrors stateManager.getStateHistory() — populated by a subscribeToHistory
+  // wiring in TimelineEditor. Exposed on the store so consumers (StepRender
+  // header) can drive disabled state on Undo/Redo buttons reactively.
+  canUndo: boolean;
+  canRedo: boolean;
+  // Timestamp (ms) of the most recent successful localStorage snapshot write,
+  // or null if nothing is saved for the current project. Drives the "Saved"
+  // pill (tooltip exposes the exact time — no per-second ticker).
+  lastSavedAt: number | null;
+  // Project id published by TimelineEditor on mount so the Header (which is
+  // several layers down) can save/clear snapshots without prop-drilling.
+  projectId: string | null;
+  // Monotonic counter — bumping it re-runs the seed effect and re-seeds from
+  // initialClips. Reset button in Header bumps this after clearSnapshot.
+  resetToken: number;
   setStateManager: (s: StateManager) => void;
   setTimeline: (t: CanvasTimeline) => void;
   setPlayerRef: (r: React.RefObject<PlayerRef> | null) => void;
   setScale: (s: ITimelineScaleState) => void;
   setState: (partial: Partial<ITimelineStore>) => void;
+  setHistory: (canUndo: boolean, canRedo: boolean) => void;
+  setLastSavedAt: (ts: number | null) => void;
+  setProjectId: (id: string | null) => void;
+  bumpResetToken: () => void;
   addTransition: (transition: ITransition) => void;
   removeTransition: (transitionId: string) => void;
 }
@@ -43,11 +62,20 @@ const useStore = create<ITimelineStore>((set, get) => ({
   trackItemsMap: {},
   activeIds: [],
   size: { width: 1920, height: 1080 },
+  canUndo: false,
+  canRedo: false,
+  lastSavedAt: null,
+  projectId: null,
+  resetToken: 0,
   setStateManager: (stateManager) => set({ stateManager }),
   setTimeline: (timeline) => set({ timeline }),
   setPlayerRef: (playerRef) => set({ playerRef }),
   setScale: (scale) => set({ scale }),
   setState: (partial) => set(partial as any),
+  setHistory: (canUndo, canRedo) => set({ canUndo, canRedo }),
+  setLastSavedAt: (lastSavedAt) => set({ lastSavedAt }),
+  setProjectId: (projectId) => set({ projectId }),
+  bumpResetToken: () => set((s) => ({ resetToken: s.resetToken + 1 })),
 
   addTransition: (transition) => {
     const { transitionIds, transitionsMap, stateManager } = get();

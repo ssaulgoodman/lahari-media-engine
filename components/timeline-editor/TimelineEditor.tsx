@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { dispatch } from '@designcombo/events';
-import StateManager, { ADD_VIDEO, TIMELINE_SCALE_CHANGED } from '@designcombo/state';
+import StateManager, {
+  ADD_VIDEO,
+  TIMELINE_SCALE_CHANGED,
+  HISTORY_UNDO,
+  HISTORY_REDO,
+} from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
 import { getFitZoomLevel } from './utils';
 import { Upload, Sparkles } from 'lucide-react';
@@ -9,6 +14,7 @@ import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
 import useStore from './store';
 import useTimelineEvents from './use-timeline-events';
+import { loadSnapshot, saveSnapshot, clearSnapshot } from './persistence';
 
 export type InitialClip = { src: string; name?: string };
 
@@ -25,6 +31,12 @@ interface Props {
   // the upload toolbar becomes a compact corner control. For embedding in
   // another page (e.g. StepRender) as a live preview.
   embedded?: boolean;
+  // When set, enables client-side persistence: on mount we try to restore
+  // the saved snapshot for this project, and subsequent edits auto-save
+  // (debounced) to localStorage. Omit for ephemeral use. The id is also
+  // mirrored into the store so the Header's Reset/Save buttons can act on
+  // it without prop-drilling.
+  projectId?: string;
 }
 
 const toolbarBtn: React.CSSProperties = {
@@ -108,11 +120,40 @@ const addVideoClip = (src: string, name?: string) => {
   return id;
 };
 
-const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioClips, embedded }) => {
+const TimelineEditor: React.FC<Props> = ({
+  onExit,
+  initialClips,
+  initialAudioClips,
+  embedded,
+  projectId,
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { playerRef, setStateManager, setState, stateManager } = useStore();
+  const {
+    playerRef,
+    setStateManager,
+    setState,
+    stateManager,
+    setHistory,
+    setLastSavedAt,
+    setProjectId,
+  } = useStore();
+  // Reset signal lives in the store so the Header can trigger it. Reading it
+  // as a dep here makes the seed effect re-run on bump.
+  const resetToken = useStore((s) => s.resetToken);
+
+  // Mirror the prop into the store so deep children (Header) can read it.
+  useEffect(() => {
+    setProjectId(projectId ?? null);
+    return () => setProjectId(null);
+  }, [projectId, setProjectId]);
   const [sidePanel, setSidePanel] = useState<'effects' | null>(null);
   useTimelineEvents();
+
+  // Gate auto-save until after the seed effect has finished committing. Seeds
+  // (both initial-clips and snapshot restore) flow through the same
+  // subscribeToState wiring as user edits, and we don't want the first
+  // post-seed fire to immediately rewrite the very snapshot we just loaded.
+  const hasSeededRef = useRef(false);
 
   // Init the StateManager once.
   useEffect(() => {
@@ -145,6 +186,20 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
       activeIds: [],
     });
 
+    // Read undo/redo availability from the live arrays on the StateManager
+    // instance. The `stateHistorySubject` that backs subscribeHistory is a
+    // transient signal (it gets reset to {false,false} after each emission)
+    // and only fires on undo/redo calls — NOT when regular edits push onto
+    // the stack. So we re-derive from the arrays on every state change.
+    const syncHistory = () => {
+      const undos = (sm as any).undos;
+      const redos = (sm as any).redos;
+      setHistory(
+        Array.isArray(undos) && undos.length > 0,
+        Array.isArray(redos) && redos.length > 0,
+      );
+    };
+
     const sub = sm.subscribeToState((s: any) => {
       setState({
         tracks: s.tracks,
@@ -153,6 +208,7 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
         transitionIds: s.transitionIds,
         transitionsMap: s.transitionsMap,
       });
+      syncHistory();
     });
     const durSub = sm.subscribeToDuration(({ duration }: any) => setState({ duration }));
     const scaleSub = sm.subscribeToScale(({ scale }: any) => setState({ scale }));
@@ -260,6 +316,13 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
     const trackItemSub = sm.subscribeToUpdateTrackItem(({ trackItemsMap }: any) =>
       setState({ trackItemsMap }),
     );
+    // subscribeHistory fires on undo/redo actions too (not just state edits)
+    // so it catches the transition from "redo stack populated" → "empty" when
+    // a new edit after an undo wipes the redo stack.
+    syncHistory();
+    const historySub = (sm as any).subscribeHistory
+      ? (sm as any).subscribeHistory(() => syncHistory())
+      : { unsubscribe: () => {} };
 
     return () => {
       sub.unsubscribe();
@@ -269,10 +332,12 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
       timingSub.unsubscribe();
       itemDetailsSub.unsubscribe();
       trackItemSub.unsubscribe();
+      historySub.unsubscribe();
       sm.purge();
       setStateManager(null as any);
+      setHistory(false, false);
     };
-  }, [setStateManager, setState]);
+  }, [setStateManager, setState, setHistory]);
 
   // Seed with initialClips + initialAudioClips by probing durations ourselves
   // and committing the full state via stateManager.updateState. This bypasses
@@ -287,9 +352,12 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
     if (!stateManager) return;
     const videoKey = (initialClips ?? []).map((c) => c.src).join('|');
     const audioKey = (initialAudioClips ?? []).map((c) => c.src).join('|');
-    const key = `${videoKey}#${audioKey}`;
+    // resetToken is folded into the key so bumping it in the parent forces a
+    // re-seed even when the clip URLs are identical.
+    const key = `${videoKey}#${audioKey}#${resetToken ?? 0}#${projectId ?? ''}`;
     if (seededKeyRef.current === key) return;
 
+    hasSeededRef.current = false;
     let cancelled = false;
     (async () => {
       // Always hard-reset before seeding, even when there are no clips. This
@@ -306,8 +374,71 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
         { kind: 'update', updateHistory: false },
       );
 
+      // Snapshot restore path: when a projectId is provided and a saved
+      // timeline exists in localStorage, hydrate from it and skip the
+      // initialClips seeding entirely. Reset flow calls clearSnapshot before
+      // bumping resetToken, so after a reset this returns null and we fall
+      // through to the fresh-clips path below.
+      if (projectId) {
+        const snap = loadSnapshot(projectId);
+        // Validate snapshot srcs against the current initialClips set. If the
+        // studio regenerated a shot video, the snapshot's src is a dead URL
+        // and the Player would just show a broken clip. `blob:` srcs (manual
+        // uploads from the Upload button) are ephemeral to the page session
+        // but we accept them — they'll fail to load silently which is no
+        // worse than the current non-persistent behavior.
+        const freshSrcs = new Set([
+          ...(initialClips ?? []).map((c) => c.src),
+          ...(initialAudioClips ?? []).map((c) => c.src),
+        ]);
+        const hasStaleSrc =
+          !!snap &&
+          Object.values(snap.trackItemsMap).some((it: any) => {
+            const src = it?.details?.src;
+            if (typeof src !== 'string') return false;
+            if (src.startsWith('blob:')) return false;
+            return !freshSrcs.has(src);
+          });
+        if (hasStaleSrc) {
+          clearSnapshot(projectId);
+        } else if (snap && snap.trackItemIds.length > 0) {
+          if (cancelled) return;
+          if (useStore.getState().stateManager !== stateManager) return;
+          (stateManager as any).updateState(
+            {
+              tracks: snap.tracks,
+              trackItemIds: snap.trackItemIds,
+              trackItemsMap: snap.trackItemsMap,
+              transitionIds: snap.transitionIds,
+              transitionsMap: snap.transitionsMap,
+              duration: snap.duration,
+            },
+            { kind: 'update', updateHistory: false },
+          );
+          setLastSavedAt(snap.savedAt);
+          seededKeyRef.current = key;
+          hasSeededRef.current = true;
+          if (snap.duration > 0) {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                if (cancelled) return;
+                if (useStore.getState().stateManager !== stateManager) return;
+                const currentZoom = useStore.getState().scale?.zoom ?? 1 / 90;
+                dispatch(TIMELINE_SCALE_CHANGED, {
+                  payload: { scale: getFitZoomLevel(snap.duration, currentZoom) },
+                });
+              });
+            });
+          }
+          return;
+        }
+        // No snapshot (or empty) — ensure stale "Saved X ago" pill clears.
+        setLastSavedAt(null);
+      }
+
       if (!initialClips?.length && !initialAudioClips?.length) {
         seededKeyRef.current = key;
+        hasSeededRef.current = true;
         return;
       }
 
@@ -398,6 +529,7 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
         { kind: 'update', updateHistory: false },
       );
       seededKeyRef.current = key;
+      hasSeededRef.current = true;
 
       // Fit-to-screen after the timeline canvas has rendered. getFitZoomLevel
       // reads the canvas element's width, so we have to wait a frame for the
@@ -419,7 +551,71 @@ const TimelineEditor: React.FC<Props> = ({ onExit, initialClips, initialAudioCli
     return () => {
       cancelled = true;
     };
-  }, [stateManager, initialClips, initialAudioClips]);
+  }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, setLastSavedAt]);
+
+  // Auto-save: debounced writer that mirrors the render-authoritative subset
+  // of the store into localStorage whenever the user edits the timeline.
+  // Gated by hasSeededRef so the seed effect's own commits don't immediately
+  // overwrite the snapshot we may have just loaded.
+  useEffect(() => {
+    if (!projectId || !stateManager) return;
+    let timer: number | null = null;
+    const unsub = useStore.subscribe((state, prev) => {
+      if (!hasSeededRef.current) return;
+      // Only save when the render-authoritative subset actually changed.
+      if (
+        state.trackItemIds === prev.trackItemIds &&
+        state.trackItemsMap === prev.trackItemsMap &&
+        state.transitionsMap === prev.transitionsMap &&
+        state.transitionIds === prev.transitionIds &&
+        state.tracks === prev.tracks &&
+        state.duration === prev.duration
+      )
+        return;
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const s = useStore.getState();
+        if (s.trackItemIds.length === 0) return;
+        const savedAt = saveSnapshot(projectId, {
+          trackItemIds: s.trackItemIds,
+          trackItemsMap: s.trackItemsMap,
+          transitionIds: s.transitionIds,
+          transitionsMap: s.transitionsMap,
+          tracks: s.tracks,
+          duration: s.duration,
+          fps: s.fps,
+          size: s.size,
+        });
+        if (savedAt != null) s.setLastSavedAt(savedAt);
+      }, 500);
+    });
+    return () => {
+      if (timer !== null) window.clearTimeout(timer);
+      unsub();
+    };
+  }, [projectId, stateManager]);
+
+  // Keyboard shortcuts for undo/redo are disabled alongside the Header
+  // buttons — the redo path has a visual regrowth bug on trimmed clips. Keep
+  // this block here (commented) as the re-enable point.
+  //
+  // useEffect(() => {
+  //   if (!stateManager) return;
+  //   const onKey = (e: KeyboardEvent) => {
+  //     const mod = e.metaKey || e.ctrlKey;
+  //     if (!mod) return;
+  //     if (e.key !== 'z' && e.key !== 'Z') return;
+  //     const t = e.target as HTMLElement | null;
+  //     if (t) {
+  //       const tag = t.tagName;
+  //       if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
+  //     }
+  //     e.preventDefault();
+  //     dispatch(e.shiftKey ? HISTORY_REDO : HISTORY_UNDO);
+  //   };
+  //   window.addEventListener('keydown', onKey);
+  //   return () => window.removeEventListener('keydown', onKey);
+  // }, [stateManager]);
 
   const handleUpload = (files: File[]) => {
     if (!files[0]) return;

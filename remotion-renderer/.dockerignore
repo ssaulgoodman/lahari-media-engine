@@ -4,3 +4,4 @@ dist
 .env.local
 *.log
 README.md
+__pycache__

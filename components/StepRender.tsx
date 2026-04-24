@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiProject } from '../types';
 import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
 import useStore from './timeline-editor/store';
+import { loadSnapshot } from './timeline-editor/persistence';
 import {
   startRender,
   getRenderStatus,
@@ -31,6 +32,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<RenderHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Seed lastSavedAt from disk on mount so the Header's "Saved" pill appears
+  // immediately after page reload (TimelineEditor's seed effect sets it too
+  // a moment later, but this avoids a flash of empty state).
+  useEffect(() => {
+    const snap = loadSnapshot(project.id);
+    if (snap) useStore.getState().setLastSavedAt(snap.savedAt);
+  }, [project.id]);
 
   // Load render history lazily when the panel opens, and again after a render
   // completes so the newest entry appears without a manual refresh.
@@ -256,6 +265,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             embedded
             initialClips={previewClips}
             initialAudioClips={previewAudioClips}
+            projectId={project.id}
           />
         ) : (
           <div className="h-full flex items-center justify-center">

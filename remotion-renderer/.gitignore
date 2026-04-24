@@ -11,9 +11,13 @@
 # deps
 node_modules/
 
+.venv
+
 # env
 .env
 .env.production
+
+__pycache__
 
 # logs
 logs/
