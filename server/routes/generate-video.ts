@@ -6,7 +6,8 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn } from '../database.js';
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
+import { SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
+import { generateVideoWithFallback } from '../services/video-provider.js';
 import { extractLastFrame } from '../services/ffmpeg.js';
 import { refreshChainedShotPrompt } from '../services/claude.js';
 import { getFullProject } from './projects.js';
@@ -152,7 +153,7 @@ export const mountVideoRoutes = (router: Router) => {
       const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
       console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
-      const result = await generateSegmindVideo(imageAsset.file_path, veoPrompt, {
+      const result = await generateVideoWithFallback(imageAsset.file_path, veoPrompt, {
         endImagePath,
         referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
         aspectRatio: aspect,
@@ -248,7 +249,7 @@ export const mountVideoRoutes = (router: Router) => {
           { type: 'image', label: 'Start keyframe', url: storageUrl(imageAsset.file_path) },
         ],
         contextChain: await buildContextChain(project.id),
-        responseSummary: `Video generated via Segmind (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
+        responseSummary: `Video generated via ${result.provider} (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
         outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
         durationMs,
         costEstimate,
