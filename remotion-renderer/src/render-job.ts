@@ -1,0 +1,248 @@
+import { unlink } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import { shutdownPosthog, track, trackError } from './posthog';
+import { renderTimeline } from './render';
+import { uploadRender } from './storage';
+import type { TimelineRenderProps } from './Video';
+
+// Raw, untrusted JSON shape from the caller (HTTP body on CapRover, stdin on
+// Modal/RunPod). We narrow into TimelineRenderProps inside buildInputProps
+// after validating each field. The project song rides along inside
+// timeline.trackItemsMap as an audio item — no separate audioUrl field.
+export interface RenderRequestBody {
+  renderId?: string;
+  projectId?: string;
+  timeline?: Record<string, any>;
+}
+
+// Validates the minimum shape we need before kicking off a (very expensive)
+// render. We don't deeply validate the timeline objects — Remotion will
+// surface structural mistakes during selectComposition/renderMedia.
+export const buildInputProps = (body: RenderRequestBody): TimelineRenderProps => {
+  if (!body.timeline) throw new Error('timeline is required');
+  const t = body.timeline;
+  if (!Array.isArray(t.trackItemIds)) throw new Error('timeline.trackItemIds must be an array');
+  if (!t.trackItemsMap || typeof t.trackItemsMap !== 'object') {
+    throw new Error('timeline.trackItemsMap must be an object');
+  }
+  if (typeof t.fps !== 'number' || t.fps <= 0) throw new Error('timeline.fps must be > 0');
+  if (!t.size || typeof t.size.width !== 'number' || typeof t.size.height !== 'number') {
+    throw new Error('timeline.size.{width,height} must be numbers');
+  }
+  if (typeof t.durationMs !== 'number' || t.durationMs <= 0) {
+    throw new Error('timeline.durationMs must be > 0');
+  }
+
+  return {
+    trackItemIds: t.trackItemIds,
+    trackItemsMap: t.trackItemsMap as TimelineRenderProps['trackItemsMap'],
+    transitionsMap: (t.transitionsMap ?? {}) as TimelineRenderProps['transitionsMap'],
+    fps: t.fps,
+    size: t.size,
+    durationMs: t.durationMs,
+  };
+};
+
+// POSTs the final result (or failure) back to the main backend. Retries with
+// exponential backoff — if main is briefly down (deploy, network blip) we'd
+// otherwise lose the render result forever. After all retries exhaust, we
+// surface the failure in PostHog so it's visible in Error Tracking.
+const CALLBACK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
+
+const postCallback = async (renderId: string, payload: Record<string, unknown>) => {
+  const base = process.env.MAIN_BACKEND_URL;
+  const sharedSecret = process.env.RENDERER_SHARED_SECRET;
+  if (!base) {
+    console.warn(`[render ${renderId}] MAIN_BACKEND_URL not set — skipping callback`);
+    return;
+  }
+  if (!sharedSecret) return;
+
+  const url = `${base.replace(/\/$/, '')}/api/renders/callback/${renderId}`;
+  const attempts = CALLBACK_RETRY_DELAYS_MS.length + 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-renderer-secret': sharedSecret,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return;
+
+      // 400/401/403 mean our request is truly wrong — retrying won't help.
+      // Everything else (404, 408, 429, 5xx) could be a transient main-backend
+      // issue (mid-deploy, route rollout race, timeout, rate-limit, crash) so
+      // we retry.
+      const body = await res.text().catch(() => '');
+      lastError = new Error(`callback ${res.status}: ${body}`);
+      if (res.status === 400 || res.status === 401 || res.status === 403) {
+        console.error(`[render ${renderId}] callback got non-retriable ${res.status}: ${body}`);
+        break;
+      }
+      console.warn(`[render ${renderId}] callback attempt ${attempt}/${attempts} failed ${res.status}: ${body}`);
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[render ${renderId}] callback attempt ${attempt}/${attempts} threw:`, err?.message || err);
+    }
+
+    const delay = CALLBACK_RETRY_DELAYS_MS[attempt - 1];
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+  }
+
+  console.error(`[render ${renderId}] callback exhausted ${attempts} attempts — result lost`);
+  trackError(renderId, lastError ?? new Error('callback exhausted retries'), {
+    renderId,
+    stage: 'callback',
+  });
+};
+
+export interface RunRenderJobArgs {
+  renderId: string;
+  projectId: string;
+  inputProps: TimelineRenderProps;
+}
+
+export interface RunRenderJobResult {
+  ok: boolean;
+  videoUrl?: string;
+  storagePath?: string;
+  sizeBytes?: number;
+  durationInFrames?: number;
+  width?: number;
+  height?: number;
+  renderMs: number;
+  error?: string;
+}
+
+// Performs the render end-to-end: renderTimeline → uploadRender → postCallback
+// (plus PostHog tracking). Never throws — failure is reported via the callback
+// and returned to the caller. Safe to invoke fire-and-forget from the Hono
+// handler; safe to await from a subprocess CLI that wants the final result.
+export const runRenderJob = async ({
+  renderId,
+  projectId,
+  inputProps,
+}: RunRenderJobArgs): Promise<RunRenderJobResult> => {
+  const startedAt = Date.now();
+  console.log(`[render] start render=${renderId} project=${projectId}`);
+  let outputPath: string | undefined;
+  try {
+    const result = await renderTimeline(inputProps);
+    outputPath = result.outputPath;
+
+    const upload = await uploadRender(outputPath, projectId);
+    const renderMs = Date.now() - startedAt;
+
+    console.log(
+      `[render] done render=${renderId} project=${projectId} ms=${renderMs} bytes=${upload.sizeBytes}`,
+    );
+    track('render_completed', projectId, {
+      renderId,
+      renderMs,
+      sizeBytes: upload.sizeBytes,
+      durationInFrames: result.durationInFrames,
+      width: result.width,
+      height: result.height,
+    });
+
+    const payload = {
+      videoUrl: upload.publicUrl,
+      storagePath: upload.path,
+      sizeBytes: upload.sizeBytes,
+      durationInFrames: result.durationInFrames,
+      width: result.width,
+      height: result.height,
+      renderMs,
+    };
+    await postCallback(renderId, payload);
+    return { ok: true, ...payload };
+  } catch (e) {
+    const message = (e as Error).message;
+    const renderMs = Date.now() - startedAt;
+    console.error(`[render] failed render=${renderId} project=${projectId}`, message);
+    trackError(projectId, e, { renderId, renderMs });
+    await postCallback(renderId, { error: message, renderMs });
+    return { ok: false, error: message, renderMs };
+  } finally {
+    if (outputPath) {
+      unlink(outputPath).catch(() => {});
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// CLI entrypoint — Modal and RunPod handlers shell into this, piping a single
+// JSON object on stdin. Example:
+//   echo '{"renderId":"...","projectId":"...","timeline":{...}}' | tsx render-job.ts
+// Emits the final RunRenderJobResult as a single JSON line on stdout and exits
+// 0 (success or handled failure) / 1 (unexpected crash). postCallback fires
+// the same way it does in the Hono path, so downstream state machines are
+// unchanged regardless of which host invoked the job.
+// ---------------------------------------------------------------------------
+
+const readAllStdin = async (): Promise<string> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+};
+
+const cliMain = async (): Promise<void> => {
+  let body: RenderRequestBody;
+  try {
+    const raw = await readAllStdin();
+    if (!raw.trim()) throw new Error('stdin was empty — expected JSON {renderId, projectId, timeline}');
+    body = JSON.parse(raw) as RenderRequestBody;
+  } catch (e) {
+    console.error('[render-job] failed to read/parse stdin:', (e as Error).message);
+    process.exit(1);
+  }
+
+  if (!body.renderId || !body.projectId) {
+    console.error('[render-job] renderId and projectId are required');
+    process.exit(1);
+  }
+
+  let inputProps: TimelineRenderProps;
+  try {
+    inputProps = buildInputProps(body);
+  } catch (e) {
+    console.error('[render-job] invalid timeline:', (e as Error).message);
+    process.exit(1);
+  }
+
+  const result = await runRenderJob({
+    renderId: body.renderId,
+    projectId: body.projectId,
+    inputProps,
+  });
+
+  // Single JSON line on stdout so Modal/RunPod handlers can parse it with
+  // JSON.loads without dealing with log noise.
+  process.stdout.write(JSON.stringify(result) + '\n');
+  await shutdownPosthog();
+  // Exit code mirrors reality so Modal/RunPod dashboards show the render's
+  // real status. Main backend already has the authoritative result via
+  // postCallback, so this is purely for host-side visibility.
+  process.exit(result.ok ? 0 : 1);
+};
+
+// Run cliMain only when this file is the Node entrypoint, not when index.ts
+// imports runRenderJob/buildInputProps as a library.
+const isEntrypoint = () => {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(entry).href;
+  } catch {
+    return false;
+  }
+};
+
+if (isEntrypoint()) {
+  void cliMain();
+}
