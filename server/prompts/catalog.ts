@@ -427,32 +427,60 @@ Translate emotion into physical evidence:
 
 EXAMPLES — the boundary between renderable and not:
 
-GOOD visualPrompt: "Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
-GOOD motionPrompt: "Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
-BAD visualPrompt: "The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
-BAD motionPrompt: "The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
+GOOD visualPrompt:
+"Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
+
+GOOD visualPrompt:
+"Low wide shot from the shrine floor: the devotee lies in full prostration in the foreground, forehead touching stone, while the Ganesha murti rises behind him in stillness. The brass lamp burns between them."
+
+GOOD motionPrompt:
+"Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
+
+GOOD motionPrompt:
+"Slow push-in toward the murti's cheek as a bead of moisture begins to slide down the carved stone."
+
+BAD visualPrompt:
+"The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
+
+BAD visualPrompt:
+"A symmetrical split-focus composition with the devotee on the left third and the murti on the right third." — schematic layout jargon unless the shot truly needs it.
+
+BAD motionPrompt:
+"The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
+
+BAD motionPrompt:
+"Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
 
 {{songType}}, {{traits}}
 Mood: {{concept.mood}}
 
-CHARACTERS: {{castList}}
+CHARACTERS:
+{{castList}}
 {{userNote}}{{previousBatchTail}}
-SHOTS TO WRITE: {{shotList}}
+SHOTS TO WRITE:
+{{shotList}}
 {{meditativeGuidance}}
+For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. Do allow functional lighting when it defines the frame. Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
+- visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
+  ONLY include characters listed in that shot's Cast field.
 
-- motionPrompt: One sentence. Say only what changes: character action, camera movement, or environmental motion. Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
+- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, or environmental motion. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
 
-- continuityFrom: 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment. 'cut' when it begins a new beat, scale, angle, or emotional step. First shot of a scene is ALWAYS 'cut'.
+- continuityFrom: 'cut' or 'prev_shot'.
+  Use 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment — a gaze becoming a close-up, stillness cracking into recognition, a slow reveal continuing across an edit point.
+  Use 'cut' when the shot begins a new beat, scale, angle, or emotional step.
+  The first shot of a scene is ALWAYS 'cut'.
 
 BEFORE RETURNING, CHECK THE SEQUENCE:
-- No invented geography
+- No invented geography (corridors, archways, courtyards not in the direction)
 - No repeated camera verb across consecutive shots
-- No schematic composition shortcuts unless truly necessary
+- No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
 - No mystical VFX unless explicitly described in the shot direction
-- At least consider 'prev_shot' for direct intensifications
-- Every shot must advance the devotional arc, not just restate the previous beat`,
+- At least consider 'prev_shot' for direct intensifications — don't default to all cuts
+- Every shot must advance the devotional arc, not just restate the previous beat
+
+Match the IDs exactly.`,
     source: { file: 'server/services/claude.ts', lines: 'writeShotPrompts' },
   },
   {
