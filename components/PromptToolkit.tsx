@@ -16,8 +16,8 @@ interface PromptToolkitProps {
   shotIdx: number;
 
   // Tab state (parent-owned — key pattern used for refs)
-  activeTab: 'image' | 'endframe' | 'video' | 'compiled';
-  onTabChange: (tab: 'image' | 'endframe' | 'video' | 'compiled') => void;
+  activeTab: 'image' | 'endframe' | 'video';
+  onTabChange: (tab: 'image' | 'endframe' | 'video') => void;
 
   // Video override (parent-owned — used in bulk ops)
   videoOverride?: string;
@@ -41,10 +41,6 @@ interface PromptToolkitProps {
   modelSupportsLastFrame: boolean;
   autoVeoPrompt: string;
 
-  // Compiled chain data (pre-built by parent)
-  compiledRefs: { label: string; url?: string }[];
-  compiledText: string;
-
   // Callbacks
   onGenerateImage: (sceneId: string, shotId: string, refs?: ShotRefInput[]) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
@@ -65,7 +61,6 @@ export const PromptToolkit: React.FC<PromptToolkitProps> = ({
   getActiveRefs, setActiveRefs, resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
   isGenerating, hasStartFrame, hasVideo, actionable, modelSupportsLastFrame, autoVeoPrompt,
-  compiledRefs, compiledText,
   onGenerateImage, onGenerateVideo, onGenerateEndFrame,
   onRefinePrompt, onRefineEndFramePrompt, onRefineVideoPrompt,
   onUploadShotRef, onDeleteShotRef, onUpdateShot, setModalImage,
@@ -150,14 +145,10 @@ export const PromptToolkit: React.FC<PromptToolkitProps> = ({
           onClick={() => onTabChange('video')}
           className={`text-sm font-medium transition-colors ${activeTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
         >Video</button>
-        <button
-          onClick={() => onTabChange('compiled')}
-          className={`text-sm font-medium transition-colors ${activeTab === 'compiled' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-        >Full chain</button>
       </div>
 
       {/* ═══ Ref chips — artist-controlled, these are what get sent to generation ═══ */}
-      {!shot.locked && activeTab !== 'compiled' && (() => {
+      {!shot.locked && (() => {
         const tab = activeTab as 'image' | 'endframe' | 'video';
         const activeRefList = getActiveRefs(shot, tab);
         const modelSpec = getVideoModel(project?.videoModel);
@@ -216,46 +207,7 @@ export const PromptToolkit: React.FC<PromptToolkitProps> = ({
         );
       })()}
 
-      {/* ═══ Full chain (compiled read-only view) ═══ */}
-      {activeTab === 'compiled' ? (
-        <div className="space-y-4">
-          <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Inputs &rarr; Gemini 3 Pro Image</div>
-          {compiledRefs.length > 0 && (
-            <div className="flex gap-2.5 flex-wrap">
-              {compiledRefs.map((ref, i) => (
-                <div key={i} className="relative group/ref">
-                  {ref.url ? (
-                    <img src={ref.url} className="w-16 h-16 object-cover rounded-md border border-white/[0.06] cursor-zoom-in" alt={ref.label} onClick={() => ref.url && setModalImage(ref.url)} />
-                  ) : (
-                    <div className="w-16 h-16 rounded-md border border-white/[0.06] bg-white/[0.02] flex items-center justify-center text-[11px] text-zinc-400">?</div>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 bg-black/80 text-[10px] text-zinc-300 px-1 py-0.5 rounded-b-md truncate text-center font-mono">{ref.label}</div>
-                </div>
-              ))}
-            </div>
-          )}
-          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{compiledText}</pre>
-          <div className="h-px bg-white/[0.06]" />
-          <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Output &rarr; Start frame</div>
-          {shot.imageUrl ? (
-            <img src={shot.imageUrl} alt={`Shot ${shotIdx + 1} start frame`} onClick={() => setModalImage(shot.imageUrl!)} className="max-h-48 rounded-md border border-white/[0.06] cursor-zoom-in" />
-          ) : (
-            <div className="text-xs text-zinc-400">Not generated yet</div>
-          )}
-          <div className="h-px bg-white/[0.06] mt-2" />
-          <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
-            Start frame + prompt &rarr; {project?.videoModel?.includes('seedance') ? 'Seedance' : 'Veo'} &rarr; Video
-          </div>
-          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{autoVeoPrompt}</pre>
-          {shot.videoUrl && (
-            <>
-              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Output &rarr; Video</div>
-              <video src={shot.videoUrl} className="max-h-48 rounded-md border border-white/[0.06]" controls muted />
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
+      <div className="space-y-3">
           {/* Extracted-from-video note for last frame with no prompt */}
           {isEndFrame && !shot.endVisualPrompt && shot.extractedLastFrameUrl && (
             <div className="surface-inset rounded-md p-3 text-sm text-zinc-400 italic">
@@ -413,16 +365,29 @@ export const PromptToolkit: React.FC<PromptToolkitProps> = ({
               <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
                 Refine — describe what's wrong, Claude rewrites the prompt
               </div>
-              {/* Attached reference image preview */}
-              {refineImage && (
-                <div className="flex items-center gap-2">
-                  <img src={refineImage.previewUrl} className="w-10 h-10 rounded object-cover border border-white/[0.08]" alt="Reference" />
-                  <span className="text-[11px] text-zinc-400">Reference attached</span>
-                  <button onClick={() => { URL.revokeObjectURL(refineImage.previewUrl); setRefineImage(null); }} className="text-zinc-500 hover:text-red-400 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  </button>
-                </div>
-              )}
+              {/* Context images Claude will see */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {(() => {
+                  const contextUrl = isFirstFrame ? shot.imageUrl
+                    : isEndFrame ? (shot.endImageUrl || shot.extractedLastFrameUrl)
+                    : shot.imageUrl; // video tab: start frame as context
+                  return contextUrl ? (
+                    <div className="flex items-center gap-1.5">
+                      <img src={contextUrl} className="w-8 h-8 rounded object-cover border border-white/[0.08] opacity-70" alt="Current" />
+                      <span className="text-[10px] text-zinc-500">{isVideo ? 'Start frame' : 'Current'}</span>
+                    </div>
+                  ) : null;
+                })()}
+                {refineImage && (
+                  <div className="flex items-center gap-1.5">
+                    <img src={refineImage.previewUrl} className="w-8 h-8 rounded object-cover border border-amber-400/30" alt="Reference" />
+                    <span className="text-[10px] text-zinc-400">Your ref</span>
+                    <button onClick={() => { URL.revokeObjectURL(refineImage.previewUrl); setRefineImage(null); }} className="text-zinc-500 hover:text-red-400 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-2">
                 <AutoGrowTextarea
                   id={`refine-${activeTab}-${shot.id}`}
@@ -465,7 +430,6 @@ export const PromptToolkit: React.FC<PromptToolkitProps> = ({
             </>
           )}
         </div>
-      )}
     </div>
   );
 };

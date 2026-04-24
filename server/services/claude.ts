@@ -3,7 +3,7 @@
  * Uses tool_use for guaranteed valid JSON output (no truncation, no schema violations).
  *
  * Opus: generateConceptOptions, brainstormStyleDirections, planScenes, writeShotPrompts, refineScript
- * Sonnet: summarizeMeaning, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt
+ * Sonnet: summarizeMeaning, refineStyleDirection, analyzeImageStyle, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt
  * Gemini still handles: audio analysis (transcribe, structure), image critique (vision), chat
  */
 import Anthropic from '@anthropic-ai/sdk';
@@ -780,7 +780,6 @@ Match the IDs exactly.`;
 
 export const brainstormStyleDirections = async (
   lyrics: string,
-  musicalStructure: any[],
   meaning: string,
   concept: any,
   userNotes?: string,
@@ -799,9 +798,6 @@ Language: ${concept.language || 'Unknown'}
 
 LYRICS:
 ${(lyrics || '').substring(0, 3000)}
-
-MUSICAL STRUCTURE:
-${JSON.stringify((musicalStructure || []).slice(0, 8), null, 2)}
 
 MEANING:
 ${(meaning || '').substring(0, 1500)}
@@ -908,48 +904,6 @@ Use the refine_direction tool.`;
 };
 
 // ─── Enrich Style DNA (vision — analyzes locked style image) ─────────
-
-export const enrichStyleDNA = async (
-  imageBase64: string,
-  mimeType: string,
-  shortDescription: string
-): Promise<string> => {
-  const client = getClient();
-
-  const mediaType = mimeType.startsWith('image/') ? mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' : 'image/png';
-
-  const systemPrompt = `Analyze this locked style reference image.
-
-The user chose it based on this direction: "${shortDescription}"
-
-Write a STYLE DNA fragment — 30-50 words of dense keywords and short phrases. NOT prose. This fragment gets injected into every image generation prompt downstream, so it must be pure transferable visual treatment.
-
-Format: keyword phrases separated by commas. Like an image generation prompt, not a paragraph.
-
-Include: lighting type, color temperature, dominant palette colors, texture/medium, grain, mood keyword, artistic reference if clear.
-
-Do NOT include: the subject/character, the scene/environment/architecture, narrative, composition, camera angle.
-
-Example output:
-warm amber chiaroscuro, deep burgundy-gold palette, oil painting texture, visible brushwork, film grain, sacred stillness, Caravaggio lighting, Tanjore gold leaf finish
-
-Return ONLY the keywords. No quotes, no JSON, no markdown.`;
-
-  const response = await client.messages.create({
-    model: SONNET,
-    max_tokens: 512,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
-        { type: 'text', text: systemPrompt }
-      ]
-    }]
-  });
-
-  const textBlock = response.content.find((b: any) => b.type === 'text');
-  return (textBlock && textBlock.type === 'text' ? textBlock.text : null) || shortDescription;
-};
 
 // ─── Analyze Image Style (vision — user uploads reference) ───────────
 

@@ -32,8 +32,8 @@ interface Props {
   onClearEndFrame?: (shotId: string) => void | Promise<void>;
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
-  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
-  onRefineVideoPrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
+  onRefineVideoPrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
   onDeleteShotRef?: (shotId: string, assetId: string) => void | Promise<void>;
   onSetProject?: (project: ApiProject) => void;
@@ -44,7 +44,7 @@ interface Props {
 
 export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, isLoading }) => {
   const [modalImage, setModalImage] = useState<string | null>(null);
-  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video' | 'compiled'>>({});
+  const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
   const [expandedShotIds, setExpandedShotIds] = useState<Set<string>>(new Set());
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);

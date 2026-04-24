@@ -295,37 +295,6 @@ Revise the direction incorporating the feedback. Keep it cohesive and internally
 Use the refine_direction tool.`,
     source: { file: 'server/services/claude.ts', lines: '472-493' },
   },
-  {
-    id: 'enrich-style-dna',
-    name: 'Enrich style DNA from locked image',
-    stage: 'blueprint',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6 (vision)',
-    triggeredBy: 'Fires automatically after you lock a style image.',
-    summary: 'Claude sees the locked style image and writes a 30-50 word keyword DNA. Used as context for Claude refine calls only — NOT sent to Gemini (style image is the ground truth for Gemini).',
-    variables: [
-      { name: 'image', description: 'The locked style reference image' },
-      { name: 'shortDescription', description: 'The original text direction' },
-    ],
-    template: `Analyze this locked style reference image.
-
-The user chose it based on this direction: "{{shortDescription}}"
-
-Write a STYLE DNA fragment — 30-50 words of dense keywords and short phrases. NOT prose. This fragment gets injected into every image generation prompt downstream, so it must be pure transferable visual treatment.
-
-Format: keyword phrases separated by commas. Like an image generation prompt, not a paragraph.
-
-Include: lighting type, color temperature, dominant palette colors, texture/medium, grain, mood keyword, artistic reference if clear.
-
-Do NOT include: the subject/character, the scene/environment/architecture, narrative, composition, camera angle.
-
-Example output:
-warm amber chiaroscuro, deep burgundy-gold palette, oil painting texture, visible brushwork, film grain, sacred stillness, Caravaggio lighting, Tanjore gold leaf finish
-
-Return ONLY the keywords. No quotes, no JSON, no markdown.`,
-    source: { file: 'server/services/claude.ts', lines: '521-561' },
-  },
-
   // ─── Looks ────────────────────────────────────────────────────────
   {
     id: 'character-look',

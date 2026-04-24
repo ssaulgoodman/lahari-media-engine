@@ -366,7 +366,7 @@ router.post('/:id/refine-script', async (req, res) => {
 router.post('/:id/write-shot-prompts', async (req, res) => {
   const project = await selectOne('projects', { id: paramStr(req.params.id) });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  if (!project.style_description) return res.status(400).json({ error: 'Style not locked yet' });
+  if (!project.style_asset_id) return res.status(400).json({ error: 'Style not locked yet' });
   const userNote: string | undefined = req.body?.userNote;
 
   const concept = JSON.parse(project.locked_concept || '{}');

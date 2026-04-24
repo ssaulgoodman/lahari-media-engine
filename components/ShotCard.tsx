@@ -43,8 +43,8 @@ interface ShotCardProps {
   onCloseHistory: () => void;
 
   // Prompt toolkit state (parent-owned)
-  activeTab: 'image' | 'endframe' | 'video' | 'compiled';
-  onTabChange: (tab: 'image' | 'endframe' | 'video' | 'compiled') => void;
+  activeTab: 'image' | 'endframe' | 'video';
+  onTabChange: (tab: 'image' | 'endframe' | 'video') => void;
   videoOverride?: string;
   onVideoOverrideChange: (v: string | undefined) => void;
   getActiveRefs: (shot: VideoShot, tab: 'image' | 'endframe' | 'video') => ShotRefInput[];
@@ -65,8 +65,8 @@ interface ShotCardProps {
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void | Promise<void>;
   onGenerateEndFrame?: (shotId: string, refs?: ShotRefInput[]) => void | Promise<void>;
-  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
-  onRefineVideoPrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
+  onRefineVideoPrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onCancelShotImage?: (shotId: string) => void;
   onCancelShotVideo?: (shotId: string) => void;
   onUsePrevLastFrame?: (shotId: string) => void;
@@ -108,37 +108,17 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const canLock = hasStartFrame && hasVideo && !shot.locked;
   const progress = shot.locked ? 3 : hasVideo ? 2 : hasStartFrame ? 1 : 0;
 
-  // Build compiled data for PromptToolkit
-  const buildCompiledData = () => {
-    const compiledRefs: { label: string; url?: string }[] = [];
+  // Build auto video prompt for display (mirrors server-side generate-video.ts logic)
+  const buildAutoVeoPrompt = () => {
     const shotCast = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
-    shotCast.forEach(c => { if (c.referenceImageUrl) compiledRefs.push({ label: c.name, url: c.referenceImageUrl }); });
-    if (project.styleAssetUrl) compiledRefs.push({ label: 'Style', url: project.styleAssetUrl });
     const shotEnv = project.environments.find(e => e.id === shot.environmentId);
-    if (shotEnv?.referenceImageUrl) compiledRefs.push({ label: shotEnv.name, url: shotEnv.referenceImageUrl });
-    if (shot.continuityFrom === 'prev_shot') {
-      const prevShot = scene.shots[shotIdx - 1];
-      if (prevShot?.extractedLastFrameUrl) compiledRefs.push({ label: 'Continuity', url: prevShot.extractedLastFrameUrl });
-      else if (prevShot?.endImageUrl) compiledRefs.push({ label: 'Continuity', url: prevShot.endImageUrl });
-    }
-    if (shot.userFeedback && shot.imageUrl) compiledRefs.push({ label: 'Failed attempt', url: shot.imageUrl });
-
-    const compiledLines = [`Scene: ${shot.visualPrompt}`, '', `Style: ${project.styleDescription || '(none)'}`, '', `Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${shot.continuityFrom === 'prev_shot' ? 'Continue visual flow from previous shot. ' : ''}Render in the style of the style reference image.`];
-    if (shot.continuityFrom === 'prev_shot') compiledLines.push('', 'Previous shot ended with: [auto-described from extracted frame]', 'This shot should begin from that exact continuity state.');
-    if (shot.userFeedback) compiledLines.push('', `Director note: ${shot.userFeedback}`);
-    compiledLines.push('', 'Single cinematic frame. No text, no watermark.', 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.');
-
-    // Video prompt: motionPrompt is the video instruction. Start frame shows the scene.
-    // Ref labels added only when ref images are actually attached.
     const veoParts: string[] = [];
     if (shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement') veoParts.push(shot.motionPrompt);
-    const castWithRefs = shotCast.filter(c => c.referenceImageUrl);
     const refLabels: string[] = [];
-    castWithRefs.forEach(c => refLabels.push(`Maintain ${c.name}'s appearance from reference`));
+    shotCast.filter(c => c.referenceImageUrl).forEach(c => refLabels.push(`Maintain ${c.name}'s appearance from reference`));
     if (shotEnv?.referenceImageUrl) refLabels.push(`Maintain ${shotEnv.name} setting from reference`);
     if (refLabels.length) veoParts.push(refLabels.join('. '));
-
-    return { compiledRefs, compiledText: compiledLines.join('\n'), autoVeoPrompt: veoParts.join('. ') };
+    return veoParts.join('. ');
   };
 
   return (
@@ -429,7 +409,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
       {/* Prompts */}
       <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
         {(shot.locked || actionable) && (() => {
-          const { compiledRefs, compiledText, autoVeoPrompt } = buildCompiledData();
+          const autoVeoPrompt = buildAutoVeoPrompt();
           return (
             <PromptToolkit
               project={project}
@@ -452,8 +432,6 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               actionable={actionable}
               modelSupportsLastFrame={modelSupportsLastFrame}
               autoVeoPrompt={autoVeoPrompt}
-              compiledRefs={compiledRefs}
-              compiledText={compiledText}
               onGenerateImage={onGenerateImage}
               onGenerateVideo={onGenerateVideo}
               onGenerateEndFrame={onGenerateEndFrame}
