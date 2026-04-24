@@ -117,8 +117,8 @@ Under 150 words. Write in English.`,
     id: 'generate-concepts',
     name: 'Generate concept directions',
     stage: 'blueprint',
-    model: 'claude-opus-4-6',
-    modelLabel: 'Claude Opus 4.6',
+    model: 'claude-opus-4-7',
+    modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Generate concept' on the Concept phase.",
     summary: 'Proposes 3 creative directions adapted to the song type. Receives songType + isNarrative + isMeditative from audio analysis — no hardcoded direction labels.',
     variables: [
@@ -155,8 +155,8 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
     id: 'plan-scenes',
     name: 'Plan script (cast, environments, scenes, shots)',
     stage: 'blueprint',
-    model: 'claude-opus-4-6',
-    modelLabel: 'Claude Opus 4.6',
+    model: 'claude-opus-4-7',
+    modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
     summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Uses song type + meditative/narrative signals to keep devotional songs from drifting into generic plot logic.',
     variables: [
@@ -215,8 +215,8 @@ SCENE rules:
     id: 'brainstorm-style-directions',
     name: 'Brainstorm style directions',
     stage: 'blueprint',
-    model: 'claude-opus-4-6',
-    modelLabel: 'Claude Opus 4.6',
+    model: 'claude-opus-4-7',
+    modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Brainstorm styles' on the Style phase.",
     summary: 'Proposes 4 distinct visual style directions — lighting, palette, texture, cultural references.',
     variables: [
@@ -395,10 +395,10 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
     id: 'write-shot-prompts',
     name: 'Write shot prompts (bulk)',
     stage: 'studio',
-    model: 'claude-opus-4-6',
-    modelLabel: 'Claude Opus 4.6',
+    model: 'claude-opus-4-7',
+    modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Auto-fires once at the end of Blueprint, or when you click 'Rewrite all' in Studio.",
-    summary: 'Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot).',
+    summary: 'Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot). "Cinematic but renderable" — functional for AI models without being literary or schematic.',
     variables: [
       { name: 'shots', description: 'List of shots with id, direction, duration, cast, scene context' },
       { name: 'cast', description: 'Character descriptions' },
@@ -411,46 +411,49 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
     ],
     template: `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
-SONG TYPE: {{songType}}, {{traits}}
+WRITE CINEMATIC PROMPTS THAT ARE RENDERABLE.
+
+These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
+
+But do not become schematic. Avoid layout jargon like "left half", "right half", "split-focus", or "perfect symmetry" unless the shot truly depends on that exact arrangement.
+
+Translate emotion into physical evidence:
+- a still face
+- a hand tightening
+- a flame settling
+- moisture on stone
+- a body lowering into prostration
+- distance between two figures
+
+EXAMPLES — the boundary between renderable and not:
+
+GOOD visualPrompt: "Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
+GOOD motionPrompt: "Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
+BAD visualPrompt: "The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
+BAD motionPrompt: "The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
+
+{{songType}}, {{traits}}
 Mood: {{concept.mood}}
 
-CHARACTERS:
-{{castList}}
+CHARACTERS: {{castList}}
+{{userNote}}{{previousBatchTail}}
+SHOTS TO WRITE: {{shotList}}
+{{meditativeGuidance}}
 
-{{userNote ? "USER DIRECTION (apply to this rewrite): " + userNote : ""}}
-{{previousBatchTail ? "PREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\\n..." : ""}}
+- visualPrompt: Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. Do allow functional lighting when it defines the frame. Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
 
-SHOTS TO WRITE:
-{{shotList}}
-{{isMeditative ? "MEDITATIVE CINEMATOGRAPHY:\\n- Favor stillness, patience, and negative space. Let the frame breathe.\\n- Resist the urge to fill every shot with spectacle. A still face, a trembling hand, a single flame can carry more weight than divine radiance.\\n- Show sacred presence through atmosphere and reaction, not only through literal divine manifestation.\\n- When the divine appears, keep it grounded — earned through the devotee's state, not inserted as a visual effect." : ""}}
+- motionPrompt: One sentence. Say only what changes: character action, camera movement, or environmental motion. Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
 
-For EACH shot, write using the write_shot_prompts tool:
+- continuityFrom: 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment. 'cut' when it begins a new beat, scale, angle, or emotional step. First shot of a scene is ALWAYS 'cut'.
 
-- visualPrompt: The start frame. 1-2 sentences. This goes to an image model alongside character/environment/style reference IMAGES — so the model already knows the art style, the character faces, the environment. Your job is to describe WHAT we see: the composition, the spatial relationship, what the character is doing, where they are in the space. Write it like you're describing a photograph to a painter who already knows the palette.
-  ONLY include characters listed in that shot's Cast field.
-  Do NOT include art style, lighting adjectives, or color — the style reference image handles all of that.
-  Honor the scene's real geography. Do not casually invent a corridor, doorway, courtyard, riverbank, or other spatial feature unless the shot direction or scene context clearly calls for it.
-  Avoid overly schematic composition language like "left third," "right third," "perfect symmetry," or diagram-like blocking unless that exact formal composition is the dramatic point.
-
-- motionPrompt: The video instruction. 1 sentence. The video model receives the start frame image and this text — it already SEES the frame. Tell it what changes: character action, camera movement, environmental shift. Be specific about the camera verb (static hold, slow push-in, gentle pan, tracking shot, pull-back). A shot where nothing moves except a flame is a valid choice.
-  Prefer the simplest truthful motion. Do not reach for a dolly, pan, or push-in unless it adds something specific to the beat.
-
-- continuityFrom: 'cut' or 'prev_shot'.
-  Use 'cut' when the shot is a new composition — different subject, framing, angle, or environment. This is the default.
-  Use 'prev_shot' only when the camera or action genuinely continues from the previous frame — same subject, same or adjacent framing, unbroken motion. Use it for dramatic effect: a reveal, a slow transformation, a sustained gaze. Don't use it just because two shots share a location.
-  If this shot is a direct intensification of the previous moment — for example moving from a face to a detail, or from stillness to a subtle recognition within the same space — strongly consider 'prev_shot'.
-  The first shot of a scene is ALWAYS 'cut'.
-
-SEQUENCE THINKING:
-Before writing each shot, look at what you wrote for the previous 2-3 shots. Ask:
-- Am I repeating a camera verb? (If the last shot was a dolly in, don't dolly in again.)
-- Am I stuck at one shot scale? (If the last two were close-ups, go wide or medium.)
-- Does this shot ADVANCE the emotional arc, or just restate the previous beat in a new image?
-- Would a hard cut feel better here, or would continuity from the previous shot create a more powerful moment?
-- Am I honoring the real spatial world of the scene, or have I lazily invented a prettier but less truthful location detail?
-
-Match the IDs exactly.`,
-    source: { file: 'server/services/claude.ts', lines: '634-722' },
+BEFORE RETURNING, CHECK THE SEQUENCE:
+- No invented geography
+- No repeated camera verb across consecutive shots
+- No schematic composition shortcuts unless truly necessary
+- No mystical VFX unless explicitly described in the shot direction
+- At least consider 'prev_shot' for direct intensifications
+- Every shot must advance the devotional arc, not just restate the previous beat`,
+    source: { file: 'server/services/claude.ts', lines: 'writeShotPrompts' },
   },
   {
     id: 'shot-start-frame',
@@ -565,8 +568,8 @@ Rewrite: theme, mood, conceptDirection. Output via tool.`,
     id: 'refine-script',
     name: 'Refine script (surgical edit)',
     stage: 'blueprint',
-    model: 'claude-opus-4-6',
-    modelLabel: 'Claude Opus 4.6',
+    model: 'claude-opus-4-7',
+    modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Refine script' and enter feedback.",
     summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for pacing.',
     variables: [

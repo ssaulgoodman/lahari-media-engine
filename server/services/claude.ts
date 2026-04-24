@@ -2,8 +2,8 @@
  * Claude text service — handles structured text + vision tasks.
  * Uses tool_use for guaranteed valid JSON output (no truncation, no schema violations).
  *
- * Sonnet: summarizeMeaning, planScenes, writeShotPrompts, refineStyleDirection, enrichStyleDNA, analyzeImageStyle
- * Opus: generateConceptOptions, brainstormStyleDirections
+ * Opus: generateConceptOptions, brainstormStyleDirections, planScenes, writeShotPrompts, refineScript
+ * Sonnet: summarizeMeaning, refineStyleDirection, enrichStyleDNA, analyzeImageStyle, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt
  * Gemini still handles: audio analysis (transcribe, structure), image critique (vision), chat
  */
 import Anthropic from '@anthropic-ai/sdk';
@@ -12,7 +12,7 @@ const getClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! }
 
 // Model choices
 const SONNET = 'claude-sonnet-4-6';
-const OPUS = 'claude-opus-4-6';
+const OPUS = 'claude-opus-4-7';
 
 // ─── Meaning Summary (Stage 3) ──────────────────────────────────────
 
@@ -671,6 +671,46 @@ MEDITATIVE CINEMATOGRAPHY:
 
   const prompt = `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
+WRITE CINEMATIC PROMPTS THAT ARE RENDERABLE.
+
+These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
+
+But do not become schematic. Avoid layout jargon like "left half", "right half", "split-focus", or "perfect symmetry" unless the shot truly depends on that exact arrangement.
+
+Translate emotion into physical evidence:
+- a still face
+- a hand tightening
+- a flame settling
+- moisture on stone
+- a body lowering into prostration
+- distance between two figures
+
+EXAMPLES — the boundary between renderable and not:
+
+GOOD visualPrompt:
+"Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
+
+GOOD visualPrompt:
+"Low wide shot from the shrine floor: the devotee lies in full prostration in the foreground, forehead touching stone, while the Ganesha murti rises behind him in stillness. The brass lamp burns between them."
+
+GOOD motionPrompt:
+"Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
+
+GOOD motionPrompt:
+"Slow push-in toward the murti's cheek as a bead of moisture begins to slide down the carved stone."
+
+BAD visualPrompt:
+"The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
+
+BAD visualPrompt:
+"A symmetrical split-focus composition with the devotee on the left third and the murti on the right third." — schematic layout jargon unless the shot truly needs it.
+
+BAD motionPrompt:
+"The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
+
+BAD motionPrompt:
+"Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
+
 ${songTypeSignal}
 Mood: ${context.concept.mood || 'Cinematic'}
 
@@ -682,28 +722,23 @@ ${shotList}
 ${meditativeGuidance}
 For EACH shot, write using the write_shot_prompts tool:
 
-- visualPrompt: The start frame. 1-2 sentences. This goes to an image model alongside character/environment/style reference IMAGES — so the model already knows the art style, the character faces, the environment. Your job is to describe WHAT we see: the composition, the spatial relationship, what the character is doing, where they are in the space. Write it like you're describing a photograph to a painter who already knows the palette.
+- visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
   ONLY include characters listed in that shot's Cast field.
-  Do NOT include art style, lighting adjectives, or color — the style reference image handles all of that.
-  Honor the scene's real geography. Do not casually invent a corridor, doorway, courtyard, riverbank, or other spatial feature unless the shot direction or scene context clearly calls for it.
-  Avoid overly schematic composition language like "left third," "right third," "perfect symmetry," or diagram-like blocking unless that exact formal composition is the dramatic point.
 
-- motionPrompt: The video instruction. 1 sentence. The video model receives the start frame image and this text — it already SEES the frame. Tell it what changes: character action, camera movement, environmental shift. Be specific about the camera verb (static hold, slow push-in, gentle pan, tracking shot, pull-back). A shot where nothing moves except a flame is a valid choice.
-  Prefer the simplest truthful motion. Do not reach for a dolly, pan, or push-in unless it adds something specific to the beat.
+- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, or environmental motion. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
 
 - continuityFrom: 'cut' or 'prev_shot'.
-  Use 'cut' when the shot is a new composition — different subject, framing, angle, or environment. This is the default.
-  Use 'prev_shot' only when the camera or action genuinely continues from the previous frame — same subject, same or adjacent framing, unbroken motion. Use it for dramatic effect: a reveal, a slow transformation, a sustained gaze. Don't use it just because two shots share a location.
-  If this shot is a direct intensification of the previous moment — for example moving from a face to a detail, or from stillness to a subtle recognition within the same space — strongly consider 'prev_shot'.
+  Use 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment — a gaze becoming a close-up, stillness cracking into recognition, a slow reveal continuing across an edit point.
+  Use 'cut' when the shot begins a new beat, scale, angle, or emotional step.
   The first shot of a scene is ALWAYS 'cut'.
 
-SEQUENCE THINKING:
-Before writing each shot, look at what you wrote for the previous 2-3 shots. Ask:
-- Am I repeating a camera verb? (If the last shot was a dolly in, don't dolly in again.)
-- Am I stuck at one shot scale? (If the last two were close-ups, go wide or medium.)
-- Does this shot ADVANCE the emotional arc, or just restate the previous beat in a new image?
-- Would a hard cut feel better here, or would continuity from the previous shot create a more powerful moment?
-- Am I honoring the real spatial world of the scene, or have I lazily invented a prettier but less truthful location detail?
+BEFORE RETURNING, CHECK THE SEQUENCE:
+- No invented geography (corridors, archways, courtyards not in the direction)
+- No repeated camera verb across consecutive shots
+- No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
+- No mystical VFX unless explicitly described in the shot direction
+- At least consider 'prev_shot' for direct intensifications — don't default to all cuts
+- Every shot must advance the devotional arc, not just restate the previous beat
 
 Match the IDs exactly.`;
 
