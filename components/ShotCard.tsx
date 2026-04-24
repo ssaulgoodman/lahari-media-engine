@@ -65,8 +65,8 @@ interface ShotCardProps {
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void | Promise<void>;
   onGenerateEndFrame?: (shotId: string, refs?: ShotRefInput[]) => void | Promise<void>;
-  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
-  onRefineVideoPrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
+  onRefineVideoPrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onCancelShotImage?: (shotId: string) => void;
   onCancelShotVideo?: (shotId: string) => void;
   onUsePrevLastFrame?: (shotId: string) => void;

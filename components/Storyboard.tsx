@@ -32,8 +32,8 @@ interface Props {
   onClearEndFrame?: (shotId: string) => void | Promise<void>;
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
-  onRefineEndFramePrompt?: (shotId: string, feedback: string) => void | Promise<void>;
-  onRefineVideoPrompt?: (shotId: string, feedback: string) => void | Promise<void>;
+  onRefineEndFramePrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
+  onRefineVideoPrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
   onDeleteShotRef?: (shotId: string, assetId: string) => void | Promise<void>;
   onSetProject?: (project: ApiProject) => void;
