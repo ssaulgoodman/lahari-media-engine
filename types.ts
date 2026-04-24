@@ -99,10 +99,12 @@ export interface ConceptOption {
   theme: string;
   lyricsSummary?: string;
   conceptDirection: string;
-  visualSuggestions: {
-    physicalDescription: string;
-    artStyle: string;
-    colorPalette: string;
+  description?: string;
+  /** @deprecated — replaced by description. Kept for backward compat with old projects. */
+  visualSuggestions?: {
+    physicalDescription?: string;
+    artStyle?: string;
+    colorPalette?: string;
   };
 }
 
@@ -143,6 +145,9 @@ export interface ApiProject {
   styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
   colorPalette?: string;
   videoMode: VideoMode;
+  songType?: string;
+  isNarrative?: boolean;
+  isMeditative?: boolean;
   imageModel: string;
   videoModel: string;
   aspectRatio: '16:9' | '9:16' | '1:1';

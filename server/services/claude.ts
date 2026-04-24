@@ -119,9 +119,10 @@ For each direction provide:
 - deity: the primary divine figure
 - mood: one distinct emotional keyword (different per direction)
 - theme: the core narrative idea (1 sentence)
-- conceptDirection: traditional / modern / experimental
+- conceptDirection: a short creative label for this direction (e.g. "intimate darshan", "cosmic invocation", "earthen ritual" — NOT generic labels like "traditional" or "modern")
+- description: 2-3 sentences expanding the concept — what the viewer sees, the emotional arc, the world of this video
 
-Visual style is decided in a separate phase — do NOT include art style or color palette here. Focus purely on narrative direction.
+Visual style is decided in a separate phase — do NOT include art style, color palette, or cinematography here. Focus purely on narrative direction and concept.
 
 Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
   }
@@ -146,18 +147,10 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
                 mood: { type: 'string', description: 'Emotional keyword — unique per concept' },
                 theme: { type: 'string', description: 'Core narrative idea (1 sentence)' },
                 lyricsSummary: { type: 'string', description: 'Brief meaning summary' },
-                conceptDirection: { type: 'string', description: 'Short label for this direction' },
-                visualSuggestions: {
-                  type: 'object',
-                  properties: {
-                    physicalDescription: { type: 'string', description: 'How the deity/subject looks' },
-                    artStyle: { type: 'string', description: 'Art direction for this concept' },
-                    colorPalette: { type: 'string', description: 'Color palette for this concept' }
-                  },
-                  required: ['artStyle', 'colorPalette']
-                }
+                conceptDirection: { type: 'string', description: 'Short creative label (e.g. "intimate darshan", "cosmic invocation")' },
+                description: { type: 'string', description: '2-3 sentence expansion of the concept — what the viewer sees, the emotional arc' },
               },
-              required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'visualSuggestions']
+              required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'description']
             }
           }
         },

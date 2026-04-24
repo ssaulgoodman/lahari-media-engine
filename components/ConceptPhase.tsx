@@ -350,6 +350,7 @@ export const ConceptPhase: React.FC<Props> = ({
                   <div><span className="text-white font-medium">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
                   <div><span className="text-white font-medium">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
                   <p className="text-zinc-300 leading-relaxed">{concept.theme}</p>
+                  {concept.description && <p className="text-zinc-400 text-xs leading-relaxed">{concept.description}</p>}
                 </div>
                 <button disabled={isLoading} className={`w-full py-2 rounded-md text-xs font-medium transition-colors disabled:opacity-50 mt-auto ${isCurrent ? 'bg-white/[0.1] text-white border border-white/[0.15]' : 'bg-white/[0.06] text-zinc-300 group-hover:bg-white group-hover:text-black'}`}>
                   {isCurrent ? 'Current' : 'Choose'}

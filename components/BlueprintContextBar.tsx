@@ -124,10 +124,16 @@ export const BlueprintContextBar: React.FC<Props> = ({
   const imageLabel = getImageModel(project.imageModel || IMAGE_MODELS[0].key).label;
   const modelLabel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key).label;
   const renderSummary = `${aspectLabel} · ${resLabel} · ${imageLabel} · ${modelLabel}`;
+  const songTypeLabel = project.songType && project.songType !== 'unknown'
+    ? project.songType.charAt(0).toUpperCase() + project.songType.slice(1)
+      + (project.isMeditative ? ' · Meditative' : '')
+      + (project.isNarrative ? ' · Narrative' : '')
+    : null;
   const analysisItems = [
     { label: 'Lyrics', present: !!project.lyrics },
     { label: 'Structure', present: project.musicalStructure?.length > 0 },
     { label: 'Meaning', present: !!project.meaning },
+    ...(songTypeLabel ? [{ label: songTypeLabel, present: true }] : []),
   ];
   const hasAnalysis = !!(project.meaning || project.musicalStructure?.length > 0 || project.lyrics);
   const needsAnalysis = !project.lyrics || !project.meaning || !(project.musicalStructure?.length > 0);
