@@ -619,7 +619,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'generate-concepts',
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       prompt: `Generate EXACTLY 3 creative concept directions for "${title}"${language ? ` (${language})` : ''}${context ? ` — Context: ${context}` : ''}\n\nLyrics:\n${lyrics}\n\nStructure:\n${musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join(', ')}`,
       responseSummary: conceptOptions.map((c: any, i: number) =>
         `[${i + 1}] ${c.conceptDirection} — ${c.mood} / ${c.visualSuggestions?.artStyle || 'N/A'} / ${c.visualSuggestions?.colorPalette || 'N/A'}\n    Theme: ${c.theme}`
@@ -639,7 +639,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     logCall({
       projectId: project.id,
       stage: 'generate-concepts',
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       prompt: `Generate concepts for "${title}"`,
       durationMs: 0,
       error: err.message,
@@ -793,7 +793,7 @@ router.patch('/:id', async (req, res) => {
   if (styleDescription !== undefined) {
     await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
     await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
-    // Shots are also stale — style DNA feeds into frame + video gen
+    // Shots are also stale because visual style changes can invalidate prompts and media.
     const scenes = await selectAll('scenes', { project_id: projectId });
     for (const s of scenes) {
       await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
@@ -803,9 +803,31 @@ router.patch('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Delete project
+// Delete project — also resets the linked queue item back to 'queued'
 router.delete('/:id', async (req, res) => {
-  await deleteRows('projects', { id: paramStr(req.params.id) });
+  const projectId = paramStr(req.params.id);
+
+  // Walk fork chain to find the queue row (same logic as publish)
+  const chain: string[] = [projectId];
+  let cur = projectId;
+  while (true) {
+    const row = await selectOne('projects', { id: cur });
+    if (!row?.parent_project_id) break;
+    chain.push(row.parent_project_id);
+    cur = row.parent_project_id;
+  }
+
+  await deleteRows('projects', { id: projectId });
+
+  // Reset queue item if this was the linked project
+  const queueRow = await findQueueByProjectIds(chain);
+  if (queueRow && queueRow.lahari_project_id === projectId) {
+    await updateQueueItem(queueRow.id, {
+      status: 'queued',
+      lahari_project_id: null as any,
+    });
+  }
+
   res.json({ ok: true });
 });
 
