@@ -136,12 +136,12 @@ router.post('/:id/generate-script', async (req, res) => {
         }
 
         // direction = shot's creative intent (preserved permanently)
-        // visual_prompt starts as direction placeholder — writeShotPrompts overwrites with start-frame description
+        // visual_prompt stays empty until writeShotPrompts fills it with the cinematographer's start-frame description
         await insertRow('shots', {
           id: shotId,
           scene_id: sceneId,
           direction: shot.direction || '',
-          visual_prompt: shot.direction || '',
+          visual_prompt: '',
           motion_prompt: '',
           duration,
           cast_ids: JSON.stringify(castIds),
