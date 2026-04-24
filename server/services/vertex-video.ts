@@ -127,7 +127,12 @@ export const generateVertexVideo = async (
     config,
   });
 
+  const maxPollMs = 10 * 60 * 1000; // 10 minutes
+  const pollStart = Date.now();
   while (!operation.done) {
+    if (Date.now() - pollStart > maxPollMs) {
+      throw new Error(`Vertex Veo timed out after ${maxPollMs / 1000}s of polling.`);
+    }
     await new Promise(resolve => setTimeout(resolve, 5000));
     operation = await ai.operations.getVideosOperation({ operation });
   }
