@@ -15,11 +15,11 @@ Living document. Updated as we refine each step. Go back to any step, trace the 
 Three sub-steps, each with its own LLM prompt. Execution order: lyrics + structure in parallel → meaning (depends on lyrics).
 
 **Lyrics source priority (queue start):**
-1. Cached analysis from `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — skips all AI calls
+1. Cached analysis from `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`, `cached_song_type`, `cached_is_narrative`, `cached_is_meditative`) — skips all AI calls
 2. SRT file from Supabase (`srt_verified_san` > `srt_verified_*` > `srt_turbo_scribe`)
 3. Fallback: audio transcription via Gemini
 
-**Queue start is fully async**: project created immediately (title + queue link only), backend responds instantly. Audio download, SRT parsing, transcription, and analysis ALL run in the background. Project always starts as `status: 'analyzing'` — background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls every 3s until status changes. Results cached on `songs` table for future users.
+**Queue start is fully async**: project created immediately (title + queue link only), backend responds instantly. Audio download, SRT parsing, transcription, and analysis ALL run in the background. Project always starts as `status: 'analyzing'` — background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls every 3s until status changes. Lyrics, meaning, musical structure, and song classification are cached on `songs` table for future users.
 
 **Multi-user**: `source_queue_id` on projects. Multiple users can start the same queued song — each gets their own project. No 403 when another user's project exists.
 
@@ -236,10 +236,10 @@ Claude receives explicit structural guidance based on the chosen mode:
 |---|---|
 | **Model** | Claude Sonnet vision (claude.ts → `enrichStyleDNA`) |
 | **Input** | Locked style image + current style description |
-| **Output** | Enriched `style_description` (the Style DNA used everywhere downstream) |
+| **Output** | Enriched `style_description` — visible/editable style metadata and critique context. The locked style image, not this text, is the downstream visual ground truth. |
 | **Artist control** | Can edit `style_description` after enrichment |
 
-**Status:** Good. Style DNA is visible and editable.
+**Status:** Good. Style description is visible and editable, but no longer injected into image-generation prompts when the style image is available.
 
 ---
 
@@ -309,7 +309,11 @@ The prompt now stays intentionally lean:
 - no full lyrics dump
 - no heavy concept block beyond mood + song-type signal
 - meditative guidance only when `isMeditative = true`
-- explicit sequence-thinking checks to avoid repeated camera verbs / scales and to choose continuity deliberately
+- "cinematic but renderable" calibration: prompts must be visual/animateable, not literary, but also not schematic
+- good/bad examples teach the boundary between renderable cinema and vague prose or diagram-like blocking
+- functional lighting is allowed when it defines the frame; style/palette language is still left to the reference image
+- micro-rule avoids phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion
+- explicit sequence checks avoid invented geography, repeated camera verbs, schematic composition shortcuts, mystical VFX, all-cuts defaulting, and static restatement of the same beat
 
 **Gaps:**
 - [ ] Shot writer is model-agnostic — needs model-specific best practices
@@ -406,7 +410,7 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 
 ## Step 12: Chained Shot Prompt Refresh
 
-**Source:** [`server/services/claude.ts:712`](../server/services/claude.ts#L712) · Triggered automatically after video gen in `server/routes/generate-video.ts`
+**Source:** [`server/services/claude.ts` → `refreshChainedShotPrompt`](../server/services/claude.ts) · Triggered automatically after video gen in `server/routes/generate-video.ts`
 
 | | |
 |---|---|
