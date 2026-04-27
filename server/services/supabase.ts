@@ -34,6 +34,7 @@ export interface QueueItem {
   audio_uploaded?: boolean;
   audio_url?: string | null;
   srts_ready?: boolean;
+  render_count?: number;
 }
 
 export const listQueue = async (filters?: {
@@ -65,6 +66,25 @@ export const listQueue = async (filters?: {
   const { data, error } = await query;
   if (error) throw new Error(`Supabase error: ${error.message}`);
 
+  // One extra round-trip: count final_render assets for every linked project
+  // so the queue table can show/hide a "Renders (N)" button without per-row
+  // requests. Single IN-list query, aggregated client-side.
+  const projectIds = (data || [])
+    .map((r: any) => r.lahari_project_id)
+    .filter((id: string | null): id is string => !!id);
+  const renderCounts = new Map<string, number>();
+  if (projectIds.length > 0) {
+    const { data: assetRows, error: aErr } = await supabase
+      .from('lahari_assets')
+      .select('project_id')
+      .eq('category', 'final_render')
+      .in('project_id', projectIds);
+    if (aErr) throw new Error(`Supabase error: ${aErr.message}`);
+    for (const a of (assetRows as any[]) || []) {
+      renderCounts.set(a.project_id, (renderCounts.get(a.project_id) || 0) + 1);
+    }
+  }
+
   // Flatten the join
   return (data || []).map((row: any) => ({
     ...row,
@@ -77,6 +97,7 @@ export const listQueue = async (filters?: {
     audio_uploaded: !!(row.songs?.audio_storage_url || row.songs?.drive_audio_url),
     audio_url: row.songs?.audio_storage_url || row.songs?.drive_audio_url || null,
     srts_ready: row.songs?.srts_ready,
+    render_count: row.lahari_project_id ? (renderCounts.get(row.lahari_project_id) || 0) : 0,
     songs: undefined,
   }));
 };

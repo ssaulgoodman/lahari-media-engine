@@ -15,11 +15,13 @@ interface QueueItem {
   album: string;
   audio_uploaded: boolean;
   srts_ready: boolean;
+  render_count: number;
 }
 
 interface Props {
   onStartProduction: (queueId: string) => Promise<void> | void;
   onOpenProject: (projectId: string) => void;
+  onViewRenders?: (projectId: string, title: string) => void;
 }
 
 const FILTER_KEY = 'lahari-queue-filters';
@@ -30,7 +32,7 @@ const formatDuration = (secs: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject }) => {
+export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, onViewRenders }) => {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [deities, setDeities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,14 +271,25 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
               </span>
 
               {/* Action */}
-              <div className="flex justify-end">
+              <div className="flex justify-end items-center gap-1">
                 {hasProject ? (
-                  <button
-                    onClick={() => onOpenProject(item.lahari_project_id!)}
-                    className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
-                  >
-                    Open
-                  </button>
+                  <>
+                    {onViewRenders && item.render_count > 0 && (
+                      <button
+                        onClick={() => onViewRenders(item.lahari_project_id!, item.song_name)}
+                        className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                        title="View renders"
+                      >
+                        Renders
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onOpenProject(item.lahari_project_id!)}
+                      className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                    >
+                      Open
+                    </button>
+                  </>
                 ) : canStart ? (
                   <button
                     onClick={() => handleStart(item)}

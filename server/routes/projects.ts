@@ -457,6 +457,23 @@ router.get('/', async (req, res) => {
     { user_id: req.userId },
     { orderBy: 'created_at', ascending: false }
   );
+
+  // One extra query: count final_render assets per project so the sidebar can
+  // show "Renders (N)" without N round-trips.
+  const ids = rows.map((r: any) => r.id);
+  const renderCounts = new Map<string, number>();
+  if (ids.length > 0) {
+    const { data: assetRows, error } = await getSB()
+      .from(T.assets)
+      .select('project_id')
+      .eq('category', 'final_render')
+      .in('project_id', ids);
+    if (error) throw new Error(`DB select assets: ${error.message}`);
+    for (const a of (assetRows as any[]) || []) {
+      renderCounts.set(a.project_id, (renderCounts.get(a.project_id) || 0) + 1);
+    }
+  }
+
   res.json(rows.map((r: any) => ({
     id: r.id,
     title: r.title,
@@ -464,6 +481,7 @@ router.get('/', async (req, res) => {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     parentProjectId: r.parent_project_id || undefined,
+    renderCount: renderCounts.get(r.id) || 0,
   })));
 });
 

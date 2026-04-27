@@ -9,6 +9,7 @@ import { ChatAssistant } from './components/ChatAssistant';
 import { XRayPanel } from './components/XRayPanel';
 import { Dashboard } from './components/Dashboard';
 import { PromptsLibrary } from './components/PromptsLibrary';
+import { RendersModal } from './components/RendersModal';
 import { getVideoModel } from './constants/videoModels';
 import { useAuth } from './contexts/AuthContext';
 import * as api from './services/api';
@@ -34,6 +35,7 @@ type ProjectSummary = {
   createdAt: string;
   updatedAt: string;
   parentProjectId?: string;
+  renderCount?: number;
 };
 
 // Humanize a timestamp: "3m ago", "2h ago", "yesterday", "Mar 4".
@@ -132,6 +134,9 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const [videoQueue, setVideoQueue] = useState<string[]>([]);
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
+  // Renders viewer (popup) — opened from Dashboard rows or sidebar entries.
+  const [rendersFor, setRendersFor] = useState<{ id: string; title: string } | null>(null);
+
   // Project sidebar
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState<ProjectSummary[]>([]);
@@ -1344,6 +1349,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                   <Dashboard
                     onStartProduction={handleStartProduction}
                     onOpenProject={handleOpenProject}
+                    onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
                   />
                 </motion.div>
               )}
@@ -1667,6 +1673,19 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                                 </svg>
                               </button>
                             )}
+                            {/* Renders — film icon, opens popup viewer. Only
+                                shown when this project has at least one render. */}
+                            {renamingId !== p.id && (p.renderCount ?? 0) > 0 && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setRendersFor({ id: p.id, title: p.title }); }}
+                                className="absolute right-16 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="View renders"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -1678,6 +1697,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           </>
         )}
       </AnimatePresence>
+
+      {/* Renders viewer popup — accessible from Dashboard rows and sidebar entries */}
+      {rendersFor && (
+        <RendersModal
+          projectId={rendersFor.id}
+          projectTitle={rendersFor.title}
+          onClose={() => setRendersFor(null)}
+        />
+      )}
 
       {/* Error toast */}
       <AnimatePresence>
