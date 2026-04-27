@@ -3,8 +3,6 @@ import { dispatch } from '@designcombo/events';
 import StateManager, {
   ADD_VIDEO,
   TIMELINE_SCALE_CHANGED,
-  HISTORY_UNDO,
-  HISTORY_REDO,
 } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
 import { getFitZoomLevel } from './utils';
@@ -12,7 +10,7 @@ import { Upload, Sparkles } from 'lucide-react';
 import Player from './Player';
 import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
-import useStore from './store';
+import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot, clearSnapshot } from './persistence';
 
@@ -136,7 +134,12 @@ const TimelineEditor: React.FC<Props> = ({
     setHistory,
     setLastSavedAt,
     setProjectId,
+    setHistoryHandlers,
   } = useStore();
+  // Filled in by the main effect once a StateManager is mounted; called by
+  // the seed effect after seeding completes so the first user edit has a
+  // baseline to push onto the undo stack.
+  const captureBaselineRef = useRef<(() => void) | null>(null);
   // Reset signal lives in the store so the Header can trigger it. Reading it
   // as a dep here makes the seed effect re-run on bump.
   const resetToken = useStore((s) => s.resetToken);
@@ -186,19 +189,88 @@ const TimelineEditor: React.FC<Props> = ({
       activeIds: [],
     });
 
-    // Read undo/redo availability from the live arrays on the StateManager
-    // instance. The `stateHistorySubject` that backs subscribeHistory is a
-    // transient signal (it gets reset to {false,false} after each emission)
-    // and only fires on undo/redo calls — NOT when regular edits push onto
-    // the stack. So we re-derive from the arrays on every state change.
-    const syncHistory = () => {
-      const undos = (sm as any).undos;
-      const redos = (sm as any).redos;
-      setHistory(
-        Array.isArray(undos) && undos.length > 0,
-        Array.isArray(redos) && redos.length > 0,
-      );
+    // Session-only undo/redo. Whole-snapshot replay (vs. designcombo's
+    // diff-based history) sidesteps the regrowth bug where a trim diff is
+    // recorded but the pack-after-trim is `updateHistory:false`, so an undo
+    // would restore the trimmed clip's old width without unwinding neighbor
+    // positions — clips would overlap. Closure-local arrays keep history out
+    // of the zustand state (which is sufficient since reload clears it).
+    const undoStack: HistoryFrame[] = [];
+    const redoStack: HistoryFrame[] = [];
+    const HIST_MAX = 50;
+    let lastCommitted: HistoryFrame | null = null;
+    let isReplayingHistory = false;
+    let captureTimer: number | null = null;
+    const captureFrame = (): HistoryFrame => {
+      const s = sm.getState() as any;
+      return {
+        trackItemIds: s.trackItemIds,
+        trackItemsMap: s.trackItemsMap,
+        transitionIds: s.transitionIds,
+        transitionsMap: s.transitionsMap,
+        tracks: s.tracks,
+        duration: s.duration,
+      };
     };
+    const updateButtons = () => {
+      setHistory(undoStack.length > 0, redoStack.length > 0);
+    };
+    const commit = () => {
+      const current = captureFrame();
+      if (lastCommitted) {
+        undoStack.push(lastCommitted);
+        if (undoStack.length > HIST_MAX) undoStack.shift();
+        redoStack.length = 0;
+        updateButtons();
+      }
+      lastCommitted = current;
+    };
+    captureBaselineRef.current = () => {
+      lastCommitted = captureFrame();
+      undoStack.length = 0;
+      redoStack.length = 0;
+      updateButtons();
+    };
+    const applyFrame = (target: HistoryFrame) => {
+      isReplayingHistory = true;
+      try {
+        (sm as any).updateState(
+          {
+            trackItemIds: target.trackItemIds,
+            trackItemsMap: target.trackItemsMap,
+            transitionIds: target.transitionIds,
+            transitionsMap: target.transitionsMap,
+            tracks: target.tracks,
+            duration: target.duration,
+          },
+          { kind: 'update', updateHistory: false },
+        );
+      } finally {
+        // Clear after the synchronous subscriber chain has flushed. queueMicrotask
+        // is enough — RxJS dispatches are sync, so the store.subscribe handler
+        // below has already fired by the time the microtask runs.
+        queueMicrotask(() => {
+          isReplayingHistory = false;
+        });
+      }
+    };
+    const performUndo = () => {
+      if (undoStack.length === 0 || !lastCommitted) return;
+      const target = undoStack.pop()!;
+      redoStack.push(lastCommitted);
+      lastCommitted = target;
+      applyFrame(target);
+      updateButtons();
+    };
+    const performRedo = () => {
+      if (redoStack.length === 0 || !lastCommitted) return;
+      const target = redoStack.pop()!;
+      undoStack.push(lastCommitted);
+      lastCommitted = target;
+      applyFrame(target);
+      updateButtons();
+    };
+    setHistoryHandlers(performUndo, performRedo);
 
     const sub = sm.subscribeToState((s: any) => {
       setState({
@@ -208,7 +280,6 @@ const TimelineEditor: React.FC<Props> = ({
         transitionIds: s.transitionIds,
         transitionsMap: s.transitionsMap,
       });
-      syncHistory();
     });
     const durSub = sm.subscribeToDuration(({ duration }: any) => setState({ duration }));
     const scaleSub = sm.subscribeToScale(({ scale }: any) => setState({ scale }));
@@ -316,13 +387,29 @@ const TimelineEditor: React.FC<Props> = ({
     const trackItemSub = sm.subscribeToUpdateTrackItem(({ trackItemsMap }: any) =>
       setState({ trackItemsMap }),
     );
-    // subscribeHistory fires on undo/redo actions too (not just state edits)
-    // so it catches the transition from "redo stack populated" → "empty" when
-    // a new edit after an undo wipes the redo stack.
-    syncHistory();
-    const historySub = (sm as any).subscribeHistory
-      ? (sm as any).subscribeHistory(() => syncHistory())
-      : { unsubscribe: () => {} };
+    // History capture: subscribe to the store and debounce 400ms so that a
+    // trim event followed by our pack reflow coalesces into ONE snapshot
+    // (post-pack), which is what we want both forward (redo) and backward
+    // (undo) replay to land on. isReplayingHistory blocks capture during
+    // our own undo/redo applies.
+    const histUnsub = useStore.subscribe((state, prev) => {
+      if (isReplayingHistory) return;
+      if (!hasSeededRef.current) return;
+      if (
+        state.trackItemIds === prev.trackItemIds &&
+        state.trackItemsMap === prev.trackItemsMap &&
+        state.transitionIds === prev.transitionIds &&
+        state.transitionsMap === prev.transitionsMap &&
+        state.tracks === prev.tracks &&
+        state.duration === prev.duration
+      )
+        return;
+      if (captureTimer != null) window.clearTimeout(captureTimer);
+      captureTimer = window.setTimeout(() => {
+        if (isReplayingHistory) return;
+        commit();
+      }, 400);
+    });
 
     return () => {
       sub.unsubscribe();
@@ -332,12 +419,15 @@ const TimelineEditor: React.FC<Props> = ({
       timingSub.unsubscribe();
       itemDetailsSub.unsubscribe();
       trackItemSub.unsubscribe();
-      historySub.unsubscribe();
+      histUnsub();
+      if (captureTimer != null) window.clearTimeout(captureTimer);
       sm.purge();
       setStateManager(null as any);
       setHistory(false, false);
+      setHistoryHandlers(null, null);
+      captureBaselineRef.current = null;
     };
-  }, [setStateManager, setState, setHistory]);
+  }, [setStateManager, setState, setHistory, setHistoryHandlers]);
 
   // Seed with initialClips + initialAudioClips by probing durations ourselves
   // and committing the full state via stateManager.updateState. This bypasses
@@ -418,6 +508,7 @@ const TimelineEditor: React.FC<Props> = ({
           setLastSavedAt(snap.savedAt);
           seededKeyRef.current = key;
           hasSeededRef.current = true;
+          captureBaselineRef.current?.();
           if (snap.duration > 0) {
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
@@ -439,6 +530,7 @@ const TimelineEditor: React.FC<Props> = ({
       if (!initialClips?.length && !initialAudioClips?.length) {
         seededKeyRef.current = key;
         hasSeededRef.current = true;
+        captureBaselineRef.current?.();
         return;
       }
 
@@ -530,6 +622,7 @@ const TimelineEditor: React.FC<Props> = ({
       );
       seededKeyRef.current = key;
       hasSeededRef.current = true;
+      captureBaselineRef.current?.();
 
       // Fit-to-screen after the timeline canvas has rendered. getFitZoomLevel
       // reads the canvas element's width, so we have to wait a frame for the
@@ -595,27 +688,33 @@ const TimelineEditor: React.FC<Props> = ({
     };
   }, [projectId, stateManager]);
 
-  // Keyboard shortcuts for undo/redo are disabled alongside the Header
-  // buttons — the redo path has a visual regrowth bug on trimmed clips. Keep
-  // this block here (commented) as the re-enable point.
-  //
-  // useEffect(() => {
-  //   if (!stateManager) return;
-  //   const onKey = (e: KeyboardEvent) => {
-  //     const mod = e.metaKey || e.ctrlKey;
-  //     if (!mod) return;
-  //     if (e.key !== 'z' && e.key !== 'Z') return;
-  //     const t = e.target as HTMLElement | null;
-  //     if (t) {
-  //       const tag = t.tagName;
-  //       if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
-  //     }
-  //     e.preventDefault();
-  //     dispatch(e.shiftKey ? HISTORY_REDO : HISTORY_UNDO);
-  //   };
-  //   window.addEventListener('keydown', onKey);
-  //   return () => window.removeEventListener('keydown', onKey);
-  // }, [stateManager]);
+  // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo. Routes through the store's
+  // session-only history handlers (not designcombo's diff history).
+  useEffect(() => {
+    if (!stateManager) return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key !== 'z' && e.key !== 'Z') return;
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
+      }
+      const { performUndo, performRedo } = useStore.getState();
+      if (e.shiftKey) {
+        if (!performRedo) return;
+        e.preventDefault();
+        performRedo();
+      } else {
+        if (!performUndo) return;
+        e.preventDefault();
+        performUndo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stateManager]);
 
   const handleUpload = (files: File[]) => {
     if (!files[0]) return;

@@ -4,6 +4,22 @@ import StateManager from '@designcombo/state';
 import { PlayerRef } from '@remotion/player';
 import { create } from 'zustand';
 
+// Session-only undo/redo: a snapshot is the full render-authoritative slice
+// of state. Storing whole snapshots (rather than deltas) bypasses the
+// designcombo history's known regrowth bug — where a trim diff is recorded
+// but our pack-after-trim is `updateHistory:false`, so undo restores the
+// trimmed clip's old width without unwinding neighbor positions and clips
+// overlap. Whole-snapshot replay restores layout atomically. Capped to 50
+// frames per session and not persisted across reloads (memory only).
+export interface HistoryFrame {
+  trackItemIds: string[];
+  trackItemsMap: Record<string, ITrackItem>;
+  transitionIds: string[];
+  transitionsMap: Record<string, ITransition>;
+  tracks: ITrack[];
+  duration: number;
+}
+
 interface ITimelineStore {
   stateManager: StateManager | null;
   timeline: CanvasTimeline | null;
@@ -43,6 +59,15 @@ interface ITimelineStore {
   setLastSavedAt: (ts: number | null) => void;
   setProjectId: (id: string | null) => void;
   bumpResetToken: () => void;
+  // Set by TimelineEditor's main effect when the StateManager is wired up.
+  // Header buttons + keyboard shortcuts call these. Null when the editor is
+  // unmounted so the Header's disabled-state stays consistent.
+  performUndo: (() => void) | null;
+  performRedo: (() => void) | null;
+  setHistoryHandlers: (
+    undo: (() => void) | null,
+    redo: (() => void) | null,
+  ) => void;
   addTransition: (transition: ITransition) => void;
   removeTransition: (transitionId: string) => void;
 }
@@ -76,6 +101,10 @@ const useStore = create<ITimelineStore>((set, get) => ({
   setLastSavedAt: (lastSavedAt) => set({ lastSavedAt }),
   setProjectId: (projectId) => set({ projectId }),
   bumpResetToken: () => set((s) => ({ resetToken: s.resetToken + 1 })),
+  performUndo: null,
+  performRedo: null,
+  setHistoryHandlers: (performUndo, performRedo) =>
+    set({ performUndo, performRedo }),
 
   addTransition: (transition) => {
     const { transitionIds, transitionsMap, stateManager } = get();

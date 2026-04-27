@@ -3,8 +3,6 @@ import { dispatch } from '@designcombo/events';
 import {
   TIMELINE_SCALE_CHANGED,
   LAYER_DELETE,
-  HISTORY_UNDO,
-  HISTORY_REDO,
 } from '@designcombo/state';
 import {
   Maximize2,
@@ -74,6 +72,8 @@ const Header: React.FC = () => {
   const { duration, fps, scale, playerRef, activeIds } = useStore();
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
+  const performUndo = useStore((s) => s.performUndo);
+  const performRedo = useStore((s) => s.performRedo);
   const lastSavedAt = useStore((s) => s.lastSavedAt);
   const projectId = useStore((s) => s.projectId);
   const bumpResetToken = useStore((s) => s.bumpResetToken);
@@ -217,29 +217,26 @@ const Header: React.FC = () => {
           makes their meaning unambiguous. */}
       {projectId && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginRight: 2 }}>
-          {/* Undo/Redo temporarily hidden — the redo path triggers a visual
-              glitch where previously-trimmed clips "grow back" and disrupt
-              the layout of neighbors. Wiring (canUndo/canRedo + dispatch)
-              is left intact so re-enabling is a one-line uncomment once the
-              growth bug is fixed. */}
-          {/*
+          {/* Session-only undo/redo — replays full state snapshots from
+              memory rather than designcombo's diff history. Stack clears on
+              page reload (intentional: snapshots are kept in a closure inside
+              TimelineEditor, not persisted). */}
           <button
             style={canUndo ? btn : btnDisabled}
-            disabled={!canUndo}
-            onClick={() => dispatch(HISTORY_UNDO)}
+            disabled={!canUndo || !performUndo}
+            onClick={() => performUndo?.()}
             title="Undo (Ctrl/Cmd+Z)"
           >
             <Undo2 size={14} />
           </button>
           <button
             style={canRedo ? btn : btnDisabled}
-            disabled={!canRedo}
-            onClick={() => dispatch(HISTORY_REDO)}
+            disabled={!canRedo || !performRedo}
+            onClick={() => performRedo?.()}
             title="Redo (Shift+Ctrl/Cmd+Z)"
           >
             <Redo2 size={14} />
           </button>
-          */}
           <button
             style={justSaved ? { ...btn, color: '#4ade80' } : btn}
             onClick={handleSave}
