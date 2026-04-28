@@ -1,0 +1,161 @@
+@import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+
+@theme {
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --font-display: Geist, Inter, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  --color-obsidian-950: #141418;
+  --color-obsidian-900: #17171c;
+  --color-obsidian-800: #1f1f25;
+  --color-obsidian-700: #2a2a32;
+
+  --color-accent-100: #E0E7FF;
+  --color-accent-400: #818CF8;
+  --color-accent-500: #6366F1;
+  --color-accent-600: #4F46E5;
+  --color-accent-900: #312E81;
+
+  --color-gold-400: #FACC15;
+  --color-gold-500: #EAB308;
+
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-slide-up: slideUp 0.3s ease-out;
+  --animate-shimmer: shimmer 2s ease-in-out infinite;
+
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  @keyframes slideUp {
+    0% { transform: translateY(8px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+}
+
+body {
+  background-color: #141418;
+  background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.08), transparent);
+  color: #e5e5e5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+h1, h2, h3, h4 { text-wrap: balance; }
+p, span, label { text-wrap: pretty; }
+.font-mono, [class*="font-mono"] { font-variant-numeric: tabular-nums; }
+
+/* Generated images: subtle inset outline so they don't bleed into dark bg */
+img[src*="supabase"], img[alt*="Shot"], img[alt*="shot"], img[alt*="frame"],
+.shot-image, .ref-image { outline: 1px solid rgba(255,255,255,0.06); outline-offset: -1px; border-radius: inherit; }
+
+::selection {
+  background: rgba(79, 70, 229, 0.3);
+  color: white;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* ─── Typography system ──────────────────────────────────────────
+   Stick to these — don't invent new sizes or intensities.
+
+   SIZE TIERS (5 total, clear hierarchy):
+     text-[11px]  Micro    — UPPERCASE section dividers (RENDER, SONG ANALYSIS), tiny metadata
+     text-xs      Small    — 12px descriptions, card subtitles, secondary labels
+     text-sm      Body     — 14px default body + primary nav/tabs (Concept, Script…)
+     text-lg      Heading  — 18px section headings
+     text-2xl     Display  — 24px page titles
+
+   Visual hierarchy rule: two co-located elements should differ by at least one tier.
+   Section label (11px) next to a tab (14px) = clear hierarchy. Two 11px things = flat/confusing.
+
+   COLOR TIERS (3 total — anything darker disappears on the dark bg):
+     text-white      Primary — titles, active states, locked-in values
+     text-zinc-300   Body    — body text, main content, emphasized labels
+     text-zinc-400   Muted   — secondary body, labels, captions, hints
+
+   Avoid: text-zinc-500 / 600 / 700 / 800 for any text (they vanish).
+          text-xl / text-3xl (use text-2xl).
+          Custom pixel sizes outside of 11px.
+
+   Background: body is #141418 (warm near-black, slightly lifted from pure 950).
+*/
+
+/* Surface system — multi-layer shadows for depth instead of flat borders */
+.surface {
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1px 2px -1px rgba(0, 0, 0, 0.15),
+    0 2px 4px 0 rgba(0, 0, 0, 0.08);
+}
+.surface-raised {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 2px 4px -1px rgba(0, 0, 0, 0.2),
+    0 4px 12px 0 rgba(0, 0, 0, 0.25);
+}
+.surface-inset {
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Gradient accent system */
+.gradient-text {
+  background: linear-gradient(135deg, #818CF8 0%, #C084FC 50%, #F472B6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gradient-border {
+  position: relative;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(129,140,248,0.3), rgba(192,132,252,0.1), transparent);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.glow-emerald {
+  box-shadow: 0 0 20px rgba(16,185,129,0.08), inset 0 0 0 1px rgba(16,185,129,0.15);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

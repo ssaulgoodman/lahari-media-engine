@@ -10,6 +10,7 @@ import { XRayPanel } from './components/XRayPanel';
 import { Dashboard } from './components/Dashboard';
 import { PromptsLibrary } from './components/PromptsLibrary';
 import { RendersModal } from './components/RendersModal';
+import { FloatingAiButton } from './components/FloatingAiButton';
 import { getVideoModel } from './constants/videoModels';
 import { useAuth } from './contexts/AuthContext';
 import * as api from './services/api';
@@ -1735,6 +1736,32 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           onClose={() => setXrayOpen(false)}
         />
       )}
+
+      <FloatingAiButton
+        onNavigate={(phase) => {
+          const map: Record<string, AppStep> = {
+            queue: AppStep.UPLOAD,
+            upload: AppStep.UPLOAD,
+            blueprint: AppStep.BLUEPRINT,
+            studio: AppStep.STUDIO,
+            render: AppStep.RENDER,
+          };
+          const step = map[phase];
+          if (step === undefined) return { ok: false, message: `unknown phase: ${phase}` };
+          setCurrentStep(step);
+          return { ok: true, message: `navigated to ${phase}` };
+        }}
+        onSwitchProject={async (idOrTitle) => {
+          const ref = idOrTitle.trim().toLowerCase();
+          const match = projectList.find(p =>
+            p.id === idOrTitle || p.title.toLowerCase() === ref || p.title.toLowerCase().includes(ref)
+          );
+          if (!match) return { ok: false, message: `no project matched "${idOrTitle}"` };
+          await loadProject(match.id);
+          return { ok: true, message: `switched to "${match.title}"` };
+        }}
+        listProjects={() => projectList.map(p => ({ id: p.id, title: p.title }))}
+      />
     </div>
   );
 };
