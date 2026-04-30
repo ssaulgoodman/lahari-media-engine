@@ -235,6 +235,24 @@ Start with read-only operation:
 
 This proves the premise safely.
 
+Implemented first read-only tools:
+
+- CLI: `npm run lahari -- project list [limit]`
+- CLI: `npm run lahari -- project packet <projectId>`
+- CLI: `npm run lahari -- shot packet <projectId> <shotId>`
+- CLI: `npm run lahari -- project report <projectId> [out.md]`
+- CLI: `npm run lahari -- project contact-sheet <projectId> [out.html]`
+- MCP: `npm run lahari:mcp`
+
+The MCP server currently exposes only read-only/local-output tools:
+
+- `list_projects`
+- `get_project_packet`
+- `get_shot_packet`
+- `write_project_artifacts`
+
+This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
+
 Second milestone:
 
 - permissioned prompt rewrites
