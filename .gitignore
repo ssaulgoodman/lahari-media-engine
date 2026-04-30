@@ -36,6 +36,7 @@ storage/*.db
 # Local dev tooling (Claude Code, skills)
 .claude/
 .agents/
+.lahari/
 skills/
 skills-lock.json
 storage/*.db-shm
