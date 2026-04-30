@@ -1,0 +1,271 @@
+# Codex-Native Studio
+
+This project should become a Codex-native creative production workspace, not only a web app with an embedded assistant.
+
+The Lahari app remains the visual studio: storyboard, images, videos, prompts, approvals, renders. Codex Desktop becomes the operator: it reads the repo, uses skills, opens the studio in the browser, inspects assets, calls typed tools, writes reports, and asks permission before costly or destructive changes.
+
+The core idea: the repo is the creative operating system. Codex already brings the polished harness, long-running threads, worktrees, browser/computer use, skills, plugins, MCP, git, and memory. We should expose Lahari as a set of safe production tools that Codex can operate.
+
+## Product Shape
+
+- Codex Desktop is the director/operator surface.
+- Lahari web app is the visual workstation.
+- Supabase is durable truth for projects, assets, decisions, and history.
+- Repo docs and skills are production doctrine.
+- MCP tools are Codex's hands.
+- Browser/computer use are Codex's eyes and fallback controls.
+- The CLI is the human-debuggable engine room behind the MCP tools.
+
+This is an internal Lahari workflow first. It does not need to look like a consumer SaaS assistant. It needs to be powerful, permissioned, inspectable, and easy for a high-agency artist/operator to use.
+
+## Core Engine vs Presets
+
+The engine is not Bhakti-specific. The current app has Bhakti assumptions baked into prompts, names, UI copy, schema fields, and examples. Those should become a preset.
+
+Core engine:
+
+- media/content intake
+- analysis and segmentation
+- concept directions
+- script/scene/shot planning
+- style system
+- entity/reference generation
+- location/environment references
+- shot prompt writing
+- frame/video generation
+- continuity chaining
+- critique, rerun, refine, lock
+- final assembly and publishing
+
+Preset:
+
+- domain vocabulary
+- input schema extensions
+- prompt doctrine
+- taste rules
+- examples and anti-examples
+- critique rubrics
+- default models/settings
+- approval policies
+
+Bhakti is the first serious preset, not the whole engine.
+
+Future presets:
+
+- `bhakti-music-video`
+- `short-film`
+- `ad-film`
+- `product-launch`
+- `anime-series`
+- `music-video`
+
+## Bhakti Preset
+
+Bhakti-specific concepts to extract out of core:
+
+- deity, devotee, darshan, ritual, invocation, stotra, bhajan, kirtan, chant
+- Indian audience and cultural authenticity rules
+- devotional restraint and anti-generic-fantasy rules
+- temple/home-shrine/sacred-space defaults
+- song classification: stotra, chant, bhajan, kirtan, song, unknown
+- meditative/narrative axes
+- guidance around divine presence, spectacle, symbolism, and cultural references
+
+These belong in a preset skill/package, not scattered through core route logic.
+
+## Codex Tooling Stack
+
+Build both CLI and MCP, but MCP is the primary Codex interface.
+
+CLI gives us debuggability and local repeatability:
+
+```bash
+lahari project packet <projectId>
+lahari shot packet <shotId>
+lahari assets contact-sheet <projectId>
+lahari critique concepts <projectId>
+lahari critique shots <projectId>
+lahari report <projectId>
+```
+
+MCP wraps the same domain services as typed tools:
+
+- `list_projects`
+- `get_project_packet`
+- `get_shot_packet`
+- `get_asset`
+- `make_contact_sheet`
+- `critique_concepts`
+- `critique_style_refs`
+- `critique_shot_sequence`
+- `generate_concepts`
+- `brainstorm_styles`
+- `visualize_style`
+- `write_shot_prompts`
+- `rewrite_shot_prompts_preview`
+- `generate_start_frame`
+- `generate_video`
+- `compare_versions`
+- `mark_stale`
+- `fork_project`
+- `publish_render`
+
+Do not make raw SQL the normal creative interface. Supabase MCP is useful for read-only inspection, debugging, migrations, and admin work. Production creative actions should go through Lahari domain tools because they understand phase state, staleness, cost, assets, forks, and rollback.
+
+## Permission Model
+
+Codex can freely run read-only tools.
+
+Codex should ask approval before:
+
+- writing to the Lahari DB
+- calling paid generation models
+- overwriting prompts/scripts/concepts
+- marking assets stale
+- deleting anything
+- publishing final renders
+- running raw SQL writes
+
+Tool outputs should say what changed:
+
+- entities updated
+- assets created
+- prompts rewritten
+- stale flags set
+- estimated cost
+- next recommended action
+- rollback/fork option
+
+The app should never require blind trust. Codex should be able to say: "This will rewrite 6 shot prompts and mark 4 frames stale. Proceed?"
+
+## Project Packets
+
+The most important primitive is a compact project packet. Codex should not need the whole DB dumped into context.
+
+A project packet includes:
+
+- project status and active preset
+- source media metadata
+- analysis summary
+- concept options and locked concept
+- script summary
+- style directions and selected style asset
+- cast/entity references
+- environments/locations
+- scenes and shot table
+- generated assets per shot
+- stale/error state
+- recent human decisions
+- recent agent notes
+- recommended next actions
+
+A shot packet includes:
+
+- scene narrative and lyrics/time range
+- shot beat/direction
+- visual prompt
+- motion prompt
+- continuity mode
+- cast/environment refs
+- start frame, end frame, video, extracted last frame
+- previous/next shot context
+- known issues and retries
+
+## Visual Evidence
+
+Codex needs fast visual access. Build tools that create contact sheets:
+
+- concept option sheet
+- style reference sheet
+- character candidate sheet
+- environment candidate sheet
+- storyboard frame sheet
+- video thumbnail strip
+- before/after comparison sheet
+
+These should be files Codex can open or attach in the thread. One contact sheet beats forty scattered URLs.
+
+## Journals and Learning Loop
+
+Every song/project should accumulate a durable journal.
+
+Capture:
+
+- critiques
+- accepted/rejected candidates
+- human edits
+- rerun reasons
+- tool calls
+- prompt diffs
+- model failures
+- final winners
+
+This is not just logging. It becomes eval data. Later Codex can ask: "For meditative stotra projects, which concept/style/shot prompt patterns got accepted fastest?"
+
+The learning loop should improve prompts and presets from real work, not theoretical prompt debates.
+
+## Skills
+
+Initial skills:
+
+- `lahari-director`
+- `bhakti-cultural-grounding`
+- `style-reference-critic`
+- `shot-continuity-critic`
+- `cinematic-renderable-prompts`
+- `render-triage`
+
+Skills should teach process and taste. Tools should mutate state. Docs should explain architecture. Keep those responsibilities separate.
+
+## First Milestone
+
+Do not start with "Codex makes a whole video."
+
+Start with read-only operation:
+
+1. Codex opens an existing project.
+2. Codex calls `get_project_packet`.
+3. Codex creates a contact sheet.
+4. Codex writes a director report:
+   - what is working
+   - what is weak
+   - where the pipeline is blocked
+   - which actions it recommends next
+5. No mutation happens.
+
+This proves the premise safely.
+
+Second milestone:
+
+- permissioned prompt rewrites
+- preview/diff before write
+- one approved mutation at a time
+
+Third milestone:
+
+- generation actions with cost/approval gates
+- visual comparison
+- accepted/rejected decision capture
+
+## Setup Vision
+
+An artist/operator should be able to:
+
+1. Install Codex Desktop.
+2. Install/open the Lahari Codex workspace.
+3. Run a setup command.
+4. Add required API keys interactively.
+5. Validate Supabase/storage/model access.
+6. Start the Lahari server.
+7. Open the studio in Codex's browser.
+8. Work in a long-lived Codex thread per song.
+
+The fallback remains the normal Lahari app.
+
+## Design Principle
+
+Do not build an imitation of Codex inside Lahari.
+
+Make Lahari operable by Codex.
+
+The app becomes a machine Codex can inhabit.
