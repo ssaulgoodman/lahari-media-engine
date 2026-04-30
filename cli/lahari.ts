@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import 'dotenv/config';
+import { selectColumns } from '../server/database.js';
 import { getFullProject } from '../server/routes/projects.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
@@ -10,6 +11,7 @@ const usage = () => {
 Read-only Codex-native studio helpers.
 
 Usage:
+  npm run lahari -- project list [limit]
   npm run lahari -- project packet <projectId>
   npm run lahari -- shot packet <projectId> <shotId>
 
@@ -27,6 +29,36 @@ const compactText = (value?: string | null, max = 700): string | null => {
 
 const namesById = <T extends { id: string; name: string }>(items: T[]) => {
   return new Map(items.map((item) => [item.id, item.name]));
+};
+
+const listProjects = async (limitArg?: string) => {
+  const parsedLimit = limitArg ? Number.parseInt(limitArg, 10) : 20;
+  const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20;
+  const rows = await selectColumns(
+    'projects',
+    'id,title,status,song_type,is_narrative,is_meditative,image_model,video_model,created_at,updated_at',
+    {},
+    { orderBy: 'updated_at', ascending: false, limit },
+  );
+
+  return {
+    kind: 'lahari.project.list',
+    generatedAt: new Date().toISOString(),
+    limit,
+    projects: rows.map((row: any) => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      preset: 'bhakti-music-video',
+      songType: row.song_type || null,
+      isNarrative: row.is_narrative ?? null,
+      isMeditative: row.is_meditative ?? null,
+      imageModel: row.image_model || 'gemini-3-pro',
+      videoModel: row.video_model || 'veo-3.1',
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
+  };
 };
 
 const statusCounts = (project: Project) => {
@@ -259,6 +291,11 @@ const main = async () => {
 
   if (!domain || domain === 'help' || domain === '--help' || domain === '-h') {
     usage();
+    return;
+  }
+
+  if (domain === 'project' && action === 'list') {
+    console.log(JSON.stringify(await listProjects(projectId), null, 2));
     return;
   }
 
