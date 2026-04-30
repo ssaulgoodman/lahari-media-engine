@@ -414,6 +414,7 @@ const getFullProject = async (projectId: string) => {
       narrativeDescription: s.narrative_description || '',
       shots: (s.shots || []).map((shot: any) => ({
         id: shot.id,
+        direction: shot.direction || undefined,
         visualPrompt: shot.visual_prompt || '',
         motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
         duration: shot.duration,

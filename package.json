@@ -8,6 +8,7 @@
     "dev:client": "vite --port 3002",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
+    "lahari": "tsx cli/lahari.ts",
     "start": "NODE_ENV=production tsx server/index.ts",
     "preview": "vite preview"
   },
