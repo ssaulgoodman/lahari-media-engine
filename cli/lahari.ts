@@ -1,15 +1,6 @@
 #!/usr/bin/env node
 import 'dotenv/config';
-import { getFullProject } from '../server/routes/projects.js';
-import {
-  buildProjectContactSheet,
-  buildProjectPacket,
-  buildProjectReport,
-  buildShotPacket,
-  defaultArtifactPath,
-  listProjects,
-  writeArtifact,
-} from '../server/services/codexStudio.js';
+import { prepareCodexReadEnv } from '../server/services/codexReadEnv.js';
 
 const usage = () => {
   console.log(`Lahari CLI
@@ -28,6 +19,19 @@ Output:
 `);
 };
 
+const loadStudio = async () => {
+  const env = await prepareCodexReadEnv();
+  if (env.warning) console.error(`[lahari] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('No valid Supabase key available for Lahari CLI.');
+
+  const [{ getFullProject }, studio] = await Promise.all([
+    import('../server/routes/projects.js'),
+    import('../server/services/codexStudio.js'),
+  ]);
+
+  return { getFullProject, ...studio };
+};
+
 const main = async () => {
   const [domain, action, projectId, arg4] = process.argv.slice(2);
 
@@ -36,36 +40,38 @@ const main = async () => {
     return;
   }
 
+  const studio = await loadStudio();
+
   if (domain === 'project' && action === 'list') {
-    console.log(JSON.stringify(await listProjects(projectId), null, 2));
+    console.log(JSON.stringify(await studio.listProjects(projectId), null, 2));
     return;
   }
 
   if (domain === 'project' && action === 'packet' && projectId) {
-    const project = await getFullProject(projectId);
-    console.log(JSON.stringify(buildProjectPacket(project), null, 2));
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.buildProjectPacket(project), null, 2));
     return;
   }
 
   if (domain === 'project' && action === 'report' && projectId) {
-    const project = await getFullProject(projectId);
-    const outPath = arg4 || defaultArtifactPath(project, 'director-report.md');
-    const written = writeArtifact(outPath, buildProjectReport(project));
+    const project = await studio.getFullProject(projectId);
+    const outPath = arg4 || studio.defaultArtifactPath(project, 'director-report.md');
+    const written = studio.writeArtifact(outPath, studio.buildProjectReport(project));
     console.log(JSON.stringify({ kind: 'lahari.artifact', type: 'director-report', path: written }, null, 2));
     return;
   }
 
   if (domain === 'project' && action === 'contact-sheet' && projectId) {
-    const project = await getFullProject(projectId);
-    const outPath = arg4 || defaultArtifactPath(project, 'contact-sheet.html');
-    const written = writeArtifact(outPath, buildProjectContactSheet(project));
+    const project = await studio.getFullProject(projectId);
+    const outPath = arg4 || studio.defaultArtifactPath(project, 'contact-sheet.html');
+    const written = studio.writeArtifact(outPath, studio.buildProjectContactSheet(project));
     console.log(JSON.stringify({ kind: 'lahari.artifact', type: 'contact-sheet', path: written }, null, 2));
     return;
   }
 
   if (domain === 'shot' && action === 'packet' && projectId && arg4) {
-    const project = await getFullProject(projectId);
-    console.log(JSON.stringify(buildShotPacket(project, arg4), null, 2));
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.buildShotPacket(project, arg4), null, 2));
     return;
   }
 

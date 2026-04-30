@@ -3,16 +3,16 @@ import 'dotenv/config';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as z from 'zod/v4';
-import { getFullProject } from '../server/routes/projects.js';
-import {
-  buildProjectContactSheet,
-  buildProjectPacket,
-  buildProjectReport,
-  buildShotPacket,
-  defaultArtifactPath,
-  listProjects,
-  writeArtifact,
-} from '../server/services/codexStudio.js';
+import { prepareCodexReadEnv } from '../server/services/codexReadEnv.js';
+
+const loadStudio = async () => {
+  const [{ getFullProject }, studio] = await Promise.all([
+    import('../server/routes/projects.js'),
+    import('../server/services/codexStudio.js'),
+  ]);
+
+  return { getFullProject, ...studio };
+};
 
 const textResult = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
@@ -30,7 +30,8 @@ server.registerTool('list_projects', {
     limit: z.number().int().min(1).max(100).optional().describe('Maximum number of recent projects to return. Default: 20.'),
   },
 }, async ({ limit }) => {
-  return textResult(await listProjects(limit?.toString()));
+  const studio = await loadStudio();
+  return textResult(await studio.listProjects(limit?.toString()));
 });
 
 server.registerTool('get_project_packet', {
@@ -40,8 +41,9 @@ server.registerTool('get_project_packet', {
     projectId: z.string().min(1).describe('Lahari project ID.'),
   },
 }, async ({ projectId }) => {
-  const project = await getFullProject(projectId);
-  return textResult(buildProjectPacket(project));
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.buildProjectPacket(project));
 });
 
 server.registerTool('get_shot_packet', {
@@ -52,8 +54,9 @@ server.registerTool('get_shot_packet', {
     shotId: z.string().min(1).describe('Shot ID within the project.'),
   },
 }, async ({ projectId, shotId }) => {
-  const project = await getFullProject(projectId);
-  return textResult(buildShotPacket(project, shotId));
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.buildShotPacket(project, shotId));
 });
 
 server.registerTool('write_project_artifacts', {
@@ -67,17 +70,18 @@ server.registerTool('write_project_artifacts', {
     includeContactSheet: z.boolean().default(true).describe('Whether to write the HTML contact sheet.'),
   },
 }, async ({ projectId, reportPath, contactSheetPath, includeReport, includeContactSheet }) => {
-  const project = await getFullProject(projectId);
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
   const artifacts: { type: string; path: string }[] = [];
 
   if (includeReport) {
-    const outPath = reportPath || defaultArtifactPath(project, 'director-report.md');
-    artifacts.push({ type: 'director-report', path: writeArtifact(outPath, buildProjectReport(project)) });
+    const outPath = reportPath || studio.defaultArtifactPath(project, 'director-report.md');
+    artifacts.push({ type: 'director-report', path: studio.writeArtifact(outPath, studio.buildProjectReport(project)) });
   }
 
   if (includeContactSheet) {
-    const outPath = contactSheetPath || defaultArtifactPath(project, 'contact-sheet.html');
-    artifacts.push({ type: 'contact-sheet', path: writeArtifact(outPath, buildProjectContactSheet(project)) });
+    const outPath = contactSheetPath || studio.defaultArtifactPath(project, 'contact-sheet.html');
+    artifacts.push({ type: 'contact-sheet', path: studio.writeArtifact(outPath, studio.buildProjectContactSheet(project)) });
   }
 
   return textResult({
@@ -89,6 +93,10 @@ server.registerTool('write_project_artifacts', {
 });
 
 async function main() {
+  const env = await prepareCodexReadEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('No valid Supabase key available for Lahari MCP.');
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Lahari Codex Studio MCP server running on stdio');
