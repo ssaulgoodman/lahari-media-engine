@@ -13,6 +13,10 @@ Usage:
   npm run lahari -- project report <projectId> [out.md]
   npm run lahari -- project contact-sheet <projectId> [out.html]
   npm run lahari -- shot packet <projectId> <shotId>
+  npm run lahari -- session attach <projectId> [note...]
+  npm run lahari -- session state <projectId>
+  npm run lahari -- session note <projectId> <note...>
+  npm run lahari -- session journal <projectId>
 
 Output:
   JSON packets and local review artifacts designed for Codex inspection and future MCP wrapping.
@@ -33,7 +37,7 @@ const loadStudio = async () => {
 };
 
 const main = async () => {
-  const [domain, action, projectId, arg4] = process.argv.slice(2);
+  const [domain, action, projectId, arg4, ...rest] = process.argv.slice(2);
 
   if (!domain || domain === 'help' || domain === '--help' || domain === '-h') {
     usage();
@@ -72,6 +76,33 @@ const main = async () => {
   if (domain === 'shot' && action === 'packet' && projectId && arg4) {
     const project = await studio.getFullProject(projectId);
     console.log(JSON.stringify(studio.buildShotPacket(project, arg4), null, 2));
+    return;
+  }
+
+  if (domain === 'session' && action === 'attach' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(studio.attachDirectorSession(project, note), null, 2));
+    return;
+  }
+
+  if (domain === 'session' && action === 'state' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.getDirectorSession(project), null, 2));
+    return;
+  }
+
+  if (domain === 'session' && action === 'note' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const note = [arg4, ...rest].filter(Boolean).join(' ');
+    console.log(JSON.stringify(studio.addDirectorSessionNote(project, note), null, 2));
+    return;
+  }
+
+  if (domain === 'session' && action === 'journal' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const session = studio.getDirectorSession(project);
+    console.log(session.journal || 'No director journal exists yet. Run: npm run lahari -- session attach <projectId>');
     return;
   }
 

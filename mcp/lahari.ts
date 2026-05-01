@@ -92,6 +92,44 @@ server.registerTool('write_project_artifacts', {
   });
 });
 
+server.registerTool('attach_director_session', {
+  title: 'Attach director session',
+  description: 'Local-file only. Creates or refreshes a Codex director session for a Lahari project under .lahari/sessions.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    note: z.string().optional().describe('Optional operator note to append to the journal.'),
+  },
+}, async ({ projectId, note }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.attachDirectorSession(project, note));
+});
+
+server.registerTool('get_director_session', {
+  title: 'Get director session',
+  description: 'Read-only/local-file. Returns the current derived checkpoint plus saved session state and journal when present.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+  },
+}, async ({ projectId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.getDirectorSession(project));
+});
+
+server.registerTool('add_director_note', {
+  title: 'Add director journal note',
+  description: 'Local-file only. Appends an operator/Codex note to the project director journal and refreshes local state.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    note: z.string().min(1).describe('Note to append to the director journal.'),
+  },
+}, async ({ projectId, note }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.addDirectorSessionNote(project, note));
+});
+
 async function main() {
   const env = await prepareCodexReadEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);

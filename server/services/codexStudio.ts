@@ -48,6 +48,33 @@ const md = (value?: string | null): string => {
   return value?.trim() || 'None';
 };
 
+const sessionDir = (projectId: string): string => {
+  return path.join(process.cwd(), '.lahari', 'sessions', projectId);
+};
+
+const sessionStatePath = (projectId: string): string => {
+  return path.join(sessionDir(projectId), 'state.json');
+};
+
+const sessionJournalPath = (projectId: string): string => {
+  return path.join(sessionDir(projectId), 'journal.md');
+};
+
+const readTextFileIfExists = (filePath: string): string | null => {
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath, 'utf8');
+};
+
+const readJsonFileIfExists = (filePath: string): unknown | null => {
+  const content = readTextFileIfExists(filePath);
+  if (!content) return null;
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+};
+
 export const listProjects = async (limitArg?: string) => {
   const parsedLimit = limitArg ? Number.parseInt(limitArg, 10) : 20;
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20;
@@ -124,6 +151,91 @@ export const recommendedActions = (project: Project): string[] => {
   if (counts.shots && counts.lockedShots < counts.shots) actions.push('Review and lock completed shots.');
 
   return actions.slice(0, 8);
+};
+
+export const deriveCheckpointState = (project: Project) => {
+  const counts = statusCounts(project);
+  const missingRefs = missingReferenceNames(project);
+  const hasConcept = !!project.lockedConcept;
+  const hasScript = counts.scenes > 0 && counts.shots > 0;
+  const hasStyle = !!project.styleAssetUrl;
+  const refsComplete = missingRefs.cast.length === 0 && missingRefs.environments.length === 0;
+  const promptsComplete = hasScript && project.scenes.every((scene) => scene.shots.every((shot) => (
+    !!shot.visualPrompt
+    && !!shot.motionPrompt
+    && shot.motionPrompt !== 'Cinematic camera movement'
+  )));
+  const framesComplete = counts.shots > 0 && counts.frames === counts.shots;
+  const videosComplete = counts.shots > 0 && counts.videos === counts.shots;
+  const locksComplete = counts.shots > 0 && counts.lockedShots === counts.shots;
+
+  let key = 'audio_analysis';
+  let label = 'Audio analysis';
+  let summary = 'Review source lyrics, meaning, structure, and song classification before concept work.';
+
+  if (project.status === 'completed') {
+    key = 'completed';
+    label = 'Completed';
+    summary = 'Project is completed. Useful next work is audit, publish review, or meta-learning capture.';
+  } else if (videosComplete && locksComplete) {
+    key = 'render_publish';
+    label = 'Render and publish';
+    summary = 'All shots have videos and are locked. Ready for final assembly/publish review.';
+  } else if (videosComplete) {
+    key = 'studio_review';
+    label = 'Studio review';
+    summary = 'All shot videos exist. Review quality, lock winners, and handle stale/error states.';
+  } else if (framesComplete) {
+    key = 'video_generation';
+    label = 'Video generation';
+    summary = 'Start frames are complete. Generate or retry shot videos, respecting chained-shot dependencies.';
+  } else if (promptsComplete) {
+    key = 'frame_generation';
+    label = 'Frame generation';
+    summary = 'Shot prompts are ready. Generate missing start frames and inspect the visual sequence.';
+  } else if (refsComplete && hasScript && hasStyle) {
+    key = 'shot_prompting';
+    label = 'Shot prompting';
+    summary = 'Blueprint references are ready. Write or rewrite cinematic shot prompts before generating frames.';
+  } else if (hasStyle && hasScript) {
+    key = 'looks';
+    label = 'Characters and environments';
+    summary = 'Style is locked. Finish reusable character/entity and environment/location references.';
+  } else if (hasScript) {
+    key = 'style';
+    label = 'Style direction';
+    summary = 'Script exists. Brainstorm, visualize, and lock the reusable style reference.';
+  } else if (hasConcept) {
+    key = 'script';
+    label = 'Script and shot plan';
+    summary = 'Concept is locked. Generate or refine cast, environments, scenes, and shot beats.';
+  } else if (project.conceptOptions.length > 0) {
+    key = 'concept';
+    label = 'Concept selection';
+    summary = 'Concept options exist. Choose, refine, or regenerate before script planning.';
+  }
+
+  const openIssues = [
+    project.songType ? null : 'Song classification is missing; this may be an older project or unanalyzed cache path.',
+    counts.stalePrompts ? `${counts.stalePrompts} stale prompt${counts.stalePrompts === 1 ? '' : 's'} need review.` : null,
+    counts.errors ? `${counts.errors} error state${counts.errors === 1 ? ' needs' : 's need'} triage.` : null,
+    missingRefs.cast.length ? `Missing character/entity references: ${missingRefs.cast.join(', ')}.` : null,
+    missingRefs.environments.length ? `Missing environment/location references: ${missingRefs.environments.join(', ')}.` : null,
+    hasScript && !promptsComplete ? 'Some shots are missing usable visual or motion prompts.' : null,
+    counts.shots && counts.frames < counts.shots ? `${counts.shots - counts.frames} start frame${counts.shots - counts.frames === 1 ? '' : 's'} missing.` : null,
+    counts.shots && counts.videos < counts.shots ? `${counts.shots - counts.videos} video${counts.shots - counts.videos === 1 ? '' : 's'} missing.` : null,
+    counts.shots && counts.lockedShots < counts.shots ? `${counts.shots - counts.lockedShots} shot${counts.shots - counts.lockedShots === 1 ? '' : 's'} not locked.` : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    key,
+    label,
+    summary,
+    projectStatus: project.status,
+    counts,
+    openIssues,
+    recommendedActions: recommendedActions(project),
+  };
 };
 
 export const buildProjectPacket = (project: Project) => {
@@ -510,4 +622,109 @@ export const buildShotPacket = (project: Project, shotId: string) => {
   }
 
   throw new Error(`Shot not found in project: ${shotId}`);
+};
+
+const journalEntry = (title: string, body: string): string => {
+  return `\n\n## ${new Date().toISOString()} — ${title}\n\n${body.trim()}\n`;
+};
+
+const sessionState = (project: Project, note?: string | null) => {
+  const checkpoint = deriveCheckpointState(project);
+  return {
+    kind: 'lahari.director.session',
+    updatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      preset: 'bhakti-music-video',
+      imageModel: project.imageModel,
+      videoModel: project.videoModel,
+      updatedAt: project.updatedAt,
+    },
+    checkpoint,
+    note: note || null,
+    files: {
+      state: sessionStatePath(project.id),
+      journal: sessionJournalPath(project.id),
+      directorReport: defaultArtifactPath(project, 'director-report.md'),
+      contactSheet: defaultArtifactPath(project, 'contact-sheet.html'),
+    },
+    guardrails: [
+      'Read-only inspection is allowed without approval.',
+      'Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.',
+      'Use preview/diff artifacts before overwriting creative work.',
+    ],
+  };
+};
+
+export const attachDirectorSession = (project: Project, note?: string) => {
+  const dir = sessionDir(project.id);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const state = sessionState(project, note);
+  fs.writeFileSync(sessionStatePath(project.id), `${JSON.stringify(state, null, 2)}\n`);
+
+  const journalPath = sessionJournalPath(project.id);
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+
+  const actions = state.checkpoint.recommendedActions.length
+    ? state.checkpoint.recommendedActions.map((action) => `- ${action}`).join('\n')
+    : '- No deterministic next action.';
+  const issues = state.checkpoint.openIssues.length
+    ? state.checkpoint.openIssues.map((issue) => `- ${issue}`).join('\n')
+    : '- No open issues from deterministic checks.';
+  const noteBlock = note ? `\n\nOperator note: ${note}` : '';
+
+  fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
+
+  return {
+    kind: 'lahari.director.session.attached',
+    projectId: project.id,
+    statePath: sessionStatePath(project.id),
+    journalPath,
+    checkpoint: state.checkpoint,
+  };
+};
+
+export const getDirectorSession = (project: Project) => {
+  const statePath = sessionStatePath(project.id);
+  const journalPath = sessionJournalPath(project.id);
+  const currentState = sessionState(project);
+
+  return {
+    kind: 'lahari.director.session.read',
+    projectId: project.id,
+    exists: fs.existsSync(statePath) || fs.existsSync(journalPath),
+    currentState,
+    savedState: readJsonFileIfExists(statePath),
+    journal: readTextFileIfExists(journalPath),
+  };
+};
+
+export const addDirectorSessionNote = (project: Project, note: string) => {
+  if (!note.trim()) throw new Error('Session note cannot be empty.');
+
+  const dir = sessionDir(project.id);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const state = sessionState(project, note);
+  fs.writeFileSync(sessionStatePath(project.id), `${JSON.stringify(state, null, 2)}\n`);
+
+  const journalPath = sessionJournalPath(project.id);
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+
+  fs.appendFileSync(journalPath, journalEntry('operator note', `${note.trim()}\n\nCheckpoint: ${state.checkpoint.label}`));
+
+  return {
+    kind: 'lahari.director.session.note_added',
+    projectId: project.id,
+    statePath: sessionStatePath(project.id),
+    journalPath,
+    checkpoint: state.checkpoint,
+  };
 };

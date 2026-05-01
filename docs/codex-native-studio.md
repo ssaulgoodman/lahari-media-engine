@@ -242,6 +242,10 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- shot packet <projectId> <shotId>`
 - CLI: `npm run lahari -- project report <projectId> [out.md]`
 - CLI: `npm run lahari -- project contact-sheet <projectId> [out.html]`
+- CLI: `npm run lahari -- session attach <projectId> [note...]`
+- CLI: `npm run lahari -- session state <projectId>`
+- CLI: `npm run lahari -- session note <projectId> <note...>`
+- CLI: `npm run lahari -- session journal <projectId>`
 - MCP: `npm run lahari:mcp`
 
 The MCP server currently exposes only read-only/local-output tools:
@@ -250,8 +254,19 @@ The MCP server currently exposes only read-only/local-output tools:
 - `get_project_packet`
 - `get_shot_packet`
 - `write_project_artifacts`
+- `attach_director_session`
+- `get_director_session`
+- `add_director_note`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
+
+Director sessions are local working memory under `.lahari/sessions/<projectId>/`:
+
+- `state.json` is the latest deterministic checkpoint read.
+- `journal.md` is the running human/Codex production log.
+- Reports and contact sheets remain generated snapshots under `.lahari/codex/`.
+
+The state file is not the source of truth for the project. Supabase remains truth; the session files preserve production context, open questions, and decisions for a long-lived Codex thread.
 
 Second milestone:
 
