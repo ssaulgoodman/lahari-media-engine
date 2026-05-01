@@ -10,17 +10,20 @@ npm run dev          # Backend :3003 (or PORT env), frontend :3002 (Vite proxies
 npm run dev:server   # Backend only
 npm run dev:client   # Frontend only
 npm run build        # Vite production build → dist/
+npm run lahari       # Codex-native Lahari CLI helpers
+npm run lahari:mcp   # Codex-native Lahari MCP adapter
 npm start            # Production: Express serves dist/ + /api + /storage from one origin
 ```
 
 **Env vars required:**
-- `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
+- `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini image generation (`imagen.ts`) and Gemini audio/vision (`gemini.ts`). Not used for video.
 - `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY` — required only when the project image model is `gpt-image-2`.
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
 - `CORS_ORIGINS` — comma-separated in prod
-- **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
+- **Vertex AI legacy**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only matter if re-enabling direct Veo calls.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
 
@@ -39,6 +42,48 @@ Minimal response endpoints: clear-frame, clear-end-frame, clear-extracted-frame,
 
 Full `getFullProject` still used for: all generate/refine endpoints (AI work), fork, analyze-audio, revert-video, GET /:id, queue start/publish.
 
+## Codex-Native Studio Mode
+
+This branch is also a Codex-native production workspace. The Lahari web app stays the visual studio; Codex Desktop is the operator/director surface. Start with `docs/codex-native-studio.md` for the vision and current tool list.
+
+The shared service for Codex tools is `server/services/codexStudio.ts`. The CLI and MCP are adapters around that service:
+
+```bash
+npm run lahari -- project list [limit]
+npm run lahari -- project packet <projectId>
+npm run lahari -- shot packet <projectId> <shotId>
+npm run lahari -- project report <projectId> [out.md]
+npm run lahari -- project contact-sheet <projectId> [out.html]
+npm run lahari -- session attach <projectId> [note...]
+npm run lahari -- session state <projectId>
+npm run lahari -- session note <projectId> <note...>
+npm run lahari -- session journal <projectId>
+npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
+npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>
+npm run lahari -- apply rewrite-shot-prompts <preview.json>
+```
+
+Generated local artifacts live under `.lahari/` and are intentionally ignored:
+
+- `.lahari/codex/` — director reports and contact sheets
+- `.lahari/sessions/<projectId>/` — `state.json` and `journal.md`
+- `.lahari/previews/<projectId>/` — preview JSON/Markdown/runtime prompts
+
+Permission boundary:
+
+- Read-only inspection and local artifacts are safe to run.
+- `preview rewrite-shot-prompts` is non-mutating but calls Claude, so ask before running it autonomously.
+- `apply rewrite-shot-prompts` mutates Supabase and must be an explicit user-approved command. It requires a valid `SUPABASE_SERVICE_KEY`; Codex tools may fall back to `VITE_SUPABASE_ANON_KEY` for read-only work, but apply tools refuse anon fallback.
+- Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.
+
+Recommended fresh-session start:
+
+1. `git status --short --branch`
+2. Read `docs/codex-native-studio.md`.
+3. `npm run lahari -- project list 10`
+4. `npm run lahari -- session attach <projectId> "starting Codex director session"`
+5. Generate a report/contact sheet before proposing any mutation.
+
 ## Architecture
 
 **Lahari Media Engine** — AI-powered music video production tool for devotional songs. Integrates with a shared Supabase song catalog (see `music_video_queue` table).
@@ -50,33 +95,34 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 
 ### Pipeline (4 steps)
 
-1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage, creates Lahari project.
-2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
+1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → creates a Lahari project quickly, then background work downloads audio/SRT, runs Gemini analysis when needed, and promotes to `analyzed`. Analysis cache on `songs` includes lyrics, structure, meaning, and song classification (`cached_song_type`, `cached_is_narrative`, `cached_is_meditative`).
+2. **Blueprint** (orchestrated by `AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
-   - Script (Claude Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
-   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA)
-   - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
-   - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
-   - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
+   - Script (Claude Opus with extended thinking + validation, proposes cast + environments + scenes + shots)
+   - Style (Claude brainstorm → image model visualize → style image lock; style image is ground truth)
+   - Characters (image model, candidate history persisted)
+   - Environments (image model, candidate history persisted)
+   - Auto-writes shot prompts (Claude Opus) with full context at the end.
 3. **Studio** (`Storyboard.tsx`) — Per-shot:
    - Generate start frame (Gemini 3 Pro Image with full ref chain)
-   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind, start keyframe only)
+   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind)
    - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
    - Lock shot (requires start + video)
-4. **Render** (`StepRender.tsx`) — Client-side FFmpeg WASM stitches videos + audio.
+4. **Render** (`StepRender.tsx`) — Timeline editor → `/api/projects/:id/render` → sibling Remotion renderer service → Supabase Storage → publish back to queue.
 
 ### AI Models
 
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
-| All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
+| Concept, script, script refine, style brainstorm, shot prompts | `claude-opus-4-7` | claude.ts | Anthropic API |
+| Meaning, style refine, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Image gen default | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` | imagen.ts | Gemini Developer API |
+| Image gen alt | `gpt-image-2` (`gpt-image-1.5` runtime) | openai-image.ts | OpenAI Images API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
-**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs. Seedance models accept `first_frame_url` + `last_frame_url` + up to 9 `reference_images`. All models support end-frame conditioning and ref images. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
+**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs together. **Seedance constraint**: `first_frame_url` and `reference_images` are mutually exclusive — when start frame exists, frame mode is used and reference images are skipped. `ffmpeg.ts` provides `extractLastFrame` (provider-independent). Duration is rounded up to the smallest valid model duration.
 
 **Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
 
@@ -121,8 +167,8 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
-- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
+- `lahari_projects` — core state incl. `user_id` (auth ownership), `image_model`, `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage), `source_queue_id`
+- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
@@ -142,10 +188,10 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 ### Launch Studio shortcut
 
-`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
+`handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Script generation must leave `visual_prompt` empty; `direction` holds the narrative beat until `writeShotPrompts` writes the actual start-frame prompt. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
 
 **Supabase tables (read-only from Lahari):**
-- `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
+- `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url` plus cached Lahari analysis fields
 - `files` — SRT files, etc. (Google Drive URLs)
 - `music_video_queue` (Lahari's domain table) — song_id, priority, status, lahari_project_id, video_url
 

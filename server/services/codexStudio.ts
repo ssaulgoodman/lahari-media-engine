@@ -959,7 +959,7 @@ export const previewRewriteShotPrompts = async (project: Project, userNote?: str
       imageModel: project.imageModel,
       videoModel: project.videoModel,
     },
-    model: 'claude-opus-4-6',
+    model: 'claude-opus-4-7',
     userNote: userNote || null,
     counts: {
       shots: previewShots.length,
