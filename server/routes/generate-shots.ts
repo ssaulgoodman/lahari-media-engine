@@ -649,6 +649,28 @@ router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Cancel an in-flight image generation — flips a stuck `loading` row back
+// to idle so the artist can retry. Server work (if any) keeps running but
+// its terminal write is harmless on an idle row.
+router.post('/:id/shots/:shotId/cancel-image', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot = await selectOne('shots', { id: shotId });
+  if (shot?.image_status === 'loading') {
+    await updateRows('shots', { id: shotId }, { image_status: 'idle' });
+  }
+  res.json({ ok: true });
+});
+
+// Cancel an in-flight video generation — same pattern as cancel-image.
+router.post('/:id/shots/:shotId/cancel-video', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot = await selectOne('shots', { id: shotId });
+  if (shot?.video_status === 'loading') {
+    await updateRows('shots', { id: shotId }, { video_status: 'idle' });
+  }
+  res.json({ ok: true });
+});
+
 // Clear extracted last frame — removes the ffmpeg-extracted frame from a previous video gen
 router.post('/:id/shots/:shotId/clear-extracted-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);

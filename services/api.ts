@@ -482,6 +482,16 @@ export const clearShotFrame = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
+export const cancelShotImage = async (projectId: string, shotId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/cancel-image`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const cancelShotVideo = async (projectId: string, shotId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/cancel-video`, { method: 'POST' });
+  return handleResponse(res);
+};
+
 export const generateEndFrame = async (projectId: string, shotId: string, refs?: ShotRefInput[]) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, {
     method: 'POST',

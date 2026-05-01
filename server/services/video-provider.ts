@@ -34,8 +34,8 @@ const shouldFallbackToVertex = (err: any): boolean => {
     return false;
   }
 
-  if (category === 'model_unavailable') return true;
-  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  if (category === 'model_unavailable' || category === 'insufficient_credits') return true;
+  if ([402, 403, 408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
 
   return [
     'fetch failed',
@@ -48,6 +48,12 @@ const shouldFallbackToVertex = (err: any): boolean => {
     'bad gateway',
     'gateway timeout',
     'internal server error',
+    'insufficient credits',
+    'insufficient credit',
+    'out of credits',
+    'not enough credits',
+    'payment required',
+    'billing',
   ].some(needle => text.includes(needle));
 };
 

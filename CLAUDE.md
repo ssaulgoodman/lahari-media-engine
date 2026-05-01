@@ -21,7 +21,7 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
 - `CORS_ORIGINS` — comma-separated in prod
 - `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` — URL of the `remotion-renderer` service (sibling deployment) and the shared HMAC-style secret used for `x-renderer-secret`. See `docs/remotion-renderer.md`.
-- **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
+- **Vertex AI (Veo fallback)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Used as a continuity-preserving backup when Segmind Veo calls fail with infra errors — see "Vertex fallback" below. Also used by `extractLastFrame` ffmpeg.
 
 Production is deployed on Railway: https://lahari-media-engine-production.up.railway.app
 
@@ -100,6 +100,13 @@ All modules mount on the same router instance — param validators and scope hel
 **All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs together. **Seedance constraint**: `first_frame_url` and `reference_images` are mutually exclusive — when start frame exists (always for shot gen), frame mode is used and reference_images are skipped. `ffmpeg.ts` provides `extractLastFrame` (provider-independent). **Duration rounding**: `generateSegmindVideo` picks the smallest model duration >= shot duration (not nearest). A 5s shot on Veo Fast (8s only) sends 8s. `getModelMinDuration()` helper returns the floor for a given model key.
 
 **Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
+
+**Vertex fallback** (`server/services/video-provider.ts`): `generateVideoWithFallback` wraps Segmind. If Segmind throws and the request meets all of these conditions, it retries on Vertex Veo:
+1. Model is a Veo variant (`veo-3.1-fast` or `veo-3.1`) — Seedance has no Vertex equivalent and never falls back.
+2. Vertex is configured (`hasVertexVideoConfig()` checks `GCP_PROJECT_ID`).
+3. Error looks like infra trouble OR billing exhaustion: `errorCategory` in `{model_unavailable, insufficient_credits}`, status in `[402, 403, 408, 409, 425, 429, 500, 502, 503, 504]`, or message matches `fetch failed | network | timeout | unavailable | overloaded | bad gateway | gateway timeout | internal server error | insufficient credit(s) | out of credits | not enough credits | payment required | billing`.
+
+Safety blocks (`errorCategory === 'safety'`) explicitly never fall back — Vertex's RAI filter is stricter, so retrying there would just fail again. Segmind classifies HTTP 402 / "insufficient credits" / "payment required" / 403+billing as `errorCategory === 'insufficient_credits'`, which triggers the Vertex retry. Vertex fallback drops shot-level `referenceImagePaths` (image-to-video mode only) — it preserves start frame, end frame, and motion prompt.
 
 ### Video workflow (redesigned)
 
