@@ -154,8 +154,17 @@ export const generateSegmindVideo = async (
     // Classify errors so the artist sees actionable messages
     const lower = errText.toLowerCase();
     let userMessage: string;
+    const isCreditsError =
+      res.status === 402 ||
+      lower.includes('insufficient credit') ||
+      lower.includes('out of credits') ||
+      lower.includes('not enough credits') ||
+      lower.includes('payment required') ||
+      (res.status === 403 && lower.includes('billing'));
     if (lower.includes('safety settings') || lower.includes('blocked') || lower.includes('person/face')) {
       userMessage = `Safety filter blocked this image — the AI flagged faces/people in the start frame. Try regenerating the start frame first, or switch to Seedance which has a different safety policy.`;
+    } else if (isCreditsError) {
+      userMessage = `Segmind credits exhausted — falling back to Vertex Veo if configured, otherwise this will fail.`;
     } else if (res.status === 404 || lower.includes('not_found') || lower.includes('not found')) {
       userMessage = `Model ${modelKey} is temporarily unavailable on Segmind (404). This usually resolves in a few minutes — try again shortly.`;
     } else if (res.status === 429 || lower.includes('rate limit') || lower.includes('quota')) {
@@ -168,7 +177,13 @@ export const generateSegmindVideo = async (
     const err = new Error(userMessage);
     (err as any).segmindStatus = res.status;
     (err as any).segmindRaw = errText.slice(0, 500);
-    (err as any).errorCategory = lower.includes('safety') || lower.includes('blocked') ? 'safety' : res.status === 404 ? 'model_unavailable' : 'unknown';
+    (err as any).errorCategory = lower.includes('safety') || lower.includes('blocked')
+      ? 'safety'
+      : isCreditsError
+        ? 'insufficient_credits'
+        : res.status === 404
+          ? 'model_unavailable'
+          : 'unknown';
     throw err;
   }
 
