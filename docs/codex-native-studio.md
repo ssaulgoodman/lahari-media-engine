@@ -246,6 +246,7 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- session state <projectId>`
 - CLI: `npm run lahari -- session note <projectId> <note...>`
 - CLI: `npm run lahari -- session journal <projectId>`
+- CLI: `npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]`
 - MCP: `npm run lahari:mcp`
 
 The MCP server currently exposes only read-only/local-output tools:
@@ -257,6 +258,7 @@ The MCP server currently exposes only read-only/local-output tools:
 - `attach_director_session`
 - `get_director_session`
 - `add_director_note`
+- `preview_rewrite_shot_prompts`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
 
@@ -267,6 +269,8 @@ Director sessions are local working memory under `.lahari/sessions/<projectId>/`
 - Reports and contact sheets remain generated snapshots under `.lahari/codex/`.
 
 The state file is not the source of truth for the project. Supabase remains truth; the session files preserve production context, open questions, and decisions for a long-lived Codex thread.
+
+Preview artifacts live under `.lahari/previews/<projectId>/`. The first preview action is `rewrite-shot-prompts`: it calls the real shot prompt writer, writes before/after Markdown + JSON + runtime prompt artifacts, and does not mutate Supabase. It is still a paid AI call, so Codex should ask before running it when operating autonomously.
 
 Second milestone:
 

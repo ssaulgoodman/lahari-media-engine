@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { selectColumns } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
+import { writeShotPrompts } from './claude.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
 
@@ -26,6 +27,10 @@ const slugify = (value: string): string => {
 
 export const defaultArtifactPath = (project: Project, suffix: string): string => {
   return path.join(process.cwd(), '.lahari', 'codex', `${slugify(project.title)}-${suffix}`);
+};
+
+const defaultPreviewPath = (project: Project, previewId: string, suffix: string): string => {
+  return path.join(process.cwd(), '.lahari', 'previews', project.id, `${previewId}-${suffix}`);
 };
 
 export const writeArtifact = (filePath: string, content: string) => {
@@ -727,4 +732,236 @@ export const addDirectorSessionNote = (project: Project, note: string) => {
     journalPath,
     checkpoint: state.checkpoint,
   };
+};
+
+type ShotPromptPreviewShot = {
+  id: string;
+  sceneIndex: number;
+  shotIndex: number;
+  duration: number;
+  beat: string;
+  castNames: string[];
+  sceneNarrative: string;
+  sceneLyrics: string;
+  before: {
+    visualPrompt: string;
+    motionPrompt: string;
+    continuityFrom: string;
+    promptsStale: boolean;
+  };
+  after: {
+    visualPrompt: string;
+    motionPrompt: string;
+    continuityFrom: 'cut' | 'prev_shot';
+  };
+};
+
+const formatPromptBlock = (value?: string | null): string => {
+  return value?.trim() ? value.trim() : '_empty_';
+};
+
+const buildShotPromptPreviewMarkdown = (
+  project: Project,
+  preview: {
+    previewId: string;
+    generatedAt: string;
+    userNote?: string;
+    model: string;
+    shots: ShotPromptPreviewShot[];
+    promptPath: string;
+    jsonPath: string;
+  },
+) => {
+  const changed = preview.shots.filter((shot) => (
+    shot.before.visualPrompt !== shot.after.visualPrompt
+    || shot.before.motionPrompt !== shot.after.motionPrompt
+    || shot.before.continuityFrom !== shot.after.continuityFrom
+  )).length;
+
+  const shotSections = preview.shots.map((shot) => `## Scene ${shot.sceneIndex}, Shot ${shot.shotIndex}
+
+- Shot ID: \`${shot.id}\`
+- Duration: ${shot.duration}s
+- Cast: ${shot.castNames.join(', ') || 'none'}
+- Beat: ${shot.beat || 'None'}
+- Continuity: \`${shot.before.continuityFrom || 'cut'}\` -> \`${shot.after.continuityFrom}\`
+
+### Visual Prompt
+
+Before:
+${formatPromptBlock(shot.before.visualPrompt)}
+
+After:
+${formatPromptBlock(shot.after.visualPrompt)}
+
+### Motion Prompt
+
+Before:
+${formatPromptBlock(shot.before.motionPrompt)}
+
+After:
+${formatPromptBlock(shot.after.motionPrompt)}
+`).join('\n');
+
+  return `# Shot Prompt Rewrite Preview
+
+Generated: ${preview.generatedAt}
+Preview ID: \`${preview.previewId}\`
+Project: ${project.title}
+Project ID: \`${project.id}\`
+Model: ${preview.model}
+User note: ${preview.userNote || 'None'}
+
+This is a preview only. No Lahari database rows, prompts, stale flags, frames, or videos were changed.
+
+## Summary
+
+- Shots previewed: ${preview.shots.length}
+- Shots changed: ${changed}
+- JSON artifact: \`${preview.jsonPath}\`
+- Runtime prompt artifact: \`${preview.promptPath}\`
+
+${shotSections || 'No shots.'}
+`;
+};
+
+export const previewRewriteShotPrompts = async (project: Project, userNote?: string) => {
+  if (!project.scenes.length) throw new Error('Project has no scenes. Generate a script before previewing shot prompts.');
+  const allProjectShots = project.scenes.flatMap((scene) => scene.shots);
+  if (!allProjectShots.length) throw new Error('Project has no shots. Generate a script before previewing shot prompts.');
+
+  const castById = namesById(project.cast);
+  const firstShotIdsPerScene = new Set<string>();
+  const previewShots: ShotPromptPreviewShot[] = [];
+  const batchPrompts: string[] = [];
+  const BATCH_SIZE = 15;
+
+  const allShots = project.scenes.flatMap((scene, sceneIndex) => {
+    if (scene.shots[0]) firstShotIdsPerScene.add(scene.shots[0].id);
+    return scene.shots.map((shot, shotIndex) => {
+      const castNames = (shot.castIds || []).map((id) => castById.get(id) || id);
+      return {
+        id: shot.id,
+        sceneIndex: sceneIndex + 1,
+        shotIndex: shotIndex + 1,
+        direction: shot.direction || shot.visualPrompt || '',
+        duration: shot.duration,
+        castNames,
+        sceneNarrative: scene.narrativeDescription || '',
+        sceneLyrics: scene.lyrics || '',
+        before: {
+          visualPrompt: shot.visualPrompt || '',
+          motionPrompt: shot.motionPrompt || '',
+          continuityFrom: shot.continuityFrom || 'cut',
+          promptsStale: !!shot.promptsStale,
+        },
+      };
+    });
+  });
+
+  let previousBatchTail: { id: string; visualPrompt: string; motionPrompt: string }[] | undefined;
+
+  for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
+    const batch = allShots.slice(i, i + BATCH_SIZE);
+    const result = await writeShotPrompts(batch.map((shot) => ({
+      id: shot.id,
+      direction: shot.direction,
+      duration: shot.duration,
+      castNames: shot.castNames,
+      sceneNarrative: shot.sceneNarrative,
+      sceneLyrics: shot.sceneLyrics,
+    })), {
+      cast: project.cast.map((member) => ({ name: member.name, description: member.description })),
+      concept: project.lockedConcept || {},
+      userNote,
+      songType: project.songType || undefined,
+      isNarrative: project.isNarrative ?? undefined,
+      isMeditative: project.isMeditative ?? undefined,
+    }, previousBatchTail);
+
+    batchPrompts.push(
+      allShots.length > BATCH_SIZE
+        ? `=== Batch ${Math.floor(i / BATCH_SIZE) + 1} (shots ${i + 1}-${Math.min(i + BATCH_SIZE, allShots.length)}) ===\n${result.prompt}`
+        : result.prompt,
+    );
+
+    const outputById = new Map(result.shots.map((shot) => [shot.id, shot]));
+    for (const shot of batch) {
+      const output = outputById.get(shot.id);
+      if (!output) throw new Error(`writeShotPrompts preview did not return shot ID ${shot.id}`);
+      previewShots.push({
+        id: shot.id,
+        sceneIndex: shot.sceneIndex,
+        shotIndex: shot.shotIndex,
+        duration: shot.duration,
+        beat: shot.direction,
+        castNames: shot.castNames,
+        sceneNarrative: shot.sceneNarrative,
+        sceneLyrics: shot.sceneLyrics,
+        before: shot.before,
+        after: {
+          visualPrompt: output.visualPrompt || '',
+          motionPrompt: output.motionPrompt || '',
+          continuityFrom: firstShotIdsPerScene.has(shot.id) ? 'cut' : (output.continuityFrom || 'cut'),
+        },
+      });
+    }
+
+    previousBatchTail = result.shots.slice(-2).map((shot) => ({
+      id: shot.id,
+      visualPrompt: shot.visualPrompt,
+      motionPrompt: shot.motionPrompt,
+    }));
+  }
+
+  const now = new Date().toISOString();
+  const previewId = `${now.replace(/[:.]/g, '-')}-shot-prompts`;
+  const promptPath = defaultPreviewPath(project, previewId, 'runtime-prompt.txt');
+  const jsonPath = defaultPreviewPath(project, previewId, 'preview.json');
+  const markdownPath = defaultPreviewPath(project, previewId, 'preview.md');
+  const promptText = batchPrompts.join('\n\n');
+
+  const preview = {
+    kind: 'lahari.preview.rewrite_shot_prompts',
+    previewId,
+    generatedAt: now,
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      imageModel: project.imageModel,
+      videoModel: project.videoModel,
+    },
+    model: 'claude-opus-4-6',
+    userNote: userNote || null,
+    counts: {
+      shots: previewShots.length,
+      changed: previewShots.filter((shot) => (
+        shot.before.visualPrompt !== shot.after.visualPrompt
+        || shot.before.motionPrompt !== shot.after.motionPrompt
+        || shot.before.continuityFrom !== shot.after.continuityFrom
+      )).length,
+    },
+    artifacts: {
+      markdownPath,
+      jsonPath,
+      promptPath,
+    },
+    shots: previewShots,
+    note: 'Preview only. No database rows, assets, or stale flags were changed.',
+  };
+
+  writeArtifact(promptPath, promptText);
+  writeArtifact(jsonPath, `${JSON.stringify(preview, null, 2)}\n`);
+  writeArtifact(markdownPath, buildShotPromptPreviewMarkdown(project, {
+    previewId,
+    generatedAt: now,
+    userNote,
+    model: preview.model,
+    shots: previewShots,
+    promptPath,
+    jsonPath,
+  }));
+
+  return preview;
 };

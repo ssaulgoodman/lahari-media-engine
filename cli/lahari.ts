@@ -17,6 +17,7 @@ Usage:
   npm run lahari -- session state <projectId>
   npm run lahari -- session note <projectId> <note...>
   npm run lahari -- session journal <projectId>
+  npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
 
 Output:
   JSON packets and local review artifacts designed for Codex inspection and future MCP wrapping.
@@ -103,6 +104,13 @@ const main = async () => {
     const project = await studio.getFullProject(projectId);
     const session = studio.getDirectorSession(project);
     console.log(session.journal || 'No director journal exists yet. Run: npm run lahari -- session attach <projectId>');
+    return;
+  }
+
+  if (domain === 'preview' && action === 'rewrite-shot-prompts' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.previewRewriteShotPrompts(project, note), null, 2));
     return;
   }
 

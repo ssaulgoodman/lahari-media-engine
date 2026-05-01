@@ -130,6 +130,19 @@ server.registerTool('add_director_note', {
   return textResult(studio.addDirectorSessionNote(project, note));
 });
 
+server.registerTool('preview_rewrite_shot_prompts', {
+  title: 'Preview shot prompt rewrite',
+  description: 'Paid AI call, preview-only. Rewrites shot visual/motion prompts into local preview artifacts without mutating the Lahari database.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    note: z.string().optional().describe('Optional director note to steer the rewrite preview.'),
+  },
+}, async ({ projectId, note }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.previewRewriteShotPrompts(project, note));
+});
+
 async function main() {
   const env = await prepareCodexReadEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
