@@ -43,3 +43,20 @@ export const prepareCodexReadEnv = async (): Promise<{ keyMode: 'service' | 'ano
     warning: 'No valid Supabase key found. Refresh SUPABASE_SERVICE_KEY or VITE_SUPABASE_ANON_KEY.',
   };
 };
+
+export const prepareCodexWriteEnv = async (): Promise<{ keyMode: 'service' | 'missing'; warning?: string }> => {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+
+  if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.' };
+  if (!process.env.SUPABASE_URL) process.env.SUPABASE_URL = url;
+
+  if (serviceKey && await testSupabaseKey(url, serviceKey)) {
+    return { keyMode: 'service' };
+  }
+
+  return {
+    keyMode: 'missing',
+    warning: 'A valid SUPABASE_SERVICE_KEY is required for Lahari write/apply tools. Refusing to fall back to anon key for mutations.',
+  };
+};

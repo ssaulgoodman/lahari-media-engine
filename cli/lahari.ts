@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
-import { prepareCodexReadEnv } from '../server/services/codexReadEnv.js';
+import fs from 'fs';
+import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
 
 const usage = () => {
   console.log(`Lahari CLI
@@ -18,16 +19,20 @@ Usage:
   npm run lahari -- session note <projectId> <note...>
   npm run lahari -- session journal <projectId>
   npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
+  npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>
+  npm run lahari -- apply rewrite-shot-prompts <preview.json>
 
 Output:
   JSON packets and local review artifacts designed for Codex inspection and future MCP wrapping.
 `);
 };
 
-const loadStudio = async () => {
-  const env = await prepareCodexReadEnv();
+const loadStudio = async (mode: 'read' | 'write' = 'read') => {
+  const env = mode === 'write' ? await prepareCodexWriteEnv() : await prepareCodexReadEnv();
   if (env.warning) console.error(`[lahari] ${env.warning}`);
-  if (env.keyMode === 'missing') throw new Error('No valid Supabase key available for Lahari CLI.');
+  if (env.keyMode === 'missing') throw new Error(mode === 'write'
+    ? 'No valid Supabase service key available for Lahari write tools.'
+    : 'No valid Supabase key available for Lahari CLI.');
 
   const [{ getFullProject }, studio] = await Promise.all([
     import('../server/routes/projects.js'),
@@ -45,7 +50,8 @@ const main = async () => {
     return;
   }
 
-  const studio = await loadStudio();
+  const wantsWrite = (domain === 'apply' && action === 'rewrite-shot-prompts');
+  const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
     console.log(JSON.stringify(await studio.listProjects(projectId), null, 2));
@@ -111,6 +117,20 @@ const main = async () => {
     const project = await studio.getFullProject(projectId);
     const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
     console.log(JSON.stringify(await studio.previewRewriteShotPrompts(project, note), null, 2));
+    return;
+  }
+
+  if (domain === 'apply-plan' && action === 'rewrite-shot-prompts' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.getRewriteShotPromptsApplyPlan(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'rewrite-shot-prompts' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.applyRewriteShotPromptsPreview(projectId, project), null, 2));
     return;
   }
 

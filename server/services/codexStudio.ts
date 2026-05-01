@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import { selectColumns } from '../database.js';
+import { selectColumns, updateRows } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { writeShotPrompts } from './claude.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
+type ProjectShot = Project['scenes'][number]['shots'][number];
 
 export const compactText = (value?: string | null, max = 700): string | null => {
   if (!value) return null;
@@ -756,6 +757,32 @@ type ShotPromptPreviewShot = {
   };
 };
 
+type ShotPromptPreviewFile = {
+  kind: 'lahari.preview.rewrite_shot_prompts';
+  previewId: string;
+  generatedAt: string;
+  project: {
+    id: string;
+    title: string;
+    status: string;
+    imageModel?: string;
+    videoModel?: string;
+  };
+  model: string;
+  userNote: string | null;
+  counts: {
+    shots: number;
+    changed: number;
+  };
+  artifacts: {
+    markdownPath: string;
+    jsonPath: string;
+    promptPath: string;
+  };
+  shots: ShotPromptPreviewShot[];
+  note: string;
+};
+
 const formatPromptBlock = (value?: string | null): string => {
   return value?.trim() ? value.trim() : '_empty_';
 };
@@ -964,4 +991,112 @@ export const previewRewriteShotPrompts = async (project: Project, userNote?: str
   }));
 
   return preview;
+};
+
+const readShotPromptPreview = (previewJsonPath: string): ShotPromptPreviewFile => {
+  const resolved = path.resolve(previewJsonPath);
+  if (!fs.existsSync(resolved)) throw new Error(`Preview JSON not found: ${resolved}`);
+  const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  if (parsed?.kind !== 'lahari.preview.rewrite_shot_prompts') {
+    throw new Error('Preview JSON is not a lahari.preview.rewrite_shot_prompts artifact.');
+  }
+  if (!parsed.project?.id || !Array.isArray(parsed.shots)) {
+    throw new Error('Preview JSON is missing project ID or shots.');
+  }
+  return parsed as ShotPromptPreviewFile;
+};
+
+export const getRewriteShotPromptsApplyPlan = async (previewJsonPath: string, project: Project) => {
+  const preview = readShotPromptPreview(previewJsonPath);
+  if (preview.project.id !== project.id) {
+    throw new Error(`Preview belongs to project ${preview.project.id}, not loaded project ${project.id}.`);
+  }
+
+  const currentShots = new Map<string, ProjectShot>(project.scenes.flatMap((scene) => scene.shots.map((shot) => [shot.id, shot])));
+  const missingShotIds = preview.shots.filter((shot) => !currentShots.has(shot.id)).map((shot) => shot.id);
+  const driftedShots = preview.shots.filter((shot) => {
+    const current = currentShots.get(shot.id);
+    if (!current) return false;
+    return (current.visualPrompt || '') !== (shot.before.visualPrompt || '')
+      || (current.motionPrompt || '') !== (shot.before.motionPrompt || '')
+      || (current.continuityFrom || 'cut') !== (shot.before.continuityFrom || 'cut');
+  }).map((shot) => shot.id);
+  const changedShots = preview.shots.filter((shot) => (
+    shot.before.visualPrompt !== shot.after.visualPrompt
+    || shot.before.motionPrompt !== shot.after.motionPrompt
+    || shot.before.continuityFrom !== shot.after.continuityFrom
+  ));
+  const hasShots = preview.shots.length > 0;
+
+  return {
+    kind: 'lahari.apply_plan.rewrite_shot_prompts',
+    previewId: preview.previewId,
+    previewPath: path.resolve(previewJsonPath),
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+    },
+    counts: {
+      previewShots: preview.shots.length,
+      changedShots: changedShots.length,
+      missingShots: missingShotIds.length,
+      driftedShots: driftedShots.length,
+    },
+    missingShotIds,
+    driftedShotIds: driftedShots,
+    canApply: hasShots && missingShotIds.length === 0 && driftedShots.length === 0,
+    note: !hasShots
+      ? 'Refusing to apply an empty preview.'
+      : missingShotIds.length || driftedShots.length
+      ? 'Refusing to apply until missing/drifted shots are resolved. Regenerate a fresh preview.'
+      : 'Ready to apply. This will update shot prompts/continuity and clear prompts_stale for previewed shots.',
+  };
+};
+
+export const applyRewriteShotPromptsPreview = async (previewJsonPath: string, project: Project) => {
+  const preview = readShotPromptPreview(previewJsonPath);
+  const plan = await getRewriteShotPromptsApplyPlan(previewJsonPath, project);
+  if (!plan.canApply) {
+    throw new Error(`${plan.note} Missing: ${plan.missingShotIds.join(', ') || 'none'}. Drifted: ${plan.driftedShotIds.join(', ') || 'none'}.`);
+  }
+
+  for (const shot of preview.shots) {
+    await updateRows('shots', { id: shot.id }, {
+      visual_prompt: shot.after.visualPrompt || '',
+      motion_prompt: shot.after.motionPrompt || '',
+      continuity_from: shot.after.continuityFrom || 'cut',
+      prompts_stale: false,
+    });
+  }
+
+  const promptText = preview.artifacts?.promptPath && fs.existsSync(preview.artifacts.promptPath)
+    ? fs.readFileSync(preview.artifacts.promptPath, 'utf8')
+    : undefined;
+  await updateRows('projects', { id: project.id }, {
+    ...(promptText ? { last_write_shots_prompt: promptText } : {}),
+    updated_at: new Date().toISOString(),
+  });
+
+  const changed = preview.shots.filter((shot) => (
+    shot.before.visualPrompt !== shot.after.visualPrompt
+    || shot.before.motionPrompt !== shot.after.motionPrompt
+    || shot.before.continuityFrom !== shot.after.continuityFrom
+  ));
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry('applied shot prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShots updated: ${preview.shots.length}\nChanged shots: ${changed.length}\n\nNo frames, videos, assets, or locks were changed.`));
+
+  return {
+    kind: 'lahari.apply.rewrite_shot_prompts',
+    previewId: preview.previewId,
+    projectId: project.id,
+    shotsUpdated: preview.shots.length,
+    changedShots: changed.length,
+    journalPath,
+    note: 'Applied preview to Supabase. Updated visual_prompt, motion_prompt, continuity_from, prompts_stale=false, and project last_write_shots_prompt when available.',
+  };
 };

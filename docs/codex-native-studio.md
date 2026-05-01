@@ -247,9 +247,11 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- session note <projectId> <note...>`
 - CLI: `npm run lahari -- session journal <projectId>`
 - CLI: `npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]`
+- CLI: `npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>`
+- CLI: `npm run lahari -- apply rewrite-shot-prompts <preview.json>`
 - MCP: `npm run lahari:mcp`
 
-The MCP server currently exposes only read-only/local-output tools:
+The MCP server currently exposes read-only/local-output tools plus one explicit mutating apply tool:
 
 - `list_projects`
 - `get_project_packet`
@@ -259,6 +261,8 @@ The MCP server currently exposes only read-only/local-output tools:
 - `get_director_session`
 - `add_director_note`
 - `preview_rewrite_shot_prompts`
+- `plan_apply_shot_prompt_preview`
+- `apply_shot_prompt_preview`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
 
@@ -271,6 +275,8 @@ Director sessions are local working memory under `.lahari/sessions/<projectId>/`
 The state file is not the source of truth for the project. Supabase remains truth; the session files preserve production context, open questions, and decisions for a long-lived Codex thread.
 
 Preview artifacts live under `.lahari/previews/<projectId>/`. The first preview action is `rewrite-shot-prompts`: it calls the real shot prompt writer, writes before/after Markdown + JSON + runtime prompt artifacts, and does not mutate Supabase. It is still a paid AI call, so Codex should ask before running it when operating autonomously.
+
+Applying a preview is a separate command/tool. `apply-plan rewrite-shot-prompts` is read-only and validates drift. `apply rewrite-shot-prompts` / `apply_shot_prompt_preview` requires a valid `SUPABASE_SERVICE_KEY`, refuses anon fallback, updates only the previewed shot prompt fields, and appends to the local director journal. This is the intended Codex permission boundary.
 
 Second milestone:
 

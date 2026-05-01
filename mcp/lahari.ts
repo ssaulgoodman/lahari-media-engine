@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import 'dotenv/config';
+import fs from 'fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as z from 'zod/v4';
-import { prepareCodexReadEnv } from '../server/services/codexReadEnv.js';
+import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
 
 const loadStudio = async () => {
   const [{ getFullProject }, studio] = await Promise.all([
@@ -141,6 +142,36 @@ server.registerTool('preview_rewrite_shot_prompts', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.previewRewriteShotPrompts(project, note));
+});
+
+server.registerTool('plan_apply_shot_prompt_preview', {
+  title: 'Plan applying shot prompt preview',
+  description: 'Read-only. Validates a saved shot prompt preview and reports the exact mutation blast radius before apply.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.getRewriteShotPromptsApplyPlan(previewJsonPath, project));
+});
+
+server.registerTool('apply_shot_prompt_preview', {
+  title: 'Apply shot prompt preview',
+  description: 'Mutating. Applies a saved shot prompt preview to Supabase after validating project/shot drift. Updates shot prompts, continuity, stale flags, project prompt cache, and local director journal.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_shot_prompt_preview.');
+
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.applyRewriteShotPromptsPreview(previewJsonPath, project));
 });
 
 async function main() {
