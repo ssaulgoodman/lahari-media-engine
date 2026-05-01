@@ -11,6 +11,7 @@ import { Dashboard } from './components/Dashboard';
 import { PromptsLibrary } from './components/PromptsLibrary';
 import { RendersModal } from './components/RendersModal';
 import { FloatingAiButton } from './components/FloatingAiButton';
+import { useAssistantDirectorHandlers } from './hooks/useAssistantDirectorHandlers';
 import { getVideoModel } from './constants/videoModels';
 import { useAuth } from './contexts/AuthContext';
 import * as api from './services/api';
@@ -119,6 +120,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const assistantHandlers = useAssistantDirectorHandlers({ project, setProject });
 
   // Character look candidates per cast member
   const [lookCandidates, setLookCandidates] = useState<Record<string, { id: string; url: string }[]>>({});
@@ -787,8 +790,36 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
-  const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
+  // Cancel = abort the in-flight fetch (so the UI unblocks instantly), reset
+  // the shot's status optimistically, and tell the server to flip a stuck
+  // `loading` row back to idle. The server PATCH covers two cases the local
+  // abort can't: (1) bulk-launched jobs whose AbortController isn't tracked
+  // here on this tab, (2) rows already persisted as `loading` from a prior
+  // session/crash that the artist sees as "stuck" after a refresh.
+  const handleCancelShotImage = (shotId: string) => {
+    abortOp(`image:${shotId}`);
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => ({
+        ...s,
+        shots: s.shots.map(sh => sh.id === shotId && sh.imageStatus === GenerationStatus.LOADING
+          ? { ...sh, imageStatus: GenerationStatus.IDLE } : sh)
+      }))
+    } : prev);
+    if (project) api.cancelShotImage(project.id, shotId).catch(console.error);
+  };
+  const handleCancelShotVideo = (shotId: string) => {
+    abortOp(`video:${shotId}`);
+    setProject(prev => prev ? {
+      ...prev,
+      scenes: prev.scenes.map(s => ({
+        ...s,
+        shots: s.shots.map(sh => sh.id === shotId && sh.videoStatus === GenerationStatus.LOADING
+          ? { ...sh, videoStatus: GenerationStatus.IDLE } : sh)
+      }))
+    } : prev);
+    if (project) api.cancelShotVideo(project.id, shotId).catch(console.error);
+  };
 
   const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
@@ -987,7 +1018,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
         await runWithConcurrency(
           targets,
           10,
-          t => api.generateShotImage(latestProject.id, t.shotId),
+          async t => {
+            const opKey = `image:${t.shotId}`;
+            const signal = startOp(opKey);
+            try {
+              await api.generateShotImage(latestProject.id, t.shotId, undefined, signal);
+            } finally {
+              endOp(opKey);
+            }
+          },
           t => {
             setFrameQueue(q => q.filter(id => id !== t.shotId));
             setProject(prev => prev ? {
@@ -1040,7 +1079,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
         await runWithConcurrency(
           targets,
           5,
-          t => api.generateShotVideo(latestProject.id, t.shotId),
+          async t => {
+            const opKey = `video:${t.shotId}`;
+            const signal = startOp(opKey);
+            try {
+              await api.generateShotVideo(latestProject.id, t.shotId, undefined, undefined, signal);
+            } finally {
+              endOp(opKey);
+            }
+          },
           t => {
             setVideoQueue(q => q.filter(id => id !== t.shotId));
             setProject(prev => prev ? {
@@ -1761,6 +1808,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           return { ok: true, message: `switched to "${match.title}"` };
         }}
         listProjects={() => projectList.map(p => ({ id: p.id, title: p.title }))}
+        {...assistantHandlers}
       />
     </div>
   );

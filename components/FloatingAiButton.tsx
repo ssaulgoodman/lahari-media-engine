@@ -49,10 +49,32 @@ const getOrCreate = (key: string) => {
 
 type Phase = 'queue' | 'blueprint' | 'studio' | 'render';
 
+export type ActiveProjectSnapshot = {
+  id: string;
+  title: string;
+  status: string;
+  lockedConceptIndex: number | null;
+  hasConceptOptions: boolean;
+};
+
+export type ToolResult<T = Record<string, unknown>> = { ok: boolean; message: string } & T;
+
 export interface FloatingAiButtonProps {
   onNavigate?: (phase: Phase) => { ok: boolean; message: string };
   onSwitchProject?: (idOrTitle: string) => Promise<{ ok: boolean; message: string }>;
   listProjects?: () => { id: string; title: string }[];
+  // Phase 0 — foundation
+  onRefreshProject?: () => Promise<ToolResult>;
+  onGetActiveProject?: () => ActiveProjectSnapshot | null;
+  // Phase 1a — concept
+  onGenerateConcepts?: (opts: { userNote?: string; directorBrief?: string }) => Promise<ToolResult<{ concepts?: unknown[] }>>;
+  onLockConcept?: (args: { conceptIndex: number; fork?: boolean }) => Promise<ToolResult>;
+  onRefineConcept?: (args: { feedback: string }) => Promise<ToolResult>;
+  onUnlockConcept?: () => Promise<ToolResult>;
+  // Phase 1b — script
+  onGenerateScript?: (args: { userNote?: string; fork?: boolean }) => Promise<ToolResult<{ sceneCount?: number; shotCount?: number }>>;
+  onRefineScript?: (args: { feedback: string }) => Promise<ToolResult>;
+  onSplitShot?: (args: { shotId: string; splitAt?: number }) => Promise<ToolResult<{ newShotId?: string }>>;
 }
 
 type ToolCallApprovalData = {
@@ -82,6 +104,15 @@ export const FloatingAiButton: React.FC<FloatingAiButtonProps> = ({
   onNavigate,
   onSwitchProject,
   listProjects,
+  onRefreshProject,
+  onGetActiveProject,
+  onGenerateConcepts,
+  onLockConcept,
+  onRefineConcept,
+  onUnlockConcept,
+  onGenerateScript,
+  onRefineScript,
+  onSplitShot,
 }) => {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -116,20 +147,57 @@ export const FloatingAiButton: React.FC<FloatingAiButtonProps> = ({
     [threadId, resourceId]
   );
 
-  const handlersRef = useRef({ onNavigate, onSwitchProject });
+  const handlersRef = useRef({
+    onNavigate,
+    onSwitchProject,
+    onRefreshProject,
+    onGetActiveProject,
+    onGenerateConcepts,
+    onLockConcept,
+    onRefineConcept,
+    onUnlockConcept,
+    onGenerateScript,
+    onRefineScript,
+    onSplitShot,
+  });
   useEffect(() => {
-    handlersRef.current = { onNavigate, onSwitchProject  };
+    handlersRef.current = {
+      onNavigate,
+      onSwitchProject,
+      onRefreshProject,
+      onGetActiveProject,
+      onGenerateConcepts,
+      onLockConcept,
+      onRefineConcept,
+      onUnlockConcept,
+      onGenerateScript,
+      onRefineScript,
+      onSplitShot,
+    };
   });
 
   const CLIENT_TOOLS = useMemo(
-    () => new Set(['navigate', 'switchProject']),
+    () =>
+      new Set([
+        'navigate',
+        'switchProject',
+        'refreshProject',
+        'getActiveProject',
+        'generateConcepts',
+        'lockConcept',
+        'refineConcept',
+        'unlockConcept',
+        'generateScript',
+        'refineScript',
+        'splitShot',
+      ]),
     []
   );
 
   const resolvedRef = useRef<Set<string>>(new Set());
 
   const resolveClientTool = useCallback(
-    (
+    async (
       name: string,
       toolCallId: string,
       toolInput: any,
@@ -139,7 +207,7 @@ export const FloatingAiButton: React.FC<FloatingAiButtonProps> = ({
       resolvedRef.current.add(toolCallId);
 
       const h = handlersRef.current;
-      let output: { ok: boolean; message: string } = { ok: true, message: 'done' };
+      let output: ToolResult = { ok: true, message: 'done' };
 
       try {
         if (name === 'navigate') {
@@ -152,6 +220,57 @@ export const FloatingAiButton: React.FC<FloatingAiButtonProps> = ({
           h.onSwitchProject?.(ref).catch((e) =>
             console.warn('[FloatingAi] onSwitchProject error', e)
           );
+        } else if (name === 'getActiveProject') {
+          const snap = h.onGetActiveProject?.() ?? null;
+          output = snap
+            ? { ok: true, message: `active project: ${snap.title}`, ...snap }
+            : { ok: false, message: 'no project loaded' };
+        } else if (name === 'refreshProject') {
+          output = (await h.onRefreshProject?.()) ?? { ok: false, message: 'refreshProject not wired' };
+        } else if (name === 'generateConcepts') {
+          output = (await h.onGenerateConcepts?.({
+            userNote: toolInput?.userNote,
+            directorBrief: toolInput?.directorBrief,
+          })) ?? { ok: false, message: 'generateConcepts not wired' };
+        } else if (name === 'lockConcept') {
+          const conceptIndex = Number(toolInput?.conceptIndex);
+          if (!Number.isInteger(conceptIndex) || conceptIndex < 0 || conceptIndex > 2) {
+            output = { ok: false, message: 'conceptIndex must be 0, 1, or 2' };
+          } else {
+            output = (await h.onLockConcept?.({ conceptIndex, fork: !!toolInput?.fork })) ?? {
+              ok: false,
+              message: 'lockConcept not wired',
+            };
+          }
+        } else if (name === 'refineConcept') {
+          const feedback = String(toolInput?.feedback ?? '').trim();
+          if (!feedback) {
+            output = { ok: false, message: 'feedback is required' };
+          } else {
+            output = (await h.onRefineConcept?.({ feedback })) ?? { ok: false, message: 'refineConcept not wired' };
+          }
+        } else if (name === 'unlockConcept') {
+          output = (await h.onUnlockConcept?.()) ?? { ok: false, message: 'unlockConcept not wired' };
+        } else if (name === 'generateScript') {
+          output = (await h.onGenerateScript?.({
+            userNote: toolInput?.userNote,
+            fork: !!toolInput?.fork,
+          })) ?? { ok: false, message: 'generateScript not wired' };
+        } else if (name === 'refineScript') {
+          const feedback = String(toolInput?.feedback ?? '').trim();
+          if (!feedback) {
+            output = { ok: false, message: 'feedback is required' };
+          } else {
+            output = (await h.onRefineScript?.({ feedback })) ?? { ok: false, message: 'refineScript not wired' };
+          }
+        } else if (name === 'splitShot') {
+          const shotId = String(toolInput?.shotId ?? '').trim();
+          if (!shotId) {
+            output = { ok: false, message: 'shotId is required' };
+          } else {
+            const splitAt = typeof toolInput?.splitAt === 'number' ? toolInput.splitAt : undefined;
+            output = (await h.onSplitShot?.({ shotId, splitAt })) ?? { ok: false, message: 'splitShot not wired' };
+          }
         }
       } catch (err: any) {
         console.error('[FloatingAi] resolveClientTool threw', err);
@@ -239,14 +358,14 @@ export const FloatingAiButton: React.FC<FloatingAiButtonProps> = ({
     <>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-5 right-5 z-[300] w-12 h-12 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-black/40 flex items-center justify-center"
+        className="fixed bottom-5 right-5 z-300 w-12 h-12 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg shadow-black/40 flex items-center justify-center"
         aria-label="AI assistant"
       >
         {open ? <X className="size-5" /> : <Sparkles className="size-5" />}
       </button>
 
       {open && (
-        <div className="fixed bottom-20 right-5 z-[300] w-[520px] h-[640px] bg-[#1a1a1f] border border-white/10 rounded-xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
+        <div className="fixed bottom-20 right-5 z-300 w-[520px] h-[640px] bg-[#1a1a1f] border border-white/10 rounded-xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
           <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between shrink-0">
             <div className="text-sm text-white">AI Chat</div>
             <div className="flex items-center gap-2">
