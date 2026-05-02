@@ -786,8 +786,41 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
-  const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
+  const handleCancelShotImage = (shotId: string) => {
+    if (!project) return;
+    abortOp(`image:${shotId}`);
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scenes: prev.scenes.map(s => ({
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, imageStatus: GenerationStatus.IDLE } : sh)
+        }))
+      };
+    });
+    void api.cancelShotImage(project.id, shotId).catch((err: any) => {
+      setError(`Cancel image failed: ${err.message}`);
+    });
+  };
+
+  const handleCancelShotVideo = (shotId: string) => {
+    if (!project) return;
+    abortOp(`video:${shotId}`);
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scenes: prev.scenes.map(s => ({
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, videoStatus: GenerationStatus.IDLE } : sh)
+        }))
+      };
+    });
+    void api.cancelShotVideo(project.id, shotId).catch((err: any) => {
+      setError(`Cancel video failed: ${err.message}`);
+    });
+  };
 
   const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
