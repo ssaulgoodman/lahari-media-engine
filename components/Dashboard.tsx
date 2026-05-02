@@ -284,10 +284,12 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
                       </button>
                     )}
                     <button
-                      onClick={() => onOpenProject(item.lahari_project_id!)}
-                      className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                      onClick={() => handleStart(item)}
+                      disabled={starting === item.id}
+                      className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors disabled:opacity-50 flex items-center gap-1.5"
                     >
-                      Open
+                      {starting === item.id && <div className="w-3 h-3 border-2 border-zinc-400 border-t-white rounded-full animate-spin"></div>}
+                      {starting === item.id ? 'Opening…' : 'Open'}
                     </button>
                   </>
                 ) : canStart ? (

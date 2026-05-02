@@ -70,7 +70,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200
 // shared (same files on disk) so disk usage stays near-zero. Caller can
 // then run destructive operations on the new project while the original
 // stays frozen as a snapshot.
-const forkProject = async (sourceId: string): Promise<string> => {
+const forkProject = async (
+  sourceId: string,
+  opts?: { newUserId?: string; newSourceQueueId?: string | null },
+): Promise<string> => {
   const src: any = await selectOne('projects', { id: sourceId });
   if (!src) throw new Error('Source project not found');
 
@@ -147,8 +150,9 @@ const forkProject = async (sourceId: string): Promise<string> => {
     last_concept_prompt: src.last_concept_prompt,
     last_write_shots_prompt: src.last_write_shots_prompt,
     style_generation_prompt: src.style_generation_prompt,
-    user_id: src.user_id,
+    user_id: opts?.newUserId ?? src.user_id,
     parent_project_id: sourceId,
+    source_queue_id: opts && 'newSourceQueueId' in opts ? opts.newSourceQueueId : src.source_queue_id,
     created_at: now,
     updated_at: now,
   });

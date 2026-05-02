@@ -1107,8 +1107,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     try {
       const result = await api.startProduction(queueId);
       setProject(result.project);
-      // Jump to Blueprint immediately — analysis runs in background
-      setCurrentStep(AppStep.BLUEPRINT);
+      setLookCandidates({});
+      setActiveSceneIdx(0);
+      // For fresh starts (analyzing) jump to Blueprint; for existing/forked
+      // projects route to whatever phase the project is in.
+      if (result.project.status === 'analyzing' || result.project.status === 'analyzed') {
+        setCurrentStep(AppStep.BLUEPRINT);
+      } else {
+        navigateToPhase(result.project);
+      }
       // Poll for analysis completion if still analyzing
       if (result.project.status === 'analyzing') {
         const projectId = result.project.id;
