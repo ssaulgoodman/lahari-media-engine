@@ -2,6 +2,17 @@
 
 Guidance for Codex when working in this repo.
 
+## Workspace Layout
+
+`/Users/ssaulgoodman/Code/lahari-media-engine/` is a parent folder, not the git repo root.
+
+Current worktrees:
+
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` — main Lahari app checkout, usually for Claude Code / production work on `main`.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` — Codex-native assistant-director worktree on `codex-native-studio`.
+
+Do not switch the main checkout to `codex-native-studio` for Codex-native work. Open a Codex session in this `lahari-codex-native` worktree instead. Always confirm with `pwd` and `git status --short --branch` before editing.
+
 ## Build & Run
 
 ```bash
