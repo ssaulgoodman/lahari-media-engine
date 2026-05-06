@@ -7,8 +7,8 @@ import {
   updateRows, deleteRows, countRows, maxVal,
   selectColumns, getSB, T,
 } from '../database.js';
-import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
-import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
+import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile, deleteFiles } from '../storage.js';
+import { findQueueByProjectIds, updateQueueItem, getQueueItem } from '../services/supabase.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
@@ -826,9 +826,15 @@ router.patch('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Delete project — also resets the linked queue item back to 'queued'
+// Delete project — cascades to all child rows (DB FK ON DELETE CASCADE),
+// removes orphaned files from Supabase Storage, and updates the linked
+// queue row in a multi-user-aware way.
 router.delete('/:id', async (req, res) => {
   const projectId = paramStr(req.params.id);
+
+  // Read the project to capture source_queue_id before delete
+  const projectRow = await selectOne('projects', { id: projectId });
+  const sourceQueueId = projectRow?.source_queue_id ?? null;
 
   // Walk fork chain to find the queue row (same logic as publish)
   const chain: string[] = [projectId];
@@ -840,15 +846,73 @@ router.delete('/:id', async (req, res) => {
     cur = row.parent_project_id;
   }
 
+  // Collect every storage key this project referenced BEFORE delete — DB
+  // cascade will wipe lahari_assets / lahari_renders rows, so we'd lose the
+  // keys otherwise. Three sources: assets (most), project audio, renders.
+  const projectAssets = await selectAll('assets', { project_id: projectId });
+  const projectRenders = await selectAll('renders', { project_id: projectId });
+  const candidatePaths = Array.from(new Set([
+    ...projectAssets.map((a: any) => a.file_path),
+    ...projectRenders.map((r: any) => r.storage_path),
+    projectRow?.audio_path,
+  ].filter((p: any): p is string => typeof p === 'string' && p.length > 0)));
+
+  // Delete the project (DB cascade nukes scenes/shots/cast/env/assets/ai_calls/renders/chat)
   await deleteRows('projects', { id: projectId });
 
-  // Reset queue item if this was the linked project
-  const queueRow = await findQueueByProjectIds(chain);
-  if (queueRow && queueRow.lahari_project_id === projectId) {
-    await updateQueueItem(queueRow.id, {
-      status: 'queued',
-      lahari_project_id: null as any,
-    });
+  // Filter out paths still referenced by anything else. Forks share
+  // file_paths and audio between sibling/parent projects, so we must check
+  // all three reference sources after the cascade has run.
+  if (candidatePaths.length > 0) {
+    const [stillInAssets, stillInProjects, stillInRenders] = await Promise.all([
+      selectAll('assets', { file_path: candidatePaths }),
+      selectAll('projects', { audio_path: candidatePaths }),
+      selectAll('renders', { storage_path: candidatePaths }),
+    ]);
+    const referencedSet = new Set<string>([
+      ...stillInAssets.map((a: any) => a.file_path),
+      ...stillInProjects.map((p: any) => p.audio_path),
+      ...stillInRenders.map((r: any) => r.storage_path),
+    ]);
+    const orphanedPaths = candidatePaths.filter(p => !referencedSet.has(p));
+    if (orphanedPaths.length > 0) {
+      // Best-effort: log on failure, don't fail the request — DB is already clean
+      try {
+        await deleteFiles(orphanedPaths);
+      } catch (err) {
+        console.error(`[delete project ${projectId}] storage cleanup failed:`, err);
+      }
+    }
+  }
+
+  // Multi-user-aware queue update. Look up by source_queue_id (the project's
+  // link) first, then fall back to fork-chain lookup for older projects that
+  // pre-date source_queue_id.
+  const queueRow = sourceQueueId
+    ? await getQueueItem(sourceQueueId).catch(() => null)
+    : await findQueueByProjectIds(chain);
+
+  if (queueRow) {
+    // Are there any other projects still attached to this queue item?
+    const remaining = sourceQueueId
+      ? await selectAll('projects', { source_queue_id: sourceQueueId })
+      : [];
+
+    if (remaining.length === 0) {
+      // No other users have a project for this song — reopen it in the queue
+      await updateQueueItem(queueRow.id, {
+        status: 'queued',
+        lahari_project_id: null as any,
+      });
+    } else if (queueRow.lahari_project_id === projectId) {
+      // Other users still have projects, but the queue's primary pointer
+      // was on the deleted one — repoint to the next still-existing project,
+      // keep status as-is so we don't downgrade a completed song to 'queued'.
+      await updateQueueItem(queueRow.id, {
+        lahari_project_id: remaining[0].id,
+      });
+    }
+    // else: queue pointer wasn't on this project — leave it alone.
   }
 
   res.json({ ok: true });
