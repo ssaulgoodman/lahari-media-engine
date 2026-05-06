@@ -19,15 +19,13 @@ export const IMAGE_MODELS: ImageModelSpec[] = [
     note: 'Current default. Falls back to Flash on overload.',
   },
   {
-    // Product-facing alias requested for Lahari. Under the hood this maps to
-    // the current official OpenAI Images API model.
     key: 'gpt-image-2',
     label: 'GPT Image 2',
     provider: 'openai',
-    runtimeModel: 'gpt-image-1.5',
+    runtimeModel: 'gpt-image-2',
     supportsRefs: true,
     maxRefs: 10,
-    note: 'OpenAI image edits with ref images.',
+    note: 'OpenAI GPT Image 2 with ref images.',
   },
 ];
 
