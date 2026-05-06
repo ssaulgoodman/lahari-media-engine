@@ -142,6 +142,26 @@ export const deleteFile = async (key: string, bucket: string = BUCKET): Promise<
 };
 
 /**
+ * Delete multiple files from Supabase Storage in batches. Supabase's
+ * `.remove()` accepts up to 1000 keys per call, so we chunk to be safe.
+ * Best-effort: logs and swallows per-batch errors so a single failure
+ * doesn't prevent the rest from being cleaned up.
+ */
+export const deleteFiles = async (keys: string[], bucket: string = BUCKET): Promise<void> => {
+  if (keys.length === 0) return;
+  const CHUNK = 500;
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const batch = keys.slice(i, i + CHUNK);
+    try {
+      await getSB().storage.from(bucket).remove(batch);
+      for (const k of batch) _cache.delete(k);
+    } catch (err) {
+      console.warn(`[storage.deleteFiles] batch ${i / CHUNK} failed (${batch.length} keys):`, err);
+    }
+  }
+};
+
+/**
  * Get absolute path — downloads to /tmp first. Needed for code that
  * expects a local file path (ffmpeg, fal upload).
  */

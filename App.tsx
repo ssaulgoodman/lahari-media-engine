@@ -1684,7 +1684,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                                 e.stopPropagation();
                                 setDestructive({
                                   title: `Delete "${p.title}"?`,
-                                  description: 'Removes the project from the list. Generated files stay on disk and can be re-linked later if needed.',
+                                  description: 'Permanently deletes this project and all generated assets (images, videos, frames). The song will reopen in the queue if no other users have a project for it. This cannot be undone.',
                                   mode: 'simple',
                                   confirmLabel: 'Delete',
                                   run: async () => {

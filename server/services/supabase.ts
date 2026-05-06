@@ -119,6 +119,18 @@ export const updateQueueItem = async (
  * when marking a project complete: we walk up the fork chain locally, then
  * ask Supabase which queue row owns any project in that lineage.
  */
+/** Fetch a queue row by its id. Returns null if not found. */
+export const getQueueItem = async (id: string): Promise<QueueItem | null> => {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('music_video_queue')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  return (data as any) || null;
+};
+
 export const findQueueByProjectIds = async (projectIds: string[]): Promise<QueueItem | null> => {
   if (projectIds.length === 0) return null;
   const supabase = getClient();
