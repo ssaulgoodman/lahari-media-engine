@@ -15,6 +15,7 @@ import { SEGMIND_MODELS } from '../services/segmind.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
+import { generateStoryboardVersion, lockStoryboardVersion } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -298,6 +299,85 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
+});
+
+// ─── Generate / Refine / Lock Storyboard (Responses + GPT Image 2) ───
+
+router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    const result = await generateStoryboardVersion({
+      projectId,
+      shotId,
+      variant: req.body?.variant || 'four_panel_clean',
+    });
+    res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard generation failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  const feedback = req.body?.feedback;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  try {
+    const result = await generateStoryboardVersion({
+      projectId,
+      shotId,
+      artistNote: feedback,
+      previousVersionId: req.body?.previousVersionId,
+      variant: req.body?.variant || 'four_panel_clean',
+    });
+    res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard refinement failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/lock-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    await lockStoryboardVersion(projectId, shotId, req.body?.versionId);
+    res.json({ ok: true, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard lock failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const rows = await selectAll('storyboard_versions', { shot_id: shotId }, { orderBy: 'created_at', ascending: false });
+  const assetIds = rows.map((row: any) => row.asset_id).filter(Boolean);
+  const assets = assetIds.length ? await selectAll('assets', { id: assetIds }) : [];
+  const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
+
+  res.json({
+    versions: rows.map((row: any) => {
+      const asset = assetMap.get(row.asset_id);
+      return {
+        id: row.id,
+        assetId: row.asset_id,
+        imageUrl: asset ? storageUrl(asset.file_path) : undefined,
+        parentVersionId: row.parent_version_id || undefined,
+        artistNote: row.artist_note || undefined,
+        openaiResponseId: row.openai_response_id || undefined,
+        reasoningModel: row.reasoning_model || undefined,
+        imageModel: row.image_model || undefined,
+        locked: !!row.locked,
+        createdAt: row.created_at,
+      };
+    }),
+  });
 });
 
 // End frame and frame-pair endpoints removed — the new workflow captures the

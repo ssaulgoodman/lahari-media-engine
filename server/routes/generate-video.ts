@@ -10,6 +10,8 @@ import { SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
 import { generateVideoWithFallback } from '../services/video-provider.js';
 import { extractLastFrame } from '../services/ffmpeg.js';
 import { refreshChainedShotPrompt } from '../services/claude.js';
+import { buildSeedanceStoryboardVideoPrompt } from '../services/seedance-storyboard-rd.js';
+import { loadStoryboardContext } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -59,10 +61,18 @@ export const mountVideoRoutes = (router: Router) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
-    if (!shot || !shot.image_asset_id) return res.status(400).json({ error: 'Shot has no image yet' });
+    if (!shot) return res.status(400).json({ error: 'Shot not found' });
 
-    const imageAsset = await selectOne('assets', { id: shot.image_asset_id });
-    if (!imageAsset) return res.status(400).json({ error: 'Image asset not found' });
+    const videoModelKey = (project.video_model || 'veo-3.1-fast') as SegmindModelKey;
+    const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
+    const useStoryboardMode = modelSpec.family === 'seedance' && !!shot.storyboard_locked && !!shot.storyboard_asset_id;
+
+    if (!shot.image_asset_id && !useStoryboardMode) return res.status(400).json({ error: 'Shot has no image yet' });
+
+    const imageAsset = shot.image_asset_id ? await selectOne('assets', { id: shot.image_asset_id }) : null;
+    if (!imageAsset && !useStoryboardMode) return res.status(400).json({ error: 'Image asset not found' });
+    const storyboardAsset = useStoryboardMode ? await selectOne('assets', { id: shot.storyboard_asset_id }) : null;
+    if (useStoryboardMode && !storyboardAsset) return res.status(400).json({ error: 'Locked storyboard asset not found' });
 
     const scene = await selectOne('scenes', { id: shot.scene_id });
     const concept = JSON.parse(project.locked_concept || '{}');
@@ -82,9 +92,6 @@ export const mountVideoRoutes = (router: Router) => {
         veoPromptParts.push(shot.motion_prompt);
       }
 
-      const videoModelKey = (project.video_model || 'veo-3.1-fast') as SegmindModelKey;
-      const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
-
       // veoPrompt is finalized after ref resolution below
 
       const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
@@ -94,6 +101,10 @@ export const mountVideoRoutes = (router: Router) => {
       const videoFrontendRefs: any[] | undefined = req.body?.refs;
       const referenceImagePaths: string[] = [];
       const resolveVideoAsset = async (id: string) => { const a = await selectOne('assets', { id }); return a?.file_path; };
+
+      if (useStoryboardMode && storyboardAsset?.file_path) {
+        referenceImagePaths.push(storyboardAsset.file_path);
+      }
 
       if (videoFrontendRefs) {
         const allCast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
@@ -111,6 +122,10 @@ export const mountVideoRoutes = (router: Router) => {
           }
         }
       } else {
+        if (useStoryboardMode && project.style_asset_id && referenceImagePaths.length < 9) {
+          const styleAsset = await selectOne('assets', { id: project.style_asset_id });
+          if (styleAsset) referenceImagePaths.push(styleAsset.file_path);
+        }
         for (const c of activeCast) {
           if (c.reference_asset_id && referenceImagePaths.length < 9) {
             const refAsset = await selectOne('assets', { id: c.reference_asset_id });
@@ -138,7 +153,7 @@ export const mountVideoRoutes = (router: Router) => {
       }
 
       // Add ref labels only when ref images are actually being sent
-      if (referenceImagePaths.length > 0 && modelSpec.supportsRefs) {
+      if (!useStoryboardMode && referenceImagePaths.length > 0 && modelSpec.supportsRefs) {
         const refLabels: string[] = [];
         // Figure out which refs resolved — label them so Veo knows what the images are
         const castWithRefs = activeCast.filter((c: any) => c.reference_asset_id);
@@ -150,11 +165,14 @@ export const mountVideoRoutes = (router: Router) => {
         if (refLabels.length) veoPromptParts.push(refLabels.join('. '));
       }
 
-      const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
+      const storyboardPrompt = useStoryboardMode
+        ? buildSeedanceStoryboardVideoPrompt((await loadStoryboardContext(project.id, shot.id)).input, 'board_plus_timing')
+        : '';
+      const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : (useStoryboardMode ? storyboardPrompt : veoPromptParts.join('. '));
       console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
-      const result = await generateVideoWithFallback(imageAsset.file_path, veoPrompt, {
-        endImagePath,
+      const result = await generateVideoWithFallback(useStoryboardMode ? undefined : imageAsset!.file_path, veoPrompt, {
+        endImagePath: useStoryboardMode ? undefined : endImagePath,
         referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
         aspectRatio: aspect,
         resolution,
@@ -245,9 +263,11 @@ export const mountVideoRoutes = (router: Router) => {
         stage: 'generate-shot-video',
         model: modelId,
         prompt: veoPrompt,
-        referenceInputs: [
-          { type: 'image', label: 'Start keyframe', url: storageUrl(imageAsset.file_path) },
-        ],
+        referenceInputs: useStoryboardMode && storyboardAsset
+          ? [{ type: 'image' as const, label: 'Locked storyboard', url: storageUrl(storyboardAsset.file_path) }]
+          : imageAsset
+            ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
+            : [],
         contextChain: await buildContextChain(project.id),
         responseSummary: `Video generated via ${result.provider} (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
         outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
@@ -266,7 +286,11 @@ export const mountVideoRoutes = (router: Router) => {
         stage: 'generate-shot-video',
         model: project.video_model || 'veo-3.1',
         prompt: shot.motion_prompt || 'Cinematic camera movement',
-        referenceInputs: [{ type: 'image', label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }],
+        referenceInputs: useStoryboardMode && storyboardAsset
+          ? [{ type: 'image' as const, label: 'Locked storyboard', url: storageUrl(storyboardAsset.file_path) }]
+          : imageAsset
+            ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
+            : [],
         contextChain: await buildContextChain(project.id),
         durationMs: 0,
         error: err.message,

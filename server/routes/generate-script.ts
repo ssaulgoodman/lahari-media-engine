@@ -42,6 +42,7 @@ router.post('/:id/generate-script', async (req, res) => {
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 8,
       minShotDuration: getModelMinDuration(project.video_model),
+      videoModel: project.video_model || undefined,
       userNote,
       songType: project.song_type || undefined,
       isNarrative: project.is_narrative ?? undefined,
@@ -128,9 +129,12 @@ router.post('/:id/generate-script', async (req, res) => {
         // Map environmentName → environmentId
         const envId = shot.environmentName ? (envNameToId[shot.environmentName] || null) : null;
 
-        // Last shot gets remainder (with ceil pacing, remainder ≤ basePacing). Safety clamp at 2×.
-        let duration = basePacing;
-        if (shIdx === shotCount - 1 && sceneDuration > 0) {
+        // Standard mode uses deterministic ceil+remainder pacing. Seedance
+        // storyboard mode lets the script planner choose 1-15s clip blocks.
+        let duration = Number(shot.duration || 0) > 0 && String(project.video_model || '').startsWith('seedance')
+          ? Number(shot.duration)
+          : basePacing;
+        if (!(String(project.video_model || '').startsWith('seedance')) && shIdx === shotCount - 1 && sceneDuration > 0) {
           const remainder = sceneDuration - (shotCount - 1) * basePacing;
           duration = Math.max(1, Math.min(remainder, basePacing * 2));
         }
@@ -409,6 +413,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         songType: project.song_type || undefined,
         isNarrative: project.is_narrative ?? undefined,
         isMeditative: project.is_meditative ?? undefined,
+        videoModel: project.video_model || undefined,
       }, previousBatchTail);
       const prompts = result.shots;
       batchPrompts.push(

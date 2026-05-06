@@ -63,7 +63,7 @@ const summarizeError = (err: any): string => {
 };
 
 export const generateVideoWithFallback = async (
-  startImagePath: string,
+  startImagePath: string | undefined,
   motionPrompt: string,
   opts?: VideoGenerationOptions
 ): Promise<VideoGenerationResult> => {

@@ -227,6 +227,11 @@ const forkProject = async (sourceId: string): Promise<string> => {
           cast_ids: newCastIds,
           image_asset_id: remapAsset(shot.image_asset_id),
           video_asset_id: remapAsset(shot.video_asset_id),
+          storyboard_asset_id: remapAsset(shot.storyboard_asset_id),
+          storyboard_version_id: null,
+          storyboard_status: shot.storyboard_status,
+          storyboard_locked: shot.storyboard_locked,
+          storyboard_user_feedback: shot.storyboard_user_feedback,
           image_status: shot.image_status,
           video_status: shot.video_status,
           critique: shot.critique,
@@ -287,6 +292,7 @@ const getFullProject = async (projectId: string) => {
     if (shot.end_image_asset_id) assetIds.add(shot.end_image_asset_id);
     if (shot.extracted_last_frame_asset_id) assetIds.add(shot.extracted_last_frame_asset_id);
     if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
+    if (shot.storyboard_asset_id) assetIds.add(shot.storyboard_asset_id);
   }
   for (const c of cast) { if (c.reference_asset_id) assetIds.add(c.reference_asset_id); }
   for (const e of environments) { if (e.reference_asset_id) assetIds.add(e.reference_asset_id); }
@@ -332,6 +338,7 @@ const getFullProject = async (projectId: string) => {
       shot.endImageUrl = resolveUrl(shot.end_image_asset_id);
       shot.extractedLastFrameUrl = resolveUrl(shot.extracted_last_frame_asset_id);
       shot.videoUrl = resolveUrl(shot.video_asset_id);
+      shot.storyboardUrl = resolveUrl(shot.storyboard_asset_id);
       shot.castIds = JSON.parse(shot.cast_ids || '[]');
       shot.critique = shot.critique ? JSON.parse(shot.critique) : undefined;
       shot.refImages = shotRefsByShot.get(shot.id) || [];
@@ -421,6 +428,12 @@ const getFullProject = async (projectId: string) => {
         imageUrl: shot.imageUrl,
         endImageUrl: shot.endImageUrl,
         extractedLastFrameUrl: shot.extractedLastFrameUrl,
+        storyboardUrl: shot.storyboardUrl,
+        storyboardAssetId: shot.storyboard_asset_id || undefined,
+        storyboardVersionId: shot.storyboard_version_id || undefined,
+        storyboardStatus: shot.storyboard_status || 'idle',
+        storyboardLocked: !!shot.storyboard_locked,
+        storyboardUserFeedback: shot.storyboard_user_feedback || undefined,
         continuityFrom: shot.continuity_from || 'cut',
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',

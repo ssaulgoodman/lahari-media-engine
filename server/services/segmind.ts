@@ -39,7 +39,7 @@ export const SEGMIND_MODELS = {
     endpoint: `${SEGMIND_BASE}/seedance-2.0-fast`,
     label: 'Seedance 2.0 Fast',
     family: 'seedance',
-    durations: [5, 10],
+    durations: [4, 5, 6, 8, 10, 12, 15],
     costPerSec: 0.146,
     supportsLastFrame: true,
     supportsRefs: true, // up to 9 reference images
@@ -48,7 +48,7 @@ export const SEGMIND_MODELS = {
     endpoint: `${SEGMIND_BASE}/seedance-2.0`,
     label: 'Seedance 2.0',
     family: 'seedance',
-    durations: [5, 10],
+    durations: [4, 5, 6, 8, 10, 12, 15],
     costPerSec: 0.182,
     supportsLastFrame: true,
     supportsRefs: true,
@@ -67,7 +67,7 @@ export const getModelMinDuration = (modelKey?: string): number => {
 // ─── Generate Video ──────────────────────────────────────────────
 
 export const generateSegmindVideo = async (
-  startImagePath: string,
+  startImagePath: string | undefined,
   motionPrompt: string,
   opts?: {
     endImagePath?: string;
@@ -89,7 +89,7 @@ export const generateSegmindVideo = async (
   const durationSec = durations.find(d => d >= requested) ?? durations[durations.length - 1];
 
   // Convert storage paths to public Supabase URLs
-  const startUrl = storageUrl(startImagePath);
+  const startUrl = startImagePath ? storageUrl(startImagePath) : undefined;
   const endUrl = opts?.endImagePath ? storageUrl(opts.endImagePath) : undefined;
   const refUrls = (opts?.referenceImagePaths || []).map(p => storageUrl(p));
 

@@ -278,6 +278,7 @@ const SCRIPT_TOOL = {
                 type: 'object',
                 properties: {
                   direction: { type: 'string', description: '5-10 word creative idea' },
+                  duration: { type: 'number', description: 'Clip duration in seconds. Required for Seedance storyboard mode; ignored/recomputed for standard mode.' },
                   castNames: { type: 'array', items: { type: 'string' }, description: 'Names of cast members in this shot' },
                   environmentName: { type: 'string', description: 'Environment name (must match from environments list)' }
                 },
@@ -306,11 +307,13 @@ const parseTimestamp = (t: string): number => {
 };
 
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean }
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = input.basePacing || 8;
   const minDuration = input.minShotDuration || 4;
+  const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
+  const seedanceMaxDuration = 15;
 
   // Song type signal
   const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
@@ -325,6 +328,42 @@ export const planScenes = async (
   const modeGuidance = input.videoMode === 'cinematic'
     ? `DIRECTOR STYLE: Cinematic — fewer, more sustained moments. Stronger continuity between shots, deeper immersion. Each scene builds and breathes.`
     : `DIRECTOR STYLE: Montage — rhythmic, many discrete moments. Broader coverage of the emotional and spiritual world. Each shot is its own beat.`;
+
+  const pacingGuidance = isSeedanceStoryboard
+    ? `═══ SEEDANCE STORYBOARD PACING (CRITICAL — think through this before writing) ═══
+Video model: ${input.videoModel}
+In this mode, a Lahari "shot" is a storyboard clip, not one continuous camera take.
+Each shot may contain internal edits, multiple angles, and beat hits, but it must still serve one clear story/music idea.
+
+Target clip length: 15 seconds whenever the musical phrase can support a mini-scene.
+Allowed practical range: 4-15 seconds. Use shorter clips for short phrases, transitions, refrains, or quick devotional responses.
+For each scene, shot durations must add up to the scene duration exactly.
+Good examples:
+- 30s scene -> 15 + 15
+- 28s scene -> 15 + 13
+- 20s scene -> 10 + 10 or 15 + 5
+- 12s scene -> 12
+
+Write each shot.direction as an edited mini-sequence, not a single camera setup.
+Good: "Villagers assemble around the grounded idol, then hands lift it onto the marigold palanquin"
+Good: "The procession enters the lane, lamps ignite on doorsteps, and the idol passes through the crowd"
+Bad: "Wide establishing shot of the field"
+Bad: "Slow dolly toward the idol"
+
+Do not create zero-second cuts or filler shots. Every shot must have duration > 0.
+Do not include art style, color palette, rendering language, or architecture not present in the scene/environment.
+═══════════════════════════════════════════════════════════════════════`
+    : `═══ PACING RULES (CRITICAL — think through this before writing) ═══
+Base shot length: ${pacing} seconds.
+For each scene: number_of_shots = ceil(scene_duration / ${pacing})
+Every shot is ${pacing}s except the LAST shot which gets the remainder.
+
+Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
+
+Video model minimum clip length: ${minDuration}s. Shots shorter than this get padded — don't adjust shot count to avoid it.
+
+BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots.
+═══════════════════════════════════════════════════════════════════`;
 
   const prompt = `You are a music video director. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
 
@@ -342,17 +381,7 @@ MEANING: ${input.meaning}
 
 MUSICAL STRUCTURE: ${input.musicalStructure}
 
-═══ PACING RULES (CRITICAL — think through this before writing) ═══
-Base shot length: ${pacing} seconds.
-For each scene: number_of_shots = ceil(scene_duration / ${pacing})
-Every shot is ${pacing}s except the LAST shot which gets the remainder.
-
-Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
-
-Video model minimum clip length: ${minDuration}s. Shots shorter than this get padded — don't adjust shot count to avoid it.
-
-BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots.
-═══════════════════════════════════════════════════════════════════
+${pacingGuidance}
 ${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
 Plan the full music video using the plan_music_video tool.
 
@@ -379,6 +408,7 @@ SCENE rules:
   Good: "The devotee's offering becomes the bridge between human longing and divine grace"
   Bad: "Slow dolly in on Ganesha" (that's camera work, not direction)
   Bad: "Wide establishing shot of temple" (that's framing, not action)
+${isSeedanceStoryboard ? '- In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive clip idea. Include shot.duration for every shot.' : ''}
 ${input.isMeditative ? '\n- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs.' : ''}
 - Avoid mechanical alternation between two visual worlds unless the song truly demands it. Let some beats bridge the human and divine, or move from one into the other.
 - Not every sacred name or attribute needs a literal illustration. Some should be felt through atmosphere, ritual action, emotional change, silence, or presence.
@@ -390,7 +420,7 @@ IMPORTANT — character and environment assignment:
 - Every character who appears in a shot MUST be listed in castNames
 - Do NOT skip character/environment assignment`;
 
-  console.log(`[planScenes] Extended thinking + validation loop (pacing=${pacing}s)`);
+  console.log(`[planScenes] Extended thinking + validation loop (pacing=${pacing}s, seedanceStoryboard=${!!isSeedanceStoryboard})`);
 
   // ═══ CALL 1: Extended thinking — Claude reasons through pacing math then outputs ═══
   let messages: any[] = [{ role: 'user', content: prompt }];
@@ -415,17 +445,29 @@ IMPORTANT — character and environment assignment:
     const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
     if (!candidate.environments) candidate.environments = [];
 
-    // ═══ VALIDATE: Check shot counts fit scene durations ═══
+    // ═══ VALIDATE: Check shot counts/durations fit scene durations ═══
     const errors: string[] = [];
     for (const scene of candidate.scenes) {
       const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
       if (sceneDuration <= 0) continue;
-      const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
-      if ((scene.shots?.length || 0) !== expectedShots) {
-        errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} shots expected.`);
-      }
       if ((scene.shots?.length || 0) === 0) {
         errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
+      }
+      if (isSeedanceStoryboard) {
+        const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
+        shotDurations.forEach((duration: number, idx: number) => {
+          if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
+          if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
+        });
+        const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
+        if (Math.abs(total - sceneDuration) > 0.01) {
+          errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): shot durations add to ${total}s, must add to ${sceneDuration}s exactly.`);
+        }
+      } else {
+        const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
+        if ((scene.shots?.length || 0) !== expectedShots) {
+          errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} shots expected.`);
+        }
       }
     }
 
@@ -447,7 +489,7 @@ IMPORTANT — character and environment assignment:
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\nRemember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Remember: Seedance storyboard shots must each be 1-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Remember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.`}` }
       ] },
     ];
   }
@@ -460,7 +502,9 @@ IMPORTANT — character and environment assignment:
     if (sceneDuration <= 0 || !scene.shots?.length) continue;
     const shotCount = scene.shots.length;
     for (let i = 0; i < shotCount; i++) {
-      if (i < shotCount - 1) {
+      if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
+        scene.shots[i].duration = Number(scene.shots[i].duration);
+      } else if (i < shotCount - 1) {
         scene.shots[i].duration = pacing;
       } else {
         const usedTime = (shotCount - 1) * pacing;
@@ -628,7 +672,7 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean },
+  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = getClient();
@@ -663,6 +707,20 @@ MEDITATIVE CINEMATOGRAPHY:
 - Resist the urge to fill every shot with spectacle. A still face, a trembling hand, a single flame can carry more weight than divine radiance.
 - Show sacred presence through atmosphere and reaction, not only through literal divine manifestation.
 - When the divine appears, keep it grounded — earned through the devotee's state, not inserted as a visual effect.` : '';
+
+  const modelGuidance = context.videoModel?.startsWith('seedance') ? `
+SEEDANCE 2.0 PROMPTING MODE:
+- Think like a production storyboard: each motionPrompt should read as a timed action cue for this exact shot duration, not a loose mood sentence.
+- Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
+- Use each shot's listed duration when helpful: "Over 5s..." or "During the final second..." for holds, reveals, and beat hits.
+- Lahari provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
+- You may reference the song rhythm visually: "on the vocal phrase", "on the drum accent", "as the line resolves", "with the chant pulse". Keep it visible and editorial.
+- Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
+- If the start frame must stay consistent, say so positively: "maintain the same face, costume, and temple geometry while..."
+- Avoid multi-shot language inside one Lahari shot unless the direction explicitly requires a transition. Lahari stitches separate clips later.` : `
+VIDEO MODEL PROMPTING MODE:
+- The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
+- Do not request generated audio, dialogue, subtitles, or sound effects.`;
 
   const prompt = `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
@@ -708,19 +766,21 @@ BAD motionPrompt:
 
 ${songTypeSignal}
 Mood: ${context.concept.mood || 'Cinematic'}
+Video model: ${context.videoModel || 'default'}
 
 CHARACTERS:
 ${castList}
 ${userNoteBlock}${tailContext}
 SHOTS TO WRITE:
 ${shotList}
+${modelGuidance}
 ${meditativeGuidance}
 For EACH shot, write using the write_shot_prompts tool:
 
 - visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
   ONLY include characters listed in that shot's Cast field.
 
-- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, or environmental motion. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
+- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, environmental motion, and visible timing against the song when useful. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
 
 - continuityFrom: 'cut' or 'prev_shot'.
   Use 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment — a gaze becoming a close-up, stillness cracking into recognition, a slow reveal continuing across an edit point.

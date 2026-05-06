@@ -316,7 +316,7 @@ The prompt now stays intentionally lean:
 - explicit sequence checks avoid invented geography, repeated camera verbs, schematic composition shortcuts, mystical VFX, all-cuts defaulting, and static restatement of the same beat
 
 **Gaps:**
-- [ ] Shot writer is model-agnostic — needs model-specific best practices
+- [x] Shot writer is model-aware for Seedance — `writeShotPrompts` receives `video_model` and adds production-board/timing guidance when the selected model is Seedance. See [`docs/seedance-storyboard-workflow.md`](seedance-storyboard-workflow.md).
 - [ ] Bulk regen overwrites ALL manual edits to individual shots — no selective regen
 - [ ] Could add "rewrite prompts for selected shots only"
 - [x] UI: simplified to 3 tabs (First frame / Last frame / Video) + Full chain diagnostic. Motion prompt merged into Video tab.
