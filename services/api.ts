@@ -437,6 +437,71 @@ export const writeShotPrompts = async (projectId: string, userNote?: string, sig
   return handleResponse(res);
 };
 
+// ─── Shot Storyboards ──────────────────────────────────────────────
+
+export type StoryboardVersionEntry = {
+  id: string;
+  assetId: string;
+  imageUrl?: string;
+  parentVersionId?: string;
+  artistNote?: string;
+  openaiResponseId?: string;
+  reasoningModel?: string;
+  imageModel?: string;
+  cutPlanText?: string;
+  continuityNotes?: string;
+  locked: boolean;
+  createdAt: string;
+};
+
+export const generateStoryboard = async (projectId: string, shotId: string, signal?: AbortSignal) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-storyboard`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ variant: 'adaptive_numbered_storyboard' }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
+export const refineStoryboard = async (projectId: string, shotId: string, feedback: string, previousVersionId?: string, signal?: AbortSignal) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-storyboard`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feedback, previousVersionId, variant: 'adaptive_numbered_storyboard' }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
+export const lockStoryboard = async (projectId: string, shotId: string, versionId?: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/lock-storyboard`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(versionId ? { versionId } : {}),
+  });
+  return handleResponse(res);
+};
+
+export const unlockStoryboard = async (projectId: string, shotId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/unlock-storyboard`, { method: 'POST' });
+  return handleResponse(res);
+};
+
+export const updateStoryboardPlan = async (projectId: string, shotId: string, cutPlanText: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/storyboard-plan`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cutPlanText }),
+  });
+  return handleResponse(res);
+};
+
+export const getStoryboardHistory = async (projectId: string, shotId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/storyboard-history`);
+  return handleResponse(res) as Promise<{ versions: StoryboardVersionEntry[] }>;
+};
+
 // ─── Shot Image & Video ─────────────────────────────────────────────
 
 export const refineShotPrompt = async (projectId: string, shotId: string, feedback: string, referenceImage?: File, signal?: AbortSignal) => {

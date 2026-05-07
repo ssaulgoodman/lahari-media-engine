@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ShotVideoPreview } from './ShotVideoPreview';
 import { PromptToolkit } from './PromptToolkit';
+import { StoryboardPanel } from './StoryboardPanel';
 import { ShotVersionHistory } from './ShotVersionHistory';
 import type { ShotRefInput } from '../services/api';
 
@@ -36,6 +37,8 @@ interface ShotCardProps {
   onToggleExpand: () => void;
   actionable: boolean;
   modelSupportsLastFrame: boolean;
+  studioMode: 'storyboard' | 'keyframe';
+  storyboardSupported: boolean;
 
   // History
   historyOpen: boolean;
@@ -57,11 +60,17 @@ interface ShotCardProps {
   // Queue position
   frameQueue?: string[];
   videoQueue?: string[];
+  storyboardQueue?: string[];
 
   // Callbacks
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateImage: (sceneId: string, shotId: string, refs?: ShotRefInput[]) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
+  onGenerateStoryboard?: (shotId: string) => void | Promise<void>;
+  onRefineStoryboard?: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
+  onLockStoryboard?: (shotId: string, versionId?: string) => void | Promise<void>;
+  onUnlockStoryboard?: (shotId: string) => void | Promise<void>;
+  onUpdateStoryboardPlan?: (shotId: string, cutPlanText: string) => void | Promise<void>;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void | Promise<void>;
   onGenerateEndFrame?: (shotId: string, refs?: ShotRefInput[]) => void | Promise<void>;
@@ -83,13 +92,14 @@ interface ShotCardProps {
 }
 
 export const ShotCard: React.FC<ShotCardProps> = ({
-  project, shot, scene, shotIdx, isExpanded, onToggleExpand, actionable, modelSupportsLastFrame,
+  project, shot, scene, shotIdx, isExpanded, onToggleExpand, actionable, modelSupportsLastFrame, studioMode, storyboardSupported,
   historyOpen, onToggleHistory, onCloseHistory,
   activeTab, onTabChange, videoOverride, onVideoOverrideChange,
   getActiveRefs, setActiveRefs, resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
-  frameQueue, videoQueue,
+  frameQueue, videoQueue, storyboardQueue,
   onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt,
+  onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
@@ -99,14 +109,19 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const [showFrames, setShowFrames] = useState(false);
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
-  const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
-  const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR;
+  const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
+  const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
+  const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR || shot.storyboardStatus === GenerationStatus.ERROR;
   const activeCastMembers = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
   const hasStartFrame = !!shot.imageUrl;
   const hasVideo = !!shot.videoUrl;
-  const canGenerateVideo = hasStartFrame && !isGenerating;
-  const canLock = hasStartFrame && hasVideo && !shot.locked;
-  const progress = shot.locked ? 3 : hasVideo ? 2 : hasStartFrame ? 1 : 0;
+  const hasStoryboard = !!shot.storyboardUrl;
+  const canGenerateVideo = isStoryboardMode ? !!shot.storyboardLocked && hasStoryboard && !isGenerating : hasStartFrame && !isGenerating;
+  const canLock = isStoryboardMode ? !!shot.storyboardLocked && hasVideo && !shot.locked : hasStartFrame && hasVideo && !shot.locked;
+  const progress = shot.locked ? 3 : hasVideo ? 2 : isStoryboardMode ? (shot.storyboardLocked ? 1 : 0) : hasStartFrame ? 1 : 0;
+  // In storyboard mode the storyboard image stands in for the start frame —
+  // show it as soon as it exists, alongside any video that gets generated.
+  const showMediaSection = isStoryboardMode ? (hasStoryboard || hasVideo || shot.storyboardStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING) : true;
 
   // Build auto video prompt for display (mirrors server-side generate-video.ts logic)
   const buildAutoVeoPrompt = () => {
@@ -180,11 +195,12 @@ export const ShotCard: React.FC<ShotCardProps> = ({
             <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0" title="Prompt was auto-rewritten by Claude after seeing the previous shot's actual last frame.">refined</span>
           )}
           {(() => {
+            const storyboardPos = storyboardQueue?.indexOf(shot.id) ?? -1;
             const framePos = frameQueue?.indexOf(shot.id) ?? -1;
             const videoPos = videoQueue?.indexOf(shot.id) ?? -1;
-            if (framePos < 0 && videoPos < 0) return null;
-            const kind = framePos >= 0 ? 'frame' : 'video';
-            const pos = framePos >= 0 ? framePos + 1 : videoPos + 1;
+            if (storyboardPos < 0 && framePos < 0 && videoPos < 0) return null;
+            const kind = storyboardPos >= 0 ? 'storyboard' : framePos >= 0 ? 'frame' : 'video';
+            const pos = storyboardPos >= 0 ? storyboardPos + 1 : framePos >= 0 ? framePos + 1 : videoPos + 1;
             const ordinal = pos === 1 ? '1st' : pos === 2 ? '2nd' : pos === 3 ? '3rd' : `${pos}th`;
             return <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0 font-mono" title={`Queued for bulk ${kind} generation — ${ordinal} in line.`}>queued · {ordinal}</span>;
           })()}
@@ -198,15 +214,21 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           {shot.videoUrl && (
             <div className="flex gap-px bg-white/[0.04] rounded overflow-hidden mr-2">
               <button onClick={() => setShowFrames(false)} className={`text-[11px] px-2 py-1 font-medium transition-colors ${!showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`} title="Show video">Video</button>
-              <button onClick={() => setShowFrames(true)} className={`text-[11px] px-2 py-1 font-medium transition-colors ${showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`} title="Show start + end frames">Frames</button>
+              <button
+                onClick={() => setShowFrames(true)}
+                className={`text-[11px] px-2 py-1 font-medium transition-colors ${showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                title={isStoryboardMode ? 'Show numbered storyboard' : 'Show start + end frames'}
+              >
+                {isStoryboardMode ? 'Storyboard' : 'Frames'}
+              </button>
             </div>
           )}
-          {shot.videoUrl && (
+          {(shot.videoUrl || shot.imageUrl || shot.storyboardUrl) && (
             <button onClick={onToggleHistory} className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${historyOpen ? 'text-white bg-white/[0.1]' : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'}`} title="Version history" aria-label="Version history">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
             </button>
           )}
-          <button onClick={() => onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'))} disabled={isGenerating || (!actionable && !shot.locked)} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'} aria-label={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}>
+          <button onClick={() => onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'))} disabled={isGenerating || (!actionable && !shot.locked) || isStoryboardMode} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode ? 'Start frames are disabled in storyboard mode' : hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'} aria-label={hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}>
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
           </button>
           <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo && !shot.locked || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>
@@ -232,8 +254,44 @@ export const ShotCard: React.FC<ShotCardProps> = ({
         </div>
       )}
       {/* Media: Video or Frames */}
-      <div className="relative">
-        {shot.videoUrl && !showFrames ? (
+      {showMediaSection && <div className="relative">
+        {/* Storyboard mode: video (when present) or numbered storyboard image — no start/end keyframes */}
+        {isStoryboardMode ? (
+          shot.videoUrl && !showFrames ? (
+            <div className="bg-black">
+              <ShotVideoPreview
+                videoUrl={shot.videoUrl}
+                audioUrl={project.audioPath ? project.audioPath : undefined}
+                globalStartSec={parseTimeToSec(scene.startTime) + scene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)}
+                durationSec={shot.duration}
+              />
+            </div>
+          ) : (
+            <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/sb">
+              {shot.storyboardUrl ? (
+                <>
+                  <div className="absolute top-2 left-2 z-20">
+                    <span className="text-[10px] bg-black/70 backdrop-blur text-zinc-300 px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
+                      {shot.storyboardLocked ? 'Storyboard · Locked' : 'Storyboard'}
+                    </span>
+                  </div>
+                  <img
+                    src={shot.storyboardUrl}
+                    alt={`Shot ${shotIdx + 1} storyboard`}
+                    onClick={() => setModalImage(shot.storyboardUrl!)}
+                    className="max-w-full max-h-[480px] h-auto w-auto cursor-zoom-in"
+                  />
+                </>
+              ) : shot.storyboardStatus === GenerationStatus.LOADING ? (
+                <div className="text-xs text-zinc-400">Generating storyboard…</div>
+              ) : (
+                <div className="w-full min-h-[160px] flex items-center justify-center text-zinc-400">
+                  <span className="text-xs">No storyboard yet — generate below to draft one.</span>
+                </div>
+              )}
+            </div>
+          )
+        ) : shot.videoUrl && !showFrames ? (
           <div className="bg-black">
             <ShotVideoPreview
               videoUrl={shot.videoUrl}
@@ -366,7 +424,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
         )}
 
         {/* Error */}
-        {isError && !isGenerating && !shot.videoUrl && (
+        {isError && !isGenerating && !shot.videoUrl && !isStoryboardMode && (
           <div className="px-4 py-2 border-t border-red-500/10 bg-red-500/[0.04] space-y-1">
             <span className="text-xs text-red-300">Generation failed — click regen to retry</span>
             {shot.lastError && <p className="text-[11px] text-red-300/60 font-mono leading-snug break-all">{shot.lastError.slice(0, 200)}</p>}
@@ -378,7 +436,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center z-30 gap-3">
             <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
             <span className="text-[11px] text-zinc-400 font-medium">
-              {shot.imageStatus === GenerationStatus.LOADING ? 'Generating frame' : shot.videoStatus === GenerationStatus.LOADING ? 'Generating video' : 'Processing'}
+              {shot.storyboardStatus === GenerationStatus.LOADING ? 'Generating storyboard' : shot.imageStatus === GenerationStatus.LOADING ? 'Generating frame' : shot.videoStatus === GenerationStatus.LOADING ? 'Generating video' : 'Processing'}
             </span>
             <div className="w-24 h-0.5 bg-white/[0.06] rounded-full overflow-hidden"><div className="h-full bg-white/30 rounded-full animate-shimmer" style={{ width: '40%' }} /></div>
             {(shot.imageStatus === GenerationStatus.LOADING && onCancelShotImage) || (shot.videoStatus === GenerationStatus.LOADING && onCancelShotVideo) ? (
@@ -393,13 +451,15 @@ export const ShotCard: React.FC<ShotCardProps> = ({
             <span className="text-xs text-zinc-400">Waiting on previous shot's video (continuity)</span>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Version history panel */}
       {historyOpen && (
         <ShotVersionHistory
           projectId={project.id}
           shotId={shot.id}
+          storyboardSupported={storyboardSupported}
+          activeStoryboardVersionId={shot.storyboardVersionId}
           onRevertVideo={onRevertVideo}
           onSetProject={onSetProject}
           onClose={onCloseHistory}
@@ -408,43 +468,62 @@ export const ShotCard: React.FC<ShotCardProps> = ({
 
       {/* Prompts */}
       <div className="px-5 py-4 space-y-4 border-t border-white/[0.06]">
-        {(shot.locked || actionable) && (() => {
-          const autoVeoPrompt = buildAutoVeoPrompt();
-          return (
-            <PromptToolkit
+        {(shot.locked || actionable) && (
+          isStoryboardMode ? (
+            <StoryboardPanel
               project={project}
               shot={shot}
               scene={scene}
-              shotIdx={shotIdx}
-              activeTab={activeTab}
-              onTabChange={onTabChange}
-              videoOverride={videoOverride}
-              onVideoOverrideChange={onVideoOverrideChange}
               getActiveRefs={getActiveRefs}
-              setActiveRefs={setActiveRefs}
               resolveRefDisplay={resolveRefDisplay}
               isRefining={isRefining}
               onRefineStart={onRefineStart}
               onRefineEnd={onRefineEnd}
-              isGenerating={isGenerating}
-              hasStartFrame={hasStartFrame}
-              hasVideo={hasVideo}
-              actionable={actionable}
-              modelSupportsLastFrame={modelSupportsLastFrame}
-              autoVeoPrompt={autoVeoPrompt}
-              onGenerateImage={onGenerateImage}
-              onGenerateVideo={onGenerateVideo}
-              onGenerateEndFrame={onGenerateEndFrame}
-              onRefinePrompt={onRefinePrompt}
-              onRefineEndFramePrompt={onRefineEndFramePrompt}
-              onRefineVideoPrompt={onRefineVideoPrompt}
-              onUploadShotRef={onUploadShotRef}
-              onDeleteShotRef={onDeleteShotRef}
-              onUpdateShot={onUpdateShot}
+              onGenerateStoryboard={onGenerateStoryboard!}
+              onRefineStoryboard={onRefineStoryboard!}
+              onLockStoryboard={onLockStoryboard!}
+              onUnlockStoryboard={onUnlockStoryboard!}
+              onUpdateStoryboardPlan={onUpdateStoryboardPlan!}
               setModalImage={setModalImage}
             />
-          );
-        })()}
+          ) : (() => {
+            const autoVeoPrompt = buildAutoVeoPrompt();
+            return (
+              <PromptToolkit
+                project={project}
+                shot={shot}
+                scene={scene}
+                shotIdx={shotIdx}
+                activeTab={activeTab}
+                onTabChange={onTabChange}
+                videoOverride={videoOverride}
+                onVideoOverrideChange={onVideoOverrideChange}
+                getActiveRefs={getActiveRefs}
+                setActiveRefs={setActiveRefs}
+                resolveRefDisplay={resolveRefDisplay}
+                isRefining={isRefining}
+                onRefineStart={onRefineStart}
+                onRefineEnd={onRefineEnd}
+                isGenerating={isGenerating}
+                hasStartFrame={hasStartFrame}
+                hasVideo={hasVideo}
+                actionable={actionable}
+                modelSupportsLastFrame={modelSupportsLastFrame}
+                autoVeoPrompt={autoVeoPrompt}
+                onGenerateImage={onGenerateImage}
+                onGenerateVideo={onGenerateVideo}
+                onGenerateEndFrame={onGenerateEndFrame}
+                onRefinePrompt={onRefinePrompt}
+                onRefineEndFramePrompt={onRefineEndFramePrompt}
+                onRefineVideoPrompt={onRefineVideoPrompt}
+                onUploadShotRef={onUploadShotRef}
+                onDeleteShotRef={onDeleteShotRef}
+                onUpdateShot={onUpdateShot}
+                setModalImage={setModalImage}
+              />
+            );
+          })()
+        )}
       </div>
       </>}
 

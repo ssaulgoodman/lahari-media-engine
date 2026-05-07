@@ -9,6 +9,7 @@ type StoryboardRefMeta = {
   assetId?: string;
   filePath: string;
 };
+export type { StoryboardRefMeta };
 
 type StoryboardContext = {
   project: any;
@@ -24,12 +25,47 @@ const parseJson = <T>(value: any, fallback: T): T => {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
 
+const parseTimestamp = (t?: string): number => {
+  if (!t || !t.includes(':')) return 0;
+  const parts = t.split(':').map(Number);
+  if (parts.some((part) => Number.isNaN(part))) return 0;
+  return parts[0] * 60 + (parts[1] || 0);
+};
+
 const buildConceptSummary = (project: any): { concept: string; mood?: string } => {
   const concept = parseJson<Record<string, any>>(project.locked_concept, {});
   return {
-    concept: concept.conceptDirection || concept.summary || concept.title || project.style_description || project.title,
+    concept: concept.conceptDirection || concept.summary || concept.title || `Devotional music video for ${project.title}`,
     mood: concept.mood || undefined,
   };
+};
+
+const buildMusicalCue = (project: any, scene: any): string | undefined => {
+  const sections = parseJson<any[]>(project.musical_structure, []);
+  if (!sections.length) return undefined;
+
+  const sceneStart = parseTimestamp(scene.start_time);
+  const sceneEnd = parseTimestamp(scene.end_time);
+  const matching = sections
+    .map((section) => {
+      const start = parseTimestamp(section.startTime || section.start_time);
+      const end = parseTimestamp(section.endTime || section.end_time);
+      const overlap = Math.max(0, Math.min(sceneEnd, end) - Math.max(sceneStart, start));
+      return { section, overlap };
+    })
+    .sort((a, b) => b.overlap - a.overlap)[0]?.section;
+
+  if (!matching) return undefined;
+  const label = matching.label || matching.sectionLabel || 'Musical section';
+  const start = matching.startTime || matching.start_time;
+  const end = matching.endTime || matching.end_time;
+  const energy = matching.energy || matching.energyLevel || matching.energy_level;
+  const description = matching.description;
+  return [
+    `${label}${start && end ? ` (${start}-${end})` : ''}`,
+    energy ? `${energy} energy` : '',
+    description || '',
+  ].filter(Boolean).join('; ');
 };
 
 const addRef = (
@@ -83,11 +119,11 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
     sceneEnd: scene.end_time || '',
     sceneNarrative: scene.narrative_description || '',
     sceneLyrics: scene.lyrics || '',
+    musicalCue: buildMusicalCue(project, scene),
     clipDirection: shot.direction || shot.motion_prompt || shot.visual_prompt || '',
     clipDuration: Math.max(4, Math.min(15, Number(shot.duration || 15))),
     castNames: activeCast.map((member: any) => member.name),
     environmentName: environment?.name || undefined,
-    styleSummary: project.style_description || undefined,
   };
 
   return { project, scene, shot, input, refs, refMeta };
@@ -115,7 +151,8 @@ export const generateStoryboardVersion = async (opts: {
       ? await selectOne('storyboard_versions', { id: ctx.shot.storyboard_version_id, shot_id: opts.shotId })
       : null;
 
-  const basePrompt = buildStoryboardPrompt(ctx.input, opts.variant || 'four_panel_clean');
+  const variant = opts.variant || 'adaptive_numbered_storyboard';
+  const basePrompt = buildStoryboardPrompt(ctx.input, variant);
   const prompt = opts.artistNote?.trim()
     ? `Refine the existing Lahari storyboard using this artist note: "${opts.artistNote.trim()}"
 
@@ -169,7 +206,7 @@ ${basePrompt}`
       artist_note: opts.artistNote || null,
       refs: ctx.refMeta,
       metadata: {
-        variant: opts.variant || 'four_panel_clean',
+        variant,
         clipDuration: ctx.input.clipDuration,
         sceneLabel: ctx.input.sceneLabel,
         cutPlanText: result.outputText || null,
@@ -222,5 +259,46 @@ export const lockStoryboardVersion = async (projectId: string, shotId: string, v
     storyboard_asset_id: version.asset_id,
     storyboard_locked: true,
     storyboard_status: 'success',
+  });
+};
+
+export const unlockStoryboardVersion = async (projectId: string, shotId: string): Promise<void> => {
+  const shot = await selectOne('shots', { id: shotId });
+  if (!shot) throw new Error('Shot not found');
+
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  if (!scene || scene.project_id !== projectId) throw new Error('Shot does not belong to this project');
+
+  await updateRows('storyboard_versions', { shot_id: shotId }, { locked: false });
+  await updateRows('shots', { id: shotId }, {
+    storyboard_locked: false,
+    storyboard_status: shot.storyboard_asset_id ? 'success' : 'idle',
+  });
+};
+
+export const updateStoryboardCutPlan = async (
+  projectId: string,
+  shotId: string,
+  cutPlanText: string
+): Promise<void> => {
+  const shot = await selectOne('shots', { id: shotId });
+  if (!shot) throw new Error('Shot not found');
+
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  if (!scene || scene.project_id !== projectId) throw new Error('Shot does not belong to this project');
+
+  const versionId = shot.storyboard_version_id;
+  if (!versionId) throw new Error('No active storyboard version to update');
+
+  const version = await selectOne('storyboard_versions', { id: versionId, shot_id: shotId, project_id: projectId });
+  if (!version) throw new Error('Storyboard version not found');
+
+  const metadata = parseJson<Record<string, any>>(version.metadata, {});
+  await updateRows('storyboard_versions', { id: versionId }, {
+    metadata: {
+      ...metadata,
+      cutPlanText: cutPlanText.trim(),
+      cutPlanEditedAt: new Date().toISOString(),
+    },
   });
 };

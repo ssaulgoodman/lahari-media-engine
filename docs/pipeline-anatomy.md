@@ -323,6 +323,28 @@ The prompt now stays intentionally lean:
 
 ---
 
+## Step 7.5: Seedance Storyboards (per shot)
+
+**Source:** [`server/services/storyboard.ts`](../server/services/storyboard.ts) · Prompt templates: [`server/services/seedance-storyboard-rd.ts`](../server/services/seedance-storyboard-rd.ts) · Route: `server/routes/generate-shots.ts`
+
+| | |
+|---|---|
+| **Model** | OpenAI Responses API with `gpt-5.5` + image tool using `gpt-image-2` |
+| **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs |
+| **Output** | Numbered 3-6 panel storyboard image + text cut plan saved on `lahari_storyboard_versions.metadata.cutPlanText` |
+| **Artist control** | Generate, natural-language refine, lock/unlock, history, editable cut-plan text |
+| **generation_prompt** | Built from the canonical template; cut-plan text is editable after generation and feeds Seedance video prompting |
+
+**Storyboard contract:** one board per Lahari shot, not one scene board. The board may contain internal cuts and camera angles, but it remains one cohesive 4-15s Seedance clip. Panel numbers are allowed; captions/readable labels are not.
+
+**API endpoints:** `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
+
+**UI target:** Storyboard belongs as a first tab inside `PromptToolkit` when the Studio mode is `Storyboard`. Do not embed a separate storyboard card above the media/toolkit stack. See [`docs/seedance-storyboard-workflow.md`](seedance-storyboard-workflow.md).
+
+**Status: IN PROGRESS** — backend contract and endpoints are wired; final UI should be implemented as a `PromptToolkit` tab.
+
+---
+
 ## Step 8: Frame Generation (per shot)
 
 **Source:** [`server/services/imagen.ts` → `generateShotStartFrame`](../server/services/imagen.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
@@ -376,14 +398,14 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | | |
 |---|---|
 | **Model** | Veo 3.1 / Seedance 2.0 via Segmind (segmind.ts) |
-| **Input** | start frame + motion prompt + ref images + end frame |
+| **Input** | Keyframe mode: start frame + motion prompt + ref images + end frame. Seedance storyboard mode: locked storyboard as `@image1` + exact style/cast/environment refs + saved cut plan text. |
 | **Output** | Video clip |
-| **Artist control** | "Video" tab: motion prompt (editable, overrideable). AI refine rewrites motion prompt. |
-| **generation_prompt** | `motionPrompt` only + ref labels when ref images attached. No mood, scene narrative, or cast names — the start frame already shows all of that. Overrideable in Video tab. |
+| **Artist control** | "Video" tab: motion prompt/edit prompt in keyframe mode. In storyboard mode, the saved storyboard cut plan drives the prompt after storyboard lock. |
+| **generation_prompt** | Keyframe mode: `motionPrompt` + ref labels. Storyboard mode: generated Seedance prompt from locked storyboard, refs, and saved cut plan text. |
 
 **Refine context:** `refineMotionPrompt` — Claude sees start frame + end frame (if exists) + shot visual prompt (context) + director's feedback + current motion prompt + optional reference image. No style/scene/character context. Output: rewritten `motionPrompt` only.
 
-**Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Frame mode prioritized when start frame exists. Veo accepts all inputs together.
+**Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control when a start frame exists. Storyboard mode intentionally sends no `first_frame_url`; it sends the locked storyboard and refs through `reference_images` so `@image1` is the storyboard source of truth.
 
 **Error transparency:** `last_error` column on shots — saved on failure (truncated 500 chars), cleared on success. Shown in shot card error banner.
 

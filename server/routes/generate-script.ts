@@ -130,7 +130,7 @@ router.post('/:id/generate-script', async (req, res) => {
         const envId = shot.environmentName ? (envNameToId[shot.environmentName] || null) : null;
 
         // Standard mode uses deterministic ceil+remainder pacing. Seedance
-        // storyboard mode lets the script planner choose 1-15s clip blocks.
+        // storyboard mode lets the script planner choose 4-15s clip blocks.
         let duration = Number(shot.duration || 0) > 0 && String(project.video_model || '').startsWith('seedance')
           ? Number(shot.duration)
           : basePacing;

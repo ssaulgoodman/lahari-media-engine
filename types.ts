@@ -75,6 +75,12 @@ export interface VideoShot {
   promptsStale?: boolean;
   videoUrl?: string;
   videoStatus: GenerationStatus;
+  storyboardUrl?: string;
+  storyboardAssetId?: string;
+  storyboardVersionId?: string;
+  storyboardStatus: GenerationStatus;
+  storyboardLocked?: boolean;
+  storyboardUserFeedback?: string;
   useNextAsEndFrame: boolean;
   error?: string;
   lastError?: string;

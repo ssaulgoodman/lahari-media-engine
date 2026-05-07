@@ -1,64 +1,183 @@
-# Seedance Storyboard Workflow Research
+# Seedance Storyboard Workflow
 
-Research date: 2026-05-05
+Current implementation contract for the Seedance storyboard branch.
 
-This note captures the current X/Grok sweep on ChatGPT plus Seedance storyboarding workflows and the first Lahari embedding decision.
+## Product Shape
 
-## What The Tweets Are Converging On
+Seedance storyboard mode changes the meaning of a Lahari shot.
 
-The useful pattern is not a single magic prompt. It is a production-board loop:
+In the old keyframe workflow, a shot is one continuous clip driven by a first frame and a motion prompt. In Seedance storyboard mode, a shot is an edited 4-15 second mini-sequence. The storyboard image defines the internal cuts, camera progression, blocking, and screen direction for that one shot. The final video still lands back in the same Studio card and Render flow.
 
-1. Use ChatGPT or GPT Image to make a timed storyboard, often a 3x3 grid or 3 shots of 5 seconds each.
-2. Convert the board into a Seedance prompt with explicit time slices, action, camera, lighting, and consistency locks.
-3. Feed the storyboard/keyframe image into Seedance as the visual reference.
-4. Generate short clips, then stitch/edit over music.
+This is Seedance-only for now. Veo stays on the keyframe path.
 
-High-signal tweets from the search:
+## Script Contract
 
-- @Studio_Tora_lab: GPT Images2 x Seedance 2.0 workflow, with idea plus prompt, GPT storyboard, reference in Seedance, refined prompt back into Seedance. https://x.com/Studio_Tora_lab/status/2046944835739799944
-- @IamEmily2050: senior AI-video storyboard director prompt with 3 shots of 5 seconds, keyframe prompts, Seedance final prompt, and consistency lock. https://x.com/IamEmily2050/status/2048147198869946855
-- @GumVue: custom GPT that generates cinematic Seedance prompts with timestamped scenes, film camera shots/movements, expressions, and dialogue. https://x.com/GumVue/status/2044201155786375492
-- @harboriis: GPT Image 2 plus Seedance 2.0 K-pop clip framed around 16 clean counts and on-beat motion. https://x.com/harboriis/status/2050238800534835475
-- @JordanMaruszak: trailer workflow using ChatGPT custom GPT for shot list and prompt refinement, Seedance/Veo for video, and music layered separately. https://x.com/JordanMaruszak/status/2051295402012426322
-- @GumVue: music creator GPT with Suno and Seedance, emphasizing BPM and trailer-style structure. https://x.com/GumVue/status/2050640100477026573
-- @0xInk_: timed Seedance 2 workflow template using second-by-second cinematic setup and audio cues. https://x.com/0xInk_/status/2037234396626116661
+`server/services/claude.ts -> planScenes` is model-aware.
 
-The repeatable parts for Lahari are: timed boards, reference-first prompting, consistency locks, visible beat cues, and short physically plausible camera/action instructions.
+When `project.video_model` starts with `seedance`, Opus is told:
 
-## Fit With Lahari
+- a Lahari shot is a storyboard clip, not one continuous camera take
+- each shot may contain internal edits, multiple angles, and beat hits
+- prefer 15s shots when the musical phrase supports a mini-scene
+- allow shorter 4-15s shots for transitions, refrains, or short phrases
+- shot durations must add exactly to the scene duration
+- each `shot.direction` should describe what happens across the edited mini-sequence
 
-Lahari already has the right primitives:
+Validation enforces:
 
-- Audio analysis creates timestamped lyrics and musical sections.
-- Script generation creates scenes and shot directions aligned to those sections.
-- `writeShotPrompts` turns each direction into `visual_prompt` and `motion_prompt`.
-- Studio generates start frames, videos, extracts last frames, and refreshes chained prompts.
+- every Seedance storyboard shot duration is 4-15 seconds
+- all shot durations in a scene add exactly to the scene duration
 
-So this should embed as an upgrade to Step 7, not as a separate pipeline. The shot writer should become model-aware and, for Seedance, behave more like a storyboard-to-video prompt compiler.
+`server/routes/generate-script.ts` preserves Opus-provided durations for Seedance shots and only uses fixed pacing/remainder logic for non-Seedance models.
 
-Important boundary: our Segmind Seedance calls currently set `generate_audio=false`. Lahari should not ask Seedance to synthesize music, dialogue, SFX, or VO. The song remains the source of truth, and the final render adds the original audio. Seedance prompts can still use visual rhythm cues such as "on the vocal phrase", "on the drum accent", or "as the chant resolves".
+## Storyboard Generation
 
-## First Implementation Pass
+Main service: `server/services/storyboard.ts`
 
-Implemented in this pass:
+Prompt template: `server/services/seedance-storyboard-rd.ts -> buildStoryboardPrompt`
 
-- `writeShotPrompts` now receives `project.video_model`.
-- When the selected model is Seedance, the prompt writer gets explicit Seedance guidance:
-  - write production-board style motion prompts
-  - include subject, visible change, camera, and timing
-  - use song rhythm as visible editorial timing, not generated audio
-  - maintain identity/wardrobe/geometry positively
-  - avoid multi-shot language inside one Lahari shot
+Image call: `server/services/openai-image.ts -> generateOpenAIImageWithResponses`
 
-This directly addresses the existing pipeline gap: "Shot writer is model-agnostic - needs model-specific best practices."
+The storyboard generator builds context from:
 
-## Next Embed Candidates
+- project title, concept, mood, song type
+- scene label, scene timestamps, scene narrative, scene lyrics
+- matching musical-structure cue from Gemini audio analysis
+- exact shot direction and shot duration
+- locked cast references for that shot
+- locked environment reference
+- locked style reference
 
-The stronger version is a proper Storyboard Treatment layer between script and prompt writing:
+The default prompt variant is `adaptive_numbered_storyboard`.
 
-- Store per-shot `beat_cue`, `frame_intent`, `motion_intent`, and `continuity_lock`.
-- Generate optional 3x3 storyboard sheets per scene using the existing start-frame model.
-- Let artists approve the scene board before bulk video generation.
-- Use board/keyframe references to make Seedance prompts more stable.
+The storyboard image contract:
 
-The smallest shippable next step is probably just adding `beat_cue` to the shot writer output and UI, because it makes the music-driven workflow inspectable without forcing a new storyboard asset system.
+- one board for the exact shot, not the whole scene
+- 3-6 panels depending on pacing
+- panels must include small clear order numbers only: `1`, `2`, `3`, etc.
+- no captions, subtitles, speech bubbles, logos, watermarks, or readable labels
+- stable spatial map and coherent screen direction across cuts
+- all objects and gestures must come from the shot, refs, and devotional context
+
+The Responses API text output is stored as the cut plan:
+
+```text
+Storyboard cut plan:
+Panel 1 [00:00-..] - camera: ...; action: ...; Seedance cue: ...
+Panel 2 [...] - camera: ...; action: ...; Seedance cue: ...
+
+Continuity notes: ...
+```
+
+This text is not cosmetic. It is saved on the storyboard version and is reused in the Seedance video prompt.
+
+## Storyboard Persistence
+
+Migration: `migrations/2026-05-06_add_storyboard_versions.sql`
+
+Shot columns:
+
+- `storyboard_asset_id`
+- `storyboard_version_id`
+- `storyboard_status`
+- `storyboard_locked`
+- `storyboard_user_feedback`
+
+History table:
+
+- `lahari_storyboard_versions`
+- one row per generated/refined storyboard image
+- stores OpenAI response chain IDs, image tool call IDs, prompt, refs, artist note, locked state, and metadata
+- `metadata.cutPlanText` is the canonical editable cut plan used by video generation
+
+`getFullProject` resolves storyboard URLs into each shot:
+
+- `storyboardUrl`
+- `storyboardAssetId`
+- `storyboardVersionId`
+- `storyboardStatus`
+- `storyboardLocked`
+- `storyboardUserFeedback`
+
+## API Endpoints
+
+All routes are under `/api/projects/:id/shots/:shotId`.
+
+| Endpoint | Body | Purpose |
+| --- | --- | --- |
+| `POST /generate-storyboard` | `{ variant?: "adaptive_numbered_storyboard" }` | Generate a new storyboard version from shot, scene, refs, and musical context. |
+| `POST /refine-storyboard` | `{ feedback, previousVersionId?, variant? }` | Natural-language refinement using the prior OpenAI response chain when available. |
+| `POST /lock-storyboard` | `{ versionId? }` | Lock the selected/current storyboard version for video generation. |
+| `POST /unlock-storyboard` | none | Unlock the storyboard while keeping the active version. |
+| `PATCH /storyboard-plan` | `{ cutPlanText }` | Save edited cut-plan text on the active storyboard version. Video generation uses this text. |
+| `GET /storyboard-history` | none | Return generated versions with image URLs, model IDs, notes, lock state, and cut plan text. |
+
+Client helpers live in `services/api.ts`:
+
+- `generateStoryboard`
+- `refineStoryboard`
+- `lockStoryboard`
+- `unlockStoryboard`
+- `updateStoryboardPlan`
+- `getStoryboardHistory`
+
+## Seedance Video Prompt
+
+Video route: `server/routes/generate-video.ts`
+
+Prompt template: `server/services/seedance-storyboard-rd.ts -> buildSeedanceStoryboardVideoPrompt`
+
+When the selected video model is Seedance and the shot has a locked storyboard, video generation switches to storyboard mode.
+
+Reference ordering is important:
+
+- `@image1` is always the locked numbered storyboard
+- `@image2+` are the exact style, cast, and environment refs used to create the storyboard
+- frontend video refs are ignored in storyboard mode so `@imageN` stays deterministic
+
+The generated Seedance prompt says:
+
+- follow `@image1` panels in order
+- treat `@image1` as source of truth for composition, blocking, screen direction, cut order, and camera progression
+- use all other images only as consistency anchors
+- use the saved cut plan text as the motion/cut guide
+- do not replace storyboard composition with a composition from reference images
+- do not invent a different devotional object or character blocking than the storyboard
+- do not generate audio, subtitles, text, logos, or watermarks
+
+Seedance is called with `startImagePath = undefined` in storyboard mode, so `reference_images` carries storyboard plus refs. This avoids the Segmind Seedance mutual-exclusion rule between `first_frame_url` and `reference_images`.
+
+## UI Handoff For Claude Code
+
+Do not keep storyboard as a separate embedded panel. The clean UI contract is:
+
+- Studio header has a mode toggle: `Storyboard | Keyframe`
+- Storyboard mode is enabled only for Seedance models; gray it out for Veo
+- In Storyboard mode, `PromptToolkit` gets a first tab named `Storyboard`
+- Existing `First frame` and `Last frame` tabs remain visible but disabled/locked in Storyboard mode
+- `Video` stays in the same shot card, same place as today
+- The storyboard tab reuses the toolkit structure:
+  - refs chips show the locked refs being used
+  - main prompt/text area displays the active cut plan text when available
+  - editing the cut plan calls `api.updateStoryboardPlan`
+  - Generate calls `api.generateStoryboard`
+  - Refine calls `api.refineStoryboard`
+  - Lock/Unlock calls `api.lockStoryboard` / `api.unlockStoryboard`
+  - History calls `api.getStoryboardHistory`
+- Do not show the old "No start frame" placeholder while Storyboard mode is active and no video exists
+- Bulk `Storyboards` generation belongs in the Studio header when Storyboard mode is active
+- Bulk `Videos` should enable only for shots with `storyboardLocked && storyboardUrl`
+
+Implementation note: the old throwaway `ShotStoryboardPanel` spike has been removed. The target UI is a `PromptToolkit` tab, not a separate card.
+
+## Test Path
+
+Backend/manual test order:
+
+1. Use a Seedance project with locked style, cast, environment, and script.
+2. `POST /generate-storyboard` for one shot.
+3. `GET /storyboard-history` and confirm `cutPlanText` exists.
+4. `PATCH /storyboard-plan` with a small edited cut plan.
+5. `POST /lock-storyboard`.
+6. `POST /generate-video`.
+7. Confirm the logged Seedance prompt binds `@image1` to the numbered storyboard and includes the edited cut plan.

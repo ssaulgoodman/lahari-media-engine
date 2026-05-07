@@ -17,17 +17,21 @@ interface StudioHeaderProps {
   onRewriteShotPrompts?: (userNote?: string) => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
   onBulkGenerateVideos?: () => Promise<void> | void;
+  onBulkGenerateStoryboards?: () => Promise<void> | void;
+  studioMode: 'storyboard' | 'keyframe';
+  onStudioModeChange: (mode: 'storyboard' | 'keyframe') => void;
+  storyboardSupported: boolean;
   isLoading?: boolean;
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
   scenes, project, activeSceneIdx, onSceneChange, onUpdateShot,
-  onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, isLoading,
+  onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, studioMode, onStudioModeChange, storyboardSupported, isLoading,
 }) => {
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
   const contextBarRef = useRef<HTMLDivElement>(null);
   const [bulkNote, setBulkNote] = useState('');
-  const [bulkRunning, setBulkRunning] = useState<'frames' | 'videos' | null>(null);
+  const [bulkRunning, setBulkRunning] = useState<'storyboards' | 'frames' | 'videos' | null>(null);
 
   // Close popover on outside click
   useEffect(() => {
@@ -47,6 +51,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   const lockedShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => x.locked).length, 0);
   const videoShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.videoUrl).length, 0);
   const frameShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.imageUrl).length, 0);
+  const storyboardShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.storyboardUrl).length, 0);
   const concept = project?.lockedConcept;
 
   const missingPromptCount = scenes.reduce(
@@ -65,12 +70,21 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   }, 0);
   const videosToFire = scenes.reduce((acc, s) => {
     return acc + s.shots.filter((shot, idx) => {
-      if (!shot.imageUrl || shot.videoUrl) return false;
+      if (studioMode === 'storyboard' && storyboardSupported) {
+        if (!shot.storyboardLocked || !shot.storyboardUrl || shot.videoUrl) return false;
+      } else if (!shot.imageUrl || shot.videoUrl) return false;
       if (shot.videoStatus === GenerationStatus.LOADING) return false;
       if (shot.continuityFrom === 'prev_shot' && idx > 0) {
         const prev = s.shots[idx - 1];
         if (!prev?.videoUrl) return false;
       }
+      return true;
+    }).length;
+  }, 0);
+  const storyboardsToFire = scenes.reduce((acc, s) => {
+    return acc + s.shots.filter(shot => {
+      if (shot.storyboardLocked || shot.storyboardUrl) return false;
+      if (shot.storyboardStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.ERROR) return false;
       return true;
     }).length;
   }, 0);
@@ -156,10 +170,28 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
 
         {/* Compact progress */}
         <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
+          {studioMode === 'storyboard' && storyboardSupported ? <><span className="text-white">{storyboardShots}</span>/{totalShots}sb · </> : null}
           <span className="text-white">{frameShots}</span>/{totalShots}f · <span className="text-white">{videoShots}</span>/{totalShots}v
           {lockedShots > 0 && <> · <span className="text-white">{lockedShots}</span>/{totalShots} locked</>}
           {chainWaitingCount > 0 && <> · <span className="text-amber-400/80">{chainWaitingCount} wait</span></>}
         </span>
+
+        {/* Studio mode */}
+        <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.04]" title={storyboardSupported ? 'Choose the generation workflow for this Studio session.' : 'Storyboard mode is available for Seedance models.'}>
+          <button
+            onClick={() => storyboardSupported && onStudioModeChange('storyboard')}
+            disabled={!storyboardSupported}
+            className={`text-[11px] px-2.5 py-1 transition-colors disabled:opacity-35 ${studioMode === 'storyboard' && storyboardSupported ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            Storyboard
+          </button>
+          <button
+            onClick={() => onStudioModeChange('keyframe')}
+            className={`text-[11px] px-2.5 py-1 transition-colors ${studioMode === 'keyframe' ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            Keyframe
+          </button>
+        </div>
 
         {/* Story popover */}
         {concept && (
@@ -233,29 +265,43 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         )}
 
         {/* Bulk actions */}
-        <button
-          onClick={() => onRewriteShotPrompts?.(undefined)}
-          disabled={isLoading || !onRewriteShotPrompts || totalShots === 0}
-          className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-          title={missingPromptCount > 0 ? `${missingPromptCount} missing — also rewrites existing.` : 'Rewrite every shot prompt from scratch.'}
-        >
-          {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-          Write prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
-        </button>
-        <button
-          onClick={async () => { setBulkRunning('frames'); try { await onBulkGenerateFrames?.(); } finally { setBulkRunning(null); } }}
-          disabled={!onBulkGenerateFrames || framesToFire === 0 || bulkRunning !== null}
-          className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-          title={framesToFire > 0 ? `Fire ${framesToFire} start frame${framesToFire === 1 ? '' : 's'} in parallel.` : 'All eligible frames generated.'}
-        >
-          {bulkRunning === 'frames' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
-          {bulkRunning === 'frames' ? 'Running…' : <>Frames <span className="text-zinc-400">({framesToFire})</span></>}
-        </button>
+        {studioMode === 'storyboard' && storyboardSupported ? (
+          <button
+            onClick={async () => { setBulkRunning('storyboards'); try { await onBulkGenerateStoryboards?.(); } finally { setBulkRunning(null); } }}
+            disabled={!onBulkGenerateStoryboards || storyboardsToFire === 0 || bulkRunning !== null}
+            className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            title={storyboardsToFire > 0 ? `Generate ${storyboardsToFire} storyboard${storyboardsToFire === 1 ? '' : 's'} with low concurrency.` : 'All eligible storyboards generated or locked.'}
+          >
+            {bulkRunning === 'storyboards' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+            {bulkRunning === 'storyboards' ? 'Running…' : <>Storyboards <span className="text-zinc-400">({storyboardsToFire})</span></>}
+          </button>
+        ) : (
+          <>
+            <button
+              onClick={() => onRewriteShotPrompts?.(undefined)}
+              disabled={isLoading || !onRewriteShotPrompts || totalShots === 0}
+              className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              title={missingPromptCount > 0 ? `${missingPromptCount} missing — also rewrites existing.` : 'Rewrite every shot prompt from scratch.'}
+            >
+              {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+              Write prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
+            </button>
+            <button
+              onClick={async () => { setBulkRunning('frames'); try { await onBulkGenerateFrames?.(); } finally { setBulkRunning(null); } }}
+              disabled={!onBulkGenerateFrames || framesToFire === 0 || bulkRunning !== null}
+              className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              title={framesToFire > 0 ? `Fire ${framesToFire} start frame${framesToFire === 1 ? '' : 's'} in parallel.` : 'All eligible frames generated.'}
+            >
+              {bulkRunning === 'frames' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+              {bulkRunning === 'frames' ? 'Running…' : <>Frames <span className="text-zinc-400">({framesToFire})</span></>}
+            </button>
+          </>
+        )}
         <button
           onClick={async () => { setBulkRunning('videos'); try { await onBulkGenerateVideos?.(); } finally { setBulkRunning(null); } }}
           disabled={!onBulkGenerateVideos || videosToFire === 0 || bulkRunning !== null}
           className="text-[11px] bg-white text-black hover:bg-zinc-100 rounded-md px-2.5 py-1 font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
-          title={videosToFire > 0 ? `Fire ${videosToFire} video${videosToFire === 1 ? '' : 's'} in parallel.` : 'Generate frames first.'}
+          title={videosToFire > 0 ? `Fire ${videosToFire} video${videosToFire === 1 ? '' : 's'} in parallel.` : studioMode === 'storyboard' && storyboardSupported ? 'Lock storyboards first.' : 'Generate frames first.'}
         >
           {bulkRunning === 'videos' && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
           {bulkRunning === 'videos' ? 'Running…' : <>Videos <span className="opacity-70">({videosToFire})</span></>}

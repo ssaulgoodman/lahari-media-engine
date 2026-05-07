@@ -457,6 +457,7 @@ IMPORTANT — character and environment assignment:
         const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
         shotDurations.forEach((duration: number, idx: number) => {
           if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
+          if (duration > 0 && duration < 4) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
           if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
         });
         const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
@@ -489,7 +490,7 @@ IMPORTANT — character and environment assignment:
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Remember: Seedance storyboard shots must each be 1-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Remember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.`}` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Remember: Seedance storyboard shots must each be 4-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Remember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.`}` }
       ] },
     ];
   }

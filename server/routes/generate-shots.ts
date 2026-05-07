@@ -15,12 +15,18 @@ import { SEGMIND_MODELS } from '../services/segmind.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
-import { generateStoryboardVersion, lockStoryboardVersion } from '../services/storyboard.js';
+import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const parseJson = <T>(value: any, fallback: T): T => {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value as T;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+};
 
 export const mountShotRoutes = (router: Router) => {
 
@@ -311,7 +317,7 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
     const result = await generateStoryboardVersion({
       projectId,
       shotId,
-      variant: req.body?.variant || 'four_panel_clean',
+      variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
     res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
   } catch (err: any) {
@@ -332,7 +338,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
       shotId,
       artistNote: feedback,
       previousVersionId: req.body?.previousVersionId,
-      variant: req.body?.variant || 'four_panel_clean',
+      variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
     res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
   } catch (err: any) {
@@ -354,6 +360,35 @@ router.post('/:id/shots/:shotId/lock-storyboard', async (req, res) => {
   }
 });
 
+router.post('/:id/shots/:shotId/unlock-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    await unlockStoryboardVersion(projectId, shotId);
+    res.json({ ok: true, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard unlock failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/:id/shots/:shotId/storyboard-plan', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  const cutPlanText = String(req.body?.cutPlanText || '').trim();
+
+  if (!cutPlanText) return res.status(400).json({ error: 'cutPlanText required' });
+
+  try {
+    await updateStoryboardCutPlan(projectId, shotId, cutPlanText);
+    res.json({ ok: true, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard plan update failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
   const rows = await selectAll('storyboard_versions', { shot_id: shotId }, { orderBy: 'created_at', ascending: false });
@@ -364,6 +399,7 @@ router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
   res.json({
     versions: rows.map((row: any) => {
       const asset = assetMap.get(row.asset_id);
+      const metadata = parseJson<Record<string, any>>(row.metadata, {});
       return {
         id: row.id,
         assetId: row.asset_id,
@@ -373,6 +409,8 @@ router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
         openaiResponseId: row.openai_response_id || undefined,
         reasoningModel: row.reasoning_model || undefined,
         imageModel: row.image_model || undefined,
+        cutPlanText: metadata.cutPlanText || undefined,
+        continuityNotes: metadata.continuityNotes || undefined,
         locked: !!row.locked,
         createdAt: row.created_at,
       };

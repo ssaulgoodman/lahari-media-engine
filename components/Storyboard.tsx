@@ -16,12 +16,18 @@ interface Props {
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateImage: (sceneId: string, shotId: string, refs?: ShotRefInput[]) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
+  onGenerateStoryboard?: (shotId: string) => void | Promise<void>;
+  onRefineStoryboard?: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
+  onLockStoryboard?: (shotId: string, versionId?: string) => void | Promise<void>;
+  onUnlockStoryboard?: (shotId: string) => void | Promise<void>;
+  onUpdateStoryboardPlan?: (shotId: string, cutPlanText: string) => void | Promise<void>;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
   onBulkGenerateVideos?: () => Promise<void> | void;
+  onBulkGenerateStoryboards?: () => Promise<void> | void;
   onCancelShotImage?: (shotId: string) => void;
   onCancelShotVideo?: (shotId: string) => void;
   onUsePrevLastFrame?: (shotId: string) => void;
@@ -39,10 +45,11 @@ interface Props {
   onSetProject?: (project: ApiProject) => void;
   frameQueue?: string[];
   videoQueue?: string[];
+  storyboardQueue?: string[];
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardQueue, isLoading }) => {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
@@ -51,7 +58,14 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [refiningShots, setRefiningShots] = useState<Set<string>>(new Set());
   const [shotRefs, setShotRefs] = useState<Record<string, ShotRefInput[]>>({});
 
-  const modelSupportsLastFrame = getVideoModel(project?.videoModel).supportsLastFrame;
+  const modelSpec = getVideoModel(project?.videoModel);
+  const modelSupportsLastFrame = modelSpec.supportsLastFrame;
+  const storyboardSupported = !!project?.videoModel?.startsWith('seedance');
+  const [studioMode, setStudioMode] = useState<'storyboard' | 'keyframe'>(storyboardSupported ? 'storyboard' : 'keyframe');
+
+  React.useEffect(() => {
+    if (!storyboardSupported) setStudioMode('keyframe');
+  }, [storyboardSupported, project?.id]);
 
   // Build default refs for a shot+tab combo
   const getDefaultRefs = (shot: VideoShot, tab: 'image' | 'endframe' | 'video'): ShotRefInput[] => {
@@ -140,6 +154,10 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
         onRewriteShotPrompts={onRewriteShotPrompts}
         onBulkGenerateFrames={onBulkGenerateFrames}
         onBulkGenerateVideos={onBulkGenerateVideos}
+        onBulkGenerateStoryboards={onBulkGenerateStoryboards}
+        studioMode={studioMode}
+        onStudioModeChange={setStudioMode}
+        storyboardSupported={storyboardSupported}
         isLoading={isLoading}
       />
 
@@ -167,6 +185,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
           <div className="space-y-4">
             {scene.shots.map((shot, shotIdx) => {
               const activeTab = promptTab[shot.id] || 'image';
+              const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
+              const refineKey = isStoryboardMode ? `storyboard:${shot.id}` : `${activeTab}:${shot.id}`;
               return (
                 <ShotCard
                   key={shot.id}
@@ -178,6 +198,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   onToggleExpand={() => toggleExpanded(shot.id)}
                   actionable={isShotActionable(scene, shotIdx)}
                   modelSupportsLastFrame={modelSupportsLastFrame}
+                  studioMode={studioMode}
+                  storyboardSupported={storyboardSupported}
                   historyOpen={historyOpenFor === shot.id}
                   onToggleHistory={() => setHistoryOpenFor(prev => prev === shot.id ? null : shot.id)}
                   onCloseHistory={() => setHistoryOpenFor(null)}
@@ -191,14 +213,20 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   getActiveRefs={getActiveRefs}
                   setActiveRefs={setActiveRefs}
                   resolveRefDisplay={resolveRefDisplay}
-                  isRefining={refiningShots.has(`${activeTab}:${shot.id}`)}
+                  isRefining={refiningShots.has(refineKey)}
                   onRefineStart={key => setRefiningShots(prev => new Set(prev).add(key))}
                   onRefineEnd={key => setRefiningShots(prev => { const next = new Set(prev); next.delete(key); return next; })}
                   frameQueue={frameQueue}
                   videoQueue={videoQueue}
+                  storyboardQueue={storyboardQueue}
                   onUpdateShot={onUpdateShot}
                   onGenerateImage={onGenerateImage}
                   onGenerateVideo={onGenerateVideo}
+                  onGenerateStoryboard={onGenerateStoryboard}
+                  onRefineStoryboard={onRefineStoryboard}
+                  onLockStoryboard={onLockStoryboard}
+                  onUnlockStoryboard={onUnlockStoryboard}
+                  onUpdateStoryboardPlan={onUpdateStoryboardPlan}
                   onLockShot={onLockShot}
                   onRefinePrompt={onRefinePrompt}
                   onGenerateEndFrame={onGenerateEndFrame}

@@ -132,6 +132,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // Worker pulls from the front; UI reads indexOf for the badge.
   const [frameQueue, setFrameQueue] = useState<string[]>([]);
   const [videoQueue, setVideoQueue] = useState<string[]>([]);
+  const [storyboardQueue, setStoryboardQueue] = useState<string[]>([]);
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   // Renders viewer (popup) — opened from Dashboard rows or sidebar entries.
@@ -579,6 +580,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleLaunchStudio = async () => {
     if (!project) return;
+    if (project.videoModel?.startsWith('seedance')) {
+      setCurrentStep(AppStep.STUDIO);
+      return;
+    }
     // Skip bulk prompt regeneration if every shot already has a prompt written.
     // User just clicking Launch Studio again after coming back from Blueprint
     // shouldn't burn a Claude call. The explicit "Rewrite all" button in Studio
@@ -930,6 +935,68 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const handleGenerateStoryboard = async (shotId: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING });
+    try {
+      const result = await api.generateStoryboard(project.id, shotId);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
+      setError(`Storyboard generation failed: ${err.message}`);
+    }
+  };
+
+  const handleRefineStoryboard = async (shotId: string, feedback: string, previousVersionId?: string) => {
+    if (!project || !feedback.trim()) return;
+    updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING, storyboardUserFeedback: feedback });
+    try {
+      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
+      setError(`Storyboard refinement failed: ${err.message}`);
+    }
+  };
+
+  const handleLockStoryboard = async (shotId: string, versionId?: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardLocked: true });
+    try {
+      const result = await api.lockStoryboard(project.id, shotId, versionId);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardLocked: false });
+      setError(`Storyboard lock failed: ${err.message}`);
+    }
+  };
+
+  const handleUnlockStoryboard = async (shotId: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardLocked: false });
+    try {
+      const result = await api.unlockStoryboard(project.id, shotId);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardLocked: true });
+      setError(`Storyboard unlock failed: ${err.message}`);
+    }
+  };
+
+  // Cut plan autosaves on blur — server returns { ok: true } and persists
+  // cutPlanText on the active storyboard version's metadata. We don't refresh
+  // the project (the new text is local to StoryboardPanel and used at video
+  // generation time on the server), but we do let parent surface failures.
+  const handleUpdateStoryboardPlan = async (shotId: string, cutPlanText: string) => {
+    if (!project) return;
+    try {
+      await api.updateStoryboardPlan(project.id, shotId, cutPlanText);
+    } catch (err: any) {
+      setError(`Cut plan save failed: ${err.message}`);
+      throw err;
+    }
+  };
+
   // ─── Bulk Studio actions ────────────────────────────────────────
   // Frank Sinatra doesn't move his pianos — fire everything auto-firable.
   // Each button fires only what's actionable right now; chained shots stay
@@ -974,6 +1041,41 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     return targets;
   };
 
+  const getReadyStoryboardTargets = (p: ApiProject) => {
+    const targets: { sceneId: string; shotId: string }[] = [];
+    for (const scene of p.scenes) {
+      scene.shots.forEach((shot) => {
+        if (shot.storyboardLocked || shot.storyboardUrl) return;
+        if (shot.storyboardStatus === GenerationStatus.LOADING) return;
+        if (shot.storyboardStatus === GenerationStatus.ERROR) return;
+        targets.push({ sceneId: scene.id, shotId: shot.id });
+      });
+    }
+    return targets;
+  };
+
+  const handleBulkGenerateStoryboards = async () => {
+    if (!project) return;
+    const targets = getReadyStoryboardTargets(project);
+    if (targets.length === 0) return;
+    setStoryboardQueue(targets.map(t => t.shotId));
+    try {
+      await runWithConcurrency(
+        targets,
+        2,
+        t => api.generateStoryboard(project.id, t.shotId),
+        t => {
+          setStoryboardQueue(q => q.filter(id => id !== t.shotId));
+          updateShotOptimistic(t.shotId, { storyboardStatus: GenerationStatus.LOADING });
+        },
+      );
+      const latest = await api.getProject(project.id);
+      setProject(latest);
+    } finally {
+      setStoryboardQueue([]);
+    }
+  };
+
   const handleBulkGenerateFrames = async () => {
     if (!project) return;
     let latestProject = project;
@@ -1011,9 +1113,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const getReadyVideoTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
+    const allowStoryboardVideo = p.videoModel?.startsWith('seedance');
     for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
-        if (!shot.imageUrl || shot.videoUrl) return;
+        const hasVideoSource = !!shot.imageUrl || (allowStoryboardVideo && !!shot.storyboardLocked && !!shot.storyboardUrl);
+        if (!hasVideoSource || shot.videoUrl) return;
         if (shot.videoStatus === GenerationStatus.LOADING) return;
         if (shot.videoStatus === GenerationStatus.ERROR) return;
         if (shot.continuityFrom === 'prev_shot' && idx > 0) {
@@ -1410,6 +1514,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onUpdateShot={handleUpdateShot}
                     onGenerateImage={handleGenerateImage}
                     onGenerateVideo={handleGenerateVideo}
+                    onGenerateStoryboard={handleGenerateStoryboard}
+                    onRefineStoryboard={handleRefineStoryboard}
+                    onLockStoryboard={handleLockStoryboard}
+                    onUnlockStoryboard={handleUnlockStoryboard}
+                    onUpdateStoryboardPlan={handleUpdateStoryboardPlan}
                     onCancelShotImage={handleCancelShotImage}
                     onCancelShotVideo={handleCancelShotVideo}
                     onLockShot={handleLockShot}
@@ -1420,8 +1529,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onRewriteShotPrompts={handleRewriteShotPrompts}
                     onBulkGenerateFrames={handleBulkGenerateFrames}
                     onBulkGenerateVideos={handleBulkGenerateVideos}
+                    onBulkGenerateStoryboards={handleBulkGenerateStoryboards}
                     frameQueue={frameQueue}
                     videoQueue={videoQueue}
+                    storyboardQueue={storyboardQueue}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
                     onGenerateEndFrame={handleGenerateEndFrame}

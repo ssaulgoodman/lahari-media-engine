@@ -12,15 +12,15 @@ export type StoryboardRdInput = {
   sceneEnd: string;
   sceneNarrative: string;
   sceneLyrics?: string;
+  musicalCue?: string;
   clipDirection: string;
   clipDuration: number;
   castNames: string[];
   environmentName?: string;
-  styleSummary?: string;
 };
 
 export type ScriptPromptVariant = 'clip_blocks' | 'clip_blocks_combine_short' | 'clip_blocks_freeform';
-export type StoryboardPromptVariant = 'four_panel_clean' | 'six_panel_music_video' | 'filmstrip_minimal_cuts';
+export type StoryboardPromptVariant = 'adaptive_numbered_storyboard' | 'four_panel_clean' | 'six_panel_music_video' | 'filmstrip_minimal_cuts';
 export type SeedancePromptVariant = 'follow_board_only' | 'shot_timing_only' | 'board_plus_timing' | 'board_plus_audio_rhythm' | 'board_plus_audio_lipsync';
 
 const clampDuration = (seconds: number): SeedanceStoryboardDuration => {
@@ -38,17 +38,16 @@ const castLine = (input: StoryboardRdInput) =>
   input.castNames.length ? input.castNames.join(', ') : 'No recurring character in frame';
 
 const commonContext = (input: StoryboardRdInput) => `Song: ${input.title}
-Concept: ${input.concept}
+Video intent: ${input.concept}
 Mood: ${input.mood || 'cinematic'}
 Song type: ${input.songType || 'unknown'}
-Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
-Scene story: ${input.sceneNarrative}
-Clip direction: ${input.clipDirection}
+Scene context only: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
+Scene overview for context: ${input.sceneNarrative}
+${input.musicalCue ? `Musical structure cue from audio analysis: ${input.musicalCue}\n` : ''}Exact shot to storyboard: ${input.clipDirection}
 Clip duration: ${input.clipDuration}s
 Lyrics/phrase: ${input.sceneLyrics || 'instrumental or no lyric cue'}
 Cast in clip: ${castLine(input)}
-Environment: ${input.environmentName || 'unspecified'}
-Visual style: locked reference images are applied later during storyboard generation; do not invent style, architecture, palette, or location details at script-planning time.`;
+Environment: ${input.environmentName || 'unspecified'}`;
 
 export const buildSeedanceScriptWriterPrompt = (
   input: StoryboardRdInput,
@@ -129,13 +128,17 @@ export const buildStoryboardPrompt = (
   input: StoryboardRdInput,
   variant: StoryboardPromptVariant
 ): string => {
-  const panelSpec = variant === 'six_panel_music_video'
+  const panelSpec = variant === 'adaptive_numbered_storyboard'
+    ? `Create a numbered cinematic storyboard for this exact ${input.clipDuration}s Lahari shot/clip, not the whole scene. Use 3-6 panels, choosing the count that best fits the pacing.`
+    : variant === 'six_panel_music_video'
     ? `Create a six-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`
     : variant === 'filmstrip_minimal_cuts'
       ? `Create a clean horizontal filmstrip storyboard for this one ${input.clipDuration}s Lahari music-video clip, using four panels and minimal internal cuts.`
       : `Create a four-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`;
 
-  const cutGuidance = variant === 'filmstrip_minimal_cuts'
+  const cutGuidance = variant === 'adaptive_numbered_storyboard'
+    ? `First decide the cut plan: emotional turn, action/object continuity, blocking, screen direction, and camera progression.`
+    : variant === 'filmstrip_minimal_cuts'
     ? `The panels should imply a calm edited sequence with only 2-3 cuts: opening, one meaningful angle change, emotional landing.`
     : `The panels should imply an edited mini-sequence with distinct camera angles: opening, first movement, emotional/action peak, and landing image.`;
 
@@ -144,28 +147,33 @@ export const buildStoryboardPrompt = (
 ${commonContext(input)}
 
 Use the provided reference images as ground truth:
-- style reference controls lighting, texture, palette, and overall visual language
-- character references control face, body, costume, jewelry, and identity
-- environment reference controls architecture, geography, and physical space
+- the locked style reference controls visual language
+- character references control identity, body, costume, and jewelry
+- the environment reference controls geography and physical space
 
 ${cutGuidance}
 
-Storyboard requirements:
-- no text, captions, subtitles, speech bubbles, logos, watermarks, or readable labels
+Storyboard contract:
+- Treat the board as one edited scene, not separate concept frames.
+- Keep a stable spatial map across panels while allowing meaningful angle changes.
+- Every cut should reveal new information, deepen emotion, or land a musical beat.
+- Use only objects and gestures that belong to the shot, the references, and the devotional context.
+- include small clear panel order numbers only: 1, 2, 3, etc. No other text.
+- no captions, subtitles, speech bubbles, logos, watermarks, or readable labels
 - same characters, costumes, environment, and style across all panels
 - every panel must be a plausible frame from the same ${input.clipDuration}s clip
 - show actual visible action, camera angle, and emotional progression
-- avoid generic magical particles, floating symbols, or abstract energy unless the clip direction explicitly requires them
-- make the board useful as a Seedance reference image, not a poster or concept art sheet
+- make the board useful as a Seedance reference image, not a poster or concept sheet
 
-Also return a concise cut plan outside the image, in plain text, using this exact shape:
+Also return a concise cut plan outside the image, in plain text, using this exact shape. Use exactly the same number of panels as the image:
 Storyboard cut plan:
 Panel 1 [00:00-..] - camera: ...; action: ...; Seedance cue: ...
 Panel 2 [...] - camera: ...; action: ...; Seedance cue: ...
 Panel 3 [...] - camera: ...; action: ...; Seedance cue: ...
-Panel 4 [...] - camera: ...; action: ...; Seedance cue: ...
+Panel N [...] - camera: ...; action: ...; Seedance cue: ...
 
-The generated storyboard image itself must still contain no text, no labels, and no panel numbers.`;
+Then add:
+Continuity notes: one short sentence naming the spatial map and screen direction you preserved.`;
 };
 
 const seedanceShotList = (input: StoryboardRdInput, minimal = false): string => {
@@ -187,14 +195,19 @@ Shot 4 [00:${String(c).padStart(2, '0')}-00:${String(duration).padStart(2, '0')}
 
 export const buildSeedanceStoryboardVideoPrompt = (
   input: StoryboardRdInput,
-  variant: SeedancePromptVariant
+  variant: SeedancePromptVariant,
+  opts?: {
+    cutPlanText?: string | null;
+    refs?: { label: string }[];
+  }
 ): string => {
   const hasAudio = variant === 'board_plus_audio_rhythm' || variant === 'board_plus_audio_lipsync';
   const lipsync = variant === 'board_plus_audio_lipsync';
   const minimal = variant === 'follow_board_only';
 
   if (variant === 'follow_board_only') {
-    return `Use @image1 as the complete storyboard plan for a ${input.clipDuration}s edited music-video clip. Follow the panels in order from left to right. Preserve character identity, costume, environment, and visual style from the reference images. No generated audio, no subtitles, no text.`;
+    return `Here is the numbered storyboard for a ${input.clipDuration}s Lahari music-video clip: @image1.
+Follow the panels in order. Use all other reference images only to preserve style, character identity, costume, and environment. No generated audio, no subtitles, no readable text.`;
   }
 
   if (variant === 'shot_timing_only') {
@@ -207,22 +220,31 @@ ${seedanceShotList(input)}
 No generated audio, no subtitles, no readable text. Preserve all provided reference identities and style.`;
   }
 
-  return `Use @image1 as the storyboard plan for this ${input.clipDuration}s Lahari music-video clip. Follow the storyboard panels in order while using the timed shot script below for motion and cuts.
+  const refs = opts?.refs || [];
+  const refBindings = refs.length
+    ? refs.map((ref, idx) => `- @image${idx + 2} = ${ref.label}; use only as a consistency anchor, not as an alternate composition`).join('\n')
+    : '- @image2 and later = locked style, character, and environment references; use only as consistency anchors, not alternate compositions';
+  const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
+
+  return `Here is the numbered storyboard for this ${input.clipDuration}s Lahari music-video clip: @image1.
+Follow @image1 panels in order. Treat @image1 as the source of truth for composition, blocking, screen direction, cut order, and camera progression.
 
 Reference bindings:
-- @image1 = storyboard board; follow panel order and framing logic
-- @image2 = locked style reference; match lighting, palette, texture, and cinematic finish
-- additional @image references = character and environment consistency anchors
+- @image1 = locked numbered storyboard and edit plan
+${refBindings}
 ${hasAudio ? `- @audio1 = song excerpt for rhythm, phrase timing, and edit energy` : ''}
 
 ${commonContext(input)}
 
-${seedanceShotList(input, minimal)}
+Storyboard description / cut plan:
+${cutPlan}
 
 Timing and motion rules:
-- clean internal cuts between shot beats are allowed and desired
+- clean internal cuts between storyboard panels are allowed and desired
 - preserve character faces, costume, jewelry, and environment geometry across cuts
 - camera movement should be simple and physically plausible
+- do not replace storyboard composition with a composition from the reference images
+- do not invent a different devotional object or character blocking than the storyboard
 - no subtitles, no readable text, no logos, no watermark
 - do not generate new music, dialogue, or sound effects; Lahari will render the final song separately
 ${hasAudio ? `- use @audio1 only as a rhythm and phrase reference for visual timing` : ''}
@@ -233,7 +255,7 @@ Generate one cohesive ${input.clipDuration}s edited clip.`;
 
 export const buildPromptPack = (input: StoryboardRdInput): string => {
   const scriptVariants: ScriptPromptVariant[] = ['clip_blocks', 'clip_blocks_combine_short', 'clip_blocks_freeform'];
-  const storyboardVariants: StoryboardPromptVariant[] = ['four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts'];
+  const storyboardVariants: StoryboardPromptVariant[] = ['adaptive_numbered_storyboard', 'four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts'];
   const seedanceVariants: SeedancePromptVariant[] = ['follow_board_only', 'shot_timing_only', 'board_plus_timing', 'board_plus_audio_rhythm', 'board_plus_audio_lipsync'];
 
   return `# Seedance Storyboard Prompt Pack

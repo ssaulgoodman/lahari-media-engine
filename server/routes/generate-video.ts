@@ -16,6 +16,12 @@ import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
 
+const parseJson = <T>(value: any, fallback: T): T => {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value as T;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+};
+
 /**
  * Mount video generation routes onto the given router.
  * Called from generate.ts — shares the same router instance so param
@@ -73,6 +79,11 @@ export const mountVideoRoutes = (router: Router) => {
     if (!imageAsset && !useStoryboardMode) return res.status(400).json({ error: 'Image asset not found' });
     const storyboardAsset = useStoryboardMode ? await selectOne('assets', { id: shot.storyboard_asset_id }) : null;
     if (useStoryboardMode && !storyboardAsset) return res.status(400).json({ error: 'Locked storyboard asset not found' });
+    const storyboardContext = useStoryboardMode ? await loadStoryboardContext(project.id, shot.id) : null;
+    const storyboardVersion = useStoryboardMode && shot.storyboard_version_id
+      ? await selectOne('storyboard_versions', { id: shot.storyboard_version_id, shot_id: shot.id, project_id: project.id })
+      : null;
+    const storyboardVersionMeta = parseJson<{ cutPlanText?: string | null }>(storyboardVersion?.metadata, {});
 
     const scene = await selectOne('scenes', { id: shot.scene_id });
     const concept = JSON.parse(project.locked_concept || '{}');
@@ -106,7 +117,7 @@ export const mountVideoRoutes = (router: Router) => {
         referenceImagePaths.push(storyboardAsset.file_path);
       }
 
-      if (videoFrontendRefs) {
+      if (videoFrontendRefs && !useStoryboardMode) {
         const allCast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
         const allEnvs = await selectAll('environments', { project_id: paramStr(req.params.id) });
         for (const ref of videoFrontendRefs) {
@@ -122,21 +133,24 @@ export const mountVideoRoutes = (router: Router) => {
           }
         }
       } else {
-        if (useStoryboardMode && project.style_asset_id && referenceImagePaths.length < 9) {
-          const styleAsset = await selectOne('assets', { id: project.style_asset_id });
-          if (styleAsset) referenceImagePaths.push(styleAsset.file_path);
-        }
-        for (const c of activeCast) {
-          if (c.reference_asset_id && referenceImagePaths.length < 9) {
-            const refAsset = await selectOne('assets', { id: c.reference_asset_id });
-            if (refAsset) referenceImagePaths.push(refAsset.file_path);
+        if (useStoryboardMode && storyboardContext) {
+          for (const ref of storyboardContext.refMeta) {
+            if (referenceImagePaths.length >= 9) break;
+            referenceImagePaths.push(ref.filePath);
           }
-        }
-        if (shot.environment_id && referenceImagePaths.length < 9) {
-          const env = await selectOne('environments', { id: shot.environment_id });
-          if (env?.reference_asset_id) {
-            const envAsset = await selectOne('assets', { id: env.reference_asset_id });
-            if (envAsset) referenceImagePaths.push(envAsset.file_path);
+        } else {
+          for (const c of activeCast) {
+            if (c.reference_asset_id && referenceImagePaths.length < 9) {
+              const refAsset = await selectOne('assets', { id: c.reference_asset_id });
+              if (refAsset) referenceImagePaths.push(refAsset.file_path);
+            }
+          }
+          if (shot.environment_id && referenceImagePaths.length < 9) {
+            const env = await selectOne('environments', { id: shot.environment_id });
+            if (env?.reference_asset_id) {
+              const envAsset = await selectOne('assets', { id: env.reference_asset_id });
+              if (envAsset) referenceImagePaths.push(envAsset.file_path);
+            }
           }
         }
         const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
@@ -166,7 +180,10 @@ export const mountVideoRoutes = (router: Router) => {
       }
 
       const storyboardPrompt = useStoryboardMode
-        ? buildSeedanceStoryboardVideoPrompt((await loadStoryboardContext(project.id, shot.id)).input, 'board_plus_timing')
+        ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
+          cutPlanText: storyboardVersionMeta.cutPlanText || null,
+          refs: storyboardContext!.refMeta.map((ref) => ({ label: ref.label })),
+        })
         : '';
       const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : (useStoryboardMode ? storyboardPrompt : veoPromptParts.join('. '));
       console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
@@ -264,7 +281,10 @@ export const mountVideoRoutes = (router: Router) => {
         model: modelId,
         prompt: veoPrompt,
         referenceInputs: useStoryboardMode && storyboardAsset
-          ? [{ type: 'image' as const, label: 'Locked storyboard', url: storageUrl(storyboardAsset.file_path) }]
+          ? [
+            { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
+            ...(storyboardContext?.refMeta || []).map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+          ]
           : imageAsset
             ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
             : [],
@@ -287,7 +307,10 @@ export const mountVideoRoutes = (router: Router) => {
         model: project.video_model || 'veo-3.1',
         prompt: shot.motion_prompt || 'Cinematic camera movement',
         referenceInputs: useStoryboardMode && storyboardAsset
-          ? [{ type: 'image' as const, label: 'Locked storyboard', url: storageUrl(storyboardAsset.file_path) }]
+          ? [
+            { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
+            ...(storyboardContext?.refMeta || []).map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+          ]
           : imageAsset
             ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
             : [],
