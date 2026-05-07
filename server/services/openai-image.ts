@@ -19,6 +19,7 @@ export type OpenAIRefImage = RefImage;
 const OPENAI_MODEL = getImageModel('gpt-image-2').runtimeModel;
 const OPENAI_RESPONSES_IMAGE_MODEL = process.env.OPENAI_RESPONSES_IMAGE_MODEL || 'gpt-5.5';
 const MAX_OPENAI_INPUT_IMAGES = 10;
+const SUPPORTS_INPUT_FIDELITY = new Set(['gpt-image-1', 'gpt-image-1.5', 'chatgpt-image-latest']);
 
 const getClient = () => {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
@@ -97,7 +98,7 @@ const generateFromPrompt = async (
 
   if (cappedRefs.length > 0) {
     const files = await Promise.all(cappedRefs.map((ref, idx) => toUploadable(ref, idx)));
-    const response = await client.images.edit({
+    const editRequest: any = {
       model: OPENAI_MODEL,
       image: files,
       prompt: `${buildReferenceIndex(cappedRefs)}${prompt}`,
@@ -105,8 +106,9 @@ const generateFromPrompt = async (
       size,
       quality: 'medium',
       output_format: 'png',
-      input_fidelity: 'high',
-    });
+    };
+    if (SUPPORTS_INPUT_FIDELITY.has(OPENAI_MODEL)) editRequest.input_fidelity = 'high';
+    const response = await client.images.edit(editRequest);
     return saveGeneratedImages(response);
   }
 
@@ -158,19 +160,21 @@ export const generateOpenAIImageWithResponses = async (
     ...fileIds.map((fileId) => ({ type: 'input_image', file_id: fileId, detail: 'high' })),
   ];
 
+  const imageTool: any = {
+    type: 'image_generation',
+    model: OPENAI_MODEL,
+    action: opts?.action || (opts?.previousResponseId ? 'edit' : 'generate'),
+    output_format: 'png',
+    quality: opts?.quality || 'medium',
+    size,
+  };
+  if (SUPPORTS_INPUT_FIDELITY.has(OPENAI_MODEL)) imageTool.input_fidelity = 'high';
+
   const response = await (client.responses.create as any)({
     model: OPENAI_RESPONSES_IMAGE_MODEL,
     previous_response_id: opts?.previousResponseId,
     input: [{ role: 'user', content }],
-    tools: [{
-      type: 'image_generation',
-      model: OPENAI_MODEL,
-      action: opts?.action || (opts?.previousResponseId ? 'edit' : 'generate'),
-      input_fidelity: 'high',
-      output_format: 'png',
-      quality: opts?.quality || 'medium',
-      size,
-    }],
+    tools: [imageTool],
   });
 
   const imageCalls = (response.output || []).filter((item: any) => item.type === 'image_generation_call');
