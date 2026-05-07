@@ -129,7 +129,7 @@ export const buildStoryboardPrompt = (
   variant: StoryboardPromptVariant
 ): string => {
   const panelSpec = variant === 'adaptive_numbered_storyboard'
-    ? `Create a numbered cinematic storyboard for this exact ${input.clipDuration}s Lahari shot/clip, not the whole scene. Use 3-6 panels, choosing the count that best fits the pacing.`
+    ? `Create an ordered cinematic storyboard for this exact ${input.clipDuration}s Lahari shot/clip, not the whole scene. Use 3-6 panels, choosing the count that best fits the pacing.`
     : variant === 'six_panel_music_video'
     ? `Create a six-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`
     : variant === 'filmstrip_minimal_cuts'
@@ -155,11 +155,11 @@ ${cutGuidance}
 
 Storyboard contract:
 - Treat the board as one edited scene, not separate concept frames.
+- Arrange panels in reading order: left-to-right, then top-to-bottom if there are multiple rows.
 - Keep a stable spatial map across panels while allowing meaningful angle changes.
 - Every cut should reveal new information, deepen emotion, or land a musical beat.
 - Use only objects and gestures that belong to the shot, the references, and the devotional context.
-- include small clear panel order numbers only: 1, 2, 3, etc. No other text.
-- no captions, subtitles, speech bubbles, logos, watermarks, or readable labels
+- Do NOT print panel numbers, labels, arrows, captions, subtitles, speech bubbles, logos, watermarks, or readable text inside the storyboard image.
 - same characters, costumes, environment, and style across all panels
 - every panel must be a plausible frame from the same ${input.clipDuration}s clip
 - show actual visible action, camera angle, and emotional progression
@@ -206,8 +206,8 @@ export const buildSeedanceStoryboardVideoPrompt = (
   const minimal = variant === 'follow_board_only';
 
   if (variant === 'follow_board_only') {
-    return `Here is the numbered storyboard for a ${input.clipDuration}s Lahari music-video clip: @image1.
-Follow the panels in order. Use all other reference images only to preserve style, character identity, costume, and environment. No generated audio, no subtitles, no readable text.`;
+    return `Here is the ordered storyboard for a ${input.clipDuration}s Lahari music-video clip: @image1.
+Follow the panels left-to-right, then top-to-bottom. If @image1 contains panel numbers or labels, treat them only as sequencing guides and do not render them into the video. Use all other reference images only to preserve style, character identity, costume, and environment. No generated audio, no subtitles, no readable text.`;
   }
 
   if (variant === 'shot_timing_only') {
@@ -226,11 +226,12 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
     : '- @image2 and later = locked style, character, and environment references; use only as consistency anchors, not alternate compositions';
   const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
 
-  return `Here is the numbered storyboard for this ${input.clipDuration}s Lahari music-video clip: @image1.
-Follow @image1 panels in order. Treat @image1 as the source of truth for composition, blocking, screen direction, cut order, and camera progression.
+  return `Here is the ordered storyboard for this ${input.clipDuration}s Lahari music-video clip: @image1.
+Follow @image1 panels left-to-right, then top-to-bottom. Treat @image1 as the source of truth for composition, blocking, screen direction, cut order, and camera progression.
+If @image1 contains panel numbers, labels, borders, or guide marks, use them only to understand the edit order. Do not reproduce any visible numbers, labels, borders, captions, or guide marks in the final video.
 
 Reference bindings:
-- @image1 = locked numbered storyboard and edit plan
+- @image1 = locked ordered storyboard and edit plan
 ${refBindings}
 ${hasAudio ? `- @audio1 = song excerpt for rhythm, phrase timing, and edit energy` : ''}
 
@@ -245,7 +246,7 @@ Timing and motion rules:
 - camera movement should be simple and physically plausible
 - do not replace storyboard composition with a composition from the reference images
 - do not invent a different devotional object or character blocking than the storyboard
-- no subtitles, no readable text, no logos, no watermark
+- no panel numbers, subtitles, readable text, logos, watermark, or storyboard borders
 - do not generate new music, dialogue, or sound effects; Lahari will render the final song separately
 ${hasAudio ? `- use @audio1 only as a rhythm and phrase reference for visual timing` : ''}
 ${lipsync ? `- if a singer, devotee, or deity mouth is clearly visible, add subtle mouth movement matching @audio1; avoid exaggerated dialogue lip-sync if the face is not featured` : ''}

@@ -1,7 +1,7 @@
 /**
  * StoryboardPanel — Studio shot panel for Seedance storyboard mode.
  *
- * Two sub-tabs: Storyboard (numbered cut plan editor + generate/refine/lock)
+ * Two sub-tabs: Storyboard (ordered cut plan editor + generate/refine/lock)
  * and Video (read-only preview of what Seedance will see + generate button).
  *
  * The cut plan lives on the active storyboard version's metadata, so we
@@ -338,7 +338,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
 
         {!hasStoryboard ? (
           <div className="surface-inset rounded-md p-3 text-sm text-zinc-400 italic">
-            No storyboard yet. Generate to draft a numbered cut plan.
+            No storyboard yet. Generate to draft an ordered cut plan.
           </div>
         ) : isLocked ? (
           <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{cutPlanText || '(empty cut plan)'}</pre>

@@ -219,7 +219,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               <button
                 onClick={() => setShowFrames(true)}
                 className={`text-[11px] px-2 py-1 font-medium transition-colors ${showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-                title={isStoryboardMode ? 'Show numbered storyboard' : 'Show start + end frames'}
+                title={isStoryboardMode ? 'Show ordered storyboard' : 'Show start + end frames'}
               >
                 {isStoryboardMode ? 'Storyboard' : 'Frames'}
               </button>
@@ -257,7 +257,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
       )}
       {/* Media: Video or Frames */}
       {showMediaSection && <div className="relative">
-        {/* Storyboard mode: video (when present) or numbered storyboard image — no start/end keyframes */}
+        {/* Storyboard mode: video (when present) or ordered storyboard image — no start/end keyframes */}
         {isStoryboardMode ? (
           shot.videoUrl && !showFrames ? (
             <div className="bg-black">

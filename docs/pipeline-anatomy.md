@@ -335,7 +335,7 @@ The prompt now stays intentionally lean:
 | **Artist control** | Generate, natural-language refine, lock/unlock, history, editable cut-plan text |
 | **generation_prompt** | Built from the canonical template; cut-plan text is editable after generation and feeds Seedance video prompting |
 
-**Storyboard contract:** one board per Lahari shot, not one scene board. The board may contain internal cuts and camera angles, but it remains one cohesive 4-15s Seedance clip. Panel numbers are allowed; captions/readable labels are not.
+**Storyboard contract:** one board per Lahari shot, not one scene board. The board may contain internal cuts and camera angles, but it remains one cohesive 4-15s Seedance clip. Panels are ordered left-to-right, then top-to-bottom; visible panel numbers, captions, labels, and other readable text are not allowed because video models can render them into the final clip.
 
 **API endpoints:** `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
 
