@@ -77,6 +77,12 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   const versionId = shot.storyboardVersionId;
   const dirty = cutPlanText.trim() !== savedPlanText.trim();
   const saving = saveState === 'saving';
+  // The backend rejects empty cutPlanText, and an empty plan would
+  // produce a meaningless Seedance prompt. When a storyboard exists,
+  // the cut plan must be non-empty before lock or video generation
+  // is allowed — otherwise the locked version would silently retain
+  // the previous server text, mismatching what the artist sees.
+  const cutPlanRequired = hasStoryboard && cutPlanText.trim() === '';
 
   // Backend-bound refs only — what the storyboard generator actually uses.
   // Mirrors server/services/storyboard.ts: locked style + locked cast (only
@@ -128,9 +134,20 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
 
   // The single save path used by both onBlur autosave and the explicit Lock
   // flush below. Returns true on success so callers can sequence follow-ups.
+  // An empty cut plan with a storyboard present is treated as a hard failure:
+  // the backend rejects empty cutPlanText, and silently treating it as saved
+  // would let Lock freeze the previous server text instead of what the artist
+  // sees. A no-storyboard or no-change call is a no-op success.
   const flushPlan = useCallback(async (): Promise<boolean> => {
     const trimmed = cutPlanText.trim();
-    if (!trimmed || trimmed === savedPlanText.trim()) return true;
+    if (!trimmed) {
+      if (hasStoryboard) {
+        setSaveState('failed');
+        return false;
+      }
+      return true;
+    }
+    if (trimmed === savedPlanText.trim()) return true;
     setSaveState('saving');
     if (savedFlashTimer.current) window.clearTimeout(savedFlashTimer.current);
     try {
@@ -143,13 +160,14 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       setSaveState('failed');
       return false;
     }
-  }, [cutPlanText, savedPlanText, onUpdateStoryboardPlan, shot.id]);
+  }, [cutPlanText, savedPlanText, hasStoryboard, onUpdateStoryboardPlan, shot.id]);
 
   const handleLock = async () => {
-    // Flush any unsaved cut plan edit BEFORE locking, so we never freeze
-    // a stale text into the locked version. If save fails, abort the lock —
-    // the artist sees the failed state and can retry.
-    if (saving) return;
+    // Defense in depth — Lock is also disabled in the UI when these are true.
+    if (saving || cutPlanRequired) return;
+    // Flush any unsaved edit BEFORE locking, so we never freeze stale text
+    // into the locked version. If save fails, abort the lock — the artist
+    // sees the failed state and can retry.
     if (dirty) {
       const ok = await flushPlan();
       if (!ok) return;
@@ -225,6 +243,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           planLoading={planLoading}
           saveState={saveState}
           dirty={dirty}
+          cutPlanRequired={cutPlanRequired}
           cutPlanText={cutPlanText}
           onCutPlanChange={(v) => { setCutPlanText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onPlanBlur={flushPlan}
@@ -243,6 +262,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           hasVideo={hasVideo}
           isVideoGenerating={isVideoGenerating}
           cutPlanText={cutPlanText}
+          cutPlanRequired={cutPlanRequired}
           boundRefCount={boundRefs.length}
           onGenerateVideo={onGenerateVideo}
         />
@@ -264,6 +284,7 @@ interface StoryboardTabBodyProps {
   planLoading: boolean;
   saveState: SaveState;
   dirty: boolean;
+  cutPlanRequired: boolean;
   cutPlanText: string;
   onCutPlanChange: (v: string) => void;
   onPlanBlur: () => Promise<boolean>;
@@ -277,7 +298,7 @@ interface StoryboardTabBodyProps {
 
 const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   shot, isLocked, isGenerating, isError, isRefining, hasStoryboard, versionId,
-  planLoading, saveState, dirty, cutPlanText,
+  planLoading, saveState, dirty, cutPlanRequired, cutPlanText,
   onCutPlanChange, onPlanBlur, onPlanRetry,
   onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
@@ -290,22 +311,28 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
         <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
           Cut plan
           {planLoading && <span className="text-[10px] normal-case tracking-normal text-zinc-400">Loading…</span>}
-          {!planLoading && saveState === 'saving' && (
-            <span className="text-[10px] normal-case tracking-normal text-zinc-300">Saving…</span>
-          )}
-          {!planLoading && saveState === 'saved' && (
-            <span className="text-[10px] normal-case tracking-normal text-emerald-400/70">Saved</span>
-          )}
-          {!planLoading && saveState === 'failed' && (
-            <button
-              type="button"
-              onClick={onPlanRetry}
-              className="text-[10px] normal-case tracking-normal text-red-300 hover:text-red-200 underline-offset-2 hover:underline"
-              title="Retry save"
-            >Save failed — retry</button>
-          )}
-          {!planLoading && saveState === 'idle' && dirty && (
-            <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
+          {!planLoading && cutPlanRequired ? (
+            <span className="text-[10px] normal-case tracking-normal text-red-300">Cut plan required</span>
+          ) : (
+            <>
+              {!planLoading && saveState === 'saving' && (
+                <span className="text-[10px] normal-case tracking-normal text-zinc-300">Saving…</span>
+              )}
+              {!planLoading && saveState === 'saved' && (
+                <span className="text-[10px] normal-case tracking-normal text-emerald-400/70">Saved</span>
+              )}
+              {!planLoading && saveState === 'failed' && (
+                <button
+                  type="button"
+                  onClick={onPlanRetry}
+                  className="text-[10px] normal-case tracking-normal text-red-300 hover:text-red-200 underline-offset-2 hover:underline"
+                  title="Retry save"
+                >Save failed — retry</button>
+              )}
+              {!planLoading && saveState === 'idle' && dirty && (
+                <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
+              )}
+            </>
           )}
         </div>
 
@@ -341,9 +368,9 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           {hasStoryboard && (
             <button
               onClick={onLock}
-              disabled={isGenerating || saving}
+              disabled={isGenerating || saving || cutPlanRequired}
               className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              title={saving ? 'Saving cut plan first…' : 'Lock this storyboard so video generation can use it.'}
+              title={cutPlanRequired ? 'Write a cut plan before locking — empty plans cannot drive Seedance.' : saving ? 'Saving cut plan first…' : 'Lock this storyboard so video generation can use it.'}
             >
               {saving && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
               {saving ? 'Locking…' : 'Lock'}
@@ -437,14 +464,15 @@ interface VideoTabBodyProps {
   hasVideo: boolean;
   isVideoGenerating: boolean;
   cutPlanText: string;
+  cutPlanRequired: boolean;
   boundRefCount: number;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
 }
 
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
-  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, boundRefCount, onGenerateVideo,
+  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount, onGenerateVideo,
 }) => {
-  const canGenerate = isLocked && !isVideoGenerating;
+  const canGenerate = isLocked && !isVideoGenerating && !cutPlanRequired;
   const previewLine = `@image1 = locked storyboard${boundRefCount > 0 ? `, @image2..${boundRefCount + 1} = locked refs` : ''}`;
 
   return (
@@ -467,14 +495,16 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
           onClick={() => onGenerateVideo(scene.id, shot.id, undefined, undefined)}
           disabled={!canGenerate}
           className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
-          title={!isLocked ? 'Lock the storyboard first' : isVideoGenerating ? 'Video generation in progress' : hasVideo ? 'Regenerate video from the locked storyboard' : 'Generate video from the locked storyboard'}
+          title={cutPlanRequired ? 'Write a cut plan in the Storyboard tab first.' : !isLocked ? 'Lock the storyboard first' : isVideoGenerating ? 'Video generation in progress' : hasVideo ? 'Regenerate video from the locked storyboard' : 'Generate video from the locked storyboard'}
         >
           {isVideoGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
           {isVideoGenerating ? 'Generating…' : hasVideo ? 'Regenerate video' : 'Generate video'}
         </button>
-        {!isLocked && (
+        {cutPlanRequired ? (
+          <span className="text-[11px] text-red-300/80">Cut plan required.</span>
+        ) : !isLocked ? (
           <span className="text-[11px] text-zinc-400">Lock the storyboard first.</span>
-        )}
+        ) : null}
       </div>
 
       {shot.videoStatus === GenerationStatus.ERROR && shot.lastError && !isVideoGenerating && (
