@@ -29,7 +29,7 @@ interface Props {
   onGenerateScript: (userNote?: string) => void;
   onRefineScript?: (feedback: string) => void;
   onUpdateScene?: (sceneId: string, updates: { narrativeDescription?: string }) => void;
-  onUpdateShot?: (sceneId: string, shotId: string, updates: { visualPrompt?: string; castIds?: string[]; environmentId?: string | null; duration?: number }) => void;
+  onUpdateShot?: (sceneId: string, shotId: string, updates: { direction?: string; visualPrompt?: string; castIds?: string[]; environmentId?: string | null; duration?: number }) => void;
   onGenerateConcepts?: (opts?: { userNote?: string; directorBrief?: string }) => void;
   onCancelConcepts?: () => void;
   onCancelScript?: () => void;

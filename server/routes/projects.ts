@@ -468,6 +468,7 @@ const getFullProject = async (projectId: string) => {
       narrativeDescription: s.narrative_description || '',
       shots: (s.shots || []).map((shot: any) => ({
         id: shot.id,
+        direction: shot.direction || '',
         visualPrompt: shot.visual_prompt || '',
         motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
         duration: shot.duration,
@@ -1266,11 +1267,14 @@ router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
 });
 
 router.patch('/:id/shots/:shotId', async (req, res) => {
-  const { visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
+  const { direction, visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
   const shotId = paramStr(req.params.shotId);
 
   // Manual edits to the prompt invalidate the auto-refresh chip — it meant
   // "this text was written by the vision rewrite", not "this text is current".
+  if (direction !== undefined) {
+    await updateRows('shots', { id: shotId }, { direction, prompts_stale: true });
+  }
   if (visualPrompt !== undefined) {
     await updateRows('shots', { id: shotId }, { visual_prompt: visualPrompt, refined_from_prev_frame: 0 });
   }
