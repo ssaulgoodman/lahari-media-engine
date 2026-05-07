@@ -89,7 +89,9 @@ const estimateStoryboardCost = (imageCount: number): number => {
 
 const isMissingPreviousResponse = (err: any): boolean => {
   const text = `${err?.message || ''} ${err?.code || ''} ${err?.type || ''}`.toLowerCase();
-  return text.includes('previous_response') || text.includes('previous response') || text.includes('not found') || text.includes('expired');
+  const mentionsPreviousResponse = text.includes('previous_response') || text.includes('previous response');
+  const looksMissingOrExpired = text.includes('not found') || text.includes('expired');
+  return mentionsPreviousResponse || (looksMissingOrExpired && text.includes('previous') && text.includes('response'));
 };
 
 export const loadStoryboardContext = async (projectId: string, shotId: string): Promise<StoryboardContext> => {
