@@ -193,7 +193,6 @@ const loadShotContext = async (projectId: string, shotId: string, durationOverri
       clipDuration,
       castNames: activeCast.map((c: any) => c.name),
       environmentName: env?.name,
-      styleSummary: project.style_description || undefined,
     },
     project,
     shot,
