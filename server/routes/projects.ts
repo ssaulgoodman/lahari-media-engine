@@ -15,6 +15,11 @@ import { logCall, getCalls, buildContextChain } from '../xray.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
+const parseJson = <T,>(value: any, fallback: T): T => {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value as T;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+};
 
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
@@ -101,6 +106,7 @@ const forkProject = async (sourceId: string): Promise<string> => {
   const srcEnvs = await selectAll('environments', { project_id: sourceId });
   const srcAssets = await selectAll('assets', { project_id: sourceId });
   const srcScenes = await selectAll('scenes', { project_id: sourceId }, { orderBy: 'sort_order' });
+  const srcStoryboardVersions = await selectAll('storyboard_versions', { project_id: sourceId });
 
   const castMap = new Map<string, string>();
   srcCast.forEach(c => castMap.set(c.id, uuidv4()));
@@ -110,8 +116,15 @@ const forkProject = async (sourceId: string): Promise<string> => {
   srcAssets.forEach(a => assetMap.set(a.id, uuidv4()));
   const sceneMap = new Map<string, string>();
   srcScenes.forEach(s => sceneMap.set(s.id, uuidv4()));
+  const shotMap = new Map<string, string>();
+  const storyboardVersionMap = new Map<string, string>();
+  srcStoryboardVersions.forEach(v => storyboardVersionMap.set(v.id, uuidv4()));
 
   const remapAsset = (oldId: string | null | undefined) => oldId ? (assetMap.get(oldId) || null) : null;
+  const remapStoryboardRefs = (refs: any) => parseJson<any[]>(refs, []).map((ref) => ({
+    ...ref,
+    assetId: remapAsset(ref.assetId) || ref.assetId,
+  }));
 
   // Project row — copy everything, remap style_asset_id, new id + parent.
   const now = new Date().toISOString();
@@ -213,13 +226,15 @@ const forkProject = async (sourceId: string): Promise<string> => {
       const shots = await selectAll('shots', { scene_id: s.id }, { orderBy: 'sort_order' });
       const newSceneId = sceneMap.get(s.id)!;
       for (const shot of shots) {
+        const newShotId = uuidv4();
+        shotMap.set(shot.id, newShotId);
         let newCastIds = '[]';
         try {
           const ids = JSON.parse(shot.cast_ids || '[]') as string[];
           newCastIds = JSON.stringify(ids.map((id: string) => castMap.get(id) || id).filter(Boolean));
         } catch {}
         allShotRows.push({
-          id: uuidv4(),
+          id: newShotId,
           scene_id: newSceneId,
           visual_prompt: shot.visual_prompt,
           motion_prompt: shot.motion_prompt,
@@ -228,7 +243,9 @@ const forkProject = async (sourceId: string): Promise<string> => {
           image_asset_id: remapAsset(shot.image_asset_id),
           video_asset_id: remapAsset(shot.video_asset_id),
           storyboard_asset_id: remapAsset(shot.storyboard_asset_id),
-          storyboard_version_id: null,
+          storyboard_version_id: shot.storyboard_version_id
+            ? (storyboardVersionMap.get(shot.storyboard_version_id) || null)
+            : null,
           storyboard_status: shot.storyboard_status,
           storyboard_locked: shot.storyboard_locked,
           storyboard_user_feedback: shot.storyboard_user_feedback,
@@ -255,6 +272,36 @@ const forkProject = async (sourceId: string): Promise<string> => {
     }
     if (allShotRows.length > 0) {
       await insertMany('shots', allShotRows);
+    }
+
+    const storyboardVersionRows = srcStoryboardVersions
+      .map((version: any) => {
+        const newShotId = shotMap.get(version.shot_id);
+        const newAssetId = remapAsset(version.asset_id);
+        if (!newShotId || !newAssetId) return null;
+        return {
+          id: storyboardVersionMap.get(version.id),
+          project_id: newId,
+          shot_id: newShotId,
+          asset_id: newAssetId,
+          parent_version_id: version.parent_version_id
+            ? (storyboardVersionMap.get(version.parent_version_id) || null)
+            : null,
+          openai_response_id: version.openai_response_id,
+          openai_image_call_ids: version.openai_image_call_ids,
+          reasoning_model: version.reasoning_model,
+          image_model: version.image_model,
+          prompt: version.prompt,
+          artist_note: version.artist_note,
+          refs: remapStoryboardRefs(version.refs),
+          metadata: version.metadata,
+          locked: version.locked,
+          created_at: version.created_at,
+        };
+      })
+      .filter(Boolean);
+    if (storyboardVersionRows.length > 0) {
+      await insertMany('storyboard_versions', storyboardVersionRows as any[]);
     }
   }
 

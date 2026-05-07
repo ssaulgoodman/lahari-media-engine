@@ -90,6 +90,7 @@ export const mountVideoRoutes = (router: Router) => {
     const shotCastIds = JSON.parse(shot.cast_ids || '[]');
     const cast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
     const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
+    const storyboardSentRefs: { label: string; filePath: string }[] = [];
 
     try {
       await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
@@ -137,6 +138,7 @@ export const mountVideoRoutes = (router: Router) => {
           for (const ref of storyboardContext.refMeta) {
             if (referenceImagePaths.length >= 9) break;
             referenceImagePaths.push(ref.filePath);
+            storyboardSentRefs.push({ label: ref.label, filePath: ref.filePath });
           }
         } else {
           for (const c of activeCast) {
@@ -152,10 +154,10 @@ export const mountVideoRoutes = (router: Router) => {
               if (envAsset) referenceImagePaths.push(envAsset.file_path);
             }
           }
-        }
-        const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
-        for (const sra of shotRefAssets) {
-          if (referenceImagePaths.length < 9) referenceImagePaths.push(sra.file_path);
+          const shotRefAssets = await selectAll('assets', { shot_id: shot.id, category: 'shot_ref' });
+          for (const sra of shotRefAssets) {
+            if (referenceImagePaths.length < 9) referenceImagePaths.push(sra.file_path);
+          }
         }
       }
 
@@ -182,10 +184,12 @@ export const mountVideoRoutes = (router: Router) => {
       const storyboardPrompt = useStoryboardMode
         ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
           cutPlanText: storyboardVersionMeta.cutPlanText || null,
-          refs: storyboardContext!.refMeta.map((ref) => ({ label: ref.label })),
+          refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
         })
         : '';
-      const veoPrompt = promptOverride?.trim() ? promptOverride.trim() : (useStoryboardMode ? storyboardPrompt : veoPromptParts.join('. '));
+      const veoPrompt = useStoryboardMode
+        ? storyboardPrompt
+        : promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
       console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
       const result = await generateVideoWithFallback(useStoryboardMode ? undefined : imageAsset!.file_path, veoPrompt, {
@@ -283,7 +287,7 @@ export const mountVideoRoutes = (router: Router) => {
         referenceInputs: useStoryboardMode && storyboardAsset
           ? [
             { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
-            ...(storyboardContext?.refMeta || []).map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+            ...storyboardSentRefs.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
           ]
           : imageAsset
             ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
@@ -309,7 +313,7 @@ export const mountVideoRoutes = (router: Router) => {
         referenceInputs: useStoryboardMode && storyboardAsset
           ? [
             { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
-            ...(storyboardContext?.refMeta || []).map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+            ...storyboardSentRefs.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
           ]
           : imageAsset
             ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]

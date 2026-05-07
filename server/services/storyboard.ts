@@ -1,8 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
+import { incrementColumn, insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { storageUrl } from '../storage.js';
 import { generateOpenAIImageWithResponses, OpenAIRefImage } from './openai-image.js';
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
+import { buildContextChain, logCall } from '../xray.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -79,6 +80,18 @@ const addRef = (
   refMeta.push({ label, assetId: asset.id, filePath: asset.file_path });
 };
 
+const estimateStoryboardCost = (imageCount: number): number => {
+  const configured = Number(process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0);
+  if (configured > 0) return configured * Math.max(1, imageCount);
+  // Rough non-zero telemetry until OpenAI usage exposes image-tool cost directly.
+  return 0.06 * Math.max(1, imageCount);
+};
+
+const isMissingPreviousResponse = (err: any): boolean => {
+  const text = `${err?.message || ''} ${err?.code || ''} ${err?.type || ''}`.toLowerCase();
+  return text.includes('previous_response') || text.includes('previous response') || text.includes('not found') || text.includes('expired');
+};
+
 export const loadStoryboardContext = async (projectId: string, shotId: string): Promise<StoryboardContext> => {
   const project = await selectOne('projects', { id: projectId });
   if (!project) throw new Error('Project not found');
@@ -153,29 +166,52 @@ export const generateStoryboardVersion = async (opts: {
 
   const variant = opts.variant || 'adaptive_numbered_storyboard';
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
+  const previousMetadata = parseJson<Record<string, any>>(previousVersion?.metadata, {});
+  const previousCutPlan = previousMetadata.cutPlanText ? `\n\nPrevious cut plan to preserve/improve:\n${previousMetadata.cutPlanText}` : '';
   const prompt = opts.artistNote?.trim()
     ? `Refine the existing Lahari storyboard using this artist note: "${opts.artistNote.trim()}"
 
 Keep character identity, costume, environment, style, and the same ${ctx.input.clipDuration}s clip intent unless the note explicitly asks otherwise.
+${previousCutPlan}
 
 Original storyboard brief:
 ${basePrompt}`
     : basePrompt;
 
   await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
+  const t0 = Date.now();
 
   try {
-    const result = await generateOpenAIImageWithResponses(prompt, {
+    let responseChainFallback = false;
+    const callResponses = (previousResponseId?: string, refs: OpenAIRefImage[] = ctx.refs) => generateOpenAIImageWithResponses(prompt, {
       aspectRatio: ctx.project.aspect_ratio || '16:9',
-      refs: ctx.refs,
-      previousResponseId: previousVersion?.openai_response_id || undefined,
+      refs,
+      previousResponseId,
       action: previousVersion ? 'edit' : 'generate',
       quality: 'medium',
     });
 
+    let result;
+    try {
+      result = await callResponses(previousVersion?.openai_response_id || undefined);
+    } catch (err: any) {
+      if (!previousVersion?.openai_response_id || !isMissingPreviousResponse(err)) throw err;
+
+      responseChainFallback = true;
+      const previousAsset = previousVersion.asset_id
+        ? await selectOne('assets', { id: previousVersion.asset_id })
+        : null;
+      const fallbackRefs = previousAsset?.file_path
+        ? [{ label: 'Previous storyboard version to refine', imagePath: previousAsset.file_path }, ...ctx.refs]
+        : ctx.refs;
+      result = await callResponses(undefined, fallbackRefs);
+    }
+
     const [storagePath] = result.imagePaths;
     const assetId = uuidv4();
     const versionId = uuidv4();
+    const durationMs = Date.now() - t0;
+    const costEstimate = estimateStoryboardCost(result.imagePaths.length);
     await insertRow('assets', {
       id: assetId,
       project_id: opts.projectId,
@@ -189,6 +225,7 @@ ${basePrompt}`
         imageGenerationCallIds: result.imageGenerationCallIds,
         imageGenerationRevisedPrompts: result.imageGenerationRevisedPrompts,
         responseText: result.outputText,
+        responseChainFallback,
       }),
     });
 
@@ -211,6 +248,7 @@ ${basePrompt}`
         sceneLabel: ctx.input.sceneLabel,
         cutPlanText: result.outputText || null,
         revisedPrompt: result.imageGenerationRevisedPrompts[0] || null,
+        responseChainFallback,
       },
       locked: false,
     });
@@ -225,6 +263,20 @@ ${basePrompt}`
       last_error: null,
     });
 
+    await logCall({
+      projectId: opts.projectId,
+      stage: opts.artistNote?.trim() ? 'refine-storyboard' : 'generate-storyboard',
+      model: `${result.reasoningModel}+${result.imageModel}`,
+      prompt,
+      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      contextChain: await buildContextChain(opts.projectId),
+      responseSummary: `${opts.artistNote?.trim() ? 'Refined' : 'Generated'} storyboard ${versionId}${responseChainFallback ? ' (fresh response fallback)' : ''}`,
+      outputAssetIds: [assetId],
+      durationMs,
+      costEstimate,
+    });
+    await incrementColumn('projects', { id: opts.projectId }, 'cost_estimate', costEstimate);
+
     return {
       versionId,
       assetId,
@@ -235,6 +287,17 @@ ${basePrompt}`
       imageModel: result.imageModel,
     };
   } catch (err: any) {
+    const durationMs = Date.now() - t0;
+    await logCall({
+      projectId: opts.projectId,
+      stage: opts.artistNote?.trim() ? 'refine-storyboard' : 'generate-storyboard',
+      model: 'openai-responses-image',
+      prompt,
+      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      contextChain: await buildContextChain(opts.projectId),
+      durationMs,
+      error: err.message,
+    });
     await updateRows('shots', { id: opts.shotId }, {
       storyboard_status: 'error',
       last_error: err.message,
