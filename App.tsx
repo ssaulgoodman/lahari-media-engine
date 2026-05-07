@@ -133,6 +133,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const [frameQueue, setFrameQueue] = useState<string[]>([]);
   const [videoQueue, setVideoQueue] = useState<string[]>([]);
   const [storyboardQueue, setStoryboardQueue] = useState<string[]>([]);
+  const [bulkStopNotice, setBulkStopNotice] = useState<string | null>(null);
+  const bulkStopRef = useRef({ requested: false, controllers: new Set<AbortController>() });
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   // Renders viewer (popup) — opened from Dashboard rows or sidebar entries.
@@ -718,14 +720,16 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleRewriteShotPrompts = async (userNote?: string) => {
     if (!project) return;
+    const signal = startOp('write-prompts');
     setLoading(true);
     setError(null);
     try {
-      const p = await api.writeShotPrompts(project.id, userNote);
+      const p = await api.writeShotPrompts(project.id, userNote, signal);
       setProject(p);
     } catch (err: any) {
-      setError('Failed to rewrite shot prompts: ' + err.message);
+      if (!api.isCancelled(err)) setError('Failed to rewrite shot prompts: ' + err.message);
     } finally {
+      endOp('write-prompts');
       setLoading(false);
     }
   };
@@ -1007,18 +1011,39 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // "5 at a time, queue the rest" actually means — no artificial sleeps,
   // no fixed batches. Rejections are swallowed into the results array so
   // one failure doesn't abort the whole bulk.
+  const beginBulkRun = () => {
+    bulkStopRef.current.requested = false;
+    bulkStopRef.current.controllers.clear();
+    setBulkStopNotice(null);
+  };
+
+  const stopBulkRun = useCallback(() => {
+    bulkStopRef.current.requested = true;
+    bulkStopRef.current.controllers.forEach(ctrl => ctrl.abort());
+    bulkStopRef.current.controllers.clear();
+    setFrameQueue([]);
+    setVideoQueue([]);
+    setStoryboardQueue([]);
+    setBulkStopNotice('Stopped queued jobs. Active generations may still finish and appear when they complete.');
+  }, []);
+
   const runWithConcurrency = async <T,>(
     items: T[],
     limit: number,
-    fn: (item: T) => Promise<any>,
+    fn: (item: T, signal: AbortSignal) => Promise<any>,
     onStart?: (item: T) => void,
   ): Promise<void> => {
     let cursor = 0;
     const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (cursor < items.length) {
+        if (bulkStopRef.current.requested) break;
         const idx = cursor++;
+        if (bulkStopRef.current.requested) break;
         if (onStart) onStart(items[idx]);
-        try { await fn(items[idx]); } catch (err) { /* logged by the handler */ }
+        const ctrl = new AbortController();
+        bulkStopRef.current.controllers.add(ctrl);
+        try { await fn(items[idx], ctrl.signal); } catch (err) { /* logged by the handler */ }
+        finally { bulkStopRef.current.controllers.delete(ctrl); }
       }
     });
     await Promise.all(workers);
@@ -1026,12 +1051,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const getReadyFrameTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
+    const ignoreContinuity = p.videoModel?.startsWith('seedance');
     for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
         if (shot.imageUrl) return;
         if (shot.imageStatus === GenerationStatus.LOADING) return;
         if (shot.imageStatus === GenerationStatus.ERROR) return;
-        if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+        if (!ignoreContinuity && shot.continuityFrom === 'prev_shot' && idx > 0) {
           const prev = scene.shots[idx - 1];
           if (!prev?.videoUrl) return;
         }
@@ -1058,17 +1084,19 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     if (!project) return;
     const targets = getReadyStoryboardTargets(project);
     if (targets.length === 0) return;
+    beginBulkRun();
     setStoryboardQueue(targets.map(t => t.shotId));
     try {
       await runWithConcurrency(
         targets,
         2,
-        t => api.generateStoryboard(project.id, t.shotId),
+        (t, signal) => api.generateStoryboard(project.id, t.shotId, signal),
         t => {
           setStoryboardQueue(q => q.filter(id => id !== t.shotId));
           updateShotOptimistic(t.shotId, { storyboardStatus: GenerationStatus.LOADING });
         },
       );
+      if (bulkStopRef.current.requested) return;
       const latest = await api.getProject(project.id);
       setProject(latest);
     } finally {
@@ -1079,8 +1107,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleBulkGenerateFrames = async () => {
     if (!project) return;
     let latestProject = project;
+    beginBulkRun();
     try {
       while (true) {
+        if (bulkStopRef.current.requested) break;
         const targets = getReadyFrameTargets(latestProject);
         if (targets.length === 0) break;
         const queueIds = targets.map(t => t.shotId);
@@ -1088,7 +1118,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
         await runWithConcurrency(
           targets,
           10,
-          t => api.generateShotImage(latestProject.id, t.shotId),
+          (t, signal) => api.generateShotImage(latestProject.id, t.shotId, undefined, signal),
           t => {
             setFrameQueue(q => q.filter(id => id !== t.shotId));
             setProject(prev => prev ? {
@@ -1102,6 +1132,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
             } : prev);
           },
         );
+        if (bulkStopRef.current.requested) break;
         // Refresh to see newly unblocked prev_shot frames
         latestProject = await api.getProject(latestProject.id);
         setProject(latestProject);
@@ -1114,13 +1145,14 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const getReadyVideoTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
     const allowStoryboardVideo = p.videoModel?.startsWith('seedance');
+    const ignoreContinuity = allowStoryboardVideo;
     for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
         const hasVideoSource = !!shot.imageUrl || (allowStoryboardVideo && !!shot.storyboardLocked && !!shot.storyboardUrl);
         if (!hasVideoSource || shot.videoUrl) return;
         if (shot.videoStatus === GenerationStatus.LOADING) return;
         if (shot.videoStatus === GenerationStatus.ERROR) return;
-        if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+        if (!ignoreContinuity && shot.continuityFrom === 'prev_shot' && idx > 0) {
           const prev = scene.shots[idx - 1];
           if (!prev?.videoUrl) return;
         }
@@ -1133,8 +1165,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleBulkGenerateVideos = async () => {
     if (!project) return;
     let latestProject = project;
+    beginBulkRun();
     try {
       while (true) {
+        if (bulkStopRef.current.requested) break;
         const targets = getReadyVideoTargets(latestProject);
         if (targets.length === 0) break;
         const queueIds = targets.map(t => t.shotId);
@@ -1143,7 +1177,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
         await runWithConcurrency(
           targets,
           5,
-          t => api.generateShotVideo(latestProject.id, t.shotId),
+          (t, signal) => api.generateShotVideo(latestProject.id, t.shotId, undefined, undefined, signal),
           t => {
             setVideoQueue(q => q.filter(id => id !== t.shotId));
             setProject(prev => prev ? {
@@ -1157,6 +1191,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
             } : prev);
           },
         );
+        if (bulkStopRef.current.requested) break;
         // Refresh to see newly unblocked prev_shot shots
         latestProject = await api.getProject(latestProject.id);
         setProject(latestProject);
@@ -1527,9 +1562,12 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onRefinePrompt={handleRefinePrompt}
                     onUpdateProject={handleUpdateProject}
                     onRewriteShotPrompts={handleRewriteShotPrompts}
+                    onCancelRewritePrompts={() => abortOp('write-prompts')}
                     onBulkGenerateFrames={handleBulkGenerateFrames}
                     onBulkGenerateVideos={handleBulkGenerateVideos}
                     onBulkGenerateStoryboards={handleBulkGenerateStoryboards}
+                    onCancelBulk={stopBulkRun}
+                    bulkStopNotice={bulkStopNotice}
                     frameQueue={frameQueue}
                     videoQueue={videoQueue}
                     storyboardQueue={storyboardQueue}

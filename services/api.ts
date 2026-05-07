@@ -414,10 +414,11 @@ export const refineScript = async (projectId: string, feedback: string, signal?:
   return handleResponse(res);
 };
 
-export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
+export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean; scriptProvider?: 'claude' | 'openai' }, signal?: AbortSignal) => {
   const body: Record<string, any> = {};
   if (userNote) body.userNote = userNote;
   if (opts?.fork) body.fork = true;
+  if (opts?.scriptProvider) body.scriptProvider = opts.scriptProvider;
   const res = await authFetch(`${API}/projects/${projectId}/generate-script`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

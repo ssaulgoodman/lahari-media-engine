@@ -15,9 +15,12 @@ interface StudioHeaderProps {
   onSceneChange: (idx: number) => void;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
+  onCancelRewritePrompts?: () => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
   onBulkGenerateVideos?: () => Promise<void> | void;
   onBulkGenerateStoryboards?: () => Promise<void> | void;
+  onCancelBulk?: () => void;
+  bulkStopNotice?: string | null;
   studioMode: 'storyboard' | 'keyframe';
   onStudioModeChange: (mode: 'storyboard' | 'keyframe') => void;
   storyboardSupported: boolean;
@@ -26,7 +29,7 @@ interface StudioHeaderProps {
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
   scenes, project, activeSceneIdx, onSceneChange, onUpdateShot,
-  onRewriteShotPrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, studioMode, onStudioModeChange, storyboardSupported, isLoading,
+  onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, studioMode, onStudioModeChange, storyboardSupported, isLoading,
 }) => {
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
   const contextBarRef = useRef<HTMLDivElement>(null);
@@ -57,11 +60,12 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   const missingPromptCount = scenes.reduce(
     (acc, s) => acc + s.shots.filter(x => !x.visualPrompt || !x.visualPrompt.trim()).length, 0
   );
+  const ignoreContinuity = studioMode === 'storyboard' && storyboardSupported;
   const framesToFire = scenes.reduce((acc, s) => {
     return acc + s.shots.filter((shot, idx) => {
       if (shot.imageUrl) return false;
       if (shot.imageStatus === GenerationStatus.LOADING) return false;
-      if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+      if (!ignoreContinuity && shot.continuityFrom === 'prev_shot' && idx > 0) {
         const prev = s.shots[idx - 1];
         if (!prev?.videoUrl) return false;
       }
@@ -74,7 +78,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         if (!shot.storyboardLocked || !shot.storyboardUrl || shot.videoUrl) return false;
       } else if (!shot.imageUrl || shot.videoUrl) return false;
       if (shot.videoStatus === GenerationStatus.LOADING) return false;
-      if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+      if (!ignoreContinuity && shot.continuityFrom === 'prev_shot' && idx > 0) {
         const prev = s.shots[idx - 1];
         if (!prev?.videoUrl) return false;
       }
@@ -89,6 +93,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
     }).length;
   }, 0);
   const chainWaitingCount = scenes.reduce((acc, s) => {
+    if (ignoreContinuity) return acc;
     return acc + s.shots.filter((shot, idx) => {
       if (shot.imageUrl || idx === 0) return false;
       if (shot.continuityFrom !== 'prev_shot') return false;
@@ -233,14 +238,22 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               <div className="absolute top-full right-0 mt-2 w-[28rem] bg-zinc-900 border border-white/[0.08] rounded-xl p-4 shadow-2xl z-30 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] uppercase tracking-wide text-zinc-400">Rewrite all shot prompts</span>
-                  <button
-                    onClick={() => { onRewriteShotPrompts(bulkNote || undefined); setBulkNote(''); setContextPopover(null); }}
-                    disabled={isLoading}
-                    className="text-[11px] bg-white text-black rounded-md px-3 py-1.5 font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors flex items-center gap-2"
-                  >
-                    {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-                    {isLoading ? 'Rewriting…' : 'Rewrite all'}
-                  </button>
+                  {isLoading ? (
+                    <button
+                      onClick={onCancelRewritePrompts}
+                      className="text-[11px] bg-amber-500/10 hover:bg-amber-500/15 text-amber-300 border border-amber-500/20 rounded-md px-3 py-1.5 font-medium transition-colors"
+                      title="Stops waiting for the prompt rewrite. Server work may still finish."
+                    >
+                      Stop waiting
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { onRewriteShotPrompts(bulkNote || undefined); setBulkNote(''); setContextPopover(null); }}
+                      className="text-[11px] bg-white text-black rounded-md px-3 py-1.5 font-medium hover:bg-zinc-200 transition-colors flex items-center gap-2"
+                    >
+                      Rewrite all
+                    </button>
+                  )}
                 </div>
                 <AutoGrowTextarea
                   value={bulkNote}
@@ -265,6 +278,15 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         )}
 
         {/* Bulk actions */}
+        {bulkRunning && (
+          <button
+            onClick={() => { onCancelBulk?.(); setBulkRunning(null); }}
+            className="text-[11px] bg-amber-500/10 hover:bg-amber-500/15 text-amber-300 border border-amber-500/20 rounded-md px-2.5 py-1 transition-colors"
+            title="Stops queued jobs and aborts browser requests. Active provider generations may still finish."
+          >
+            Stop queue
+          </button>
+        )}
         {studioMode === 'storyboard' && storyboardSupported ? (
           <button
             onClick={async () => { setBulkRunning('storyboards'); try { await onBulkGenerateStoryboards?.(); } finally { setBulkRunning(null); } }}
@@ -286,6 +308,15 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
               Write prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
             </button>
+            {isLoading && onCancelRewritePrompts && (
+              <button
+                onClick={onCancelRewritePrompts}
+                className="text-[11px] bg-amber-500/10 hover:bg-amber-500/15 text-amber-300 border border-amber-500/20 rounded-md px-2.5 py-1 transition-colors"
+                title="Stops waiting for the prompt rewrite. Server work may still finish."
+              >
+                Stop prompts
+              </button>
+            )}
             <button
               onClick={async () => { setBulkRunning('frames'); try { await onBulkGenerateFrames?.(); } finally { setBulkRunning(null); } }}
               disabled={!onBulkGenerateFrames || framesToFire === 0 || bulkRunning !== null}
@@ -306,6 +337,9 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           {bulkRunning === 'videos' && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
           {bulkRunning === 'videos' ? 'Running…' : <>Videos <span className="opacity-70">({videosToFire})</span></>}
         </button>
+        {bulkStopNotice && (
+          <span className="text-[11px] text-amber-300/80 max-w-xs truncate" title={bulkStopNotice}>{bulkStopNotice}</span>
+        )}
       </div>
     </div>
   );

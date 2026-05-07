@@ -180,7 +180,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           {activeCastMembers.length > 0 && (
             <span className="text-sm text-zinc-300 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
           )}
-          {shotIdx > 0 && (
+          {shotIdx > 0 && !isStoryboardMode && (
             <button
               onClick={() => onUpdateShot(scene.id, shot.id, { continuityFrom: shot.continuityFrom === 'prev_shot' ? 'cut' : 'prev_shot' } as any)}
               className={`text-[11px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded transition-colors flex-shrink-0 ${
@@ -206,7 +206,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
             const ordinal = pos === 1 ? '1st' : pos === 2 ? '2nd' : pos === 3 ? '3rd' : `${pos}th`;
             return <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0 font-mono" title={`Queued for bulk ${kind} generation — ${ordinal} in line.`}>queued · {ordinal}</span>;
           })()}
-          {!actionable && !shot.imageUrl && (
+          {!isStoryboardMode && !actionable && !shot.imageUrl && (
             <span className="text-[11px] uppercase tracking-wide text-zinc-400 flex-shrink-0" title="Waiting on previous shot's video (continuity chain)">queued</span>
           )}
         </div>
@@ -442,13 +442,19 @@ export const ShotCard: React.FC<ShotCardProps> = ({
             </span>
             <div className="w-24 h-0.5 bg-white/[0.06] rounded-full overflow-hidden"><div className="h-full bg-white/30 rounded-full animate-shimmer" style={{ width: '40%' }} /></div>
             {(shot.imageStatus === GenerationStatus.LOADING && onCancelShotImage) || (shot.videoStatus === GenerationStatus.LOADING && onCancelShotVideo) ? (
-              <button onClick={() => { if (shot.imageStatus === GenerationStatus.LOADING) onCancelShotImage?.(shot.id); else if (shot.videoStatus === GenerationStatus.LOADING) onCancelShotVideo?.(shot.id); }} className="text-[11px] bg-white/[0.08] hover:bg-white/[0.14] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1 transition-colors">Stop</button>
+              <button
+                onClick={() => { if (shot.imageStatus === GenerationStatus.LOADING) onCancelShotImage?.(shot.id); else if (shot.videoStatus === GenerationStatus.LOADING) onCancelShotVideo?.(shot.id); }}
+                title="Stops waiting in this browser. Active provider generations may still finish."
+                className="text-[11px] bg-white/[0.08] hover:bg-white/[0.14] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md px-3 py-1 transition-colors"
+              >
+                Stop waiting
+              </button>
             ) : null}
           </div>
         )}
 
         {/* Not actionable overlay */}
-        {!actionable && !isGenerating && (
+        {!isStoryboardMode && !actionable && !isGenerating && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
             <span className="text-xs text-zinc-400">Waiting on previous shot's video (continuity)</span>
           </div>

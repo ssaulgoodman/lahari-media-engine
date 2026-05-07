@@ -234,7 +234,7 @@ export const mountVideoRoutes = (router: Router) => {
       });
 
       // Chain refresh — if the NEXT shot is tagged `prev_shot`, rewrite its prompts
-      if (extractedFramePath) {
+      if (!useStoryboardMode && extractedFramePath) {
         try {
           const nextShot = await findShot(shot.scene_id, shot.sort_order + 1, { continuity_from: 'prev_shot', locked: 0 });
           if (nextShot && nextShot.visual_prompt) {

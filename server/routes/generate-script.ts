@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, selectColumns, insertRow, updateRows, deleteRows, incrementColumn, maxVal } from '../database.js';
 import { storageUrl, readAsBase64, mimeFromExt } from '../storage.js';
 import { planScenes, refineScript, writeShotPrompts } from '../services/claude.js';
+import { planScenesOpenAI } from '../services/openai-script.js';
 import { getModelMinDuration } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -26,15 +27,18 @@ router.post('/:id/generate-script', async (req, res) => {
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file' });
 
   const { userNote } = req.body || {};
+  const requestedProvider = String(req.body?.scriptProvider || process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
+  const useOpenAIScriptWriter = requestedProvider === 'openai' || requestedProvider === 'gpt-5.5';
   const concept = JSON.parse(project.locked_concept || '{}');
 
-  const scriptPrompt = `Plan script + propose cast for "${project.title}" — Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood} | Mode: ${project.video_mode || 'montage'}${userNote ? ' | Note: ' + userNote : ''}`;
+  const scriptProviderLabel = useOpenAIScriptWriter ? 'openai' : 'claude';
+  const scriptPrompt = `Plan script + propose cast for "${project.title}" — Provider: ${scriptProviderLabel} | Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood} | Mode: ${project.video_mode || 'montage'}${userNote ? ' | Note: ' + userNote : ''}`;
 
   try {
-    console.log(`[${project.id}] Generating script + cast${userNote ? ' with note: ' + userNote : ''}...`);
+    console.log(`[${project.id}] Generating script + cast via ${scriptProviderLabel}${userNote ? ' with note: ' + userNote : ''}...`);
 
     const t0 = Date.now();
-    const data = await planScenes({
+    const scriptInput = {
       concept,
       videoMode: project.video_mode || 'montage',
       lyrics: project.lyrics || '',
@@ -47,7 +51,10 @@ router.post('/:id/generate-script', async (req, res) => {
       songType: project.song_type || undefined,
       isNarrative: project.is_narrative ?? undefined,
       isMeditative: project.is_meditative ?? undefined,
-    });
+    };
+    const data = useOpenAIScriptWriter
+      ? await planScenesOpenAI(scriptInput)
+      : await planScenes(scriptInput);
     const durationMs = Date.now() - t0;
 
     // Cache the full prompt for transparency/View Prompt UI
@@ -160,7 +167,7 @@ router.post('/:id/generate-script', async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-script',
-      model: 'claude-opus-4-6',
+      model: useOpenAIScriptWriter ? (data as any).model || process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.5' : 'claude-opus-4-7',
       prompt: scriptPrompt,
       referenceInputs: [],
       contextChain: await buildContextChain(project.id),
@@ -178,7 +185,7 @@ router.post('/:id/generate-script', async (req, res) => {
     await logCall({
       projectId: project.id,
       stage: 'generate-script',
-      model: 'claude-opus-4-6',
+      model: useOpenAIScriptWriter ? process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.5' : 'claude-opus-4-7',
       prompt: scriptPrompt,
       referenceInputs: [],
       contextChain: await buildContextChain(project.id),

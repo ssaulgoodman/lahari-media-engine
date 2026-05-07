@@ -121,10 +121,11 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   const scene = await selectOne('scenes', { id: shot.scene_id });
+  const ignoreContinuity = String(project.video_model || '').startsWith('seedance');
 
   // Sequential enforcement only for continuity-linked shots.
   // Hard-cut shots are independent and can generate in parallel.
-  if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+  if (!ignoreContinuity && shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
     const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
     if (prevShot && !prevShot.video_asset_id) {
       return res.status(400).json({ error: 'Previous shot must have a generated video first (continuity dependency)' });
@@ -177,7 +178,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
         const endAssetId = shot.end_image_asset_id || shot.extracted_last_frame_asset_id;
         if (endAssetId) { const path = await resolveAssetPath(endAssetId); if (path) additionalRefs.push({ imagePath: path }); }
       } else if (ref.type === 'continuity') {
-        if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+        if (!ignoreContinuity && shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
           const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
           const cid = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
           if (cid) prevShotEndFramePath = await resolveAssetPath(cid);
@@ -207,7 +208,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
         if (path) environmentRef = { name: env.name, imagePath: path };
       }
     }
-    if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+    if (!ignoreContinuity && shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
       const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
       const cid = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
       if (cid) prevShotEndFramePath = await resolveAssetPath(cid);
