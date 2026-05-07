@@ -522,11 +522,13 @@ IMPORTANT — character and environment assignment:
 export const refineScript = async (
   currentScript: { cast: any[]; environments: any[]; scenes: any[] },
   feedback: string,
-  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number }
+  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = context.basePacing || 8;
   const minDuration = context.minShotDuration || 4;
+  const isSeedanceStoryboard = context.videoModel?.startsWith('seedance');
+  const seedanceMaxDuration = 15;
 
   const currentJson = JSON.stringify({
     cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
@@ -538,11 +540,25 @@ export const refineScript = async (
       narrativeDescription: s.narrativeDescription || s.narrative_description,
       shots: (s.shots || []).map((sh: any) => ({
         direction: sh.direction || sh.visual_prompt || '',
+        duration: sh.duration,
         castNames: sh.castNames || sh.cast_names || [],
         environmentName: sh.environmentName || sh.environment_name || '',
       }))
     }))
   }, null, 2);
+
+  const pacingGuidance = isSeedanceStoryboard
+    ? `SEEDANCE STORYBOARD PACING:
+Video model: ${context.videoModel}
+In this mode, a Lahari "shot" is a storyboard clip, not one continuous camera take.
+Each shot may contain internal edits, multiple angles, and beat hits, but it must still serve one clear story/music idea.
+
+Allowed range: 4-${seedanceMaxDuration} seconds per shot.
+For each scene, shot durations must add up to the scene duration exactly.
+If you edit a scene, include duration for every shot in that scene. Preserve existing durations in untouched scenes.
+Do not create zero-second cuts or filler shots.`
+    : `SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
+Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.`;
 
   const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
 
@@ -557,8 +573,7 @@ MEANING: ${context.meaning}
 
 MUSICAL STRUCTURE: ${context.musicalStructure}
 
-SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
-Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.
+${pacingGuidance}
 
 ═══════════════════════════════════════
 CURRENT SCRIPT (your starting point):
@@ -580,6 +595,7 @@ REFINEMENT PRINCIPLES:
 3. RESPECT the existing cast and environments. These may already have locked reference images. Do NOT rename characters or environments — their names are IDs in the system. You may add new ones if the feedback requires new characters or locations.
 4. MAINTAIN musical structure. Section labels and timestamps are fixed — they come from the audio analysis. Do not change them.
 5. Every shot MUST have castNames (characters visible) and environmentName (location). This is critical — the video model uses these to send reference images for consistency.
+${isSeedanceStoryboard ? '6. In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive storyboard clip. Include shot.duration for every shot.' : ''}
 
 CAST rules (same as original script):
 - Description = physical appearance for image generation. 2-3 sentences.
@@ -592,7 +608,7 @@ ENVIRONMENT rules:
 
 Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
 
-  console.log(`[refineScript] Extended thinking + validation loop (pacing=${pacing}s)`);
+  console.log(`[refineScript] Extended thinking + validation loop (pacing=${pacing}s, seedanceStoryboard=${!!isSeedanceStoryboard})`);
 
   let messages: any[] = [{ role: 'user', content: prompt }];
   let data: { cast: any[]; environments: any[]; scenes: any[] } | null = null;
@@ -616,14 +632,30 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
     const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
     if (!candidate.environments) candidate.environments = [];
 
-    // Validate shot counts
+    // Validate shot counts/durations
     const errors: string[] = [];
     for (const scene of candidate.scenes) {
       const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
       if (sceneDuration <= 0) continue;
-      const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
-      if ((scene.shots?.length || 0) !== expectedShots) {
-        errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} expected.`);
+      if ((scene.shots?.length || 0) === 0) {
+        errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
+      }
+      if (isSeedanceStoryboard) {
+        const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
+        shotDurations.forEach((duration: number, idx: number) => {
+          if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
+          if (duration > 0 && duration < 4) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
+          if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
+        });
+        const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
+        if (Math.abs(total - sceneDuration) > 0.01) {
+          errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): shot durations add to ${total}s, must add to ${sceneDuration}s exactly.`);
+        }
+      } else {
+        const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
+        if ((scene.shots?.length || 0) !== expectedShots) {
+          errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} expected.`);
+        }
       }
     }
 
@@ -644,7 +676,7 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\nShots per scene = ceil(scene_duration / ${pacing}). Fix and resubmit.` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Seedance storyboard shots must each be 4-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Shots per scene = ceil(scene_duration / ${pacing}). Fix and resubmit.`}` }
       ] },
     ];
   }
@@ -657,7 +689,9 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
     if (sceneDuration <= 0 || !scene.shots?.length) continue;
     const shotCount = scene.shots.length;
     for (let i = 0; i < shotCount; i++) {
-      if (i < shotCount - 1) {
+      if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
+        scene.shots[i].duration = Number(scene.shots[i].duration);
+      } else if (i < shotCount - 1) {
         scene.shots[i].duration = pacing;
       } else {
         const usedTime = (shotCount - 1) * pacing;

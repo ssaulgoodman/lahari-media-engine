@@ -250,6 +250,7 @@ router.post('/:id/refine-script', async (req, res) => {
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 8,
       minShotDuration: getModelMinDuration(project.video_model),
+      videoModel: project.video_model || undefined,
     });
     const durationMs = Date.now() - t0;
 
@@ -314,8 +315,11 @@ router.post('/:id/refine-script', async (req, res) => {
         narrative_description: scene.narrativeDescription, sort_order: sIdx,
       });
 
-      // Calculate per-shot durations: base pacing for all, last shot gets remainder (clamped)
+      // Calculate per-shot durations: standard mode uses base pacing +
+      // remainder; Seedance storyboard mode preserves the planner's 4-15s
+      // clip durations.
       const basePacing = project.target_duration || 8;
+      const isSeedanceStoryboard = String(project.video_model || '').startsWith('seedance');
       const sceneStartSec = parseTimestamp(scene.startTime);
       const sceneEndSec = parseTimestamp(scene.endTime);
       const sceneDuration = Math.max(0, sceneEndSec - sceneStartSec);
@@ -328,9 +332,10 @@ router.post('/:id/refine-script', async (req, res) => {
           .filter(Boolean);
         const envId = shot.environmentName ? envNameToId.get(shot.environmentName.toLowerCase()) : null;
 
-        // Last shot gets remainder (with ceil pacing, remainder ≤ basePacing). Safety clamp at 2×.
-        let duration = basePacing;
-        if (shIdx === shotCount - 1 && sceneDuration > 0) {
+        let duration = Number(shot.duration || 0) > 0 && isSeedanceStoryboard
+          ? Number(shot.duration)
+          : basePacing;
+        if (!isSeedanceStoryboard && shIdx === shotCount - 1 && sceneDuration > 0) {
           const remainder = sceneDuration - (shotCount - 1) * basePacing;
           duration = Math.max(1, Math.min(remainder, basePacing * 2));
         }
@@ -372,7 +377,8 @@ router.post('/:id/refine-script', async (req, res) => {
 // ─── Write Shot Prompts (after all creative decisions locked) ────────
 // Input: project with script skeleton + locked style DNA + locked characters
 // Output: visualPrompt + motionPrompt written into each shot record
-// Stored: shots.visual_prompt, shots.motion_prompt (overwritten from direction placeholders)
+// Stored: shots.visual_prompt, shots.motion_prompt. Shot direction remains the
+// preserved beat/intent and is used as input, not overwritten.
 
 router.post('/:id/write-shot-prompts', async (req, res) => {
   const project = await selectOne('projects', { id: paramStr(req.params.id) });

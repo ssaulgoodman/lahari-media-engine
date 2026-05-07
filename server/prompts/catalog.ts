@@ -769,7 +769,7 @@ Rewrite: theme, mood, conceptDirection. Output via tool.`,
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Refine script' and enter feedback.",
-    summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for pacing.',
+    summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for standard pacing or Seedance storyboard clip durations.',
     variables: [
       { name: 'currentScript', description: 'Full current script (cast, environments, scenes with shots)' },
       { name: 'feedback', description: 'Director feedback' },
@@ -778,12 +778,14 @@ Rewrite: theme, mood, conceptDirection. Output via tool.`,
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
+      { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip duration validation' },
     ],
     template: `Surgical refinement with 5 preservation rules. Extended thinking (8K budget) for pacing math.
-Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
-Validation loop: if shot counts wrong, errors sent back as tool_result.
+Standard mode: shot counts must equal ceil(scene_duration / {{pacing}}); last shot gets the remainder.
+Seedance storyboard mode: each shot is a 4-15s storyboard clip; shot durations must add exactly to the scene duration and each direction may describe 2-5 internal edited beats.
+Validation loop: if shot counts or Seedance durations are wrong, errors are sent back as tool_result.
 Same plan_music_video tool output.`,
-    source: { file: 'server/services/claude.ts', lines: '439-548' },
+    source: { file: 'server/services/claude.ts', lines: 'refineScript' },
   },
   {
     id: 'chained-shot-refresh',
