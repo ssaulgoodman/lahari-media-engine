@@ -12,9 +12,9 @@ This is Seedance-only for now. Veo stays on the keyframe path.
 
 ## Script Contract
 
-`server/services/claude.ts -> planScenes` is model-aware.
+`server/services/claude.ts -> planScenes` is model-aware by default. `server/services/openai-script.ts -> planScenesOpenAI` is available as an opt-in GPT-5.5 experiment via `scriptProvider: "openai"` or `SCRIPT_WRITER_PROVIDER=openai`.
 
-When `project.video_model` starts with `seedance`, Opus is told:
+When `project.video_model` starts with `seedance`, the script writer is told:
 
 - a Lahari shot is a storyboard clip, not one continuous camera take
 - each shot may contain internal edits, multiple angles, and beat hits
@@ -29,6 +29,8 @@ Validation enforces:
 - all shot durations in a scene add exactly to the scene duration
 
 `server/routes/generate-script.ts` preserves Opus-provided durations for Seedance shots and only uses fixed pacing/remainder logic for non-Seedance models.
+
+The GPT-5.5 script-writer experiment uses the same JSON shape and backend validation loop. Its prompt is intentionally more practical and shootable, avoiding pompous or invisible prose unless it maps to visible action.
 
 ## Storyboard Generation
 
@@ -48,14 +50,14 @@ The storyboard generator builds context from:
 - locked environment reference
 - locked style reference
 
-The default prompt variant is `adaptive_numbered_storyboard`.
+The default prompt variant is still named `adaptive_numbered_storyboard` for API compatibility, but the visual contract is now ordered, not visibly numbered.
 
 The storyboard image contract:
 
 - one board for the exact shot, not the whole scene
 - 3-6 panels depending on pacing
-- panels must include small clear order numbers only: `1`, `2`, `3`, etc.
-- no captions, subtitles, speech bubbles, logos, watermarks, or readable labels
+- panel order is left-to-right, then top-to-bottom
+- do not print panel numbers, labels, arrows, captions, subtitles, speech bubbles, logos, watermarks, or any readable text into the storyboard image
 - stable spatial map and coherent screen direction across cuts
 - all objects and gestures must come from the shot, refs, and devotional context
 
@@ -131,32 +133,35 @@ When the selected video model is Seedance and the shot has a locked storyboard, 
 
 Reference ordering is important:
 
-- `@image1` is always the locked numbered storyboard
+- `@image1` is always the locked ordered storyboard
 - `@image2+` are the exact style, cast, and environment refs used to create the storyboard
 - frontend video refs are ignored in storyboard mode so `@imageN` stays deterministic
 
 The generated Seedance prompt says:
 
-- follow `@image1` panels in order
+- follow `@image1` panels left-to-right, then top-to-bottom
 - treat `@image1` as source of truth for composition, blocking, screen direction, cut order, and camera progression
+- if an old storyboard contains panel numbers, labels, borders, or guide marks, treat them only as sequencing guides and do not render them into the video
 - use all other images only as consistency anchors
 - use the saved cut plan text as the motion/cut guide
 - do not replace storyboard composition with a composition from reference images
 - do not invent a different devotional object or character blocking than the storyboard
-- do not generate audio, subtitles, text, logos, or watermarks
+- do not generate audio, panel numbers, subtitles, text, logos, watermarks, or storyboard borders
 
 Seedance is called with `startImagePath = undefined` in storyboard mode, so `reference_images` carries storyboard plus refs. This avoids the Segmind Seedance mutual-exclusion rule between `first_frame_url` and `reference_images`.
 
+Seedance storyboard mode also ignores the old keyframe continuity chain: Studio does not block on `prev_shot`, start-frame generation skips continuity gates for Seedance, and video generation skips chained prompt refresh when a locked storyboard is driving the clip.
+
 ## UI Handoff For Claude Code
 
-Do not keep storyboard as a separate embedded panel. The clean UI contract is:
+Do not keep storyboard as a separate card above the shot. The current UI contract is:
 
 - Studio header has a mode toggle: `Storyboard | Keyframe`
 - Storyboard mode is enabled only for Seedance models; gray it out for Veo
-- In Storyboard mode, `PromptToolkit` gets a first tab named `Storyboard`
-- Existing `First frame` and `Last frame` tabs remain visible but disabled/locked in Storyboard mode
+- In Storyboard mode, `ShotCard` swaps the keyframe `PromptToolkit` for `StoryboardPanel`
+- `StoryboardPanel` has Storyboard and Video sub-tabs
 - `Video` stays in the same shot card, same place as today
-- The storyboard tab reuses the toolkit structure:
+- The storyboard sub-tab owns:
   - refs chips show the locked refs being used
   - main prompt/text area displays the active cut plan text when available
   - editing the cut plan calls `api.updateStoryboardPlan`
@@ -168,7 +173,7 @@ Do not keep storyboard as a separate embedded panel. The clean UI contract is:
 - Bulk `Storyboards` generation belongs in the Studio header when Storyboard mode is active
 - Bulk `Videos` should enable only for shots with `storyboardLocked && storyboardUrl`
 
-Implementation note: the old throwaway `ShotStoryboardPanel` spike has been removed. The target UI is a `PromptToolkit` tab, not a separate card.
+Implementation note: the old throwaway `ShotStoryboardPanel` spike has been removed. The current implementation is `components/StoryboardPanel.tsx`, not a separate card.
 
 ## Test Path
 
@@ -180,4 +185,4 @@ Backend/manual test order:
 4. `PATCH /storyboard-plan` with a small edited cut plan.
 5. `POST /lock-storyboard`.
 6. `POST /generate-video`.
-7. Confirm the logged Seedance prompt binds `@image1` to the numbered storyboard and includes the edited cut plan.
+7. Confirm the logged Seedance prompt binds `@image1` to the ordered storyboard, includes the edited cut plan, and forbids visible panel numbers/text from appearing in the final video.

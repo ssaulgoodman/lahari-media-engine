@@ -16,6 +16,8 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 **Env vars required:**
 - `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
+- `OPENAI_API_KEY` — Seedance storyboard generation via Responses API (`gpt-5.5` reasoning + `gpt-image-2` image tool). Also used by the optional GPT script-writer experiment.
+- `SCRIPT_WRITER_PROVIDER=openai` (optional) — routes `generate-script` to GPT-5.5 instead of Claude Opus for testing more practical, less literary scripts. Defaults to Claude. `OPENAI_SCRIPT_MODEL` can override the model id.
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
@@ -53,14 +55,15 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage, creates Lahari project.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
-   - Script (Claude Sonnet, proposes cast + environments + scenes + shots, tagged continuity_from, regen with note)
+   - Script (Claude Opus by default, optional GPT-5.5 experiment, proposes cast + environments + scenes + shots with validated durations)
    - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA)
    - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
    - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
-   - Auto-writes shot prompts (Claude Sonnet) with full context at the end.
+   - Auto-writes shot prompts (Claude Opus) with full context at the end.
 3. **Studio** (`Storyboard.tsx`) — Per-shot:
-   - Generate start frame (Gemini 3 Pro Image with full ref chain)
-   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind, start keyframe only)
+   - Keyframe mode: generate start frame (Gemini 3 Pro Image with full ref chain)
+   - Seedance storyboard mode: generate/refine/lock an ordered storyboard board first, then generate video from storyboard + refs
+   - Generate video (Veo 3.1 or Seedance 2.0 via Segmind)
    - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
    - Lock shot (requires start + video)
 4. **Render** (`StepRender.tsx`) — Client-side FFmpeg WASM stitches videos + audio.
@@ -70,13 +73,15 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, style brainstorm | `claude-opus-4-6` | claude.ts | Anthropic API |
-| Meaning, script, style refine/enrich, shot prompts, refineShotPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Concept, script, style brainstorm, shot prompts | `claude-opus-4-7` | claude.ts | Anthropic API |
+| Meaning, style refine/enrich, refineShotPrompt, refineMotionPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
+| Script experiment | `gpt-5.5` (opt-in via `scriptProvider: "openai"` / `SCRIPT_WRITER_PROVIDER=openai`) | openai-script.ts | OpenAI Responses API structured output |
 | All image gen | `gemini-3-pro-image-preview` | imagen.ts | Gemini Developer API |
+| Seedance storyboards | `gpt-5.5` + image tool `gpt-image-2` | storyboard.ts / openai-image.ts | OpenAI Responses API |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
-**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs. Seedance models accept `first_frame_url` + `last_frame_url` + up to 9 `reference_images`. All models support end-frame conditioning and ref images. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
+**All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs. **Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes `first_frame_url`; storyboard mode intentionally sends no `first_frame_url` and sends the locked storyboard as `@image1` plus locked style/cast/environment refs as `reference_images`. `ffmpeg.ts` provides `extractLastFrame` (provider-independent).
 
 **Why Segmind over Vertex**: Vertex AI's RAI safety filter silently blocks AI-generated frames (especially faces). Segmind proxies the same models with a different safety policy. Veo 3.1 Fast costs $0.10/s (vs $0.08/s on Vertex) — 25% premium for actually working. Seedance on Segmind is cheapest across all providers ($0.146/s Fast, $0.182/s Std).
 
@@ -89,6 +94,12 @@ No end-frame prediction. Shot = start frame + motion prompt → video plays natu
 **Bulk fan-out (throttled, multi-pass)**: `App.tsx` exposes three bulk actions — `Write prompts`, `Generate all frames (N)`, `Generate all videos (N)`. Under the hood `runWithConcurrency` caps parallel execution at **5 for videos**, **10 for frames**. Both bulk handlers use a **multi-pass loop**: after each pass completes, project state is refreshed from the server and newly unblocked `prev_shot` items are picked up automatically. Failed shots (ERROR status) are excluded from automatic requeue — artist sees them in UI and can retry manually.
 
 **Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
+
+**Seedance storyboard mode:** Seedance ignores the old continuity chain entirely. Studio does not block on `prev_shot`, `generate-image` skips continuity refs/gates for Seedance, and `generate-video` skips chained prompt refresh when using a locked storyboard. A Lahari shot becomes one 4-15s storyboard-controlled edited clip; internal cuts live in the storyboard/cut plan, not in chained keyframes.
+
+**Storyboard contract:** future boards are ordered, not visibly numbered. Panels read left-to-right, then top-to-bottom. Do not print panel numbers, captions, arrows, labels, or readable text into the storyboard image; Seedance can render those marks into final footage. The Seedance video prompt defensively tells the model to treat any legacy numbers/labels/borders as sequencing guides only and not reproduce them.
+
+**Bulk stop semantics:** Studio bulk buttons can stop queued work and abort browser requests. Already-started provider calls may still finish server-side and appear later; the UI says "Stop queue" / "Stop waiting" instead of promising hard cancellation.
 
 ### Reference chain for shot start frame
 
@@ -122,7 +133,8 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
 - `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
-- `lahari_scenes`, `lahari_shots` (with `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `prompts_stale`)
+- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `storyboard_asset_id`, `storyboard_version_id`, `storyboard_locked`, `storyboard_status`, `prompts_stale`)
+- `lahari_storyboard_versions` — storyboard history per shot: OpenAI response id, image call ids, prompt, refs, parent version, locked flag, and `metadata.cutPlanText`
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
@@ -158,7 +170,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 **Blueprint:**
 - `POST /api/projects/:id/generate-concepts` (userNote optional)
-- `POST /api/projects/:id/generate-script` (userNote optional)
+- `POST /api/projects/:id/generate-script` (userNote optional; experimental `scriptProvider: "openai"` switches to GPT-5.5)
 - `POST /api/projects/:id/brainstorm-styles`, `visualize-style`, `refine-style-direction`, `analyze-style-image`, `lock-style`, `unlock-style`
 - `POST /api/projects/:id/generate-looks`, `lock-character`, `advance-characters`
 - `POST /api/projects/:id/generate-environment-look`, `lock-environment`, `advance-environments`
@@ -167,6 +179,8 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Studio:**
 - `POST /api/projects/:id/shots/:shotId/generate-image`
 - `POST /api/projects/:id/shots/:shotId/generate-video` (accepts `promptOverride`)
+- `POST /api/projects/:id/shots/:shotId/generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`
+- `PATCH /api/projects/:id/shots/:shotId/storyboard-plan`, `GET /api/projects/:id/shots/:shotId/storyboard-history`
 - `POST /api/projects/:id/shots/:shotId/refine-prompt` (vision + rewrite based on feedback, accepts multipart with referenceImage)
 - `POST /api/projects/:id/shots/:shotId/refine-end-frame-prompt` (same pattern for end frame)
 - `POST /api/projects/:id/shots/:shotId/lock` / `unlock`
@@ -203,8 +217,8 @@ The `index.html` `<style>` block has a commented spec. Short version:
 Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/segmind.ts` (`SEGMIND_MODELS`). All four models route through Segmind:
 - `veo-3.1-fast` — 8s fixed, $0.10/s, supports last frame
 - `veo-3.1` — 4s/6s/8s, $0.20/s, supports last frame
-- `seedance-2.0-fast` — 5s/10s, $0.146/s, supports last frame + up to 9 ref images
-- `seedance-2.0` — 5s/10s, $0.182/s, supports last frame + up to 9 ref images
+- `seedance-2.0-fast` — 5s/10s, $0.146/s, frame URLs OR ref images (mutually exclusive)
+- `seedance-2.0` — 5s/10s, $0.182/s, frame URLs OR ref images (mutually exclusive)
 
 Pacing buttons in the Script phase are derived from the selected model's `durations`.
 

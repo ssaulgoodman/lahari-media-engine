@@ -135,11 +135,11 @@ The locked concept is NOT frozen. Three ways to adjust:
 
 ## Step 3: Script Generation
 
-**Source:** [`server/services/claude.ts` → `planScenes`](../server/services/claude.ts) · Route: `server/routes/generate-script.ts` → `POST /:id/generate-script`
+**Source:** [`server/services/claude.ts` → `planScenes`](../server/services/claude.ts) by default; optional [`server/services/openai-script.ts` → `planScenesOpenAI`](../server/services/openai-script.ts) via `scriptProvider: "openai"` / `SCRIPT_WRITER_PROVIDER=openai` · Route: `server/routes/generate-script.ts` → `POST /:id/generate-script`
 
 | | |
 |---|---|
-| **Model** | Claude Opus (claude.ts → `planScenes`) |
+| **Model** | Claude Opus by default. GPT-5.5 is available as an opt-in script-writer experiment for more practical, less literary plans. |
 | **Input** | locked_concept + lyrics + meaning + musicalStructure + videoMode + pacing + minShotDuration + `userNote` |
 | **Output** | `cast[]` + `environments[]` + `scenes[shots[]]` |
 | **Artist control** | Direct edit (scene narratives + shot directions inline, saves on blur with "Saved" flash). LLM refine. Full regenerate. Prompt viewable via toggle. |
@@ -167,6 +167,8 @@ Claude receives explicit structural guidance based on the chosen mode:
 
 1. **Refine** (Claude Opus + extended thinking) — Claude sees the FULL current script + director's feedback. Surgical refinement with 5 preservation rules. Same validation loop.
 2. **Regenerate** (Claude Opus + extended thinking) — fresh generation from concept + lyrics. Same validation loop.
+
+**GPT-5.5 experiment:** `openai-script.ts` uses Responses API structured output with the same JSON shape and the same backend validation loop. It is intentionally opt-in only while we compare script taste against Opus. The prompt biases toward concrete, shootable devotional action and avoids pompous/non-renderable prose.
 
 **Style image as ground truth:** Style DNA text removed from all Gemini image gen prompts. Gemini receives only the style reference image and is told to match it exactly.
 
@@ -331,7 +333,7 @@ The prompt now stays intentionally lean:
 |---|---|
 | **Model** | OpenAI Responses API with `gpt-5.5` + image tool using `gpt-image-2` |
 | **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs |
-| **Output** | Numbered 3-6 panel storyboard image + text cut plan saved on `lahari_storyboard_versions.metadata.cutPlanText` |
+| **Output** | Ordered 3-6 panel storyboard image + text cut plan saved on `lahari_storyboard_versions.metadata.cutPlanText` |
 | **Artist control** | Generate, natural-language refine, lock/unlock, history, editable cut-plan text |
 | **generation_prompt** | Built from the canonical template; cut-plan text is editable after generation and feeds Seedance video prompting |
 
@@ -339,9 +341,9 @@ The prompt now stays intentionally lean:
 
 **API endpoints:** `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
 
-**UI target:** Storyboard belongs as a first tab inside `PromptToolkit` when the Studio mode is `Storyboard`. Do not embed a separate storyboard card above the media/toolkit stack. See [`docs/seedance-storyboard-workflow.md`](seedance-storyboard-workflow.md).
+**UI:** In Seedance storyboard mode, `ShotCard` swaps the keyframe `PromptToolkit` for `StoryboardPanel`. The panel has Storyboard and Video sub-tabs: Storyboard handles ordered cut-plan editing, generate/refine/lock, and history; Video previews `@image1 = locked storyboard` plus bound refs and fires Seedance only after the storyboard is locked.
 
-**Status: IN PROGRESS** — backend contract and endpoints are wired; final UI should be implemented as a `PromptToolkit` tab.
+**Status: DONE / ARTIST TESTING** — backend, UI, history, editable cut plan, lock/save race guard, no-empty-plan guard, and Seedance prompt integration are wired.
 
 ---
 
@@ -407,11 +409,13 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 
 **Seedance constraint:** `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control when a start frame exists. Storyboard mode intentionally sends no `first_frame_url`; it sends the locked storyboard and refs through `reference_images` so `@image1` is the storyboard source of truth.
 
+**Storyboard text/no-number guard:** Seedance can copy visible storyboard marks into footage. Storyboard prompts now forbid visible panel numbers, labels, borders, captions, and readable text; panel order is left-to-right, then top-to-bottom. The video prompt also says any legacy numbers/labels/borders in `@image1` are sequencing guides only and must not appear in the final video.
+
 **Error transparency:** `last_error` column on shots — saved on failure (truncated 500 chars), cleared on success. Shown in shot card error banner.
 
 **Version history:** `GET history` returns all versions for first frame, last frame, and video. Revert endpoints swap active pointers. Assets track `shot_id` + `category`.
 
-**Status: DONE.** All 3 tabs have unified toolkit: Refs → Prompt (@mention) → Generate → Refine.
+**Status: DONE.** Keyframe mode uses the unified toolkit. Storyboard mode uses the locked storyboard + cut plan as the video prompt source.
 
 ---
 
@@ -442,6 +446,8 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | **Artist control** | Marks `refined_from_prev_frame`. Artist can override. |
 
 **Status: DONE** — clears `prompts_stale` on the refreshed shot. Automatic but non-destructive — artist sees the `refined_from_prev_frame` flag and can undo. Uses `direction` field to honor the shot's creative intent while adjusting for visual continuity. No style/mood/scene narrative — just frame + drafts + intent + names.
+
+**Seedance exception:** chained-shot prompt refresh is skipped when video generation uses a locked storyboard. Seedance storyboard mode does not wait on `prev_shot`; continuity is handled inside the ordered storyboard/cut plan instead of through the old extracted-frame chain.
 
 ---
 
