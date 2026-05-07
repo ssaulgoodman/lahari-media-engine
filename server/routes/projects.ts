@@ -383,7 +383,7 @@ const getFullProject = async (projectId: string) => {
     })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
-    imageModel: project.image_model || 'gemini-3-pro',
+    imageModel: project.image_model || 'nano-banana-2',
     videoModel: project.video_model || 'veo-3.1',
     aspectRatio: project.aspect_ratio || '16:9',
     videoResolution: project.video_resolution || '720p',
@@ -514,7 +514,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     title,
     status: 'analyzing',
     audio_path: audioPath,
-    image_model: 'gemini-3-pro',
+    image_model: 'nano-banana-2',
     user_id: req.userId,
   });
 

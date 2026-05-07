@@ -1,7 +1,7 @@
 export interface ImageModelSpec {
   key: string;
   label: string;
-  provider: 'google' | 'openai';
+  provider: 'google' | 'openai' | 'segmind';
   runtimeModel: string;
   supportsRefs: boolean;
   maxRefs: number;
@@ -9,6 +9,15 @@ export interface ImageModelSpec {
 }
 
 export const IMAGE_MODELS: ImageModelSpec[] = [
+  {
+    key: 'nano-banana-2',
+    label: 'Nano Banana 2',
+    provider: 'segmind',
+    runtimeModel: 'nano-banana-2',
+    supportsRefs: true,
+    maxRefs: 14,
+    note: 'Practical default via Segmind. Lower-cost image refs for style, looks, and frames.',
+  },
   {
     key: 'gemini-3-pro',
     label: 'Gemini 3 Pro',
@@ -34,3 +43,6 @@ export const getImageModel = (key: string | undefined | null): ImageModelSpec =>
 
 export const isOpenAIImageModel = (key: string | undefined | null): boolean =>
   getImageModel(key).provider === 'openai';
+
+export const isSegmindImageModel = (key: string | undefined | null): boolean =>
+  getImageModel(key).provider === 'segmind';

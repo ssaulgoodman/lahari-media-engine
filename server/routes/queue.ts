@@ -135,7 +135,7 @@ router.post('/:queueId/start', async (req, res) => {
       song_type: cached.cached_song_type || null,
       is_narrative: cached.cached_is_narrative ?? null,
       is_meditative: cached.cached_is_meditative ?? null,
-      image_model: 'gemini-3-pro',
+      image_model: 'nano-banana-2',
       user_id: req.userId,
       source_queue_id: queueId,
     });
