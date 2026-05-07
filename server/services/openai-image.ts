@@ -147,6 +147,8 @@ export const generateOpenAIImageWithResponses = async (
   imagePaths: string[];
   responseId: string;
   imageGenerationCallIds: string[];
+  imageGenerationRevisedPrompts: string[];
+  outputText: string;
   reasoningModel: string;
   imageModel: string;
 }> => {
@@ -178,6 +180,13 @@ export const generateOpenAIImageWithResponses = async (
   });
 
   const imageCalls = (response.output || []).filter((item: any) => item.type === 'image_generation_call');
+  const outputText = (response.output || [])
+    .filter((item: any) => item.type === 'message')
+    .flatMap((item: any) => item.content || [])
+    .filter((content: any) => content.type === 'output_text' && content.text)
+    .map((content: any) => content.text)
+    .join('\n\n')
+    .trim();
   const imagePaths: string[] = [];
   for (const call of imageCalls) {
     if (!call.result) continue;
@@ -189,6 +198,8 @@ export const generateOpenAIImageWithResponses = async (
     imagePaths,
     responseId: response.id,
     imageGenerationCallIds: imageCalls.map((call: any) => call.id).filter(Boolean),
+    imageGenerationRevisedPrompts: imageCalls.map((call: any) => call.revised_prompt).filter(Boolean),
+    outputText,
     reasoningModel: OPENAI_RESPONSES_IMAGE_MODEL,
     imageModel: OPENAI_MODEL,
   };

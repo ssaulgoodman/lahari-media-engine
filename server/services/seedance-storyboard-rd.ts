@@ -158,7 +158,14 @@ Storyboard requirements:
 - avoid generic magical particles, floating symbols, or abstract energy unless the clip direction explicitly requires them
 - make the board useful as a Seedance reference image, not a poster or concept art sheet
 
-Output only the storyboard image.`;
+Also return a concise cut plan outside the image, in plain text, using this exact shape:
+Storyboard cut plan:
+Panel 1 [00:00-..] - camera: ...; action: ...; Seedance cue: ...
+Panel 2 [...] - camera: ...; action: ...; Seedance cue: ...
+Panel 3 [...] - camera: ...; action: ...; Seedance cue: ...
+Panel 4 [...] - camera: ...; action: ...; Seedance cue: ...
+
+The generated storyboard image itself must still contain no text, no labels, and no panel numbers.`;
 };
 
 const seedanceShotList = (input: StoryboardRdInput, minimal = false): string => {

@@ -150,6 +150,8 @@ ${basePrompt}`
         storyboardVersionId: versionId,
         openaiResponseId: result.responseId,
         imageGenerationCallIds: result.imageGenerationCallIds,
+        imageGenerationRevisedPrompts: result.imageGenerationRevisedPrompts,
+        responseText: result.outputText,
       }),
     });
 
@@ -170,6 +172,8 @@ ${basePrompt}`
         variant: opts.variant || 'four_panel_clean',
         clipDuration: ctx.input.clipDuration,
         sceneLabel: ctx.input.sceneLabel,
+        cutPlanText: result.outputText || null,
+        revisedPrompt: result.imageGenerationRevisedPrompts[0] || null,
       },
       locked: false,
     });
