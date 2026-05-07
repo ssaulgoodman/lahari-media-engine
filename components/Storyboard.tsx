@@ -16,11 +16,13 @@ interface Props {
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateImage: (sceneId: string, shotId: string, refs?: ShotRefInput[]) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
-  onGenerateStoryboard?: (shotId: string) => void | Promise<void>;
-  onRefineStoryboard?: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
-  onLockStoryboard?: (shotId: string, versionId?: string) => void | Promise<void>;
-  onUnlockStoryboard?: (shotId: string) => void | Promise<void>;
-  onUpdateStoryboardPlan?: (shotId: string, cutPlanText: string) => void | Promise<void>;
+  // Required — App.tsx always wires these. Keeping them optional would force
+  // non-null asserts further down the tree (StoryboardPanel needs them).
+  onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
+  onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
+  onUnlockStoryboard: (shotId: string) => void | Promise<void>;
+  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUpdateProject?: (updates: Record<string, any>) => void;

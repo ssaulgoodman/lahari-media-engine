@@ -27,6 +27,7 @@ interface ShotVersionHistoryProps {
   projectId: string;
   shotId: string;
   storyboardSupported?: boolean;
+  defaultTab?: HistoryTab;
   activeStoryboardVersionId?: string;
   onRevertVideo?: (shotId: string, assetId: string) => void | Promise<void>;
   onSetProject?: (project: ApiProject) => void;
@@ -34,9 +35,12 @@ interface ShotVersionHistoryProps {
 }
 
 export const ShotVersionHistory: React.FC<ShotVersionHistoryProps> = ({
-  projectId, shotId, storyboardSupported, activeStoryboardVersionId, onRevertVideo, onSetProject, onClose,
+  projectId, shotId, storyboardSupported, defaultTab, activeStoryboardVersionId, onRevertVideo, onSetProject, onClose,
 }) => {
-  const [tab, setTab] = useState<HistoryTab>('firstFrame');
+  const initialTab: HistoryTab = defaultTab && (defaultTab !== 'storyboard' || storyboardSupported)
+    ? defaultTab
+    : 'firstFrame';
+  const [tab, setTab] = useState<HistoryTab>(initialTab);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<HistoryData>({ firstFrame: [], lastFrame: [], storyboard: [], video: [] });
 
@@ -44,7 +48,7 @@ export const ShotVersionHistory: React.FC<ShotVersionHistoryProps> = ({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setTab('firstFrame');
+    setTab(initialTab);
     const frames = getShotHistory(projectId, shotId).catch(() => ({ firstFrame: [], lastFrame: [], video: [] }));
     const story = storyboardSupported
       ? getStoryboardHistory(projectId, shotId).catch(() => ({ versions: [] }))
@@ -56,7 +60,8 @@ export const ShotVersionHistory: React.FC<ShotVersionHistoryProps> = ({
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [projectId, shotId, storyboardSupported]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, shotId, storyboardSupported, defaultTab]);
 
   const refreshHistory = async () => {
     const [f, s] = await Promise.all([
