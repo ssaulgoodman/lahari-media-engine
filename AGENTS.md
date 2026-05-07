@@ -2,6 +2,17 @@
 
 Guidance for Codex when working in this repo.
 
+## Workspace Layout
+
+This checkout is the **preset abstraction lane**.
+
+- Parent folder: `/Users/ssaulgoodman/Code/lahari-media-engine/` — not a git repo.
+- Main/deploy checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` on `main`.
+- Codex-native checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` on `codex-native-studio`.
+- Preset abstraction checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `codex/preset-abstraction`.
+
+Do preset/generalization work here. Do not switch the main checkout away from `main` for this lane, and do not use this checkout for urgent production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
+
 ## Build & Run
 
 ```bash
