@@ -13,6 +13,24 @@ This checkout is the **preset abstraction lane**.
 
 Do preset/generalization work here. Do not switch the main checkout away from `main` for this lane, and do not use this checkout for urgent production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
+## Preset Abstraction Context
+
+This lane is for making Lahari less hardcoded to bhakti/devotional videos without breaking Lahari. Treat the current Lahari devotional workflow as the first strong preset sitting on top of a more general music/video production engine.
+
+North star:
+- Preserve the existing Lahari behavior as the default devotional preset.
+- Extract domain taste into preset configuration: concept/script prompt rules, cultural constraints, queue/source assumptions, model defaults, style/cast/environment guidance, and output format defaults.
+- Keep deterministic pipeline semantics intact: Blueprint -> Looks -> Studio -> Render. Do not replace the pipeline with a generic agent loop.
+- Prove the abstraction with one real second preset, likely `generic_music_video`, before broadening to reels, clips, ads, performance videos, or short-film scenes.
+- Prefer a strangler approach: add a `PipelinePreset` shape and route prompt/model/default choices through it, then migrate hardcoded devotional assumptions gradually.
+
+Good starting docs:
+- `docs/world-class-plan.md` — product north star; explicitly frames Lahari as the first vertical workflow, not the final product boundary.
+- `docs/pipeline-anatomy.md` — current pipeline trace and known hardcoded devotional points; search for "preset" and "Devotional cinema".
+- `docs/seedance-storyboard-workflow.md` — current Seedance storyboard baseline that the abstraction must preserve.
+- `docs/assistant-director-plan.md` — adjacent future lane for agentic orchestration; useful context, but do not mix it into the preset abstraction unless asked.
+- `docs/learning-loop-plan.md` — later feedback/research loop; useful after presets exist.
+
 ## Build & Run
 
 ```bash
