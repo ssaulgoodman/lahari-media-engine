@@ -10,7 +10,7 @@ import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows, getSB, T } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
-import { getFullProject } from './projects.js';
+import { getFullProject, forkProject } from './projects.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -94,7 +94,17 @@ router.post('/:queueId/start', async (req, res) => {
         const project = await getFullProject(item.lahari_project_id);
         if (project) return res.json({ project, queueItem: item });
       }
-      // Different user's project — fall through to create a new one
+      // Different user's project — fork it under the current user so they
+      // inherit all the upstream creative work (concept, script, style, etc.)
+      // instead of starting from scratch.
+      if (existing) {
+        const forkedId = await forkProject(item.lahari_project_id, {
+          newUserId: req.userId,
+          newSourceQueueId: queueId,
+        });
+        const project = await getFullProject(forkedId);
+        if (project) return res.json({ project, queueItem: item });
+      }
     }
 
     // Get audio URL — prefer Supabase Storage, fall back to Google Drive

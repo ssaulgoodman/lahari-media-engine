@@ -795,8 +795,41 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
-  const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
+  const handleCancelShotImage = (shotId: string) => {
+    if (!project) return;
+    abortOp(`image:${shotId}`);
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scenes: prev.scenes.map(s => ({
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, imageStatus: GenerationStatus.IDLE } : sh)
+        }))
+      };
+    });
+    void api.cancelShotImage(project.id, shotId).catch((err: any) => {
+      setError(`Cancel image failed: ${err.message}`);
+    });
+  };
+
+  const handleCancelShotVideo = (shotId: string) => {
+    if (!project) return;
+    abortOp(`video:${shotId}`);
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scenes: prev.scenes.map(s => ({
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, videoStatus: GenerationStatus.IDLE } : sh)
+        }))
+      };
+    });
+    void api.cancelShotVideo(project.id, shotId).catch((err: any) => {
+      setError(`Cancel video failed: ${err.message}`);
+    });
+  };
 
   const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
@@ -1246,8 +1279,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     try {
       const result = await api.startProduction(queueId);
       setProject(result.project);
-      // Jump to Blueprint immediately — analysis runs in background
-      setCurrentStep(AppStep.BLUEPRINT);
+      setLookCandidates({});
+      setActiveSceneIdx(0);
+      // For fresh starts (analyzing) jump to Blueprint; for existing/forked
+      // projects route to whatever phase the project is in.
+      if (result.project.status === 'analyzing' || result.project.status === 'analyzed') {
+        setCurrentStep(AppStep.BLUEPRINT);
+      } else {
+        navigateToPhase(result.project);
+      }
       // Poll for analysis completion if still analyzing
       if (result.project.status === 'analyzing') {
         const projectId = result.project.id;
