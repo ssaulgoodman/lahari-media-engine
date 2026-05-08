@@ -102,10 +102,38 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
         style={{ maxHeight: 'calc(100vh - 6rem)' }}
       >
         <div className="px-3 py-2 sticky top-0 bg-[#141418]/95 backdrop-blur border-b border-white/[0.04] z-10">
-          <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
-            {showStoryboardCount && <><span className="text-white">{storyboardShots}</span>/{totalShots}sb · </>}
-            <span className="text-white">{frameShots}</span>/{totalShots}f · <span className="text-white">{videoShots}</span>/{totalShots}v
-            {lockedShots > 0 && <> · <span className="text-emerald-400/90">{lockedShots}</span>/{totalShots} locked</>}
+          {/* Compact single-line: lowercase labels in zinc, counts in white,
+              denominator only on the first stat (all share the same total),
+              locked count in emerald to match the locked-shot dot color. */}
+          <span className="text-[11px] font-mono tabular-nums whitespace-nowrap flex items-baseline gap-1.5 text-zinc-500">
+            {showStoryboardCount ? (
+              <>
+                <span>sb</span>
+                <span className="text-white">{storyboardShots}/{totalShots}</span>
+              </>
+            ) : (
+              <>
+                <span>f</span>
+                <span className="text-white">{frameShots}/{totalShots}</span>
+              </>
+            )}
+            {showStoryboardCount && (
+              <>
+                <span className="text-zinc-600">·</span>
+                <span>f</span>
+                <span className="text-white">{frameShots}</span>
+              </>
+            )}
+            <span className="text-zinc-600">·</span>
+            <span>v</span>
+            <span className="text-white">{videoShots}</span>
+            {lockedShots > 0 && (
+              <>
+                <span className="text-zinc-600">·</span>
+                <span className="text-emerald-400/70">L</span>
+                <span className="text-emerald-400/90">{lockedShots}</span>
+              </>
+            )}
           </span>
         </div>
 
