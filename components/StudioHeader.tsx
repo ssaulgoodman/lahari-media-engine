@@ -45,13 +45,11 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onEsc); };
   }, [contextPopover]);
 
-  // Derived stats
+  // Derived stats — only the bits this top bar still uses. Progress totals
+  // moved to StudioShotNav; per-bulk-button counts stay here so each button
+  // can show "(N)" remaining.
   const hasBulkPrompt = !!project?.lastWriteShotsPrompt;
   const totalShots = scenes.reduce((acc, s) => acc + s.shots.length, 0);
-  const lockedShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => x.locked).length, 0);
-  const videoShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.videoUrl).length, 0);
-  const frameShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.imageUrl).length, 0);
-  const storyboardShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.storyboardUrl).length, 0);
   const concept = project?.lockedConcept;
 
   const missingPromptCount = scenes.reduce(
@@ -93,15 +91,8 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   return (
     <div ref={contextBarRef} className="sticky top-0 z-40 mb-6">
       <div className="surface rounded-xl border border-white/[0.06] bg-[#141418] shadow-md shadow-black/15 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-        {/* Compact progress */}
-        <span className="text-[11px] text-zinc-400 font-mono tabular-nums mr-auto">
-          {studioMode === 'storyboard' && storyboardSupported ? <><span className="text-white">{storyboardShots}</span>/{totalShots}sb · </> : null}
-          <span className="text-white">{frameShots}</span>/{totalShots}f · <span className="text-white">{videoShots}</span>/{totalShots}v
-          {lockedShots > 0 && <> · <span className="text-white">{lockedShots}</span>/{totalShots} locked</>}
-        </span>
-
-        {/* Studio mode */}
-        <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.04]" title={storyboardSupported ? 'Choose the generation workflow for this Studio session.' : 'Storyboard mode is available for Seedance models.'}>
+        {/* Studio mode — leads the bar now that progress lives in the sidebar. */}
+        <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.04] mr-auto" title={storyboardSupported ? 'Choose the generation workflow for this Studio session.' : 'Storyboard mode is available for Seedance models.'}>
           <button
             onClick={() => storyboardSupported && onStudioModeChange('storyboard')}
             disabled={!storyboardSupported}

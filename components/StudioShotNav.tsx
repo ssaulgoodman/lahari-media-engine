@@ -23,6 +23,7 @@ import { VideoScene, VideoShot, GenerationStatus } from '../types';
 interface StudioShotNavProps {
   scenes: VideoScene[];
   isStoryboardMode: boolean;
+  storyboardSupported: boolean;
   activeShotId: string | null;
   frameQueue?: string[];
   videoQueue?: string[];
@@ -56,9 +57,17 @@ const dotClass = (s: DotState): string =>
     : 'bg-white/[0.12]';
 
 export const StudioShotNav: React.FC<StudioShotNavProps> = ({
-  scenes, isStoryboardMode, activeShotId, frameQueue, videoQueue, storyboardQueue,
+  scenes, isStoryboardMode, storyboardSupported, activeShotId, frameQueue, videoQueue, storyboardQueue,
   onJumpToShot, onJumpToScene,
 }) => {
+  // Progress totals — same math StudioHeader used to display in the top bar.
+  // Lives here now so the sidebar is the single place where status reads.
+  const totalShots = scenes.reduce((acc, s) => acc + s.shots.length, 0);
+  const lockedShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => x.locked).length, 0);
+  const videoShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.videoUrl).length, 0);
+  const frameShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.imageUrl).length, 0);
+  const storyboardShots = scenes.reduce((acc, s) => acc + s.shots.filter(x => !!x.storyboardUrl).length, 0);
+  const showStoryboardCount = isStoryboardMode && storyboardSupported;
   // Only auto-scroll the sidebar to follow the active shot when the user
   // hasn't manually scrolled the sidebar in the last ~1.5s — otherwise the
   // sidebar fights the user's intent.
@@ -93,7 +102,11 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
         style={{ maxHeight: 'calc(100vh - 6rem)' }}
       >
         <div className="px-3 py-2 sticky top-0 bg-[#141418]/95 backdrop-blur border-b border-white/[0.04] z-10">
-          <span className="text-[11px] uppercase tracking-wider text-zinc-400">Shots</span>
+          <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
+            {showStoryboardCount && <><span className="text-white">{storyboardShots}</span>/{totalShots}sb · </>}
+            <span className="text-white">{frameShots}</span>/{totalShots}f · <span className="text-white">{videoShots}</span>/{totalShots}v
+            {lockedShots > 0 && <> · <span className="text-emerald-400/90">{lockedShots}</span>/{totalShots} locked</>}
+          </span>
         </div>
 
         {scenes.map((scene, sceneIdx) => (

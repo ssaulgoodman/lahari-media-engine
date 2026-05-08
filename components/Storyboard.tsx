@@ -332,6 +332,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
       <StudioShotNav
         scenes={scenes}
         isStoryboardMode={isStoryboardModeActive}
+        storyboardSupported={storyboardSupported}
         activeShotId={activeShotId}
         frameQueue={frameQueue}
         videoQueue={videoQueue}
