@@ -18,7 +18,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { getStoryboardHistory } from '../services/api';
-import type { ShotRefInput } from '../services/api';
+import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
 
 type SubTab = 'storyboard' | 'video';
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
@@ -38,7 +38,7 @@ interface StoryboardPanelProps {
 
   // Storyboard callbacks — required at this boundary; parent guarantees them.
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
-  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
+  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
@@ -58,6 +58,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   setModalImage,
 }) => {
   const [subTab, setSubTab] = useState<SubTab>('storyboard');
+  const [refineMode, setRefineMode] = useState<StoryboardRefineMode>('replan');
 
   // Cut plan is controlled — local state mirrors the active version's text.
   const [cutPlanText, setCutPlanText] = useState<string>('');
@@ -180,7 +181,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     const key = `storyboard:${shot.id}`;
     onRefineStart(key);
     try {
-      await onRefineStoryboard(shot.id, feedback, versionId);
+      await onRefineStoryboard(shot.id, feedback, versionId, refineMode);
     } finally {
       onRefineEnd(key);
     }
@@ -245,6 +246,8 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           dirty={dirty}
           cutPlanRequired={cutPlanRequired}
           cutPlanText={cutPlanText}
+          refineMode={refineMode}
+          onRefineModeChange={setRefineMode}
           onCutPlanChange={(v) => { setCutPlanText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onPlanBlur={flushPlan}
           onPlanRetry={flushPlan}
@@ -286,6 +289,8 @@ interface StoryboardTabBodyProps {
   dirty: boolean;
   cutPlanRequired: boolean;
   cutPlanText: string;
+  refineMode: StoryboardRefineMode;
+  onRefineModeChange: (mode: StoryboardRefineMode) => void;
   onCutPlanChange: (v: string) => void;
   onPlanBlur: () => Promise<boolean>;
   onPlanRetry: () => Promise<boolean>;
@@ -299,6 +304,7 @@ interface StoryboardTabBodyProps {
 const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   shot, isLocked, isGenerating, isError, isRefining, hasStoryboard, versionId,
   planLoading, saveState, dirty, cutPlanRequired, cutPlanText,
+  refineMode, onRefineModeChange,
   onCutPlanChange, onPlanBlur, onPlanRetry,
   onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
@@ -409,13 +415,38 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
       {!isLocked && hasStoryboard && (
         <>
           <div className="h-px bg-white/[0.06] my-1" />
-          <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-2">
-            Refine — describe what's wrong, GPT rewrites the storyboard
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+              Refine storyboard
+            </div>
+            <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden border border-white/[0.04]">
+              {([
+                ['replan', 'Redo', 'Rewrite the cut plan and draw a fresh board.'],
+                ['edit_image', 'Edit', 'Keep the cut plan; edit the current board image.'],
+              ] as const).map(([mode, label, hint]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onRefineModeChange(mode)}
+                  disabled={isRefining || isGenerating}
+                  className={`text-[11px] px-2.5 py-1 transition-colors disabled:opacity-50 ${
+                    refineMode === mode
+                      ? 'bg-white/[0.1] text-white'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title={hint}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex gap-2">
             <AutoGrowTextarea
               inputRef={refineRef}
-              placeholder="e.g. 'panel 3 should pull wider', 'add a cutaway to the lamp before the bow'"
+              placeholder={refineMode === 'replan'
+                ? "e.g. 'make it 4 panels', 'fewer cuts', 'make the landing more intimate'"
+                : "e.g. 'fix the hand', 'remove the number', 'keep same panels but make Ganesha screen-right'"}
               rows={1}
               disabled={isRefining || isGenerating}
               className="flex-1 surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed disabled:opacity-50"
