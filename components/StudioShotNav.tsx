@@ -16,6 +16,11 @@
  * but stale (upstream changed, video out of sync with end keyframe),
  * dim = not yet created.
  *
+ * While generation is in flight the dot becomes a colored spinner in
+ * place — white-top for the artifact (dot 1), amber-top for video (dot
+ * 2) — so the artist can tell at a glance which step is running and
+ * stop spinning the moment status leaves LOADING.
+ *
  * No thumbnails — text-only by design. Keeps it scannable, fast, and
  * doesn't fan out 30+ image requests on a long song. Hidden below 1280px.
  */
@@ -163,9 +168,15 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 const isError = shot.imageStatus === GenerationStatus.ERROR
                   || shot.videoStatus === GenerationStatus.ERROR
                   || shot.storyboardStatus === GenerationStatus.ERROR;
-                const isLoading = shot.imageStatus === GenerationStatus.LOADING
-                  || shot.videoStatus === GenerationStatus.LOADING
-                  || shot.storyboardStatus === GenerationStatus.LOADING;
+                // Per-dot loading — shows which artifact is being generated
+                // at a glance. Dot 1 covers storyboard gen in storyboard
+                // mode and frame gen (incl. critique loop) in keyframe mode.
+                // Dot 2 always tracks video gen.
+                const dot1Loading = isStoryboardMode
+                  ? shot.storyboardStatus === GenerationStatus.LOADING
+                  : shot.imageStatus === GenerationStatus.LOADING
+                    || shot.imageStatus === GenerationStatus.CRITIQUING;
+                const dot2Loading = shot.videoStatus === GenerationStatus.LOADING;
                 const promptStale = !!shot.promptsStale;
                 const videoStale = shot.videoStatus === GenerationStatus.STALE;
 
@@ -230,19 +241,27 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
 
                     {/* Status dots + flags */}
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {isLoading ? (
-                        <div className="w-3 h-3 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+                      {dot1Loading ? (
+                        <span
+                          className="w-2.5 h-2.5 border-[1.5px] border-zinc-700 border-t-white rounded-full animate-spin"
+                          title={`Generating ${isStoryboardMode ? 'storyboard' : 'start frame'}…`}
+                        />
                       ) : (
-                        <>
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${dotClass(dot1)}`}
-                            title={`${isStoryboardMode ? 'Storyboard' : 'Start frame'} — ${dotStateLabel(dot1)}`}
-                          />
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`}
-                            title={`Video — ${dotStateLabel(dot2)}`}
-                          />
-                        </>
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${dotClass(dot1)}`}
+                          title={`${isStoryboardMode ? 'Storyboard' : 'Start frame'} — ${dotStateLabel(dot1)}`}
+                        />
+                      )}
+                      {dot2Loading ? (
+                        <span
+                          className="w-2.5 h-2.5 border-[1.5px] border-zinc-700 border-t-amber-400/90 rounded-full animate-spin"
+                          title="Generating video…"
+                        />
+                      ) : (
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`}
+                          title={`Video — ${dotStateLabel(dot2)}`}
+                        />
                       )}
                       {isError && (
                         <span className="text-[9px] text-red-300/80 font-mono ml-0.5" title="Generation error">err</span>
