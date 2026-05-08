@@ -7,12 +7,12 @@
  * duration, three status dots, and an active highlight that follows the
  * user's scroll position via IntersectionObserver.
  *
- * Three-dot status, mode-aware: dot 1 = first creative output (start
- * frame in keyframe mode, storyboard in storyboard mode), dot 2 = video,
- * dot 3 = shot locked. Colors: green = the whole shot is locked (all
- * three turn green together), white = done, amber = exists-but-stale
- * (upstream changed, storyboard generated but not locked, video out of
- * sync with end keyframe), dim = not yet done.
+ * Two-dot status, mode-aware: dot 1 = first creative output (start
+ * frame in keyframe mode, storyboard in storyboard mode), dot 2 = video.
+ * Lock is encoded as color, not as a third dot — when the shot is locked,
+ * the corresponding artifact's dot turns green. Colors: green = locked,
+ * white = created and current, amber = created but stale (upstream
+ * changed, video out of sync with end keyframe), dim = not yet created.
  *
  * No thumbnails — text-only by design. Keeps it scannable, fast, and
  * doesn't fan out 30+ image requests on a long song. Hidden below 1280px.
@@ -167,30 +167,24 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 const promptStale = !!shot.promptsStale;
                 const videoStale = shot.videoStatus === GenerationStatus.STALE;
 
-                // When the shot is locked, all three dots go green — that's
-                // the "this is done and frozen" signal, replacing the
-                // previous separate lock glyph next to the dots.
-                let dot1: DotState;
-                let dot2: DotState;
-                let dot3: DotState;
-                if (shot.locked) {
-                  dot1 = dot2 = dot3 = 'locked';
-                } else {
-                  // Dot 1 = first creative output. Amber when the artist's
-                  // existing frame/storyboard is out of sync with upstream
-                  // edits (promptsStale), or when a storyboard exists but
-                  // isn't locked yet. Otherwise white if done, dim if not.
-                  const dot1Has = isStoryboardMode ? !!shot.storyboardUrl : !!shot.imageUrl;
-                  const dot1Amber = dot1Has && (promptStale || (isStoryboardMode && !shot.storyboardLocked));
-                  dot1 = !dot1Has ? 'todo' : dot1Amber ? 'pending' : 'done';
+                // Two dots, both lift to green when the shot is locked —
+                // the lock is a single boolean that freezes both artifacts
+                // at once, so encoding it as color is cleaner than adding
+                // a redundant third dot.
+                const dot1Has = isStoryboardMode ? !!shot.storyboardUrl : !!shot.imageUrl;
+                const dot1Stale = dot1Has && promptStale;
+                const dot1: DotState =
+                  shot.locked && dot1Has ? 'locked'
+                    : !dot1Has ? 'todo'
+                    : dot1Stale ? 'pending'
+                    : 'done';
 
-                  // Dot 2 = video. Amber when the rendered video is stale
-                  // relative to a changed end keyframe.
-                  dot2 = !shot.videoUrl ? 'todo' : videoStale ? 'pending' : 'done';
-
-                  // Dot 3 = shot lock — turns green when locked (handled above).
-                  dot3 = 'todo';
-                }
+                const dot2Has = !!shot.videoUrl;
+                const dot2: DotState =
+                  shot.locked && dot2Has ? 'locked'
+                    : !dot2Has ? 'todo'
+                    : videoStale ? 'pending'
+                    : 'done';
 
                 // Bulk queue position — mirror the badge ShotCard already shows.
                 const sbPos = storyboardQueue?.indexOf(shot.id) ?? -1;
@@ -240,10 +234,6 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                           <span
                             className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`}
                             title={`Video — ${dotStateLabel(dot2)}`}
-                          />
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${dotClass(dot3)}`}
-                            title={`Shot lock — ${dotStateLabel(dot3)}`}
                           />
                         </>
                       )}
