@@ -9,10 +9,12 @@
  *
  * Two-dot status, mode-aware: dot 1 = first creative output (start
  * frame in keyframe mode, storyboard in storyboard mode), dot 2 = video.
- * Lock is encoded as color, not as a third dot — when the shot is locked,
- * the corresponding artifact's dot turns green. Colors: green = locked,
- * white = created and current, amber = created but stale (upstream
- * changed, video out of sync with end keyframe), dim = not yet created.
+ * Each dot turns green when its artifact is locked: dot 1 follows the
+ * storyboard lock in storyboard mode (or the shot lock in keyframe mode),
+ * dot 2 follows the shot lock since there's no separate video lock.
+ * Colors: green = locked, white = created and current, amber = created
+ * but stale (upstream changed, video out of sync with end keyframe),
+ * dim = not yet created.
  *
  * No thumbnails — text-only by design. Keeps it scannable, fast, and
  * doesn't fan out 30+ image requests on a long song. Hidden below 1280px.
@@ -167,14 +169,19 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 const promptStale = !!shot.promptsStale;
                 const videoStale = shot.videoStatus === GenerationStatus.STALE;
 
-                // Two dots, both lift to green when the shot is locked —
-                // the lock is a single boolean that freezes both artifacts
-                // at once, so encoding it as color is cleaner than adding
-                // a redundant third dot.
+                // Each dot lifts to green when its artifact is locked.
+                // Dot 1 (storyboard/start frame): in storyboard mode the
+                // storyboard has its own lock the artist sets before video
+                // gen; in keyframe mode the start frame inherits lock state
+                // from the whole shot. Dot 2 (video) is sealed only when
+                // the shot is locked (no separate video-lock concept).
                 const dot1Has = isStoryboardMode ? !!shot.storyboardUrl : !!shot.imageUrl;
+                const dot1Locked = isStoryboardMode
+                  ? !!shot.storyboardLocked || !!shot.locked
+                  : !!shot.locked;
                 const dot1Stale = dot1Has && promptStale;
                 const dot1: DotState =
-                  shot.locked && dot1Has ? 'locked'
+                  dot1Locked && dot1Has ? 'locked'
                     : !dot1Has ? 'todo'
                     : dot1Stale ? 'pending'
                     : 'done';
