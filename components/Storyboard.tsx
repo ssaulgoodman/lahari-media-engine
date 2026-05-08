@@ -223,9 +223,6 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
       <StudioHeader
         scenes={scenes}
         project={project}
-        activeSceneIdx={activeSceneIdx}
-        onSceneChange={onSceneChange}
-        onUpdateShot={onUpdateShot}
         onRewriteShotPrompts={onRewriteShotPrompts}
         onCancelRewritePrompts={onCancelRewritePrompts}
         onBulkGenerateFrames={onBulkGenerateFrames}

@@ -7,9 +7,11 @@
  * duration, three status dots, and an active highlight that follows the
  * user's scroll position via IntersectionObserver.
  *
- * Status dots match ShotCard's inline 3-dot vocabulary. Mode-aware: dot 1
- * = `storyboardLocked` in storyboard mode, `imageUrl` in keyframe mode.
- * Dot 2 = video, dot 3 = shot locked.
+ * Three-dot status, mode-aware: dot 1 = first creative output (start
+ * frame in keyframe mode, storyboard in storyboard mode), dot 2 = video,
+ * dot 3 = shot locked. White = done, amber = exists-but-stale (e.g.
+ * upstream changed, storyboard generated but not locked, video out of
+ * sync with end keyframe), dim = not yet done.
  *
  * No thumbnails — text-only by design. Keeps it scannable, fast, and
  * doesn't fan out 30+ image requests on a long song. Hidden below 1280px.
@@ -112,12 +114,6 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 // Mode-aware progress dots — same vocabulary as ShotCard's
                 // inline 3-dot indicator. Dot 1 differs by mode; 2 and 3 are
                 // shared (video / shot-locked).
-                const dot1: DotState = isStoryboardMode
-                  ? (shot.storyboardLocked ? 'done' : shot.storyboardUrl ? 'pending' : 'todo')
-                  : (shot.imageUrl ? 'done' : 'todo');
-                const dot2: DotState = shot.videoUrl ? 'done' : 'todo';
-                const dot3: DotState = shot.locked ? 'done' : 'todo';
-
                 const isActive = activeShotId === shot.id;
                 const isError = shot.imageStatus === GenerationStatus.ERROR
                   || shot.videoStatus === GenerationStatus.ERROR
@@ -125,7 +121,23 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 const isLoading = shot.imageStatus === GenerationStatus.LOADING
                   || shot.videoStatus === GenerationStatus.LOADING
                   || shot.storyboardStatus === GenerationStatus.LOADING;
-                const isStale = shot.promptsStale || shot.videoStatus === GenerationStatus.STALE;
+                const promptStale = !!shot.promptsStale;
+                const videoStale = shot.videoStatus === GenerationStatus.STALE;
+
+                // Dot 1 = first creative output. Amber when the artist's
+                // existing frame/storyboard is out of sync with upstream
+                // edits (promptsStale), or when a storyboard exists but
+                // isn't locked yet. Otherwise white if done, dim if not.
+                const dot1Has = isStoryboardMode ? !!shot.storyboardUrl : !!shot.imageUrl;
+                const dot1Amber = dot1Has && (promptStale || (isStoryboardMode && !shot.storyboardLocked));
+                const dot1: DotState = !dot1Has ? 'todo' : dot1Amber ? 'pending' : 'done';
+
+                // Dot 2 = video. Amber when the rendered video is stale
+                // relative to a changed end keyframe.
+                const dot2: DotState = !shot.videoUrl ? 'todo' : videoStale ? 'pending' : 'done';
+
+                // Dot 3 = shot lock — terminal, no stale state.
+                const dot3: DotState = shot.locked ? 'done' : 'todo';
 
                 // Bulk queue position — mirror the badge ShotCard already shows.
                 const sbPos = storyboardQueue?.indexOf(shot.id) ?? -1;
@@ -181,9 +193,6 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                       )}
                       {isError && (
                         <span className="text-[9px] text-red-300/80 font-mono ml-0.5" title="Generation error">err</span>
-                      )}
-                      {isStale && !isError && (
-                        <span className="text-[9px] text-amber-400/80 font-mono ml-0.5" title="Outdated — upstream changed">stale</span>
                       )}
                       {queuePos !== null && (
                         <span className="text-[9px] text-zinc-400 font-mono ml-0.5" title="Bulk queue position">#{queuePos}</span>

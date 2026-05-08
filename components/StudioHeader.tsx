@@ -1,19 +1,16 @@
 /**
  * StudioHeader — extracted from Storyboard.tsx.
- * Sticky context bar: scene pills with lock toggles, progress stats,
- * story popover, master-prompt popover, and bulk actions.
+ * Sticky context bar: progress stats, story popover, master-prompt popover,
+ * and bulk actions. Scene + shot navigation lives in StudioShotNav (right
+ * sidebar) — having it in two places was redundant and noisy.
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
-import { lockAllSceneShots, unlockAllSceneShots } from '../services/api';
 
 interface StudioHeaderProps {
   scenes: VideoScene[];
   project: ApiProject | null;
-  activeSceneIdx: number;
-  onSceneChange: (idx: number) => void;
-  onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
   onCancelRewritePrompts?: () => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
@@ -28,7 +25,7 @@ interface StudioHeaderProps {
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
-  scenes, project, activeSceneIdx, onSceneChange, onUpdateShot,
+  scenes, project,
   onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, studioMode, onStudioModeChange, storyboardSupported, isLoading,
 }) => {
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
@@ -92,93 +89,15 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
       return true;
     }).length;
   }, 0);
-  const chainWaitingCount = scenes.reduce((acc, s) => {
-    if (ignoreContinuity) return acc;
-    return acc + s.shots.filter((shot, idx) => {
-      if (shot.imageUrl || idx === 0) return false;
-      if (shot.continuityFrom !== 'prev_shot') return false;
-      const prev = s.shots[idx - 1];
-      return !prev?.videoUrl;
-    }).length;
-  }, 0);
 
   return (
     <div ref={contextBarRef} className="sticky top-0 z-40 mb-6">
       <div className="surface rounded-xl border border-white/[0.06] bg-[#141418] shadow-md shadow-black/15 px-4 py-2.5 flex items-center gap-2 flex-wrap">
-        {/* Scene pills */}
-        <div className="flex items-center gap-1 overflow-x-auto mr-auto">
-          {scenes.map((s, i) => {
-            const sceneVideoCount = s.shots.filter(x => !!x.videoUrl).length;
-            const sceneFrameCount = s.shots.filter(x => !!x.imageUrl).length;
-            const done = sceneVideoCount === s.shots.length && s.shots.length > 0;
-            const inProgress = sceneVideoCount > 0 && !done;
-            const isActive = i === activeSceneIdx;
-            const dotClass = done ? 'bg-white' : inProgress ? 'bg-amber-400/80' : sceneFrameCount > 0 ? 'bg-white/50' : 'bg-white/15';
-            const lockableShots = s.shots.filter(x => x.imageUrl && x.videoUrl);
-            const lockedCount = s.shots.filter(x => x.locked).length;
-            const allLocked = lockableShots.length > 0 && lockedCount === lockableShots.length;
-            return (
-              <div key={s.id} className="flex items-center gap-0 flex-shrink-0">
-                <button
-                  onClick={() => {
-                    onSceneChange(i);
-                    const el = document.getElementById(`scene-${s.id}`);
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  }}
-                  className={`px-2.5 py-1 rounded-l-md text-[11px] font-medium transition-colors flex items-center gap-1.5 border border-r-0 ${
-                    isActive
-                      ? 'bg-white/[0.08] text-white border-white/[0.12]'
-                      : 'bg-transparent text-zinc-300 border-white/[0.04] hover:bg-white/[0.04]'
-                  }`}
-                  title={`Scene ${i + 1} · ${s.shots.length} shot${s.shots.length === 1 ? '' : 's'} · ${sceneVideoCount}/${s.shots.length} videos`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
-                  <span className="font-mono">S{i + 1}</span>
-                </button>
-                {lockableShots.length > 0 && (
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if (!project) return;
-                      try {
-                        if (allLocked) {
-                          await unlockAllSceneShots(project.id, s.id);
-                          s.shots.forEach(sh => onUpdateShot(s.id, sh.id, { locked: false }));
-                        } else {
-                          const result = await lockAllSceneShots(project.id, s.id);
-                          s.shots.forEach(sh => {
-                            if (sh.imageUrl && sh.videoUrl) onUpdateShot(s.id, sh.id, { locked: true });
-                          });
-                        }
-                      } catch (err: any) {
-                        console.error('Scene lock/unlock failed:', err);
-                      }
-                    }}
-                    className={`px-1.5 py-1 rounded-r-md text-[11px] transition-colors border ${
-                      isActive ? 'border-white/[0.12]' : 'border-white/[0.04]'
-                    } ${allLocked ? 'text-white/60 hover:text-amber-400/80 bg-white/[0.04]' : 'text-zinc-500 hover:text-white/60 bg-transparent hover:bg-white/[0.04]'}`}
-                    title={allLocked ? `Unlock all ${lockedCount} shots in scene ${i + 1}` : `Lock ${lockableShots.length - lockedCount} ready shots in scene ${i + 1}`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      {allLocked ? (
-                        <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>
-                      ) : (
-                        <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></>
-                      )}
-                    </svg>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
         {/* Compact progress */}
-        <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
+        <span className="text-[11px] text-zinc-400 font-mono tabular-nums mr-auto">
           {studioMode === 'storyboard' && storyboardSupported ? <><span className="text-white">{storyboardShots}</span>/{totalShots}sb · </> : null}
           <span className="text-white">{frameShots}</span>/{totalShots}f · <span className="text-white">{videoShots}</span>/{totalShots}v
           {lockedShots > 0 && <> · <span className="text-white">{lockedShots}</span>/{totalShots} locked</>}
-          {chainWaitingCount > 0 && <> · <span className="text-amber-400/80">{chainWaitingCount} wait</span></>}
         </span>
 
         {/* Studio mode */}
