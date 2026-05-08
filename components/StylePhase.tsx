@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ApiProject } from '../types';
+import { ApiProject, StylePreset } from '../types';
 import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { Markdown } from './Markdown';
@@ -197,6 +197,32 @@ export const StylePhase: React.FC<Props> = ({
   const [uploadedStyleFile, setUploadedStyleFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const styleDirectUploadRef = useRef<HTMLInputElement>(null);
+  // Curated style presets — fetched once per project mount. Applying a preset
+  // generates and locks a normal style asset, so the artist lands in
+  // locked-style state and proceeds to characters as if they brainstormed it.
+  const [presets, setPresets] = useState<StylePreset[]>([]);
+  const [applyingPresetKey, setApplyingPresetKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getStylePresets(project.id)
+      .then(r => { if (!cancelled) setPresets(r.presets || []); })
+      .catch(() => { if (!cancelled) setPresets([]); });
+    return () => { cancelled = true; };
+  }, [project.id]);
+
+  const handleApplyPreset = async (key: string) => {
+    if (applyingPresetKey) return;
+    setApplyingPresetKey(key);
+    try {
+      const updated = await api.applyStylePreset(project.id, key);
+      onSetProject?.(updated);
+    } catch (err: any) {
+      showActionError(`Style preset failed: ${err.message}`);
+    } finally {
+      setApplyingPresetKey(null);
+    }
+  };
 
   // Auto-persist style exploration to DB
   const styleExplorationInitRef = useRef(true);
@@ -437,11 +463,52 @@ export const StylePhase: React.FC<Props> = ({
         </div>
       ) : (
         <div className="space-y-5">
+          {presets.length > 0 && (
+            <div className="surface rounded-xl p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-white mb-1">Curated Styles</h3>
+                <p className="text-zinc-400 text-xs">
+                  Skip brainstorming with a preset — generates a style image and locks it for you. You can unlock to swap or refine later.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {presets.map(preset => {
+                  const isApplying = applyingPresetKey === preset.key;
+                  const isAnyApplying = applyingPresetKey !== null;
+                  return (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() => handleApplyPreset(preset.key)}
+                      disabled={isAnyApplying}
+                      className={`surface-inset rounded-lg p-4 text-left transition-colors disabled:cursor-not-allowed flex items-start gap-3 border border-transparent ${
+                        isApplying ? 'border-white/[0.16] bg-white/[0.04]'
+                          : isAnyApplying ? 'opacity-40'
+                          : 'hover:bg-white/[0.04] hover:border-white/[0.08]'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-white">{preset.title}</span>
+                          {isApplying && (
+                            <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-relaxed">{preset.description}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="surface rounded-xl p-5 space-y-4">
             <div>
               <h3 className="text-sm font-medium text-white mb-1">Art Style Exploration</h3>
               <p className="text-zinc-400 text-xs">
-                Claude brainstorms 4 visual directions. You choose which to visualize as images.
+                Or brainstorm 4 custom visual directions and pick one to visualize.
               </p>
             </div>
 
