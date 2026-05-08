@@ -114,6 +114,12 @@ export interface ConceptOption {
   };
 }
 
+export interface StylePreset {
+  key: string;
+  title: string;
+  description: string;
+}
+
 export interface CastMember {
   id: string;
   name: string;

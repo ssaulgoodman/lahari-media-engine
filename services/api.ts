@@ -176,6 +176,21 @@ export const refineStyleDirection = async (projectId: string, description: strin
   return handleResponse(res);
 };
 
+export const getStylePresets = async (projectId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/style-presets`);
+  return handleResponse(res);
+};
+
+export const applyStylePreset = async (projectId: string, presetKey: string, signal?: AbortSignal) => {
+  const res = await authFetch(`${API}/projects/${projectId}/apply-style-preset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ presetKey }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
 // Unlocks are pure nav — no body, no options. Destructive events live on
 // the active mutation endpoints (lock-concept, generate-script, etc).
 const simplePost = (path: string) => authFetch(`${API}${path}`, { method: 'POST' }).then(handleResponse);

@@ -13,10 +13,86 @@ import { getImageGenerationModelName, getImageService } from '../services/image-
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireAsset } from './scope-helpers.js';
+import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 export const mountStyleRoutes = (router: Router) => {
+
+  // ─── Curated Style Presets ─────────────────────────────────────────
+
+  router.get('/:id/style-presets', async (_req, res) => {
+    res.json({ presets: STYLE_PRESETS });
+  });
+
+  router.post('/:id/apply-style-preset', async (req, res) => {
+    const project = await selectOne('projects', { id: paramStr(req.params.id) });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const { presetKey } = req.body || {};
+    const preset = typeof presetKey === 'string' ? getStylePreset(presetKey) : undefined;
+    if (!preset) return res.status(400).json({ error: 'Valid presetKey required' });
+
+    const concept = JSON.parse(project.locked_concept || '{}');
+    const subject = concept.deity || project.title;
+    const genPrompt = buildStylePrompt(preset.description, subject);
+
+    try {
+      console.log(`[${project.id}] Applying style preset: ${preset.title}`);
+      const t0 = Date.now();
+      const imageService = getImageService(project.image_model);
+      const assetPath = await imageService.generateSingleStyleImage(
+        preset.description,
+        subject,
+        genPrompt,
+      );
+      const durationMs = Date.now() - t0;
+
+      const assetId = uuidv4();
+      await insertRow('assets', {
+        id: assetId,
+        project_id: project.id,
+        category: 'style',
+        file_path: assetPath,
+        prompt: `${preset.title}: ${preset.description}`,
+        metadata: JSON.stringify({ stylePresetKey: preset.key, stylePresetTitle: preset.title }),
+      });
+
+      await updateRows('projects', { id: project.id }, {
+        status: 'style_locked',
+        style_asset_id: assetId,
+        style_description: `${preset.title} — ${preset.description}`,
+        style_generation_prompt: genPrompt,
+        updated_at: new Date().toISOString(),
+      });
+
+      await logCall({
+        projectId: project.id,
+        stage: 'apply-style-preset',
+        model: getImageGenerationModelName(project.image_model),
+        prompt: genPrompt,
+        contextChain: await buildContextChain(project.id),
+        responseSummary: `Applied style preset: ${preset.title}`,
+        outputAssetIds: [assetId],
+        durationMs,
+        costEstimate: 0.01,
+      });
+
+      res.json(await getFullProject(project.id));
+    } catch (err: any) {
+      console.error(`[${project.id}] Apply style preset failed:`, err);
+      await logCall({
+        projectId: project.id,
+        stage: 'apply-style-preset',
+        model: getImageGenerationModelName(project.image_model),
+        prompt: genPrompt,
+        contextChain: await buildContextChain(project.id),
+        durationMs: 0,
+        error: err.message,
+      });
+      res.status((err as any).statusCode || 500).json({ error: err.message });
+    }
+  });
 
   // ─── Brainstorm Style Directions (text only, no images) ─────────────
 
