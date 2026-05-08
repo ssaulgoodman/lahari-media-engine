@@ -160,11 +160,14 @@ export const generateStoryboardVersion = async (opts: {
   imageModel: string;
 }> => {
   const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
-  const previousVersion = opts.previousVersionId
-    ? await selectOne('storyboard_versions', { id: opts.previousVersionId, shot_id: opts.shotId })
-    : ctx.shot.storyboard_version_id
-      ? await selectOne('storyboard_versions', { id: ctx.shot.storyboard_version_id, shot_id: opts.shotId })
-      : null;
+  const isRefine = Boolean(opts.artistNote?.trim() || opts.previousVersionId);
+  const previousVersion = isRefine
+    ? opts.previousVersionId
+      ? await selectOne('storyboard_versions', { id: opts.previousVersionId, shot_id: opts.shotId })
+      : ctx.shot.storyboard_version_id
+        ? await selectOne('storyboard_versions', { id: ctx.shot.storyboard_version_id, shot_id: opts.shotId })
+        : null
+    : null;
 
   const variant = opts.variant || 'adaptive_numbered_storyboard';
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
@@ -187,9 +190,10 @@ ${basePrompt}`
     let responseChainFallback = false;
     const callResponses = (previousResponseId?: string, refs: OpenAIRefImage[] = ctx.refs) => generateOpenAIImageWithResponses(prompt, {
       aspectRatio: ctx.project.aspect_ratio || '16:9',
+      size: '3072x1024',
       refs,
       previousResponseId,
-      action: previousVersion ? 'edit' : 'generate',
+      action: 'generate',
       quality: 'medium',
     });
 

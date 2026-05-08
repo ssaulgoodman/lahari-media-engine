@@ -32,7 +32,7 @@ const detectImageExt = (base64: string): string => {
   return 'png';
 };
 
-const sizeForAspectRatio = (aspectRatio = '16:9'): '1536x1024' | '1024x1536' | '1024x1024' => {
+const sizeForAspectRatio = (aspectRatio = '16:9'): string => {
   switch (aspectRatio) {
     case '9:16':
       return '1024x1536';
@@ -138,6 +138,7 @@ export const generateOpenAIImageWithResponses = async (
   prompt: string,
   opts?: {
     aspectRatio?: string;
+    size?: string;
     refs?: OpenAIRefImage[];
     previousResponseId?: string;
     action?: 'generate' | 'edit' | 'auto';
@@ -155,7 +156,7 @@ export const generateOpenAIImageWithResponses = async (
   const client = getClient();
   const cappedRefs = (opts?.refs || []).slice(0, MAX_OPENAI_INPUT_IMAGES);
   const fileIds = await Promise.all(cappedRefs.map((ref, idx) => uploadVisionFile(client, ref, idx)));
-  const size = sizeForAspectRatio(opts?.aspectRatio || '16:9');
+  const size = opts?.size || sizeForAspectRatio(opts?.aspectRatio || '16:9');
 
   const content: any[] = [
     { type: 'input_text', text: `${buildReferenceIndex(cappedRefs)}${prompt}` },
