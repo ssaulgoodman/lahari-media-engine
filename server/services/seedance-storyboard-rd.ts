@@ -23,6 +23,13 @@ export type ScriptPromptVariant = 'clip_blocks' | 'clip_blocks_combine_short' | 
 export type StoryboardPromptVariant = 'adaptive_numbered_storyboard' | 'four_panel_clean' | 'six_panel_music_video' | 'filmstrip_minimal_cuts';
 export type SeedancePromptVariant = 'follow_board_only' | 'shot_timing_only' | 'board_plus_timing' | 'board_plus_audio_rhythm' | 'board_plus_audio_lipsync';
 
+const panelLayout = (seconds: number) => {
+  const duration = Number.isFinite(seconds) ? seconds : 15;
+  return duration < 10
+    ? { count: 4, rows: 2, cols: 2 }
+    : { count: 6, rows: 2, cols: 3 };
+};
+
 const clampDuration = (seconds: number): SeedanceStoryboardDuration => {
   const valid = [...SEEDANCE_STORYBOARD_DURATIONS].sort((a, b) => a - b);
   return valid.find((d) => d >= seconds) ?? 15;
@@ -147,17 +154,74 @@ export const buildStoryboardPrompt = (
   input: StoryboardRdInput,
   variant: StoryboardPromptVariant
 ): string => {
-  const panelSpec = variant === 'adaptive_numbered_storyboard'
-    ? `Create a clean cinematic storyboard board for this exact ${input.clipDuration}s Lahari shot/clip. Use 3-6 panels, choosing the count that best fits the pacing.`
-    : variant === 'six_panel_music_video'
+  if (variant === 'adaptive_numbered_storyboard') {
+    const layout = panelLayout(input.clipDuration);
+    const moodLine = input.mood ? `Mood: ${input.mood}\n` : '';
+    const musicalCueLine = input.musicalCue ? `Pacing cue from the music: ${input.musicalCue}\n` : '';
+    const sceneContextLine = input.sceneNarrative
+      ? `Scene context only: ${input.sceneNarrative}\n`
+      : '';
+
+    return `Create a numbered cinematic storyboard for one Lahari devotional music-video clip.
+
+Use a ${layout.rows}x${layout.cols} grid (${layout.count} panels) read left-to-right, top-to-bottom. Clean white background, thin white borders, generous spacing between and around every panel. Editorial minimalist storyboard layout, professional pitch-deck style.
+
+Song: ${input.title}
+Concept: ${input.concept}
+${moodLine}${musicalCueLine}${sceneContextLine}Shot description: ${input.clipDirection}
+Clip length: ${input.clipDuration}s
+Characters in this shot: ${input.castNames.length ? input.castNames.join(', ') : 'no recurring character'}
+Setting: ${input.environmentName || 'not specified'}
+
+Reference images:
+- Style image — copy its lighting, colors, and art style.
+- Character images — match each character's face, body, and outfit.
+- Environment image — keep the same place and layout in every panel.
+
+You're directing this clip's visual edit. The scene context gives emotional placement only; the shot description tells you what happens in this clip and is the source of truth. For each panel, decide:
+
+- the framing (wide / medium / close / extreme close)
+- the camera angle (eye / low / high / overhead / over-shoulder)
+- whether the camera moves (static, push, pull, pan, tilt, rack-focus) or holds
+- where characters stand, where they look, what they do
+- which part of the environment is visible and how light falls
+- why this cut earns its place — new information, deeper emotion, or a beat hit
+- where in the ${input.clipDuration}s window this panel sits
+
+Across the panels, design a coherent arc: open (establish), build (deepen the moment), land (the strongest visual or emotional beat), resolve (a final image that releases the tension). Keep a stable spatial map — characters and key objects on consistent sides of the frame across cuts (the 180° rule).
+
+Storyboard contract:
+- Treat the board as one edited scene, not separate concept frames. Every panel must be a plausible frame from the same ${input.clipDuration}s clip.
+- Each panel is a true 16:9 cinematic film frame, all panels with identical width and height. Do not stretch, crop, stack vertically, or distort panels to fill the canvas.
+- Maintain 100% visual consistency across all panels: same art style, same lighting mood, same character designs, same color palette, same environment details, same costumes and jewelry.
+- Only the characters listed in "Characters in this shot" appear with identity in this clip. Other named characters mentioned elsewhere in the brief (concept or scene context) belong to the broader scene, not this clip — don't draw them. Anonymous background figures the shot description itself calls for (crowds of devotees, villagers, distant sages, temple staff) are fine; keep them out of the foreground unless the shot calls for it.
+- Use only culturally authentic objects, gestures, and elements that belong to the shot, the references, and the devotional Bhakti context.
+- Every panel must show visible action, a clear camera angle, and a step in the emotional progression — not a static repeat of the previous panel.
+- Mark each panel with a small clean panel number only — just the digit ("1", "2", "3"…) in a corner. Do not write descriptions, captions, arrows, subtitles, speech bubbles, logos, watermarks, or any other readable text inside the panels. Panel descriptions live outside the image, in the shot progression below.
+
+Style and quality:
+- Live-action cinematic realism, high-end Indian devotional film quality.
+- Sharp focus, natural skin and fabric detail, real-world materials, physically accurate lighting.
+- Spiritually uplifting, emotionally moving, serene yet vibrant Bhakti devotional atmosphere.
+- Ultra-high resolution, subtle film grain, masterpiece quality.
+
+Then, outside the image, return a concise shot progression in plain text using this exact shape. Use exactly the same number of panels as the image:
+
+Shot progression:
+Panel 1 [MM:SS-MM:SS] - camera: <shot type and any movement>; action: <what happens visibly in this panel>; motion cue: <the specific camera move or beat the video model should preserve, e.g. "slow push-in over 3s" or "rack focus on a chime hit">
+Panel 2 [MM:SS-MM:SS] - camera: ...; action: ...; motion cue: ...
+(repeat for every panel actually drawn)
+
+Continuity notes: one short sentence naming the spatial map and screen direction you preserved.`;
+  }
+
+  const panelSpec = variant === 'six_panel_music_video'
     ? `Create a six-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`
     : variant === 'filmstrip_minimal_cuts'
       ? `Create a clean horizontal filmstrip storyboard for this one ${input.clipDuration}s Lahari music-video clip, using four panels and minimal internal cuts.`
       : `Create a four-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`;
 
-  const cutGuidance = variant === 'adaptive_numbered_storyboard'
-    ? `First decide the cut plan: emotional turn, action/object continuity, blocking, screen direction, and camera progression.`
-    : variant === 'filmstrip_minimal_cuts'
+  const cutGuidance = variant === 'filmstrip_minimal_cuts'
     ? `The panels should imply a calm edited sequence with only 2-3 cuts: opening, one meaningful angle change, emotional landing.`
     : `The panels should imply an edited mini-sequence with distinct camera angles: opening, first movement, emotional/action peak, and landing image.`;
 

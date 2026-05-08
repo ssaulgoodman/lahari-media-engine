@@ -18,7 +18,7 @@ Future iteration may swap the rule for pacing-driven sizing (slow → fewer pane
 ## Final prompt
 
 ```
-Draw a numbered cinematic storyboard for one Lahari devotional music-video clip.
+Create a numbered cinematic storyboard for one Lahari devotional music-video clip.
 
 Use a {{rows}}×{{cols}} grid ({{panelCount}} panels) read left-to-right, top-to-bottom. Clean white background, thin white borders, generous spacing between and around every panel. Editorial minimalist storyboard layout, professional pitch-deck style.
 
@@ -26,6 +26,7 @@ Song: {{title}}
 Concept: {{concept}}
 {{#if mood}}Mood: {{mood}}{{/if}}
 {{#if musicalCue}}Pacing cue from the music: {{musicalCue}}{{/if}}
+Scene context only: {{sceneNarrative}}
 Shot description: {{clipDirection}}
 Clip length: {{clipDuration}}s
 Characters in this shot: {{castNames || "no recurring character"}}
@@ -36,7 +37,7 @@ Reference images:
 - Character images — match each character's face, body, and outfit.
 - Environment image — keep the same place and layout in every panel.
 
-You're directing this clip's visual edit. The shot description tells you what happens; how to show it is your call. For each panel, decide:
+You're directing this clip's visual edit. The scene context gives emotional placement only; the shot description tells you what happens in this clip and is the source of truth. For each panel, decide:
 
 - the framing (wide / medium / close / extreme close)
 - the camera angle (eye / low / high / overhead / over-shoulder)

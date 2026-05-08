@@ -465,11 +465,20 @@ export const generateStoryboard = async (projectId: string, shotId: string, sign
   return handleResponse(res);
 };
 
-export const refineStoryboard = async (projectId: string, shotId: string, feedback: string, previousVersionId?: string, signal?: AbortSignal) => {
+export type StoryboardRefineMode = 'replan' | 'edit_image';
+
+export const refineStoryboard = async (
+  projectId: string,
+  shotId: string,
+  feedback: string,
+  previousVersionId?: string,
+  refineMode: StoryboardRefineMode = 'replan',
+  signal?: AbortSignal
+) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-storyboard`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ feedback, previousVersionId, variant: 'adaptive_numbered_storyboard' }),
+    body: JSON.stringify({ feedback, previousVersionId, refineMode, variant: 'adaptive_numbered_storyboard' }),
     signal,
   });
   return handleResponse(res);

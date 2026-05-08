@@ -21,6 +21,8 @@ type StoryboardContext = {
   refMeta: StoryboardRefMeta[];
 };
 
+type StoryboardRefineMode = 'replan' | 'edit_image';
+
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
   try { return JSON.parse(value) as T; } catch { return fallback; }
@@ -94,27 +96,6 @@ const isMissingPreviousResponse = (err: any): boolean => {
   return mentionsPreviousResponse || (looksMissingOrExpired && text.includes('previous') && text.includes('response'));
 };
 
-const shouldRegenerateStoryboardRefine = (artistNote?: string): boolean => {
-  const note = artistNote?.toLowerCase().trim() || '';
-  if (!note) return false;
-  const surgicalHints = [
-    'small fix', 'surgical', 'only change', 'just change', 'keep layout',
-    'keep the same panels', 'same panels', 'same composition', 'same cut plan',
-    'fix face', 'fix hand', 'fix hands', 'fix eyes', 'fix costume', 'fix color',
-    'clean up', 'remove artifact', 'remove text', 'remove number', 'remove label',
-  ];
-  if (surgicalHints.some((hint) => note.includes(hint))) return false;
-
-  const regenerateHints = [
-    'panel', 'panels', 'cut', 'cuts', 'beat', 'beats', 'timing', 'duration',
-    'remove', 'add', 'fewer', 'more', 'reorder', 'sequence', 'pacing',
-    'layout', 'row', 'grid', 'story', 'thematic', 'theme', 'make it about',
-    'change the action', 'different action', 'different angle', 'new angle',
-    'from scratch', 'redo', 'rework',
-  ];
-  return regenerateHints.some((hint) => note.includes(hint));
-};
-
 export const loadStoryboardContext = async (projectId: string, shotId: string): Promise<StoryboardContext> => {
   const project = await selectOne('projects', { id: projectId });
   if (!project) throw new Error('Project not found');
@@ -171,6 +152,7 @@ export const generateStoryboardVersion = async (opts: {
   variant?: StoryboardPromptVariant;
   artistNote?: string;
   previousVersionId?: string;
+  refineMode?: StoryboardRefineMode;
 }): Promise<{
   versionId: string;
   assetId: string;
@@ -194,13 +176,14 @@ export const generateStoryboardVersion = async (opts: {
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
   const previousMetadata = parseJson<Record<string, any>>(previousVersion?.metadata, {});
   const previousCutPlan = previousMetadata.cutPlanText ? `\n\nPrevious cut plan to preserve/improve:\n${previousMetadata.cutPlanText}` : '';
-  const regenerateRefine = shouldRegenerateStoryboardRefine(opts.artistNote);
+  const refineMode: StoryboardRefineMode = opts.refineMode === 'edit_image' ? 'edit_image' : 'replan';
   const prompt = opts.artistNote?.trim()
     ? `Refine the existing Lahari storyboard using this artist note: "${opts.artistNote.trim()}"
 
-${regenerateRefine
-  ? `If the note asks for panel count, cut order, pacing, layout, action, or thematic changes, re-plan the storyboard and generate a new clean board.`
-  : `Treat this as a surgical visual edit. Preserve the same cut plan, panel count, layout, camera order, character identity, costume, environment, and style unless the note explicitly asks otherwise.`}
+Refine mode: ${refineMode === 'edit_image' ? 'Edit image' : 'Re-plan board'}.
+${refineMode === 'edit_image'
+  ? `Treat this as a surgical visual edit. Preserve the same cut plan, panel count, layout, camera order, character identity, costume, environment, and style unless the note explicitly asks otherwise.`
+  : `Re-plan the storyboard and generate a new clean board. You may change panel count, cut order, pacing, layout, camera progression, or thematic emphasis to satisfy the note.`}
 Keep the same ${ctx.input.clipDuration}s clip intent unless the note explicitly asks otherwise.
 ${previousCutPlan}
 
@@ -218,7 +201,7 @@ ${basePrompt}`
       size: '3072x1536',
       refs,
       previousResponseId,
-      action: previousVersion && !regenerateRefine ? 'edit' : 'generate',
+      action: previousVersion && refineMode === 'edit_image' ? 'edit' : 'generate',
       quality: 'medium',
     });
 

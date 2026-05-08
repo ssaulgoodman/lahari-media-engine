@@ -339,6 +339,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
       shotId,
       artistNote: feedback,
       previousVersionId: req.body?.previousVersionId,
+      refineMode: req.body?.refineMode === 'edit_image' ? 'edit_image' : 'replan',
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
     res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });

@@ -985,11 +985,16 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleRefineStoryboard = async (shotId: string, feedback: string, previousVersionId?: string) => {
+  const handleRefineStoryboard = async (
+    shotId: string,
+    feedback: string,
+    previousVersionId?: string,
+    refineMode: api.StoryboardRefineMode = 'replan'
+  ) => {
     if (!project || !feedback.trim()) return;
     updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING, storyboardUserFeedback: feedback });
     try {
-      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId);
+      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode);
       setProject(result.project);
     } catch (err: any) {
       updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
