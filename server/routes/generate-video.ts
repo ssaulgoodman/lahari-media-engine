@@ -8,18 +8,26 @@ import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn 
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { SEGMIND_MODELS, SegmindModelKey } from '../services/segmind.js';
 import { generateVideoWithFallback } from '../services/video-provider.js';
-import { extractLastFrame } from '../services/ffmpeg.js';
+import { extractAudioSegment, extractLastFrame } from '../services/ffmpeg.js';
 import { refreshChainedShotPrompt } from '../services/claude.js';
 import { buildSeedanceStoryboardVideoPrompt } from '../services/seedance-storyboard-rd.js';
 import { loadStoryboardContext } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
-import { paramStr } from './scope-helpers.js';
+import type { XRayReference } from '../xray.js';
+import { paramStr, parseTimestamp } from './scope-helpers.js';
 
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
   if (typeof value === 'object') return value as T;
   try { return JSON.parse(value) as T; } catch { return fallback; }
+};
+
+const formatTimecode = (seconds: number): string => {
+  const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 };
 
 /**
@@ -91,6 +99,7 @@ export const mountVideoRoutes = (router: Router) => {
     const cast = await selectAll('cast_members', { project_id: paramStr(req.params.id) });
     const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
     const storyboardSentRefs: { label: string; filePath: string }[] = [];
+    const storyboardAudioRefs: XRayReference[] = [];
 
     try {
       await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
@@ -185,6 +194,7 @@ export const mountVideoRoutes = (router: Router) => {
         ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
           cutPlanText: storyboardVersionMeta.cutPlanText || null,
           refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
+          lipsyncEnabled: !!shot.lipsync_enabled,
         })
         : '';
       const veoPrompt = useStoryboardMode
@@ -192,9 +202,45 @@ export const mountVideoRoutes = (router: Router) => {
         : promptOverride?.trim() ? promptOverride.trim() : veoPromptParts.join('. ');
       console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
+      const referenceAudioPaths: string[] = [];
+      let referenceAudioAssetId: string | null = null;
+      if (useStoryboardMode && shot.lipsync_enabled) {
+        if (!project.audio_path) {
+          throw new Error('Lip-sync is enabled for this shot, but the project has no source audio.');
+        }
+        const sceneShots = await selectAll('shots', { scene_id: shot.scene_id }, { orderBy: 'sort_order' });
+        const priorDuration = sceneShots
+          .filter((candidate: any) => Number(candidate.sort_order || 0) < Number(shot.sort_order || 0))
+          .reduce((sum: number, candidate: any) => sum + Number(candidate.duration || 0), 0);
+        const shotStartSec = parseTimestamp(scene?.start_time || '0:00') + priorDuration;
+        const shotDurationSec = Number(shot.duration || storyboardContext?.input.clipDuration || modelSpec.durations[0] || 5);
+        const audioPath = await extractAudioSegment(project.audio_path, shotStartSec, shotDurationSec);
+        referenceAudioPaths.push(audioPath);
+        referenceAudioAssetId = uuidv4();
+        await insertRow('assets', {
+          id: referenceAudioAssetId,
+          project_id: project.id,
+          shot_id: shot.id,
+          category: 'shot_audio_ref',
+          file_path: audioPath,
+          metadata: JSON.stringify({
+            sourceAudioPath: project.audio_path,
+            startSec: shotStartSec,
+            durationSec: shotDurationSec,
+            purpose: 'seedance_lipsync_reference',
+          }),
+        });
+        storyboardAudioRefs.push({
+          type: 'audio',
+          label: `Shot audio reference (${formatTimecode(shotStartSec)}-${formatTimecode(shotStartSec + shotDurationSec)})`,
+          url: storageUrl(audioPath),
+        });
+      }
+
       const result = await generateVideoWithFallback(useStoryboardMode ? undefined : imageAsset!.file_path, veoPrompt, {
         endImagePath: useStoryboardMode ? undefined : endImagePath,
         referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
+        referenceAudioPaths: useStoryboardMode ? referenceAudioPaths : undefined,
         aspectRatio: aspect,
         resolution,
         durationSec: shot.duration,
@@ -220,7 +266,10 @@ export const mountVideoRoutes = (router: Router) => {
         console.warn(`  [shot ${shot.id}] last-frame extraction failed: ${err.message}`);
       }
 
-      const videoMetadata = JSON.stringify({ extracted_last_frame_asset_id: extractedAssetId });
+      const videoMetadata = JSON.stringify({
+        extracted_last_frame_asset_id: extractedAssetId,
+        reference_audio_asset_id: referenceAudioAssetId,
+      });
       await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
 
       // Only clear last_error if no other operation is in error state
@@ -288,6 +337,7 @@ export const mountVideoRoutes = (router: Router) => {
           ? [
             { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
             ...storyboardSentRefs.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+            ...storyboardAudioRefs,
           ]
           : imageAsset
             ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
@@ -314,6 +364,7 @@ export const mountVideoRoutes = (router: Router) => {
           ? [
             { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
             ...storyboardSentRefs.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+            ...storyboardAudioRefs,
           ]
           : imageAsset
             ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]

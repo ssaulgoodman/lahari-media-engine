@@ -289,6 +289,7 @@ export const buildSeedanceStoryboardVideoPrompt = (
   opts?: {
     cutPlanText?: string | null;
     refs?: { label: string }[];
+    lipsyncEnabled?: boolean;
   }
 ): string => {
   const minimal = variant === 'follow_board_only';
@@ -314,6 +315,14 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
     : '- @image2..N = locked style, character, and environment refs — identity anchors only';
   const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
   const layout = panelLayout(input.clipDuration);
+  const lipsyncInstruction = opts?.lipsyncEnabled
+    ? `
+Audio reference:
+- audio 1 is the exact song segment for this clip. Use it only as a visual timing and lip-sync reference; do not generate or preserve audio.
+- If a singing or chanting face is clearly visible in the storyboard progression, add subtle mouth movement aligned to audio 1's vocal phrasing.
+- If the face is turned away, too small, obscured, or the passage is instrumental, keep the mouth natural and still. Do not invent dialogue or exaggerated mouth shapes.
+`
+    : '';
 
   return `Animate this ${layout.rows}×${layout.cols} storyboard grid into one cohesive ${input.clipDuration}s music-video clip. Follow @image1's panels left-to-right across each row, then continue to the next row.
 
@@ -322,6 +331,7 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
 Reference bindings:
 - @image1 = the locked storyboard grid
 ${refBindings}
+${lipsyncInstruction}
 
 ${clipContext(input)}
 

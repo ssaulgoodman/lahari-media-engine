@@ -74,6 +74,7 @@ export const generateSegmindVideo = async (
     endImagePath?: string;
     referenceImagePaths?: string[];
     resolution?: SegmindResolution;
+    referenceAudioPaths?: string[];
     aspectRatio?: '16:9' | '9:16';
     durationSec?: number;
     modelKey?: SegmindModelKey;
@@ -93,6 +94,7 @@ export const generateSegmindVideo = async (
   const startUrl = startImagePath ? storageUrl(startImagePath) : undefined;
   const endUrl = opts?.endImagePath ? storageUrl(opts.endImagePath) : undefined;
   const refUrls = (opts?.referenceImagePaths || []).map(p => storageUrl(p));
+  const refAudioUrls = (opts?.referenceAudioPaths || []).map(p => storageUrl(p));
   const requestedResolution = opts?.resolution || '720p';
   const resolution = model.family === 'seedance'
     // Segmind Seedance currently accepts 480p/720p only. Lahari exposes
@@ -142,10 +144,13 @@ export const generateSegmindVideo = async (
     if (!useFrameMode && refUrls.length && model.supportsRefs) {
       body.reference_images = refUrls.slice(0, 9);
     }
+    if (refAudioUrls.length) {
+      body.reference_audios = refAudioUrls.slice(0, 1);
+    }
   }
 
   const bodyKeys = Object.keys(body).sort().join(',');
-  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, audioRefs=${refAudioUrls.length}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   const res = await fetch(model.endpoint, {
     method: 'POST',

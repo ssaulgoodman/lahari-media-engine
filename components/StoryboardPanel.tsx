@@ -42,6 +42,7 @@ interface StoryboardPanelProps {
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
+  onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
 
   // Video gen — the panel's Video sub-tab fires this once a storyboard is locked.
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
@@ -54,6 +55,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
   onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onUpdateShot,
   onGenerateVideo,
   setModalImage,
 }) => {
@@ -267,6 +269,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           cutPlanText={cutPlanText}
           cutPlanRequired={cutPlanRequired}
           boundRefCount={boundRefs.length}
+          onUpdateShot={onUpdateShot}
           onGenerateVideo={onGenerateVideo}
         />
       )}
@@ -497,14 +500,16 @@ interface VideoTabBodyProps {
   cutPlanText: string;
   cutPlanRequired: boolean;
   boundRefCount: number;
+  onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
 }
 
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
-  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount, onGenerateVideo,
+  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount, onUpdateShot, onGenerateVideo,
 }) => {
   const canGenerate = isLocked && !isVideoGenerating && !cutPlanRequired;
-  const previewLine = `@image1 = locked storyboard${boundRefCount > 0 ? `, @image2..${boundRefCount + 1} = locked refs` : ''}`;
+  const audioLine = shot.lipsyncEnabled ? '\naudio 1 = sliced song segment for subtle visible vocal lip-sync' : '';
+  const previewLine = `@image1 = locked storyboard${boundRefCount > 0 ? `, @image2..${boundRefCount + 1} = locked refs` : ''}${audioLine}`;
 
   return (
     <>
@@ -519,6 +524,22 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
           Seedance receives the locked storyboard plus the cut plan as the motion/cut guide. To change the video, refine the storyboard or edit the cut plan.
         </p>
       </div>
+
+      <label className="surface-inset rounded-md px-3 py-2 flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={!!shot.lipsyncEnabled}
+          disabled={isVideoGenerating}
+          onChange={(e) => onUpdateShot(scene.id, shot.id, { lipsyncEnabled: e.target.checked })}
+          className="mt-0.5 h-4 w-4 rounded border-white/10 bg-transparent accent-white"
+        />
+        <span className="min-w-0">
+          <span className="block text-xs font-medium text-zinc-200">Lip-sync from song audio</span>
+          <span className="block text-[11px] text-zinc-500 leading-relaxed">
+            Sends this shot's sliced audio as an extra Seedance reference. Use only when vocals are present and a singing or chanting face is clearly visible.
+          </span>
+        </span>
+      </label>
 
       {/* Status + Generate */}
       <div className="flex items-center gap-2">

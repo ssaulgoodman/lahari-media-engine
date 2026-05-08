@@ -488,6 +488,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               onLockStoryboard={onLockStoryboard}
               onUnlockStoryboard={onUnlockStoryboard}
               onUpdateStoryboardPlan={onUpdateStoryboardPlan}
+              onUpdateShot={onUpdateShot}
               onGenerateVideo={onGenerateVideo}
               setModalImage={setModalImage}
             />

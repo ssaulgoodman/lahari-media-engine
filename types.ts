@@ -81,6 +81,7 @@ export interface VideoShot {
   storyboardStatus: GenerationStatus;
   storyboardLocked?: boolean;
   storyboardUserFeedback?: string;
+  lipsyncEnabled?: boolean;
   useNextAsEndFrame: boolean;
   error?: string;
   lastError?: string;

@@ -253,6 +253,7 @@ const forkProject = async (
           storyboard_status: shot.storyboard_status,
           storyboard_locked: shot.storyboard_locked,
           storyboard_user_feedback: shot.storyboard_user_feedback,
+          lipsync_enabled: shot.lipsync_enabled,
           image_status: shot.image_status,
           video_status: shot.video_status,
           critique: shot.critique,
@@ -486,6 +487,7 @@ const getFullProject = async (projectId: string) => {
         storyboardStatus: shot.storyboard_status || 'idle',
         storyboardLocked: !!shot.storyboard_locked,
         storyboardUserFeedback: shot.storyboard_user_feedback || undefined,
+        lipsyncEnabled: !!shot.lipsync_enabled,
         continuityFrom: shot.continuity_from || 'cut',
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
@@ -1296,7 +1298,7 @@ router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
 });
 
 router.patch('/:id/shots/:shotId', async (req, res) => {
-  const { direction, visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
+  const { direction, visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom, lipsyncEnabled } = req.body;
   const shotId = paramStr(req.params.shotId);
 
   // Manual edits to the prompt invalidate the auto-refresh chip — it meant
@@ -1312,6 +1314,9 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   }
   if (useNextAsEndFrame !== undefined) {
     await updateRows('shots', { id: shotId }, { use_next_as_end_frame: useNextAsEndFrame ? 1 : 0 });
+  }
+  if (lipsyncEnabled !== undefined) {
+    await updateRows('shots', { id: shotId }, { lipsync_enabled: !!lipsyncEnabled });
   }
   if (userFeedback !== undefined) {
     await updateRows('shots', { id: shotId }, { user_feedback: userFeedback || null });

@@ -243,6 +243,7 @@ Unified table for all file assets (audio, SRTs, references)
 | `end_visual_prompt` | `text` |  Nullable |
 | `end_user_feedback` | `text` |  Nullable |
 | `prompts_stale` | `bool` |  Nullable |
+| `lipsync_enabled` | `bool` |  Nullable |
 | `last_error` | `text` |  Nullable |
 
 ## Table `music_video_queue`
@@ -398,4 +399,3 @@ One record per language per song (5 videos per song)
 | `file_size_mb` | `numeric` |  Nullable |
 | `created_at` | `timestamptz` |  Nullable |
 | `updated_at` | `timestamptz` |  Nullable |
-

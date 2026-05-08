@@ -865,6 +865,7 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
       { name: 'mood', description: 'Mood word from the project (e.g. contemplative)' },
       { name: 'musicalCue', description: 'Pacing cue from audio analysis, optional' },
       { name: 'clipDirection', description: 'Exact shot direction for this clip' },
+      { name: 'lipsyncEnabled', description: 'Per-shot toggle; when true the shot audio slice is sent as audio 1 for subtle visible vocal lip-sync' },
     ],
     template: `Animate this {{rows}}×{{cols}} storyboard grid into one cohesive {{clipDuration}}s music-video clip. Follow @image1's panels left-to-right across each row, then continue to the next row.
 
@@ -873,6 +874,12 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
 Reference bindings:
 - @image1 = the locked storyboard grid
 - @image2..N = locked style, character, and environment refs — identity anchors only
+{{lipsyncEnabled ? "
+Audio reference:
+- audio 1 is the exact song segment for this clip. Use it only as a visual timing and lip-sync reference; do not generate or preserve audio.
+- If a singing or chanting face is clearly visible in the storyboard progression, add subtle mouth movement aligned to audio 1's vocal phrasing.
+- If the face is turned away, too small, obscured, or the passage is instrumental, keep the mouth natural and still. Do not invent dialogue or exaggerated mouth shapes.
+" : ""}}
 
 Song: {{title}}
 Concept: {{concept}}
