@@ -60,15 +60,16 @@ Environment: ${input.environmentName || 'unspecified'}`;
 // narrative, scene timestamps, lyrics, and song type: those describe a
 // broader window than this clip and risk leaking events (e.g. another
 // character mentioned in the scene narrative) into the storyboard. The
-// shot direction alone defines what gets drawn.
+// shot direction alone defines what gets drawn. Optional fields drop
+// out when missing instead of leaking defaults.
 const clipContext = (input: StoryboardRdInput) => {
   const lines: string[] = [
     `Song: ${input.title}`,
-    `Video intent: ${input.concept}`,
-    `Mood: ${input.mood || 'cinematic'}`,
+    `Concept: ${input.concept}`,
   ];
+  if (input.mood) lines.push(`Mood: ${input.mood}`);
   if (input.musicalCue) lines.push(`Musical pacing cue: ${input.musicalCue}`);
-  lines.push(`Exact shot to storyboard: ${input.clipDirection}`);
+  lines.push(`Shot description: ${input.clipDirection}`);
   lines.push(`Clip duration: ${input.clipDuration}s`);
   lines.push(`Cast in clip: ${castLine(input)}`);
   lines.push(`Environment: ${input.environmentName || 'unspecified'}`);
@@ -332,11 +333,11 @@ ${cutPlan}
 
 Animation contract:
 - Camera movement: simple and physically plausible — pushes, pulls, pans, tilts, rack-focus. No impossible swings or vertigo zooms unless the shot progression names them.
-- Preserve every character's face, body, costume, and jewelry across cuts to match the references. Preserve environment geometry across cuts.
+- Preserve character identity (face, body, costume, jewelry) and environment geometry across cuts to match the references.
 - The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
 - Soft slow-motion feel on emotional, singing, and dancing moments.
 - Do not generate audio; the song is mixed separately.${hasAudio ? `
-- @audio1 is a timing reference. Read it for rhythm and phrase boundaries; do not pass its audio through to the output.` : ''}${lipsync ? `
+- @audio1 is a timing reference — read it for rhythm and phrase boundaries; do not pass its audio through to the output.` : ''}${lipsync ? `
 - Additionally, if a visible face is singing or chanting, match subtle mouth movement to @audio1's vocal phrasing — no exaggerated lip-sync.` : ''}
 
 Generate one cohesive ${input.clipDuration}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`;

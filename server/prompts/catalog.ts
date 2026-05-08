@@ -877,10 +877,10 @@ Reference bindings:
 {{audioExcerpt ? "- @audio1 = song excerpt; read it for rhythm and phrase timing" : ""}}
 
 Song: {{title}}
-Video intent: {{concept}}
-Mood: {{mood}}
+Concept: {{concept}}
+{{mood ? "Mood: {{mood}}" : ""}}
 {{musicalCue ? "Musical pacing cue: {{musicalCue}}" : ""}}
-Exact shot to storyboard: {{clipDirection}}
+Shot description: {{clipDirection}}
 Clip duration: {{clipDuration}}s
 Cast in clip: {{castNames}}
 Environment: {{environmentName}}
@@ -890,11 +890,11 @@ Locked shot progression (motion and cut guide):
 
 Animation contract:
 - Camera movement: simple and physically plausible — pushes, pulls, pans, tilts, rack-focus. No impossible swings or vertigo zooms unless the shot progression names them.
-- Preserve every character's face, body, costume, and jewelry across cuts to match the references. Preserve environment geometry across cuts.
+- Preserve character identity (face, body, costume, jewelry) and environment geometry across cuts to match the references.
 - The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
 - Soft slow-motion feel on emotional, singing, and dancing moments.
 - Do not generate audio; the song is mixed separately.
-{{audioExcerpt ? "- @audio1 is a timing reference. Read it for rhythm and phrase boundaries; do not pass its audio through to the output." : ""}}
+{{audioExcerpt ? "- @audio1 is a timing reference — read it for rhythm and phrase boundaries; do not pass its audio through to the output." : ""}}
 
 Generate one cohesive {{clipDuration}}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`,
     source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt' },
