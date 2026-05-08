@@ -3,16 +3,16 @@
  *
  * Vertical scroll on a long song is hard to navigate. The horizontal scene
  * pills in StudioHeader give scene-level orientation; this sidebar gives
- * shot-level orientation: every shot shown with a thumbnail, timestamp,
- * three status dots (matching ShotCard's progress indicator), and an active
- * highlight that follows the user's scroll position via IntersectionObserver.
+ * shot-level orientation: every shot listed with shot index, timestamp,
+ * duration, three status dots, and an active highlight that follows the
+ * user's scroll position via IntersectionObserver.
  *
- * Mode-aware: in storyboard mode the thumbnail comes from `storyboardUrl`
- * and dot 1 reflects `storyboardLocked`; in keyframe mode the thumbnail is
- * `imageUrl` and dot 1 reflects start frame presence. Dot 2 = video, dot 3
- * = shot locked. Same vocabulary as the inline 3-dot row in ShotCard.
+ * Status dots match ShotCard's inline 3-dot vocabulary. Mode-aware: dot 1
+ * = `storyboardLocked` in storyboard mode, `imageUrl` in keyframe mode.
+ * Dot 2 = video, dot 3 = shot locked.
  *
- * Hidden below 1280px (the content area + a 256px sidebar wants the room).
+ * No thumbnails — text-only by design. Keeps it scannable, fast, and
+ * doesn't fan out 30+ image requests on a long song. Hidden below 1280px.
  */
 import React, { useEffect, useRef } from 'react';
 import { VideoScene, VideoShot, GenerationStatus } from '../types';
@@ -118,7 +118,6 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 const dot2: DotState = shot.videoUrl ? 'done' : 'todo';
                 const dot3: DotState = shot.locked ? 'done' : 'todo';
 
-                const thumbUrl = isStoryboardMode ? shot.storyboardUrl : shot.imageUrl;
                 const isActive = activeShotId === shot.id;
                 const isError = shot.imageStatus === GenerationStatus.ERROR
                   || shot.videoStatus === GenerationStatus.ERROR
@@ -139,60 +138,56 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                     key={shot.id}
                     id={`shot-nav-${shot.id}`}
                     onClick={() => onJumpToShot(shot.id)}
-                    className={`w-full px-3 py-1.5 flex items-center gap-2 transition-colors text-left border-l-2 ${
+                    className={`w-full pl-3 pr-2 py-1.5 flex items-center gap-2.5 transition-colors text-left border-l-2 ${
                       isActive
                         ? 'bg-white/[0.04] border-white/70'
                         : 'border-transparent hover:bg-white/[0.02]'
                     }`}
                     title={`Shot ${shotIdx + 1} · ${fmtTime(absSec)} · ${shot.duration}s`}
                   >
-                    {/* Thumbnail */}
-                    <div className="relative w-8 h-8 flex-shrink-0 rounded bg-black/40 overflow-hidden border border-white/[0.06]">
-                      {thumbUrl ? (
-                        <img src={thumbUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <span className="text-[9px] text-zinc-600 font-mono">{shotIdx + 1}</span>
-                        </div>
-                      )}
-                      {isLoading && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
-                        </div>
-                      )}
+                    {/* Index — primary identifier in the absence of a thumbnail */}
+                    <span
+                      className={`text-[11px] font-medium tabular-nums w-5 flex-shrink-0 ${
+                        isActive ? 'text-white' : 'text-zinc-400'
+                      }`}
+                    >
+                      {shotIdx + 1}
+                    </span>
+
+                    {/* Timestamp + duration */}
+                    <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
+                      <span className="text-[11px] text-zinc-400 font-mono tabular-nums">
+                        {fmtTime(absSec)}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-mono">[{shot.duration}s]</span>
                     </div>
 
-                    {/* Label + meta */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-1.5">
-                        <span className={`text-[11px] font-medium tabular-nums ${isActive ? 'text-white' : 'text-zinc-300'}`}>
-                          {shotIdx + 1}
-                        </span>
-                        <span className="text-[10px] text-zinc-500 font-mono tabular-nums">
-                          {fmtTime(absSec)}
-                        </span>
-                        <span className="text-[10px] text-zinc-600 font-mono">[{shot.duration}s]</span>
-                      </div>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot1)}`} />
-                        <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`} />
-                        <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot3)}`} />
-                        {shot.locked && (
-                          <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/60 ml-0.5" aria-hidden="true">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                          </svg>
-                        )}
-                        {isError && (
-                          <span className="text-[9px] text-red-300/80 font-mono ml-0.5" title="Generation error">err</span>
-                        )}
-                        {isStale && !isError && (
-                          <span className="text-[9px] text-amber-400/80 font-mono ml-0.5" title="Outdated — upstream changed">stale</span>
-                        )}
-                        {queuePos !== null && (
-                          <span className="text-[9px] text-zinc-400 font-mono ml-auto" title="Bulk queue position">#{queuePos}</span>
-                        )}
-                      </div>
+                    {/* Status dots + flags */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {isLoading ? (
+                        <div className="w-3 h-3 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot1)}`} />
+                          <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`} />
+                          <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot3)}`} />
+                        </>
+                      )}
+                      {shot.locked && !isLoading && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/60 ml-0.5" aria-hidden="true">
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                      )}
+                      {isError && (
+                        <span className="text-[9px] text-red-300/80 font-mono ml-0.5" title="Generation error">err</span>
+                      )}
+                      {isStale && !isError && (
+                        <span className="text-[9px] text-amber-400/80 font-mono ml-0.5" title="Outdated — upstream changed">stale</span>
+                      )}
+                      {queuePos !== null && (
+                        <span className="text-[9px] text-zinc-400 font-mono ml-0.5" title="Bulk queue position">#{queuePos}</span>
+                      )}
                     </div>
                   </button>
                 );
