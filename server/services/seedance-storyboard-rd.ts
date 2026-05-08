@@ -129,7 +129,7 @@ export const buildStoryboardPrompt = (
   variant: StoryboardPromptVariant
 ): string => {
   const panelSpec = variant === 'adaptive_numbered_storyboard'
-    ? `Create an ordered cinematic storyboard for this exact ${input.clipDuration}s Lahari shot/clip, not the whole scene. Use 3-6 panels, choosing the count that best fits the pacing.`
+    ? `Create an ordered cinematic storyboard for this exact ${input.clipDuration}s Lahari shot/clip. Use 3-6 panels, choosing the count that best fits the pacing.`
     : variant === 'six_panel_music_video'
     ? `Create a six-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`
     : variant === 'filmstrip_minimal_cuts'
@@ -165,7 +165,7 @@ Storyboard contract:
 - show actual visible action, camera angle, and emotional progression
 - make the board useful as a Seedance reference image, not a poster or concept sheet
 
-Also return a concise cut plan outside the image, in plain text, using this exact shape. Use exactly the same number of panels as the image:
+Also return a concise cut plan outside the image, in plain text, using this exact shape. Use exactly the same number of panels as the image. The numbered labels below are for the text cut plan only; do not render them inside the storyboard image:
 Storyboard cut plan:
 Panel 1 [00:00-..] - camera: ...; action: ...; Seedance cue: ...
 Panel 2 [...] - camera: ...; action: ...; Seedance cue: ...
