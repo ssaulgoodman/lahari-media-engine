@@ -5,6 +5,7 @@ import { VideoScene, VideoShot, ApiProject } from '../types';
 import { ImageModal } from './ImageModal';
 import { ShotCard } from './ShotCard';
 import { StudioHeader } from './StudioHeader';
+import { StudioShotNav } from './StudioShotNav';
 import type { ShotRefInput } from '../services/api';
 import { getVideoModel } from '../constants/videoModels';
 
@@ -62,6 +63,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [historyOpenFor, setHistoryOpenFor] = useState<string | null>(null);
   const [refiningShots, setRefiningShots] = useState<Set<string>>(new Set());
   const [shotRefs, setShotRefs] = useState<Record<string, ShotRefInput[]>>({});
+  const [activeShotId, setActiveShotId] = useState<string | null>(null);
 
   const modelSpec = getVideoModel(project?.videoModel);
   const modelSupportsLastFrame = modelSpec.supportsLastFrame;
@@ -139,6 +141,69 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
     setExpandedShotIds(prev => { const next = new Set(prev); if (next.has(shotId)) next.delete(shotId); else next.add(shotId); return next; });
   };
 
+  // Track which shot is currently in view so the right-side StudioShotNav
+  // can highlight it. Uses IntersectionObserver against each shot card's
+  // outer wrapper (id="shot-<id>"). The observer rebuilds whenever the
+  // shot list changes — cheap because there's at most a few dozen shots.
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
+    const allShotIds = scenes.flatMap(s => s.shots.map(sh => sh.id));
+    if (allShotIds.length === 0) return;
+
+    // Track each shot's ratio so we can pick the most-visible one as active.
+    const ratios = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.shotId;
+          if (!id) continue;
+          ratios.set(id, entry.isIntersecting ? entry.intersectionRatio : 0);
+        }
+        // Pick the shot with the highest visible ratio. Ties (e.g. two
+        // small shots both at 0.5) resolve by document order via the
+        // allShotIds traversal.
+        let bestId: string | null = null;
+        let bestRatio = 0;
+        for (const id of allShotIds) {
+          const r = ratios.get(id) || 0;
+          if (r > bestRatio) { bestRatio = r; bestId = id; }
+        }
+        if (bestRatio > 0) setActiveShotId(bestId);
+      },
+      // Bias toward the upper half of the viewport so "active" reflects
+      // what the artist is reading rather than what's at the bottom edge.
+      { threshold: [0, 0.25, 0.5, 0.75, 1], rootMargin: '-20% 0px -50% 0px' }
+    );
+
+    const elements: HTMLElement[] = [];
+    for (const id of allShotIds) {
+      const el = document.getElementById(`shot-${id}`);
+      if (el) { observer.observe(el); elements.push(el); }
+    }
+    return () => {
+      for (const el of elements) observer.unobserve(el);
+      observer.disconnect();
+    };
+    // Re-observe on shot count or order change. Stringifying the id list
+    // keeps the dep stable across reference-only changes.
+  }, [scenes.map(s => s.shots.map(sh => sh.id).join(',')).join('|')]);
+
+  const jumpToShot = (shotId: string) => {
+    setExpandedShotIds(prev => prev.has(shotId) ? prev : new Set(prev).add(shotId));
+    // Defer scroll until the (potentially newly-expanded) card has laid out.
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`shot-${shotId}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  const jumpToScene = (sceneId: string) => {
+    const el = document.getElementById(`scene-${sceneId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const idx = scenes.findIndex(s => s.id === sceneId);
+    if (idx >= 0) onSceneChange(idx);
+  };
+
   const isShotActionable = (scene: VideoScene, shotIdx: number): boolean => {
     const shot = scene.shots[shotIdx];
     const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
@@ -150,8 +215,11 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
 
   if (scenes.length === 0) return null;
 
+  const isStoryboardModeActive = storyboardSupported && studioMode === 'storyboard';
+
   return (
-    <div className="max-w-5xl mx-auto pb-32">
+    <div className="max-w-5xl xl:max-w-7xl mx-auto pb-32 xl:flex xl:items-start xl:gap-6">
+      <div className="flex-1 min-w-0">
       <StudioHeader
         scenes={scenes}
         project={project}
@@ -262,6 +330,18 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
         </motion.div>
       ))}
       </div>
+      </div>
+
+      <StudioShotNav
+        scenes={scenes}
+        isStoryboardMode={isStoryboardModeActive}
+        activeShotId={activeShotId}
+        frameQueue={frameQueue}
+        videoQueue={videoQueue}
+        storyboardQueue={storyboardQueue}
+        onJumpToShot={jumpToShot}
+        onJumpToScene={jumpToScene}
+      />
 
       <AnimatePresence>
         {modalImage && <ImageModal src={modalImage} onClose={() => setModalImage(null)} />}

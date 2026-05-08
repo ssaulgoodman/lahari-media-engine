@@ -140,10 +140,12 @@ export const ShotCard: React.FC<ShotCardProps> = ({
 
   return (
     <motion.div
+      id={`shot-${shot.id}`}
+      data-shot-id={shot.id}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: shotIdx * 0.03 }}
-      className={`rounded-xl overflow-hidden border transition-all ${
+      className={`rounded-xl overflow-hidden border transition-all scroll-mt-20 ${
         !actionable ? 'opacity-40 border-white/[0.03]'
           : shot.locked ? 'border-white/[0.08]'
           : 'border-white/[0.05]'
