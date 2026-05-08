@@ -21,7 +21,7 @@ export type StoryboardRdInput = {
 
 export type ScriptPromptVariant = 'clip_blocks' | 'clip_blocks_combine_short' | 'clip_blocks_freeform';
 export type StoryboardPromptVariant = 'adaptive_numbered_storyboard' | 'four_panel_clean' | 'six_panel_music_video' | 'filmstrip_minimal_cuts';
-export type SeedancePromptVariant = 'follow_board_only' | 'shot_timing_only' | 'board_plus_timing' | 'board_plus_audio_rhythm' | 'board_plus_audio_lipsync';
+export type SeedancePromptVariant = 'follow_board_only' | 'shot_timing_only' | 'board_plus_timing';
 
 const panelLayout = (seconds: number) => {
   const duration = Number.isFinite(seconds) ? seconds : 15;
@@ -291,8 +291,6 @@ export const buildSeedanceStoryboardVideoPrompt = (
     refs?: { label: string }[];
   }
 ): string => {
-  const hasAudio = variant === 'board_plus_audio_rhythm' || variant === 'board_plus_audio_lipsync';
-  const lipsync = variant === 'board_plus_audio_lipsync';
   const minimal = variant === 'follow_board_only';
 
   if (variant === 'follow_board_only') {
@@ -324,7 +322,6 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
 Reference bindings:
 - @image1 = the locked storyboard grid
 ${refBindings}
-${hasAudio ? `- @audio1 = song excerpt; read it for rhythm and phrase timing` : ''}
 
 ${clipContext(input)}
 
@@ -336,9 +333,7 @@ Animation contract:
 - Preserve character identity (face, body, costume, jewelry) and environment geometry across cuts to match the references.
 - The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
 - Soft slow-motion feel on emotional, singing, and dancing moments.
-- Do not generate audio; the song is mixed separately.${hasAudio ? `
-- @audio1 is a timing reference — read it for rhythm and phrase boundaries; do not pass its audio through to the output.` : ''}${lipsync ? `
-- Additionally, if a visible face is singing or chanting, match subtle mouth movement to @audio1's vocal phrasing — no exaggerated lip-sync.` : ''}
+- Do not generate audio; the song is mixed separately.
 
 Generate one cohesive ${input.clipDuration}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`;
 };
@@ -346,7 +341,7 @@ Generate one cohesive ${input.clipDuration}s edited clip with smooth cinematic c
 export const buildPromptPack = (input: StoryboardRdInput): string => {
   const scriptVariants: ScriptPromptVariant[] = ['clip_blocks', 'clip_blocks_combine_short', 'clip_blocks_freeform'];
   const storyboardVariants: StoryboardPromptVariant[] = ['adaptive_numbered_storyboard', 'four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts'];
-  const seedanceVariants: SeedancePromptVariant[] = ['follow_board_only', 'shot_timing_only', 'board_plus_timing', 'board_plus_audio_rhythm', 'board_plus_audio_lipsync'];
+  const seedanceVariants: SeedancePromptVariant[] = ['follow_board_only', 'shot_timing_only', 'board_plus_timing'];
 
   return `# Seedance Storyboard Prompt Pack
 

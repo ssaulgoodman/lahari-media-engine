@@ -865,7 +865,6 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
       { name: 'mood', description: 'Mood word from the project (e.g. contemplative)' },
       { name: 'musicalCue', description: 'Pacing cue from audio analysis, optional' },
       { name: 'clipDirection', description: 'Exact shot direction for this clip' },
-      { name: 'audioExcerpt', description: 'Optional future @audio1 rhythm/lipsync reference' },
     ],
     template: `Animate this {{rows}}×{{cols}} storyboard grid into one cohesive {{clipDuration}}s music-video clip. Follow @image1's panels left-to-right across each row, then continue to the next row.
 
@@ -874,7 +873,6 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
 Reference bindings:
 - @image1 = the locked storyboard grid
 - @image2..N = locked style, character, and environment refs — identity anchors only
-{{audioExcerpt ? "- @audio1 = song excerpt; read it for rhythm and phrase timing" : ""}}
 
 Song: {{title}}
 Concept: {{concept}}
@@ -894,7 +892,6 @@ Animation contract:
 - The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
 - Soft slow-motion feel on emotional, singing, and dancing moments.
 - Do not generate audio; the song is mixed separately.
-{{audioExcerpt ? "- @audio1 is a timing reference — read it for rhythm and phrase boundaries; do not pass its audio through to the output." : ""}}
 
 Generate one cohesive {{clipDuration}}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`,
     source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt' },
