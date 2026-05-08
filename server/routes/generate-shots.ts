@@ -844,7 +844,8 @@ router.post('/:id/shots/:shotId/delete-ref', async (req, res) => {
 router.post('/:id/shots/:shotId/lock', async (req, res) => {
   const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
-  if (!shot.image_asset_id) return res.status(400).json({ error: 'Start frame required to lock' });
+  const hasFrameSource = !!shot.image_asset_id || (!!shot.storyboard_locked && !!shot.storyboard_asset_id);
+  if (!hasFrameSource) return res.status(400).json({ error: 'Start frame or locked storyboard required to lock' });
   if (!shot.video_asset_id) return res.status(400).json({ error: 'Video must be generated before locking' });
 
   await updateRows('shots', { id: shot.id }, { locked: 1 });
@@ -864,8 +865,10 @@ router.post('/:id/shots/:shotId/unlock', async (req, res) => {
 router.post('/:id/scenes/:sceneId/lock-all', async (req, res) => {
   const sceneId = paramStr(req.params.sceneId);
   const shots = await selectAll('shots', { scene_id: sceneId });
-  // Only lock shots that have both start frame + video
-  const lockable = shots.filter((s: any) => s.image_asset_id && s.video_asset_id && !s.locked);
+  // Only lock shots that have video plus either a start frame or a locked storyboard.
+  const lockable = shots.filter((s: any) =>
+    (s.image_asset_id || (s.storyboard_locked && s.storyboard_asset_id)) && s.video_asset_id && !s.locked
+  );
   for (const shot of lockable) {
     await updateRows('shots', { id: shot.id }, { locked: 1 });
   }
