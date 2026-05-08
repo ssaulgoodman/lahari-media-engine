@@ -155,10 +155,13 @@ ${cutGuidance}
 
 Storyboard contract:
 - Treat the board as one edited scene, not separate concept frames.
-- Each panel must be its own 16:9 cinematic film frame.
+- Each panel must be its own true 16:9 cinematic film frame, about 1.78:1.
+- All panels must use the exact same width and height.
+- Do not make panels panoramic, cinemascope, ultra-wide, or poster-shaped.
 - Place the panels on a neutral storyboard board with clean spacing. Unused empty board space is allowed.
+- On the wide storyboard canvas, each panel should be about 800x450 px or 900x506 px. Use smaller panels and larger empty margins rather than stretching any panel wider than 16:9.
 - Do not stretch, crop, stack vertically, or distort panels just to fill the canvas.
-- Read panel order left-to-right across each row. If more than 3 panels are needed, use a second row with balanced spacing.
+- Read panel order left-to-right across each row. If more than 3 panels are needed, use a second row with balanced spacing. For 5 panels, use 3 panels on top and 2 below, with the bottom panels the same size as the top panels and centered with empty space on both sides. For 6 panels, use 3 panels on top and 3 below.
 - Keep a stable spatial map across panels while allowing meaningful angle changes.
 - Every cut should reveal new information, deepen emotion, or land a musical beat.
 - Use only objects and gestures that belong to the shot, the references, and the devotional context.
