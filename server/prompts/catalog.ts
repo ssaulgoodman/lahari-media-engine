@@ -856,48 +856,47 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     triggeredBy: "Fires when you click 'Generate video' in the Storyboard panel's Video sub-tab.",
     summary: 'Builds the Seedance prompt around @image1 as the locked ordered storyboard, @image2+ as locked consistency refs, and the saved cut plan as the motion/edit guide.',
     variables: [
-      { name: 'storyboardImage', description: '@image1, the locked ordered storyboard' },
-      { name: 'referenceImages', description: '@image2+ locked style, character, and environment consistency anchors' },
-      { name: 'cutPlanText', description: 'Saved storyboard cut plan from the active storyboard version' },
+      { name: 'storyboardImage', description: '@image1, the locked storyboard grid' },
+      { name: 'referenceImages', description: '@image2+ locked style, character, and environment identity anchors' },
+      { name: 'rows', description: 'Storyboard grid rows (2 for both sizes today)' },
+      { name: 'cols', description: 'Storyboard grid columns (2 for clips <10s, 3 for clips ≥10s)' },
+      { name: 'cutPlanText', description: 'Saved shot progression text from the active storyboard version' },
       { name: 'clipDuration', description: 'Seedance clip duration, 4-15s' },
-      { name: 'sceneContext', description: 'Scene overview and musical cue for context only' },
-      { name: 'clipDirection', description: 'Exact shot direction' },
+      { name: 'mood', description: 'Mood word from the project (e.g. contemplative)' },
+      { name: 'musicalCue', description: 'Pacing cue from audio analysis, optional' },
+      { name: 'clipDirection', description: 'Exact shot direction for this clip' },
       { name: 'audioExcerpt', description: 'Optional future @audio1 rhythm/lipsync reference' },
     ],
-    template: `Here is the ordered storyboard for this {{clipDuration}}s Lahari music-video clip: @image1.
-Follow @image1 panels left-to-right, then top-to-bottom. Treat @image1 as the source of truth for composition, blocking, screen direction, cut order, and camera progression.
-If @image1 contains panel numbers, labels, borders, or guide marks, use them only to understand the edit order. Do not reproduce any visible numbers, labels, borders, captions, or guide marks in the final video.
+    template: `Animate this {{rows}}×{{cols}} storyboard grid into one cohesive {{clipDuration}}s music-video clip. Follow @image1's panels left-to-right across each row, then continue to the next row.
+
+@image1 is the source of truth for composition, blocking, screen direction, cut order, and camera progression. Do not render text, panel numbers, borders, gutters, or split-screen artifacts from the board into the video.
 
 Reference bindings:
-- @image1 = locked ordered storyboard and edit plan
-- @image2...N = locked style, character, and environment references; use only as consistency anchors, not alternate compositions
-{{audioExcerpt ? "- @audio1 = song excerpt for rhythm, phrase timing, and edit energy" : ""}}
+- @image1 = the locked storyboard grid
+- @image2..N = locked style, character, and environment refs — identity anchors only
+{{audioExcerpt ? "- @audio1 = song excerpt; read it for rhythm and phrase timing" : ""}}
 
 Song: {{title}}
 Video intent: {{concept}}
-Scene context only: {{sceneLabel}} ({{sceneStart}}-{{sceneEnd}})
-Scene overview for context: {{sceneNarrative}}
-Musical structure cue from audio analysis: {{musicalCue}}
+Mood: {{mood}}
+{{musicalCue ? "Musical pacing cue: {{musicalCue}}" : ""}}
 Exact shot to storyboard: {{clipDirection}}
 Clip duration: {{clipDuration}}s
-Lyrics/phrase: {{sceneLyrics}}
 Cast in clip: {{castNames}}
 Environment: {{environmentName}}
 
-Storyboard description / cut plan:
+Locked shot progression (motion and cut guide):
 {{cutPlanText}}
 
-Timing and motion rules:
-- clean internal cuts between storyboard panels are allowed and desired
-- preserve character faces, costume, jewelry, and environment geometry across cuts
-- camera movement should be simple and physically plausible
-- do not replace storyboard composition with a composition from the reference images
-- do not invent a different devotional object or character blocking than the storyboard
-- no panel numbers, subtitles, readable text, logos, watermark, or storyboard borders
-- do not generate new music, dialogue, or sound effects; Lahari will render the final song separately
-{{audioExcerpt ? "- use @audio1 only as a rhythm and phrase reference for visual timing" : ""}}
+Animation contract:
+- Camera movement: simple and physically plausible — pushes, pulls, pans, tilts, rack-focus. No impossible swings or vertigo zooms unless the shot progression names them.
+- Preserve every character's face, body, costume, and jewelry across cuts to match the references. Preserve environment geometry across cuts.
+- The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
+- Soft slow-motion feel on emotional, singing, and dancing moments.
+- Do not generate audio; the song is mixed separately.
+{{audioExcerpt ? "- @audio1 is a timing reference. Read it for rhythm and phrase boundaries; do not pass its audio through to the output." : ""}}
 
-Generate one cohesive {{clipDuration}}s edited clip.`,
+Generate one cohesive {{clipDuration}}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`,
     source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt' },
   },
 

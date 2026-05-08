@@ -311,36 +311,35 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
 
   const refs = opts?.refs || [];
   const refBindings = refs.length
-    ? refs.map((ref, idx) => `- @image${idx + 2} = ${ref.label}; use only as a consistency anchor, not as an alternate composition`).join('\n')
-    : '- @image2 and later = locked style, character, and environment references; use only as consistency anchors, not alternate compositions';
+    ? refs.map((ref, idx) => `- @image${idx + 2} = ${ref.label} — identity anchor only`).join('\n')
+    : '- @image2..N = locked style, character, and environment refs — identity anchors only';
   const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
+  const layout = panelLayout(input.clipDuration);
 
-  return `Here is the ordered storyboard for this ${input.clipDuration}s Lahari music-video clip: @image1.
-Follow @image1 panels left-to-right across each row, then continue to the next row if present. Treat @image1 as the source of truth for composition, blocking, screen direction, cut order, and camera progression.
-If @image1 contains panel numbers, labels, borders, gutters, or guide marks, use them only to understand the edit order. Do not reproduce any visible numbers, labels, borders, gutters, split-screen layout, captions, or guide marks in the final video.
+  return `Animate this ${layout.rows}×${layout.cols} storyboard grid into one cohesive ${input.clipDuration}s music-video clip. Follow @image1's panels left-to-right across each row, then continue to the next row.
+
+@image1 is the source of truth for composition, blocking, screen direction, cut order, and camera progression. Do not render text, panel numbers, borders, gutters, or split-screen artifacts from the board into the video.
 
 Reference bindings:
-- @image1 = locked ordered storyboard and edit plan
+- @image1 = the locked storyboard grid
 ${refBindings}
-${hasAudio ? `- @audio1 = song excerpt for rhythm, phrase timing, and edit energy` : ''}
+${hasAudio ? `- @audio1 = song excerpt; read it for rhythm and phrase timing` : ''}
 
 ${clipContext(input)}
 
-Storyboard description / cut plan:
+Locked shot progression (motion and cut guide):
 ${cutPlan}
 
-Timing and motion rules:
-- clean internal cuts between storyboard panels are allowed and desired
-- preserve character faces, costume, jewelry, and environment geometry across cuts
-- camera movement should be simple and physically plausible
-- do not replace storyboard composition with a composition from the reference images
-- do not invent a different devotional object or character blocking than the storyboard
-- no panel numbers, subtitles, readable text, logos, watermark, storyboard borders, gutters, or split-screen layout
-- do not generate new music, dialogue, or sound effects; Lahari will render the final song separately
-${hasAudio ? `- use @audio1 only as a rhythm and phrase reference for visual timing` : ''}
-${lipsync ? `- if a singer, devotee, or deity mouth is clearly visible, add subtle mouth movement matching @audio1; avoid exaggerated dialogue lip-sync if the face is not featured` : ''}
+Animation contract:
+- Camera movement: simple and physically plausible — pushes, pulls, pans, tilts, rack-focus. No impossible swings or vertigo zooms unless the shot progression names them.
+- Preserve every character's face, body, costume, and jewelry across cuts to match the references. Preserve environment geometry across cuts.
+- The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
+- Soft slow-motion feel on emotional, singing, and dancing moments.
+- Do not generate audio; the song is mixed separately.${hasAudio ? `
+- @audio1 is a timing reference. Read it for rhythm and phrase boundaries; do not pass its audio through to the output.` : ''}${lipsync ? `
+- Additionally, if a visible face is singing or chanting, match subtle mouth movement to @audio1's vocal phrasing — no exaggerated lip-sync.` : ''}
 
-Generate one cohesive ${input.clipDuration}s edited clip.`;
+Generate one cohesive ${input.clipDuration}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`;
 };
 
 export const buildPromptPack = (input: StoryboardRdInput): string => {
