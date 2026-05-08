@@ -250,7 +250,9 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-display font-medium text-white">Scene {sceneIdx + 1}</h2>
               <span className="text-xs text-zinc-400 font-mono">{scene.startTime}–{scene.endTime}</span>
-              <span className="text-xs text-zinc-400">{scene.sectionLabel}</span>
+              {scene.sectionLabel && (
+                <span className="text-xs text-zinc-400 ml-auto">{scene.sectionLabel}</span>
+              )}
             </div>
             {scene.narrativeDescription && (
               <p className="text-sm text-zinc-400 max-w-3xl">{scene.narrativeDescription}</p>

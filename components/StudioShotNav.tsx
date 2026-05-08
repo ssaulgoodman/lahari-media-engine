@@ -142,7 +142,7 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
               <span className="text-[11px] font-mono text-zinc-300">S{sceneIdx + 1}</span>
               <span className="text-[10px] text-zinc-500 font-mono tabular-nums">{scene.startTime}–{scene.endTime}</span>
               {scene.sectionLabel && (
-                <span className="text-[10px] text-zinc-500 truncate">· {scene.sectionLabel}</span>
+                <span className="text-[10px] text-zinc-500 truncate ml-auto">{scene.sectionLabel}</span>
               )}
             </button>
 
