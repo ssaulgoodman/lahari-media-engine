@@ -125,7 +125,7 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
             {lockedShots > 0 && (
               <>
                 <span className="text-zinc-600">·</span>
-                <span className="text-emerald-400/70" title={`${lockedShots} of ${totalShots} shots locked (frame + video frozen)`}>L</span>
+                <span title={`${lockedShots} of ${totalShots} shots locked (frame + video frozen)`}>L</span>
                 <span className="text-emerald-400/90" title={`${lockedShots} of ${totalShots} shots locked (frame + video frozen)`}>{lockedShots}</span>
               </>
             )}
