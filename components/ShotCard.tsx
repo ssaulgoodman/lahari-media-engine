@@ -10,7 +10,7 @@ import { ShotVideoPreview } from './ShotVideoPreview';
 import { PromptToolkit } from './PromptToolkit';
 import { StoryboardPanel } from './StoryboardPanel';
 import { ShotVersionHistory } from './ShotVersionHistory';
-import type { ShotRefInput } from '../services/api';
+import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
 
 // "0:32" / "00:32" / "1:23:45" → seconds.
 const parseTimeToSec = (t?: string): number => {
@@ -69,7 +69,7 @@ interface ShotCardProps {
   // Required at this boundary — Storyboard.tsx always wires these. Optionality
   // here would force `!` non-null asserts inside StoryboardPanel.
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
-  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
+  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;

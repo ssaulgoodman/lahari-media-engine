@@ -6,7 +6,7 @@ import { ImageModal } from './ImageModal';
 import { ShotCard } from './ShotCard';
 import { StudioHeader } from './StudioHeader';
 import { StudioShotNav } from './StudioShotNav';
-import type { ShotRefInput } from '../services/api';
+import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
 import { getVideoModel } from '../constants/videoModels';
 
 interface Props {
@@ -20,7 +20,7 @@ interface Props {
   // Required — App.tsx always wires these. Keeping them optional would force
   // non-null asserts further down the tree (StoryboardPanel needs them).
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
-  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string) => void | Promise<void>;
+  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
