@@ -37,17 +37,36 @@ export const chooseSeedanceStoryboardDuration = (seconds: number, preferredMax =
 const castLine = (input: StoryboardRdInput) =>
   input.castNames.length ? input.castNames.join(', ') : 'No recurring character in frame';
 
-const commonContext = (input: StoryboardRdInput) => `Song: ${input.title}
+// Scene-scoped context — for the script writer that plans clips across a
+// whole scene. Includes scene narrative, scene timestamps, and lyrics
+// because the planner needs them to decide clip boundaries and beats.
+const sceneContext = (input: StoryboardRdInput) => `Song: ${input.title}
 Video intent: ${input.concept}
 Mood: ${input.mood || 'cinematic'}
-Song type: ${input.songType || 'unknown'}
-Scene context only: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
-Scene overview for context: ${input.sceneNarrative}
-${input.musicalCue ? `Musical structure cue from audio analysis: ${input.musicalCue}\n` : ''}Exact shot to storyboard: ${input.clipDirection}
-Clip duration: ${input.clipDuration}s
-Lyrics/phrase: ${input.sceneLyrics || 'instrumental or no lyric cue'}
-Cast in clip: ${castLine(input)}
+${input.songType && input.songType !== 'song' ? `Song type: ${input.songType}\n` : ''}Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
+Scene overview: ${input.sceneNarrative}
+${input.musicalCue ? `Musical structure cue: ${input.musicalCue}\n` : ''}${input.sceneLyrics ? `Lyrics/phrase: ${input.sceneLyrics}\n` : ''}Cast available in scene: ${castLine(input)}
 Environment: ${input.environmentName || 'unspecified'}`;
+
+// Clip-scoped context — for the storyboard generator and the video model,
+// both of which produce a single 4-15s clip. Deliberately drops scene
+// narrative, scene timestamps, lyrics, and song type: those describe a
+// broader window than this clip and risk leaking events (e.g. another
+// character mentioned in the scene narrative) into the storyboard. The
+// shot direction alone defines what gets drawn.
+const clipContext = (input: StoryboardRdInput) => {
+  const lines: string[] = [
+    `Song: ${input.title}`,
+    `Video intent: ${input.concept}`,
+    `Mood: ${input.mood || 'cinematic'}`,
+  ];
+  if (input.musicalCue) lines.push(`Musical pacing cue: ${input.musicalCue}`);
+  lines.push(`Exact shot to storyboard: ${input.clipDirection}`);
+  lines.push(`Clip duration: ${input.clipDuration}s`);
+  lines.push(`Cast in clip: ${castLine(input)}`);
+  lines.push(`Environment: ${input.environmentName || 'unspecified'}`);
+  return lines.join('\n');
+};
 
 export const buildSeedanceScriptWriterPrompt = (
   input: StoryboardRdInput,
@@ -79,7 +98,7 @@ For each scene, output storyboard clips. Each clip needs:
 - environmentName
 - Do not include art style, color palette, rendering language, or architecture not present in the scene/environment.
 
-${commonContext(input)}
+${sceneContext(input)}
 
 Return a compact JSON object with a "clips" array.`;
 };
@@ -144,7 +163,7 @@ export const buildStoryboardPrompt = (
 
   return `${panelSpec}
 
-${commonContext(input)}
+${clipContext(input)}
 
 Use the provided reference images as ground truth:
 - the locked style reference controls visual language
@@ -219,7 +238,7 @@ Follow the panels left-to-right across each row, then continue to the next row i
   if (variant === 'shot_timing_only') {
     return `Generate a ${input.clipDuration}s cinematic Lahari music-video clip.
 
-${commonContext(input)}
+${clipContext(input)}
 
 ${seedanceShotList(input)}
 
@@ -241,7 +260,7 @@ Reference bindings:
 ${refBindings}
 ${hasAudio ? `- @audio1 = song excerpt for rhythm, phrase timing, and edit energy` : ''}
 
-${commonContext(input)}
+${clipContext(input)}
 
 Storyboard description / cut plan:
 ${cutPlan}
@@ -269,10 +288,16 @@ export const buildPromptPack = (input: StoryboardRdInput): string => {
 
 Generated: ${new Date().toISOString()}
 
-## Context
+## Scene context (used by script writer)
 
 \`\`\`
-${commonContext(input)}
+${sceneContext(input)}
+\`\`\`
+
+## Clip context (used by storyboard generator + video model)
+
+\`\`\`
+${clipContext(input)}
 \`\`\`
 
 ## Script Writer Variants
