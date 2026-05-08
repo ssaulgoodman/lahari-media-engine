@@ -120,7 +120,6 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const hasStoryboard = !!shot.storyboardUrl;
   const canGenerateVideo = isStoryboardMode ? !!shot.storyboardLocked && hasStoryboard && !isGenerating : hasStartFrame && !isGenerating;
   const canLock = isStoryboardMode ? !!shot.storyboardLocked && hasVideo && !shot.locked : hasStartFrame && hasVideo && !shot.locked;
-  const progress = shot.locked ? 3 : hasVideo ? 2 : isStoryboardMode ? (shot.storyboardLocked ? 1 : 0) : hasStartFrame ? 1 : 0;
   // In storyboard mode the storyboard image stands in for the start frame —
   // show it as soon as it exists, alongside any video that gets generated.
   const showMediaSection = isStoryboardMode ? (hasStoryboard || hasVideo || shot.storyboardStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING) : true;
@@ -174,11 +173,6 @@ export const ShotCard: React.FC<ShotCardProps> = ({
             {fmtTime(parseTimeToSec(scene.startTime) + scene.shots.slice(0, shotIdx).reduce((a, s) => a + (s.duration || 0), 0))}
             <span className="text-zinc-500 ml-1">[{shot.duration}s]</span>
           </span>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {[1, 2, 3].map(step => (
-              <div key={step} className={`w-1.5 h-1.5 rounded-full transition-colors ${step <= progress ? 'bg-white' : 'bg-white/[0.1]'}`} />
-            ))}
-          </div>
           {activeCastMembers.length > 0 && (
             <span className="text-sm text-zinc-300 truncate">{activeCastMembers.map(c => c.name).join(', ')}</span>
           )}
