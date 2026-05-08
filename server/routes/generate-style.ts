@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import { selectOne, selectColumns, insertRow, updateRows } from '../database.js';
+import { selectOne, selectColumns, insertRow, updateRows, selectAll } from '../database.js';
 import { saveBuffer, storageUrl } from '../storage.js';
 import { buildStylePrompt } from '../services/imagen.js';
 import { brainstormStyleDirections, refineStyleDirection, analyzeImageStyle } from '../services/claude.js';
@@ -65,6 +65,12 @@ export const mountStyleRoutes = (router: Router) => {
         style_generation_prompt: genPrompt,
         updated_at: new Date().toISOString(),
       });
+      await updateRows('cast_members', { project_id: project.id }, { prompts_stale: true });
+      await updateRows('environments', { project_id: project.id }, { prompts_stale: true });
+      const scenes = await selectAll('scenes', { project_id: project.id });
+      for (const scene of scenes) {
+        await updateRows('shots', { scene_id: scene.id }, { prompts_stale: true });
+      }
 
       await logCall({
         projectId: project.id,
