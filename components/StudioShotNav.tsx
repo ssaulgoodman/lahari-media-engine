@@ -9,8 +9,9 @@
  *
  * Three-dot status, mode-aware: dot 1 = first creative output (start
  * frame in keyframe mode, storyboard in storyboard mode), dot 2 = video,
- * dot 3 = shot locked. White = done, amber = exists-but-stale (e.g.
- * upstream changed, storyboard generated but not locked, video out of
+ * dot 3 = shot locked. Colors: green = the whole shot is locked (all
+ * three turn green together), white = done, amber = exists-but-stale
+ * (upstream changed, storyboard generated but not locked, video out of
  * sync with end keyframe), dim = not yet done.
  *
  * No thumbnails — text-only by design. Keeps it scannable, fast, and
@@ -46,10 +47,13 @@ const fmtTime = (sec: number): string => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
-type DotState = 'done' | 'todo' | 'pending';
+type DotState = 'done' | 'todo' | 'pending' | 'locked';
 
 const dotClass = (s: DotState): string =>
-  s === 'done' ? 'bg-white' : s === 'pending' ? 'bg-amber-400/80' : 'bg-white/[0.12]';
+  s === 'locked' ? 'bg-emerald-400/90'
+    : s === 'done' ? 'bg-white'
+    : s === 'pending' ? 'bg-amber-400/80'
+    : 'bg-white/[0.12]';
 
 export const StudioShotNav: React.FC<StudioShotNavProps> = ({
   scenes, isStoryboardMode, activeShotId, frameQueue, videoQueue, storyboardQueue,
@@ -124,20 +128,30 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                 const promptStale = !!shot.promptsStale;
                 const videoStale = shot.videoStatus === GenerationStatus.STALE;
 
-                // Dot 1 = first creative output. Amber when the artist's
-                // existing frame/storyboard is out of sync with upstream
-                // edits (promptsStale), or when a storyboard exists but
-                // isn't locked yet. Otherwise white if done, dim if not.
-                const dot1Has = isStoryboardMode ? !!shot.storyboardUrl : !!shot.imageUrl;
-                const dot1Amber = dot1Has && (promptStale || (isStoryboardMode && !shot.storyboardLocked));
-                const dot1: DotState = !dot1Has ? 'todo' : dot1Amber ? 'pending' : 'done';
+                // When the shot is locked, all three dots go green — that's
+                // the "this is done and frozen" signal, replacing the
+                // previous separate lock glyph next to the dots.
+                let dot1: DotState;
+                let dot2: DotState;
+                let dot3: DotState;
+                if (shot.locked) {
+                  dot1 = dot2 = dot3 = 'locked';
+                } else {
+                  // Dot 1 = first creative output. Amber when the artist's
+                  // existing frame/storyboard is out of sync with upstream
+                  // edits (promptsStale), or when a storyboard exists but
+                  // isn't locked yet. Otherwise white if done, dim if not.
+                  const dot1Has = isStoryboardMode ? !!shot.storyboardUrl : !!shot.imageUrl;
+                  const dot1Amber = dot1Has && (promptStale || (isStoryboardMode && !shot.storyboardLocked));
+                  dot1 = !dot1Has ? 'todo' : dot1Amber ? 'pending' : 'done';
 
-                // Dot 2 = video. Amber when the rendered video is stale
-                // relative to a changed end keyframe.
-                const dot2: DotState = !shot.videoUrl ? 'todo' : videoStale ? 'pending' : 'done';
+                  // Dot 2 = video. Amber when the rendered video is stale
+                  // relative to a changed end keyframe.
+                  dot2 = !shot.videoUrl ? 'todo' : videoStale ? 'pending' : 'done';
 
-                // Dot 3 = shot lock — terminal, no stale state.
-                const dot3: DotState = shot.locked ? 'done' : 'todo';
+                  // Dot 3 = shot lock — turns green when locked (handled above).
+                  dot3 = 'todo';
+                }
 
                 // Bulk queue position — mirror the badge ShotCard already shows.
                 const sbPos = storyboardQueue?.indexOf(shot.id) ?? -1;
@@ -184,12 +198,6 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                           <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`} />
                           <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot3)}`} />
                         </>
-                      )}
-                      {shot.locked && !isLoading && (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/60 ml-0.5" aria-hidden="true">
-                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                        </svg>
                       )}
                       {isError && (
                         <span className="text-[9px] text-red-300/80 font-mono ml-0.5" title="Generation error">err</span>
