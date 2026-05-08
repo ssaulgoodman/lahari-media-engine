@@ -102,36 +102,31 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
         style={{ maxHeight: 'calc(100vh - 6rem)' }}
       >
         <div className="px-3 py-2 sticky top-0 bg-[#141418]/95 backdrop-blur border-b border-white/[0.04] z-10">
-          {/* Compact single-line: lowercase labels in zinc, counts in white,
-              denominator only on the first stat (all share the same total),
-              locked count in emerald to match the locked-shot dot color. */}
+          {/* Single-line totals: T = total shots, S = storyboards generated
+              (storyboard mode only), F = frames generated, V = videos
+              generated, L = whole shots locked by the artist. Hover labels
+              spell each one out. */}
           <span className="text-[11px] font-mono tabular-nums whitespace-nowrap flex items-baseline gap-1.5 text-zinc-500">
-            {showStoryboardCount ? (
-              <>
-                <span>sb</span>
-                <span className="text-white">{storyboardShots}/{totalShots}</span>
-              </>
-            ) : (
-              <>
-                <span>f</span>
-                <span className="text-white">{frameShots}/{totalShots}</span>
-              </>
-            )}
+            <span title={`${totalShots} total shots`}>T</span>
+            <span className="text-white" title={`${totalShots} total shots`}>{totalShots}</span>
             {showStoryboardCount && (
               <>
                 <span className="text-zinc-600">·</span>
-                <span>f</span>
-                <span className="text-white">{frameShots}</span>
+                <span title={`${storyboardShots} of ${totalShots} storyboards generated`}>S</span>
+                <span className="text-white" title={`${storyboardShots} of ${totalShots} storyboards generated`}>{storyboardShots}</span>
               </>
             )}
             <span className="text-zinc-600">·</span>
-            <span>v</span>
-            <span className="text-white">{videoShots}</span>
+            <span title={`${frameShots} of ${totalShots} start frames generated`}>F</span>
+            <span className="text-white" title={`${frameShots} of ${totalShots} start frames generated`}>{frameShots}</span>
+            <span className="text-zinc-600">·</span>
+            <span title={`${videoShots} of ${totalShots} videos generated`}>V</span>
+            <span className="text-white" title={`${videoShots} of ${totalShots} videos generated`}>{videoShots}</span>
             {lockedShots > 0 && (
               <>
                 <span className="text-zinc-600">·</span>
-                <span className="text-emerald-400/70">L</span>
-                <span className="text-emerald-400/90">{lockedShots}</span>
+                <span className="text-emerald-400/70" title={`${lockedShots} of ${totalShots} shots locked (frame + video frozen)`}>L</span>
+                <span className="text-emerald-400/90" title={`${lockedShots} of ${totalShots} shots locked (frame + video frozen)`}>{lockedShots}</span>
               </>
             )}
           </span>
