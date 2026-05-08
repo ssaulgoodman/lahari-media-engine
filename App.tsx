@@ -34,6 +34,7 @@ type ProjectSummary = {
   status: string;
   createdAt: string;
   updatedAt: string;
+  lastActivityAt?: string;
   parentProjectId?: string;
   renderCount?: number;
 };
@@ -1745,8 +1746,9 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                 ) : projectList.length === 0 ? (
                   <p className="text-sm text-zinc-400 text-center py-8">No projects yet</p>
                 ) : (() => {
-                  // Build lineage tree: orig → children → grandchildren, flattened
-                  // with depth so we can indent. Originals sorted by createdAt DESC.
+                  // Build lineage tree: orig -> children -> grandchildren, flattened
+                  // with depth so we can indent. Families sort by latest activity
+                  // anywhere in the lineage, so the thing you just touched floats up.
                   const childrenOf = new Map<string, ProjectSummary[]>();
                   projectList.forEach(p => {
                     if (p.parentProjectId) {
@@ -1758,18 +1760,26 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                   const byId = new Map(projectList.map(p => [p.id, p]));
                   const roots = projectList.filter(p => !p.parentProjectId || !byId.has(p.parentProjectId));
                   const flat: { project: ProjectSummary; depth: number }[] = [];
+                  const activityMs = (p: ProjectSummary) => new Date(p.lastActivityAt || p.updatedAt || p.createdAt).getTime();
+                  const subtreeActivityMs = (p: ProjectSummary): number => Math.max(
+                    activityMs(p),
+                    ...(childrenOf.get(p.id) || []).map(subtreeActivityMs)
+                  );
+                  const sortByActivity = (a: ProjectSummary, b: ProjectSummary) => subtreeActivityMs(b) - subtreeActivityMs(a);
                   const walk = (p: ProjectSummary, depth: number) => {
                     flat.push({ project: p, depth });
-                    const kids = (childrenOf.get(p.id) || []).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                    const kids = (childrenOf.get(p.id) || []).sort(sortByActivity);
                     kids.forEach(k => walk(k, depth + 1));
                   };
-                  roots.forEach(r => walk(r, 0));
+                  roots.sort(sortByActivity).forEach(r => walk(r, 0));
 
                   return (
                     <div className="space-y-px">
                       {flat.map(({ project: p, depth }) => {
                         const isActive = project?.id === p.id;
                         const isFork = !!p.parentProjectId && byId.has(p.parentProjectId);
+                        const lastActivityAt = p.lastActivityAt || p.updatedAt || p.createdAt;
+                        const lastActivityDate = new Date(lastActivityAt.includes('T') || lastActivityAt.includes('Z') ? lastActivityAt : lastActivityAt.replace(' ', 'T') + 'Z');
                         return (
                           <div
                             key={p.id}
@@ -1821,8 +1831,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                                   <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
                                     {p.title}
                                   </span>
-                                  <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Started ${new Date(p.createdAt.includes('T') || p.createdAt.includes('Z') ? p.createdAt : p.createdAt.replace(' ', 'T') + 'Z').toLocaleString()}`}>
-                                    {relativeTime(p.createdAt)}
+                                  <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Last activity ${lastActivityDate.toLocaleString()}`}>
+                                    {relativeTime(lastActivityAt)}
                                   </span>
                                 </div>
                               </button>

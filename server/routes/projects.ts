@@ -520,34 +520,59 @@ router.get('/', async (req, res) => {
     'projects',
     'id, title, status, created_at, updated_at, parent_project_id',
     { user_id: req.userId },
-    { orderBy: 'created_at', ascending: false }
+    { orderBy: 'updated_at', ascending: false }
   );
 
   // One extra query: count final_render assets per project so the sidebar can
   // show "Renders (N)" without N round-trips.
   const ids = rows.map((r: any) => r.id);
   const renderCounts = new Map<string, number>();
+  const activityTimes = new Map<string, string>();
+  const noteActivity = (projectId: string, value?: string | null) => {
+    if (!value) return;
+    const current = activityTimes.get(projectId);
+    if (!current || new Date(value).getTime() > new Date(current).getTime()) {
+      activityTimes.set(projectId, value);
+    }
+  };
+  for (const r of rows) noteActivity(r.id, r.updated_at || r.created_at);
+
   if (ids.length > 0) {
     const { data: assetRows, error } = await getSB()
       .from(T.assets)
-      .select('project_id')
-      .eq('category', 'final_render')
+      .select('project_id, category, created_at')
       .in('project_id', ids);
     if (error) throw new Error(`DB select assets: ${error.message}`);
     for (const a of (assetRows as any[]) || []) {
-      renderCounts.set(a.project_id, (renderCounts.get(a.project_id) || 0) + 1);
+      if (a.category === 'final_render') {
+        renderCounts.set(a.project_id, (renderCounts.get(a.project_id) || 0) + 1);
+      }
+      noteActivity(a.project_id, a.created_at);
+    }
+
+    const { data: callRows, error: callError } = await getSB()
+      .from(T.ai_calls)
+      .select('project_id, created_at')
+      .in('project_id', ids);
+    if (callError) throw new Error(`DB select ai_calls: ${callError.message}`);
+    for (const c of (callRows as any[]) || []) {
+      noteActivity(c.project_id, c.created_at);
     }
   }
 
-  res.json(rows.map((r: any) => ({
+  const summaries = rows.map((r: any) => ({
     id: r.id,
     title: r.title,
     status: r.status,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    lastActivityAt: activityTimes.get(r.id) || r.updated_at || r.created_at,
     parentProjectId: r.parent_project_id || undefined,
     renderCount: renderCounts.get(r.id) || 0,
-  })));
+  }));
+
+  summaries.sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
+  res.json(summaries);
 });
 
 // Get single project (full state)
