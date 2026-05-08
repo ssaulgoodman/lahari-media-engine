@@ -56,6 +56,9 @@ const dotClass = (s: DotState): string =>
     : s === 'pending' ? 'bg-amber-400/80'
     : 'bg-white/[0.12]';
 
+const dotStateLabel = (s: DotState): string =>
+  s === 'locked' ? 'locked' : s === 'done' ? 'done' : s === 'pending' ? 'stale' : 'pending';
+
 export const StudioShotNav: React.FC<StudioShotNavProps> = ({
   scenes, isStoryboardMode, storyboardSupported, activeShotId, frameQueue, videoQueue, storyboardQueue,
   onJumpToShot, onJumpToScene,
@@ -230,9 +233,18 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                         <div className="w-3 h-3 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
                       ) : (
                         <>
-                          <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot1)}`} />
-                          <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`} />
-                          <div className={`w-1.5 h-1.5 rounded-full ${dotClass(dot3)}`} />
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${dotClass(dot1)}`}
+                            title={`${isStoryboardMode ? 'Storyboard' : 'Start frame'} — ${dotStateLabel(dot1)}`}
+                          />
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${dotClass(dot2)}`}
+                            title={`Video — ${dotStateLabel(dot2)}`}
+                          />
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${dotClass(dot3)}`}
+                            title={`Shot lock — ${dotStateLabel(dot3)}`}
+                          />
                         </>
                       )}
                       {isError && (
