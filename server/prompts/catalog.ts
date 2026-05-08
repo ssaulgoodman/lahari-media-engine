@@ -592,7 +592,7 @@ Song: {{title}}
 Concept: {{concept}}
 Mood: {{mood}}
 Pacing cue from the music: {{musicalCue}}
-Scene context only: {{sceneNarrative}}
+Scene this clip is part of: {{sceneNarrative}}
 Shot description: {{clipDirection}}
 Clip length: {{clipDuration}}s
 Characters in this shot: {{castNames || "no recurring character"}}
@@ -603,7 +603,7 @@ Reference images:
 - Character images — match each character's face, body, and outfit.
 - Environment image — keep the same place and layout in every panel.
 
-You're directing this clip's visual edit. The scene context gives emotional placement only; the shot description tells you what happens in this clip and is the source of truth. For each panel, decide:
+You're directing this clip's visual edit. The scene gives you the wider moment this clip belongs to; the shot description is the specific moment you draw. For each panel, decide:
 
 - the framing (wide / medium / close / extreme close)
 - the camera angle (eye / low / high / overhead / over-shoulder)

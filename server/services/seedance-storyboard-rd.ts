@@ -159,7 +159,7 @@ export const buildStoryboardPrompt = (
     const moodLine = input.mood ? `Mood: ${input.mood}\n` : '';
     const musicalCueLine = input.musicalCue ? `Pacing cue from the music: ${input.musicalCue}\n` : '';
     const sceneContextLine = input.sceneNarrative
-      ? `Scene context only: ${input.sceneNarrative}\n`
+      ? `Scene this clip is part of: ${input.sceneNarrative}\n`
       : '';
 
     return `Create a numbered cinematic storyboard for one Lahari devotional music-video clip.
@@ -178,7 +178,7 @@ Reference images:
 - Character images — match each character's face, body, and outfit.
 - Environment image — keep the same place and layout in every panel.
 
-You're directing this clip's visual edit. The scene context gives emotional placement only; the shot description tells you what happens in this clip and is the source of truth. For each panel, decide:
+You're directing this clip's visual edit. The scene gives you the wider moment this clip belongs to; the shot description is the specific moment you draw. For each panel, decide:
 
 - the framing (wide / medium / close / extreme close)
 - the camera angle (eye / low / high / overhead / over-shoulder)
