@@ -181,12 +181,20 @@ export const getStylePresets = async (projectId: string) => {
   return handleResponse(res);
 };
 
-export const applyStylePreset = async (projectId: string, presetKey: string, signal?: AbortSignal) => {
-  const res = await authFetch(`${API}/projects/${projectId}/apply-style-preset`, {
+/** Visualize a curated preset for THIS project. Does NOT lock — the artist must
+ *  hit lockStyle after. Returns { assetId, url, cached } where cached=true means
+ *  no AI work happened and the previous render was returned from the per-project
+ *  presetSlots cache. Pass force=true to bypass cache and regenerate. */
+export const visualizeStylePreset = async (
+  projectId: string,
+  presetKey: string,
+  opts?: { force?: boolean; signal?: AbortSignal }
+): Promise<{ assetId: string; url: string; cached: boolean }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/visualize-style-preset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ presetKey }),
-    signal,
+    body: JSON.stringify({ presetKey, force: opts?.force }),
+    signal: opts?.signal,
   });
   return handleResponse(res);
 };

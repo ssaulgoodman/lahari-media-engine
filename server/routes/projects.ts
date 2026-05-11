@@ -155,6 +155,14 @@ const forkProject = async (
       let se = JSON.parse(src.style_exploration);
       if (se.slots) se.slots = se.slots.map((s: any) => ({ ...s, assetId: remapAsset(s.assetId) || s.assetId }));
       if (se.userSlot?.assetId) se.userSlot = { ...se.userSlot, assetId: remapAsset(se.userSlot.assetId) || se.userSlot.assetId };
+      if (se.presetSlots) {
+        se.presetSlots = Object.fromEntries(
+          Object.entries(se.presetSlots as Record<string, any>).map(([k, v]: [string, any]) => [
+            k,
+            { ...v, assetId: remapAsset(v?.assetId) || v?.assetId },
+          ])
+        );
+      }
       return JSON.stringify(se);
     })(),
     video_model: src.video_model,

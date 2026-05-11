@@ -197,11 +197,18 @@ export const StylePhase: React.FC<Props> = ({
   const [uploadedStyleFile, setUploadedStyleFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const styleDirectUploadRef = useRef<HTMLInputElement>(null);
-  // Curated style presets — fetched once per project mount. Applying a preset
-  // generates and locks a normal style asset, so the artist lands in
-  // locked-style state and proceeds to characters as if they brainstormed it.
+  // Curated style presets — fetched once per project mount.
+  // Flow: artist clicks Visualize on a preset → project-specific image
+  // generates → result cached in project.styleExploration.presetSlots so
+  // revisits after unlock are instant. Lock is a separate explicit step via
+  // the same onLockStyle path used by brainstorm slots. Same lock-marks-stale
+  // semantics for downstream phases.
   const [presets, setPresets] = useState<StylePreset[]>([]);
-  const [applyingPresetKey, setApplyingPresetKey] = useState<string | null>(null);
+  const [presetVisualizingKey, setPresetVisualizingKey] = useState<string | null>(null);
+  const [presetLockingKey, setPresetLockingKey] = useState<string | null>(null);
+
+  // Read cache directly from project — server is source of truth, survives unmount/unlock.
+  const presetSlots = project.styleExploration?.presetSlots || {};
 
   useEffect(() => {
     let cancelled = false;
@@ -211,16 +218,48 @@ export const StylePhase: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [project.id]);
 
-  const handleApplyPreset = async (key: string) => {
-    if (applyingPresetKey) return;
-    setApplyingPresetKey(key);
+  const handleVisualizePreset = async (presetKey: string, force = false) => {
+    if (presetVisualizingKey) return;
+    setPresetVisualizingKey(presetKey);
     try {
-      const updated = await api.applyStylePreset(project.id, key);
-      onSetProject?.(updated);
+      const result = await api.visualizeStylePreset(project.id, presetKey, { force });
+      // Optimistic patch: write the new slot into the local project so the
+      // card re-renders with the project-specific image immediately, without
+      // a full project refetch.
+      if (onSetProject) {
+        const nextPresetSlots = {
+          ...(project.styleExploration?.presetSlots || {}),
+          [presetKey]: { imageUrl: result.url, assetId: result.assetId },
+        };
+        onSetProject({
+          ...project,
+          styleExploration: {
+            slots: project.styleExploration?.slots || [],
+            userSlot: project.styleExploration?.userSlot,
+            presetSlots: nextPresetSlots,
+          },
+        });
+      }
     } catch (err: any) {
-      showActionError(`Style preset failed: ${err.message}`);
+      showActionError(`Preset visualize failed: ${err.message}`);
     } finally {
-      setApplyingPresetKey(null);
+      setPresetVisualizingKey(null);
+    }
+  };
+
+  const handleLockPreset = async (preset: StylePreset) => {
+    const cached = presetSlots[preset.key];
+    if (!cached?.assetId) return;
+    if (presetLockingKey) return;
+    setPresetLockingKey(preset.key);
+    try {
+      // Lock via the same path as brainstorm slots — onLockStyle marks
+      // downstream stale and transitions the phase. No special preset path.
+      await onLockStyle(cached.assetId, `${preset.title} — ${preset.description}`);
+    } catch (err: any) {
+      showActionError(`Preset lock failed: ${err.message}`);
+    } finally {
+      setPresetLockingKey(null);
     }
   };
 
@@ -468,36 +507,97 @@ export const StylePhase: React.FC<Props> = ({
               <div>
                 <h3 className="text-sm font-medium text-white mb-1">Curated Styles</h3>
                 <p className="text-zinc-400 text-xs">
-                  Skip brainstorming with a preset — generates a style image and locks it for you. You can unlock to swap or refine later.
+                  Visualize a preset to see how it renders for this project, then lock the one you want. Revisit any time — previously rendered presets are cached.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {presets.map(preset => {
-                  const isApplying = applyingPresetKey === preset.key;
-                  const isAnyApplying = applyingPresetKey !== null;
+                  const cached = presetSlots[preset.key];
+                  const hasRender = !!cached?.imageUrl;
+                  const isVisualizing = presetVisualizingKey === preset.key;
+                  const isLocking = presetLockingKey === preset.key;
+                  const anyBusy = !!presetVisualizingKey || !!presetLockingKey || isLocking;
+                  // Show project render if we have one, otherwise curated anchor.
+                  const displayImageUrl = hasRender ? cached!.imageUrl : preset.previewImageUrl;
                   return (
-                    <button
+                    <div
                       key={preset.key}
-                      type="button"
-                      onClick={() => handleApplyPreset(preset.key)}
-                      disabled={isAnyApplying}
-                      className={`surface-inset rounded-lg p-4 text-left transition-colors disabled:cursor-not-allowed flex items-start gap-3 border border-transparent ${
-                        isApplying ? 'border-white/[0.16] bg-white/[0.04]'
-                          : isAnyApplying ? 'opacity-40'
-                          : 'hover:bg-white/[0.04] hover:border-white/[0.08]'
-                      }`}
+                      className="surface-inset rounded-lg overflow-hidden border border-transparent hover:border-white/[0.08] transition-colors"
                     >
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-white">{preset.title}</span>
-                          {isApplying && (
-                            <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
-                          )}
-                        </div>
+                      {/* Image — clickable to zoom */}
+                      <div
+                        className="relative aspect-video bg-black/30 cursor-zoom-in group"
+                        onClick={() => displayImageUrl && onOpenModal(displayImageUrl)}
+                      >
+                        {displayImageUrl ? (
+                          <img
+                            src={displayImageUrl}
+                            alt={preset.title}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[11px] text-zinc-500">
+                            No preview
+                          </div>
+                        )}
+                        {isVisualizing && (
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                            <div className="w-5 h-5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                          </div>
+                        )}
+                        {hasRender && (
+                          <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide bg-black/60 text-zinc-300 px-1.5 py-0.5 rounded">
+                            This project
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Title + description */}
+                      <div className="px-4 py-3 space-y-1.5">
+                        <div className="text-sm font-medium text-white">{preset.title}</div>
                         <p className="text-xs text-zinc-400 leading-relaxed">{preset.description}</p>
                       </div>
-                    </button>
+
+                      {/* Actions */}
+                      <div className="px-4 pb-4 flex items-center gap-2">
+                        {!hasRender ? (
+                          <button
+                            type="button"
+                            onClick={() => handleVisualizePreset(preset.key)}
+                            disabled={anyBusy}
+                            className="flex-1 px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                          >
+                            {isVisualizing && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                            {isVisualizing ? 'Visualizing…' : 'Visualize for this project'}
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleLockPreset(preset)}
+                              disabled={anyBusy}
+                              className="flex-1 px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                            >
+                              {isLocking && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                              {isLocking ? 'Locking…' : 'Use this style'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleVisualizePreset(preset.key, true)}
+                              disabled={anyBusy}
+                              title="Regenerate this preset's image"
+                              className="px-2.5 py-1.5 border border-white/[0.08] hover:border-white/20 rounded-md text-xs text-zinc-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

@@ -22,23 +22,54 @@ export const mountStyleRoutes = (router: Router) => {
   // ─── Curated Style Presets ─────────────────────────────────────────
 
   router.get('/:id/style-presets', async (_req, res) => {
-    res.json({ presets: STYLE_PRESETS });
+    // Resolve the curated preview image path to a public URL per preset.
+    const presets = STYLE_PRESETS.map(p => ({
+      key: p.key,
+      title: p.title,
+      description: p.description,
+      previewImageUrl: storageUrl(p.previewImagePath),
+    }));
+    res.json({ presets });
   });
 
-  router.post('/:id/apply-style-preset', async (req, res) => {
+  // Visualize a preset for THIS project. Does NOT lock — that happens via the
+  // existing /lock-style endpoint once the artist decides. Mirrors the
+  // brainstorm/visualize pattern so presets share the same flow.
+  //
+  // Cache strategy: project.style_exploration.presetSlots[key] holds the
+  // previously-generated assetId for this preset on this project. On revisit
+  // (or after unlock), we return the cached assetId/url without paying for
+  // regeneration. Pass `force: true` to bypass the cache (Regenerate button).
+  router.post('/:id/visualize-style-preset', async (req, res) => {
     const project = await selectOne('projects', { id: paramStr(req.params.id) });
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const { presetKey } = req.body || {};
+    const { presetKey, force } = req.body || {};
     const preset = typeof presetKey === 'string' ? getStylePreset(presetKey) : undefined;
     if (!preset) return res.status(400).json({ error: 'Valid presetKey required' });
+
+    // Cache check — return previously-generated asset if it still exists.
+    const styleExploration = project.style_exploration ? JSON.parse(project.style_exploration) : {};
+    const presetSlots = styleExploration.presetSlots || {};
+    const cached = presetSlots[preset.key];
+    if (!force && cached?.assetId) {
+      const existingAsset = await selectOne('assets', { id: cached.assetId, project_id: project.id });
+      if (existingAsset?.file_path) {
+        return res.json({
+          assetId: cached.assetId,
+          url: storageUrl(existingAsset.file_path),
+          cached: true,
+        });
+      }
+      // Cache miss — asset row was deleted. Fall through to regenerate.
+    }
 
     const concept = JSON.parse(project.locked_concept || '{}');
     const subject = concept.deity || project.title;
     const genPrompt = buildStylePrompt(preset.description, subject);
 
     try {
-      console.log(`[${project.id}] Applying style preset: ${preset.title}`);
+      console.log(`[${project.id}] Visualizing style preset: ${preset.title}${force ? ' (forced)' : ''}`);
       const t0 = Date.now();
       const imageService = getImageService(project.image_model);
       const assetPath = await imageService.generateSingleStyleImage(
@@ -58,38 +89,37 @@ export const mountStyleRoutes = (router: Router) => {
         metadata: JSON.stringify({ stylePresetKey: preset.key, stylePresetTitle: preset.title }),
       });
 
+      // Persist into styleExploration.presetSlots so revisits hit the cache.
+      const nextExploration = {
+        ...styleExploration,
+        presetSlots: {
+          ...presetSlots,
+          [preset.key]: { imageUrl: storageUrl(assetPath), assetId },
+        },
+      };
       await updateRows('projects', { id: project.id }, {
-        status: 'style_locked',
-        style_asset_id: assetId,
-        style_description: `${preset.title} — ${preset.description}`,
-        style_generation_prompt: genPrompt,
+        style_exploration: JSON.stringify(nextExploration),
         updated_at: new Date().toISOString(),
       });
-      await updateRows('cast_members', { project_id: project.id }, { prompts_stale: true });
-      await updateRows('environments', { project_id: project.id }, { prompts_stale: true });
-      const scenes = await selectAll('scenes', { project_id: project.id });
-      for (const scene of scenes) {
-        await updateRows('shots', { scene_id: scene.id }, { prompts_stale: true });
-      }
 
       await logCall({
         projectId: project.id,
-        stage: 'apply-style-preset',
+        stage: 'visualize-style-preset',
         model: getImageGenerationModelName(project.image_model),
         prompt: genPrompt,
         contextChain: await buildContextChain(project.id),
-        responseSummary: `Applied style preset: ${preset.title}`,
+        responseSummary: `Visualized style preset: ${preset.title}`,
         outputAssetIds: [assetId],
         durationMs,
         costEstimate: 0.01,
       });
 
-      res.json(await getFullProject(project.id));
+      res.json({ assetId, url: storageUrl(assetPath), cached: false });
     } catch (err: any) {
-      console.error(`[${project.id}] Apply style preset failed:`, err);
+      console.error(`[${project.id}] Visualize style preset failed:`, err);
       await logCall({
         projectId: project.id,
-        stage: 'apply-style-preset',
+        stage: 'visualize-style-preset',
         model: getImageGenerationModelName(project.image_model),
         prompt: genPrompt,
         contextChain: await buildContextChain(project.id),

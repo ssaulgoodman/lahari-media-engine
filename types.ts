@@ -123,6 +123,15 @@ export interface StylePreset {
   key: string;
   title: string;
   description: string;
+  /** Curated static anchor image — what this preset generally looks like, shown
+   *  before the artist runs a project-specific visualize. Resolved server-side. */
+  previewImageUrl?: string;
+}
+
+/** Per-project cache of preset visualizations. Keyed by preset key.
+ *  Survives unlock so the artist can revisit without paying for regen. */
+export interface PresetSlotCache {
+  [presetKey: string]: { imageUrl?: string; assetId?: string };
 }
 
 export interface CastMember {
@@ -159,7 +168,7 @@ export interface ApiProject {
   styleDescription?: string;
   styleAssetUrl?: string;
   styleGenerationPrompt?: string;
-  styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
+  styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string }; presetSlots?: PresetSlotCache } | null;
   colorPalette?: string;
   videoMode: VideoMode;
   songType?: string;
