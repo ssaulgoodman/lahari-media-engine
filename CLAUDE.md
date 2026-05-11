@@ -16,7 +16,7 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 **Env vars required:**
 - `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` — Seedance storyboard generation via Responses API (`gpt-5.5` reasoning + `gpt-image-2` image tool). Also used by the optional GPT script-writer experiment.
+- `OPENAI_API_KEY` — Seedance storyboard generation runs as a **two-step pipeline**: a cheap text planner writes the storyboard prompt + cut plan (default `gpt-5.5`, override via `OPENAI_STORYBOARD_PLANNER_MODEL`), then the image renderer renders the board itself. Image step is configurable per-project via `project.storyboard_provider` — `gpt-image-2` (OpenAI) or `nano-banana-2` (Segmind). Also used by the optional GPT script-writer experiment.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) — routes `generate-script` to GPT-5.5 instead of Claude Opus for testing more practical, less literary scripts. Defaults to Claude. `OPENAI_SCRIPT_MODEL` can override the model id.
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
@@ -69,11 +69,11 @@ All modules mount on the same router instance — param validators and scope hel
 
 ### Pipeline (4 steps)
 
-1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → creates Lahari project immediately (title + queue link only), responds instantly. **Everything runs in background**: audio download from Supabase Storage, SRT parsing (`[M:SS]` timestamps preserved), Gemini audio transcription fallback, structure detection, meaning summarization. Project starts as `status: 'analyzing'`; background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls (still need audio download). **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently.
+1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. **Action-vocabulary UI**: each row has one verb button — `Start` (first time), `Continue` (your WIP exists), `Open` (your fork is published), `Needs audio` (disabled). Filter chips at the top use the same vocabulary (`All / Start / Continue / Open`) with inline counts. Per-user fork stats (`others_done`, `others_wip`, `has_active_fork`, `has_done_fork`) are computed server-side in a single aggregation over `lahari_projects` partitioned by current user. Green + amber dots in the Pipeline column show how many other artists have published / are still WIP for the same song. Click **Start** → creates Lahari project immediately (title + queue link only), responds instantly. **Everything runs in background**: audio download from Supabase Storage, SRT parsing (`[M:SS]` timestamps preserved), Gemini audio transcription fallback, structure detection, meaning summarization. Project starts as `status: 'analyzing'`; background promotes to `analyzed` once audio is downloaded (cached path) or full analysis completes. Audio download failure sets `error` status. Frontend polls until done. **Analysis caching**: lyrics/structure/meaning cached on `songs` table (`cached_lyrics`, `cached_structure`, `cached_meaning`) — subsequent users skip AI calls (still need audio download). **Multi-user**: `source_queue_id` on projects lets multiple users work on the same queued song independently. **No auto-fork**: clicking Start on a queue row where another user already has a project creates a **fresh** project for the current user — silent fork-from-another-user was removed (queue.ts comment block). When multi-user fork-from-someone-else is needed, it will live as an explicit affordance, not silent queue-Start behavior.
 2. **Blueprint** (7 components, orchestrated by `AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Opus with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
-   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to Gemini.)
+   - Style (Claude brainstorm → image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to the image model.) **Curated style presets**: 4 pre-canned style frames (see `server/style-presets.ts`) with curated anchor preview images in Supabase at `styles/presets/<key>.png` (backed up in repo at `docs/assets/style-presets/`). Presets follow the same visualize → lock flow as brainstorm slots — `POST /visualize-style-preset` generates a project-specific render and caches the assetId in `project.style_exploration.presetSlots[key]` so revisits after unlock are free. Locking a preset goes through the same `/lock-style` path as brainstorm slots; `/lock-style` always marks downstream stale (cast / environments / shots), first-lock is a no-op.
    - Characters — unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine. Description collapsed.
    - Environments — same unified toolkit pattern as characters.
    - Auto-writes shot prompts (Claude Opus) with full context at the end.
@@ -82,7 +82,7 @@ All modules mount on the same router instance — param validators and scope hel
    - **Last frame** — end visual prompt + generate end frame + AI refine
    - **Video** — motion prompt (editable, the video instruction sent to Veo) + generate (Veo/Seedance) + AI refine
    - **Full chain** — read-only diagnostic view of the complete prompt chain
-   - **Seedance storyboard mode** — replaces keyframe tabs with `StoryboardPanel`: ordered storyboard image + editable cut plan + natural-language refine + lock, then Video sub-tab generates Seedance from locked storyboard + locked refs
+   - **Seedance storyboard mode** — replaces keyframe tabs with `StoryboardPanel`. **Two-step pipeline**: (1) `POST /write-storyboard-prompt` runs a cheap text planner (default `gpt-5.5`, configurable) → saves `shot.storyboard_prompt` and `shot.storyboard_cut_plan` (both editable inline). (2) `POST /generate-storyboard` renders the board via the project's `storyboard_provider` (`gpt-image-2` or `nano-banana-2`). Artist can refine the prompt or cut plan, regenerate the image, then lock. Refine has two modes: `replan` (re-plan the entire board) vs `edit_image` (surgical pixel edit on the existing image — preserves layout/identity). Lock requires BOTH prompt + cut plan present. Then Video sub-tab generates Seedance from locked storyboard + locked refs.
    - All tabs follow same pattern: Refs → Prompt (with @mention) → Generate → Refine
    - @mention picker in prompt area: type `@` to reference Style, characters, environments
    - Version history panel with 4 tabs (First frame / Last frame / Storyboard / Clip) — revert to any previous generation
@@ -96,9 +96,11 @@ All modules mount on the same router instance — param validators and scope hel
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
 | Concept, script, script refine, style brainstorm, shot prompts | `claude-opus-4-7` | claude.ts | Anthropic API |
 | Meaning, style refine/enrich, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
-| All image gen | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` (Nano Banana 2) | imagen.ts | Gemini Developer API |
+| All image gen (default) | `nano-banana-2` via Segmind | segmind-image.ts | Segmind API |
+| Image gen alternates | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` ; `gpt-image-2` | imagen.ts / openai-image.ts | Gemini Developer API / OpenAI |
 | Script experiment | `gpt-5.5` (opt-in via `scriptProvider: "openai"` / `SCRIPT_WRITER_PROVIDER=openai`) | openai-script.ts | OpenAI Responses API structured output |
-| Seedance storyboards | `gpt-5.5` + image tool `gpt-image-2` | storyboard.ts / openai-image.ts | OpenAI Responses API |
+| Seedance storyboard — planner step | `gpt-5.5` (configurable via `OPENAI_STORYBOARD_PLANNER_MODEL`) | storyboard.ts (`writeStoryboardPrompt`) | OpenAI Responses API |
+| Seedance storyboard — image step | `gpt-image-2` (OpenAI) **or** `nano-banana-2` (Segmind) — per-project via `storyboard_provider` | storyboard.ts → openai-image.ts / segmind-image.ts | OpenAI / Segmind |
 | Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
 | Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
 
@@ -166,7 +168,7 @@ The Studio UI is split into 6 components (was a single 1546-line `Storyboard.tsx
 | `Storyboard.tsx` | Orchestrator: state management, ref helpers, scene loop, modal, solo-play |
 | `ShotCard.tsx` | Per-shot: expandable header, media display (4 layout variants), overlays, composes PromptToolkit + ShotVersionHistory |
 | `PromptToolkit.tsx` | Prompt tabs, @mention picker, ref chips, generate button, refine section, full chain view |
-| `StoryboardPanel.tsx` | Seedance storyboard-mode toolkit: ordered cut plan, generate/refine/lock, Video sub-tab with locked refs preview |
+| `StoryboardPanel.tsx` | Seedance storyboard-mode toolkit. Two-step flow: editable storyboard prompt + cut plan (planner step) → generate image → refine (replan / edit_image modes) → lock. Video sub-tab with locked refs preview. Reads cached plan/prompt directly from `shot` columns; useEffect deps narrowed so unrelated project refreshes don't clobber uncommitted local edits. |
 | `StudioHeader.tsx` | Scene pills with lock toggles, progress stats, story/prompts popovers, bulk actions |
 | `ShotVersionHistory.tsx` | Tabbed version history (First frame / Last frame / Storyboard / Clip) with revert |
 
@@ -177,7 +179,7 @@ The Blueprint UI is split into 7 components (was a single 2858-line `AnalysisEdi
 | Component | What |
 |-----------|------|
 | `AnalysisEditor.tsx` | Orchestrator: state (viewPhase, envLooks, envGenerating, actionError), phase switch, modal |
-| `BlueprintContextBar.tsx` | Sticky header: title, audio player, render/analysis popovers, phase tabs, launch button. Exports shared helpers: `Phase`, `PHASE_ORDER`, `phaseIndex`, `getActivePhase`, `isLockedPhase` |
+| `BlueprintContextBar.tsx` | Sticky header: title, audio player, **always-on render-params row** (Aspect / Resolution / Image model / Storyboard image / Video model — 5 dropdowns visible at all times, no popover), analysis chip with full-readability checkmarks, phase tabs, launch button. Exports shared helpers: `Phase`, `PHASE_ORDER`, `phaseIndex`, `getActivePhase`, `isLockedPhase` |
 | `ConceptPhase.tsx` | Concept options, lock, director brief, custom vision mode, refine |
 | `ScriptPhase.tsx` | Director mode toggle, pacing, scene/shot cards with inline editing, split |
 | `StylePhase.tsx` | Style brainstorm, visualize, refine, lock, upload. `StyleRow` at module scope |
@@ -244,9 +246,9 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage), `source_queue_id` (links project to queue item for multi-user support)
-- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `storyboard_asset_id`, `storyboard_version_id`, `storyboard_locked`, `storyboard_status`, `prompts_stale`)
-- `lahari_storyboard_versions` — storyboard history per shot: OpenAI response id, image call ids, prompt, refs, parent version, locked flag, and `metadata.cutPlanText`
+- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `image_model`, `storyboard_provider` (image renderer for storyboard mode: `gpt-image-2` | `nano-banana-2`), `parent_project_id` (fork lineage), `source_queue_id` (links project to queue item for multi-user support), `style_exploration` JSON (now includes `presetSlots: { [presetKey]: { imageUrl, assetId } }` for per-project preset visualization cache — survives unlock)
+- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `storyboard_asset_id`, `storyboard_version_id`, `storyboard_locked`, `storyboard_status`, `storyboard_prompt` (editable text from planner), `storyboard_cut_plan` (editable text from planner), `storyboard_prompt_status`, `storyboard_prompt_user_feedback`, `prompts_stale`)
+- `lahari_storyboard_versions` — storyboard history per shot. Columns include `openai_response_id`, `openai_image_call_ids`, `reasoning_model` (legacy OpenAI-specific; null on Nano Banana 2 / non-OpenAI runs), plus the generic `image_model`, `prompt`, `refs`, `parent_version`, `locked` flag, `metadata.cutPlanText` (legacy — canonical text now lives on the shot row).
 - `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
@@ -278,7 +280,7 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Supabase tables (shared with other services):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url` + `cached_lyrics`, `cached_structure`, `cached_meaning` (written by Lahari on first analysis, read on subsequent starts)
 - `files` — SRT files, etc. (Google Drive URLs)
-- `music_video_queue` (Lahari's domain table) — song_id, priority, status, lahari_project_id, video_url
+- `music_video_queue` (Lahari's domain table) — song_id, priority, status, lahari_project_id, video_url, `assigned_to` (column exists, currently unused — reserved for future explicit-claim affordance)
 
 ### Key API Endpoints
 
@@ -290,7 +292,9 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Blueprint:**
 - `POST /api/projects/:id/generate-concepts` (userNote optional)
 - `POST /api/projects/:id/generate-script` (userNote optional; experimental `scriptProvider: "openai"` switches to GPT-5.5)
-- `POST /api/projects/:id/brainstorm-styles`, `visualize-style`, `refine-style-direction`, `analyze-style-image`, `lock-style`, `unlock-style`
+- `POST /api/projects/:id/brainstorm-styles`, `visualize-style`, `refine-style-direction`, `analyze-style-image`, `lock-style` (always marks downstream stale), `unlock-style`
+- `GET  /api/projects/:id/style-presets` — returns 4 curated presets each with `previewImageUrl` resolved from Supabase
+- `POST /api/projects/:id/visualize-style-preset` — body: `{ presetKey, force? }`. Generates a project-specific render for the preset, persists to `style_exploration.presetSlots[key]`, returns `{ assetId, url, cached }`. Does NOT lock. Lock via `/lock-style` with the returned `assetId`.
 - `POST /api/projects/:id/generate-looks`, `lock-character`, `advance-characters`
 - `POST /api/projects/:id/generate-environment-look`, `lock-environment`, `advance-environments`
 - `POST /api/projects/:id/write-shot-prompts`
@@ -298,7 +302,8 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 **Studio:**
 - `POST /api/projects/:id/shots/:shotId/generate-image`
 - `POST /api/projects/:id/shots/:shotId/generate-video` (accepts `promptOverride`)
-- `POST /api/projects/:id/shots/:shotId/generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`
+- `POST /api/projects/:id/shots/:shotId/write-storyboard-prompt` — planner step (cheap text-only). Writes `shot.storyboard_prompt` + `shot.storyboard_cut_plan`. Body: `{ feedback?, variant? }`. Both fields are also editable inline via `PATCH /storyboard-plan`.
+- `POST /api/projects/:id/shots/:shotId/generate-storyboard`, `refine-storyboard` (modes: `replan` | `edit_image`), `lock-storyboard`, `unlock-storyboard`
 - `PATCH /api/projects/:id/shots/:shotId/storyboard-plan`, `GET /api/projects/:id/shots/:shotId/storyboard-history`
 - `POST /api/projects/:id/shots/:shotId/generate-end-frame`
 - `POST /api/projects/:id/shots/:shotId/refine-prompt` (Claude rewrites visual prompt — sees failed image + scene + env + cast + style)
