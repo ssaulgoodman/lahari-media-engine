@@ -510,7 +510,11 @@ Render is async because Railway cannot hold long HTTP requests. `/render` insert
 - If callback delivery exhausts, the renderer writes a `pending_finalize` terminal fallback row; the backend reconciler runs the normal `finalizePublish` path and marks the render completed.
 - Renderer prechecks that the project still exists and applies a 50 minute default hard cap before Modal's 60 minute timeout.
 
-**Still planned:** cancel-on-watchdog, asset pre-staging for remote video/image/audio, baked Remotion bundle deploy verification, and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
+**Phase 4 efficiency now in code:**
+- Renderer pre-stages every remote video/image/audio URL from `trackItemsMap[*].details.src` into `/tmp/lahari-render-<renderId>-*`, serves those staged files over a loopback HTTP server for Remotion, and cleans the temp files in `finally`.
+- Docker pre-bundles the Remotion composition so cold containers can skip the runtime bundler pass when the baked bundle is present.
+
+**Still planned:** cancel-on-watchdog and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
 
 ---
 

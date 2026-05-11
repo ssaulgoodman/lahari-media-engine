@@ -186,8 +186,8 @@ After Phase 3: callbacks survive Railway redeploys, the renderer can self-report
 
 The big visible win for artists.
 
-16. **E1 asset pre-staging** — Before `renderMedia` in `render-job.ts`, walk `trackItemsMap`, parallel-fetch (concurrency=16) every remote video/image/audio URL into `/tmp/lahari-render-<renderId>/`, validate HTTP status/content length/content type, rewrite the timeline URLs to `file://...`, and clean the temp dir in `finally`. Result: one ~30s parallel burst replaces 80s+ of serialized network waits during render.
-17. **E2 bake bundle into Dockerfile** — Run `@remotion/bundler` at Docker build time, save `out/` into the image. Skip `bundle()` in `render.ts` if `out/` exists. Saves ~15s on cold renders.
+16. **E1 asset pre-staging** — Before `renderMedia` in `render-job.ts`, walk `trackItemsMap`, parallel-fetch (concurrency=16) every remote video/image/audio URL into `/tmp/lahari-render-<renderId>-*`, validate HTTP status/content length/content type, serve staged files over loopback HTTP for Remotion, and clean the temp dir in `finally`. Done in code. Result: one parallel burst replaces serialized network waits during render.
+17. **E2 bake bundle into Dockerfile** — Run `@remotion/bundler` at Docker build time, save `out/` into the image. Skip `bundle()` in `render.ts` if `out/` exists. Done in code. Saves ~15s on cold renders.
 18. **E5 timeline-hash dedup** — Compute SHA-256 of canonicalized timeline. If a completed row exists for that hash within last N days, short-circuit and copy `(video_url, storage_path)` to the new row. Optional save-mode setting if artists want to force re-render.
 
 After Phase 4: typical 22-shot 2:40 render goes from 15–25 min → expected 3–5 min.

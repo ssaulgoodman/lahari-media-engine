@@ -1,5 +1,6 @@
 import { stat, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { stageTimelineAssets } from './asset-staging';
 import { shutdownPosthog, track, trackError } from './posthog';
 import { renderTimeline } from './render';
 import { projectExists, uploadRender, writeTerminalFallback } from './storage';
@@ -179,6 +180,12 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
     return 'asset_404';
   }
   if (
+    text.includes('asset fetch failed') &&
+    (text.includes('500') || text.includes('502') || text.includes('503') || text.includes('504'))
+  ) {
+    return 'supabase_5xx';
+  }
+  if (
     (text.includes('supabase') || text.includes('storage')) &&
     (text.includes('500') || text.includes('502') || text.includes('503') || text.includes('504') || text.includes('5xx'))
   ) {
@@ -236,6 +243,7 @@ export const runRenderJob = async ({
   const startedAt = Date.now();
   console.log(`[render] start render=${renderId} project=${projectId}`);
   let outputPath: string | undefined;
+  let cleanupStagedAssets: (() => Promise<void>) | undefined;
   let lastProgressPostAt = 0;
   let lastProgress = 0;
   let lastStage = 'starting';
@@ -268,10 +276,22 @@ export const runRenderJob = async ({
     if (!exists) {
       throw new Error(`project not found before render: ${projectId}`);
     }
-    await reportProgress('bundling', 0.03, true);
+    const stagedAssets = await stageTimelineAssets(inputProps, renderId, reportProgress);
+    cleanupStagedAssets = stagedAssets.cleanup;
+    if (stagedAssets.count > 0) {
+      track('render_assets_staged', projectId, {
+        renderId,
+        count: stagedAssets.count,
+        bytes: stagedAssets.bytes,
+        stagingMs: stagedAssets.stagingMs,
+      });
+    } else {
+      await reportProgress('bundling', 0.04, true);
+    }
+
     const result = await withHardCap(
-      renderTimeline(inputProps, (progress) => {
-        void reportProgress('rendering_frames', 0.05 + progress * 0.82);
+      renderTimeline(stagedAssets.inputProps, (progress) => {
+        void reportProgress('rendering_frames', 0.08 + progress * 0.79);
       }),
     );
     outputPath = result.outputPath;
@@ -323,6 +343,11 @@ export const runRenderJob = async ({
     return { ok: false, error: message, renderMs };
   } finally {
     clearInterval(heartbeat);
+    if (cleanupStagedAssets) {
+      await cleanupStagedAssets().catch((err: any) => {
+        console.warn(`[render ${renderId}] staged asset cleanup failed:`, err?.message || err);
+      });
+    }
     if (outputPath) {
       unlink(outputPath).catch(() => {});
     }

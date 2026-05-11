@@ -34,6 +34,8 @@ const renderStageLabel = (stage?: string | null) => {
       return 'Queued';
     case 'accepted':
       return 'Accepted by renderer';
+    case 'staging_assets':
+      return 'Staging media';
     case 'bundling':
       return 'Preparing render';
     case 'rendering_frames':
