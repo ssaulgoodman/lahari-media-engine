@@ -291,9 +291,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           isRefining={isRefining}
           hasStoryboard={hasStoryboard}
           versionId={versionId}
-          planLoading={planLoading}
           saveState={saveState}
-          dirty={dirty}
           cutPlanRequired={cutPlanRequired}
           promptRequired={promptRequired}
           cutPlanText={cutPlanText}
@@ -301,9 +299,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           refineMode={refineMode}
           onRefineModeChange={setRefineMode}
           onPromptChange={(v) => { setPromptText(v); if (saveState === 'saved') setSaveState('idle'); }}
-          onCutPlanChange={(v) => { setCutPlanText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onPlanBlur={flushPlan}
-          onPlanRetry={flushPlan}
           refineImage={refineImage}
           onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
@@ -323,6 +319,12 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           cutPlanText={cutPlanText}
           cutPlanRequired={cutPlanRequired}
           boundRefCount={boundRefs.length}
+          planLoading={planLoading}
+          saveState={saveState}
+          dirty={dirty}
+          onCutPlanChange={setCutPlanText}
+          onPlanBlur={flushPlan}
+          onPlanRetry={flushPlan}
           onUpdateShot={onUpdateShot}
           onGenerateVideo={onGenerateVideo}
         />
@@ -341,9 +343,10 @@ interface StoryboardTabBodyProps {
   isRefining: boolean;
   hasStoryboard: boolean;
   versionId?: string;
-  planLoading: boolean;
+  // saveState drives `saving` (Lock spinner). The full save indicators
+  // (Saving/Saved/Failed badges) moved to the Video tab along with the
+  // cut plan editor itself.
   saveState: SaveState;
-  dirty: boolean;
   cutPlanRequired: boolean;
   promptRequired: boolean;
   cutPlanText: string;
@@ -351,9 +354,9 @@ interface StoryboardTabBodyProps {
   refineMode: StoryboardRefineMode;
   onRefineModeChange: (mode: StoryboardRefineMode) => void;
   onPromptChange: (v: string) => void;
-  onCutPlanChange: (v: string) => void;
+  // onPlanBlur fires when the storyboard prompt textarea loses focus —
+  // flushes both the prompt and cut plan to the server in one call.
   onPlanBlur: () => Promise<boolean>;
-  onPlanRetry: () => Promise<boolean>;
   refineImage: { file: File; previewUrl: string } | null;
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
@@ -366,9 +369,9 @@ interface StoryboardTabBodyProps {
 
 const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   shot, isLocked, isGenerating, isError, isRefining, hasStoryboard, versionId,
-  planLoading, saveState, dirty, cutPlanRequired, promptRequired, cutPlanText, promptText,
+  saveState, cutPlanRequired, promptRequired, cutPlanText, promptText,
   refineMode, onRefineModeChange,
-  onPromptChange, onCutPlanChange, onPlanBlur, onPlanRetry,
+  onPromptChange, onPlanBlur,
   refineImage, onRefineImageChange,
   onWriteStoryboardPrompt, onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
@@ -398,49 +401,10 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
         )}
       </div>
 
-      {/* Cut plan editor */}
-      <div className="space-y-1">
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
-          Cut plan
-          {planLoading && <span className="text-[10px] normal-case tracking-normal text-zinc-400">Loading…</span>}
-          {!planLoading && cutPlanRequired ? (
-            <span className="text-[10px] normal-case tracking-normal text-red-300">Cut plan required</span>
-          ) : (
-            <>
-              {!planLoading && saveState === 'saving' && (
-                <span className="text-[10px] normal-case tracking-normal text-zinc-300">Saving…</span>
-              )}
-              {!planLoading && saveState === 'saved' && (
-                <span className="text-[10px] normal-case tracking-normal text-emerald-400/70">Saved</span>
-              )}
-              {!planLoading && saveState === 'failed' && (
-                <button
-                  type="button"
-                  onClick={onPlanRetry}
-                  className="text-[10px] normal-case tracking-normal text-red-300 hover:text-red-200 underline-offset-2 hover:underline"
-                  title="Retry save"
-                >Save failed — retry</button>
-              )}
-              {!planLoading && saveState === 'idle' && dirty && (
-                <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
-              )}
-            </>
-          )}
-        </div>
-
-        {isLocked ? (
-          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{cutPlanText || '(empty cut plan)'}</pre>
-        ) : (
-          <AutoGrowTextarea
-            value={cutPlanText}
-            onChange={(e) => onCutPlanChange((e.target as HTMLTextAreaElement).value)}
-            onBlur={() => { void onPlanBlur(); }}
-            placeholder="Panel 1 [00:00-..] - camera: …; action: …; Seedance cue: …"
-            rows={5}
-            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
-          />
-        )}
-      </div>
+      {/* Cut plan editor moved to Video tab. "Write prompt" still fills both
+          shot.storyboardPrompt (shown above) and shot.storyboardCutPlan (the
+          video prompt over in the Video tab). Errors below point there when
+          the cut plan is missing. */}
 
       {/* Generate + Lock buttons */}
       {!isLocked && (
@@ -457,7 +421,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             onClick={() => onGenerateStoryboard(shot.id)}
             disabled={isGenerating || saving || promptRequired || cutPlanRequired}
             className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
-            title={promptRequired ? 'Write a storyboard prompt first.' : cutPlanRequired ? 'Write a cut plan first.' : undefined}
+            title={promptRequired ? 'Write a storyboard prompt first.' : cutPlanRequired ? 'Write the video prompt over in the Video tab first.' : undefined}
           >
             {isGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
             {isGenerating ? 'Rendering…' : hasStoryboard ? 'Regenerate image' : 'Generate image'}
@@ -467,11 +431,14 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               onClick={onLock}
               disabled={isGenerating || saving || cutPlanRequired}
               className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              title={cutPlanRequired ? 'Write a cut plan before locking — empty plans cannot drive Seedance.' : saving ? 'Saving cut plan first…' : 'Lock this storyboard so video generation can use it.'}
+              title={cutPlanRequired ? 'Write the video prompt over in the Video tab before locking — empty video prompts cannot drive Seedance.' : saving ? 'Saving first…' : 'Lock this storyboard so video generation can use it.'}
             >
               {saving && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
               {saving ? 'Locking…' : 'Lock'}
             </button>
+          )}
+          {cutPlanRequired && hasStoryboard && (
+            <span className="text-[11px] text-red-300/80">Video prompt required (Video tab).</span>
           )}
         </div>
       )}
@@ -616,12 +583,24 @@ interface VideoTabBodyProps {
   cutPlanText: string;
   cutPlanRequired: boolean;
   boundRefCount: number;
+  // Cut plan (= video prompt for Seedance) editing — same save plumbing as
+  // the storyboard tab. Editable only while the storyboard is unlocked;
+  // locked shots render the value as a read-only block so the input that
+  // produced the published video stays visible but immutable.
+  planLoading: boolean;
+  saveState: SaveState;
+  dirty: boolean;
+  onCutPlanChange: (v: string) => void;
+  onPlanBlur: () => Promise<boolean>;
+  onPlanRetry: () => Promise<boolean>;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
 }
 
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
-  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount, onUpdateShot, onGenerateVideo,
+  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount,
+  planLoading, saveState, dirty, onCutPlanChange, onPlanBlur, onPlanRetry,
+  onUpdateShot, onGenerateVideo,
 }) => {
   const canGenerate = isLocked && !isVideoGenerating && !cutPlanRequired;
   const audioLine = shot.lipsyncEnabled ? '\naudio 1 = sliced song segment for subtle visible vocal lip-sync' : '';
@@ -630,14 +609,58 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
   return (
     <>
       <div className="space-y-1">
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Seedance prompt preview</div>
-        <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed">
-{previewLine}
-{`\n\nMotion guide (from cut plan):\n`}
-{cutPlanText.trim() || '(empty — generate or edit the cut plan in the Storyboard tab)'}
-        </pre>
+        {/* Refs binding — read-only header showing what @image1, @image2…
+            mean to Seedance. Stays compact because the editable part is the
+            motion guide below. */}
+        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Seedance refs</div>
+        <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed">{previewLine}</pre>
+      </div>
+
+      {/* Video prompt = the cut plan. Editable text that drives Seedance's
+          motion/cut sequencing. Lives here (not the Storyboard tab) so the
+          artist edits it next to the Generate video button it feeds. */}
+      <div className="space-y-1">
+        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
+          Video prompt
+          {planLoading && <span className="text-[10px] normal-case tracking-normal text-zinc-400">Loading…</span>}
+          {!planLoading && cutPlanRequired ? (
+            <span className="text-[10px] normal-case tracking-normal text-red-300">Required</span>
+          ) : (
+            <>
+              {!planLoading && saveState === 'saving' && (
+                <span className="text-[10px] normal-case tracking-normal text-zinc-300">Saving…</span>
+              )}
+              {!planLoading && saveState === 'saved' && (
+                <span className="text-[10px] normal-case tracking-normal text-emerald-400/70">Saved</span>
+              )}
+              {!planLoading && saveState === 'failed' && (
+                <button
+                  type="button"
+                  onClick={() => { void onPlanRetry(); }}
+                  className="text-[10px] normal-case tracking-normal text-red-300 hover:text-red-200 underline-offset-2 hover:underline"
+                  title="Retry save"
+                >Save failed — retry</button>
+              )}
+              {!planLoading && saveState === 'idle' && dirty && (
+                <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
+              )}
+            </>
+          )}
+        </div>
+        {isLocked ? (
+          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{cutPlanText.trim() || '(empty video prompt)'}</pre>
+        ) : (
+          <AutoGrowTextarea
+            value={cutPlanText}
+            onChange={(e) => onCutPlanChange((e.target as HTMLTextAreaElement).value)}
+            onBlur={() => { void onPlanBlur(); }}
+            placeholder="Panel 1 [00:00-..] - camera: …; action: …; Seedance cue: …"
+            rows={5}
+            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
+          />
+        )}
         <p className="text-[11px] text-zinc-500">
-          Seedance receives the locked storyboard plus the cut plan as the motion/cut guide. To change the video, refine the storyboard or edit the cut plan.
+          Seedance reads the locked storyboard image plus this text as the motion/cut guide. {isLocked ? 'Unlock the storyboard to edit.' : 'Writing or refining the storyboard prompt also fills this field.'}
         </p>
       </div>
 
