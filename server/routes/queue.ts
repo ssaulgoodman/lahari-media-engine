@@ -10,7 +10,7 @@ import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows, getSB, T } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
-import { getFullProject, forkProject } from './projects.js';
+import { getFullProject } from './projects.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -43,10 +43,10 @@ function parseSrtToTimestamped(srt: string): string {
 const router = Router();
 
 // List queue with optional filters
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const { status, deity, search } = _req.query as any;
-    const items = await listQueue({ status, deity, search });
+    const { status, deity, search } = req.query as any;
+    const items = await listQueue({ status, deity, search, currentUserId: req.userId });
     res.json(items);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -88,21 +88,15 @@ router.post('/:queueId/start', async (req, res) => {
     }
 
     // Also check the legacy link (projects created before source_queue_id existed)
+    // — only honour it if it's YOUR project. If another user's project sits in
+    // lahari_project_id we deliberately ignore it and fall through to create a
+    // fresh project for this user. Forking from someone else mid-queue is
+    // unclear when multiple artists are working in parallel — defer that path
+    // until we have an explicit "fork from X" affordance.
     if (item.lahari_project_id) {
       const existing = await selectOne('projects', { id: item.lahari_project_id });
       if (existing && existing.user_id === req.userId) {
         const project = await getFullProject(item.lahari_project_id);
-        if (project) return res.json({ project, queueItem: item });
-      }
-      // Different user's project — fork it under the current user so they
-      // inherit all the upstream creative work (concept, script, style, etc.)
-      // instead of starting from scratch.
-      if (existing) {
-        const forkedId = await forkProject(item.lahari_project_id, {
-          newUserId: req.userId,
-          newSourceQueueId: queueId,
-        });
-        const project = await getFullProject(forkedId);
         if (project) return res.json({ project, queueItem: item });
       }
     }
