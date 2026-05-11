@@ -330,7 +330,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                       onChange={v => onUpdateProject({ imageModel: v })}
                       options={IMAGE_MODELS.map(m => ({
                         value: m.key,
-                        label: m.note ? `${m.label} · ${m.note}` : m.label,
+                        label: m.label,
                       }))}
                     />
                   </div>
@@ -357,7 +357,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                         if (!newModel.resolutions.includes(project.videoResolution)) updates.videoResolution = newModel.resolutions[0];
                         onUpdateProject(updates);
                       }}
-                      options={VIDEO_MODELS.map(m => ({ value: m.key, label: `${m.label} · ${m.durations.join('/')}s · $${m.costPerSec.toFixed(2)}/s` }))}
+                      options={VIDEO_MODELS.map(m => ({ value: m.key, label: m.label }))}
                     />
                   </div>
                 </div>
