@@ -163,7 +163,8 @@ export const generateSegmindVideo = async (
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    console.error(`[segmind] ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
+    console.error(`[segmind] ${res.status} ${res.statusText}: ${errText.slice(0, 4000)}`);
+    console.error(`[segmind] request body: ${JSON.stringify(body).slice(0, 2000)}`);
     const errDetails = (() => {
       try {
         const parsed = JSON.parse(errText);
@@ -201,7 +202,7 @@ export const generateSegmindVideo = async (
     }
     const err = new Error(userMessage);
     (err as any).segmindStatus = res.status;
-    (err as any).segmindRaw = errText.slice(0, 500);
+    (err as any).segmindRaw = errText.slice(0, 4000);
     (err as any).errorCategory = lower.includes('safety') || lower.includes('blocked')
       ? 'safety'
       : isCreditsError
