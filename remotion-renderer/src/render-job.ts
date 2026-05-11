@@ -123,6 +123,41 @@ const postProgress = async (
   }
 };
 
+type RenderErrorCode =
+  | 'bundle_failed'
+  | 'chromium_oom'
+  | 'asset_404'
+  | 'supabase_5xx'
+  | 'timeout'
+  | 'empty_output'
+  | 'renderer_failed';
+
+const classifyRenderError = (err: unknown): RenderErrorCode => {
+  const message = err instanceof Error ? err.message : String(err || '');
+  const text = message.toLowerCase();
+
+  if (text.includes('empty render output')) return 'empty_output';
+  if (text.includes('out of memory') || text.includes('oom') || text.includes('memory limit')) {
+    return 'chromium_oom';
+  }
+  if (
+    (text.includes('404') || text.includes('not found')) &&
+    (text.includes('asset') || text.includes('media') || text.includes('video') || text.includes('image') || text.includes('fetch'))
+  ) {
+    return 'asset_404';
+  }
+  if (
+    (text.includes('supabase') || text.includes('storage')) &&
+    (text.includes('500') || text.includes('502') || text.includes('503') || text.includes('504') || text.includes('5xx'))
+  ) {
+    return 'supabase_5xx';
+  }
+  if (text.includes('timeout') || text.includes('timed out') || text.includes('deadline')) return 'timeout';
+  if (text.includes('bundle') || text.includes('webpack') || text.includes('esbuild')) return 'bundle_failed';
+
+  return 'renderer_failed';
+};
+
 export interface RunRenderJobArgs {
   renderId: string;
   projectId: string;
@@ -155,6 +190,7 @@ export const runRenderJob = async ({
   let outputPath: string | undefined;
   let lastProgressPostAt = 0;
   let lastProgress = 0;
+  let lastStage = 'starting';
   const reportProgress = async (stage: string, progress?: number, force = false) => {
     const now = Date.now();
     const clamped = typeof progress === 'number' ? Math.max(0, Math.min(1, progress)) : undefined;
@@ -167,9 +203,17 @@ export const runRenderJob = async ({
       return;
     }
     lastProgressPostAt = now;
+    lastStage = stage;
     if (clamped !== undefined) lastProgress = clamped;
     await postProgress(renderId, { stage, ...(clamped !== undefined ? { progress: clamped } : {}) });
   };
+  const heartbeat = setInterval(() => {
+    void postProgress(renderId, {
+      stage: lastStage,
+      progress: lastProgress,
+    });
+  }, 30000);
+  heartbeat.unref?.();
 
   try {
     await reportProgress('bundling', 0.03, true);
@@ -217,12 +261,14 @@ export const runRenderJob = async ({
     return { ok: true, ...payload };
   } catch (e) {
     const message = (e as Error).message;
+    const errorCode = classifyRenderError(e);
     const renderMs = Date.now() - startedAt;
     console.error(`[render] failed render=${renderId} project=${projectId}`, message);
-    trackError(projectId, e, { renderId, renderMs });
-    await postCallback(renderId, { error: message, errorCode: 'renderer_failed', renderMs });
+    trackError(projectId, e, { renderId, renderMs, errorCode });
+    await postCallback(renderId, { error: message, errorCode, renderMs });
     return { ok: false, error: message, renderMs };
   } finally {
+    clearInterval(heartbeat);
     if (outputPath) {
       unlink(outputPath).catch(() => {});
     }

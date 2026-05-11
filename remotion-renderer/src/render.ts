@@ -19,17 +19,15 @@ let bundlePromise: Promise<string> | null = null;
 // Bundle once per process; subsequent renders reuse the served bundle.
 const getServeUrl = (): Promise<string> => {
   if (bundlePromise) return bundlePromise;
-  const nextBundlePromise = existsSync(PREBUILT_BUNDLE_INDEX)
-    ? Promise.resolve(PREBUILT_BUNDLE_DIR)
-    : bundle({
-      entryPoint: path.resolve(__dirname, 'entry.tsx'),
-    });
   if (existsSync(PREBUILT_BUNDLE_INDEX)) {
     console.log(`[render] using pre-built bundle at ${PREBUILT_BUNDLE_DIR}`);
+    bundlePromise = Promise.resolve(PREBUILT_BUNDLE_DIR);
   } else {
     console.log('[render] no pre-built bundle — running bundle() at runtime');
+    bundlePromise = bundle({
+      entryPoint: path.resolve(__dirname, 'entry.tsx'),
+    });
   }
-  bundlePromise = nextBundlePromise;
   return bundlePromise;
 };
 

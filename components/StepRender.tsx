@@ -63,6 +63,18 @@ const renderErrorHint = (code?: string | null) => {
       return 'The backend could not reach the renderer.';
     case 'callback_failed':
       return 'The renderer finished, but publishing the result failed.';
+    case 'bundle_failed':
+      return 'The renderer could not prepare the Remotion composition.';
+    case 'chromium_oom':
+      return 'Chromium likely ran out of memory while rendering.';
+    case 'asset_404':
+      return 'One of the timeline media files could not be fetched.';
+    case 'supabase_5xx':
+      return 'Supabase Storage returned a temporary server error.';
+    case 'timeout':
+      return 'The renderer timed out while preparing or rendering.';
+    case 'empty_output':
+      return 'The renderer produced an empty video file.';
     case 'renderer_failed':
       return 'The renderer crashed or returned an error.';
     default:
