@@ -101,6 +101,28 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
   });
 };
 
+const postProgress = async (
+  renderId: string,
+  payload: { stage: string; progress?: number },
+) => {
+  const base = process.env.MAIN_BACKEND_URL;
+  const sharedSecret = process.env.RENDERER_SHARED_SECRET;
+  if (!base || !sharedSecret) return;
+
+  try {
+    await fetch(`${base.replace(/\/$/, '')}/api/renders/progress/${renderId}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-renderer-secret': sharedSecret,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err: any) {
+    console.warn(`[render ${renderId}] progress callback failed:`, err?.message || err);
+  }
+};
+
 export interface RunRenderJobArgs {
   renderId: string;
   projectId: string;
@@ -131,10 +153,32 @@ export const runRenderJob = async ({
   const startedAt = Date.now();
   console.log(`[render] start render=${renderId} project=${projectId}`);
   let outputPath: string | undefined;
+  let lastProgressPostAt = 0;
+  let lastProgress = 0;
+  const reportProgress = async (stage: string, progress?: number, force = false) => {
+    const now = Date.now();
+    const clamped = typeof progress === 'number' ? Math.max(0, Math.min(1, progress)) : undefined;
+    if (
+      !force &&
+      clamped !== undefined &&
+      now - lastProgressPostAt < 3000 &&
+      Math.abs(clamped - lastProgress) < 0.03
+    ) {
+      return;
+    }
+    lastProgressPostAt = now;
+    if (clamped !== undefined) lastProgress = clamped;
+    await postProgress(renderId, { stage, ...(clamped !== undefined ? { progress: clamped } : {}) });
+  };
+
   try {
-    const result = await renderTimeline(inputProps);
+    await reportProgress('bundling', 0.03, true);
+    const result = await renderTimeline(inputProps, (progress) => {
+      void reportProgress('rendering_frames', 0.05 + progress * 0.82);
+    });
     outputPath = result.outputPath;
 
+    await reportProgress('validating_output', 0.9, true);
     const outputStat = await stat(outputPath);
     if (outputStat.size < 1024) {
       throw new Error(`empty render output: ${outputStat.size} bytes`);
@@ -143,6 +187,7 @@ export const runRenderJob = async ({
       throw new Error(`empty render output: ${result.durationInFrames} frames`);
     }
 
+    await reportProgress('uploading', 0.94, true);
     const upload = await uploadRender(outputPath, projectId);
     const renderMs = Date.now() - startedAt;
 
@@ -167,6 +212,7 @@ export const runRenderJob = async ({
       height: result.height,
       renderMs,
     };
+    await reportProgress('finalizing', 0.98, true);
     await postCallback(renderId, payload);
     return { ok: true, ...payload };
   } catch (e) {
@@ -174,7 +220,7 @@ export const runRenderJob = async ({
     const renderMs = Date.now() - startedAt;
     console.error(`[render] failed render=${renderId} project=${projectId}`, message);
     trackError(projectId, e, { renderId, renderMs });
-    await postCallback(renderId, { error: message, renderMs });
+    await postCallback(renderId, { error: message, errorCode: 'renderer_failed', renderMs });
     return { ok: false, error: message, renderMs };
   } finally {
     if (outputPath) {

@@ -9,6 +9,7 @@ import {
   listRenders,
   deleteRender,
   type RenderHistoryItem,
+  type RenderStatusResponse,
 } from '../services/api';
 
 interface Props {
@@ -27,8 +28,51 @@ type RenderPhase =
 
 const POLL_MS = 4000;
 
+const renderStageLabel = (stage?: string | null) => {
+  switch (stage) {
+    case 'queued':
+      return 'Queued';
+    case 'accepted':
+      return 'Accepted by renderer';
+    case 'bundling':
+      return 'Preparing render';
+    case 'rendering_frames':
+      return 'Rendering frames';
+    case 'validating_output':
+      return 'Checking output';
+    case 'uploading':
+      return 'Uploading video';
+    case 'finalizing':
+      return 'Publishing result';
+    case 'completed':
+      return 'Complete';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Rendering';
+  }
+};
+
+const renderErrorHint = (code?: string | null) => {
+  switch (code) {
+    case 'watchdog_timeout':
+      return 'The renderer stopped sending heartbeats before it finished.';
+    case 'renderer_rejected':
+      return 'The renderer rejected the job before it started.';
+    case 'renderer_unreachable':
+      return 'The backend could not reach the renderer.';
+    case 'callback_failed':
+      return 'The renderer finished, but publishing the result failed.';
+    case 'renderer_failed':
+      return 'The renderer crashed or returned an error.';
+    default:
+      return null;
+  }
+};
+
 export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
+  const [renderMeta, setRenderMeta] = useState<RenderStatusResponse | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<RenderHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -137,6 +181,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     pollRef.current = window.setInterval(async () => {
       try {
         const s = await getRenderStatus(project.id);
+        setRenderMeta(s);
         if (s.status === 'completed' && s.videoUrl) {
           stopPolling();
           setPhase({ kind: 'done', videoUrl: s.videoUrl });
@@ -160,6 +205,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     (async () => {
       try {
         const s = await getRenderStatus(project.id);
+        setRenderMeta(s);
         if (cancelled) return;
         if (s.status === 'rendering') {
           setPhase({ kind: 'rendering' });
@@ -191,8 +237,20 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     }
 
     setPhase({ kind: 'rendering' });
+    setRenderMeta({
+      renderId: null,
+      status: 'rendering',
+      videoUrl: null,
+      error: null,
+      errorCode: null,
+      renderMs: null,
+      progress: 0,
+      stage: 'queued',
+      lastHeartbeatAt: null,
+      modalFunctionCallId: null,
+    });
     try {
-      await startRender(project.id, {
+      const started = await startRender(project.id, {
         trackItemIds: s.trackItemIds,
         trackItemsMap: s.trackItemsMap,
         transitionsMap: s.transitionsMap,
@@ -200,6 +258,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         size: s.size,
         durationMs: s.duration,
       });
+      setRenderMeta((cur) => cur ? { ...cur, renderId: started.renderId } : cur);
       startPolling();
     } catch (e: any) {
       console.error('[render]', e);
@@ -208,6 +267,12 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   };
 
   const isBusy = phase.kind === 'rendering';
+  const progress = renderMeta?.status === 'rendering' && renderMeta.progress !== null
+    ? Math.max(0, Math.min(1, renderMeta.progress))
+    : null;
+  const heartbeatAgeSeconds = renderMeta?.lastHeartbeatAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(renderMeta.lastHeartbeatAt).getTime()) / 1000))
+    : null;
 
   // Neutralize the App-level <main>'s p-8 with -m-8 so this view can claim the
   // full viewport below the header. h-[calc(100vh-3.5rem)] = 100vh minus the
@@ -234,7 +299,17 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         </div>
         <div className="flex items-center gap-3 flex-none">
           {phase.kind === 'rendering' && (
-            <span className="text-[11px] text-zinc-400 font-mono">rendering…</span>
+            <div className="hidden sm:flex items-center gap-2 min-w-[210px]">
+              <div className="h-1.5 flex-1 rounded-full bg-white/[0.08] overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-emerald-400 transition-all duration-500"
+                  style={{ width: `${Math.round((progress ?? 0.03) * 100)}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-zinc-400 font-mono whitespace-nowrap">
+                {progress !== null ? `${Math.round(progress * 100)}%` : 'rendering…'}
+              </span>
+            </div>
           )}
           <button
             onClick={() => setHistoryOpen((o) => !o)}
@@ -368,7 +443,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
 
         {phase.kind === 'error' && (
           <div className="absolute bottom-4 right-4 max-w-sm bg-red-900/40 border border-red-500/40 rounded-lg shadow-xl px-3 py-2 text-xs text-red-200 flex items-start justify-between gap-3">
-            <span>{phase.message}</span>
+            <span>
+              {phase.message}
+              {renderErrorHint(renderMeta?.errorCode) && (
+                <span className="block mt-1 text-red-100/70">
+                  {renderErrorHint(renderMeta?.errorCode)}
+                </span>
+              )}
+            </span>
             <button
               onClick={() => setPhase({ kind: 'idle' })}
               className="text-red-300 hover:text-white leading-none"
@@ -376,6 +458,26 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             >
               ✕
             </button>
+          </div>
+        )}
+        {phase.kind === 'rendering' && (
+          <div className="absolute bottom-4 right-4 w-72 bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl px-3 py-2 backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-white">{renderStageLabel(renderMeta?.stage)}</span>
+              <span className="text-[10px] text-zinc-400 font-mono">
+                {progress !== null ? `${Math.round(progress * 100)}%` : '...'}
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-400 transition-all duration-500"
+                style={{ width: `${Math.round((progress ?? 0.03) * 100)}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-zinc-500 font-mono">
+              <span>{renderMeta?.renderId ? renderMeta.renderId.slice(0, 8) : 'starting'}</span>
+              {heartbeatAgeSeconds !== null && <span>heartbeat {heartbeatAgeSeconds}s ago</span>}
+            </div>
           </div>
         )}
       </div>

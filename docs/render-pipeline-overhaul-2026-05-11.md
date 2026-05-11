@@ -1,7 +1,7 @@
 # Render Pipeline Overhaul — Audit, Diagnosis, and Plan
 
 **Date**: 2026-05-11
-**Status**: Planned. Not started. Pick up when ready.
+**Status**: Phase 1 deployed. Phase 2 in progress on `codex/render-phase2-progress`.
 **Context**: One stuck render incident (2:40 video orphaned at `rendering` for 1h47m). Multiple reports of small clips (2–3 min) taking 15–25 min to render. Audit triggered.
 
 ---
@@ -12,12 +12,12 @@ Renders are slow for one dominant reason: **cross-region asset pulls**. Modal re
 
 Modal itself is configured fine (8 vCPU, 16GB, 60-min timeout). The bottleneck is **architecture, not Modal**.
 
-Beyond performance, the pipeline has zero safety nets:
-- No watchdog for orphan `lahari_renders` rows (one stuck render = manual SQL flip)
-- No progress signal during render (artist sees "rendering…" for up to 60 min with no feedback)
-- No heartbeat from renderer (we can't tell hung from slow)
-- Modal SIGKILL bypasses the callback entirely — result is lost
-- Bucket-mismatch risk: production Modal currently sets `SUPABASE_BUCKET=videos`, so final renders live in the `videos` bucket. Main backend delete must default to `videos` or explicitly set `RENDER_STORAGE_BUCKET=videos` until a planned migration moves renderer output to `lahari-assets`.
+Beyond performance, the original pipeline had no safety nets. Current state:
+- Phase 1 watchdog is deployed: orphan `rendering` rows older than `MAX_RENDER_MINUTES` fail automatically.
+- Phase 1 catches initial renderer non-2xx responses, duplicate active renders, empty outputs, and callback 404s.
+- Phase 2 adds progress, stage, heartbeat, Modal call id, and error-code columns plus UI progress.
+- Modal SIGKILL still needs Phase 3 retry/reconciler/cancel work.
+- Bucket-mismatch risk is handled short-term: production Modal currently sets `SUPABASE_BUCKET=videos`, so backend delete defaults to `videos` until a planned migration moves renderer output to `lahari-assets`.
 
 Fix plan ships in 4 phases. Phase 1 (stop the bleeding) + Phase 4 (asset pre-staging) together get us from "fails silently for hours" + "10× too slow" to "self-recovers in 2 min" + "expected 3–5 min for typical projects."
 
@@ -59,12 +59,12 @@ That's how a 3–5 min render becomes 15–30 min. And it's exactly why the stuc
 
 | # | Gap | Fix | Effort | Priority |
 |---|---|---|---|---|
-| O1 | No progress signal during render. `render.ts:31` accepts `onProgress` but `render-job.ts:135` calls `renderTimeline(inputProps)` with no callback. Artist sees only "rendering…" for up to 60 min. | Wire `onProgress` to write `lahari_renders.progress` (0..1) + `stage` ('bundling'\|'rendering'\|'uploading'). Throttle to 1 update/3s. Surface in `/render-status` + StepRender chip. | M | P0 |
+| O1 | No progress signal during render. `render.ts:31` accepts `onProgress` but `render-job.ts:135` calls `renderTimeline(inputProps)` with no callback. Artist sees only "rendering…" for up to 60 min. | **Phase 2 done in code:** `renderTimeline` progress writes `lahari_renders.progress` + `stage`, throttled to ~1 update/3s. `/render-status` and StepRender surface it. | M | P0 |
 | O2 | Errors only live in main-backend stdout (500-line Railway cap) + Modal's tail. PostHog captures `render_completed` / `trackError` (`render-job.ts:144,168`) but no Sentry, and no queryable error store on main backend. `lahari_renders.error` only holds *callback-delivered* errors — Modal SIGKILL / OOM never reach it. | (a) Add a `render_logs` table or reuse the planned `error_log` table; insert one row per render lifecycle event (start/upload/done/fail) from both `render-job.ts` and `render-callback.ts`. (b) Install `@sentry/node` in the renderer with `MODAL_TASK_ID` as a tag. | M | P0 |
-| O3 | No queryable "what did Modal do for renderId X" trail. `modal_app.py:63` returns the result but Modal's function-call dashboard is tail-only and not joinable by `render_id`. | Stamp `modal_function_call_id` onto `lahari_renders` from the ASGI handler (`render_job.spawn(...).object_id` → POST `/api/renders/:id/attach-call-id`). | S | P1 |
-| O4 | Failure messages shown to artist are raw exception strings (`render-callback.ts:46`, `StepRender.tsx:147`). "Supabase upload failed (0 bytes): {}" isn't actionable. | Classify on the renderer: `bundle_failed` / `chromium_oom` / `asset_404` / `supabase_5xx` / `timeout` / `empty_output`. Store user-facing `error_code` + `error_message` separately. UI maps `error_code` to remediation hint. | S | P1 |
+| O3 | No queryable "what did Modal do for renderId X" trail. `modal_app.py:63` returns the result but Modal's function-call dashboard is tail-only and not joinable by `render_id`. | **Phase 2 done in code:** ASGI handler returns the spawned function-call id when Modal exposes it; main backend stamps it into `lahari_renders.modal_function_call_id`. | S | P1 |
+| O4 | Failure messages shown to artist are raw exception strings (`render-callback.ts:46`, `StepRender.tsx:147`). "Supabase upload failed (0 bytes): {}" isn't actionable. | **Phase 2 partial:** coarse `error_code` values now flow to UI hints. Fine-grained renderer classification (`asset_404`, `chromium_oom`, etc.) is still Phase 3/4 polish. | S | P1 |
 | O5 | No per-asset fetch logging. When a render is slow we can't tell if it's Chromium GPU stalls, Supabase pull latency, or ffmpeg encoding. | Add `track('render_stage', ...)` markers before/after `bundle`, `selectComposition`, `renderMedia`, `uploadRender`. Same events persisted to `render_logs`. | S | P1 |
-| O6 | Modal-side stdout is captured only if subprocess exits cleanly (`modal_app.py:78` uses `capture_output=True`). A SIGKILL leaves no log trail on Modal's side either — the parent Python process is also killed. | Have `render-job.ts` heartbeat every 30s via `postCallback` with `{ phase: 'progress', stage, fraction }`. Last heartbeat before SIGKILL becomes the forensic anchor. | M | P0 |
+| O6 | Modal-side stdout is captured only if subprocess exits cleanly (`modal_app.py:78` uses `capture_output=True`). A SIGKILL leaves no log trail on Modal's side either — the parent Python process is also killed. | **Phase 2 done in code:** progress pings update `last_heartbeat_at`; the last successful ping becomes the forensic anchor. | M | P0 |
 | O7 | `RENDERER_SHARED_SECRET` mismatches return 401 with no log of *which* request was rejected; could mask a stale deploy on either side. | Log `[render-callback] 401 from %ip% renderId=%id%` so prod 401 spikes are visible. | S | P2 |
 | O8 | Frontend swallows poll errors (`StepRender.tsx:151`). A 500 on `/render-status` looks identical to "still rendering" — for hours. | After 3 consecutive poll failures, show a yellow "lost contact with server" chip with a manual Retry button. | S | P2 |
 
@@ -147,6 +147,8 @@ After Phase 1: orphan renders self-recover, silent 401/500s fail loudly, 0-byte 
 
 ### Phase 2 — Artist visibility (1 PR, 1 day)
 
+Status: in progress on `codex/render-phase2-progress`.
+
 Needs DB migration. Needs Modal redeploy + main backend redeploy in lockstep.
 
 Migration `migrations/2026-XX-XX_render_observability.sql`:
@@ -160,11 +162,11 @@ ALTER TABLE lahari_renders
 ```
 
 Code:
-6. **O6 heartbeat foundation** — `render-job.ts` fires a heartbeat every 30s via `postCallback({ phase: 'progress', last_heartbeat_at: now() })`. New main-backend route `POST /api/renders/heartbeat/:renderId` updates the row.
-7. **O1 progress callback** — Wire Remotion's `onProgress` to update `lahari_renders.progress` + `lahari_renders.stage` via heartbeat. Throttle to 1 update/3s.
-8. **O4 error classification** — On every renderer failure path, classify into `error_code`. Frontend maps codes → remediation hints.
-9. **UI progress bar** — `StepRender.tsx` renders a thin bar fed by `latest.progress`, with stage label ("bundling… 12%" / "rendering frames… 68%" / "uploading… 95%").
-10. **O3 stamp `modal_function_call_id`** — In `modal_app.py` ASGI handler, capture `FunctionCall.object_id` from `render_job.spawn(...)`, pass back to main via `POST /api/renders/:id/attach-call-id` before returning the 202. Stamp into the row.
+6. **O6 heartbeat foundation** — `render-job.ts` sends progress pings to `POST /api/renders/progress/:renderId`; main backend updates `last_heartbeat_at`.
+7. **O1 progress callback** — Remotion's `onProgress` updates `lahari_renders.progress` + `lahari_renders.stage`, throttled to ~1 update/3s.
+8. **O4 error classification** — Coarse codes now exist (`renderer_failed`, `renderer_rejected`, `renderer_unreachable`, `callback_failed`, `watchdog_timeout`). Fine-grained renderer causes remain planned.
+9. **UI progress bar** — `StepRender.tsx` renders a thin bar and stage card fed by `/render-status`.
+10. **O3 stamp `modal_function_call_id`** — In `modal_app.py`, capture the spawned `FunctionCall` id when Modal exposes one and return it to main backend; `/render` stamps it on the row.
 
 After Phase 2: artists see live progress, we can join Modal dashboard logs to render rows by `modal_function_call_id`, every render lifecycle event is recoverable from DB alone.
 

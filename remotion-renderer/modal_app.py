@@ -139,7 +139,16 @@ def web():
         # regardless of what happens to this ASGI request. Returns a FunctionCall
         # handle we could query later; we don't need it because the Node CLI
         # POSTs the final result back to the main backend via postCallback.
-        render_job.spawn(render_id, project_id, timeline)
-        return {"accepted": True, "renderId": render_id}
+        call = render_job.spawn(render_id, project_id, timeline)
+        modal_function_call_id = (
+            getattr(call, "object_id", None)
+            or getattr(call, "function_call_id", None)
+            or getattr(call, "call_id", None)
+        )
+        return {
+            "accepted": True,
+            "renderId": render_id,
+            "modalFunctionCallId": modal_function_call_id,
+        }
 
     return api

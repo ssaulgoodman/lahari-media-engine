@@ -17,6 +17,8 @@ export const runRenderWatchdogOnce = async (): Promise<number> => {
     .update({
       status: 'failed',
       error: message,
+      error_code: 'watchdog_timeout',
+      stage: 'failed',
       updated_at: new Date().toISOString(),
     })
     .eq('status', 'rendering')

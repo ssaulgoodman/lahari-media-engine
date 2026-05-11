@@ -856,7 +856,12 @@ export interface RenderStatusResponse {
   status: RenderStatus;
   videoUrl: string | null;
   error: string | null;
+  errorCode: string | null;
   renderMs: number | null;
+  progress: number | null;
+  stage: string | null;
+  lastHeartbeatAt: string | null;
+  modalFunctionCallId: string | null;
 }
 
 // Kicks off an async render. Backend returns 202 immediately with a renderId;

@@ -490,7 +490,7 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 | **Output** | Final mp4 uploaded to Supabase Storage, registered as `final_render`, and published back to the queue row |
 | **Artist control** | Timeline editor arrangement, trims, transitions, effects, then Render |
 
-Render is async because Railway cannot hold long HTTP requests. `/render` inserts a `lahari_renders` row, returns `202`, and fire-and-forgets to the renderer. The renderer uploads the mp4 and calls `/api/renders/callback/:renderId`; the frontend polls `/render-status` every 4s.
+Render is async because Railway cannot hold long HTTP requests. `/render` inserts a `lahari_renders` row, returns `202`, and fire-and-forgets to the renderer. The renderer sends progress/heartbeat pings during bundling, frame rendering, upload, and finalization, then uploads the mp4 and calls `/api/renders/callback/:renderId`; the frontend polls `/render-status` every 4s.
 
 **Phase 1 safety rails now in code:**
 - Duplicate active renders for the same project are rejected with `409`.
@@ -500,7 +500,12 @@ Render is async because Railway cannot hold long HTTP requests. `/render` insert
 - Callback `404` is non-retriable.
 - Render delete bucket default matches current production renderer bucket: `videos`.
 
-**Still planned:** progress/heartbeat columns and UI progress bar, longer callback retry + reconciler fallback, asset pre-staging for remote video/image/audio, baked Remotion bundle, and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
+**Phase 2 visibility now in code:**
+- `lahari_renders` carries `progress`, `stage`, `last_heartbeat_at`, `modal_function_call_id`, and `error_code`.
+- `/render-status` exposes those fields to the Render UI progress bar.
+- `/api/admin/active-renders` shows active rows before deploys, including stage/progress/Modal call id.
+
+**Still planned:** longer callback retry + reconciler fallback, cancel-on-watchdog, asset pre-staging for remote video/image/audio, baked Remotion bundle, and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
 
 ---
 

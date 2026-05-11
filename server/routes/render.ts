@@ -72,6 +72,9 @@ router.post('/:id/render', async (req, res) => {
     id: renderId,
     project_id: projectId,
     status: 'rendering',
+    progress: 0,
+    stage: 'queued',
+    last_heartbeat_at: new Date().toISOString(),
   });
 
   // Fire-and-forget. The renderer will call /api/renders/callback/:renderId
@@ -95,6 +98,21 @@ router.post('/:id/render', async (req, res) => {
         await updateRows('renders', { id: renderId }, {
           status: 'failed',
           error: message,
+          error_code: 'renderer_rejected',
+          stage: 'failed',
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
+      } else {
+        const body = await response.json().catch(() => null);
+        const modalFunctionCallId =
+          typeof body?.modalFunctionCallId === 'string' && body.modalFunctionCallId
+            ? body.modalFunctionCallId
+            : null;
+        await updateRows('renders', { id: renderId, status: 'rendering' }, {
+          ...(modalFunctionCallId ? { modal_function_call_id: modalFunctionCallId } : {}),
+          stage: 'accepted',
+          progress: 0.01,
+          last_heartbeat_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).catch(() => {});
       }
@@ -103,6 +121,8 @@ router.post('/:id/render', async (req, res) => {
       await updateRows('renders', { id: renderId }, {
         status: 'failed',
         error: err?.message || 'renderer unreachable',
+        error_code: 'renderer_unreachable',
+        stage: 'failed',
         updated_at: new Date().toISOString(),
       }).catch(() => {});
     }
@@ -121,14 +141,30 @@ router.get('/:id/render-status', async (req, res) => {
   });
   const latest = rows[0];
   if (!latest) {
-    return res.json({ renderId: null, status: 'idle', videoUrl: null, error: null, renderMs: null });
+    return res.json({
+      renderId: null,
+      status: 'idle',
+      videoUrl: null,
+      error: null,
+      errorCode: null,
+      renderMs: null,
+      progress: null,
+      stage: null,
+      lastHeartbeatAt: null,
+      modalFunctionCallId: null,
+    });
   }
   return res.json({
     renderId: latest.id,
     status: latest.status,
     videoUrl: latest.video_url || null,
     error: latest.error || null,
+    errorCode: latest.error_code || null,
     renderMs: latest.render_ms || null,
+    progress: latest.progress === null || latest.progress === undefined ? null : Number(latest.progress),
+    stage: latest.stage || null,
+    lastHeartbeatAt: latest.last_heartbeat_at || null,
+    modalFunctionCallId: latest.modal_function_call_id || null,
   });
 });
 
