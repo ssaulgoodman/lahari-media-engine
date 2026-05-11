@@ -985,6 +985,18 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const handleWriteStoryboardPrompt = async (shotId: string, feedback?: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
+    try {
+      const result = await api.writeStoryboardPrompt(project.id, shotId, feedback);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.ERROR });
+      setError(`Storyboard prompt write failed: ${err.message}`);
+    }
+  };
+
   const handleRefineStoryboard = async (
     shotId: string,
     feedback: string,
@@ -992,12 +1004,16 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     refineMode: api.StoryboardRefineMode = 'replan'
   ) => {
     if (!project || !feedback.trim()) return;
-    updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING, storyboardUserFeedback: feedback });
+    if (refineMode === 'edit_image') {
+      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING, storyboardUserFeedback: feedback });
+    } else {
+      updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
+    }
     try {
       const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode);
       setProject(result.project);
     } catch (err: any) {
-      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
+      updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.ERROR } : { storyboardPromptStatus: GenerationStatus.ERROR });
       setError(`Storyboard refinement failed: ${err.message}`);
     }
   };
@@ -1030,10 +1046,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // cutPlanText on the active storyboard version's metadata. We don't refresh
   // the project (the new text is local to StoryboardPanel and used at video
   // generation time on the server), but we do let parent surface failures.
-  const handleUpdateStoryboardPlan = async (shotId: string, cutPlanText: string) => {
+  const handleUpdateStoryboardPlan = async (shotId: string, cutPlanText: string, storyboardPrompt?: string) => {
     if (!project) return;
     try {
-      await api.updateStoryboardPlan(project.id, shotId, cutPlanText);
+      const result = await api.updateStoryboardPlan(project.id, shotId, cutPlanText, storyboardPrompt);
+      if (result?.project) setProject(result.project);
     } catch (err: any) {
       setError(`Cut plan save failed: ${err.message}`);
       throw err;
@@ -1111,12 +1128,50 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     for (const scene of p.scenes) {
       scene.shots.forEach((shot) => {
         if (shot.storyboardLocked || shot.storyboardUrl) return;
+        if (!shot.storyboardPrompt?.trim()) return;
         if (shot.storyboardStatus === GenerationStatus.LOADING) return;
         if (shot.storyboardStatus === GenerationStatus.ERROR) return;
         targets.push({ sceneId: scene.id, shotId: shot.id });
       });
     }
     return targets;
+  };
+
+  const getReadyStoryboardPromptTargets = (p: ApiProject) => {
+    const targets: { sceneId: string; shotId: string }[] = [];
+    for (const scene of p.scenes) {
+      scene.shots.forEach((shot) => {
+        if (shot.storyboardPrompt?.trim()) return;
+        if (shot.storyboardPromptStatus === GenerationStatus.LOADING) return;
+        if (shot.storyboardPromptStatus === GenerationStatus.ERROR) return;
+        targets.push({ sceneId: scene.id, shotId: shot.id });
+      });
+    }
+    return targets;
+  };
+
+  const handleBulkWriteStoryboardPrompts = async () => {
+    if (!project) return;
+    const targets = getReadyStoryboardPromptTargets(project);
+    if (targets.length === 0) return;
+    beginBulkRun();
+    setStoryboardQueue(targets.map(t => t.shotId));
+    try {
+      await runWithConcurrency(
+        targets,
+        5,
+        (t, signal) => api.writeStoryboardPrompt(project.id, t.shotId, undefined, signal),
+        t => {
+          setStoryboardQueue(q => q.filter(id => id !== t.shotId));
+          updateShotOptimistic(t.shotId, { storyboardPromptStatus: GenerationStatus.LOADING });
+        },
+      );
+      if (bulkStopRef.current.requested) return;
+      const latest = await api.getProject(project.id);
+      setProject(latest);
+    } finally {
+      setStoryboardQueue([]);
+    }
   };
 
   const handleBulkGenerateStoryboards = async () => {
@@ -1595,6 +1650,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onUpdateShot={handleUpdateShot}
                     onGenerateImage={handleGenerateImage}
                     onGenerateVideo={handleGenerateVideo}
+                    onWriteStoryboardPrompt={handleWriteStoryboardPrompt}
                     onGenerateStoryboard={handleGenerateStoryboard}
                     onRefineStoryboard={handleRefineStoryboard}
                     onLockStoryboard={handleLockStoryboard}
@@ -1611,6 +1667,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onCancelRewritePrompts={() => abortOp('write-prompts')}
                     onBulkGenerateFrames={handleBulkGenerateFrames}
                     onBulkGenerateVideos={handleBulkGenerateVideos}
+                    onBulkWriteStoryboardPrompts={handleBulkWriteStoryboardPrompts}
                     onBulkGenerateStoryboards={handleBulkGenerateStoryboards}
                     onCancelBulk={stopBulkRun}
                     bulkStopNotice={bulkStopNotice}

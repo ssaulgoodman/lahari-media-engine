@@ -110,7 +110,7 @@ const saveImageString = async (image: string): Promise<string> => {
   return saveBase64(image, 'images', 'png');
 };
 
-const generateNanoBanana2 = async (
+export const generateNanoBanana2 = async (
   prompt: string,
   aspectRatio = '16:9',
   refs: RefImage[] = [],

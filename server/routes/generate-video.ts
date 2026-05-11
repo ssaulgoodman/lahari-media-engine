@@ -92,6 +92,7 @@ export const mountVideoRoutes = (router: Router) => {
       ? await selectOne('storyboard_versions', { id: shot.storyboard_version_id, shot_id: shot.id, project_id: project.id })
       : null;
     const storyboardVersionMeta = parseJson<{ cutPlanText?: string | null }>(storyboardVersion?.metadata, {});
+    const storyboardCutPlanText = String(shot.storyboard_cut_plan || '').trim() || storyboardVersionMeta.cutPlanText || null;
 
     const scene = await selectOne('scenes', { id: shot.scene_id });
     const concept = JSON.parse(project.locked_concept || '{}');
@@ -192,7 +193,7 @@ export const mountVideoRoutes = (router: Router) => {
 
       const storyboardPrompt = useStoryboardMode
         ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
-          cutPlanText: storyboardVersionMeta.cutPlanText || null,
+          cutPlanText: storyboardCutPlanText,
           refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
           lipsyncEnabled: !!shot.lipsync_enabled,
         })

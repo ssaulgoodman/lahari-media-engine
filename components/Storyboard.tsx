@@ -19,11 +19,12 @@ interface Props {
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
   // Required — App.tsx always wires these. Keeping them optional would force
   // non-null asserts further down the tree (StoryboardPanel needs them).
+  onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
-  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
+  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUpdateProject?: (updates: Record<string, any>) => void;
@@ -31,6 +32,7 @@ interface Props {
   onCancelRewritePrompts?: () => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
   onBulkGenerateVideos?: () => Promise<void> | void;
+  onBulkWriteStoryboardPrompts?: () => Promise<void> | void;
   onBulkGenerateStoryboards?: () => Promise<void> | void;
   onCancelBulk?: () => void;
   bulkStopNotice?: string | null;
@@ -55,7 +57,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardQueue, isLoading }) => {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
@@ -227,12 +229,14 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
         onCancelRewritePrompts={onCancelRewritePrompts}
         onBulkGenerateFrames={onBulkGenerateFrames}
         onBulkGenerateVideos={onBulkGenerateVideos}
+        onBulkWriteStoryboardPrompts={onBulkWriteStoryboardPrompts}
         onBulkGenerateStoryboards={onBulkGenerateStoryboards}
         onCancelBulk={onCancelBulk}
         bulkStopNotice={bulkStopNotice}
         studioMode={studioMode}
         onStudioModeChange={setStudioMode}
         storyboardSupported={storyboardSupported}
+        onUpdateProject={onUpdateProject}
         isLoading={isLoading}
       />
 
@@ -299,6 +303,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   onUpdateShot={onUpdateShot}
                   onGenerateImage={onGenerateImage}
                   onGenerateVideo={onGenerateVideo}
+                  onWriteStoryboardPrompt={onWriteStoryboardPrompt}
                   onGenerateStoryboard={onGenerateStoryboard}
                   onRefineStoryboard={onRefineStoryboard}
                   onLockStoryboard={onLockStoryboard}

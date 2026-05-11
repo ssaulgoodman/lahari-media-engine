@@ -136,6 +136,7 @@ router.post('/:queueId/start', async (req, res) => {
       is_narrative: cached.cached_is_narrative ?? null,
       is_meditative: cached.cached_is_meditative ?? null,
       image_model: 'nano-banana-2',
+      storyboard_provider: 'gpt-image-2',
       user_id: req.userId,
       source_queue_id: queueId,
     });

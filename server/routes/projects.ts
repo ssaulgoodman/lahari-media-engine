@@ -146,6 +146,7 @@ const forkProject = async (
     meaning: src.meaning,
     video_mode: src.video_mode,
     image_model: src.image_model,
+    storyboard_provider: src.storyboard_provider || 'gpt-image-2',
     target_duration: src.target_duration,
     cost_estimate: src.cost_estimate,
     style_exploration: (() => {
@@ -253,6 +254,10 @@ const forkProject = async (
           storyboard_status: shot.storyboard_status,
           storyboard_locked: shot.storyboard_locked,
           storyboard_user_feedback: shot.storyboard_user_feedback,
+          storyboard_prompt: shot.storyboard_prompt,
+          storyboard_cut_plan: shot.storyboard_cut_plan,
+          storyboard_prompt_status: shot.storyboard_prompt_status,
+          storyboard_prompt_user_feedback: shot.storyboard_prompt_user_feedback,
           lipsync_enabled: shot.lipsync_enabled,
           image_status: shot.image_status,
           video_status: shot.video_status,
@@ -439,6 +444,7 @@ const getFullProject = async (projectId: string) => {
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
     imageModel: project.image_model || 'nano-banana-2',
+    storyboardProvider: project.storyboard_provider || 'gpt-image-2',
     videoModel: project.video_model || 'veo-3.1',
     aspectRatio: project.aspect_ratio || '16:9',
     videoResolution: project.video_resolution || '720p',
@@ -487,6 +493,10 @@ const getFullProject = async (projectId: string) => {
         storyboardStatus: shot.storyboard_status || 'idle',
         storyboardLocked: !!shot.storyboard_locked,
         storyboardUserFeedback: shot.storyboard_user_feedback || undefined,
+        storyboardPrompt: shot.storyboard_prompt || undefined,
+        storyboardCutPlan: shot.storyboard_cut_plan || undefined,
+        storyboardPromptStatus: shot.storyboard_prompt_status || 'idle',
+        storyboardPromptUserFeedback: shot.storyboard_prompt_user_feedback || undefined,
         lipsyncEnabled: !!shot.lipsync_enabled,
         continuityFrom: shot.continuity_from || 'cut',
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
@@ -603,6 +613,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     status: 'analyzing',
     audio_path: audioPath,
     image_model: 'nano-banana-2',
+    storyboard_provider: 'gpt-image-2',
     user_id: req.userId,
   });
 
@@ -879,12 +890,13 @@ router.patch('/:id/concept', async (req, res) => {
 
 // Update project settings
 router.patch('/:id', async (req, res) => {
-  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, videoModel, aspectRatio, videoResolution } = req.body;
+  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, aspectRatio, videoResolution } = req.body;
   const updates: Record<string, any> = {};
 
   if (title !== undefined) updates.title = title;
   if (videoMode !== undefined) updates.video_mode = videoMode;
   if (imageModel !== undefined) updates.image_model = imageModel;
+  if (storyboardProvider !== undefined) updates.storyboard_provider = storyboardProvider;
   if (videoModel !== undefined) updates.video_model = videoModel;
   if (aspectRatio !== undefined) updates.aspect_ratio = aspectRatio;
   if (videoResolution !== undefined) updates.video_resolution = videoResolution;

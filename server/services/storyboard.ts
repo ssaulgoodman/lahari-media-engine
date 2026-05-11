@@ -1,9 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
+import OpenAI from 'openai';
 import { incrementColumn, insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { storageUrl } from '../storage.js';
-import { generateOpenAIImageWithResponses, OpenAIRefImage } from './openai-image.js';
+import { generateOpenAIImageFromPrompt, OpenAIRefImage } from './openai-image.js';
+import { generateNanoBanana2 } from './segmind-image.js';
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
 import { buildContextChain, logCall } from '../xray.js';
+import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -83,17 +86,29 @@ const addRef = (
 };
 
 const estimateStoryboardCost = (imageCount: number): number => {
-  const configured = Number(process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0);
+  const configured = Number(process.env.OPENAI_STORYBOARD_RENDER_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0);
   if (configured > 0) return configured * Math.max(1, imageCount);
-  // Rough non-zero telemetry until OpenAI usage exposes image-tool cost directly.
-  return 0.06 * Math.max(1, imageCount);
+  return 0.12 * Math.max(1, imageCount);
 };
 
-const isMissingPreviousResponse = (err: any): boolean => {
-  const text = `${err?.message || ''} ${err?.code || ''} ${err?.type || ''}`.toLowerCase();
-  const mentionsPreviousResponse = text.includes('previous_response') || text.includes('previous response');
-  const looksMissingOrExpired = text.includes('not found') || text.includes('expired');
-  return mentionsPreviousResponse || (looksMissingOrExpired && text.includes('previous') && text.includes('response'));
+const estimateStoryboardPlanCost = (): number => {
+  const configured = Number(process.env.OPENAI_STORYBOARD_PLAN_COST_ESTIMATE || 0);
+  return configured > 0 ? configured : 0.02;
+};
+
+const getOpenAIClient = () => {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+};
+
+const extractJsonObject = (text: string): any => {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const raw = fenced || trimmed;
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('Storyboard planner returned no JSON object');
+  return JSON.parse(raw.slice(start, end + 1));
 };
 
 export const loadStoryboardContext = async (projectId: string, shotId: string): Promise<StoryboardContext> => {
@@ -146,6 +161,147 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
   return { project, scene, shot, input, refs, refMeta };
 };
 
+export const writeStoryboardPrompt = async (opts: {
+  projectId: string;
+  shotId: string;
+  variant?: StoryboardPromptVariant;
+  artistNote?: string;
+}): Promise<{
+  storyboardPrompt: string;
+  cutPlanText: string;
+}> => {
+  const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
+  const variant = opts.variant || 'adaptive_numbered_storyboard';
+  const basePrompt = buildStoryboardPrompt(ctx.input, variant);
+  const model = process.env.OPENAI_STORYBOARD_PLANNER_MODEL || 'gpt-5.4-mini';
+  const currentPrompt = ctx.shot.storyboard_prompt || '';
+  const currentCutPlan = ctx.shot.storyboard_cut_plan || '';
+  const prompt = opts.artistNote?.trim()
+    ? `Rewrite the saved storyboard render prompt and cut plan using the artist note.
+
+Artist note:
+${opts.artistNote.trim()}
+
+Current storyboard render prompt:
+${currentPrompt || '(none)'}
+
+Current cut plan:
+${currentCutPlan || '(none)'}
+
+Original source brief:
+${basePrompt}
+
+Return only JSON with keys:
+{
+  "storyboardPrompt": "complete image-render prompt for a storyboard renderer",
+  "cutPlanText": "numbered text-only cut plan with timestamps, camera, action, and Seedance motion cues"
+}`
+    : `Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
+
+1. storyboardPrompt: the exact image-render prompt for a storyboard renderer. It should ask for one clean storyboard sheet, coherent cinematic panels, thin white panel borders acceptable, no captions or readable text inside panels, and no printed panel numbers unless absolutely unavoidable. It should include the reference-use rules and enough visual/camera detail for the renderer, but it must not ask the image model to explain itself.
+2. cutPlanText: a text-only numbered cut plan with timestamps, camera, action, and Seedance motion cues. This text will later drive the video prompt.
+
+Source brief:
+${basePrompt}
+
+Return only JSON with keys:
+{
+  "storyboardPrompt": "complete image-render prompt for a storyboard renderer",
+  "cutPlanText": "numbered text-only cut plan with timestamps, camera, action, and Seedance motion cues"
+}`;
+
+  await updateRows('shots', { id: opts.shotId }, { storyboard_prompt_status: 'loading' });
+  const t0 = Date.now();
+
+  try {
+    const response = await (getOpenAIClient().responses.create as any)({
+      model,
+      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+      reasoning: { effort: process.env.OPENAI_STORYBOARD_PLANNER_REASONING_EFFORT || 'low' },
+      text: { format: { type: 'json_object' } },
+    });
+    const outputText = response.output_text || (response.output || [])
+      .filter((item: any) => item.type === 'message')
+      .flatMap((item: any) => item.content || [])
+      .filter((content: any) => content.type === 'output_text' && content.text)
+      .map((content: any) => content.text)
+      .join('\n')
+      .trim();
+    const parsed = extractJsonObject(outputText);
+    const storyboardPrompt = String(parsed.storyboardPrompt || '').trim();
+    const cutPlanText = String(parsed.cutPlanText || '').trim();
+    if (!storyboardPrompt || !cutPlanText) throw new Error('Storyboard planner returned empty prompt or cut plan');
+
+    await updateRows('shots', { id: opts.shotId }, {
+      storyboard_prompt: storyboardPrompt,
+      storyboard_cut_plan: cutPlanText,
+      storyboard_prompt_status: 'success',
+      storyboard_prompt_user_feedback: opts.artistNote || null,
+      last_error: null,
+    });
+
+    const durationMs = Date.now() - t0;
+    const costEstimate = estimateStoryboardPlanCost();
+    await logCall({
+      projectId: opts.projectId,
+      stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
+      model,
+      prompt,
+      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      contextChain: await buildContextChain(opts.projectId),
+      responseSummary: `Saved storyboard prompt for shot ${opts.shotId}`,
+      durationMs,
+      costEstimate,
+    });
+    await incrementColumn('projects', { id: opts.projectId }, 'cost_estimate', costEstimate);
+
+    return { storyboardPrompt, cutPlanText };
+  } catch (err: any) {
+    await updateRows('shots', { id: opts.shotId }, {
+      storyboard_prompt_status: 'error',
+      last_error: err.message,
+    });
+    await logCall({
+      projectId: opts.projectId,
+      stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
+      model,
+      prompt,
+      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      contextChain: await buildContextChain(opts.projectId),
+      durationMs: Date.now() - t0,
+      error: err.message,
+    });
+    throw err;
+  }
+};
+
+const renderWithProvider = async (
+  providerKey: string | undefined,
+  prompt: string,
+  aspectRatio: string,
+  refs: OpenAIRefImage[],
+): Promise<{ storagePath: string; model: string; provider: string; costEstimate: number; size?: string }> => {
+  const provider = getStoryboardProvider(providerKey);
+  if (provider.provider === 'openai') {
+    const [storagePath] = await generateOpenAIImageFromPrompt(prompt, { aspectRatio, refs, count: 1 });
+    return {
+      storagePath,
+      model: provider.runtimeModel,
+      provider: provider.key,
+      costEstimate: estimateStoryboardCost(1),
+      size: aspectRatio === '9:16' ? '1024x1536' : aspectRatio === '1:1' ? '1024x1024' : '1536x1024',
+    };
+  }
+
+  const imagePath = await generateNanoBanana2(prompt, aspectRatio, refs);
+  return {
+    storagePath: imagePath,
+    model: provider.runtimeModel,
+    provider: provider.key,
+    costEstimate: Number(process.env.SEGMIND_STORYBOARD_RENDER_COST_ESTIMATE || 0.03),
+  };
+};
+
 export const generateStoryboardVersion = async (opts: {
   projectId: string;
   shotId: string;
@@ -158,11 +314,16 @@ export const generateStoryboardVersion = async (opts: {
   assetId: string;
   imageUrl: string;
   storagePath: string;
-  responseId: string;
-  reasoningModel: string;
+  responseId: string | null;
+  reasoningModel: string | null;
   imageModel: string;
 }> => {
   const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
+  const promptBase = String(ctx.shot.storyboard_prompt || '').trim();
+  const cutPlanText = String(ctx.shot.storyboard_cut_plan || '').trim();
+  if (!promptBase) throw new Error('Write a storyboard prompt before rendering an image');
+  if (!cutPlanText) throw new Error('Write a cut plan before rendering an image');
+
   const isRefine = Boolean(opts.artistNote?.trim() || opts.previousVersionId);
   const previousVersion = isRefine
     ? opts.previousVersionId
@@ -171,75 +332,42 @@ export const generateStoryboardVersion = async (opts: {
         ? await selectOne('storyboard_versions', { id: ctx.shot.storyboard_version_id, shot_id: opts.shotId })
         : null
     : null;
-
-  const variant = opts.variant || 'adaptive_numbered_storyboard';
-  const basePrompt = buildStoryboardPrompt(ctx.input, variant);
-  const previousMetadata = parseJson<Record<string, any>>(previousVersion?.metadata, {});
-  const previousCutPlan = previousMetadata.cutPlanText ? `\n\nPrevious cut plan to preserve/improve:\n${previousMetadata.cutPlanText}` : '';
+  const previousAsset = previousVersion?.asset_id ? await selectOne('assets', { id: previousVersion.asset_id }) : null;
   const refineMode: StoryboardRefineMode = opts.refineMode === 'edit_image' ? 'edit_image' : 'replan';
-  const prompt = opts.artistNote?.trim()
-    ? `Refine the existing Lahari storyboard using this artist note: "${opts.artistNote.trim()}"
+  const refs = previousAsset?.file_path && refineMode === 'edit_image'
+    ? [{ label: 'Previous storyboard image to edit', imagePath: previousAsset.file_path }, ...ctx.refs]
+    : ctx.refs;
+  const prompt = opts.artistNote?.trim() && refineMode === 'edit_image'
+    ? `${promptBase}
 
-Refine mode: ${refineMode === 'edit_image' ? 'Edit image' : 'Re-plan board'}.
-${refineMode === 'edit_image'
-  ? `Treat this as a surgical visual edit. Preserve the same cut plan, panel count, layout, camera order, character identity, costume, environment, and style unless the note explicitly asks otherwise.`
-  : `Re-plan the storyboard and generate a new clean board. You may change panel count, cut order, pacing, layout, camera progression, or thematic emphasis to satisfy the note.`}
-Keep the same ${ctx.input.clipDuration}s clip intent unless the note explicitly asks otherwise.
-${previousCutPlan}
+Artist image edit note:
+${opts.artistNote.trim()}
 
-Original storyboard brief:
-${basePrompt}`
-    : basePrompt;
+Keep the saved cut plan unless the note explicitly requires a visible correction:
+${cutPlanText}`
+    : promptBase;
 
   await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
   const t0 = Date.now();
 
   try {
-    let responseChainFallback = false;
-    const callResponses = (previousResponseId?: string, refs: OpenAIRefImage[] = ctx.refs) => generateOpenAIImageWithResponses(prompt, {
-      aspectRatio: ctx.project.aspect_ratio || '16:9',
-      size: '3072x1536',
-      refs,
-      previousResponseId,
-      action: previousVersion && refineMode === 'edit_image' ? 'edit' : 'generate',
-      quality: 'medium',
-    });
-
-    let result;
-    try {
-      result = await callResponses(previousVersion?.openai_response_id || undefined);
-    } catch (err: any) {
-      if (!previousVersion?.openai_response_id || !isMissingPreviousResponse(err)) throw err;
-
-      responseChainFallback = true;
-      const previousAsset = previousVersion.asset_id
-        ? await selectOne('assets', { id: previousVersion.asset_id })
-        : null;
-      const fallbackRefs = previousAsset?.file_path
-        ? [{ label: 'Previous storyboard version to refine', imagePath: previousAsset.file_path }, ...ctx.refs]
-        : ctx.refs;
-      result = await callResponses(undefined, fallbackRefs);
-    }
-
-    const [storagePath] = result.imagePaths;
+    const rendered = await renderWithProvider(ctx.project.storyboard_provider, prompt, ctx.project.aspect_ratio || '16:9', refs);
     const assetId = uuidv4();
     const versionId = uuidv4();
     const durationMs = Date.now() - t0;
-    const costEstimate = estimateStoryboardCost(result.imagePaths.length);
     await insertRow('assets', {
       id: assetId,
       project_id: opts.projectId,
       shot_id: opts.shotId,
       category: 'shot_storyboard',
-      file_path: storagePath,
+      file_path: rendered.storagePath,
       prompt,
       metadata: JSON.stringify({
         storyboardVersionId: versionId,
-        openaiResponseId: result.responseId,
-        imageGenerationCallIds: result.imageGenerationCallIds,
-        imageGenerationRevisedPrompts: result.imageGenerationRevisedPrompts,
-        responseText: result.outputText,
-        responseChainFallback,
+        provider: rendered.provider,
+        rendererModel: rendered.model,
+        imageRenderOnly: true,
+        size: rendered.size,
       }),
     });
 
@@ -249,20 +377,22 @@ ${basePrompt}`
       shot_id: opts.shotId,
       asset_id: assetId,
       parent_version_id: previousVersion?.id || null,
-      openai_response_id: result.responseId,
-      openai_image_call_ids: result.imageGenerationCallIds,
-      reasoning_model: result.reasoningModel,
-      image_model: result.imageModel,
+      openai_response_id: null,
+      openai_image_call_ids: [],
+      reasoning_model: null,
+      image_model: rendered.model,
       prompt,
       artist_note: opts.artistNote || null,
       refs: ctx.refMeta,
       metadata: {
-        variant,
+        variant: opts.variant || 'adaptive_numbered_storyboard',
         clipDuration: ctx.input.clipDuration,
         sceneLabel: ctx.input.sceneLabel,
-        cutPlanText: result.outputText || null,
-        revisedPrompt: result.imageGenerationRevisedPrompts[0] || null,
-        responseChainFallback,
+        cutPlanText,
+        storyboardPrompt: promptBase,
+        provider: rendered.provider,
+        rendererModel: rendered.model,
+        imageRenderOnly: true,
       },
       locked: false,
     });
@@ -279,33 +409,33 @@ ${basePrompt}`
 
     await logCall({
       projectId: opts.projectId,
-      stage: opts.artistNote?.trim() ? 'refine-storyboard' : 'generate-storyboard',
-      model: `${result.reasoningModel}+${result.imageModel}`,
+      stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
+      model: rendered.model,
       prompt,
       referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
-      responseSummary: `${opts.artistNote?.trim() ? 'Refined' : 'Generated'} storyboard ${versionId}${responseChainFallback ? ' (fresh response fallback)' : ''}`,
+      responseSummary: `${opts.artistNote?.trim() ? 'Edited' : 'Rendered'} storyboard ${versionId} via ${rendered.provider}`,
       outputAssetIds: [assetId],
       durationMs,
-      costEstimate,
+      costEstimate: rendered.costEstimate,
     });
-    await incrementColumn('projects', { id: opts.projectId }, 'cost_estimate', costEstimate);
+    await incrementColumn('projects', { id: opts.projectId }, 'cost_estimate', rendered.costEstimate);
 
     return {
       versionId,
       assetId,
-      imageUrl: storageUrl(storagePath),
-      storagePath,
-      responseId: result.responseId,
-      reasoningModel: result.reasoningModel,
-      imageModel: result.imageModel,
+      imageUrl: storageUrl(rendered.storagePath),
+      storagePath: rendered.storagePath,
+      responseId: null,
+      reasoningModel: null,
+      imageModel: rendered.model,
     };
   } catch (err: any) {
     const durationMs = Date.now() - t0;
     await logCall({
       projectId: opts.projectId,
-      stage: opts.artistNote?.trim() ? 'refine-storyboard' : 'generate-storyboard',
-      model: 'openai-responses-image',
+      stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
+      model: getStoryboardProvider(ctx.project.storyboard_provider).runtimeModel,
       prompt,
       referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
@@ -356,7 +486,8 @@ export const unlockStoryboardVersion = async (projectId: string, shotId: string)
 export const updateStoryboardCutPlan = async (
   projectId: string,
   shotId: string,
-  cutPlanText: string
+  cutPlanText: string,
+  storyboardPrompt?: string,
 ): Promise<void> => {
   const shot = await selectOne('shots', { id: shotId });
   if (!shot) throw new Error('Shot not found');
@@ -364,18 +495,27 @@ export const updateStoryboardCutPlan = async (
   const scene = await selectOne('scenes', { id: shot.scene_id });
   if (!scene || scene.project_id !== projectId) throw new Error('Shot does not belong to this project');
 
+  const updates: Record<string, any> = {
+    storyboard_cut_plan: cutPlanText.trim(),
+    storyboard_prompt_status: shot.storyboard_prompt_status || 'success',
+  };
+  if (storyboardPrompt !== undefined) updates.storyboard_prompt = storyboardPrompt.trim();
+  await updateRows('shots', { id: shotId }, updates);
+
   const versionId = shot.storyboard_version_id;
-  if (!versionId) throw new Error('No active storyboard version to update');
+  if (versionId) {
+    const version = await selectOne('storyboard_versions', { id: versionId, shot_id: shotId, project_id: projectId });
+    if (!version) throw new Error('Storyboard version not found');
 
-  const version = await selectOne('storyboard_versions', { id: versionId, shot_id: shotId, project_id: projectId });
-  if (!version) throw new Error('Storyboard version not found');
-
-  const metadata = parseJson<Record<string, any>>(version.metadata, {});
-  await updateRows('storyboard_versions', { id: versionId }, {
-    metadata: {
-      ...metadata,
-      cutPlanText: cutPlanText.trim(),
-      cutPlanEditedAt: new Date().toISOString(),
-    },
-  });
+    const metadata = parseJson<Record<string, any>>(version.metadata, {});
+    await updateRows('storyboard_versions', { id: versionId }, {
+      prompt: storyboardPrompt !== undefined ? storyboardPrompt.trim() : version.prompt,
+      metadata: {
+        ...metadata,
+        cutPlanText: cutPlanText.trim(),
+        storyboardPrompt: storyboardPrompt !== undefined ? storyboardPrompt.trim() : metadata.storyboardPrompt,
+        cutPlanEditedAt: new Date().toISOString(),
+      },
+    });
+  }
 };

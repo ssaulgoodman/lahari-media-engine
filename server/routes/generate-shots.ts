@@ -15,7 +15,7 @@ import { SEGMIND_MODELS } from '../services/segmind.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
-import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan } from '../services/storyboard.js';
+import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -308,7 +308,50 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
   }
 });
 
-// ─── Generate / Refine / Lock Storyboard (Responses + GPT Image 2) ───
+// ─── Write / Render / Refine / Lock Storyboard ─────────────────────
+
+router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    const result = await writeStoryboardPrompt({
+      projectId,
+      shotId,
+      artistNote: req.body?.feedback || req.body?.artistNote,
+      variant: req.body?.variant || 'adaptive_numbered_storyboard',
+    });
+    res.json({ ok: true, storyboardPrompt: result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard prompt write failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/write-storyboard-prompts', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+
+  try {
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    let written = 0;
+    for (const scene of scenes) {
+      const shots = await selectAll('shots', { scene_id: scene.id });
+      for (const shot of shots) {
+        if (String(shot.storyboard_prompt || '').trim()) continue;
+        await writeStoryboardPrompt({
+          projectId,
+          shotId: shot.id,
+          variant: req.body?.variant || 'adaptive_numbered_storyboard',
+        });
+        written += 1;
+      }
+    }
+    res.json({ ok: true, written, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[project ${projectId}] Bulk storyboard prompt write failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
 
 router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
   const projectId = paramStr(req.params.id);
@@ -334,15 +377,27 @@ router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
   if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
 
   try {
-    const result = await generateStoryboardVersion({
+    const refineMode = req.body?.refineMode === 'edit_image' ? 'edit_image' : 'replan';
+    if (refineMode === 'edit_image') {
+      const result = await generateStoryboardVersion({
+        projectId,
+        shotId,
+        artistNote: feedback,
+        previousVersionId: req.body?.previousVersionId,
+        refineMode,
+        variant: req.body?.variant || 'adaptive_numbered_storyboard',
+      });
+      res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+      return;
+    }
+
+    const result = await writeStoryboardPrompt({
       projectId,
       shotId,
       artistNote: feedback,
-      previousVersionId: req.body?.previousVersionId,
-      refineMode: req.body?.refineMode === 'edit_image' ? 'edit_image' : 'replan',
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
-    res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+    res.json({ ok: true, storyboardPrompt: result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard refinement failed:`, err);
     res.status((err as any).statusCode || 500).json({ error: err.message });
@@ -379,11 +434,13 @@ router.patch('/:id/shots/:shotId/storyboard-plan', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const cutPlanText = String(req.body?.cutPlanText || '').trim();
+  const storyboardPrompt = req.body?.storyboardPrompt === undefined ? undefined : String(req.body.storyboardPrompt || '').trim();
 
   if (!cutPlanText) return res.status(400).json({ error: 'cutPlanText required' });
+  if (storyboardPrompt !== undefined && !storyboardPrompt) return res.status(400).json({ error: 'storyboardPrompt cannot be empty' });
 
   try {
-    await updateStoryboardCutPlan(projectId, shotId, cutPlanText);
+    await updateStoryboardCutPlan(projectId, shotId, cutPlanText, storyboardPrompt);
     res.json({ ok: true, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard plan update failed:`, err);

@@ -470,6 +470,31 @@ export type StoryboardVersionEntry = {
   createdAt: string;
 };
 
+export const writeStoryboardPrompt = async (
+  projectId: string,
+  shotId: string,
+  feedback?: string,
+  signal?: AbortSignal
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/write-storyboard-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ variant: 'adaptive_numbered_storyboard', ...(feedback ? { feedback } : {}) }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
+export const writeStoryboardPrompts = async (projectId: string, signal?: AbortSignal) => {
+  const res = await authFetch(`${API}/projects/${projectId}/write-storyboard-prompts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ variant: 'adaptive_numbered_storyboard' }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
 export const generateStoryboard = async (projectId: string, shotId: string, signal?: AbortSignal) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-storyboard`, {
     method: 'POST',
@@ -513,11 +538,11 @@ export const unlockStoryboard = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
-export const updateStoryboardPlan = async (projectId: string, shotId: string, cutPlanText: string) => {
+export const updateStoryboardPlan = async (projectId: string, shotId: string, cutPlanText: string, storyboardPrompt?: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/storyboard-plan`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cutPlanText }),
+    body: JSON.stringify({ cutPlanText, ...(storyboardPrompt !== undefined ? { storyboardPrompt } : {}) }),
   });
   return handleResponse(res);
 };

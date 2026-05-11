@@ -68,11 +68,12 @@ interface ShotCardProps {
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
   // Required at this boundary — Storyboard.tsx always wires these. Optionality
   // here would force `!` non-null asserts inside StoryboardPanel.
+  onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
-  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
+  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
   onLockShot: (sceneId: string, shotId: string) => void;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void | Promise<void>;
   onGenerateEndFrame?: (shotId: string, refs?: ShotRefInput[]) => void | Promise<void>;
@@ -101,7 +102,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   isRefining, onRefineStart, onRefineEnd,
   frameQueue, videoQueue, storyboardQueue,
   onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt,
-  onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
@@ -112,8 +113,8 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
   const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
-  const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
-  const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR || shot.storyboardStatus === GenerationStatus.ERROR;
+  const isGenerating = shot.imageStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING || shot.endImageStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.LOADING || shot.storyboardPromptStatus === GenerationStatus.LOADING || shot.imageStatus === GenerationStatus.CRITIQUING;
+  const isError = shot.imageStatus === GenerationStatus.ERROR || shot.videoStatus === GenerationStatus.ERROR || shot.storyboardStatus === GenerationStatus.ERROR || shot.storyboardPromptStatus === GenerationStatus.ERROR;
   const activeCastMembers = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
   const hasStartFrame = !!shot.imageUrl;
   const hasVideo = !!shot.videoUrl;
@@ -483,6 +484,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               isRefining={isRefining}
               onRefineStart={onRefineStart}
               onRefineEnd={onRefineEnd}
+              onWriteStoryboardPrompt={onWriteStoryboardPrompt}
               onGenerateStoryboard={onGenerateStoryboard}
               onRefineStoryboard={onRefineStoryboard}
               onLockStoryboard={onLockStoryboard}

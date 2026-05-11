@@ -37,11 +37,12 @@ interface StoryboardPanelProps {
   onRefineEnd: (key: string) => void;
 
   // Storyboard callbacks — required at this boundary; parent guarantees them.
+  onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
-  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string) => Promise<void>;
+  onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
 
   // Video gen — the panel's Video sub-tab fires this once a storyboard is locked.
@@ -54,7 +55,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   project, shot, scene,
   resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
-  onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onUpdateShot,
   onGenerateVideo,
   setModalImage,
@@ -64,28 +65,32 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
 
   // Cut plan is controlled — local state mirrors the active version's text.
   const [cutPlanText, setCutPlanText] = useState<string>('');
+  const [promptText, setPromptText] = useState<string>('');
   // Server-known cut plan, used to detect dirty state for autosave.
   const [savedPlanText, setSavedPlanText] = useState<string>('');
+  const [savedPromptText, setSavedPromptText] = useState<string>('');
   const [planLoading, setPlanLoading] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const savedFlashTimer = useRef<number | null>(null);
   const refineRef = useRef<HTMLTextAreaElement>(null);
 
   const isGenerating = shot.storyboardStatus === GenerationStatus.LOADING;
+  const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
   const isVideoGenerating = shot.videoStatus === GenerationStatus.LOADING;
   const isError = shot.storyboardStatus === GenerationStatus.ERROR;
   const hasStoryboard = !!shot.storyboardUrl;
   const hasVideo = !!shot.videoUrl;
   const isLocked = !!shot.storyboardLocked;
   const versionId = shot.storyboardVersionId;
-  const dirty = cutPlanText.trim() !== savedPlanText.trim();
+  const dirty = cutPlanText.trim() !== savedPlanText.trim() || promptText.trim() !== savedPromptText.trim();
   const saving = saveState === 'saving';
   // The backend rejects empty cutPlanText, and an empty plan would
   // produce a meaningless Seedance prompt. When a storyboard exists,
   // the cut plan must be non-empty before lock or video generation
   // is allowed — otherwise the locked version would silently retain
   // the previous server text, mismatching what the artist sees.
-  const cutPlanRequired = hasStoryboard && cutPlanText.trim() === '';
+  const promptRequired = !promptText.trim();
+  const cutPlanRequired = (hasStoryboard || !!promptText.trim()) && cutPlanText.trim() === '';
 
   // Backend-bound refs only — what the storyboard generator actually uses.
   // Mirrors server/services/storyboard.ts: locked style + locked cast (only
@@ -105,8 +110,10 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   // versionId, which is our cue to re-pull the canonical text).
   useEffect(() => {
     if (!versionId) {
-      setCutPlanText('');
-      setSavedPlanText('');
+      setCutPlanText(shot.storyboardCutPlan || '');
+      setSavedPlanText(shot.storyboardCutPlan || '');
+      setPromptText(shot.storyboardPrompt || '');
+      setSavedPromptText(shot.storyboardPrompt || '');
       setSaveState('idle');
       return;
     }
@@ -116,9 +123,11 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       .then(d => {
         if (cancelled) return;
         const active = d.versions.find(v => v.id === versionId);
-        const text = active?.cutPlanText || '';
+        const text = active?.cutPlanText || shot.storyboardCutPlan || '';
         setCutPlanText(text);
         setSavedPlanText(text);
+        setPromptText(shot.storyboardPrompt || '');
+        setSavedPromptText(shot.storyboardPrompt || '');
         setSaveState('idle');
       })
       .catch(() => {
@@ -128,7 +137,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       })
       .finally(() => { if (!cancelled) setPlanLoading(false); });
     return () => { cancelled = true; };
-  }, [project.id, shot.id, versionId]);
+  }, [project.id, shot.id, versionId, shot.storyboardPrompt, shot.storyboardCutPlan]);
 
   // Clear any pending Saved-flash timer on unmount.
   useEffect(() => () => {
@@ -143,19 +152,25 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   // sees. A no-storyboard or no-change call is a no-op success.
   const flushPlan = useCallback(async (): Promise<boolean> => {
     const trimmed = cutPlanText.trim();
+    const promptTrimmed = promptText.trim();
     if (!trimmed) {
-      if (hasStoryboard) {
+      if (hasStoryboard || promptTrimmed) {
         setSaveState('failed');
         return false;
       }
       return true;
     }
-    if (trimmed === savedPlanText.trim()) return true;
+    if (!promptTrimmed) {
+      setSaveState('failed');
+      return false;
+    }
+    if (trimmed === savedPlanText.trim() && promptTrimmed === savedPromptText.trim()) return true;
     setSaveState('saving');
     if (savedFlashTimer.current) window.clearTimeout(savedFlashTimer.current);
     try {
-      await onUpdateStoryboardPlan(shot.id, trimmed);
+      await onUpdateStoryboardPlan(shot.id, trimmed, promptTrimmed);
       setSavedPlanText(trimmed);
+      setSavedPromptText(promptTrimmed);
       setSaveState('saved');
       savedFlashTimer.current = window.setTimeout(() => setSaveState('idle'), 1500);
       return true;
@@ -163,7 +178,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       setSaveState('failed');
       return false;
     }
-  }, [cutPlanText, savedPlanText, hasStoryboard, onUpdateStoryboardPlan, shot.id]);
+  }, [cutPlanText, promptText, savedPlanText, savedPromptText, hasStoryboard, onUpdateStoryboardPlan, shot.id]);
 
   const handleLock = async () => {
     // Defense in depth — Lock is also disabled in the UI when these are true.
@@ -247,12 +262,16 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           saveState={saveState}
           dirty={dirty}
           cutPlanRequired={cutPlanRequired}
+          promptRequired={promptRequired}
           cutPlanText={cutPlanText}
+          promptText={promptText}
           refineMode={refineMode}
           onRefineModeChange={setRefineMode}
+          onPromptChange={(v) => { setPromptText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onCutPlanChange={(v) => { setCutPlanText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onPlanBlur={flushPlan}
           onPlanRetry={flushPlan}
+          onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
           onLock={handleLock}
           onUnlockStoryboard={onUnlockStoryboard}
@@ -291,12 +310,16 @@ interface StoryboardTabBodyProps {
   saveState: SaveState;
   dirty: boolean;
   cutPlanRequired: boolean;
+  promptRequired: boolean;
   cutPlanText: string;
+  promptText: string;
   refineMode: StoryboardRefineMode;
   onRefineModeChange: (mode: StoryboardRefineMode) => void;
+  onPromptChange: (v: string) => void;
   onCutPlanChange: (v: string) => void;
   onPlanBlur: () => Promise<boolean>;
   onPlanRetry: () => Promise<boolean>;
+  onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onLock: () => Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
@@ -306,15 +329,37 @@ interface StoryboardTabBodyProps {
 
 const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   shot, isLocked, isGenerating, isError, isRefining, hasStoryboard, versionId,
-  planLoading, saveState, dirty, cutPlanRequired, cutPlanText,
+  planLoading, saveState, dirty, cutPlanRequired, promptRequired, cutPlanText, promptText,
   refineMode, onRefineModeChange,
-  onCutPlanChange, onPlanBlur, onPlanRetry,
-  onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
+  onPromptChange, onCutPlanChange, onPlanBlur, onPlanRetry,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
+  const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
 
   return (
     <>
+      {/* Prompt editor */}
+      <div className="space-y-1">
+        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
+          Storyboard prompt
+          {shot.storyboardPromptStatus === GenerationStatus.LOADING && <span className="text-[10px] normal-case tracking-normal text-zinc-300">Writing…</span>}
+          {promptRequired && <span className="text-[10px] normal-case tracking-normal text-amber-300">Prompt required</span>}
+        </div>
+        {isLocked ? (
+          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{promptText || '(empty prompt)'}</pre>
+        ) : (
+          <AutoGrowTextarea
+            value={promptText}
+            onChange={(e) => onPromptChange((e.target as HTMLTextAreaElement).value)}
+            onBlur={() => { if (cutPlanText.trim()) void onPlanBlur(); }}
+            placeholder="Write or generate the storyboard image prompt first…"
+            rows={4}
+            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
+          />
+        )}
+      </div>
+
       {/* Cut plan editor */}
       <div className="space-y-1">
         <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
@@ -345,11 +390,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           )}
         </div>
 
-        {!hasStoryboard ? (
-          <div className="surface-inset rounded-md p-3 text-sm text-zinc-400 italic">
-            No storyboard yet. Generate to draft an ordered cut plan.
-          </div>
-        ) : isLocked ? (
+        {isLocked ? (
           <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{cutPlanText || '(empty cut plan)'}</pre>
         ) : (
           <AutoGrowTextarea
@@ -367,12 +408,21 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
       {!isLocked && (
         <div className="flex items-center gap-2">
           <button
+            onClick={() => onWriteStoryboardPrompt(shot.id)}
+            disabled={isWritingPrompt || isGenerating || saving}
+            className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+          >
+            {isWritingPrompt && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+            {isWritingPrompt ? 'Writing…' : promptText.trim() ? 'Rewrite prompt' : 'Write prompt'}
+          </button>
+          <button
             onClick={() => onGenerateStoryboard(shot.id)}
-            disabled={isGenerating || saving}
+            disabled={isGenerating || saving || promptRequired || cutPlanRequired}
             className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+            title={promptRequired ? 'Write a storyboard prompt first.' : cutPlanRequired ? 'Write a cut plan first.' : undefined}
           >
             {isGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
-            {isGenerating ? 'Generating…' : hasStoryboard ? 'Regenerate' : 'Generate storyboard'}
+            {isGenerating ? 'Rendering…' : hasStoryboard ? 'Regenerate image' : 'Generate image'}
           </button>
           {hasStoryboard && (
             <button
@@ -415,7 +465,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
       )}
 
       {/* Refine — disabled when locked */}
-      {!isLocked && hasStoryboard && (
+      {!isLocked && (hasStoryboard || promptText.trim()) && (
         <>
           <div className="h-px bg-white/[0.06] my-1" />
           <div className="flex items-center justify-between gap-3 mb-2">
@@ -431,7 +481,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
                   key={mode}
                   type="button"
                   onClick={() => onRefineModeChange(mode)}
-                  disabled={isRefining || isGenerating}
+                  disabled={isRefining || isGenerating || (mode === 'edit_image' && !hasStoryboard)}
                   className={`text-[11px] px-2.5 py-1 transition-colors disabled:opacity-50 ${
                     refineMode === mode
                       ? 'bg-white/[0.1] text-white'

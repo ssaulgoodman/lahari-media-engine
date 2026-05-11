@@ -81,6 +81,10 @@ export interface VideoShot {
   storyboardStatus: GenerationStatus;
   storyboardLocked?: boolean;
   storyboardUserFeedback?: string;
+  storyboardPrompt?: string;
+  storyboardCutPlan?: string;
+  storyboardPromptStatus?: GenerationStatus;
+  storyboardPromptUserFeedback?: string;
   lipsyncEnabled?: boolean;
   useNextAsEndFrame: boolean;
   error?: string;
@@ -163,6 +167,7 @@ export interface ApiProject {
   isMeditative?: boolean;
   analysisStep?: string;
   imageModel: string;
+  storyboardProvider: string;
   videoModel: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
   videoResolution: '720p' | '1080p';

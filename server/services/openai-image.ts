@@ -93,7 +93,7 @@ const generateFromPrompt = async (
   count = 1
 ): Promise<string[]> => {
   const client = getClient();
-  const size = sizeForAspectRatio(aspectRatio);
+  const size = sizeForAspectRatio(aspectRatio) as any;
   const cappedRefs = refs.slice(0, MAX_OPENAI_INPUT_IMAGES);
 
   if (cappedRefs.length > 0) {

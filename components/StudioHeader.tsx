@@ -7,6 +7,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
+import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
 
 interface StudioHeaderProps {
   scenes: VideoScene[];
@@ -15,23 +16,25 @@ interface StudioHeaderProps {
   onCancelRewritePrompts?: () => void;
   onBulkGenerateFrames?: () => Promise<void> | void;
   onBulkGenerateVideos?: () => Promise<void> | void;
+  onBulkWriteStoryboardPrompts?: () => Promise<void> | void;
   onBulkGenerateStoryboards?: () => Promise<void> | void;
   onCancelBulk?: () => void;
   bulkStopNotice?: string | null;
   studioMode: 'storyboard' | 'keyframe';
   onStudioModeChange: (mode: 'storyboard' | 'keyframe') => void;
   storyboardSupported: boolean;
+  onUpdateProject?: (updates: Record<string, any>) => void;
   isLoading?: boolean;
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
   scenes, project,
-  onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, studioMode, onStudioModeChange, storyboardSupported, isLoading,
+  onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, studioMode, onStudioModeChange, storyboardSupported, onUpdateProject, isLoading,
 }) => {
   const [contextPopover, setContextPopover] = useState<'story' | 'prompts' | null>(null);
   const contextBarRef = useRef<HTMLDivElement>(null);
   const [bulkNote, setBulkNote] = useState('');
-  const [bulkRunning, setBulkRunning] = useState<'storyboards' | 'frames' | 'videos' | null>(null);
+  const [bulkRunning, setBulkRunning] = useState<'storyboard-prompts' | 'storyboards' | 'frames' | 'videos' | null>(null);
 
   // Close popover on outside click
   useEffect(() => {
@@ -83,10 +86,19 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   const storyboardsToFire = scenes.reduce((acc, s) => {
     return acc + s.shots.filter(shot => {
       if (shot.storyboardLocked || shot.storyboardUrl) return false;
+      if (!shot.storyboardPrompt?.trim()) return false;
       if (shot.storyboardStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.ERROR) return false;
       return true;
     }).length;
   }, 0);
+  const storyboardPromptsToWrite = scenes.reduce((acc, s) => {
+    return acc + s.shots.filter(shot => {
+      if (shot.storyboardPrompt?.trim()) return false;
+      if (shot.storyboardPromptStatus === GenerationStatus.LOADING || shot.storyboardPromptStatus === GenerationStatus.ERROR) return false;
+      return true;
+    }).length;
+  }, 0);
+  const storyboardProvider = STORYBOARD_PROVIDERS.find(p => p.key === project?.storyboardProvider) || STORYBOARD_PROVIDERS[0];
 
   return (
     <div ref={contextBarRef} className="sticky top-0 z-40 mb-6">
@@ -198,15 +210,36 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           </button>
         )}
         {studioMode === 'storyboard' && storyboardSupported ? (
-          <button
-            onClick={async () => { setBulkRunning('storyboards'); try { await onBulkGenerateStoryboards?.(); } finally { setBulkRunning(null); } }}
-            disabled={!onBulkGenerateStoryboards || storyboardsToFire === 0 || bulkRunning !== null}
-            className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-            title={storyboardsToFire > 0 ? `Generate ${storyboardsToFire} storyboard${storyboardsToFire === 1 ? '' : 's'} with low concurrency.` : 'All eligible storyboards generated or locked.'}
-          >
-            {bulkRunning === 'storyboards' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
-            {bulkRunning === 'storyboards' ? 'Running…' : <>Storyboards <span className="text-zinc-400">({storyboardsToFire})</span></>}
-          </button>
+          <>
+            <select
+              value={project?.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
+              onChange={e => onUpdateProject?.({ storyboardProvider: e.target.value })}
+              className="bg-white/[0.04] border border-white/[0.06] rounded-md px-2 py-1 text-[11px] text-zinc-300 outline-none"
+              title={storyboardProvider.note}
+            >
+              {STORYBOARD_PROVIDERS.map(p => (
+                <option key={p.key} value={p.key}>{p.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={async () => { setBulkRunning('storyboard-prompts'); try { await onBulkWriteStoryboardPrompts?.(); } finally { setBulkRunning(null); } }}
+              disabled={!onBulkWriteStoryboardPrompts || storyboardPromptsToWrite === 0 || bulkRunning !== null}
+              className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              title={storyboardPromptsToWrite > 0 ? `Write ${storyboardPromptsToWrite} storyboard prompt${storyboardPromptsToWrite === 1 ? '' : 's'} first.` : 'All storyboard prompts are written.'}
+            >
+              {bulkRunning === 'storyboard-prompts' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+              {bulkRunning === 'storyboard-prompts' ? 'Writing…' : <>Board prompts <span className="text-zinc-400">({storyboardPromptsToWrite})</span></>}
+            </button>
+            <button
+              onClick={async () => { setBulkRunning('storyboards'); try { await onBulkGenerateStoryboards?.(); } finally { setBulkRunning(null); } }}
+              disabled={!onBulkGenerateStoryboards || storyboardsToFire === 0 || bulkRunning !== null}
+              className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              title={storyboardsToFire > 0 ? `${storyboardProvider.label}: ${storyboardProvider.note}` : 'Write prompts first, or all storyboard images are generated/locked.'}
+            >
+              {bulkRunning === 'storyboards' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+              {bulkRunning === 'storyboards' ? 'Rendering…' : <>Board images <span className="text-zinc-400">({storyboardsToFire})</span></>}
+            </button>
+          </>
         ) : (
           <>
             <button
