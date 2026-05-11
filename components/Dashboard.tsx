@@ -33,10 +33,16 @@ type ActionKey = 'start' | 'continue' | 'open' | 'needs-audio';
 
 /** Action button vocabulary — one verb per row, derived from per-user fork
  *  state. Filter chips at the top filter by this same vocabulary so what an
- *  artist sees on a row matches what the filter promises. */
+ *  artist sees on a row matches what the filter promises.
+ *
+ *  Priority: active beats done. If the user somehow has both an active fork
+ *  AND a completed fork for the same queue row (edge case — e.g. they
+ *  published once, then started a new variation), "Continue" wins because
+ *  that's the work they care about right now. Past renders are reachable via
+ *  the Renders button. */
 const getAction = (item: QueueItem): ActionKey => {
-  if (item.has_done_fork) return 'open';
   if (item.has_active_fork) return 'continue';
+  if (item.has_done_fork) return 'open';
   if (!item.audio_uploaded) return 'needs-audio';
   return 'start';
 };

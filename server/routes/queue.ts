@@ -75,15 +75,19 @@ router.post('/:queueId/start', async (req, res) => {
     const item = items.find(i => i.id === queueId);
     if (!item) return res.status(404).json({ error: 'Queue item not found' });
 
-    // Check if THIS user already has a project for this queue item
+    // Check if THIS user already has a project for this queue item.
+    // Prefer non-completed projects so the action button's promise matches:
+    // "Continue" on the dashboard should hit the active fork, not the
+    // archived completed one if both exist for this user.
     const { data: existingProjects } = await getSB()
       .from(T.projects)
-      .select('id')
+      .select('id, status')
       .eq('source_queue_id', queueId)
-      .eq('user_id', req.userId)
-      .limit(1);
+      .eq('user_id', req.userId);
     if (existingProjects?.length) {
-      const project = await getFullProject(existingProjects[0].id);
+      const active = existingProjects.find((p: any) => p.status !== 'completed');
+      const pick = active || existingProjects[0];
+      const project = await getFullProject(pick.id);
       if (project) return res.json({ project, queueItem: item });
     }
 
