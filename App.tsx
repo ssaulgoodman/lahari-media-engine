@@ -977,24 +977,38 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleGenerateStoryboard = async (shotId: string) => {
     if (!project) return;
     updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING });
+    const signal = startOp(`storyboard:${shotId}`);
     try {
-      const result = await api.generateStoryboard(project.id, shotId);
+      const result = await api.generateStoryboard(project.id, shotId, signal);
       setProject(result.project);
     } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.IDLE });
+        return;
+      }
       updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
       setError(`Storyboard generation failed: ${err.message}`);
+    } finally {
+      endOp(`storyboard:${shotId}`);
     }
   };
 
   const handleWriteStoryboardPrompt = async (shotId: string, feedback?: string) => {
     if (!project) return;
     updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
+    const signal = startOp(`storyboard-prompt:${shotId}`);
     try {
-      const result = await api.writeStoryboardPrompt(project.id, shotId, feedback);
+      const result = await api.writeStoryboardPrompt(project.id, shotId, feedback, signal);
       setProject(result.project);
     } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.IDLE });
+        return;
+      }
       updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.ERROR });
       setError(`Storyboard prompt write failed: ${err.message}`);
+    } finally {
+      endOp(`storyboard-prompt:${shotId}`);
     }
   };
 
@@ -1011,13 +1025,35 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     } else {
       updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
     }
+    const signal = startOp(`storyboard-refine:${shotId}`);
     try {
-      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode, referenceImage);
+      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode, referenceImage, signal);
       setProject(result.project);
     } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.IDLE } : { storyboardPromptStatus: GenerationStatus.IDLE });
+        return;
+      }
       updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.ERROR } : { storyboardPromptStatus: GenerationStatus.ERROR });
       setError(`Storyboard refinement failed: ${err.message}`);
+    } finally {
+      endOp(`storyboard-refine:${shotId}`);
     }
+  };
+
+  /** Single stop affordance for any in-flight storyboard work on a shot.
+   *  Only one of {generate, write-prompt, refine} can be running at a time
+   *  per shot, so aborting all three keys is safe and avoids the UI having
+   *  to know which action is actually live. */
+  const handleCancelStoryboard = (shotId: string) => {
+    if (!project) return;
+    abortOp(`storyboard:${shotId}`);
+    abortOp(`storyboard-prompt:${shotId}`);
+    abortOp(`storyboard-refine:${shotId}`);
+    updateShotOptimistic(shotId, {
+      storyboardStatus: GenerationStatus.IDLE,
+      storyboardPromptStatus: GenerationStatus.IDLE,
+    });
   };
 
   const handleLockStoryboard = async (shotId: string, versionId?: string) => {
@@ -1656,6 +1692,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onWriteStoryboardPrompt={handleWriteStoryboardPrompt}
                     onGenerateStoryboard={handleGenerateStoryboard}
                     onRefineStoryboard={handleRefineStoryboard}
+                    onCancelStoryboard={handleCancelStoryboard}
                     onLockStoryboard={handleLockStoryboard}
                     onUnlockStoryboard={handleUnlockStoryboard}
                     onUpdateStoryboardPlan={handleUpdateStoryboardPlan}

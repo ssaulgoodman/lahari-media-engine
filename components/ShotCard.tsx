@@ -72,6 +72,7 @@ interface ShotCardProps {
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
+  onCancelStoryboard: (shotId: string) => void;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
@@ -103,7 +104,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   isRefining, onRefineStart, onRefineEnd,
   frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue,
   onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
@@ -510,6 +511,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               onWriteStoryboardPrompt={onWriteStoryboardPrompt}
               onGenerateStoryboard={onGenerateStoryboard}
               onRefineStoryboard={onRefineStoryboard}
+              onCancelStoryboard={onCancelStoryboard}
               onLockStoryboard={onLockStoryboard}
               onUnlockStoryboard={onUnlockStoryboard}
               onUpdateStoryboardPlan={onUpdateStoryboardPlan}

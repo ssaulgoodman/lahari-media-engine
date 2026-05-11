@@ -11,7 +11,7 @@ import { generateVideoWithFallback } from '../services/video-provider.js';
 import { extractAudioSegment, extractLastFrame } from '../services/ffmpeg.js';
 import { refreshChainedShotPrompt } from '../services/claude.js';
 import { buildSeedanceStoryboardVideoPrompt } from '../services/seedance-storyboard-rd.js';
-import { loadStoryboardContext } from '../services/storyboard.js';
+import { loadStoryboardContext, getShotExcludedRefs } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
@@ -145,7 +145,14 @@ export const mountVideoRoutes = (router: Router) => {
         }
       } else {
         if (useStoryboardMode && storyboardContext) {
-          for (const ref of storyboardContext.refMeta) {
+          // Drop the refs the artist explicitly excluded for video gen. The
+          // storyboard image (@image1, appended above) always passes through;
+          // exclusion only applies to the composition refs that come after it.
+          const excludedVideoKeys = getShotExcludedRefs(shot).video;
+          const allowedRefs = excludedVideoKeys.length
+            ? storyboardContext.refMeta.filter((r) => !r.excludableKey || !excludedVideoKeys.includes(r.excludableKey))
+            : storyboardContext.refMeta;
+          for (const ref of allowedRefs) {
             if (referenceImagePaths.length >= 9) break;
             referenceImagePaths.push(ref.filePath);
             storyboardSentRefs.push({ label: ref.label, filePath: ref.filePath });

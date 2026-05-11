@@ -86,6 +86,11 @@ export interface VideoShot {
   storyboardPromptStatus?: GenerationStatus;
   storyboardPromptUserFeedback?: string;
   lipsyncEnabled?: boolean;
+  /** Per-step ref exclusion for storyboard mode. Keys: 'style' |
+   *  'cast:<castMemberId>' | 'env:<environmentId>'. Two independent lists
+   *  because storyboard image gen and Seedance video gen have different
+   *  ref appetites (Seedance often wants only the locked storyboard image). */
+  excludedRefs?: { storyboard: string[]; video: string[] };
   useNextAsEndFrame: boolean;
   error?: string;
   lastError?: string;

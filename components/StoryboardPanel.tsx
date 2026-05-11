@@ -40,6 +40,7 @@ interface StoryboardPanelProps {
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
+  onCancelStoryboard: (shotId: string) => void;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
@@ -55,7 +56,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   project, shot, scene,
   resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onUpdateShot,
   onGenerateVideo,
   setModalImage,
@@ -121,6 +122,23 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     : null;
   if (shotEnv) boundRefs.push({ type: 'env', id: shotEnv.id });
   if (project.styleAssetUrl) boundRefs.push({ type: 'style' });
+
+  // Richer chip metadata for the per-tab ref exclusion UI. Mirrors the server's
+  // composition refs (style + locked cast + locked env). Order matches what
+  // gets sent to the generator: style first, then cast, then env — keeps the
+  // chip row visually aligned with the prompt's "Reference bindings" ordering.
+  const refChips: { key: string; label: string; imageUrl?: string }[] = [];
+  if (project.styleAssetUrl) refChips.push({ key: 'style', label: 'Style', imageUrl: project.styleAssetUrl });
+  for (const c of shotCast) refChips.push({ key: `cast:${c.id}`, label: c.name, imageUrl: c.referenceImageUrl });
+  if (shotEnv) refChips.push({ key: `env:${shotEnv.id}`, label: shotEnv.name, imageUrl: shotEnv.referenceImageUrl });
+  const excludedStoryboard = shot.excludedRefs?.storyboard || [];
+  const excludedVideo = shot.excludedRefs?.video || [];
+  const toggleRefExclusion = (tab: 'storyboard' | 'video', key: string) => {
+    const current = shot.excludedRefs ?? { storyboard: [], video: [] };
+    const list = current[tab] || [];
+    const newList = list.includes(key) ? list.filter(k => k !== key) : [...list, key];
+    onUpdateShot(scene.id, shot.id, { excludedRefs: { ...current, [tab]: newList } });
+  };
 
   // Lazy-fetch the active version's cutPlanText whenever the active version
   // changes (after generate/refine the project state updates with a new
@@ -319,31 +337,65 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
         )}
       </div>
 
-      {/* Bound refs — display-only. Same chip pattern as keyframe mode but
-          without remove buttons; refs are derived from the locked entities,
-          not editable here. Manage them in the Blueprint phase. */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[11px] text-zinc-500 mr-1">Refs:</span>
-        {boundRefs.length === 0 ? (
-          <span className="text-[11px] text-zinc-500 italic">None — assign cast or environment in Blueprint to bind references.</span>
-        ) : boundRefs.map((ref, i) => {
-          const display = resolveRefDisplay(ref, shot);
-          if (!display.url) return null;
-          return (
-            <div
-              key={`${ref.type}-${ref.id || i}`}
-              className="group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border border-white/[0.08] bg-white/[0.02] text-zinc-300 cursor-pointer"
-              onClick={() => setModalImage(display.url!)}
-            >
-              <img src={display.url} className="w-4 h-4 rounded-sm object-cover flex-shrink-0" alt="" />
-              <span>{display.label}</span>
-              <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
-                <img src={display.url} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt={display.label} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {/* Bound refs — tab-aware. The active sub-tab decides which exclusion
+          list this row toggles: chips clicked × on the Storyboard sub-tab
+          drop the ref from storyboard image gen; the same chips clicked
+          × on the Video sub-tab drop the ref from Seedance only. Excluded
+          chips render greyed with a + to restore. The locked storyboard
+          image itself (which Seedance always animates) isn't in this row —
+          it's not removable. */}
+      {(() => {
+        const excluded = subTab === 'storyboard' ? excludedStoryboard : excludedVideo;
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-zinc-500 mr-1">
+              {subTab === 'storyboard' ? 'Storyboard refs:' : 'Seedance refs:'}
+            </span>
+            {refChips.length === 0 ? (
+              <span className="text-[11px] text-zinc-500 italic">None — assign cast or environment in Blueprint to bind references.</span>
+            ) : refChips.map(chip => {
+              const isExcluded = excluded.includes(chip.key);
+              return (
+                <div
+                  key={chip.key}
+                  className={`group/ref relative flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border transition-opacity ${
+                    isExcluded
+                      ? 'border-white/[0.06] bg-white/[0.01] text-zinc-500 opacity-50'
+                      : 'border-white/[0.08] bg-white/[0.02] text-zinc-300'
+                  }`}
+                >
+                  {chip.imageUrl && (
+                    <img
+                      src={chip.imageUrl}
+                      className="w-4 h-4 rounded-sm object-cover flex-shrink-0 cursor-zoom-in"
+                      alt=""
+                      onClick={() => chip.imageUrl && setModalImage(chip.imageUrl)}
+                    />
+                  )}
+                  <span>{chip.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleRefExclusion(subTab, chip.key)}
+                    className={`ml-0.5 transition-colors ${isExcluded ? 'text-zinc-400 hover:text-emerald-400' : 'text-zinc-500 hover:text-red-400'}`}
+                    title={isExcluded ? `Add ${chip.label} back to this generation` : `Drop ${chip.label} from this generation`}
+                  >
+                    {isExcluded ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    )}
+                  </button>
+                  {chip.imageUrl && (
+                    <div className="hidden group-hover/ref:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[200] pointer-events-none">
+                      <img src={chip.imageUrl} className="max-w-44 max-h-44 object-contain rounded-lg shadow-xl border border-white/[0.1]" alt={chip.label} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {subTab === 'storyboard' ? (
         <StoryboardTabBody
@@ -370,6 +422,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
+          onCancelStoryboard={onCancelStoryboard}
           onLock={handleLock}
           onUnlockStoryboard={onUnlockStoryboard}
           onRefine={handleRefine}
@@ -384,7 +437,6 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           isVideoGenerating={isVideoGenerating}
           cutPlanText={cutPlanText}
           cutPlanRequired={cutPlanRequired}
-          boundRefCount={boundRefs.length}
           planLoading={planLoading}
           saveState={saveState}
           dirty={dirty}
@@ -435,6 +487,7 @@ interface StoryboardTabBodyProps {
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onCancelStoryboard: (shotId: string) => void;
   onLock: () => Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onRefine: (feedback: string) => Promise<void>;
@@ -448,7 +501,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   onPromptChange, onPlanBlur,
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
   refineImage, onRefineImageChange,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
@@ -523,28 +576,54 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             {isWritingPrompt && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
             {isWritingPrompt ? 'Writing…' : promptText.trim() ? 'Rewrite prompt' : 'Write prompt'}
           </button>
+          {isWritingPrompt && (
+            <button
+              type="button"
+              onClick={() => onCancelStoryboard(shot.id)}
+              className="px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white border border-white/[0.08] hover:border-white/20 rounded-md transition-colors"
+              title="Stop planner step"
+            >
+              Stop
+            </button>
+          )}
+          {/* Image gen still hard-blocks on empty cut plan — the backend's
+              writeStoryboardPrompt contract guarantees both fields are
+              populated, so an empty cut plan here means the planner step
+              hasn't run yet and the artist should run it before rendering. */}
           <button
             onClick={() => onGenerateStoryboard(shot.id)}
             disabled={isGenerating || saving || promptRequired || cutPlanRequired}
             className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
-            title={promptRequired ? 'Write a storyboard prompt first.' : cutPlanRequired ? 'Write the video prompt over in the Video tab first.' : undefined}
+            title={promptRequired ? 'Write a storyboard prompt first.' : cutPlanRequired ? 'Run "Write prompt" first — image gen needs the planner output (also fills the video prompt over in the Video tab).' : undefined}
           >
             {isGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
             {isGenerating ? 'Rendering…' : hasStoryboard ? 'Regenerate image' : 'Generate image'}
           </button>
+          {isGenerating && (
+            <button
+              type="button"
+              onClick={() => onCancelStoryboard(shot.id)}
+              className="px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white border border-white/[0.08] hover:border-white/20 rounded-md transition-colors"
+              title="Stop storyboard generation"
+            >
+              Stop
+            </button>
+          )}
+          {/* Lock no longer hard-blocks on empty cut plan. The artist may
+              deliberately delete the cut plan to fall back to Seedance's
+              "follow the storyboard image" default — see VideoTabBody and
+              seedanceShotList(). The Video prompt label shows "Optional" so
+              the artist knows the field is empty by choice. */}
           {hasStoryboard && (
             <button
               onClick={onLock}
-              disabled={isGenerating || saving || cutPlanRequired}
+              disabled={isGenerating || saving}
               className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              title={cutPlanRequired ? 'Write the video prompt over in the Video tab before locking — empty video prompts cannot drive Seedance.' : saving ? 'Saving first…' : 'Lock this storyboard so video generation can use it.'}
+              title={saving ? 'Saving first…' : 'Lock this storyboard so video generation can use it.'}
             >
               {saving && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
               {saving ? 'Locking…' : 'Lock'}
             </button>
-          )}
-          {cutPlanRequired && hasStoryboard && (
-            <span className="text-[11px] text-red-300/80">Video prompt required (Video tab).</span>
           )}
         </div>
       )}
@@ -667,6 +746,16 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               {isRefining && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
               {isRefining ? 'Refining…' : 'Refine'}
             </button>
+            {isRefining && (
+              <button
+                type="button"
+                onClick={() => onCancelStoryboard(shot.id)}
+                className="px-2.5 py-2 text-xs text-zinc-400 hover:text-white border border-white/[0.08] hover:border-white/20 rounded-md transition-colors flex-shrink-0 self-start"
+                title="Stop refine"
+              >
+                Stop
+              </button>
+            )}
           </div>
         </>
       )}
@@ -688,7 +777,6 @@ interface VideoTabBodyProps {
   isVideoGenerating: boolean;
   cutPlanText: string;
   cutPlanRequired: boolean;
-  boundRefCount: number;
   // Cut plan (= video prompt for Seedance) editing — same save plumbing as
   // the storyboard tab. Editable only while the storyboard is unlocked;
   // locked shots render the value as a read-only block so the input that
@@ -706,24 +794,24 @@ interface VideoTabBodyProps {
 }
 
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
-  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount,
+  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired,
   planLoading, saveState, dirty, onCutPlanChange, onPlanBlur, onPlanRetry,
   recentlyRefined,
   onUpdateShot, onGenerateVideo,
 }) => {
-  const canGenerate = isLocked && !isVideoGenerating && !cutPlanRequired;
-  const audioLine = shot.lipsyncEnabled ? '\naudio 1 = sliced song segment for subtle visible vocal lip-sync' : '';
-  const previewLine = `@image1 = locked storyboard${boundRefCount > 0 ? `, @image2..${boundRefCount + 1} = locked refs` : ''}${audioLine}`;
+  // Cut plan was previously REQUIRED to generate video; the artist's
+  // "follow storyboard, no cut plan" workflow makes that a soft hint
+  // instead — the Seedance prompt builder already falls back to a
+  // minimal shot list when the cut plan is empty, so generating with no
+  // motion guide is safe.
+  const canGenerate = isLocked && !isVideoGenerating;
 
   return (
     <>
-      <div className="space-y-1">
-        {/* Refs binding — read-only header showing what @image1, @image2…
-            mean to Seedance. Stays compact because the editable part is the
-            motion guide below. */}
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Seedance refs</div>
-        <pre className="surface-inset rounded-md p-3 text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed">{previewLine}</pre>
-      </div>
+      {/* Seedance prompt-bindings preview used to live here as a read-only
+          <pre>; the editable chip row at the panel top now conveys the same
+          info (and lets the artist toggle exclusions), so the duplicate has
+          been removed. */}
 
       {/* Video prompt = the cut plan. Editable text that drives Seedance's
           motion/cut sequencing. Lives here (not the Storyboard tab) so the
@@ -732,31 +820,30 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
         <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
           Video prompt
           {planLoading && <span className="text-[10px] normal-case tracking-normal text-zinc-400">Loading…</span>}
-          {!planLoading && cutPlanRequired ? (
-            <span className="text-[10px] normal-case tracking-normal text-red-300">Required</span>
-          ) : (
-            <>
-              {!planLoading && saveState === 'saving' && (
-                <span className="text-[10px] normal-case tracking-normal text-zinc-300">Saving…</span>
-              )}
-              {!planLoading && saveState === 'saved' && (
-                <span className="text-[10px] normal-case tracking-normal text-emerald-400/70">Saved</span>
-              )}
-              {!planLoading && saveState === 'failed' && (
-                <button
-                  type="button"
-                  onClick={() => { void onPlanRetry(); }}
-                  className="text-[10px] normal-case tracking-normal text-red-300 hover:text-red-200 underline-offset-2 hover:underline"
-                  title="Retry save"
-                >Save failed — retry</button>
-              )}
-              {!planLoading && saveState === 'idle' && dirty && (
-                <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
-              )}
-              {recentlyRefined && saveState === 'idle' && !dirty && (
-                <span className="text-[10px] normal-case tracking-normal text-amber-300/80">Updated</span>
-              )}
-            </>
+          {!planLoading && cutPlanRequired && (
+            <span className="text-[10px] normal-case tracking-normal text-zinc-500" title="Empty — Seedance will use a default 'follow the storyboard image's panel order' guide.">
+              Optional
+            </span>
+          )}
+          {!planLoading && saveState === 'saving' && (
+            <span className="text-[10px] normal-case tracking-normal text-zinc-300">Saving…</span>
+          )}
+          {!planLoading && saveState === 'saved' && (
+            <span className="text-[10px] normal-case tracking-normal text-emerald-400/70">Saved</span>
+          )}
+          {!planLoading && saveState === 'failed' && (
+            <button
+              type="button"
+              onClick={() => { void onPlanRetry(); }}
+              className="text-[10px] normal-case tracking-normal text-red-300 hover:text-red-200 underline-offset-2 hover:underline"
+              title="Retry save"
+            >Save failed — retry</button>
+          )}
+          {!planLoading && saveState === 'idle' && dirty && (
+            <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
+          )}
+          {recentlyRefined && saveState === 'idle' && !dirty && (
+            <span className="text-[10px] normal-case tracking-normal text-amber-300/80">Updated</span>
           )}
         </div>
         {isLocked ? (
@@ -794,22 +881,28 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
         </span>
       </label>
 
-      {/* Status + Generate */}
+      {/* Status + Generate. Cut plan emptiness no longer blocks — Seedance
+          falls back to a default "follow the storyboard image" guide when
+          this field is empty (seedanceShotList in seedance-storyboard-rd.ts).
+          Lock is still required because Seedance reads the locked image. */}
       <div className="flex items-center gap-2">
         <button
           onClick={() => onGenerateVideo(scene.id, shot.id, undefined, undefined)}
           disabled={!canGenerate}
           className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
-          title={cutPlanRequired ? 'Write a cut plan in the Storyboard tab first.' : !isLocked ? 'Lock the storyboard first' : isVideoGenerating ? 'Video generation in progress' : hasVideo ? 'Regenerate video from the locked storyboard' : 'Generate video from the locked storyboard'}
+          title={!isLocked ? 'Lock the storyboard first' : isVideoGenerating ? 'Video generation in progress' : hasVideo ? 'Regenerate video from the locked storyboard' : 'Generate video from the locked storyboard'}
         >
           {isVideoGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
           {isVideoGenerating ? 'Generating…' : hasVideo ? 'Regenerate video' : 'Generate video'}
         </button>
-        {cutPlanRequired ? (
-          <span className="text-[11px] text-red-300/80">Cut plan required.</span>
-        ) : !isLocked ? (
+        {!isLocked && (
           <span className="text-[11px] text-zinc-400">Lock the storyboard first.</span>
-        ) : null}
+        )}
+        {isLocked && cutPlanRequired && (
+          <span className="text-[11px] text-zinc-500" title="Empty video prompt is OK — Seedance will follow the storyboard image's panel order.">
+            No video prompt — will follow storyboard order.
+          </span>
+        )}
       </div>
 
       {shot.videoStatus === GenerationStatus.ERROR && shot.lastError && !isVideoGenerating && (

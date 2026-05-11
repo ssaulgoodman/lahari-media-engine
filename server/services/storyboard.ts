@@ -12,8 +12,46 @@ type StoryboardRefMeta = {
   label: string;
   assetId?: string;
   filePath: string;
+  // Stable key used to look up this ref in shot.excluded_refs.{storyboard,video}.
+  // Format: 'style' | 'cast:<castMemberId>' | 'env:<environmentId>'. Refs
+  // without a key (e.g. artist-uploaded refine attachments) are always
+  // included because there's no UI for the artist to exclude them.
+  excludableKey?: string;
 };
 export type { StoryboardRefMeta };
+
+/** Filter parallel refs + refMeta arrays by the shot's per-tab exclusion list.
+ *  Excluded keys correspond to refMeta.excludableKey; non-excludable refs
+ *  (artist-uploaded refine refs etc.) always pass through. */
+export const applyRefExclusion = (
+  refs: OpenAIRefImage[],
+  refMeta: StoryboardRefMeta[],
+  excludedKeys: string[],
+): { refs: OpenAIRefImage[]; refMeta: StoryboardRefMeta[] } => {
+  if (!excludedKeys.length) return { refs, refMeta };
+  const filteredRefs: OpenAIRefImage[] = [];
+  const filteredMeta: StoryboardRefMeta[] = [];
+  for (let i = 0; i < refs.length; i++) {
+    const key = refMeta[i]?.excludableKey;
+    if (key && excludedKeys.includes(key)) continue;
+    filteredRefs.push(refs[i]);
+    filteredMeta.push(refMeta[i]);
+  }
+  return { refs: filteredRefs, refMeta: filteredMeta };
+};
+
+/** Read the storyboard-mode exclusion list off a shot row. Defaults to
+ *  empty for both tabs when the column is missing or malformed. */
+export const getShotExcludedRefs = (shot: any): { storyboard: string[]; video: string[] } => {
+  const raw = shot?.excluded_refs;
+  if (!raw) return { storyboard: [], video: [] };
+  const parsed = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+  if (!parsed || typeof parsed !== 'object') return { storyboard: [], video: [] };
+  return {
+    storyboard: Array.isArray(parsed.storyboard) ? parsed.storyboard.filter((k: any) => typeof k === 'string') : [],
+    video: Array.isArray(parsed.video) ? parsed.video.filter((k: any) => typeof k === 'string') : [],
+  };
+};
 
 type StoryboardContext = {
   project: any;
@@ -79,10 +117,11 @@ const addRef = (
   refMeta: StoryboardRefMeta[],
   label: string,
   asset: any,
+  excludableKey?: string,
 ) => {
   if (!asset?.file_path) return;
   refs.push({ label, imagePath: asset.file_path });
-  refMeta.push({ label, assetId: asset.id, filePath: asset.file_path });
+  refMeta.push({ label, assetId: asset.id, filePath: asset.file_path, excludableKey });
 };
 
 const estimateStoryboardCost = (imageCount: number): number => {
@@ -148,14 +187,14 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
   const refMeta: StoryboardRefMeta[] = [];
 
   if (project.style_asset_id) {
-    addRef(refs, refMeta, 'Locked style reference', await selectOne('assets', { id: project.style_asset_id }));
+    addRef(refs, refMeta, 'Locked style reference', await selectOne('assets', { id: project.style_asset_id }), 'style');
   }
   for (const member of activeCast) {
     if (!member.reference_asset_id) continue;
-    addRef(refs, refMeta, `Character reference: ${member.name}`, await selectOne('assets', { id: member.reference_asset_id }));
+    addRef(refs, refMeta, `Character reference: ${member.name}`, await selectOne('assets', { id: member.reference_asset_id }), `cast:${member.id}`);
   }
   if (environment?.reference_asset_id) {
-    addRef(refs, refMeta, `Environment reference: ${environment.name}`, await selectOne('assets', { id: environment.reference_asset_id }));
+    addRef(refs, refMeta, `Environment reference: ${environment.name}`, await selectOne('assets', { id: environment.reference_asset_id }), `env:${environment.id}`);
   }
 
   const concept = buildConceptSummary(project);
@@ -367,12 +406,18 @@ export const generateStoryboardVersion = async (opts: {
     : null;
   const previousAsset = previousVersion?.asset_id ? await selectOne('assets', { id: previousVersion.asset_id }) : null;
   const refineMode: StoryboardRefineMode = opts.refineMode === 'edit_image' ? 'edit_image' : 'replan';
+  // Apply per-tab exclusion BEFORE the previous-image + artist-attached-ref
+  // augmentations. The artist's exclusion list targets composition refs
+  // (style/cast/env), not the edit-mode previous image or refine attachment
+  // — those should always pass through if present.
+  const excludedKeys = getShotExcludedRefs(ctx.shot).storyboard;
+  const { refs: filteredRefs, refMeta: filteredMeta } = applyRefExclusion(ctx.refs, ctx.refMeta, excludedKeys);
   const baseRefs = previousAsset?.file_path && refineMode === 'edit_image'
-    ? [{ label: 'Previous storyboard image to edit', imagePath: previousAsset.file_path }, ...ctx.refs]
-    : ctx.refs;
+    ? [{ label: 'Previous storyboard image to edit', imagePath: previousAsset.file_path }, ...filteredRefs]
+    : filteredRefs;
   const baseRefMeta = previousAsset?.file_path && refineMode === 'edit_image'
-    ? [{ label: 'Previous storyboard image to edit', assetId: previousAsset.id, filePath: previousAsset.file_path }, ...ctx.refMeta]
-    : ctx.refMeta;
+    ? [{ label: 'Previous storyboard image to edit', assetId: previousAsset.id, filePath: previousAsset.file_path }, ...filteredMeta]
+    : filteredMeta;
   const { refs, refMeta } = withArtistRef(baseRefs, baseRefMeta, opts.artistReferenceImagePath);
   const artistRefNote = opts.artistReferenceImagePath
     ? `\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan.`

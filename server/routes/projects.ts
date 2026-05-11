@@ -506,6 +506,20 @@ const getFullProject = async (projectId: string) => {
         storyboardPromptStatus: shot.storyboard_prompt_status || 'idle',
         storyboardPromptUserFeedback: shot.storyboard_prompt_user_feedback || undefined,
         lipsyncEnabled: !!shot.lipsync_enabled,
+        excludedRefs: (() => {
+          // Per-tab ref exclusion for storyboard mode (see migration
+          // 2026-05-11_add_shot_excluded_refs.sql). Stored as JSONB with
+          // {storyboard, video} arrays of string keys. Default both empty
+          // when column is missing or malformed so the frontend can treat
+          // any shot consistently.
+          const raw = shot.excluded_refs;
+          if (!raw) return { storyboard: [], video: [] };
+          const parsed = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+          if (!parsed || typeof parsed !== 'object') return { storyboard: [], video: [] };
+          const sanitize = (v: any): string[] =>
+            Array.isArray(v) ? v.filter((k: any) => typeof k === 'string') : [];
+          return { storyboard: sanitize(parsed.storyboard), video: sanitize(parsed.video) };
+        })(),
         continuityFrom: shot.continuity_from || 'cut',
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
@@ -1358,6 +1372,22 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   if (duration !== undefined && typeof duration === 'number' && duration > 0) {
     await updateRows('shots', { id: shotId }, { duration, prompts_stale: true });
   }
+
+  // Per-step ref exclusion for storyboard mode. Payload shape:
+  //   excludedRefs: { storyboard?: string[], video?: string[] }
+  // Sanitized server-side: only string keys, both arrays present in the
+  // stored JSON so the column has stable shape downstream.
+  const { excludedRefs } = req.body;
+  if (excludedRefs !== undefined && excludedRefs && typeof excludedRefs === 'object') {
+    const sanitize = (v: any): string[] =>
+      Array.isArray(v) ? v.filter((k: any) => typeof k === 'string') : [];
+    const payload = {
+      storyboard: sanitize(excludedRefs.storyboard),
+      video: sanitize(excludedRefs.video),
+    };
+    await updateRows('shots', { id: shotId }, { excluded_refs: JSON.stringify(payload) });
+  }
+
   res.json({ ok: true });
 });
 
