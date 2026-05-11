@@ -298,6 +298,17 @@ export const mountStyleRoutes = (router: Router) => {
       updated_at: new Date().toISOString(),
     });
 
+    // Mark all downstream stale — on first lock these are no-ops; on re-lock
+    // (artist switched style after characters/environments/shots were already
+    // generated) this surfaces the "Outdated" indicator in the UI so they
+    // know to regenerate against the new style.
+    await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
+    await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const scene of scenes) {
+      await updateRows('shots', { scene_id: scene.id }, { prompts_stale: true });
+    }
+
     res.json(await getFullProject(projectId));
   });
 

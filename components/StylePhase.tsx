@@ -383,6 +383,112 @@ export const StylePhase: React.FC<Props> = ({
     }
   };
 
+  // Preset grid — shared between the fully-unlocked branch and the
+  // locked-Explorer view so the artist can swap to another preset
+  // without first issuing a real /unlock-style. Lock from either spot
+  // goes through onLockStyle → /lock-style → marks downstream stale.
+  const presetGridSection = presets.length > 0 ? (
+    <div className="surface rounded-xl p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-medium text-white mb-1">Curated Styles</h3>
+        <p className="text-zinc-400 text-xs">
+          Visualize a preset to see how it renders for this project, then lock the one you want. Revisit any time — previously rendered presets are cached.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {presets.map(preset => {
+          const cached = presetSlots[preset.key];
+          const hasRender = !!cached?.imageUrl;
+          const isVisualizing = presetVisualizingKey === preset.key;
+          const isLocking = presetLockingKey === preset.key;
+          const anyBusy = !!presetVisualizingKey || !!presetLockingKey || isLocking;
+          // Show project render if we have one, otherwise curated anchor.
+          const displayImageUrl = hasRender ? cached!.imageUrl : preset.previewImageUrl;
+          return (
+            <div
+              key={preset.key}
+              className="surface-inset rounded-lg overflow-hidden border border-transparent hover:border-white/[0.08] transition-colors"
+            >
+              {/* Image — clickable to zoom */}
+              <div
+                className="relative aspect-video bg-black/30 cursor-zoom-in group"
+                onClick={() => displayImageUrl && onOpenModal(displayImageUrl)}
+              >
+                {displayImageUrl ? (
+                  <img
+                    src={displayImageUrl}
+                    alt={preset.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[11px] text-zinc-500">
+                    No preview
+                  </div>
+                )}
+                {isVisualizing && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                  </div>
+                )}
+                {hasRender && (
+                  <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide bg-black/60 text-zinc-300 px-1.5 py-0.5 rounded">
+                    This project
+                  </span>
+                )}
+              </div>
+
+              {/* Title + description */}
+              <div className="px-4 py-3 space-y-1.5">
+                <div className="text-sm font-medium text-white">{preset.title}</div>
+                <p className="text-xs text-zinc-400 leading-relaxed">{preset.description}</p>
+              </div>
+
+              {/* Actions */}
+              <div className="px-4 pb-4 flex items-center gap-2">
+                {!hasRender ? (
+                  <button
+                    type="button"
+                    onClick={() => handleVisualizePreset(preset.key)}
+                    disabled={anyBusy}
+                    className="flex-1 px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    {isVisualizing && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                    {isVisualizing ? 'Visualizing…' : 'Visualize for this project'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleLockPreset(preset)}
+                      disabled={anyBusy}
+                      className="flex-1 px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isLocking && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                      {isLocking ? 'Locking…' : 'Use this style'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleVisualizePreset(preset.key, true)}
+                      disabled={anyBusy}
+                      title="Regenerate this preset's image"
+                      className="px-2.5 py-1.5 border border-white/[0.08] hover:border-white/20 rounded-md text-xs text-zinc-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <motion.div key="style" {...phaseTransition} className="space-y-6">
       {isLockedPhase('style', project.status) ? (
@@ -454,6 +560,8 @@ export const StylePhase: React.FC<Props> = ({
                 </div>
               )}
 
+              {presetGridSection}
+
               <div className="flex gap-2 items-center">
                 <AutoGrowTextarea
                   value={brainstormNotes}
@@ -502,107 +610,7 @@ export const StylePhase: React.FC<Props> = ({
         </div>
       ) : (
         <div className="space-y-5">
-          {presets.length > 0 && (
-            <div className="surface rounded-xl p-5 space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-white mb-1">Curated Styles</h3>
-                <p className="text-zinc-400 text-xs">
-                  Visualize a preset to see how it renders for this project, then lock the one you want. Revisit any time — previously rendered presets are cached.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {presets.map(preset => {
-                  const cached = presetSlots[preset.key];
-                  const hasRender = !!cached?.imageUrl;
-                  const isVisualizing = presetVisualizingKey === preset.key;
-                  const isLocking = presetLockingKey === preset.key;
-                  const anyBusy = !!presetVisualizingKey || !!presetLockingKey || isLocking;
-                  // Show project render if we have one, otherwise curated anchor.
-                  const displayImageUrl = hasRender ? cached!.imageUrl : preset.previewImageUrl;
-                  return (
-                    <div
-                      key={preset.key}
-                      className="surface-inset rounded-lg overflow-hidden border border-transparent hover:border-white/[0.08] transition-colors"
-                    >
-                      {/* Image — clickable to zoom */}
-                      <div
-                        className="relative aspect-video bg-black/30 cursor-zoom-in group"
-                        onClick={() => displayImageUrl && onOpenModal(displayImageUrl)}
-                      >
-                        {displayImageUrl ? (
-                          <img
-                            src={displayImageUrl}
-                            alt={preset.title}
-                            className="w-full h-full object-cover"
-                            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[11px] text-zinc-500">
-                            No preview
-                          </div>
-                        )}
-                        {isVisualizing && (
-                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                            <div className="w-5 h-5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
-                          </div>
-                        )}
-                        {hasRender && (
-                          <span className="absolute top-2 left-2 text-[10px] uppercase tracking-wide bg-black/60 text-zinc-300 px-1.5 py-0.5 rounded">
-                            This project
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Title + description */}
-                      <div className="px-4 py-3 space-y-1.5">
-                        <div className="text-sm font-medium text-white">{preset.title}</div>
-                        <p className="text-xs text-zinc-400 leading-relaxed">{preset.description}</p>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="px-4 pb-4 flex items-center gap-2">
-                        {!hasRender ? (
-                          <button
-                            type="button"
-                            onClick={() => handleVisualizePreset(preset.key)}
-                            disabled={anyBusy}
-                            className="flex-1 px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                          >
-                            {isVisualizing && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
-                            {isVisualizing ? 'Visualizing…' : 'Visualize for this project'}
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleLockPreset(preset)}
-                              disabled={anyBusy}
-                              className="flex-1 px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-                            >
-                              {isLocking && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
-                              {isLocking ? 'Locking…' : 'Use this style'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleVisualizePreset(preset.key, true)}
-                              disabled={anyBusy}
-                              title="Regenerate this preset's image"
-                              className="px-2.5 py-1.5 border border-white/[0.08] hover:border-white/20 rounded-md text-xs text-zinc-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                              </svg>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {presetGridSection}
 
           <div className="surface rounded-xl p-5 space-y-4">
             <div>
