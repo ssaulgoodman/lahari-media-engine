@@ -137,7 +137,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       })
       .finally(() => { if (!cancelled) setPlanLoading(false); });
     return () => { cancelled = true; };
-  }, [project.id, shot.id, versionId, shot.storyboardPrompt, shot.storyboardCutPlan]);
+  }, [project.id, shot.id, versionId]);
 
   // Clear any pending Saved-flash timer on unmount.
   useEffect(() => () => {

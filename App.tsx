@@ -133,7 +133,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // Worker pulls from the front; UI reads indexOf for the badge.
   const [frameQueue, setFrameQueue] = useState<string[]>([]);
   const [videoQueue, setVideoQueue] = useState<string[]>([]);
-  const [storyboardQueue, setStoryboardQueue] = useState<string[]>([]);
+  const [storyboardPromptQueue, setStoryboardPromptQueue] = useState<string[]>([]);
+  const [storyboardImageQueue, setStoryboardImageQueue] = useState<string[]>([]);
   const [bulkStopNotice, setBulkStopNotice] = useState<string | null>(null);
   const bulkStopRef = useRef({ requested: false, controllers: new Set<AbortController>() });
   // Studio scene navigation
@@ -1079,7 +1080,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     bulkStopRef.current.controllers.clear();
     setFrameQueue([]);
     setVideoQueue([]);
-    setStoryboardQueue([]);
+    setStoryboardPromptQueue([]);
+    setStoryboardImageQueue([]);
     setBulkStopNotice('Stopped queued jobs. Active generations may still finish and appear when they complete.');
   }, []);
 
@@ -1155,14 +1157,14 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     const targets = getReadyStoryboardPromptTargets(project);
     if (targets.length === 0) return;
     beginBulkRun();
-    setStoryboardQueue(targets.map(t => t.shotId));
+    setStoryboardPromptQueue(targets.map(t => t.shotId));
     try {
       await runWithConcurrency(
         targets,
         5,
         (t, signal) => api.writeStoryboardPrompt(project.id, t.shotId, undefined, signal),
         t => {
-          setStoryboardQueue(q => q.filter(id => id !== t.shotId));
+          setStoryboardPromptQueue(q => q.filter(id => id !== t.shotId));
           updateShotOptimistic(t.shotId, { storyboardPromptStatus: GenerationStatus.LOADING });
         },
       );
@@ -1170,7 +1172,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       const latest = await api.getProject(project.id);
       setProject(latest);
     } finally {
-      setStoryboardQueue([]);
+      setStoryboardPromptQueue([]);
     }
   };
 
@@ -1179,14 +1181,14 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     const targets = getReadyStoryboardTargets(project);
     if (targets.length === 0) return;
     beginBulkRun();
-    setStoryboardQueue(targets.map(t => t.shotId));
+    setStoryboardImageQueue(targets.map(t => t.shotId));
     try {
       await runWithConcurrency(
         targets,
         2,
         (t, signal) => api.generateStoryboard(project.id, t.shotId, signal),
         t => {
-          setStoryboardQueue(q => q.filter(id => id !== t.shotId));
+          setStoryboardImageQueue(q => q.filter(id => id !== t.shotId));
           updateShotOptimistic(t.shotId, { storyboardStatus: GenerationStatus.LOADING });
         },
       );
@@ -1194,7 +1196,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       const latest = await api.getProject(project.id);
       setProject(latest);
     } finally {
-      setStoryboardQueue([]);
+      setStoryboardImageQueue([]);
     }
   };
 
@@ -1673,7 +1675,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     bulkStopNotice={bulkStopNotice}
                     frameQueue={frameQueue}
                     videoQueue={videoQueue}
-                    storyboardQueue={storyboardQueue}
+                    storyboardPromptQueue={storyboardPromptQueue}
+                    storyboardImageQueue={storyboardImageQueue}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
                     onGenerateEndFrame={handleGenerateEndFrame}

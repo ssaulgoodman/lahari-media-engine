@@ -53,11 +53,12 @@ interface Props {
   onSetProject?: (project: ApiProject) => void;
   frameQueue?: string[];
   videoQueue?: string[];
-  storyboardQueue?: string[];
+  storyboardPromptQueue?: string[];
+  storyboardImageQueue?: string[];
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue, isLoading }) => {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
@@ -299,7 +300,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   onRefineEnd={key => setRefiningShots(prev => { const next = new Set(prev); next.delete(key); return next; })}
                   frameQueue={frameQueue}
                   videoQueue={videoQueue}
-                  storyboardQueue={storyboardQueue}
+                  storyboardPromptQueue={storyboardPromptQueue}
+                  storyboardImageQueue={storyboardImageQueue}
                   onUpdateShot={onUpdateShot}
                   onGenerateImage={onGenerateImage}
                   onGenerateVideo={onGenerateVideo}
@@ -343,7 +345,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
         activeShotId={activeShotId}
         frameQueue={frameQueue}
         videoQueue={videoQueue}
-        storyboardQueue={storyboardQueue}
+        storyboardPromptQueue={storyboardPromptQueue}
+        storyboardImageQueue={storyboardImageQueue}
         onJumpToShot={jumpToShot}
         onJumpToScene={jumpToScene}
       />

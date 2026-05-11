@@ -1,5 +1,7 @@
+export type StoryboardProviderKey = 'gpt-image-2' | 'nano-banana-2';
+
 export interface StoryboardProviderSpec {
-  key: 'gpt-image-2' | 'nano-banana-2';
+  key: StoryboardProviderKey;
   label: string;
   provider: 'openai' | 'segmind';
   runtimeModel: string;

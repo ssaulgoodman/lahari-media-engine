@@ -321,7 +321,7 @@ router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
       artistNote: req.body?.feedback || req.body?.artistNote,
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
-    res.json({ ok: true, storyboardPrompt: result, project: await getFullProject(projectId) });
+    res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard prompt write failed:`, err);
     res.status((err as any).statusCode || 500).json({ error: err.message });
@@ -397,7 +397,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
       artistNote: feedback,
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
-    res.json({ ok: true, storyboardPrompt: result, project: await getFullProject(projectId) });
+    res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard refinement failed:`, err);
     res.status((err as any).statusCode || 500).json({ error: err.message });

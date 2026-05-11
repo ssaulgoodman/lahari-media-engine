@@ -8,6 +8,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
+import { Dropdown } from './Dropdown';
 
 interface StudioHeaderProps {
   scenes: VideoScene[];
@@ -211,16 +212,15 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         )}
         {studioMode === 'storyboard' && storyboardSupported ? (
           <>
-            <select
+            <div className="w-40 surface-inset rounded-md px-2 py-1">
+              <Dropdown
               value={project?.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
-              onChange={e => onUpdateProject?.({ storyboardProvider: e.target.value })}
-              className="bg-white/[0.04] border border-white/[0.06] rounded-md px-2 py-1 text-[11px] text-zinc-300 outline-none"
+              onChange={value => onUpdateProject?.({ storyboardProvider: value })}
+              options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
+              size="xs"
               title={storyboardProvider.note}
-            >
-              {STORYBOARD_PROVIDERS.map(p => (
-                <option key={p.key} value={p.key}>{p.label}</option>
-              ))}
-            </select>
+            />
+            </div>
             <button
               onClick={async () => { setBulkRunning('storyboard-prompts'); try { await onBulkWriteStoryboardPrompts?.(); } finally { setBulkRunning(null); } }}
               disabled={!onBulkWriteStoryboardPrompts || storyboardPromptsToWrite === 0 || bulkRunning !== null}

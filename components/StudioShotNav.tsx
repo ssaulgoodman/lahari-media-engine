@@ -34,7 +34,8 @@ interface StudioShotNavProps {
   activeShotId: string | null;
   frameQueue?: string[];
   videoQueue?: string[];
-  storyboardQueue?: string[];
+  storyboardPromptQueue?: string[];
+  storyboardImageQueue?: string[];
   onJumpToShot: (shotId: string) => void;
   onJumpToScene: (sceneId: string) => void;
 }
@@ -67,7 +68,7 @@ const dotStateLabel = (s: DotState): string =>
   s === 'locked' ? 'locked' : s === 'done' ? 'done' : s === 'pending' ? 'stale' : 'pending';
 
 export const StudioShotNav: React.FC<StudioShotNavProps> = ({
-  scenes, isStoryboardMode, storyboardSupported, activeShotId, frameQueue, videoQueue, storyboardQueue,
+  scenes, isStoryboardMode, storyboardSupported, activeShotId, frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue,
   onJumpToShot, onJumpToScene,
 }) => {
   // Progress totals — same math StudioHeader used to display in the top bar.
@@ -205,10 +206,11 @@ export const StudioShotNav: React.FC<StudioShotNavProps> = ({
                     : 'done';
 
                 // Bulk queue position — mirror the badge ShotCard already shows.
-                const sbPos = storyboardQueue?.indexOf(shot.id) ?? -1;
+                const sbPromptPos = storyboardPromptQueue?.indexOf(shot.id) ?? -1;
+                const sbImagePos = storyboardImageQueue?.indexOf(shot.id) ?? -1;
                 const fPos = frameQueue?.indexOf(shot.id) ?? -1;
                 const vPos = videoQueue?.indexOf(shot.id) ?? -1;
-                const queuePos = sbPos >= 0 ? sbPos + 1 : fPos >= 0 ? fPos + 1 : vPos >= 0 ? vPos + 1 : null;
+                const queuePos = sbPromptPos >= 0 ? sbPromptPos + 1 : sbImagePos >= 0 ? sbImagePos + 1 : fPos >= 0 ? fPos + 1 : vPos >= 0 ? vPos + 1 : null;
 
                 return (
                   <button

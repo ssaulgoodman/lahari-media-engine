@@ -167,7 +167,7 @@ export interface ApiProject {
   isMeditative?: boolean;
   analysisStep?: string;
   imageModel: string;
-  storyboardProvider: string;
+  storyboardProvider: import('./constants/storyboardProviders').StoryboardProviderKey;
   videoModel: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
   videoResolution: '720p' | '1080p';
