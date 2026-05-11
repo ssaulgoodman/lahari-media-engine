@@ -485,16 +485,6 @@ export const writeStoryboardPrompt = async (
   return handleResponse(res);
 };
 
-export const writeStoryboardPrompts = async (projectId: string, signal?: AbortSignal) => {
-  const res = await authFetch(`${API}/projects/${projectId}/write-storyboard-prompts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ variant: 'adaptive_numbered_storyboard' }),
-    signal,
-  });
-  return handleResponse(res);
-};
-
 export const generateStoryboard = async (projectId: string, shotId: string, signal?: AbortSignal) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-storyboard`, {
     method: 'POST',

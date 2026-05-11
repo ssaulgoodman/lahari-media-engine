@@ -141,7 +141,6 @@ All routes are under `/api/projects/:id/shots/:shotId`.
 Client helpers live in `services/api.ts`:
 
 - `writeStoryboardPrompt`
-- `writeStoryboardPrompts`
 - `generateStoryboard`
 - `refineStoryboard`
 - `lockStoryboard`

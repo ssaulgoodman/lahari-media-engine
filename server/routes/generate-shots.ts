@@ -328,31 +328,6 @@ router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
   }
 });
 
-router.post('/:id/write-storyboard-prompts', async (req, res) => {
-  const projectId = paramStr(req.params.id);
-
-  try {
-    const scenes = await selectAll('scenes', { project_id: projectId });
-    let written = 0;
-    for (const scene of scenes) {
-      const shots = await selectAll('shots', { scene_id: scene.id });
-      for (const shot of shots) {
-        if (String(shot.storyboard_prompt || '').trim()) continue;
-        await writeStoryboardPrompt({
-          projectId,
-          shotId: shot.id,
-          variant: req.body?.variant || 'adaptive_numbered_storyboard',
-        });
-        written += 1;
-      }
-    }
-    res.json({ ok: true, written, project: await getFullProject(projectId) });
-  } catch (err: any) {
-    console.error(`[project ${projectId}] Bulk storyboard prompt write failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
-  }
-});
-
 router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
