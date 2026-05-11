@@ -18,6 +18,16 @@ import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 export const mountStyleRoutes = (router: Router) => {
+  const markStyleDependentsStale = async (projectId: string) => {
+    // On first style lock these are no-ops; on later swaps this surfaces the
+    // "Outdated" indicator so refs and shot prompts do not look falsely valid.
+    await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
+    await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const scene of scenes) {
+      await updateRows('shots', { scene_id: scene.id }, { prompts_stale: true });
+    }
+  };
 
   // ─── Curated Style Presets ─────────────────────────────────────────
 
@@ -298,16 +308,7 @@ export const mountStyleRoutes = (router: Router) => {
       updated_at: new Date().toISOString(),
     });
 
-    // Mark all downstream stale — on first lock these are no-ops; on re-lock
-    // (artist switched style after characters/environments/shots were already
-    // generated) this surfaces the "Outdated" indicator in the UI so they
-    // know to regenerate against the new style.
-    await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
-    await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
-    const scenes = await selectAll('scenes', { project_id: projectId });
-    for (const scene of scenes) {
-      await updateRows('shots', { scene_id: scene.id }, { prompts_stale: true });
-    }
+    await markStyleDependentsStale(projectId);
 
     res.json(await getFullProject(projectId));
   });
@@ -340,6 +341,7 @@ export const mountStyleRoutes = (router: Router) => {
         style_description: styleDesc,
         updated_at: new Date().toISOString(),
       });
+      await markStyleDependentsStale(projectId);
 
       await logCall({
         projectId,

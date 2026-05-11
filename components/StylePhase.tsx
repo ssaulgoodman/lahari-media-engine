@@ -275,6 +275,7 @@ export const StylePhase: React.FC<Props> = ({
       const payload = {
         slots: styleSlots.filter(s => !s.isGenerating && !s.isRefining).map(s => ({ title: s.title, description: s.description, imageUrl: s.imageUrl, assetId: s.assetId })),
         userSlot: userSlot.description ? { title: userSlot.title, description: userSlot.description, imageUrl: userSlot.imageUrl, assetId: userSlot.assetId } : undefined,
+        presetSlots,
       };
       api.updateProject(project.id, { styleExploration: payload }).catch(() => {});
     }, 500);
