@@ -140,6 +140,30 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     return () => { cancelled = true; };
   }, [project.id, shot.id, versionId]);
 
+  // Sync local state when the server-side prompt/cutplan change without an
+  // accompanying versionId bump. Happens specifically on `replan` refines:
+  // the planner step (`/write-storyboard-prompt` via refine-storyboard with
+  // refineMode='replan') updates shot.storyboardPrompt + storyboardCutPlan
+  // but does NOT create a new storyboard_version, so the version-keyed effect
+  // above never refires and the textareas stay stuck on the old text.
+  //
+  // Guarded by `!dirty && saveState === 'idle'` so an unrelated project
+  // refresh mid-typing can't clobber uncommitted artist edits — this is the
+  // same protection the version-keyed effect was tightened for earlier.
+  useEffect(() => {
+    if (dirty || saveState !== 'idle') return;
+    const serverPrompt = shot.storyboardPrompt || '';
+    const serverPlan = shot.storyboardCutPlan || '';
+    if (serverPrompt !== savedPromptText) {
+      setPromptText(serverPrompt);
+      setSavedPromptText(serverPrompt);
+    }
+    if (serverPlan !== savedPlanText) {
+      setCutPlanText(serverPlan);
+      setSavedPlanText(serverPlan);
+    }
+  }, [shot.storyboardPrompt, shot.storyboardCutPlan, dirty, saveState, savedPromptText, savedPlanText]);
+
   // Clear any pending Saved-flash timer on unmount.
   useEffect(() => () => {
     if (savedFlashTimer.current) window.clearTimeout(savedFlashTimer.current);
