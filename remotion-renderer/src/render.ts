@@ -1,6 +1,7 @@
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,14 +9,25 @@ import type { TimelineRenderProps } from './Video';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Docker builds pre-bundle into ../bundle via scripts/prebundle.mjs, so
+// cold containers skip the ~15-30s bundler pass on the first render.
+const PREBUILT_BUNDLE_DIR = path.resolve(__dirname, '..', 'bundle');
+const PREBUILT_BUNDLE_INDEX = path.join(PREBUILT_BUNDLE_DIR, 'index.html');
+
 let bundlePromise: Promise<string> | null = null;
 
 // Bundle once per process; subsequent renders reuse the served bundle.
 const getServeUrl = (): Promise<string> => {
   if (bundlePromise) return bundlePromise;
-  bundlePromise = bundle({
-    entryPoint: path.resolve(__dirname, 'entry.tsx'),
-  });
+  if (existsSync(PREBUILT_BUNDLE_INDEX)) {
+    console.log(`[render] using pre-built bundle at ${PREBUILT_BUNDLE_DIR}`);
+    bundlePromise = Promise.resolve(PREBUILT_BUNDLE_DIR);
+  } else {
+    console.log('[render] no pre-built bundle — running bundle() at runtime');
+    bundlePromise = bundle({
+      entryPoint: path.resolve(__dirname, 'entry.tsx'),
+    });
+  }
   return bundlePromise;
 };
 
