@@ -200,7 +200,7 @@ Pick from Section 4 as time allows. None are blocking.
 
 1. **F1 — Orphan-render watchdog.** Directly addresses the stuck-render incident. Without it every other observability fix still leaves rows wedged at `rendering`. Smallest blast radius, biggest user-visible win.
 2. **F8 — Detect renderer non-2xx response and flip row to failed.** Two-line change. Closes the silent-401/500 failure mode that F1 only papers over.
-3. **F3 — Bolster postCallback + add direct Supabase fallback writeback from renderer.** Removes the single most fragile link in the pipeline (an HTTP hop to a Railway box mid-deploy). Pairs with F1 to make the system genuinely self-healing.
+3. **F3 — Bolster postCallback + add renderer terminal fallback + backend reconciler.** Removes the single most fragile link in the pipeline (an HTTP hop to a Railway box mid-deploy) without duplicating `finalizePublish` logic inside the renderer.
 4. **F4 + F7 — Empty-output guard + dedup-on-render-row.** Both tiny, both close real edge cases. Bundle with #2.
 5. **O1 + O6 — Render progress + heartbeat.** Same plumbing (`lahari_renders.progress`, `lahari_renders.last_heartbeat_at`). Unlocks observability for the next incident *and* gives the artist a moving bar.
 

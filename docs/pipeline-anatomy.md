@@ -217,6 +217,24 @@ Claude receives explicit structural guidance based on the chosen mode:
 
 **Status:** Fixed. Prompt visible, refine clears stale prompts, legacy URLs handled.
 
+### 4b.5: Curated Style Presets
+
+**Source:** [`server/style-presets.ts`](../server/style-presets.ts) · Route: `server/routes/generate-style.ts` → `GET /:id/style-presets`, `POST /:id/visualize-style-preset`, then `POST /:id/lock-style`
+
+| | |
+|---|---|
+| **Model** | Same image provider as style visualization (project image model) |
+| **Input** | Curated preset title + description + project concept subject |
+| **Output** | Project-specific style reference image cached in `project.style_exploration.presetSlots[presetKey]` |
+| **Artist control** | Preview curated anchor image, visualize for this project, regenerate, then lock through the same style-lock path |
+| **generation_prompt** | Built by `buildStylePrompt(preset.description, subject)` |
+
+Four devotional presets are currently registered: Sacred Golden Serenity, Pure Temple Morning, Warm Incense Devotion, and Sacred Teal Riverlight. Their static anchor previews live in Supabase Storage at `styles/presets/<key>.png` and are backed up in [`docs/assets/style-presets/`](assets/style-presets/).
+
+Preset lock is not a special path: the UI calls normal `/lock-style` with the cached preset asset id. `/lock-style` and direct `/upload-and-lock-style` both mark cast, environments, and shots stale so old refs do not look valid after a style swap.
+
+**Status:** DONE — presets are visible in unlocked style and locked-style Explorer mode, project renders are cached, and lock staleness is standardized.
+
 ### 4c: Refine
 
 **Source:** [`server/services/claude.ts:479`](../server/services/claude.ts#L479) · Route: `server/routes/generate-style.ts` → `POST /:id/refine-style-direction`
@@ -331,19 +349,29 @@ The prompt now stays intentionally lean:
 
 | | |
 |---|---|
-| **Model** | OpenAI Responses API with `gpt-5.5` + image tool using `gpt-image-2` |
+| **Planner model** | OpenAI Responses API, default `gpt-5.5` (`OPENAI_STORYBOARD_PLANNER_MODEL` override), low reasoning by default |
+| **Renderer model** | Project `storyboard_provider`: `gpt-image-2` through OpenAI or `nano-banana-2` through Segmind |
 | **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs |
-| **Output** | Ordered 3-6 panel storyboard image + text cut plan saved on `lahari_storyboard_versions.metadata.cutPlanText` |
-| **Artist control** | Generate, natural-language refine, lock/unlock, history, editable cut-plan text |
-| **generation_prompt** | Built from the canonical template; cut-plan text is editable after generation and feeds Seedance video prompting |
+| **Saved outputs before image** | `shot.storyboard_prompt` + `shot.storyboard_cut_plan` + `storyboard_prompt_status` |
+| **Rendered output** | Ordered storyboard image/version in `lahari_storyboard_versions`, with provider/model metadata |
+| **Artist control** | Write/Rewrite prompt, edit prompt/cut plan directly, refine in Redo or Edit mode, generate/regenerate image, lock/unlock, history |
+| **generation_prompt** | Two fields: `storyboard_prompt` is the image-render prompt; `storyboard_cut_plan` is the text motion/cut guide used later by Seedance |
 
 **Storyboard contract:** one board per Lahari shot, not one scene board. The board may contain internal cuts and camera angles, but it remains one cohesive 4-15s Seedance clip. Panels are ordered left-to-right, then top-to-bottom; visible panel numbers, captions, labels, and other readable text are not allowed because video models can render them into the final clip.
 
-**API endpoints:** `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
+**Two-step flow:**
+1. `POST /write-storyboard-prompt` converts the canonical source brief into a saved image prompt + cut plan. This is text-only and cheap relative to image rendering.
+2. `POST /generate-storyboard` renders exactly the saved prompt with the selected storyboard provider. It does not re-plan.
+
+**Refine modes:**
+- `replan` rewrites `storyboard_prompt` + `storyboard_cut_plan` only. Artist renders again explicitly.
+- `edit_image` uses the current storyboard image plus refs and the artist note to render a new storyboard version. Optional attached reference images are accepted for both refine modes.
+
+**API endpoints:** `write-storyboard-prompt`, `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
 
 **UI:** In Seedance storyboard mode, `ShotCard` swaps the keyframe `PromptToolkit` for `StoryboardPanel`. The panel has Storyboard and Video sub-tabs: Storyboard handles ordered cut-plan editing, generate/refine/lock, and history; Video previews `@image1 = locked storyboard` plus bound refs and fires Seedance only after the storyboard is locked.
 
-**Status: DONE / ARTIST TESTING** — backend, UI, history, editable cut plan, lock/save race guard, no-empty-plan guard, and Seedance prompt integration are wired.
+**Status: DONE / ARTIST TESTING** — backend, UI, history, editable prompt + cut plan, lock/save race guard, no-empty-plan guard, provider swap, and Seedance prompt integration are wired.
 
 ---
 
@@ -451,6 +479,31 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 
 ---
 
+## Step 13: Final Render
+
+**Source:** [`server/routes/render.ts`](../server/routes/render.ts), [`server/routes/render-callback.ts`](../server/routes/render-callback.ts), [`server/render-watchdog.ts`](../server/render-watchdog.ts), [`remotion-renderer/src/render-job.ts`](../remotion-renderer/src/render-job.ts), [`remotion-renderer/src/render.ts`](../remotion-renderer/src/render.ts) · UI: [`components/StepRender.tsx`](../components/StepRender.tsx)
+
+| | |
+|---|---|
+| **Renderer** | Sibling `remotion-renderer` Modal service running Remotion SSR + Chromium |
+| **Input** | Render-authoritative timeline snapshot: `trackItemIds`, `trackItemsMap`, `transitionsMap`, `fps`, `size`, `durationMs` |
+| **Output** | Final mp4 uploaded to Supabase Storage, registered as `final_render`, and published back to the queue row |
+| **Artist control** | Timeline editor arrangement, trims, transitions, effects, then Render |
+
+Render is async because Railway cannot hold long HTTP requests. `/render` inserts a `lahari_renders` row, returns `202`, and fire-and-forgets to the renderer. The renderer uploads the mp4 and calls `/api/renders/callback/:renderId`; the frontend polls `/render-status` every 4s.
+
+**Phase 1 safety rails now in code:**
+- Duplicate active renders for the same project are rejected with `409`.
+- If Modal rejects the initial render request with non-2xx, the render row is immediately marked failed.
+- A watchdog marks stale `rendering` rows older than `MAX_RENDER_MINUTES` (default 65) failed.
+- Renderer refuses to upload empty outputs (`<1024` bytes or zero frames).
+- Callback `404` is non-retriable.
+- Render delete bucket default matches renderer default: `lahari-assets`.
+
+**Still planned:** progress/heartbeat columns and UI progress bar, longer callback retry + reconciler fallback, asset pre-staging for remote video/image/audio, baked Remotion bundle, and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
+
+---
+
 ## Auxiliary: Shot Critique
 
 **Source:** [`server/services/gemini.ts:136`](../server/services/gemini.ts#L136)
@@ -518,4 +571,4 @@ The pipeline anatomy IS the agent's knowledge base. Every field mapping, every d
 
 ---
 
-*Last updated: 2026-04-23*
+*Last updated: 2026-05-11*

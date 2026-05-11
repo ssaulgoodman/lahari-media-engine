@@ -400,6 +400,30 @@ Revise the direction incorporating the feedback. Keep it cohesive and internally
 Use the refine_direction tool.`,
     source: { file: 'server/services/claude.ts', lines: '472-493' },
   },
+  {
+    id: 'visualize-style-preset',
+    name: 'Visualize curated style preset',
+    stage: 'blueprint',
+    model: 'project image model',
+    modelLabel: 'Configured image provider',
+    triggeredBy: "Fires when you click 'Visualize for this project' on a curated style preset.",
+    summary: 'Turns one curated devotional preset description into a project-specific style reference image, then caches it in styleExploration.presetSlots.',
+    variables: [
+      { name: 'presetTitle', description: 'Curated preset title, e.g. Sacred Golden Serenity' },
+      { name: 'presetDescription', description: 'Curated transferable visual treatment' },
+      { name: 'subject', description: 'Concept deity/subject or project title' },
+    ],
+    template: `Create ONE cinematic style reference image for a devotional music video.
+
+Subject/context: {{subject}}
+Visual direction: {{presetDescription}}
+
+This is a reusable STYLE REFERENCE, not a scene illustration.
+Show transferable visual language: lighting, color palette, atmosphere, texture, material treatment, and camera feel.
+Do not make a character reference portrait, poster, collage, or text image.
+No watermark, logo, typography, captions, or readable text.`,
+    source: { file: 'server/routes/generate-style.ts + server/services/imagen.ts', lines: 'visualize-style-preset / buildStylePrompt' },
+  },
   // ─── Looks ────────────────────────────────────────────────────────
   {
     id: 'character-look',
@@ -576,12 +600,12 @@ Match the IDs exactly.`,
   },
   {
     id: 'seedance-storyboard-image',
-    name: 'Seedance storyboard image',
+    name: 'Write Seedance storyboard prompt',
     stage: 'studio',
-    model: 'gpt-5.5 + gpt-image-2',
-    modelLabel: 'OpenAI Responses + GPT Image 2',
-    triggeredBy: "Fires when you click 'Generate storyboard' in Seedance storyboard mode.",
-    summary: 'Creates a fixed 4- or 6-panel storyboard and returns a text shot progression for one Seedance shot/clip, using locked style, cast, and environment references as anchors.',
+    model: 'gpt-5.5',
+    modelLabel: 'OpenAI Responses planner',
+    triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
+    summary: 'Text-only planner step. Converts one Seedance shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'concept', description: 'Locked concept summary' },
@@ -593,9 +617,16 @@ Match the IDs exactly.`,
       { name: 'sceneLyrics', description: 'Lyric/phrase cue if present' },
       { name: 'castNames', description: 'Characters visible in this clip' },
       { name: 'environmentName', description: 'Environment reference name' },
-      { name: 'referenceImages', description: 'Locked style, cast, and environment refs passed to Responses API' },
+      { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
+      { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
     ],
-    template: `Create a numbered cinematic storyboard for one Lahari devotional music-video clip.
+    template: `Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
+
+1. storyboardPrompt: the exact image-render prompt for a storyboard renderer. It should ask for one clean storyboard sheet, coherent cinematic panels, thin white panel borders acceptable, no captions or readable text inside panels, and no printed panel numbers unless absolutely unavoidable. It should include the reference-use rules and enough visual/camera detail for the renderer, but it must not ask the image model to explain itself.
+2. cutPlanText: a text-only numbered cut plan with timestamps, camera, action, and Seedance motion cues. This text will later drive the video prompt.
+
+Source brief:
+Create a numbered cinematic storyboard for one Lahari devotional music-video clip.
 
 Use a {{rows}}x{{cols}} grid ({{panelCount}} panels) read left-to-right, top-to-bottom. Clean white background, thin white borders, generous spacing between and around every panel. Editorial minimalist storyboard layout, professional pitch-deck style.
 
@@ -649,33 +680,59 @@ Panel 2 [MM:SS-MM:SS] - camera: ...; action: ...; motion cue: ...
 (repeat for every panel actually drawn)
 
 Continuity notes: one short sentence naming the spatial map and screen direction you preserved.`,
-    source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildStoryboardPrompt' },
+    source: { file: 'server/services/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'writeStoryboardPrompt / buildStoryboardPrompt' },
+  },
+  {
+    id: 'render-seedance-storyboard-image',
+    name: 'Render Seedance storyboard image',
+    stage: 'studio',
+    model: 'gpt-image-2 / nano-banana-2',
+    modelLabel: 'Storyboard image provider',
+    triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists.",
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs.',
+    variables: [
+      { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot' },
+      { name: 'storyboardProvider', description: 'Project storyboard provider: gpt-image-2 or nano-banana-2' },
+      { name: 'referenceImages', description: 'Locked style, cast, environment refs; previous storyboard image is included in edit_image refine mode' },
+      { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction' },
+    ],
+    template: `{{storyboardPrompt}}
+
+{{editImageMode ? "Artist image edit note:\\n" + artistNote + "\\n\\nKeep the saved cut plan unless the note explicitly requires a visible correction." : ""}}`,
+    source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion / renderWithProvider' },
   },
   {
     id: 'seedance-storyboard-refine',
     name: 'Refine Seedance storyboard',
     stage: 'studio',
-    model: 'gpt-5.5 + gpt-image-2',
-    modelLabel: 'OpenAI Responses + GPT Image 2',
+    model: 'gpt-5.5 planner or storyboard image provider',
+    modelLabel: 'Redo = OpenAI planner; Edit = selected image provider',
     triggeredBy: "Fires when you enter a natural-language note and click 'Refine' in storyboard mode.",
-    summary: 'Refines the active storyboard using the previous Responses chain when available, or falls back to the previous storyboard image plus previous cut plan when the chain expired.',
+    summary: 'Refine has two modes. Redo rewrites saved storyboardPrompt + cutPlanText only. Edit image renders a new storyboard version from the current image, saved prompt, refs, and artist note.',
     variables: [
       { name: 'artistNote', description: 'Natural-language refinement note' },
-      { name: 'previousResponseId', description: 'OpenAI Responses chain id from the active storyboard version' },
-      { name: 'previousCutPlan', description: 'Saved cut plan from the active storyboard version' },
-      { name: 'baseStoryboardPrompt', description: 'The same generated storyboard brief for this shot' },
-      { name: 'referenceImages', description: 'Locked style, cast, environment refs; previous storyboard image is added on chain fallback' },
+      { name: 'refineMode', description: 'replan or edit_image' },
+      { name: 'currentPrompt', description: 'Saved storyboardPrompt' },
+      { name: 'currentCutPlan', description: 'Saved storyboard_cut_plan' },
+      { name: 'baseStoryboardPrompt', description: 'Canonical source brief for this shot' },
+      { name: 'referenceImages', description: 'Locked style/cast/environment refs; previous storyboard image added in edit_image mode' },
+      { name: 'artistReferenceImage', description: 'Optional image uploaded with the refine note' },
     ],
-    template: `Refine the existing Lahari storyboard using this artist note: "{{artistNote}}"
+    template: `REDO / replan mode:
+Rewrite the saved storyboard render prompt and cut plan using the artist note.
 
-Keep character identity, costume, environment, style, and the same {{clipDuration}}s clip intent unless the note explicitly asks otherwise.
+Artist note:
+{{artistNote}}
 
-Previous cut plan to preserve/improve:
-{{previousCutPlan}}
+Current storyboard render prompt:
+{{currentPrompt}}
 
-Original storyboard brief:
+Current cut plan:
+{{currentCutPlan}}
+
+Original source brief:
 {{baseStoryboardPrompt}}`,
-    source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion' },
+    source: { file: 'server/routes/generate-shots.ts + server/services/storyboard.ts', lines: 'refine-storyboard / writeStoryboardPrompt / generateStoryboardVersion' },
   },
   {
     id: 'shot-start-frame',
