@@ -229,7 +229,28 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
             </button>
           )}
-          <button onClick={() => isStoryboardMode ? onGenerateStoryboard(shot.id) : onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'))} disabled={isGenerating || (!actionable && !shot.locked) || (isStoryboardMode && (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()))} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode ? (!shot.storyboardPrompt?.trim() ? 'Write storyboard prompt first' : hasStoryboard ? 'Regenerate storyboard image' : 'Generate storyboard image') : hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'} aria-label={isStoryboardMode ? hasStoryboard ? 'Regenerate storyboard image' : 'Generate storyboard image' : hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}>
+          <button
+            onClick={() => {
+              if (isStoryboardMode) {
+                if (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()) onWriteStoryboardPrompt(shot.id);
+                else onGenerateStoryboard(shot.id);
+                return;
+              }
+              onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'));
+            }}
+            disabled={isGenerating || (!actionable && !shot.locked)}
+            className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
+            title={isStoryboardMode
+              ? (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()
+                ? 'Write storyboard prompt'
+                : hasStoryboard ? 'Regenerate storyboard image' : 'Generate storyboard image')
+              : hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
+            aria-label={isStoryboardMode
+              ? (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()
+                ? 'Write storyboard prompt'
+                : hasStoryboard ? 'Regenerate storyboard image' : 'Generate storyboard image')
+              : hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
+          >
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
           </button>
           <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo && !shot.locked || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>

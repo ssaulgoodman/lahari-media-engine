@@ -215,7 +215,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               onClick={async () => { setBulkRunning('storyboard-prompts'); try { await onBulkWriteStoryboardPrompts?.(); } finally { setBulkRunning(null); } }}
               disabled={!onBulkWriteStoryboardPrompts || storyboardPromptsToWrite === 0 || bulkRunning !== null}
               className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-              title={storyboardPromptsToWrite > 0 ? `Write ${storyboardPromptsToWrite} storyboard prompt${storyboardPromptsToWrite === 1 ? '' : 's'} first.` : 'All storyboard prompts are written.'}
+              title={storyboardPromptsToWrite > 0 ? `Write ${storyboardPromptsToWrite} storyboard prompt${storyboardPromptsToWrite === 1 ? '' : 's'} for eligible shots.` : 'All storyboard prompts are written.'}
             >
               {bulkRunning === 'storyboard-prompts' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
               {bulkRunning === 'storyboard-prompts' ? 'Writing…' : <>Board prompts <span className="text-zinc-400">({storyboardPromptsToWrite})</span></>}
@@ -239,7 +239,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               title={missingPromptCount > 0 ? `${missingPromptCount} missing — also rewrites existing.` : 'Rewrite every shot prompt from scratch.'}
             >
               {isLoading && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-              Write prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
+              Frame prompts{missingPromptCount > 0 && <span className="text-zinc-400">({missingPromptCount})</span>}
             </button>
             {isLoading && onCancelRewritePrompts && (
               <button
@@ -254,10 +254,10 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               onClick={async () => { setBulkRunning('frames'); try { await onBulkGenerateFrames?.(); } finally { setBulkRunning(null); } }}
               disabled={!onBulkGenerateFrames || framesToFire === 0 || bulkRunning !== null}
               className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-              title={framesToFire > 0 ? `Fire ${framesToFire} start frame${framesToFire === 1 ? '' : 's'} in parallel.` : 'All eligible frames generated.'}
+              title={framesToFire > 0 ? `Generate ${framesToFire} first frame image${framesToFire === 1 ? '' : 's'} for eligible shots.` : 'All eligible frame images generated.'}
             >
               {bulkRunning === 'frames' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
-              {bulkRunning === 'frames' ? 'Running…' : <>Frames <span className="text-zinc-400">({framesToFire})</span></>}
+              {bulkRunning === 'frames' ? 'Running…' : <>Frame images <span className="text-zinc-400">({framesToFire})</span></>}
             </button>
           </>
         )}
@@ -265,10 +265,10 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           onClick={async () => { setBulkRunning('videos'); try { await onBulkGenerateVideos?.(); } finally { setBulkRunning(null); } }}
           disabled={!onBulkGenerateVideos || videosToFire === 0 || bulkRunning !== null}
           className="text-[11px] bg-white text-black hover:bg-zinc-100 rounded-md px-2.5 py-1 font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
-          title={videosToFire > 0 ? `Fire ${videosToFire} video${videosToFire === 1 ? '' : 's'} in parallel.` : studioMode === 'storyboard' && storyboardSupported ? 'Lock storyboards first.' : 'Generate frames first.'}
+          title={videosToFire > 0 ? `Generate ${videosToFire} clip${videosToFire === 1 ? '' : 's'} in parallel.` : studioMode === 'storyboard' && storyboardSupported ? 'Lock storyboards first.' : 'Generate frame images first.'}
         >
           {bulkRunning === 'videos' && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
-          {bulkRunning === 'videos' ? 'Running…' : <>Videos <span className="opacity-70">({videosToFire})</span></>}
+          {bulkRunning === 'videos' ? 'Running…' : <>Clips <span className="opacity-70">({videosToFire})</span></>}
         </button>
         {bulkStopNotice && (
           <span className="text-[11px] text-amber-300/80 max-w-xs truncate" title={bulkStopNotice}>{bulkStopNotice}</span>
