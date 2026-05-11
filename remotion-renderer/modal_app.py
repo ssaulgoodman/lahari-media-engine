@@ -57,7 +57,7 @@ secrets = [modal.Secret.from_name("lahari-renderer-secrets")]
     secrets=secrets,
     cpu=8.0,            # doubles CapRover's 2 vCPU — expect ~4x wall-clock speedup
     memory=16384,       # 16 GB: Chromium + ffmpeg + bundle fit comfortably
-    timeout=1800,       # 30 min ceiling; a single 5-min song renders well under this
+    timeout=3600,       # 60 min ceiling; a single 5-min song renders well under this, but cross-region asset pulls + occasional Chromium hangs can blow past 30 min
     max_containers=20,  # throttle fan-out so one spike doesn't eat the budget
 )
 def render_job(render_id: str, project_id: str, timeline: dict) -> dict:
