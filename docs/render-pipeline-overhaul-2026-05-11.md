@@ -17,7 +17,7 @@ Beyond performance, the pipeline has zero safety nets:
 - No progress signal during render (artist sees "rendering…" for up to 60 min with no feedback)
 - No heartbeat from renderer (we can't tell hung from slow)
 - Modal SIGKILL bypasses the callback entirely — result is lost
-- Bucket-mismatch bug: renderer uploads to `lahari-assets`, main backend deletes from `videos` by default. Delete-from-history silently fails on prod renders unless `RENDER_STORAGE_BUCKET=lahari-assets` is set on Railway.
+- Bucket-mismatch risk: production Modal currently sets `SUPABASE_BUCKET=videos`, so final renders live in the `videos` bucket. Main backend delete must default to `videos` or explicitly set `RENDER_STORAGE_BUCKET=videos` until a planned migration moves renderer output to `lahari-assets`.
 
 Fix plan ships in 4 phases. Phase 1 (stop the bleeding) + Phase 4 (asset pre-staging) together get us from "fails silently for hours" + "10× too slow" to "self-recovers in 2 min" + "expected 3–5 min for typical projects."
 
@@ -83,7 +83,7 @@ That's how a 3–5 min render becomes 15–30 min. And it's exactly why the stuc
 | F7 | **Double-click Render** creates two `lahari_renders` rows; both fan out to Modal. Both will try to finalize; one of them updates `music_video_queue.video_url`, the other overwrites it (latest-wins per `finalizePublish` at `queue.ts:325`). Wasteful, not technically broken. | At `/render` POST, reject (`409`) if a row exists for this project with `status='rendering'` younger than X min. Frontend already disables button while `phase==='rendering'` but reload escapes that. | S | P1 |
 | F8 | Renderer ASGI front-door secret check throws *before* it can persist the failure (`modal_app.py:122`). Misconfigured secret → main backend's fetch wrapper sees a 401, but the render row stays `rendering` forever (only `.catch` flips it; a 401 response doesn't throw). | In `server/routes/render.ts:61`, check `response.ok` (not just promise rejection). Flip row to failed on non-2xx. | S | **P0** |
 | F9 | `finalizePublish` (`queue.ts:325`) does 4 sequential DB writes with no transaction. Partial failure leaves inconsistent state. | Wrap in a Supabase RPC `finalize_render(project_id, video_path, video_url)` or at minimum: do project update first (cheap, local) and queue update last, then compensating delete on the assets row if queue update fails. | M | P2 |
-| **F10** | **Bucket mismatch**: renderer uploads to `lahari-assets` by default (`remotion-renderer/src/storage.ts:7`), but `server/routes/projects.ts:1252` deletes from `RENDER_STORAGE_BUCKET ?? 'videos'`. Delete-from-history silently fails on prod renders unless `RENDER_STORAGE_BUCKET=lahari-assets` is set on Railway. | Pick one bucket and document it. Either set the renderer's `SUPABASE_BUCKET=videos` to match, or change `projects.ts:1252` default to `lahari-assets`. **Confirm what Railway env actually has first.** | S | **P0** |
+| **F10** | **Bucket mismatch risk**: code defaults can drift from the renderer's `SUPABASE_BUCKET`. Production Modal currently writes final renders to bucket `videos`; existing render history also lives there. | Short term: keep backend delete default at `videos` and/or set Railway `RENDER_STORAGE_BUCKET=videos`. Long term: if we want `lahari-assets`, change Modal secret + redeploy renderer + copy existing objects from `videos` to `lahari-assets` preserving keys. | S | **P0** |
 
 ---
 
@@ -136,7 +136,7 @@ Local Vite dev (port 3002 pointed at Railway prod) stays running in the main che
 
 Backend-only changes. No migration. No Modal deploy. Safe to merge anytime.
 
-1. **F10 / Bucket mismatch** — Step zero: `railway variables | grep RENDER_STORAGE_BUCKET`. If unset, set to `lahari-assets` AND fix the default in `server/routes/projects.ts:1252` so this isn't a config gotcha forever.
+1. **F10 / Bucket mismatch** — Phase 1 keeps production reality: Modal writes to bucket `videos`, so backend delete defaults to `videos`. Optional belt-and-suspenders: set Railway `RENDER_STORAGE_BUCKET=videos`.
 2. **F1 watchdog** — `setInterval` on backend boot in `server/index.ts`. Every 2 min, query `lahari_renders WHERE status='rendering' AND created_at < NOW() - 65 min`, flip to `failed` with `error='watchdog: exceeded max render time'`. ~30 lines.
 3. **F8 non-2xx response check** — `server/routes/render.ts:61`, inspect the fire-and-forget fetch response. On non-2xx, flip the row to failed immediately with the HTTP status/body.
 4. **F4 empty-output guard** — `remotion-renderer/src/render-job.ts` checks output file size before upload and rejects `sizeBytes < 1024 || durationInFrames === 0`. ~10 lines.
@@ -247,7 +247,7 @@ Pick from Section 4 as time allows. None are blocking.
 
 ## Open questions to resolve before starting
 
-1. **Which bucket is canonical?** Resolved for Phase 1: renderer defaults to `lahari-assets`; Railway has no `RENDER_STORAGE_BUCKET` override, so backend default should also be `lahari-assets`.
+1. **Which bucket is canonical?** Resolved for Phase 1: production renderer writes to `videos`, so backend delete defaults to `videos`. Future cleanup can migrate renderer output and existing objects to `lahari-assets`.
 2. **What's `MAX_RENDER_MINUTES`?** Currently Modal hard-caps at 60. Watchdog needs to know when to flip. Suggest 65 min (5 min grace after Modal would have given up).
 3. **Should E5 timeline-hash dedup be opt-in or default?** Default = fast iteration. Opt-in = artist trust. Suggest default with an explicit "Force re-render" checkbox.
 4. **Sentry account exists?** O2 assumes we have one. Confirm before Phase 2.

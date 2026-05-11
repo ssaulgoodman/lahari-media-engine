@@ -498,7 +498,7 @@ Render is async because Railway cannot hold long HTTP requests. `/render` insert
 - A watchdog marks stale `rendering` rows older than `MAX_RENDER_MINUTES` (default 65) failed.
 - Renderer refuses to upload empty outputs (`<1024` bytes or zero frames).
 - Callback `404` is non-retriable.
-- Render delete bucket default matches renderer default: `lahari-assets`.
+- Render delete bucket default matches current production renderer bucket: `videos`.
 
 **Still planned:** progress/heartbeat columns and UI progress bar, longer callback retry + reconciler fallback, asset pre-staging for remote video/image/audio, baked Remotion bundle, and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
 
