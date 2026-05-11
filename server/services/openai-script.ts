@@ -25,6 +25,17 @@ const getClient = () => {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 };
 
+const formatConceptForScriptPrompt = (concept: any): string => {
+  const lines = [
+    `Deity/subject: ${concept?.deity || 'Unknown'}`,
+    `Direction: ${concept?.conceptDirection || concept?.title || 'Untitled direction'}`,
+    `Core idea: ${concept?.theme || ''}`,
+    `Expanded brief: ${concept?.description || concept?.lyricsSummary || ''}`,
+    `Mood: ${concept?.mood || ''}`,
+  ];
+  return lines.filter(line => !line.endsWith(': ')).join('\n');
+};
+
 const parseTimestamp = (t: string): number => {
   if (!t || !t.includes(':')) return 0;
   const parts = t.split(':').map(Number);
@@ -215,9 +226,8 @@ Avoid impossible crowds, dozens of extras, elaborate VFX, and prop chaos unless 
 DIRECTOR STYLE: ${input.videoMode === 'cinematic' ? 'Cinematic - fewer stronger moments with continuity.' : 'Montage - rhythmic coverage, each shot is a clear beat.'}
 ${songTypeSignal}
 
-CONCEPT: ${input.concept.deity || 'Unknown'} - ${input.concept.theme || ''}
-Mood: ${input.concept.mood || ''}
-${input.concept.conceptDirection || ''}
+CONCEPT:
+${formatConceptForScriptPrompt(input.concept)}
 
 LYRICS:
 ${input.lyrics}

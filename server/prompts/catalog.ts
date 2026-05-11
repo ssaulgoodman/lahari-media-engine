@@ -164,7 +164,7 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
-      { name: 'concept', description: 'Locked concept (deity, theme, mood)' },
+      { name: 'concept', description: 'Locked concept (deity, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
@@ -183,7 +183,14 @@ DIRECTOR STYLE:
 
 SONG TYPE (from audio analysis): {{songType}}, {{traits}}
 
-[concept, lyrics, meaning, musical structure injected]
+CONCEPT:
+Deity/subject: {{concept.deity}}
+Direction: {{concept.conceptDirection}}
+Core idea: {{concept.theme}}
+Expanded brief: {{concept.description}}
+Mood: {{concept.mood}}
+
+[lyrics, meaning, musical structure injected]
 
 ═══ PACING RULES (extended thinking reasons through this) ═══
 Base shot length: {{pacing}} seconds.
@@ -233,7 +240,7 @@ SCENE rules:
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
-      { name: 'concept', description: 'Locked concept (deity, theme, mood)' },
+      { name: 'concept', description: 'Locked concept (deity, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
@@ -257,7 +264,11 @@ DIRECTOR STYLE: {{videoMode}}
 SONG TYPE: {{songType}}, {{traits}}
 
 CONCEPT:
-{{concept}}
+Deity/subject: {{concept.deity}}
+Direction: {{concept.conceptDirection}}
+Core idea: {{concept.theme}}
+Expanded brief: {{concept.description}}
+Mood: {{concept.mood}}
 
 LYRICS:
 {{lyrics}}

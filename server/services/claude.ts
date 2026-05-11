@@ -299,6 +299,17 @@ export interface ScriptInput {
   videoMode: string;
 }
 
+const formatConceptForScriptPrompt = (concept: any): string => {
+  const lines = [
+    `Deity/subject: ${concept?.deity || 'Unknown'}`,
+    `Direction: ${concept?.conceptDirection || concept?.title || 'Untitled direction'}`,
+    `Core idea: ${concept?.theme || ''}`,
+    `Expanded brief: ${concept?.description || concept?.lyricsSummary || ''}`,
+    `Mood: ${concept?.mood || ''}`,
+  ];
+  return lines.filter(line => !line.endsWith(': ')).join('\n');
+};
+
 // Parse "M:SS" or "MM:SS" to seconds
 const parseTimestamp = (t: string): number => {
   if (!t || !t.includes(':')) return 0;
@@ -370,9 +381,8 @@ BEFORE writing shots for each scene, calculate its duration and shot count. Writ
 ${modeGuidance}
 ${songTypeSignal}
 
-CONCEPT: ${input.concept.deity || 'Unknown'} — ${input.concept.theme}
-Mood: ${input.concept.mood}
-${input.concept.conceptDirection || ''}
+CONCEPT:
+${formatConceptForScriptPrompt(input.concept)}
 
 LYRICS:
 ${input.lyrics}
@@ -562,9 +572,8 @@ Video model minimum clip length: ${minDuration}s. Shots shorter than this will b
 
   const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
 
-CONCEPT: ${context.concept.deity || 'Unknown'} — ${context.concept.theme}
-Mood: ${context.concept.mood}
-${context.concept.conceptDirection || ''}
+CONCEPT:
+${formatConceptForScriptPrompt(context.concept)}
 
 LYRICS:
 ${context.lyrics}
