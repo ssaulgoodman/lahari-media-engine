@@ -85,6 +85,11 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   // the change is visible without diff'ing text manually.
   const [recentlyRefined, setRecentlyRefined] = useState(false);
   const recentlyRefinedTimer = useRef<number | null>(null);
+  // Track the last server-side prompt + cut plan we observed, so the replan-
+  // sync effect can distinguish "fresh prop value on mount" (no flash) from
+  // "value changed externally while mounted" (flash). Reset on shot switch.
+  const prevServerPromptRef = useRef<string | null>(null);
+  const prevServerPlanRef = useRef<string | null>(null);
 
   const isGenerating = shot.storyboardStatus === GenerationStatus.LOADING;
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
@@ -165,18 +170,26 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     if (dirty || saveState !== 'idle') return;
     const serverPrompt = shot.storyboardPrompt || '';
     const serverPlan = shot.storyboardCutPlan || '';
-    let changed = false;
+
+    // Was this a real external change (refine landed), or just the first
+    // observation of these values since the shot was opened? The flash +
+    // auto-expand should only fire for real changes — initial mount of a
+    // shot that already had content was incorrectly triggering both.
+    const promptChanged = prevServerPromptRef.current !== null && prevServerPromptRef.current !== serverPrompt;
+    const planChanged = prevServerPlanRef.current !== null && prevServerPlanRef.current !== serverPlan;
+
+    // Mirror local state to the server values when they drift (handles the
+    // replan-refine case where versionId doesn't bump).
     if (serverPrompt !== savedPromptText) {
       setPromptText(serverPrompt);
       setSavedPromptText(serverPrompt);
-      changed = true;
     }
     if (serverPlan !== savedPlanText) {
       setCutPlanText(serverPlan);
       setSavedPlanText(serverPlan);
-      changed = true;
     }
-    if (changed) {
+
+    if (promptChanged || planChanged) {
       // Auto-expand the prompt so the new text is actually visible, and
       // flash both fields briefly so the artist sees where the change
       // landed without having to diff prose.
@@ -185,7 +198,24 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       if (recentlyRefinedTimer.current) window.clearTimeout(recentlyRefinedTimer.current);
       recentlyRefinedTimer.current = window.setTimeout(() => setRecentlyRefined(false), 1500);
     }
+
+    prevServerPromptRef.current = serverPrompt;
+    prevServerPlanRef.current = serverPlan;
   }, [shot.storyboardPrompt, shot.storyboardCutPlan, dirty, saveState, savedPromptText, savedPlanText]);
+
+  // Reset on shot switch — refs to no-flash baseline, collapse to default,
+  // and clear any in-flight flash from the previous shot so it doesn't leak
+  // across navigation.
+  useEffect(() => {
+    prevServerPromptRef.current = null;
+    prevServerPlanRef.current = null;
+    setRecentlyRefined(false);
+    setIsPromptCollapsed(true);
+    if (recentlyRefinedTimer.current) {
+      window.clearTimeout(recentlyRefinedTimer.current);
+      recentlyRefinedTimer.current = null;
+    }
+  }, [shot.id]);
 
   // Clear any pending Saved-flash + recently-refined timers on unmount.
   useEffect(() => () => {
