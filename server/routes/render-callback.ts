@@ -54,13 +54,30 @@ router.post('/callback/:renderId', async (req, res) => {
     }
 
     await finalizePublish(render.project_id, storagePath, videoUrl);
-    await updateRows('renders', { id: renderId }, {
+
+    // Compare-and-swap: only flip to `completed` if the row is still `rendering`.
+    // Without this guard, a late callback (whose finalizePublish is mid-flight
+    // when the watchdog ticks at minute 65) would overwrite the watchdog's
+    // `failed` write. The asset upload + queue/project completion from
+    // finalizePublish are real either way; the render row just reflects the
+    // watchdog's verdict instead of being silently rewritten.
+    await updateRows('renders', { id: renderId, status: 'rendering' }, {
       status: 'completed',
       video_url: videoUrl,
       storage_path: storagePath,
       render_ms: typeof renderMs === 'number' ? renderMs : null,
       updated_at: new Date().toISOString(),
     });
+
+    // Surface the race if it bit us — finalizePublish already ran, so the
+    // queue + assets row are good; only the render row says `failed`. Log so
+    // we can spot it in dashboards.
+    const recheck = await selectOne('renders', { id: renderId });
+    if (recheck?.status === 'failed') {
+      console.warn(
+        `[render-callback ${renderId}] watchdog won race — render row stays "failed" but finalizePublish succeeded (queue + assets row are consistent).`,
+      );
+    }
 
     res.json({ ok: true });
   } catch (err: any) {
