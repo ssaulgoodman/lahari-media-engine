@@ -323,7 +323,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                       options={resolutionOptions}
                     />
                   </div>
-                  <div className="flex-[1.25] px-5 py-3 space-y-1">
+                  <div className="flex-1 px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Image model</div>
                     <Dropdown
                       value={project.imageModel || IMAGE_MODELS[0].key}
@@ -334,7 +334,18 @@ export const BlueprintContextBar: React.FC<Props> = ({
                       }))}
                     />
                   </div>
-                  <div className="flex-[1.5] px-5 py-3 space-y-1">
+                  <div className="flex-1 px-5 py-3 space-y-1">
+                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Storyboard image</div>
+                    <Dropdown
+                      value={(project as any).storyboardProvider || 'gpt-image-2'}
+                      onChange={v => onUpdateProject({ storyboardProvider: v } as any)}
+                      options={[
+                        { value: 'gpt-image-2', label: 'GPT Image 2' },
+                        { value: 'nano-banana-2', label: 'Nano Banana 2' },
+                      ]}
+                    />
+                  </div>
+                  <div className="flex-[1.4] px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
                     <Dropdown
                       value={project.videoModel || VIDEO_MODELS[0].key}
