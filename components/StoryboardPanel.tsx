@@ -171,12 +171,21 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     const serverPrompt = shot.storyboardPrompt || '';
     const serverPlan = shot.storyboardCutPlan || '';
 
-    // Was this a real external change (refine landed), or just the first
-    // observation of these values since the shot was opened? The flash +
-    // auto-expand should only fire for real changes — initial mount of a
-    // shot that already had content was incorrectly triggering both.
-    const promptChanged = prevServerPromptRef.current !== null && prevServerPromptRef.current !== serverPrompt;
-    const planChanged = prevServerPlanRef.current !== null && prevServerPlanRef.current !== serverPlan;
+    // Was this a real external change (refine landed)? Three conditions:
+    //  1. We've observed a baseline before (ref not null — skips initial mount).
+    //  2. The server value differs from the previously observed one.
+    //  3. The artist's locally-saved value also differs from the server
+    //     (filters out the artist's own autosave settling — flushPlan
+    //     updates savedPromptText synchronously, so own-saves never see
+    //     savedPromptText drift from serverPrompt).
+    const promptChangedExternally =
+      prevServerPromptRef.current !== null &&
+      prevServerPromptRef.current !== serverPrompt &&
+      savedPromptText !== serverPrompt;
+    const planChangedExternally =
+      prevServerPlanRef.current !== null &&
+      prevServerPlanRef.current !== serverPlan &&
+      savedPlanText !== serverPlan;
 
     // Mirror local state to the server values when they drift (handles the
     // replan-refine case where versionId doesn't bump).
@@ -189,7 +198,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
       setSavedPlanText(serverPlan);
     }
 
-    if (promptChanged || planChanged) {
+    if (promptChangedExternally || planChangedExternally) {
       // Auto-expand the prompt so the new text is actually visible, and
       // flash both fields briefly so the artist sees where the change
       // landed without having to diff prose.
