@@ -39,7 +39,7 @@ interface StoryboardPanelProps {
   // Storyboard callbacks — required at this boundary; parent guarantees them.
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
-  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode) => void | Promise<void>;
+  onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
@@ -73,6 +73,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const savedFlashTimer = useRef<number | null>(null);
   const refineRef = useRef<HTMLTextAreaElement>(null);
+  const [refineImage, setRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
 
   const isGenerating = shot.storyboardStatus === GenerationStatus.LOADING;
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
@@ -144,6 +145,10 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     if (savedFlashTimer.current) window.clearTimeout(savedFlashTimer.current);
   }, []);
 
+  useEffect(() => () => {
+    if (refineImage) URL.revokeObjectURL(refineImage.previewUrl);
+  }, [refineImage]);
+
   // The single save path used by both onBlur autosave and the explicit Lock
   // flush below. Returns true on success so callers can sequence follow-ups.
   // An empty cut plan with a storyboard present is treated as a hard failure:
@@ -198,9 +203,13 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     const key = `storyboard:${shot.id}`;
     onRefineStart(key);
     try {
-      await onRefineStoryboard(shot.id, feedback, versionId, refineMode);
+      await onRefineStoryboard(shot.id, feedback, versionId, refineMode, refineImage?.file);
     } finally {
       onRefineEnd(key);
+      if (refineImage) {
+        URL.revokeObjectURL(refineImage.previewUrl);
+        setRefineImage(null);
+      }
     }
   };
 
@@ -271,6 +280,8 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onCutPlanChange={(v) => { setCutPlanText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onPlanBlur={flushPlan}
           onPlanRetry={flushPlan}
+          refineImage={refineImage}
+          onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
           onLock={handleLock}
@@ -319,6 +330,8 @@ interface StoryboardTabBodyProps {
   onCutPlanChange: (v: string) => void;
   onPlanBlur: () => Promise<boolean>;
   onPlanRetry: () => Promise<boolean>;
+  refineImage: { file: File; previewUrl: string } | null;
+  onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
   onLock: () => Promise<void>;
@@ -332,6 +345,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   planLoading, saveState, dirty, cutPlanRequired, promptRequired, cutPlanText, promptText,
   refineMode, onRefineModeChange,
   onPromptChange, onCutPlanChange, onPlanBlur, onPlanRetry,
+  refineImage, onRefineImageChange,
   onWriteStoryboardPrompt, onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
@@ -494,6 +508,23 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               ))}
             </div>
           </div>
+          {refineImage && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <img src={refineImage.previewUrl} className="w-8 h-8 rounded object-cover border border-amber-400/30" alt="Reference" />
+              <span className="text-[10px] text-zinc-400">Your ref</span>
+              <button
+                type="button"
+                onClick={() => {
+                  URL.revokeObjectURL(refineImage.previewUrl);
+                  onRefineImageChange(null);
+                }}
+                className="text-zinc-500 hover:text-red-400 transition-colors"
+                title="Remove attached reference"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          )}
           <div className="flex gap-2">
             <AutoGrowTextarea
               inputRef={refineRef}
@@ -514,6 +545,17 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
                 }
               }}
             />
+            <label className="px-2 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white rounded-md transition-colors flex-shrink-0 self-start cursor-pointer flex items-center disabled:opacity-50" title="Attach a reference image for this storyboard refinement">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+              <input type="file" accept="image/*" className="hidden" disabled={isRefining || isGenerating} onChange={e => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  if (refineImage) URL.revokeObjectURL(refineImage.previewUrl);
+                  onRefineImageChange({ file, previewUrl: URL.createObjectURL(file) });
+                }
+                e.target.value = '';
+              }} />
+            </label>
             <button
               disabled={isRefining || isGenerating}
               onClick={() => {

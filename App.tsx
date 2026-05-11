@@ -1002,7 +1002,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     shotId: string,
     feedback: string,
     previousVersionId?: string,
-    refineMode: api.StoryboardRefineMode = 'replan'
+    refineMode: api.StoryboardRefineMode = 'replan',
+    referenceImage?: File
   ) => {
     if (!project || !feedback.trim()) return;
     if (refineMode === 'edit_image') {
@@ -1011,7 +1012,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
     }
     try {
-      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode);
+      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode, referenceImage);
       setProject(result.project);
     } catch (err: any) {
       updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.ERROR } : { storyboardPromptStatus: GenerationStatus.ERROR });

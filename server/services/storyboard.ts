@@ -111,6 +111,24 @@ const extractJsonObject = (text: string): any => {
   return JSON.parse(raw.slice(start, end + 1));
 };
 
+const withArtistRef = (
+  refs: OpenAIRefImage[],
+  refMeta: StoryboardRefMeta[],
+  artistReferenceImagePath?: string,
+) => {
+  if (!artistReferenceImagePath) return { refs, refMeta };
+  return {
+    refs: [
+      ...refs,
+      { label: 'Artist storyboard refinement reference', imagePath: artistReferenceImagePath },
+    ],
+    refMeta: [
+      ...refMeta,
+      { label: 'Artist storyboard refinement reference', filePath: artistReferenceImagePath },
+    ],
+  };
+};
+
 export const loadStoryboardContext = async (projectId: string, shotId: string): Promise<StoryboardContext> => {
   const project = await selectOne('projects', { id: projectId });
   if (!project) throw new Error('Project not found');
@@ -166,6 +184,7 @@ export const writeStoryboardPrompt = async (opts: {
   shotId: string;
   variant?: StoryboardPromptVariant;
   artistNote?: string;
+  artistReferenceImagePath?: string;
 }): Promise<{
   storyboardPrompt: string;
   cutPlanText: string;
@@ -176,11 +195,15 @@ export const writeStoryboardPrompt = async (opts: {
   const model = process.env.OPENAI_STORYBOARD_PLANNER_MODEL || 'gpt-5.5';
   const currentPrompt = ctx.shot.storyboard_prompt || '';
   const currentCutPlan = ctx.shot.storyboard_cut_plan || '';
+  const artistRefNote = opts.artistReferenceImagePath
+    ? `\nThe artist also attached a visual reference image. Use it only to understand the requested refinement, composition, gesture, board layout, or mood. Do not copy unrelated identity/style details from it.`
+    : '';
   const prompt = opts.artistNote?.trim()
     ? `Rewrite the saved storyboard render prompt and cut plan using the artist note.
 
 Artist note:
 ${opts.artistNote.trim()}
+${artistRefNote}
 
 Current storyboard render prompt:
 ${currentPrompt || '(none)'}
@@ -214,9 +237,18 @@ Return only JSON with keys:
   const t0 = Date.now();
 
   try {
+    const plannerRefs = withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath);
     const response = await (getOpenAIClient().responses.create as any)({
       model,
-      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+      input: [{
+        role: 'user',
+        content: [
+          { type: 'input_text', text: prompt },
+          ...plannerRefs.refs
+            .filter((ref) => ref.imagePath === opts.artistReferenceImagePath)
+            .map((ref) => ({ type: 'input_image', image_url: storageUrl(ref.imagePath) })),
+        ],
+      }],
       reasoning: { effort: process.env.OPENAI_STORYBOARD_PLANNER_REASONING_EFFORT || 'low' },
       text: { format: { type: 'json_object' } },
     });
@@ -247,7 +279,7 @@ Return only JSON with keys:
       stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
       model,
       prompt,
-      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      referenceInputs: plannerRefs.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
       responseSummary: `Saved storyboard prompt for shot ${opts.shotId}`,
       durationMs,
@@ -266,7 +298,7 @@ Return only JSON with keys:
       stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
       model,
       prompt,
-      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      referenceInputs: withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath).refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
       durationMs: Date.now() - t0,
       error: err.message,
@@ -309,6 +341,7 @@ export const generateStoryboardVersion = async (opts: {
   artistNote?: string;
   previousVersionId?: string;
   refineMode?: StoryboardRefineMode;
+  artistReferenceImagePath?: string;
 }): Promise<{
   versionId: string;
   assetId: string;
@@ -334,14 +367,22 @@ export const generateStoryboardVersion = async (opts: {
     : null;
   const previousAsset = previousVersion?.asset_id ? await selectOne('assets', { id: previousVersion.asset_id }) : null;
   const refineMode: StoryboardRefineMode = opts.refineMode === 'edit_image' ? 'edit_image' : 'replan';
-  const refs = previousAsset?.file_path && refineMode === 'edit_image'
+  const baseRefs = previousAsset?.file_path && refineMode === 'edit_image'
     ? [{ label: 'Previous storyboard image to edit', imagePath: previousAsset.file_path }, ...ctx.refs]
     : ctx.refs;
+  const baseRefMeta = previousAsset?.file_path && refineMode === 'edit_image'
+    ? [{ label: 'Previous storyboard image to edit', assetId: previousAsset.id, filePath: previousAsset.file_path }, ...ctx.refMeta]
+    : ctx.refMeta;
+  const { refs, refMeta } = withArtistRef(baseRefs, baseRefMeta, opts.artistReferenceImagePath);
+  const artistRefNote = opts.artistReferenceImagePath
+    ? `\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan.`
+    : '';
   const prompt = opts.artistNote?.trim() && refineMode === 'edit_image'
     ? `${promptBase}
 
 Artist image edit note:
 ${opts.artistNote.trim()}
+${artistRefNote}
 
 Keep the saved cut plan unless the note explicitly requires a visible correction:
 ${cutPlanText}`
@@ -383,7 +424,7 @@ ${cutPlanText}`
       image_model: rendered.model,
       prompt,
       artist_note: opts.artistNote || null,
-      refs: ctx.refMeta,
+      refs: refMeta,
       metadata: {
         variant: opts.variant || 'adaptive_numbered_storyboard',
         clipDuration: ctx.input.clipDuration,
@@ -412,7 +453,7 @@ ${cutPlanText}`
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
       model: rendered.model,
       prompt,
-      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      referenceInputs: refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
       responseSummary: `${opts.artistNote?.trim() ? 'Edited' : 'Rendered'} storyboard ${versionId} via ${rendered.provider}`,
       outputAssetIds: [assetId],
@@ -437,7 +478,7 @@ ${cutPlanText}`
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
       model: getStoryboardProvider(ctx.project.storyboard_provider).runtimeModel,
       prompt,
-      referenceInputs: ctx.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      referenceInputs: refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
       durationMs,
       error: err.message,

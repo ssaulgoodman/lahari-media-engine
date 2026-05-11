@@ -345,13 +345,27 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
   }
 });
 
-router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
+router.post('/:id/shots/:shotId/refine-storyboard', upload.single('referenceImage'), async (req, res) => {
   const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const feedback = req.body?.feedback;
   if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
 
   try {
+    let artistReferenceImagePath: string | undefined;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname).slice(1) || 'png';
+      artistReferenceImagePath = await saveBuffer(req.file.buffer, 'images', ext);
+      await insertRow('assets', {
+        id: uuidv4(),
+        project_id: projectId,
+        shot_id: shotId,
+        category: 'storyboard_refine_ref',
+        file_path: artistReferenceImagePath,
+        prompt: feedback,
+      });
+    }
+
     const refineMode = req.body?.refineMode === 'edit_image' ? 'edit_image' : 'replan';
     if (refineMode === 'edit_image') {
       const result = await generateStoryboardVersion({
@@ -361,6 +375,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
         previousVersionId: req.body?.previousVersionId,
         refineMode,
         variant: req.body?.variant || 'adaptive_numbered_storyboard',
+        artistReferenceImagePath,
       });
       res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
       return;
@@ -371,6 +386,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', async (req, res) => {
       shotId,
       artistNote: feedback,
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
+      artistReferenceImagePath,
     });
     res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {

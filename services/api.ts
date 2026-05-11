@@ -511,8 +511,24 @@ export const refineStoryboard = async (
   feedback: string,
   previousVersionId?: string,
   refineMode: StoryboardRefineMode = 'replan',
+  referenceImage?: File,
   signal?: AbortSignal
 ) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('refineMode', refineMode);
+    form.append('variant', 'adaptive_numbered_storyboard');
+    if (previousVersionId) form.append('previousVersionId', previousVersionId);
+    form.append('referenceImage', referenceImage);
+    const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-storyboard`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    return handleResponse(res);
+  }
+
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-storyboard`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
