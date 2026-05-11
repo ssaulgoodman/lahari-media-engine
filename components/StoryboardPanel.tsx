@@ -74,6 +74,17 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   const savedFlashTimer = useRef<number | null>(null);
   const refineRef = useRef<HTMLTextAreaElement>(null);
   const [refineImage, setRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  // Storyboard prompt is collapsed by default once it has content — the
+  // generated text can run several paragraphs and dominates the panel when
+  // every shot expands it. Click to expand; a refine auto-expands so the
+  // artist sees the change land.
+  const [isPromptCollapsed, setIsPromptCollapsed] = useState(true);
+  // Transient flash state — flipped true when the server-side prompt or
+  // cut plan changes from a refine (NOT from artist typing), false ~1.5s
+  // later. Drives a brief amber tint + ring on the affected textareas so
+  // the change is visible without diff'ing text manually.
+  const [recentlyRefined, setRecentlyRefined] = useState(false);
+  const recentlyRefinedTimer = useRef<number | null>(null);
 
   const isGenerating = shot.storyboardStatus === GenerationStatus.LOADING;
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
@@ -154,19 +165,32 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     if (dirty || saveState !== 'idle') return;
     const serverPrompt = shot.storyboardPrompt || '';
     const serverPlan = shot.storyboardCutPlan || '';
+    let changed = false;
     if (serverPrompt !== savedPromptText) {
       setPromptText(serverPrompt);
       setSavedPromptText(serverPrompt);
+      changed = true;
     }
     if (serverPlan !== savedPlanText) {
       setCutPlanText(serverPlan);
       setSavedPlanText(serverPlan);
+      changed = true;
+    }
+    if (changed) {
+      // Auto-expand the prompt so the new text is actually visible, and
+      // flash both fields briefly so the artist sees where the change
+      // landed without having to diff prose.
+      setIsPromptCollapsed(false);
+      setRecentlyRefined(true);
+      if (recentlyRefinedTimer.current) window.clearTimeout(recentlyRefinedTimer.current);
+      recentlyRefinedTimer.current = window.setTimeout(() => setRecentlyRefined(false), 1500);
     }
   }, [shot.storyboardPrompt, shot.storyboardCutPlan, dirty, saveState, savedPromptText, savedPlanText]);
 
-  // Clear any pending Saved-flash timer on unmount.
+  // Clear any pending Saved-flash + recently-refined timers on unmount.
   useEffect(() => () => {
     if (savedFlashTimer.current) window.clearTimeout(savedFlashTimer.current);
+    if (recentlyRefinedTimer.current) window.clearTimeout(recentlyRefinedTimer.current);
   }, []);
 
   useEffect(() => () => {
@@ -300,6 +324,9 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onRefineModeChange={setRefineMode}
           onPromptChange={(v) => { setPromptText(v); if (saveState === 'saved') setSaveState('idle'); }}
           onPlanBlur={flushPlan}
+          isPromptCollapsed={isPromptCollapsed}
+          onTogglePromptCollapse={() => setIsPromptCollapsed(c => !c)}
+          recentlyRefined={recentlyRefined}
           refineImage={refineImage}
           onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
@@ -325,6 +352,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onCutPlanChange={setCutPlanText}
           onPlanBlur={flushPlan}
           onPlanRetry={flushPlan}
+          recentlyRefined={recentlyRefined}
           onUpdateShot={onUpdateShot}
           onGenerateVideo={onGenerateVideo}
         />
@@ -357,6 +385,13 @@ interface StoryboardTabBodyProps {
   // onPlanBlur fires when the storyboard prompt textarea loses focus —
   // flushes both the prompt and cut plan to the server in one call.
   onPlanBlur: () => Promise<boolean>;
+  // Collapsible prompt: default collapsed once content exists. Refines
+  // auto-expand via the parent setting isPromptCollapsed=false.
+  isPromptCollapsed: boolean;
+  onTogglePromptCollapse: () => void;
+  // Transient flash when shot.storyboardPrompt changes externally — see
+  // the recently-refined effect in the parent.
+  recentlyRefined: boolean;
   refineImage: { file: File; previewUrl: string } | null;
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
@@ -372,6 +407,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   saveState, cutPlanRequired, promptRequired, cutPlanText, promptText,
   refineMode, onRefineModeChange,
   onPromptChange, onPlanBlur,
+  isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
   refineImage, onRefineImageChange,
   onWriteStoryboardPrompt, onGenerateStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
@@ -380,24 +416,55 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
 
   return (
     <>
-      {/* Prompt editor */}
+      {/* Prompt editor — collapsible. Long generated prompts dominate vertical
+          space across many shots, so collapse-by-default keeps the panel
+          scannable; the refine flow auto-expands when text changes so the
+          artist can see what landed. */}
       <div className="space-y-1">
-        <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
-          Storyboard prompt
-          {shot.storyboardPromptStatus === GenerationStatus.LOADING && <span className="text-[10px] normal-case tracking-normal text-zinc-300">Writing…</span>}
-          {promptRequired && <span className="text-[10px] normal-case tracking-normal text-amber-300">Prompt required</span>}
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] uppercase tracking-wide text-zinc-500 flex items-center gap-2">
+            Storyboard prompt
+            {shot.storyboardPromptStatus === GenerationStatus.LOADING && <span className="text-[10px] normal-case tracking-normal text-zinc-300">Writing…</span>}
+            {promptRequired && <span className="text-[10px] normal-case tracking-normal text-amber-300">Prompt required</span>}
+            {recentlyRefined && !isPromptCollapsed && (
+              <span className="text-[10px] normal-case tracking-normal text-amber-300/80">Updated</span>
+            )}
+          </div>
+          {promptText.length > 0 && (
+            <button
+              type="button"
+              onClick={onTogglePromptCollapse}
+              className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+              title={isPromptCollapsed ? 'Show full prompt' : 'Hide prompt'}
+            >
+              {isPromptCollapsed ? 'Show' : 'Hide'}
+              <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isPromptCollapsed ? '' : 'rotate-180'}`} aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          )}
         </div>
-        {isLocked ? (
-          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{promptText || '(empty prompt)'}</pre>
+
+        {isPromptCollapsed && promptText.length > 0 ? (
+          <button
+            type="button"
+            onClick={onTogglePromptCollapse}
+            className={`w-full surface-inset rounded-md px-3 py-2 text-left text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors flex items-center justify-between gap-3 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}
+          >
+            <span className="truncate font-mono">{promptText.replace(/\s+/g, ' ').slice(0, 90)}{promptText.length > 90 ? '…' : ''}</span>
+            <span className="text-zinc-500 flex-shrink-0 font-mono tabular-nums">{promptText.length} chars</span>
+          </button>
+        ) : isLocked ? (
+          <pre className={`surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>{promptText || '(empty prompt)'}</pre>
         ) : (
-          <AutoGrowTextarea
-            value={promptText}
-            onChange={(e) => onPromptChange((e.target as HTMLTextAreaElement).value)}
-            onBlur={() => { if (cutPlanText.trim()) void onPlanBlur(); }}
-            placeholder="Write or generate the storyboard image prompt first…"
-            rows={4}
-            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
-          />
+          <div className={`rounded-md transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>
+            <AutoGrowTextarea
+              value={promptText}
+              onChange={(e) => onPromptChange((e.target as HTMLTextAreaElement).value)}
+              onBlur={() => { if (cutPlanText.trim()) void onPlanBlur(); }}
+              placeholder="Write or generate the storyboard image prompt first…"
+              rows={4}
+              className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
+            />
+          </div>
         )}
       </div>
 
@@ -593,6 +660,8 @@ interface VideoTabBodyProps {
   onCutPlanChange: (v: string) => void;
   onPlanBlur: () => Promise<boolean>;
   onPlanRetry: () => Promise<boolean>;
+  // Transient flash when shot.storyboardCutPlan changes from a refine.
+  recentlyRefined: boolean;
   onUpdateShot: (sceneId: string, shotId: string, updates: Partial<VideoShot>) => void;
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
 }
@@ -600,6 +669,7 @@ interface VideoTabBodyProps {
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
   scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired, boundRefCount,
   planLoading, saveState, dirty, onCutPlanChange, onPlanBlur, onPlanRetry,
+  recentlyRefined,
   onUpdateShot, onGenerateVideo,
 }) => {
   const canGenerate = isLocked && !isVideoGenerating && !cutPlanRequired;
@@ -644,20 +714,25 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
               {!planLoading && saveState === 'idle' && dirty && (
                 <span className="text-[10px] normal-case tracking-normal text-zinc-400">Unsaved</span>
               )}
+              {recentlyRefined && saveState === 'idle' && !dirty && (
+                <span className="text-[10px] normal-case tracking-normal text-amber-300/80">Updated</span>
+              )}
             </>
           )}
         </div>
         {isLocked ? (
-          <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{cutPlanText.trim() || '(empty video prompt)'}</pre>
+          <pre className={`surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>{cutPlanText.trim() || '(empty video prompt)'}</pre>
         ) : (
-          <AutoGrowTextarea
-            value={cutPlanText}
-            onChange={(e) => onCutPlanChange((e.target as HTMLTextAreaElement).value)}
-            onBlur={() => { void onPlanBlur(); }}
-            placeholder="Panel 1 [00:00-..] - camera: …; action: …; Seedance cue: …"
-            rows={5}
-            className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
-          />
+          <div className={`rounded-md transition-all duration-700 ${recentlyRefined ? 'ring-1 ring-amber-400/40 bg-amber-400/[0.05]' : ''}`}>
+            <AutoGrowTextarea
+              value={cutPlanText}
+              onChange={(e) => onCutPlanChange((e.target as HTMLTextAreaElement).value)}
+              onBlur={() => { void onPlanBlur(); }}
+              placeholder="Panel 1 [00:00-..] - camera: …; action: …; Seedance cue: …"
+              rows={5}
+              className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
+            />
+          </div>
         )}
         <p className="text-[11px] text-zinc-500">
           Seedance reads the locked storyboard image plus this text as the motion/cut guide. {isLocked ? 'Unlock the storyboard to edit.' : 'Writing or refining the storyboard prompt also fills this field.'}
