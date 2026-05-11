@@ -76,8 +76,8 @@ That's how a 3–5 min render becomes 15–30 min. And it's exactly why the stuc
 |---|---|---|---|---|
 | **F1** | **No orphan-render watchdog.** Confirmed: nothing in `server/` schedules anything; `lahari_renders` rows can sit at `status='rendering'` forever (your incident). | Add a `setInterval` (or Railway cron-equivalent endpoint hit by a scheduled task) that flips any `rendering` row older than `MAX_RENDER_MINUTES + 5` to `failed` with `error='watchdog: exceeded max render time'`. Run every 2 min. | S | **P0** |
 | F2 | Modal hard-timeout (60 min ceiling, `modal_app.py:60`) gives no callback. Even after F1, the artist sees "Render failed: watchdog" with no path forward. | When watchdog flips a row, also call `render_job.cancel(modal_function_call_id)` if F1 implemented O3, so we stop paying for the hung container. Set Modal `--timeout` slightly below watchdog threshold so Modal's own timeout fires first when possible. | S | P1 |
-| F3 | `postCallback` retries cover 404/408/429/5xx (`render-job.ts:83`) but cap at 5 retries over ~31s. A Railway redeploy can take 60–90s. After exhaustion the result is lost — only PostHog has it. | (a) Extend retry budget to ~5 min with jittered backoff. (b) Have the renderer additionally **upsert into `lahari_renders` directly via the service key** on terminal failure-to-callback (renderer already has SUPABASE creds in `storage.ts:13`). Treat that as a fallback writeback. | M | P0 |
-| F4 | No size sanity check on uploaded mp4. `storage.ts:30` happily uploads a 0-byte file if `renderMedia` produced one (it shouldn't, but a Chromium hang at frame 0 could). | After `uploadRender`, fail the render if `sizeBytes < 1024` or `durationInFrames === 0`. Stamp `error_code='empty_output'`. | S | P0 |
+| F3 | `postCallback` retries cover 404/408/429/5xx (`render-job.ts:83`) but cap at 5 retries over ~31s. A Railway redeploy can take 60–90s. After exhaustion the result is lost — only PostHog has it. | (a) Extend retry budget to ~5 min with jittered backoff. (b) Have the renderer write a durable terminal result fallback into `lahari_renders` if callback exhausts. The backend must still own `finalizePublish` / asset-row / queue updates via a reconciler so business logic is not duplicated in the renderer. | M | P0 |
+| F4 | No size sanity check on uploaded mp4. `storage.ts:30` happily uploads a 0-byte file if `renderMedia` produced one (it shouldn't, but a Chromium hang at frame 0 could). | Check the file size before upload, and fail the render if `sizeBytes < 1024` or `durationInFrames === 0`. Stamp `error_code='empty_output'` once that column exists. | S | P0 |
 | F5 | If `uploadRender` throws mid-upload, `runRenderJob`'s catch posts a failure callback (`render-job.ts:164`) — good. But it leaves the tmp mp4 to be cleaned only in the `finally` of *this* run; if process is killed before, nothing else GCs. | Add a one-line `rm -rf /tmp/lahari-render-*.mp4` older than 1h on container boot. Cheap and forgettable. | S | P2 |
 | F6 | Project deletion cascade (`migrations/2026-04-21:11`: `on delete cascade`) drops the render row, so a late callback hits 404 (`render-callback.ts:31`). Renderer treats 404 as retriable (`render-job.ts:83` allows it). | Make 404 non-retriable in `postCallback`. Also: if the Modal call references a deleted project, exit early in `render-job.ts` after a precheck `selectOne('projects',...)`. | S | P1 |
 | F7 | **Double-click Render** creates two `lahari_renders` rows; both fan out to Modal. Both will try to finalize; one of them updates `music_video_queue.video_url`, the other overwrites it (latest-wins per `finalizePublish` at `queue.ts:325`). Wasteful, not technically broken. | At `/render` POST, reject (`409`) if a row exists for this project with `status='rendering'` younger than X min. Frontend already disables button while `phase==='rendering'` but reload escapes that. | S | P1 |
@@ -91,7 +91,7 @@ That's how a 3–5 min render becomes 15–30 min. And it's exactly why the stuc
 
 | # | Gap | Fix | Impact | Effort | Priority |
 |---|---|---|---|---|---|
-| **E1** | **Cross-region asset pulls.** Modal US ↔ Supabase ap-southeast-2 = ~180–230ms RTT per HTTP, ×N shot videos fetched serially by Chromium during render. For a 50-shot timeline at ~10 MB/clip that's 500 MB pulled over a slow link before encoding even starts. Comment at `render.ts:50` already flags this. | (a) Pre-stage: before `renderMedia`, fetch all `trackItemsMap` URLs in parallel (Promise.all with concurrency=16) into `/tmp` and rewrite URLs to `file://`. (b) Long-term: co-locate Supabase + Modal region. | (a) cuts 50-shot wall time by est. 4–8 min. (b) cuts further ~30%. | (a) M, (b) L | **P0** |
+| **E1** | **Cross-region asset pulls.** Modal US ↔ Supabase ap-southeast-2 = ~180–230ms RTT per HTTP, ×N shot videos fetched serially by Chromium during render. For a 50-shot timeline at ~10 MB/clip that's 500 MB pulled over a slow link before encoding even starts. Comment at `render.ts:50` already flags this. | (a) Pre-stage: before `renderMedia`, fetch every remote media item in `trackItemsMap` — video, image, and audio — in parallel (Promise.all with concurrency=16) into `/tmp/lahari-render-<id>/`, validate status/content/size, rewrite URLs to `file://`, and clean the directory in `finally`. (b) Long-term: co-locate Supabase + Modal region. | (a) cuts 50-shot wall time by est. 4–8 min. (b) cuts further ~30%. | (a) M, (b) L | **P0** |
 | E2 | Composition bundle is cached per-process (`render.ts:11-20`), but each Modal container is fresh — first render on new container pays the bundle cost (~10–30s). `min_containers=1` keeps ASGI warm but `render_job` cold-starts. | Bake the bundled `out/` directory into the Dockerfile (`@remotion/bundler` at build time), have `render.ts` skip `bundle()` if it exists. | ~15s/cold-start | M | P1 |
 | E3 | `max_containers=20` is fine for current usage; not urgent. But there's no scaledown signal — if a hung container is paid-for while watchdog is missing (F1), cost piles up. | Once F1+F2 land, `render_job.cancel()` solves this. | $$ | (covered) | — |
 | E4 | Renderer concurrency: `concurrency: '100%'` (`render.ts:56`) on 8 vCPU. Fine, but at 16GB RAM, 50-shot timelines with simultaneously decoded video clips have risked OOM in similar Remotion deployments. No monitoring of peak RSS. | Add `track('render_peak_rss', ...)` reading `process.resourceUsage().maxRSS` post-render. If we ever see >12GB regularly, drop concurrency to a number. | S | P2 |
@@ -138,9 +138,10 @@ Backend-only changes. No migration. No Modal deploy. Safe to merge anytime.
 
 1. **F10 / Bucket mismatch** — Step zero: `railway variables | grep RENDER_STORAGE_BUCKET`. If unset, set to `lahari-assets` AND fix the default in `server/routes/projects.ts:1252` so this isn't a config gotcha forever.
 2. **F1 watchdog** — `setInterval` on backend boot in `server/index.ts`. Every 2 min, query `lahari_renders WHERE status='rendering' AND created_at < NOW() - 65 min`, flip to `failed` with `error='watchdog: exceeded max render time'`. ~30 lines.
-3. **F8 non-2xx response check** — `server/routes/render.ts:61`, check `response.ok` after the Modal fetch. On non-2xx, flip the row to failed immediately. 2 lines.
-4. **F4 empty-output guard** — `remotion-renderer/src/render-job.ts` after `uploadRender`, throw if `sizeBytes < 1024 || durationInFrames === 0` with `error_code='empty_output'`. ~5 lines.
+3. **F8 non-2xx response check** — `server/routes/render.ts:61`, inspect the fire-and-forget fetch response. On non-2xx, flip the row to failed immediately with the HTTP status/body.
+4. **F4 empty-output guard** — `remotion-renderer/src/render-job.ts` checks output file size before upload and rejects `sizeBytes < 1024 || durationInFrames === 0`. ~10 lines.
 5. **F7 double-click guard** — `/render` POST, reject 409 if a `rendering` row younger than X min exists. ~10 lines.
+6. **F6 callback 404** — treat callback 404 as non-retriable so deleted projects/renders do not burn retry time.
 
 After Phase 1: orphan renders self-recover, silent 401/500s fail loudly, 0-byte mp4s caught, double-click dedup.
 
@@ -172,7 +173,7 @@ After Phase 2: artists see live progress, we can join Modal dashboard logs to re
 Builds on Phase 2 columns.
 
 11. **F3 callback retry budget** — Bump `CALLBACK_RETRY_DELAYS_MS` to ~5 min total with jittered exponential backoff.
-12. **F3 renderer-side direct Supabase fallback** — If `postCallback` exhausts all retries, the renderer directly does a Supabase update (`UPDATE lahari_renders SET status='completed', video_url=..., ... WHERE id=:renderId`) using the service key it already has. Belt-and-suspenders writeback.
+12. **F3 renderer-side direct Supabase fallback + backend reconciler** — If `postCallback` exhausts all retries, the renderer writes a terminal fallback row/result. A backend reconciler later runs the normal `finalizePublish` path. Do not duplicate queue/project/asset business logic inside the renderer.
 13. **F2 cancel-on-watchdog** — When watchdog flips a row, if `modal_function_call_id` is set, call `modal.FunctionCall.from_id(...).cancel()`. Stops paying for the hung container.
 14. **F6 404 non-retriable in `postCallback`** — and precheck `selectOne('projects',...)` in `render-job.ts` to exit early if the project was deleted mid-render.
 15. **E6 renderer-side 50min hard cap** — `Promise.race(runRenderJob(), timeout(50 * 60 * 1000))`. Lets us send a clean failure callback before Modal's 60min SIGKILL.
@@ -183,7 +184,7 @@ After Phase 3: callbacks survive Railway redeploys, the renderer can self-report
 
 The big visible win for artists.
 
-16. **E1 asset pre-staging** — Before `renderMedia` in `render-job.ts`, walk `trackItemsMap`, parallel-fetch (concurrency=16) every clip URL into `/tmp/lahari-render-<renderId>/clip-N.mp4`, rewrite the timeline URLs to `file://...`. Result: one ~30s parallel burst replaces 80s+ of serialized network waits during render.
+16. **E1 asset pre-staging** — Before `renderMedia` in `render-job.ts`, walk `trackItemsMap`, parallel-fetch (concurrency=16) every remote video/image/audio URL into `/tmp/lahari-render-<renderId>/`, validate HTTP status/content length/content type, rewrite the timeline URLs to `file://...`, and clean the temp dir in `finally`. Result: one ~30s parallel burst replaces 80s+ of serialized network waits during render.
 17. **E2 bake bundle into Dockerfile** — Run `@remotion/bundler` at Docker build time, save `out/` into the image. Skip `bundle()` in `render.ts` if `out/` exists. Saves ~15s on cold renders.
 18. **E5 timeline-hash dedup** — Compute SHA-256 of canonicalized timeline. If a completed row exists for that hash within last N days, short-circuit and copy `(video_url, storage_path)` to the new row. Optional save-mode setting if artists want to force re-render.
 
@@ -246,7 +247,7 @@ Pick from Section 4 as time allows. None are blocking.
 
 ## Open questions to resolve before starting
 
-1. **Which bucket is canonical?** Need to grep Railway env and pick one for F10.
+1. **Which bucket is canonical?** Resolved for Phase 1: renderer defaults to `lahari-assets`; Railway has no `RENDER_STORAGE_BUCKET` override, so backend default should also be `lahari-assets`.
 2. **What's `MAX_RENDER_MINUTES`?** Currently Modal hard-caps at 60. Watchdog needs to know when to flip. Suggest 65 min (5 min grace after Modal would have given up).
 3. **Should E5 timeline-hash dedup be opt-in or default?** Default = fast iteration. Opt-in = artist trust. Suggest default with an explicit "Force re-render" checkbox.
 4. **Sentry account exists?** O2 assumes we have one. Confirm before Phase 2.

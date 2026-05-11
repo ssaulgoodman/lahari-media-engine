@@ -1,4 +1,4 @@
-import { unlink } from 'node:fs/promises';
+import { stat, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { shutdownPosthog, track, trackError } from './posthog';
 import { renderTimeline } from './render';
@@ -80,7 +80,7 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
       // we retry.
       const body = await res.text().catch(() => '');
       lastError = new Error(`callback ${res.status}: ${body}`);
-      if (res.status === 400 || res.status === 401 || res.status === 403) {
+      if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) {
         console.error(`[render ${renderId}] callback got non-retriable ${res.status}: ${body}`);
         break;
       }
@@ -134,6 +134,14 @@ export const runRenderJob = async ({
   try {
     const result = await renderTimeline(inputProps);
     outputPath = result.outputPath;
+
+    const outputStat = await stat(outputPath);
+    if (outputStat.size < 1024) {
+      throw new Error(`empty render output: ${outputStat.size} bytes`);
+    }
+    if (!result.durationInFrames || result.durationInFrames <= 0) {
+      throw new Error(`empty render output: ${result.durationInFrames} frames`);
+    }
 
     const upload = await uploadRender(outputPath, projectId);
     const renderMs = Date.now() - startedAt;

@@ -1254,10 +1254,10 @@ router.delete('/:id/renders/:assetId', async (req, res) => {
   // Remove the mp4 from Supabase Storage (failure here isn't fatal — the row
   // removal below is the source of truth) and then drop the assets row.
   //
-  // Renderer-uploaded renders live in a separate bucket (RENDER_STORAGE_BUCKET,
-  // default `videos`) to match the renderer's SUPABASE_BUCKET. Legacy assets
-  // with no matching `lahari_renders` row fall back to the default bucket.
-  const renderBucket = process.env.RENDER_STORAGE_BUCKET ?? 'videos';
+  // Renderer-uploaded renders live in the renderer's SUPABASE_BUCKET. The
+  // renderer defaults to `lahari-assets`, so keep the backend default aligned
+  // and only override when both services intentionally use a different bucket.
+  const renderBucket = process.env.RENDER_STORAGE_BUCKET ?? 'lahari-assets';
   const deleteBucket = renderRow ? renderBucket : undefined;
   try {
     await deleteFile(asset.file_path, deleteBucket);

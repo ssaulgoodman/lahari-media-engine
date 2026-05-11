@@ -12,12 +12,17 @@
  */
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, selectAll, selectOne } from '../database.js';
+import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
 
 const router = Router();
 
 const paramStr = (val: string | string[]): string =>
   Array.isArray(val) ? val[0] : val;
+
+const activeRenderWindowMs = () => {
+  const minutes = Number(process.env.MAX_RENDER_MINUTES || 65);
+  return Math.max(1, minutes) * 60 * 1000;
+};
 
 router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
@@ -46,6 +51,22 @@ router.post('/:id/render', async (req, res) => {
     return res.status(400).json({ error: 'timeline is required' });
   }
 
+  const existing = await selectAll('renders', { project_id: projectId, status: 'rendering' }, {
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 1,
+  });
+  const activeRender = existing[0];
+  if (activeRender?.created_at) {
+    const ageMs = Date.now() - new Date(activeRender.created_at).getTime();
+    if (Number.isFinite(ageMs) && ageMs < activeRenderWindowMs()) {
+      return res.status(409).json({
+        error: 'A render is already running for this project. Wait for it to finish or fail before starting another.',
+        renderId: activeRender.id,
+      });
+    }
+  }
+
   const renderId = uuidv4();
   await insertRow('renders', {
     id: renderId,
@@ -54,26 +75,38 @@ router.post('/:id/render', async (req, res) => {
   });
 
   // Fire-and-forget. The renderer will call /api/renders/callback/:renderId
-  // when it's done. `.catch` swallows the unhandled rejection; real failures
-  // surface via the renderer's failure callback. If the renderer is completely
-  // unreachable we'll never hear back and the render row stays 'rendering'
-  // until someone retries (or a future stale-detection job flips it).
-  fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-renderer-secret': rendererSecret,
-    },
-    body: JSON.stringify({ renderId, projectId, timeline }),
-  }).catch(async (err) => {
-    console.error(`[render ${renderId}] upstream fetch threw:`, err?.message || err);
-    const { updateRows } = await import('../database.js');
-    await updateRows('renders', { id: renderId }, {
-      status: 'failed',
-      error: err?.message || 'renderer unreachable',
-      updated_at: new Date().toISOString(),
-    }).catch(() => {});
-  });
+  // when it's done. Immediate request failures flip the row here; deeper
+  // renderer failures surface via the callback. If the renderer dies without
+  // either path, the render watchdog will fail the stale row.
+  void (async () => {
+    try {
+      const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-renderer-secret': rendererSecret,
+        },
+        body: JSON.stringify({ renderId, projectId, timeline }),
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        const message = `renderer rejected render request: HTTP ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`;
+        console.error(`[render ${renderId}] ${message}`);
+        await updateRows('renders', { id: renderId }, {
+          status: 'failed',
+          error: message,
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error(`[render ${renderId}] upstream fetch threw:`, err?.message || err);
+      await updateRows('renders', { id: renderId }, {
+        status: 'failed',
+        error: err?.message || 'renderer unreachable',
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
+  })();
 
   return res.status(202).json({ renderId, status: 'rendering' });
 });
