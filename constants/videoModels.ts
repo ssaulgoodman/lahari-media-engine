@@ -18,6 +18,8 @@ export interface VideoModelSpec {
   supportsRefs: boolean;
   /** Whether refs work alongside start/end frames (Veo=true, Seedance=false due to mutual exclusivity). */
   refsWithFrames: boolean;
+  /** Resolutions accepted by this provider/model endpoint. */
+  resolutions: Array<'720p' | '1080p'>;
 }
 
 export const VIDEO_MODELS: VideoModelSpec[] = [
@@ -30,6 +32,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsLastFrame: true,
     supportsRefs: true,
     refsWithFrames: true,
+    resolutions: ['720p', '1080p'],
   },
   {
     key: 'veo-3.1',
@@ -40,6 +43,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsLastFrame: true,
     supportsRefs: true,
     refsWithFrames: true,
+    resolutions: ['720p', '1080p'],
   },
   {
     key: 'seedance-2.0-fast',
@@ -51,6 +55,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsLastFrame: true,
     supportsRefs: true,
     refsWithFrames: false,
+    resolutions: ['720p'],
   },
   {
     key: 'seedance-2.0',
@@ -62,6 +67,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsLastFrame: true,
     supportsRefs: true,
     refsWithFrames: false,
+    resolutions: ['720p'],
   },
 ];
 

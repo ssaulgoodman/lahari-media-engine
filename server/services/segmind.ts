@@ -7,6 +7,7 @@
 import { saveBuffer, storageUrl } from '../storage.js';
 
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
+type SegmindResolution = '480p' | '720p' | '1080p';
 
 const getApiKey = () => {
   const key = process.env.SEGMIND_API_KEY;
@@ -72,7 +73,7 @@ export const generateSegmindVideo = async (
   opts?: {
     endImagePath?: string;
     referenceImagePaths?: string[];
-    resolution?: '720p' | '1080p';
+    resolution?: SegmindResolution;
     aspectRatio?: '16:9' | '9:16';
     durationSec?: number;
     modelKey?: SegmindModelKey;
@@ -92,6 +93,12 @@ export const generateSegmindVideo = async (
   const startUrl = startImagePath ? storageUrl(startImagePath) : undefined;
   const endUrl = opts?.endImagePath ? storageUrl(opts.endImagePath) : undefined;
   const refUrls = (opts?.referenceImagePaths || []).map(p => storageUrl(p));
+  const requestedResolution = opts?.resolution || '720p';
+  const resolution = model.family === 'seedance'
+    // Segmind Seedance currently accepts 480p/720p only. Lahari exposes
+    // 720p/1080p, so clamp Seedance to 720p instead of sending a 400.
+    ? (requestedResolution === '480p' ? '480p' : '720p')
+    : (requestedResolution === '1080p' ? '1080p' : '720p');
 
   // Build request body — different param names for Veo vs Seedance
   let body: Record<string, any>;
@@ -101,7 +108,7 @@ export const generateSegmindVideo = async (
       prompt: motionPrompt || 'Cinematic camera movement',
       image: startUrl,
       duration: durationSec,
-      resolution: opts?.resolution || '720p',
+      resolution,
       aspect_ratio: opts?.aspectRatio || '16:9',
       generate_audio: false,
       seed: Math.floor(Math.random() * 1000000),
@@ -121,7 +128,7 @@ export const generateSegmindVideo = async (
     body = {
       prompt: motionPrompt || 'Cinematic camera movement',
       duration: durationSec,
-      resolution: opts?.resolution || '720p',
+      resolution,
       aspect_ratio: opts?.aspectRatio || '16:9',
       generate_audio: false,
       seed: Math.floor(Math.random() * 1000000),
@@ -137,7 +144,8 @@ export const generateSegmindVideo = async (
     }
   }
 
-  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, refs=${refUrls.length}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+  const bodyKeys = Object.keys(body).sort().join(',');
+  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   const res = await fetch(model.endpoint, {
     method: 'POST',
@@ -151,8 +159,16 @@ export const generateSegmindVideo = async (
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
     console.error(`[segmind] ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
+    const errDetails = (() => {
+      try {
+        const parsed = JSON.parse(errText);
+        return typeof parsed?.error === 'string' ? parsed.error : errText;
+      } catch {
+        return errText;
+      }
+    })();
     // Classify errors so the artist sees actionable messages
-    const lower = errText.toLowerCase();
+    const lower = errDetails.toLowerCase();
     let userMessage: string;
     const isCreditsError =
       res.status === 402 ||
@@ -171,8 +187,12 @@ export const generateSegmindVideo = async (
       userMessage = `Rate limited — too many requests. Wait a minute and retry.`;
     } else if (lower.includes('mutually exclusive')) {
       userMessage = `Seedance can't use reference images when a start frame is set. Refs are skipped automatically — this shouldn't happen. Report this bug.`;
+    } else if (lower.includes('resolution')) {
+      userMessage = `${modelKey} rejected the requested resolution. Seedance supports 720p in Lahari; retry after saving the project render settings.`;
+    } else if (lower.includes('duration')) {
+      userMessage = `${modelKey} rejected the requested duration. Valid Seedance durations are 4, 5, 6, 8, 10, 12, or 15 seconds.`;
     } else {
-      userMessage = `${modelKey} failed (${res.status}). ${errText.slice(0, 150)}`;
+      userMessage = `${modelKey} failed (${res.status}). ${errDetails.slice(0, 220)}`;
     }
     const err = new Error(userMessage);
     (err as any).segmindStatus = res.status;

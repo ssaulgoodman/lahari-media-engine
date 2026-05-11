@@ -120,9 +120,17 @@ export const BlueprintContextBar: React.FC<Props> = ({
     || project.environments.some(e => e.referenceImageUrl);
 
   const aspectLabel = project.aspectRatio || '16:9';
-  const resLabel = project.videoResolution || '720p';
+  const selectedVideoModel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key);
+  const effectiveResolution = selectedVideoModel.resolutions.includes(project.videoResolution)
+    ? project.videoResolution
+    : selectedVideoModel.resolutions[0];
+  const resLabel = effectiveResolution;
   const imageLabel = getImageModel(project.imageModel || IMAGE_MODELS[0].key).label;
-  const modelLabel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key).label;
+  const modelLabel = selectedVideoModel.label;
+  const resolutionOptions = selectedVideoModel.resolutions.map(res => ({
+    value: res,
+    label: res === '1080p' ? '1080p (Full HD)' : '720p (HD)',
+  }));
   const renderSummary = `${aspectLabel} · ${resLabel} · ${imageLabel} · ${modelLabel}`;
   const songTypeLabel = project.songType && project.songType !== 'unknown'
     ? project.songType.charAt(0).toUpperCase() + project.songType.slice(1)
@@ -310,12 +318,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
                   <div className="flex-1 px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
                     <Dropdown
-                      value={project.videoResolution || '720p'}
+                      value={effectiveResolution}
                       onChange={v => onUpdateProject({ videoResolution: v })}
-                      options={[
-                        { value: '720p', label: '720p (HD)' },
-                        { value: '1080p', label: '1080p (Full HD)' },
-                      ]}
+                      options={resolutionOptions}
                     />
                   </div>
                   <div className="flex-[1.25] px-5 py-3 space-y-1">
@@ -349,6 +354,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
 
                         const updates: Record<string, any> = { videoModel: v };
                         if (!newModel.durations.includes(project.targetDuration)) updates.targetDuration = newModel.durations[0];
+                        if (!newModel.resolutions.includes(project.videoResolution)) updates.videoResolution = newModel.resolutions[0];
                         onUpdateProject(updates);
                       }}
                       options={VIDEO_MODELS.map(m => ({ value: m.key, label: `${m.label} · ${m.durations.join('/')}s · $${m.costPerSec.toFixed(2)}/s` }))}
