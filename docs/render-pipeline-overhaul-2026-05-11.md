@@ -1,7 +1,7 @@
 # Render Pipeline Overhaul — Audit, Diagnosis, and Plan
 
 **Date**: 2026-05-11
-**Status**: Phase 1 deployed. Phase 2 in progress on `codex/render-phase2-progress`.
+**Status**: Phase 1 deployed. Phase 2 complete on `codex/render-phase2-progress`. Phase 3 resilience in progress.
 **Context**: One stuck render incident (2:40 video orphaned at `rendering` for 1h47m). Multiple reports of small clips (2–3 min) taking 15–25 min to render. Audit triggered.
 
 ---
@@ -16,7 +16,7 @@ Beyond performance, the original pipeline had no safety nets. Current state:
 - Phase 1 watchdog is deployed: orphan `rendering` rows older than `MAX_RENDER_MINUTES` fail automatically.
 - Phase 1 catches initial renderer non-2xx responses, duplicate active renders, empty outputs, and callback 404s.
 - Phase 2 adds progress, stage, heartbeat, Modal call id, and error-code columns plus UI progress.
-- Modal SIGKILL still needs Phase 3 retry/reconciler/cancel work.
+- Modal SIGKILL still needs the cancel-on-watchdog piece; Phase 3 retry/reconciler and renderer hard-cap are now in code.
 - Bucket-mismatch risk is handled short-term: production Modal currently sets `SUPABASE_BUCKET=videos`, so backend delete defaults to `videos` until a planned migration moves renderer output to `lahari-assets`.
 
 Fix plan ships in 4 phases. Phase 1 (stop the bleeding) + Phase 4 (asset pre-staging) together get us from "fails silently for hours" + "10× too slow" to "self-recovers in 2 min" + "expected 3–5 min for typical projects."
@@ -76,7 +76,7 @@ That's how a 3–5 min render becomes 15–30 min. And it's exactly why the stuc
 |---|---|---|---|---|
 | **F1** | **No orphan-render watchdog.** Confirmed: nothing in `server/` schedules anything; `lahari_renders` rows can sit at `status='rendering'` forever (your incident). | Add a `setInterval` (or Railway cron-equivalent endpoint hit by a scheduled task) that flips any `rendering` row older than `MAX_RENDER_MINUTES + 5` to `failed` with `error='watchdog: exceeded max render time'`. Run every 2 min. | S | **P0** |
 | F2 | Modal hard-timeout (60 min ceiling, `modal_app.py:60`) gives no callback. Even after F1, the artist sees "Render failed: watchdog" with no path forward. | When watchdog flips a row, also call `render_job.cancel(modal_function_call_id)` if F1 implemented O3, so we stop paying for the hung container. Set Modal `--timeout` slightly below watchdog threshold so Modal's own timeout fires first when possible. | S | P1 |
-| F3 | `postCallback` retries cover 404/408/429/5xx (`render-job.ts:83`) but cap at 5 retries over ~31s. A Railway redeploy can take 60–90s. After exhaustion the result is lost — only PostHog has it. | (a) Extend retry budget to ~5 min with jittered backoff. (b) Have the renderer write a durable terminal result fallback into `lahari_renders` if callback exhausts. The backend must still own `finalizePublish` / asset-row / queue updates via a reconciler so business logic is not duplicated in the renderer. | M | P0 |
+| F3 | `postCallback` retries cover 404/408/429/5xx (`render-job.ts:83`) but cap at 5 retries over ~31s. A Railway redeploy can take 60–90s. After exhaustion the result is lost — only PostHog has it. | **Phase 3 done in code:** retry budget is ~5 min with jitter. On exhaustion, renderer writes `pending_finalize` terminal fallback data to `lahari_renders`; backend reconciler runs `finalizePublish` and marks completed. | M | P0 |
 | F4 | No size sanity check on uploaded mp4. `storage.ts:30` happily uploads a 0-byte file if `renderMedia` produced one (it shouldn't, but a Chromium hang at frame 0 could). | Check the file size before upload, and fail the render if `sizeBytes < 1024` or `durationInFrames === 0`. Stamp `error_code='empty_output'` once that column exists. | S | P0 |
 | F5 | If `uploadRender` throws mid-upload, `runRenderJob`'s catch posts a failure callback (`render-job.ts:164`) — good. But it leaves the tmp mp4 to be cleaned only in the `finally` of *this* run; if process is killed before, nothing else GCs. | Add a one-line `rm -rf /tmp/lahari-render-*.mp4` older than 1h on container boot. Cheap and forgettable. | S | P2 |
 | F6 | Project deletion cascade (`migrations/2026-04-21:11`: `on delete cascade`) drops the render row, so a late callback hits 404 (`render-callback.ts:31`). Renderer treats 404 as retriable (`render-job.ts:83` allows it). | Make 404 non-retriable in `postCallback`. Also: if the Modal call references a deleted project, exit early in `render-job.ts` after a precheck `selectOne('projects',...)`. | S | P1 |
@@ -96,7 +96,7 @@ That's how a 3–5 min render becomes 15–30 min. And it's exactly why the stuc
 | E3 | `max_containers=20` is fine for current usage; not urgent. But there's no scaledown signal — if a hung container is paid-for while watchdog is missing (F1), cost piles up. | Once F1+F2 land, `render_job.cancel()` solves this. | $$ | (covered) | — |
 | E4 | Renderer concurrency: `concurrency: '100%'` (`render.ts:56`) on 8 vCPU. Fine, but at 16GB RAM, 50-shot timelines with simultaneously decoded video clips have risked OOM in similar Remotion deployments. No monitoring of peak RSS. | Add `track('render_peak_rss', ...)` reading `process.resourceUsage().maxRSS` post-render. If we ever see >12GB regularly, drop concurrency to a number. | S | P2 |
 | E5 | Re-render with no change → still re-bundles, re-fetches, re-encodes. There's no content hash on `{trackItemsMap, transitionsMap}`. | Compute SHA-256 of the canonicalized timeline. If a `lahari_renders` row with `status='completed'` exists for that hash, short-circuit and copy `(video_url, storage_path)` to a new row. | Saves $0.40–$1.00 + 5–15min per duplicate render | M | P1 |
-| E6 | `selectComposition` timeout = 120s, `renderMedia` timeout = 120s (`render.ts:39,52`). Per-frame fetch timeout, not total. Fine, but no upper bound on total render — Modal's 60min is the only ceiling. | Wrap `runRenderJob` in `Promise.race` with a renderer-side 50min hard cap. Lets us fail-fast cleanly *before* Modal SIGKILL, so callback fires. | S | P0 |
+| E6 | `selectComposition` timeout = 120s, `renderMedia` timeout = 120s (`render.ts:39,52`). Per-frame fetch timeout, not total. Fine, but no upper bound on total render — Modal's 60min is the only ceiling. | **Phase 3 done in code:** `renderTimeline` is wrapped in a renderer-side hard cap (`RENDER_HARD_CAP_MINUTES`, default 50), so timeout failures can callback before Modal SIGKILL. | S | P0 |
 
 ---
 
@@ -174,11 +174,11 @@ After Phase 2: artists see live progress, we can join Modal dashboard logs to re
 
 Builds on Phase 2 columns.
 
-11. **F3 callback retry budget** — Bump `CALLBACK_RETRY_DELAYS_MS` to ~5 min total with jittered exponential backoff.
-12. **F3 renderer-side direct Supabase fallback + backend reconciler** — If `postCallback` exhausts all retries, the renderer writes a terminal fallback row/result. A backend reconciler later runs the normal `finalizePublish` path. Do not duplicate queue/project/asset business logic inside the renderer.
-13. **F2 cancel-on-watchdog** — When watchdog flips a row, if `modal_function_call_id` is set, call `modal.FunctionCall.from_id(...).cancel()`. Stops paying for the hung container.
-14. **F6 404 non-retriable in `postCallback`** — and precheck `selectOne('projects',...)` in `render-job.ts` to exit early if the project was deleted mid-render.
-15. **E6 renderer-side 50min hard cap** — `Promise.race(runRenderJob(), timeout(50 * 60 * 1000))`. Lets us send a clean failure callback before Modal's 60min SIGKILL.
+11. **F3 callback retry budget** — Bump `CALLBACK_RETRY_DELAYS_MS` to ~5 min total with jittered exponential backoff. Done in code.
+12. **F3 renderer-side direct Supabase fallback + backend reconciler** — If `postCallback` exhausts all retries, the renderer writes a terminal fallback row/result. A backend reconciler later runs the normal `finalizePublish` path. Do not duplicate queue/project/asset business logic inside the renderer. Done in code.
+13. **F2 cancel-on-watchdog** — When watchdog flips a row, if `modal_function_call_id` is set, call `modal.FunctionCall.from_id(...).cancel()`. Stops paying for the hung container. Still pending; needs a safe Node/Railway-to-Modal cancel path.
+14. **F6 404 non-retriable in `postCallback`** — and precheck `selectOne('projects',...)` in `render-job.ts` to exit early if the project was deleted mid-render. Done in code.
+15. **E6 renderer-side 50min hard cap** — `Promise.race(runRenderJob(), timeout(50 * 60 * 1000))`. Lets us send a clean failure callback before Modal's 60min SIGKILL. Done in code for `renderTimeline`.
 
 After Phase 3: callbacks survive Railway redeploys, the renderer can self-report completion even when main backend is down, hung Modal containers get cancelled (cost savings), deleted projects don't leak renders, the 60-min hard cap is replaced with a 50-min soft cap that gives us a callback path.
 

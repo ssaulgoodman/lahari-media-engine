@@ -849,7 +849,7 @@ export interface TimelineRenderState {
   durationMs: number;
 }
 
-export type RenderStatus = 'idle' | 'rendering' | 'completed' | 'failed';
+export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed';
 
 export interface RenderStatusResponse {
   renderId: string | null;

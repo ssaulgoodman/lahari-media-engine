@@ -51,7 +51,7 @@ router.post('/:id/render', async (req, res) => {
     return res.status(400).json({ error: 'timeline is required' });
   }
 
-  const existing = await selectAll('renders', { project_id: projectId, status: 'rendering' }, {
+  const existing = await selectAll('renders', { project_id: projectId, status: ['rendering', 'pending_finalize'] }, {
     orderBy: 'created_at',
     ascending: false,
     limit: 1,
@@ -61,8 +61,9 @@ router.post('/:id/render', async (req, res) => {
     const ageMs = Date.now() - new Date(activeRender.created_at).getTime();
     if (Number.isFinite(ageMs) && ageMs < activeRenderWindowMs()) {
       return res.status(409).json({
-        error: 'A render is already running for this project. Wait for it to finish or fail before starting another.',
+        error: 'A render is already running or finalizing for this project. Wait for it to finish or fail before starting another.',
         renderId: activeRender.id,
+        status: activeRender.status,
       });
     }
   }

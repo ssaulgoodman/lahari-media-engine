@@ -30,6 +30,7 @@ import { renderRouter } from './routes/render.js';
 import { renderCallbackRouter } from './routes/render-callback.js';
 import { requireAuth } from './middleware/auth.js';
 import { startRenderWatchdog } from './render-watchdog.js';
+import { startRenderReconciler } from './render-reconciler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -77,3 +78,4 @@ app.listen(PORT, () => {
 });
 
 startRenderWatchdog();
+startRenderReconciler();

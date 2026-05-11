@@ -44,6 +44,8 @@ const renderStageLabel = (stage?: string | null) => {
       return 'Uploading video';
     case 'finalizing':
       return 'Publishing result';
+    case 'callback_pending':
+      return 'Waiting for backend publish';
     case 'completed':
       return 'Complete';
     case 'failed':
@@ -63,6 +65,8 @@ const renderErrorHint = (code?: string | null) => {
       return 'The backend could not reach the renderer.';
     case 'callback_failed':
       return 'The renderer finished, but publishing the result failed.';
+    case 'reconcile_failed':
+      return 'The backend could not publish the renderer fallback result.';
     case 'bundle_failed':
       return 'The renderer could not prepare the Remotion composition.';
     case 'chromium_oom':
@@ -219,7 +223,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         const s = await getRenderStatus(project.id);
         setRenderMeta(s);
         if (cancelled) return;
-        if (s.status === 'rendering') {
+        if (s.status === 'rendering' || s.status === 'pending_finalize') {
           setPhase({ kind: 'rendering' });
           startPolling();
         }
@@ -279,7 +283,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   };
 
   const isBusy = phase.kind === 'rendering';
-  const progress = renderMeta?.status === 'rendering' && renderMeta.progress !== null
+  const progress = (renderMeta?.status === 'rendering' || renderMeta?.status === 'pending_finalize') && renderMeta.progress !== null
     ? Math.max(0, Math.min(1, renderMeta.progress))
     : null;
   const heartbeatAgeSeconds = renderMeta?.lastHeartbeatAt

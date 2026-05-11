@@ -44,3 +44,44 @@ export const uploadRender = async (
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(key);
   return { path: key, publicUrl: data.publicUrl, sizeBytes: buf.byteLength };
 };
+
+export const projectExists = async (projectId: string): Promise<boolean> => {
+  const { data, error } = await supabase
+    .from('lahari_projects')
+    .select('id')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (error) throw new Error(`Project precheck failed: ${error.message}`);
+  return !!data;
+};
+
+export const writeTerminalFallback = async (
+  renderId: string,
+  payload: Record<string, unknown>,
+): Promise<void> => {
+  const now = new Date().toISOString();
+  const isError = typeof payload.error === 'string' && payload.error.length > 0;
+  const updates: Record<string, unknown> = {
+    status: isError ? 'failed' : 'pending_finalize',
+    video_url: typeof payload.videoUrl === 'string' ? payload.videoUrl : null,
+    storage_path: typeof payload.storagePath === 'string' ? payload.storagePath : null,
+    render_ms: typeof payload.renderMs === 'number' ? payload.renderMs : null,
+    error: isError ? String(payload.error).slice(0, 2000) : null,
+    error_code: isError
+      ? typeof payload.errorCode === 'string' ? payload.errorCode.slice(0, 80) : 'renderer_failed'
+      : null,
+    stage: isError ? 'failed' : 'callback_pending',
+    terminal_payload: payload,
+    terminal_at: now,
+    last_heartbeat_at: now,
+    updated_at: now,
+  };
+  if (!isError) updates.progress = 1;
+
+  const { error } = await supabase
+    .from('lahari_renders')
+    .update(updates)
+    .eq('id', renderId)
+    .in('status', ['rendering', 'pending_finalize']);
+  if (error) throw new Error(`Terminal fallback write failed: ${error.message}`);
+};

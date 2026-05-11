@@ -2,7 +2,7 @@ import { stat, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { shutdownPosthog, track, trackError } from './posthog';
 import { renderTimeline } from './render';
-import { uploadRender } from './storage';
+import { projectExists, uploadRender, writeTerminalFallback } from './storage';
 import type { TimelineRenderProps } from './Video';
 
 // Raw, untrusted JSON shape from the caller (HTTP body on CapRover, stdin on
@@ -47,16 +47,42 @@ export const buildInputProps = (body: RenderRequestBody): TimelineRenderProps =>
 // exponential backoff — if main is briefly down (deploy, network blip) we'd
 // otherwise lose the render result forever. After all retries exhaust, we
 // surface the failure in PostHog so it's visible in Error Tracking.
-const CALLBACK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
+const CALLBACK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000, 45000, 60000, 60000, 60000];
+const renderHardCapMinutes = () => {
+  const parsed = Number(process.env.RENDER_HARD_CAP_MINUTES || 50);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+};
 
-const postCallback = async (renderId: string, payload: Record<string, unknown>) => {
+const withJitter = (ms: number) => {
+  const jitter = Math.round(ms * 0.2 * Math.random());
+  return ms + jitter;
+};
+
+const persistTerminalFallback = async (
+  renderId: string,
+  payload: Record<string, unknown>,
+) => {
+  try {
+    await writeTerminalFallback(renderId, payload);
+    console.error(`[render ${renderId}] wrote terminal fallback to Supabase`);
+  } catch (err: any) {
+    console.error(`[render ${renderId}] terminal fallback failed:`, err?.message || err);
+    trackError(renderId, err, { renderId, stage: 'terminal_fallback' });
+  }
+};
+
+const postCallback = async (renderId: string, payload: Record<string, unknown>): Promise<boolean> => {
   const base = process.env.MAIN_BACKEND_URL;
   const sharedSecret = process.env.RENDERER_SHARED_SECRET;
   if (!base) {
     console.warn(`[render ${renderId}] MAIN_BACKEND_URL not set — skipping callback`);
-    return;
+    await persistTerminalFallback(renderId, payload);
+    return false;
   }
-  if (!sharedSecret) return;
+  if (!sharedSecret) {
+    await persistTerminalFallback(renderId, payload);
+    return false;
+  }
 
   const url = `${base.replace(/\/$/, '')}/api/renders/callback/${renderId}`;
   const attempts = CALLBACK_RETRY_DELAYS_MS.length + 1;
@@ -72,7 +98,7 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
         },
         body: JSON.stringify(payload),
       });
-      if (res.ok) return;
+      if (res.ok) return true;
 
       // 400/401/403 mean our request is truly wrong — retrying won't help.
       // Everything else (404, 408, 429, 5xx) could be a transient main-backend
@@ -91,14 +117,16 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
     }
 
     const delay = CALLBACK_RETRY_DELAYS_MS[attempt - 1];
-    if (delay) await new Promise((r) => setTimeout(r, delay));
+    if (delay) await new Promise((r) => setTimeout(r, withJitter(delay)));
   }
 
-  console.error(`[render ${renderId}] callback exhausted ${attempts} attempts — result lost`);
+  console.error(`[render ${renderId}] callback exhausted ${attempts} attempts — writing terminal fallback`);
   trackError(renderId, lastError ?? new Error('callback exhausted retries'), {
     renderId,
     stage: 'callback',
   });
+  await persistTerminalFallback(renderId, payload);
+  return false;
 };
 
 const postProgress = async (
@@ -137,7 +165,7 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
   const text = message.toLowerCase();
 
   if (text.includes('empty render output')) return 'empty_output';
-  if (text.includes('out of memory') || text.includes('oom') || text.includes('memory limit')) {
+  if (text.includes('out of memory') || /\boom\b/.test(text) || text.includes('memory limit')) {
     return 'chromium_oom';
   }
   if (
@@ -156,6 +184,22 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
   if (text.includes('bundle') || text.includes('webpack') || text.includes('esbuild')) return 'bundle_failed';
 
   return 'renderer_failed';
+};
+
+const withHardCap = async <T,>(promise: Promise<T>): Promise<T> => {
+  const minutes = renderHardCapMinutes();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`render timeout: exceeded ${minutes} min hard cap`));
+    }, minutes * 60 * 1000);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 };
 
 export interface RunRenderJobArgs {
@@ -216,10 +260,16 @@ export const runRenderJob = async ({
   heartbeat.unref?.();
 
   try {
+    const exists = await projectExists(projectId);
+    if (!exists) {
+      throw new Error(`project not found before render: ${projectId}`);
+    }
     await reportProgress('bundling', 0.03, true);
-    const result = await renderTimeline(inputProps, (progress) => {
-      void reportProgress('rendering_frames', 0.05 + progress * 0.82);
-    });
+    const result = await withHardCap(
+      renderTimeline(inputProps, (progress) => {
+        void reportProgress('rendering_frames', 0.05 + progress * 0.82);
+      }),
+    );
     outputPath = result.outputPath;
 
     await reportProgress('validating_output', 0.9, true);
