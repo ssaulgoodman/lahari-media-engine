@@ -6,6 +6,7 @@ import * as api from '../services/api';
 import { Markdown } from './Markdown';
 import { IMAGE_MODELS, getImageModel } from '../constants/imageModels';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
+import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
 import { Dropdown } from './Dropdown';
 
 export type Phase = 'concept' | 'script' | 'style' | 'characters' | 'environments';
@@ -337,12 +338,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
                   <div className="flex-1 px-5 py-3 space-y-1">
                     <div className="text-[11px] uppercase tracking-wide text-zinc-400">Storyboard image</div>
                     <Dropdown
-                      value={(project as any).storyboardProvider || 'gpt-image-2'}
-                      onChange={v => onUpdateProject({ storyboardProvider: v } as any)}
-                      options={[
-                        { value: 'gpt-image-2', label: 'GPT Image 2' },
-                        { value: 'nano-banana-2', label: 'Nano Banana 2' },
-                      ]}
+                      value={project.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
+                      onChange={v => onUpdateProject({ storyboardProvider: v })}
+                      options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
                     />
                   </div>
                   <div className="flex-[1.4] px-5 py-3 space-y-1">

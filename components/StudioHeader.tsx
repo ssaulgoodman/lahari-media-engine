@@ -8,7 +8,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
-import { Dropdown } from './Dropdown';
 
 interface StudioHeaderProps {
   scenes: VideoScene[];
@@ -212,15 +211,6 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         )}
         {studioMode === 'storyboard' && storyboardSupported ? (
           <>
-            <div className="w-40 surface-inset rounded-md px-2 py-1">
-              <Dropdown
-              value={project?.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
-              onChange={value => onUpdateProject?.({ storyboardProvider: value })}
-              options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
-              size="xs"
-              title={storyboardProvider.note}
-            />
-            </div>
             <button
               onClick={async () => { setBulkRunning('storyboard-prompts'); try { await onBulkWriteStoryboardPrompts?.(); } finally { setBulkRunning(null); } }}
               disabled={!onBulkWriteStoryboardPrompts || storyboardPromptsToWrite === 0 || bulkRunning !== null}
