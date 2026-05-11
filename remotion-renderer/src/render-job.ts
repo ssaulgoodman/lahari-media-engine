@@ -97,6 +97,7 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>):
           'x-renderer-secret': sharedSecret,
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000),
       });
       if (res.ok) return true;
 
@@ -145,6 +146,7 @@ const postProgress = async (
         'x-renderer-secret': sharedSecret,
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
     });
   } catch (err: any) {
     console.warn(`[render ${renderId}] progress callback failed:`, err?.message || err);
@@ -155,6 +157,7 @@ type RenderErrorCode =
   | 'bundle_failed'
   | 'chromium_oom'
   | 'asset_404'
+  | 'project_deleted'
   | 'supabase_5xx'
   | 'timeout'
   | 'empty_output'
@@ -165,6 +168,7 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
   const text = message.toLowerCase();
 
   if (text.includes('empty render output')) return 'empty_output';
+  if (text.includes('project not found before render')) return 'project_deleted';
   if (text.includes('out of memory') || /\boom\b/.test(text) || text.includes('memory limit')) {
     return 'chromium_oom';
   }

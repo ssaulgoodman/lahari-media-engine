@@ -1,6 +1,7 @@
 import { getSB, T } from './database.js';
 
 const DEFAULT_MAX_RENDER_MINUTES = 65;
+const DEFAULT_MAX_PENDING_FINALIZE_MINUTES = 15;
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
 const maxRenderMinutes = () => {
@@ -8,25 +9,47 @@ const maxRenderMinutes = () => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_RENDER_MINUTES;
 };
 
-export const runRenderWatchdogOnce = async (): Promise<number> => {
-  const cutoff = new Date(Date.now() - maxRenderMinutes() * 60 * 1000).toISOString();
-  const message = `watchdog: exceeded max render time (${maxRenderMinutes()} min)`;
+const maxPendingFinalizeMinutes = () => {
+  const parsed = Number(process.env.MAX_PENDING_FINALIZE_MINUTES || DEFAULT_MAX_PENDING_FINALIZE_MINUTES);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_PENDING_FINALIZE_MINUTES;
+};
 
-  const { data, error } = await getSB()
+export const runRenderWatchdogOnce = async (): Promise<number> => {
+  const now = new Date().toISOString();
+  const renderCutoff = new Date(Date.now() - maxRenderMinutes() * 60 * 1000).toISOString();
+  const pendingCutoff = new Date(Date.now() - maxPendingFinalizeMinutes() * 60 * 1000).toISOString();
+  const renderMessage = `watchdog: exceeded max render time (${maxRenderMinutes()} min)`;
+  const pendingMessage = `watchdog: exceeded pending finalize time (${maxPendingFinalizeMinutes()} min)`;
+
+  const { data: renderRows, error: renderError } = await getSB()
     .from(T.renders)
     .update({
       status: 'failed',
-      error: message,
+      error: renderMessage,
       error_code: 'watchdog_timeout',
       stage: 'failed',
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
     .eq('status', 'rendering')
-    .lt('created_at', cutoff)
+    .lt('created_at', renderCutoff)
     .select('id');
+  if (renderError) throw new Error(`render watchdog failed: ${renderError.message}`);
 
-  if (error) throw new Error(`render watchdog failed: ${error.message}`);
-  return data?.length || 0;
+  const { data: pendingRows, error: pendingError } = await getSB()
+    .from(T.renders)
+    .update({
+      status: 'failed',
+      error: pendingMessage,
+      error_code: 'pending_finalize_timeout',
+      stage: 'failed',
+      updated_at: now,
+    })
+    .eq('status', 'pending_finalize')
+    .lt('updated_at', pendingCutoff)
+    .select('id');
+  if (pendingError) throw new Error(`render pending-finalize watchdog failed: ${pendingError.message}`);
+
+  return (renderRows?.length || 0) + (pendingRows?.length || 0);
 };
 
 export const startRenderWatchdog = () => {

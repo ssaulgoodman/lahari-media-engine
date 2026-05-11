@@ -59,6 +59,8 @@ const renderErrorHint = (code?: string | null) => {
   switch (code) {
     case 'watchdog_timeout':
       return 'The renderer stopped sending heartbeats before it finished.';
+    case 'pending_finalize_timeout':
+      return 'The renderer finished, but backend publishing stayed stuck.';
     case 'renderer_rejected':
       return 'The renderer rejected the job before it started.';
     case 'renderer_unreachable':
@@ -73,6 +75,8 @@ const renderErrorHint = (code?: string | null) => {
       return 'Chromium likely ran out of memory while rendering.';
     case 'asset_404':
       return 'One of the timeline media files could not be fetched.';
+    case 'project_deleted':
+      return 'The project was deleted before the renderer started.';
     case 'supabase_5xx':
       return 'Supabase Storage returned a temporary server error.';
     case 'timeout':

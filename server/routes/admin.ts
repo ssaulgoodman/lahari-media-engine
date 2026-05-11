@@ -88,15 +88,15 @@ router.get('/errors', auth, async (req, res) => {
 });
 
 // GET /api/admin/active-renders — pre-deploy safety check. Returns the count
-// and list of rows currently `rendering`. Use this before a Modal redeploy:
+// and list of rows currently active. Use this before a Modal redeploy:
 // any in-flight render gets SIGKILL'd when the container is replaced, so
 // confirm count=0 before pushing.
 router.get('/active-renders', auth, async (_req, res) => {
   try {
     const { data, error } = await getSB()
       .from(T.renders)
-      .select('id, project_id, progress, stage, last_heartbeat_at, modal_function_call_id, created_at, updated_at')
-      .eq('status', 'rendering')
+      .select('id, project_id, status, progress, stage, last_heartbeat_at, modal_function_call_id, created_at, updated_at')
+      .in('status', ['rendering', 'pending_finalize'])
       .order('created_at', { ascending: true });
     if (error) throw new Error(error.message);
 
@@ -105,6 +105,7 @@ router.get('/active-renders', auth, async (_req, res) => {
       return {
         id: r.id,
         project_id: r.project_id,
+        status: r.status,
         progress: r.progress === null || r.progress === undefined ? null : Number(r.progress),
         stage: r.stage || null,
         last_heartbeat_at: r.last_heartbeat_at || null,
