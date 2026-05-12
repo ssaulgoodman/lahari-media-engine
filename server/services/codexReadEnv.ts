@@ -2,7 +2,21 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 
+const stripEmptyEnvValues = (keys: string[]) => {
+  for (const key of keys) {
+    if (process.env[key]?.trim() === '') delete process.env[key];
+  }
+};
+
 const loadFirstExistingEnv = (): string | null => {
+  stripEmptyEnvValues([
+    'LAHARI_ENV_FILE',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_KEY',
+    'VITE_SUPABASE_URL',
+    'VITE_SUPABASE_ANON_KEY',
+  ]);
+
   const candidates = [
     process.env.LAHARI_ENV_FILE,
     path.join(process.cwd(), '.env'),
@@ -41,9 +55,9 @@ const testSupabaseKey = async (url: string, key: string): Promise<boolean> => {
  */
 export const prepareCodexReadEnv = async (): Promise<{ keyMode: 'service' | 'anon' | 'missing'; warning?: string; envFile?: string }> => {
   const envFile = loadFirstExistingEnv();
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL?.trim() || process.env.VITE_SUPABASE_URL?.trim();
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY?.trim();
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY?.trim();
 
   if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.', envFile: envFile || undefined };
   if (!process.env.SUPABASE_URL) process.env.SUPABASE_URL = url;
@@ -70,8 +84,8 @@ export const prepareCodexReadEnv = async (): Promise<{ keyMode: 'service' | 'ano
 
 export const prepareCodexWriteEnv = async (): Promise<{ keyMode: 'service' | 'missing'; warning?: string; envFile?: string }> => {
   const envFile = loadFirstExistingEnv();
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+  const url = process.env.SUPABASE_URL?.trim() || process.env.VITE_SUPABASE_URL?.trim();
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY?.trim();
 
   if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.', envFile: envFile || undefined };
   if (!process.env.SUPABASE_URL) process.env.SUPABASE_URL = url;

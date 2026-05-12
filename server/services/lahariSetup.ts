@@ -32,9 +32,23 @@ const RECOMMENDED_ENV = [
   'OPENAI_API_KEY',
 ];
 
+const SETUP_ENV_KEYS = [
+  'LAHARI_ENV_FILE',
+  ...REQUIRED_ENV,
+  ...RECOMMENDED_ENV,
+];
+
 const repoRoot = () => process.cwd();
 
+const stripEmptyEnvValues = (keys: string[]) => {
+  for (const key of keys) {
+    if (process.env[key]?.trim() === '') delete process.env[key];
+  }
+};
+
 const resolveEnvFile = (): string | null => {
+  stripEmptyEnvValues(SETUP_ENV_KEYS);
+
   const candidates = [
     process.env.LAHARI_ENV_FILE,
     path.join(repoRoot(), '.env'),
@@ -49,25 +63,28 @@ const resolveEnvFile = (): string | null => {
 };
 
 const loadEnv = (envFile: string | null) => {
+  stripEmptyEnvValues(SETUP_ENV_KEYS);
   if (envFile) dotenv.config({ path: envFile, override: false, quiet: true });
+  stripEmptyEnvValues(SETUP_ENV_KEYS);
 };
 
 const maskPath = (value: string | null) => value || 'not found';
+const hasEnv = (key: string) => !!process.env[key]?.trim();
 
 const checkEnvVars = (): SetupCheck[] => {
   const checks: SetupCheck[] = [];
   for (const key of REQUIRED_ENV) {
     checks.push({
       name: `env:${key}`,
-      status: process.env[key] ? 'ok' : 'fail',
-      message: process.env[key] ? `${key} is set` : `missing ${key} - see CLAUDE.md`,
+      status: hasEnv(key) ? 'ok' : 'fail',
+      message: hasEnv(key) ? `${key} is set` : `missing ${key} - see CLAUDE.md`,
     });
   }
   for (const key of RECOMMENDED_ENV) {
     checks.push({
       name: `env:${key}`,
-      status: process.env[key] ? 'ok' : 'warn',
-      message: process.env[key] ? `${key} is set` : `missing ${key} - optional unless using GPT image/script providers; see CLAUDE.md`,
+      status: hasEnv(key) ? 'ok' : 'warn',
+      message: hasEnv(key) ? `${key} is set` : `missing ${key} - optional unless using GPT image/script providers; see CLAUDE.md`,
     });
   }
   return checks;
@@ -99,8 +116,8 @@ const checkWorktree = (): SetupCheck[] => {
 };
 
 const supabaseFetch = async (pathPart: string, init: RequestInit = {}) => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_KEY;
+  const url = process.env.SUPABASE_URL?.trim();
+  const key = process.env.SUPABASE_SERVICE_KEY?.trim();
   if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY are required for Supabase checks.');
 
   return fetch(`${url.replace(/\/$/, '')}${pathPart}`, {
@@ -116,7 +133,7 @@ const supabaseFetch = async (pathPart: string, init: RequestInit = {}) => {
 
 const checkSupabase = async (): Promise<SetupCheck[]> => {
   const checks: SetupCheck[] = [];
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+  if (!hasEnv('SUPABASE_URL') || !hasEnv('SUPABASE_SERVICE_KEY')) {
     return [{
       name: 'supabase:round-trip',
       status: 'fail',
