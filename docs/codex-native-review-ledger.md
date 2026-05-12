@@ -54,7 +54,7 @@ Web studio actions (lock shot, reject board, add note, regenerate) must land in 
 - **FU3 — Strictly monotonic cursor.** Status: **shipped**. Added `seq bigserial`; `state.json` stores `lastSeq`; attach reads `seq > lastSeq`.
 - **FU4 — Remove 50-event read cap when paginating after a cursor.** Status: **shipped**. After-cursor reads page ascending until exhausted; limit only applies to no-cursor tail reads.
 
-**Coverage gaps to wire next (R1 phase 2):** lock-concept, refine-concept, lock-style / lock-style-preset / upload-and-lock-style / unlock-style / refine-style-direction / visualize-style, generate-looks + character lock/unlock + character look refine, generate-environment-look + env lock/unlock, web-triggered generate-script / refine-script / write-shot-prompts, queue publish, fork, delete, re-run analyze-audio. Render start/complete/fail is now wired.
+**Coverage gaps to wire next (R1 phase 2):** core concept/style/cast/environment/script/publish/fork/audio-analysis decisions are wired. Project deletion is not durable because event rows cascade with the deleted project. Remaining gaps: explicit artist notes/reject reasons and any later-added workflow endpoints.
 
 **Replay idempotency note:** apply tools currently record a second event on retry. Not blocking now (visible in log), but mandatory before any auto-retry path. Consider uniqueness on `(event_type, payload->>'previewId')` for apply events.
 
@@ -95,9 +95,11 @@ Status: **shipped first pass** · Raised: 2026-05-13 · Updated: 2026-05-13
 
 ### R4 — Rollback as a first-class tool
 
-Status: **partial** · Raised: 2026-05-13
+Status: **shipped first pass** · Raised: 2026-05-13 · Updated: 2026-05-13
 
 Every preview already contains a `before` snapshot. Add `rollback_last_apply` / `restore_from_preview` that reverses the named apply using that snapshot. Without it, "rollback path" in plan responses is theatre.
+
+**Shipped first pass:** rollback commands/tools exist for shot prompt previews, storyboard prompt previews, and new script previews. Each validates current state against the preview `after` state before restoring the `before` snapshot and records a durable rollback event. Older script previews without rollback snapshots are refused.
 
 **Why it matters:** Lowers the bar for authorizing applies. Once one-click rollback exists, "yes apply" becomes a much smaller decision.
 
@@ -271,3 +273,5 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Codex implemented FU1-FU4 from Claude's review plus render lifecycle events. Event cursor is now `seq`, payloads are compact pointers, after-cursor reads page until exhausted, non-table-missing event failures log loudly, and render start/fail/complete writes durable events.
 - 2026-05-13 — Claude reviewed `d8342eb` (Harden director event journal). All four FU items verified against code. `isMissingTableError` covers both Postgres `42P01` and Supabase REST `PGRST205`. `eventResultPointers` whitelist is the right shape (additive new generator fields can't leak). Render events cover all four failure modes. Build green. **Operational note:** the two migrations must be applied in order (`add_director_events.sql` → `harden_director_events.sql`); worth bundling as a single apply step. R1 follow-ups (FU1-FU4) now `validated`. Coverage gaps and replay idempotency remain `open` under R1.
 - 2026-05-13 — Claude shipped R12 skill-side (Session Start section in `.agents/skills/lahari-director/SKILL.md`): director-vs-engine session split, explicit opening move sequence after `attach_director_session`, banned vocab list ("hydrate," "workbench," "packet," "checkpoint"), resume-vs-new-session default. Tool-side already shipped by Codex.
+- 2026-05-13 — **Migrations applied to Supabase** (`2026-05-13_add_director_events.sql` + `2026-05-13_harden_director_events.sql` in one tab). RLS enabled with `owner reads own project events` SELECT policy joining to `lahari_projects.user_id`; writes remain service-role-only via backend. Event journal seam is now live end-to-end. Forward-compatible with R2 (Realtime subscriptions) and R16 (browser-bridged auth).
+- 2026-05-13 — Codex wired R1 phase 2 event coverage for concept/style/cast/environment/script/publish/fork/audio-analysis decisions and shipped R4 first pass rollback tools for preview applies. Remaining event-memory gap is explicit artist notes/reject reasons, not the normal mutation routes.

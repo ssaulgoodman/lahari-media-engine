@@ -33,6 +33,9 @@ Usage:
   npm run lahari -- apply rewrite-shot-prompts <preview.json>
   npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
   npm run lahari -- apply rewrite-script <preview.json>
+  npm run lahari -- rollback rewrite-shot-prompts <preview.json>
+  npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>
+  npm run lahari -- rollback rewrite-script <preview.json>
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
   npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 
@@ -64,7 +67,8 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video');
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video'))
+    || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
@@ -226,6 +230,27 @@ const main = async () => {
     const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
     const project = await studio.getFullProject(preview.project.id);
     console.log(JSON.stringify(await studio.applyRewriteScriptPreview(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'rollback' && action === 'rewrite-shot-prompts' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.rollbackRewriteShotPromptsPreview(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'rollback' && action === 'rewrite-storyboard-prompt' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.rollbackRewriteStoryboardPromptPreview(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'rollback' && action === 'rewrite-script' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.rollbackRewriteScriptPreview(projectId, project), null, 2));
     return;
   }
 

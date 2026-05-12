@@ -94,6 +94,9 @@ npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>
 npm run lahari -- apply rewrite-script <preview.json>
 npm run lahari -- apply rewrite-shot-prompts <preview.json>
 npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
+npm run lahari -- rollback rewrite-script <preview.json>
+npm run lahari -- rollback rewrite-shot-prompts <preview.json>
+npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>
 npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
 npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 ```

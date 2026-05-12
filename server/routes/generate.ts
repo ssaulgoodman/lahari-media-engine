@@ -12,6 +12,7 @@ import { mountLooksRoutes } from './generate-looks.js';
 import { mountScriptRoutes } from './generate-script.js';
 import { mountShotRoutes } from './generate-shots.js';
 import { mountVideoRoutes } from './generate-video.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const router = Router();
 
@@ -82,6 +83,16 @@ router.post('/:id/generate-styles', async (req, res) => {
       durationMs,
       costEstimate: 0.04,
     });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'style_options_generated',
+      entityType: 'project',
+      entityId: project.id,
+      summary: `Artist generated ${assetIds.length} style option images.`,
+      payload: { assetIds: assetIds.map((asset) => asset.id), notes: notes || null },
+    });
 
     res.json({ styles: assetIds, project: await getFullProject(project.id) });
   } catch (err: any) {
@@ -125,6 +136,15 @@ router.post('/:id/unlock-script', async (req, res) => {
     return res.status(400).json({ error: `Script is not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'concept_locked', updated_at: new Date().toISOString() });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'script_unlocked',
+    entityType: 'project',
+    entityId: projectId,
+    summary: 'Artist reopened the script phase without deleting generated script data.',
+  });
   res.json({ ok: true, status: 'concept_locked' });
 });
 
@@ -136,6 +156,15 @@ router.post('/:id/unlock-style', async (req, res) => {
     return res.status(400).json({ error: `Style is not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'scripted', updated_at: new Date().toISOString() });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'style_unlocked',
+    entityType: 'project',
+    entityId: projectId,
+    summary: 'Artist reopened the style phase without deleting style data.',
+  });
   res.json({ ok: true, status: 'scripted' });
 });
 
@@ -147,6 +176,15 @@ router.post('/:id/unlock-characters', async (req, res) => {
     return res.status(400).json({ error: `Characters are not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'style_locked', updated_at: new Date().toISOString() });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'characters_unlocked',
+    entityType: 'project',
+    entityId: projectId,
+    summary: 'Artist reopened the character phase.',
+  });
   res.json({ ok: true, status: 'style_locked' });
 });
 
@@ -158,6 +196,15 @@ router.post('/:id/unlock-environments', async (req, res) => {
     return res.status(400).json({ error: `Environments are not locked yet (status: "${project.status}").` });
   }
   await updateRows('projects', { id: projectId }, { status: 'characters_locked', updated_at: new Date().toISOString() });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'environments_unlocked',
+    entityType: 'project',
+    entityId: projectId,
+    summary: 'Artist reopened the environment phase.',
+  });
   res.json({ ok: true, status: 'characters_locked' });
 });
 

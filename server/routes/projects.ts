@@ -794,6 +794,16 @@ router.post('/:id/generate-concepts', async (req, res) => {
       concept_options: JSON.stringify(conceptOptions),
       updated_at: new Date().toISOString(),
     });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'concepts_generated',
+      entityType: 'project',
+      entityId: project.id,
+      summary: `Artist generated ${conceptOptions.length} concept options.`,
+      payload: { count: conceptOptions.length, userNote: userNote || null, directorBrief: !!directorBrief },
+    });
 
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
@@ -859,6 +869,23 @@ router.post('/:id/lock-concept', async (req, res) => {
     locked_concept: JSON.stringify(chosen),
     updated_at: new Date().toISOString(),
   });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'concept_locked',
+    entityType: 'project',
+    entityId: projectId,
+    summary: `Artist locked concept option ${Number(conceptIndex) + 1}${needsWipe ? ' and reset downstream work' : ''}.`,
+    payload: {
+      sourceProjectId: sourceId,
+      forked: fork === true,
+      conceptIndex,
+      switchedConcept: !!switching,
+      resetDownstream: !!needsWipe,
+      conceptTitle: chosen?.title || chosen?.conceptDirection || null,
+    },
+  });
 
   res.json(await getFullProject(projectId));
 });
@@ -870,6 +897,15 @@ router.post('/:id/lock-concept', async (req, res) => {
 router.post('/:id/unlock-concept', async (req, res) => {
   const projectId = paramStr(req.params.id);
   await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'concept_unlocked',
+    entityType: 'project',
+    entityId: projectId,
+    summary: 'Artist reopened concept selection without deleting downstream work.',
+  });
   res.json({ ok: true, status: 'analyzed' });
 });
 
@@ -896,6 +932,16 @@ router.post('/:id/refine-concept', async (req, res) => {
     for (const s of scenes) {
       await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
     }
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'concept_refined',
+      entityType: 'project',
+      entityId: projectId,
+      summary: 'Artist refined the locked concept; downstream shot prompts were marked stale.',
+      payload: { feedback },
+    });
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     res.status(500).json({ error: `Concept refinement failed: ${err.message}` });
@@ -925,6 +971,16 @@ router.patch('/:id/concept', async (req, res) => {
   for (const s of scenes) {
     await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
   }
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'concept_edited',
+    entityType: 'project',
+    entityId: projectId,
+    summary: 'Artist edited locked concept fields; downstream shot prompts were marked stale.',
+    payload: { fields: Object.keys(updates || {}) },
+  });
   res.json({ ok: true });
 });
 
@@ -963,6 +1019,16 @@ router.patch('/:id', async (req, res) => {
       await updateRows('shots', { scene_id: s.id }, { prompts_stale: true });
     }
   }
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'project_settings_edited',
+    entityType: 'project',
+    entityId: projectId,
+    summary: `Artist edited project settings: ${Object.keys(updates).filter((key) => key !== 'updated_at').join(', ')}.`,
+    payload: { fields: Object.keys(updates).filter((key) => key !== 'updated_at') },
+  });
 
   res.json({ ok: true });
 });
@@ -981,10 +1047,10 @@ router.delete('/:id', async (req, res) => {
     cur = row.parent_project_id;
   }
 
-  await deleteRows('projects', { id: projectId });
-
   // Reset queue item if this was the linked project
   const queueRow = await findQueueByProjectIds(chain);
+  await deleteRows('projects', { id: projectId });
+
   if (queueRow && queueRow.lahari_project_id === projectId) {
     await updateQueueItem(queueRow.id, {
       status: 'queued',
@@ -999,7 +1065,18 @@ router.delete('/:id', async (req, res) => {
 // so the original stays frozen as a snapshot.
 router.post('/:id/fork', async (req, res) => {
   try {
-    const newId = await forkProject(paramStr(req.params.id));
+    const sourceId = paramStr(req.params.id);
+    const newId = await forkProject(sourceId);
+    await recordDirectorEvent({
+      projectId: sourceId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'project_forked',
+      entityType: 'project',
+      entityId: sourceId,
+      summary: 'Artist forked the project.',
+      payload: { forkProjectId: newId },
+    });
     res.json(await getFullProject(newId));
   } catch (err: any) {
     console.error('[fork] failed:', err);
@@ -1108,6 +1185,23 @@ router.post('/:id/analyze-audio', async (req, res) => {
       statusUpdate.status = 'analyzed';
     }
     await updateRows('projects', { id: projectId }, statusUpdate);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'audio_analysis_rerun',
+      entityType: 'project',
+      entityId: projectId,
+      summary: 'Artist re-ran audio analysis for the project.',
+      payload: {
+        sourceProjectId: sourceId,
+        forked: req.body?.fork === true,
+        sections: musicalStructure.length,
+        songType: songType2,
+        isNarrative: isNarrative2,
+        isMeditative: isMeditative2,
+      },
+    });
 
     res.json(await getFullProject(projectId));
   } catch (err: any) {

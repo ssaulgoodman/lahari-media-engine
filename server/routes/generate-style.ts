@@ -14,6 +14,7 @@ import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireAsset } from './scope-helpers.js';
 import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -91,6 +92,16 @@ export const mountStyleRoutes = (router: Router) => {
       durationMs: 0,
       costEstimate: 0,
     });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'style_preset_locked',
+      entityType: 'project',
+      entityId: project.id,
+      summary: `Artist locked curated style preset "${preset.title}".`,
+      payload: { assetId, presetKey: preset.key, presetTitle: preset.title },
+    });
 
     res.json(await getFullProject(project.id));
   });
@@ -134,6 +145,16 @@ export const mountStyleRoutes = (router: Router) => {
         responseSummary: JSON.stringify(directions),
         durationMs,
         costEstimate: 0.01,
+      });
+      await recordDirectorEvent({
+        projectId: project.id,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'style_directions_brainstormed',
+        entityType: 'project',
+        entityId: project.id,
+        summary: `Artist brainstormed ${directions.length} style directions.`,
+        payload: { count: directions.length, userNotes: userNotes || null },
       });
 
       res.json({ directions });
@@ -190,6 +211,16 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs,
         costEstimate: 0.01,
       });
+      await recordDirectorEvent({
+        projectId: project.id,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'style_visualized',
+        entityType: 'asset',
+        entityId: assetId,
+        summary: 'Artist visualized a style direction.',
+        payload: { assetId },
+      });
 
       res.json({ assetId, url: storageUrl(assetPath) });
     } catch (err: any) {
@@ -232,6 +263,16 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs,
         costEstimate: 0.005,
       });
+      await recordDirectorEvent({
+        projectId: project.id,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'style_direction_refined',
+        entityType: 'project',
+        entityId: project.id,
+        summary: 'Artist refined a style direction.',
+        payload: { feedback: feedback || null, title: refined?.title || null },
+      });
 
       res.json(refined);
     } catch (err: any) {
@@ -265,6 +306,16 @@ export const mountStyleRoutes = (router: Router) => {
     });
 
     await markStyleDependentsStale(projectId);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'style_locked',
+      entityType: 'asset',
+      entityId: assetId,
+      summary: 'Artist locked the project style reference; downstream prompts were marked stale.',
+      payload: { assetId, hasDescription: !!styleDescription },
+    });
 
     res.json(await getFullProject(projectId));
   });
@@ -312,6 +363,16 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs,
         costEstimate: 0.01,
       });
+      await recordDirectorEvent({
+        projectId,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'style_uploaded_and_locked',
+        entityType: 'asset',
+        entityId: assetId,
+        summary: 'Artist uploaded and locked a style reference; downstream prompts were marked stale.',
+        payload: { assetId, analyzed: !!styleDesc },
+      });
 
       res.json(await getFullProject(projectId));
     } catch (err: any) {
@@ -335,6 +396,15 @@ export const mountStyleRoutes = (router: Router) => {
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: projectId }, { style_description: styleDesc, updated_at: new Date().toISOString() });
+      await recordDirectorEvent({
+        projectId,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'style_image_analyzed',
+        entityType: 'project',
+        entityId: projectId,
+        summary: 'Artist analyzed an uploaded style image.',
+      });
 
       await logCall({
         projectId,

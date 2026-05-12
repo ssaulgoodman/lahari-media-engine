@@ -11,6 +11,7 @@ import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows, getSB, T } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
@@ -431,6 +432,16 @@ router.post('/publish/:projectId', upload.single('video'), async (req, res) => {
     const videoPath = await saveBuffer(req.file.buffer, 'videos', 'mp4');
     const videoUrl = storageUrl(videoPath);
     const result = await finalizePublish(projectId, videoPath, videoUrl);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'queue_published',
+      entityType: 'project',
+      entityId: projectId,
+      summary: 'Artist published the final render to the queue.',
+      payload: { queueRowId: result.queueRowId, videoPath },
+    });
     res.json(result);
   } catch (err: any) {
     console.error(`[queue/publish ${projectId}] failed:`, err);
@@ -460,6 +471,16 @@ router.post('/publish-url/:projectId', async (req, res) => {
 
   try {
     const result = await finalizePublish(projectId, storagePath, videoUrl);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'queue_published',
+      entityType: 'project',
+      entityId: projectId,
+      summary: 'Artist published an existing render URL to the queue.',
+      payload: { queueRowId: result.queueRowId, storagePath },
+    });
     res.json(result);
   } catch (err: any) {
     console.error(`[queue/publish-url ${projectId}] failed:`, err);

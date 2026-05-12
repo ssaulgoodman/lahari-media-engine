@@ -346,6 +346,8 @@ Preview artifacts live under `.lahari/previews/<projectId>/`. The first preview 
 
 Applying a preview is a separate command/tool. `apply-plan rewrite-shot-prompts` is read-only and validates drift. `apply rewrite-shot-prompts` / `apply_shot_prompt_preview` requires a valid `SUPABASE_SERVICE_KEY`, refuses anon fallback, updates only the previewed shot prompt fields, and appends to the local director journal. This is the intended Codex permission boundary.
 
+Rollback is a first-class apply primitive. `rollback rewrite-shot-prompts`, `rollback rewrite-storyboard-prompt`, and `rollback rewrite-script` restore a preview's `before` snapshot after validating current state still matches the preview `after` state. Script rollback requires previews generated after rollback snapshots were added.
+
 Second milestone:
 
 - permissioned prompt rewrites

@@ -357,6 +357,57 @@ server.registerTool('apply_script_preview', {
   return textResult(await studio.applyRewriteScriptPreview(previewJsonPath, project));
 });
 
+server.registerTool('rollback_shot_prompt_preview', {
+  title: 'Rollback shot prompt preview',
+  description: 'Mutating. Restores shot prompt fields from a saved preview before-snapshot after validating current state still matches the preview after-state.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for rollback_shot_prompt_preview.');
+
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.rollbackRewriteShotPromptsPreview(previewJsonPath, project));
+});
+
+server.registerTool('rollback_storyboard_prompt_preview', {
+  title: 'Rollback storyboard prompt preview',
+  description: 'Mutating. Restores storyboard prompt fields from a saved preview before-snapshot after validating current state still matches the preview after-state.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for rollback_storyboard_prompt_preview.');
+
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.rollbackRewriteStoryboardPromptPreview(previewJsonPath, project));
+});
+
+server.registerTool('rollback_script_preview', {
+  title: 'Rollback script preview',
+  description: 'Mutating. Restores script/cast/environment rows from a saved preview rollback snapshot after validating current script still matches the preview after-state.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for rollback_script_preview.');
+
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.rollbackRewriteScriptPreview(previewJsonPath, project));
+});
+
 server.registerTool('apply_generate_storyboard', {
   title: 'Generate storyboard board',
   description: 'Mutating and paid. Generates a new storyboard board for one shot after validating prerequisites. Updates the active storyboard pointer, unlocks the board for review, and marks video stale.',

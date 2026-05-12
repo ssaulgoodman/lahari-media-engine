@@ -2384,6 +2384,39 @@ type ScriptPreviewFile = {
   userNote: string | null;
   beforeFingerprint: string;
   beforeCounts: { cast: number; environments: number; scenes: number; shots: number };
+  beforeProject?: {
+    status: string;
+    lastScriptPrompt?: string | null;
+    lastWriteShotsPrompt?: string | null;
+  };
+  beforeRows?: {
+    cast: Array<{ id: string; name: string; description?: string | null; generationPrompt?: string | null; promptsStale?: boolean; referenceAssetId?: string | null }>;
+    environments: Array<{ id: string; name: string; description?: string | null; generationPrompt?: string | null; promptsStale?: boolean; referenceAssetId?: string | null }>;
+    scenes: Array<{
+      id: string;
+      sectionLabel?: string | null;
+      startTime?: string | null;
+      endTime?: string | null;
+      lyrics?: string | null;
+      narrativeDescription?: string | null;
+      shots: Array<{
+        id: string;
+        direction?: string | null;
+        visualPrompt?: string | null;
+        motionPrompt?: string | null;
+        duration?: number | null;
+        castIds?: string[];
+        environmentId?: string | null;
+        continuityFrom?: string | null;
+        promptsStale?: boolean;
+        useNextAsEndFrame?: boolean;
+        lipsyncEnabled?: boolean;
+        usePrevStoryboardRef?: boolean;
+        includePrevCutPlan?: boolean | null;
+        excludedRefs?: { storyboard: string[]; video: string[] };
+      }>;
+    }>;
+  };
   afterCounts: { cast: number; environments: number; scenes: number; shots: number };
   script: { cast: any[]; environments: any[]; scenes: any[] };
   artifacts: { markdownPath: string; jsonPath: string; promptPath: string };
@@ -2417,8 +2450,71 @@ const buildScriptDraft = (project: Project) => {
   };
 };
 
+const buildScriptRollbackRows = (project: Project): NonNullable<ScriptPreviewFile['beforeRows']> => ({
+  cast: project.cast.map((member) => ({
+    id: member.id,
+    name: member.name,
+    description: member.description || '',
+    generationPrompt: member.generationPrompt || null,
+    promptsStale: !!member.promptsStale,
+    referenceAssetId: member.referenceAssetId || null,
+  })),
+  environments: project.environments.map((environment) => ({
+    id: environment.id,
+    name: environment.name,
+    description: environment.description || '',
+    generationPrompt: environment.generationPrompt || null,
+    promptsStale: !!environment.promptsStale,
+    referenceAssetId: environment.referenceAssetId || null,
+  })),
+  scenes: project.scenes.map((scene) => ({
+    id: scene.id,
+    sectionLabel: scene.sectionLabel || '',
+    startTime: scene.startTime || '',
+    endTime: scene.endTime || '',
+    lyrics: scene.lyrics || '',
+    narrativeDescription: scene.narrativeDescription || '',
+    shots: scene.shots.map((shot) => ({
+      id: shot.id,
+      direction: shot.direction || '',
+      visualPrompt: shot.visualPrompt || '',
+      motionPrompt: shot.motionPrompt || '',
+      duration: shot.duration || null,
+      castIds: shot.castIds || [],
+      environmentId: shot.environmentId || null,
+      continuityFrom: shot.continuityFrom || 'cut',
+      promptsStale: !!shot.promptsStale,
+      useNextAsEndFrame: !!shot.useNextAsEndFrame,
+      lipsyncEnabled: !!shot.lipsyncEnabled,
+      usePrevStoryboardRef: !!shot.usePrevStoryboardRef,
+      includePrevCutPlan: shot.includePrevCutPlan ?? null,
+      excludedRefs: shot.excludedRefs || { storyboard: [], video: [] },
+    })),
+  })),
+});
+
 const scriptFingerprint = (project: Project): string => {
   return JSON.stringify(buildScriptDraft(project));
+};
+
+const scriptFingerprintFromDraft = (script: { cast: any[]; environments: any[]; scenes: any[] }): string => {
+  return JSON.stringify({
+    cast: (script.cast || []).map((member) => ({ name: member.name, description: member.description || '' })),
+    environments: (script.environments || []).map((environment) => ({ name: environment.name, description: environment.description || '' })),
+    scenes: (script.scenes || []).map((scene) => ({
+      sectionLabel: scene.sectionLabel || '',
+      startTime: scene.startTime || '',
+      endTime: scene.endTime || '',
+      lyrics: scene.lyrics || '',
+      narrativeDescription: scene.narrativeDescription || '',
+      shots: (scene.shots || []).map((shot: any) => ({
+        direction: shot.direction || '',
+        castNames: shot.castNames || [],
+        environmentName: shot.environmentName || '',
+        duration: shot.duration || undefined,
+      })),
+    })),
+  });
 };
 
 const scriptCounts = (script: { cast: any[]; environments: any[]; scenes: any[] }) => ({
@@ -2543,6 +2639,12 @@ export const previewRewriteScript = async (project: Project, userNote?: string) 
     userNote: userNote || null,
     beforeFingerprint: scriptFingerprint(project),
     beforeCounts: scriptCounts(beforeScript),
+    beforeProject: {
+      status: project.status,
+      lastScriptPrompt: project.lastScriptPrompt || null,
+      lastWriteShotsPrompt: project.lastWriteShotsPrompt || null,
+    },
+    beforeRows: buildScriptRollbackRows(project),
     afterCounts: scriptCounts(script),
     script,
     artifacts: { markdownPath, jsonPath, promptPath },
@@ -2726,5 +2828,222 @@ export const applyRewriteScriptPreview = async (previewJsonPath: string, project
     shotsWritten: preview.afterCounts.shots,
     journalPath,
     note: 'Applied preview to Supabase. Replaced cast, environments, scenes, and shots; project is now scripted.',
+  };
+};
+
+export const rollbackRewriteShotPromptsPreview = async (previewJsonPath: string, project: Project) => {
+  const preview = readShotPromptPreview(previewJsonPath);
+  if (preview.project.id !== project.id) throw new Error(`Preview belongs to ${preview.project.id}, not ${project.id}.`);
+
+  const currentById = new Map(project.scenes.flatMap((scene) => scene.shots).map((shot) => [shot.id, shot]));
+  const drifted: string[] = [];
+  for (const shot of preview.shots) {
+    const current = currentById.get(shot.id);
+    if (!current) {
+      drifted.push(shot.id);
+      continue;
+    }
+    if (
+      current.visualPrompt !== (shot.after.visualPrompt || '')
+      || current.motionPrompt !== (shot.after.motionPrompt || '')
+      || current.continuityFrom !== (shot.after.continuityFrom || 'cut')
+    ) {
+      drifted.push(shot.id);
+    }
+  }
+  if (drifted.length) {
+    throw new Error(`Refusing rollback because current shot prompts no longer match preview after-state. Drifted: ${drifted.join(', ')}`);
+  }
+
+  for (const shot of preview.shots) {
+    await updateRows('shots', { id: shot.id }, {
+      visual_prompt: shot.before.visualPrompt || '',
+      motion_prompt: shot.before.motionPrompt || '',
+      continuity_from: shot.before.continuityFrom || 'cut',
+      prompts_stale: !!shot.before.promptsStale,
+    });
+  }
+
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry('rolled back shot prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShots restored: ${preview.shots.length}`));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'shot_prompts_preview_rolled_back',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Rolled back shot prompt preview ${preview.previewId}; restored ${preview.shots.length} shots.`,
+    payload: { previewId: preview.previewId, previewJsonPath: path.resolve(previewJsonPath), shotsRestored: preview.shots.length },
+  });
+
+  return {
+    kind: 'lahari.rollback.rewrite_shot_prompts',
+    previewId: preview.previewId,
+    projectId: project.id,
+    shotsRestored: preview.shots.length,
+    journalPath,
+    note: 'Rolled back preview fields to their before snapshot after validating current state matched the preview after-state.',
+  };
+};
+
+export const rollbackRewriteStoryboardPromptPreview = async (previewJsonPath: string, project: Project) => {
+  const preview = readStoryboardPromptPreview(previewJsonPath);
+  if (preview.project.id !== project.id) throw new Error(`Preview belongs to ${preview.project.id}, not ${project.id}.`);
+  const current = project.scenes.flatMap((scene) => scene.shots).find((shot) => shot.id === preview.shot.id);
+  if (!current) throw new Error(`Previewed shot no longer exists: ${preview.shot.id}`);
+  if (
+    (current.storyboardPrompt || '') !== preview.shot.after.storyboardPrompt
+    || (current.storyboardCutPlan || '') !== preview.shot.after.storyboardCutPlan
+  ) {
+    throw new Error('Refusing rollback because the current storyboard prompt/cut plan no longer matches the preview after-state.');
+  }
+
+  await updateRows('shots', { id: preview.shot.id }, {
+    storyboard_prompt: preview.shot.before.storyboardPrompt,
+    storyboard_cut_plan: preview.shot.before.storyboardCutPlan,
+    prompts_stale: !!preview.shot.before.promptsStale,
+    storyboard_prompt_status: 'success',
+    last_error: null,
+  });
+
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry('rolled back storyboard prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShot restored: ${preview.shot.id}`));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_prompt_preview_rolled_back',
+    entityType: 'shot',
+    entityId: preview.shot.id,
+    summary: `Rolled back storyboard prompt preview ${preview.previewId}.`,
+    payload: { previewId: preview.previewId, previewJsonPath: path.resolve(previewJsonPath), shotId: preview.shot.id },
+  });
+
+  return {
+    kind: 'lahari.rollback.rewrite_storyboard_prompt',
+    previewId: preview.previewId,
+    projectId: project.id,
+    shotId: preview.shot.id,
+    journalPath,
+    note: 'Rolled back storyboard prompt fields to their before snapshot after validating current state matched the preview after-state.',
+  };
+};
+
+export const rollbackRewriteScriptPreview = async (previewJsonPath: string, project: Project) => {
+  const preview = readScriptPreview(previewJsonPath);
+  if (preview.project.id !== project.id) throw new Error(`Preview belongs to ${preview.project.id}, not ${project.id}.`);
+  if (!preview.beforeRows || !preview.beforeProject) {
+    throw new Error('This script preview does not contain a rollback snapshot. Regenerate the preview with the current tool version before relying on script rollback.');
+  }
+  if (hasDownstreamVisualWork(project)) {
+    throw new Error('Refusing script rollback because downstream visual work now exists. Fork first or clear visual outputs before restoring script rows.');
+  }
+  if (scriptFingerprint(project) !== scriptFingerprintFromDraft(preview.script)) {
+    throw new Error('Refusing rollback because the current script no longer matches the preview after-state.');
+  }
+
+  const currentScenes = await selectColumns('scenes', 'id', { project_id: project.id });
+  for (const scene of currentScenes) {
+    await deleteRows('shots', { scene_id: scene.id });
+  }
+  await deleteRows('scenes', { project_id: project.id });
+  await deleteRows('cast_members', { project_id: project.id });
+  await deleteRows('environments', { project_id: project.id });
+
+  for (const [idx, member] of preview.beforeRows.cast.entries()) {
+    await insertRow('cast_members', {
+      id: member.id,
+      project_id: project.id,
+      name: member.name,
+      description: member.description || '',
+      generation_prompt: member.generationPrompt || null,
+      prompts_stale: !!member.promptsStale,
+      reference_asset_id: member.referenceAssetId || null,
+      sort_order: idx,
+    });
+  }
+  for (const [idx, environment] of preview.beforeRows.environments.entries()) {
+    await insertRow('environments', {
+      id: environment.id,
+      project_id: project.id,
+      name: environment.name,
+      description: environment.description || '',
+      generation_prompt: environment.generationPrompt || null,
+      prompts_stale: !!environment.promptsStale,
+      reference_asset_id: environment.referenceAssetId || null,
+      sort_order: idx,
+    });
+  }
+  for (const [sceneIndex, scene] of preview.beforeRows.scenes.entries()) {
+    await insertRow('scenes', {
+      id: scene.id,
+      project_id: project.id,
+      section_label: scene.sectionLabel || `Scene ${sceneIndex + 1}`,
+      start_time: scene.startTime || '',
+      end_time: scene.endTime || '',
+      lyrics: scene.lyrics || '',
+      narrative_description: scene.narrativeDescription || '',
+      sort_order: sceneIndex,
+    });
+    for (const [shotIndex, shot] of scene.shots.entries()) {
+      await insertRow('shots', {
+        id: shot.id,
+        scene_id: scene.id,
+        direction: shot.direction || '',
+        visual_prompt: shot.visualPrompt || '',
+        motion_prompt: shot.motionPrompt || '',
+        duration: shot.duration || project.targetDuration || 15,
+        cast_ids: JSON.stringify(shot.castIds || []),
+        environment_id: shot.environmentId || null,
+        continuity_from: shot.continuityFrom || 'cut',
+        prompts_stale: !!shot.promptsStale,
+        use_next_as_end_frame: shot.useNextAsEndFrame ? 1 : 0,
+        lipsync_enabled: !!shot.lipsyncEnabled,
+        use_prev_storyboard_ref: !!shot.usePrevStoryboardRef,
+        include_prev_cut_plan: shot.includePrevCutPlan ?? null,
+        excluded_refs: JSON.stringify(shot.excludedRefs || { storyboard: [], video: [] }),
+        sort_order: shotIndex,
+        image_status: 'idle',
+        video_status: 'idle',
+      });
+    }
+  }
+  await updateRows('projects', { id: project.id }, {
+    status: preview.beforeProject.status,
+    last_script_prompt: preview.beforeProject.lastScriptPrompt || null,
+    last_write_shots_prompt: preview.beforeProject.lastWriteShotsPrompt || null,
+    updated_at: new Date().toISOString(),
+  });
+
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry('rolled back script preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nRestored scenes: ${preview.beforeRows.scenes.length}`));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'script_preview_rolled_back',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Rolled back script preview ${preview.previewId}.`,
+    payload: { previewId: preview.previewId, previewJsonPath: path.resolve(previewJsonPath), scenesRestored: preview.beforeRows.scenes.length },
+  });
+
+  return {
+    kind: 'lahari.rollback.rewrite_script',
+    previewId: preview.previewId,
+    projectId: project.id,
+    scenesRestored: preview.beforeRows.scenes.length,
+    journalPath,
+    note: 'Rolled back script/cast/environment rows from the preview rollback snapshot after validating current script matched the preview after-state.',
   };
 };
