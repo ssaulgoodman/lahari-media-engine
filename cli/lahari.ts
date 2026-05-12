@@ -6,7 +6,7 @@ import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/co
 const usage = () => {
   console.log(`Lahari CLI
 
-Read-only Codex-native studio helpers.
+Codex-native studio helpers.
 
 Usage:
   npm run lahari -- project list [limit]
@@ -27,6 +27,7 @@ Usage:
   npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>
   npm run lahari -- apply rewrite-shot-prompts <preview.json>
   npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
+  npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
 
 Output:
   JSON packets and local review artifacts designed for Codex inspection and future MCP wrapping.
@@ -56,7 +57,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt');
+  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'generate-storyboard');
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
@@ -179,6 +180,13 @@ const main = async () => {
     const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
     const project = await studio.getFullProject(preview.project.id);
     console.log(JSON.stringify(await studio.applyRewriteStoryboardPromptPreview(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'generate-storyboard' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const note = rest.filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.applyGenerateStoryboard(project, arg4, note), null, 2));
     return;
   }
 

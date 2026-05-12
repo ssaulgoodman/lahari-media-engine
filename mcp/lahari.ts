@@ -277,6 +277,24 @@ server.registerTool('apply_storyboard_prompt_preview', {
   return textResult(await studio.applyRewriteStoryboardPromptPreview(previewJsonPath, project));
 });
 
+server.registerTool('apply_generate_storyboard', {
+  title: 'Generate storyboard board',
+  description: 'Mutating and paid. Generates a new storyboard board for one shot after validating prerequisites. Updates the active storyboard pointer, unlocks the board for review, and marks video stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    artistNote: z.string().optional().describe('Optional refinement/render note to pass to storyboard generation.'),
+  },
+}, async ({ projectId, shotId, artistNote }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_generate_storyboard.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
+});
+
 async function main() {
   const env = await prepareCodexReadEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);

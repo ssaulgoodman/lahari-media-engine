@@ -3,7 +3,7 @@ import path from 'path';
 import { selectAll, selectColumns, updateRows } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { writeShotPrompts } from './claude.js';
-import { planStoryboardPrompt } from './storyboard.js';
+import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
@@ -1793,5 +1793,33 @@ export const planGenerateVideo = (project: Project, shotId: string) => {
     willOverwrite,
     willChange,
     approval: `Generate a ${duration}s ${model.label} video for ${project.title} ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)} in ${storyboardMode ? 'storyboard' : 'keyframe'} mode. Estimated cost: $${estimatedCost.toFixed(3)}. ${willOverwrite ? 'This will replace the active video pointer and keep the old video in history.' : 'This will create the first active video for this shot.'}`,
+  };
+};
+
+export const applyGenerateStoryboard = async (project: Project, shotId: string, artistNote?: string) => {
+  const plan = planGenerateStoryboard(project, shotId);
+  if (!plan.canRun) {
+    throw new Error(`Cannot generate storyboard: ${plan.prerequisites.join(' ')}`);
+  }
+
+  const result = await generateStoryboardVersion({
+    projectId: project.id,
+    shotId,
+    artistNote,
+  });
+
+  return {
+    kind: 'lahari.generation_result.storyboard',
+    generatedAt: new Date().toISOString(),
+    project: plan.project,
+    shot: plan.shot,
+    provider: plan.provider,
+    estimatedCost: plan.estimatedCost,
+    appliedPlan: {
+      willOverwrite: plan.willOverwrite,
+      willChange: plan.willChange,
+    },
+    result,
+    note: 'Generated storyboard board, updated the active storyboard pointer, unlocked the board for review, and marked video stale.',
   };
 };
