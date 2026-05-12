@@ -2,6 +2,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
+import { runLahariSetup } from '../server/services/lahariSetup.js';
 
 const usage = () => {
   console.log(`Lahari CLI
@@ -9,6 +10,7 @@ const usage = () => {
 Codex-native studio helpers.
 
 Usage:
+  npm run lahari -- setup [--check]
   npm run lahari -- project list [limit]
   npm run lahari -- project packet <projectId>
   npm run lahari -- project actions <projectId>
@@ -64,6 +66,11 @@ const main = async () => {
 
   if (!domain || domain === 'help' || domain === '--help' || domain === '-h') {
     usage();
+    return;
+  }
+
+  if (domain === 'setup') {
+    await runLahariSetup({ skipRegister: action === '--check' });
     return;
   }
 

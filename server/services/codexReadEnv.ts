@@ -4,10 +4,11 @@ import dotenv from 'dotenv';
 
 const loadFirstExistingEnv = (): string | null => {
   const candidates = [
+    process.env.LAHARI_ENV_FILE,
     path.join(process.cwd(), '.env'),
     path.join(process.cwd(), '..', 'lahari-media-engine', '.env'),
     path.join(process.cwd(), '..', '.env'),
-  ];
+  ].filter(Boolean) as string[];
 
   for (const candidate of candidates) {
     if (!fs.existsSync(candidate)) continue;

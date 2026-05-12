@@ -381,6 +381,14 @@ An artist/operator should be able to:
 
 The fallback remains the normal Lahari app.
 
+First pass setup command:
+
+```bash
+npm run lahari -- setup
+```
+
+It validates the local worktree, required env vars, Supabase project access, `lahari_director_events`, and the atomic script rollback RPC. It then idempotently registers the `lahari` MCP server for both Codex Desktop and Claude Code as `npm --prefix <repo> run lahari:mcp`, passing `LAHARI_ENV_FILE` so the MCP server can load the same credentials from any launch directory. Use `npm run lahari -- setup --check` for validation without rewriting MCP registration.
+
 ## Design Principle
 
 Do not build an imitation of Codex inside Lahari.

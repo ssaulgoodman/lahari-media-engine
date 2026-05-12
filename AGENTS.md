@@ -34,6 +34,7 @@ npm run dev          # Backend :3003 (or PORT env), frontend :3002 (Vite proxies
 npm run dev:server   # Backend only
 npm run dev:client   # Frontend only
 npm run build        # Vite production build -> dist/
+npm run lahari -- setup  # validate env/Supabase and register Lahari MCP in Codex + Claude Code
 npm run lahari       # Codex-native Lahari CLI helpers
 npm run lahari:mcp   # Codex-native Lahari MCP adapter
 npm start            # Production: Express serves dist/ + /api + /storage from one origin

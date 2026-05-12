@@ -165,11 +165,13 @@ CLI stays verb-rich; MCP stays tight.
 
 ### R10 — Second-user setup is the gate to plugin distribution
 
-Status: **proposed** · Raised: 2026-05-13
+Status: **shipped first pass** · Raised: 2026-05-13 · Updated: 2026-05-13
 
 For the second operator (or even Saul on a new machine), today's setup is: install Codex, clone repo, npm install, paste 8 env keys, register MCP, possibly fix Supabase service key. 30 minutes of devops, half fails silently.
 
 Pre-plugin: a `lahari setup` (or `npm run lahari -- setup`) command that handles env validation, Supabase round-trip check, MCP server registration write-out, worktree placement. That command is the bridge between "internal Saul-only tool" and "internal team tool" — and must exist before plugin packaging is a real conversation.
+
+**Shipped first pass:** `npm run lahari -- setup` validates repo shape, `.env` discovery, required keys, Supabase project access, `lahari_director_events`, and `lahari_rollback_script_preview`, then re-registers the `lahari` MCP server for Codex Desktop and Claude Code. Registration uses `npm --prefix <repo> run lahari:mcp` plus `LAHARI_ENV_FILE=<resolved .env>` so the server starts from either harness without relying on launch cwd. `setup --check` runs validation without rewriting MCP config.
 
 **Plugin gates** (not timing):
 1. Second-user setup is one command.
@@ -279,3 +281,5 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Codex wired R1 phase 2 event coverage for concept/style/cast/environment/script/publish/fork/audio-analysis decisions and shipped R4 first pass rollback tools for preview applies. Remaining event-memory gap is explicit artist notes/reject reasons, not the normal mutation routes.
 - 2026-05-13 — Claude reviewed `231483a` (Complete director events + preview rollback). R1 phase 2 verified — 30+ new event types across concept/style/cast/env/script/project domains. Coverage is comprehensive; only intentional gap is project deletion (event rows cascade-delete with the project — design choice). R4 rollback pattern verified: fingerprint drift check refuses on mismatch, `hasDownstreamVisualWork` guards script rollback against destroying visual work, snapshot restore from preview `before`, durable rollback event. Build green. **One follow-up flagged: RB-FU1 — wrap script rollback in a Postgres transaction.** Current implementation is sequential `delete`+`insert` with no atomicity; partial failure leaves the project in a half-restored state. Not blocking smoke testing on fork projects but must be atomic before script rollback runs on anything load-bearing.
 - 2026-05-13 — Codex implemented RB-FU1. Script rollback now calls `lahari_rollback_script_preview` through `rpcVoid`; the migration restores project script rows inside one Postgres transaction. Service-side preview ownership, downstream-work, and after-state drift checks still run before the RPC. Requires applying `migrations/2026-05-13_atomic_script_rollback.sql` before using script rollback against real projects.
+- 2026-05-13 — Claude reviewed `1408f0b`. PL/pgSQL function is properly hardened: `security definer`, `search_path = public`, revoked-from-public + granted-to-service_role, project-existence pre-check, jsonb iteration with coalesce defaults, tri-state handling for `include_prev_cut_plan`. Implicit single-transaction body makes the rollback atomic. **RB-FU1 status: shipped — pending migration apply to Supabase.** One trivial nit (non-blocking): function duration default `15` drops the previous `project.targetDuration` fallback; only matters if a snapshot shot has no duration AND project uses non-default target, which is vanishingly rare.
+- 2026-05-13 — Codex shipped R10 first pass setup command. `npm run lahari -- setup` validates env/worktree/Supabase/MCP prerequisites and idempotently registers `lahari` for Codex Desktop + Claude Code; `setup --check` gives a no-write validation path.
