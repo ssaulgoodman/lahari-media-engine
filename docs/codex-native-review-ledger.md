@@ -238,6 +238,72 @@ The skill should teach Codex that when the artist names a song or asks "what's g
 
 ---
 
+### R16 — Browser-bridged operator auth
+
+Status: **proposed** · Raised: 2026-05-13
+
+The current MCP server authenticates to Supabase with `SUPABASE_SERVICE_KEY` (bypasses RLS, full write power). That works for solo internal use but doesn't scale to a second operator and doesn't compose with R10's setup flow once an artist is involved.
+
+**Pattern:** `gh auth login` / Vercel CLI / Stripe CLI. The artist signs in to the web studio in Codex's browser MCP once; the MCP grabs the resulting Supabase JWT and uses it for all subsequent tool calls. RLS applies automatically — Codex can only mutate projects the artist owns. Event `userId` is the JWT subject.
+
+Implementation sketch:
+- `lahari_login` MCP tool spawns local HTTP receiver on random port
+- Tool opens `https://lahari.../auth/cli-bridge?callback=http://localhost:XXXX` in Codex's browser
+- Artist signs in via Google OAuth (the existing web flow)
+- Bridge page sends access + refresh token to localhost callback
+- MCP caches the JWT, refreshes via Supabase refresh-token endpoint on expiry
+- All tool calls send `Authorization: Bearer <jwt>` to Lahari backend / Supabase
+
+**Wins:**
+- No `SUPABASE_SERVICE_KEY` in the artist's environment — real security improvement
+- RLS becomes Codex's authorization boundary
+- Operator identity falls out for free (JWT subject)
+- Scales to N operators without config change
+- Log out in browser → JWT invalidates → Codex stops working. One-click off-switch.
+- Pattern transfers to Claude Code unchanged.
+
+**Fallback:** for headless/cron/Codex Cloud cases, env-var operator identity remains (`LAHARI_OPERATOR_EMAIL`). Browser auth is the front door for artist-driven sessions.
+
+**Why it matters:** This is the auth design decision behind R17 (distribution). The npm package can't ship `SUPABASE_SERVICE_KEY` baked in; it has to acquire credentials at runtime. Browser-bridged JWT is how.
+
+---
+
+### R17 — Distribution architecture for non-engine operators
+
+Status: **proposed** · Raised: 2026-05-13
+
+Engine + director live in one repo today because Saul is the sole operator. When a second person joins — an artist who shouldn't see or touch engine code — they can't be handed this repo (overwhelming, destructive ops accessible, exposes engine internals).
+
+**Recommended path: extract director tools as an npm package.**
+
+Package contents:
+- `bin/lahari` (CLI)
+- `bin/lahari-mcp` (MCP server)
+- `skills/lahari-director/SKILL.md`
+- `templates/AGENTS.md` (director-mode workspace template)
+- `setup` / `init` commands
+
+Artist onboarding:
+```bash
+npx @lahari/director init ~/lahari-studio
+cd ~/lahari-studio
+npx @lahari/director setup
+# open Codex Desktop on ~/lahari-studio
+```
+
+They never see the engine repo. The MCP server depends on the hosted Lahari backend (Railway) via HTTP. Auth via R16 browser-bridged JWT — no service key on artist's machine.
+
+**Do not build yet.** The CLI/MCP/skill are already self-contained units in `lahari-codex-native/`; extraction is ~1-2 days of plumbing work. Build when at least one of these triggers:
+1. Saul wants to onboard another operator.
+2. AGENTS.md is too noisy for director-only use.
+3. A real "artist needs this" moment arrives.
+
+Adds a fourth gate to R10's plugin-distribution checklist: **the director surface is extractable as a separate distribution without engine dependencies at runtime.**
+
+**Why it matters:** Resolves the "give the artist this repo" question without compromising engine separation. Makes the architecture's "Codex inhabits Lahari" claim true for non-engineers, not just Saul.
+
+---
+
 ## Discipline — Things NOT to Build
 
 Easy to drift on these once gaps appear in Codex's harness. The temptation to plug them with Lahari-side workarounds is the architecture's biggest risk.
@@ -285,3 +351,5 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Codex shipped R10 first pass setup command. `npm run lahari -- setup` validates env/worktree/Supabase/MCP prerequisites and idempotently registers `lahari` for Codex Desktop + Claude Code; `setup --check` gives a no-write validation path.
 - 2026-05-13 — Claude reviewed `fed5e88` (R10). Setup script is properly defensive: validation gates registration (won't wire a broken system), layered env-file resolution matches MCP loader, three progressively deeper Supabase probes (REST + table + RPC), uses native `codex/claude mcp add` CLI rather than writing config files directly, idempotent via remove-then-add, threads `LAHARI_ENV_FILE` to the registered server. Self-discovery caught the missing atomic-rollback migration and refused to register MCP — exactly the right behavior. **R10 status: shipped, validated end-to-end by Codex's own setup smoke.** Gate to first session: apply `2026-05-13_atomic_script_rollback.sql` → re-run setup → MCP registers → ready.
 - 2026-05-13 — Codex shipped RB-FU2/R10 follow-up: setup and MCP env loading now strip empty-string env values before dotenv loads, and setup presence checks use trimmed values. Explicit empty shell exports no longer block `.env` fallback.
+- 2026-05-13 — Saul ran setup on his own terminal. All 12 prerequisites green (env, worktree, Supabase REST + events table + rollback RPC). Codex Desktop MCP registered ✓. **One blocker remains: Claude Code MCP registration failed** due to `claude mcp add` arg-order bug. In Claude Code 2.1.132 the variadic `-e <env...>` flag greedy-consumes the `<name>` positional when env flags precede the name; reproduced and confirmed via direct `claude mcp add` calls. Fix: in `registerClaudeMcp`, move `-e LAHARI_ENV_FILE=...` to after `MCP_SERVER_NAME`. Codex Desktop is already operational; Claude Code path waits on this one-liner reorder.
+- 2026-05-13 — First-session diagnostic: Saul started a Codex Desktop session in the worktree; tools and skill both invisible. (1) MCP `lahari` is registered (`codex mcp list` confirms) but the in-flight session pre-dates the registration — Codex Desktop loads MCP servers at app start, not per-session. Fix: quit + reopen Codex Desktop. (2) `.agents/skills/lahari-director/SKILL.md` is a Claude/Anthropic-skills convention; Codex Desktop doesn't auto-discover that path. Claude inlined the Session Start bootstrap (director-vs-engine, opening move, banned plumbing vocab, resume-vs-new, pointer to full skill file) into `AGENTS.md` so Codex picks it up via the workspace instruction file it already reads. Full skill remains canonical at `.agents/skills/lahari-director/SKILL.md` for taste rubric.
