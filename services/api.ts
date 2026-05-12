@@ -837,6 +837,18 @@ export const updateQueueItem = async (queueId: string, updates: Record<string, a
   return handleResponse(res);
 };
 
+/** Set or clear the current user's mnemonic note for a song on the queue
+ *  dashboard. Pass empty/whitespace to clear. Server enforces a 200-char
+ *  cap and per-user scoping (you can never write someone else's note). */
+export const setSongNote = async (songId: string, note: string): Promise<{ note: string | null }> => {
+  const res = await authFetch(`${API}/queue/notes/${songId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+  });
+  return handleResponse(res);
+};
+
 // ─── Remotion Renderer ──────────────────────────────────────────────
 
 // Render-authoritative subset of the timeline editor's zustand store. Pass

@@ -53,6 +53,46 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Per-user, per-song mnemonic note. Empty/whitespace → DELETE the row so
+// the dashboard re-shows the bare song name. Non-empty → UPSERT. 200-char
+// cap matches the table CHECK constraint; we return 400 rather than letting
+// Postgres reject it so the frontend gets a clean message.
+router.put('/notes/:songId', async (req, res) => {
+  const songId = req.params.songId;
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Auth required' });
+  if (!songId) return res.status(400).json({ error: 'songId required' });
+
+  const raw = String(req.body?.note ?? '');
+  const trimmed = raw.trim();
+
+  if (trimmed && trimmed.length > 200) {
+    return res.status(400).json({ error: 'Note must be 200 characters or fewer' });
+  }
+
+  try {
+    const sb = getSB();
+    if (!trimmed) {
+      await sb.from('lahari_song_notes')
+        .delete()
+        .eq('user_id', userId)
+        .eq('song_id', songId);
+      return res.json({ note: null });
+    }
+    const { error } = await sb.from('lahari_song_notes')
+      .upsert({
+        user_id: userId,
+        song_id: songId,
+        note: trimmed,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,song_id' });
+    if (error) throw new Error(error.message);
+    res.json({ note: trimmed });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get available deity filters
 router.get('/deities', async (_req, res) => {
   try {

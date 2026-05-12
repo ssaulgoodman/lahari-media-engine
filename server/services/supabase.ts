@@ -40,6 +40,11 @@ export interface QueueItem {
   others_wip?: number;           // Other users with an in-progress fork.
   has_active_fork?: boolean;     // Current user has a fork that isn't `completed`.
   has_done_fork?: boolean;       // Current user has a fork that is `completed`.
+  // Per-user mnemonic label for this song (e.g. "the sculptor video"). Set via
+  // PUT /queue/notes/:songId. Null when the current user hasn't written one,
+  // or when listQueue was called without currentUserId. Other users' notes
+  // are never exposed here — single SELECT scoped to currentUserId.
+  user_note?: string | null;
 }
 
 export const listQueue = async (filters?: {
@@ -124,6 +129,25 @@ export const listQueue = async (filters?: {
     }
   }
 
+  // Third aggregation: this user's mnemonic notes by song_id. Single query
+  // scoped to currentUserId — never returns other users' notes. Skipped
+  // entirely when listQueue is called without currentUserId (admin paths).
+  const songIds = (data || [])
+    .map((r: any) => r.song_id)
+    .filter((id: string | null): id is string => !!id);
+  const notesBySong = new Map<string, string>();
+  if (songIds.length > 0 && filters?.currentUserId) {
+    const { data: noteRows, error: nErr } = await supabase
+      .from('lahari_song_notes')
+      .select('song_id, note')
+      .eq('user_id', filters.currentUserId)
+      .in('song_id', songIds);
+    if (nErr) throw new Error(`Supabase error: ${nErr.message}`);
+    for (const n of (noteRows as any[]) || []) {
+      notesBySong.set(n.song_id, n.note);
+    }
+  }
+
   // Flatten the join
   return (data || []).map((row: any) => {
     const stats = forkStats.get(row.id);
@@ -143,6 +167,7 @@ export const listQueue = async (filters?: {
       others_wip: stats?.othersWip ?? 0,
       has_active_fork: stats?.hasActiveFork ?? false,
       has_done_fork: stats?.hasDoneFork ?? false,
+      user_note: notesBySong.get(row.song_id) ?? null,
       songs: undefined,
     };
   });

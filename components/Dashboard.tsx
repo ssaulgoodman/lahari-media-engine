@@ -21,6 +21,10 @@ interface QueueItem {
   others_wip: number;
   has_active_fork: boolean;
   has_done_fork: boolean;
+  // Current user's mnemonic label for this song. Edited inline on the
+  // dashboard via setSongNote. Server-scoped to the auth user — never
+  // contains another user's note.
+  user_note: string | null;
 }
 
 interface Props {
@@ -53,6 +57,93 @@ const formatDuration = (secs: number) => {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+/** Inline mnemonic note next to the song name. Click to edit, blur or
+ *  Enter to save, Esc to cancel. Empty submission clears the note. Errors
+ *  revert local state to whatever the server confirmed. Optimistic local
+ *  cache lives in the parent (see `onChange` in the row render) so a
+ *  list refetch mid-edit doesn't clobber the artist's value. */
+const NoteCell: React.FC<{
+  songId: string;
+  initialNote: string | null;
+  onChange: (note: string | null) => void;
+}> = ({ songId, initialNote, onChange }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initialNote ?? '');
+  const [saving, setSaving] = useState(false);
+  // Sync draft when the row's initial value changes (e.g. after a refetch).
+  // Only when NOT actively editing — never overwrite the artist's in-progress
+  // typing with a stale server value.
+  useEffect(() => {
+    if (!editing) setDraft(initialNote ?? '');
+  }, [initialNote, editing]);
+
+  const commit = async (next: string) => {
+    const trimmed = next.trim();
+    // No-op short circuit: same value as server already has.
+    if (trimmed === (initialNote ?? '')) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await api.setSongNote(songId, trimmed);
+      onChange(result.note);
+    } catch {
+      // Revert on failure — surface nothing fancy, the artist can retry.
+      setDraft(initialNote ?? '');
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        maxLength={200}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); }
+          if (e.key === 'Escape') { setDraft(initialNote ?? ''); setEditing(false); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        placeholder="add a note…"
+        className="text-[11px] italic text-zinc-300 bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 outline-none focus:border-white/20 min-w-[120px] max-w-[240px]"
+      />
+    );
+  }
+
+  // Display mode: muted italic if note exists, faint "+ note" affordance on
+  // row hover if not. Click stops propagation so editing doesn't also
+  // trigger any future row click handlers.
+  if (initialNote) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        className="text-[11px] italic text-zinc-400 hover:text-white transition-colors truncate max-w-[240px]"
+        title="Click to edit note"
+      >
+        · {initialNote}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-opacity opacity-0 group-hover:opacity-100 flex-shrink-0"
+      title="Add a personal note for this song"
+    >
+      + note
+    </button>
+  );
 };
 
 export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, onViewRenders }) => {
@@ -266,7 +357,20 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
               <span className="text-xs text-zinc-400 font-mono">{item.priority}</span>
 
               <div className="min-w-0">
-                <div className="text-xs text-white truncate">{item.song_name}</div>
+                <div className="text-xs text-white truncate flex items-center gap-2">
+                  <span className="truncate">{item.song_name}</span>
+                  <NoteCell
+                    songId={item.song_id}
+                    initialNote={item.user_note}
+                    onChange={(note) => {
+                      // Optimistic local update so the row keeps the new value
+                      // across the next listQueue refetch race.
+                      setItems((prev) =>
+                        prev.map((row) => (row.song_id === item.song_id ? { ...row, user_note: note } : row)),
+                      );
+                    }}
+                  />
+                </div>
                 <div className="text-[11px] text-zinc-400 truncate">{item.album} · {item.isrc}</div>
               </div>
 
