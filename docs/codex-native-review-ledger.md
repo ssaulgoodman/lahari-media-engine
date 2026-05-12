@@ -186,20 +186,21 @@ Video gens: 60-90s. Renders: minutes. The artist will context-switch and forget.
 
 ### R12 — Session-bind UX (title + attach + journal read)
 
-Status: **proposed** · Raised: 2026-05-13
+Status: **shipped** · Raised: 2026-05-13 · Updated: 2026-05-13
 
 A new Codex session should:
-1. Ask the artist which song (or list recent in-progress projects).
-2. Call `attach_director_session <projectId>`.
-3. Suggest renaming the Codex session title to the song name (so sidebar reads like a project picker, not "Untitled chat" / "Started a chat about Lahari").
-4. Read `state.json` + recent journal/events.
-5. Show the director diagnosis as opening context.
+1. Identify director vs engine session.
+2. Ask the artist which song (or list recent in-progress projects).
+3. Call `attach_director_session <projectId>`.
+4. Read `recentEvents` and `diagnosis` from the response.
+5. Suggest renaming the Codex session title to the song name.
+6. Open with a production-language summary (no "hydrate" / "workbench" / "packet" / "checkpoint").
 
-This is a skill instruction, not a tool. But the skill must explicitly teach it because Codex won't infer the right opening move.
+**Shipped:**
+- Tool-side: `attach_director_session` returns suggested session title, opening phrase, web studio link, and the event sync block.
+- Skill-side: `lahari-director` skill now has an explicit "Session Start" section teaching the director-vs-engine distinction, the opening move sequence, the words to avoid, and resume-vs-new-session default.
 
-**Shipped so far:** `attach_director_session` now refreshes the workbench, syncs durable events, returns a suggested Codex session title, returns an artist-facing opening phrase, and includes the web studio link.
-
-**Still open:** actual skill packaging/instructions and session-title automation/nudge.
+**Still open (small):** automated session-title rename via Codex's harness API if/when one exists. Today it's a nudge to the artist.
 
 ---
 
@@ -268,3 +269,5 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Codex shipped R1 first pass in `789536b` (durable event journal). Schema and rollout strategy are correct. Verification: build green (tsc + git diff --check + vite build). Follow-ups FU1-FU4 captured under R1; coverage gaps listed (concept/style/cast/env/render not yet wired). **W1 invalidated** — structured events table was the right call, raw-row-diff approach abandoned.
 - 2026-05-13 — Codex updated P1/P6/P7 statuses to "shipped in AGENTS/docs" / "shipped first pass" in this ledger between commits. Verified against actual code; updates are accurate.
 - 2026-05-13 — Codex implemented FU1-FU4 from Claude's review plus render lifecycle events. Event cursor is now `seq`, payloads are compact pointers, after-cursor reads page until exhausted, non-table-missing event failures log loudly, and render start/fail/complete writes durable events.
+- 2026-05-13 — Claude reviewed `d8342eb` (Harden director event journal). All four FU items verified against code. `isMissingTableError` covers both Postgres `42P01` and Supabase REST `PGRST205`. `eventResultPointers` whitelist is the right shape (additive new generator fields can't leak). Render events cover all four failure modes. Build green. **Operational note:** the two migrations must be applied in order (`add_director_events.sql` → `harden_director_events.sql`); worth bundling as a single apply step. R1 follow-ups (FU1-FU4) now `validated`. Coverage gaps and replay idempotency remain `open` under R1.
+- 2026-05-13 — Claude shipped R12 skill-side (Session Start section in `.agents/skills/lahari-director/SKILL.md`): director-vs-engine session split, explicit opening move sequence after `attach_director_session`, banned vocab list ("hydrate," "workbench," "packet," "checkpoint"), resume-vs-new-session default. Tool-side already shipped by Codex.
