@@ -12,6 +12,7 @@ Usage:
   npm run lahari -- project list [limit]
   npm run lahari -- project packet <projectId>
   npm run lahari -- project report <projectId> [out.md]
+  npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]
   npm run lahari -- project contact-sheet <projectId> [out.html]
   npm run lahari -- shot packet <projectId> <shotId>
   npm run lahari -- session attach <projectId> [note...]
@@ -60,7 +61,7 @@ const main = async () => {
 
   if (domain === 'project' && action === 'packet' && projectId) {
     const project = await studio.getFullProject(projectId);
-    console.log(JSON.stringify(studio.buildProjectPacket(project), null, 2));
+    console.log(JSON.stringify(await studio.buildProjectPacket(project), null, 2));
     return;
   }
 
@@ -69,6 +70,15 @@ const main = async () => {
     const outPath = arg4 || studio.defaultArtifactPath(project, 'director-report.md');
     const written = studio.writeArtifact(outPath, studio.buildProjectReport(project));
     console.log(JSON.stringify({ kind: 'lahari.artifact', type: 'director-report', path: written }, null, 2));
+    return;
+  }
+
+  if (domain === 'project' && action === 'sheet' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const sheetType = studio.normalizeProjectSheetType(arg4);
+    const outPath = rest[0] || studio.defaultProjectSheetPath(project, sheetType);
+    const written = studio.writeArtifact(outPath, await studio.buildProjectSheet(project, sheetType));
+    console.log(JSON.stringify({ kind: 'lahari.artifact', type: `${sheetType}-sheet`, path: written }, null, 2));
     return;
   }
 

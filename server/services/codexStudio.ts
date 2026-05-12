@@ -1,8 +1,12 @@
 import fs from 'fs';
 import path from 'path';
-import { selectColumns, updateRows } from '../database.js';
+import { selectAll, selectColumns, updateRows } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { writeShotPrompts } from './claude.js';
+import { IMAGE_MODELS } from '../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
+import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
 type ProjectShot = Project['scenes'][number]['shots'][number];
@@ -86,7 +90,7 @@ export const listProjects = async (limitArg?: string) => {
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20;
   const rows = await selectColumns(
     'projects',
-    'id,title,status,song_type,is_narrative,is_meditative,image_model,video_model,created_at,updated_at',
+    'id,title,status,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
     {},
     { orderBy: 'updated_at', ascending: false, limit },
   );
@@ -103,8 +107,10 @@ export const listProjects = async (limitArg?: string) => {
       songType: row.song_type || null,
       isNarrative: row.is_narrative ?? null,
       isMeditative: row.is_meditative ?? null,
-      imageModel: row.image_model || 'gemini-3-pro',
-      videoModel: row.video_model || 'veo-3.1',
+      imageModel: row.image_model || IMAGE_MODELS[0].key,
+      storyboardProvider: row.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
+      videoModel: row.video_model || VIDEO_MODELS[0].key,
+      textProvider: row.text_provider || TEXT_PROVIDERS[0].key,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     })),
@@ -116,30 +122,56 @@ export const statusCounts = (project: Project) => {
     scenes: project.scenes.length,
     shots: 0,
     frames: 0,
+    storyboardPrompts: 0,
+    storyboards: 0,
     videos: 0,
     lockedShots: 0,
+    lockedStoryboards: 0,
     stalePrompts: 0,
     errors: 0,
     chainedShots: 0,
+    storyboardRefContinuity: 0,
   };
 
   for (const scene of project.scenes) {
     for (const shot of scene.shots) {
       counts.shots += 1;
       if (shot.imageUrl) counts.frames += 1;
+      if (shot.storyboardPrompt) counts.storyboardPrompts += 1;
+      if (shot.storyboardUrl) counts.storyboards += 1;
       if (shot.videoUrl) counts.videos += 1;
       if (shot.locked) counts.lockedShots += 1;
+      if (shot.storyboardLocked) counts.lockedStoryboards += 1;
       if (shot.promptsStale) counts.stalePrompts += 1;
-      if (shot.lastError || shot.imageStatus === 'error' || shot.videoStatus === 'error') counts.errors += 1;
+      if (
+        shot.lastError
+        || shot.imageStatus === 'error'
+        || shot.videoStatus === 'error'
+        || shot.storyboardStatus === 'error'
+        || shot.storyboardPromptStatus === 'error'
+      ) counts.errors += 1;
       if (shot.continuityFrom === 'prev_shot') counts.chainedShots += 1;
+      if (shot.usePrevStoryboardRef) counts.storyboardRefContinuity += 1;
     }
   }
 
   return counts;
 };
 
+const usesStoryboardWorkflow = (project: Project): boolean => {
+  return project.videoModel?.startsWith('seedance')
+    || project.scenes.some((scene) => scene.shots.some((shot) => (
+      !!shot.storyboardPrompt
+      || !!shot.storyboardUrl
+      || !!shot.storyboardLocked
+      || shot.storyboardPromptStatus === 'loading'
+      || shot.storyboardStatus === 'loading'
+    )));
+};
+
 export const recommendedActions = (project: Project): string[] => {
   const counts = statusCounts(project);
+  const storyboardWorkflow = usesStoryboardWorkflow(project);
   const actions: string[] = [];
 
   if (!project.lockedConcept) actions.push('Choose or generate concept directions.');
@@ -147,12 +179,16 @@ export const recommendedActions = (project: Project): string[] => {
   if (!project.styleAssetUrl) actions.push('Lock a reusable style reference.');
   if (project.cast.some((member) => !member.referenceImageUrl)) actions.push('Generate or upload missing character/entity references.');
   if (project.environments.some((environment) => !environment.referenceImageUrl)) actions.push('Generate or upload missing environment/location references.');
-  if (counts.shots > 0 && project.scenes.some((scene) => scene.shots.some((shot) => !shot.visualPrompt || !shot.motionPrompt))) {
+  if (!storyboardWorkflow && counts.shots > 0 && project.scenes.some((scene) => scene.shots.some((shot) => !shot.visualPrompt || !shot.motionPrompt))) {
     actions.push('Write or rewrite shot prompts before frame/video generation.');
+  }
+  if (storyboardWorkflow && counts.shots > 0 && counts.storyboardPrompts < counts.shots) {
+    actions.push('Write missing storyboard prompts/cut plans for Seedance storyboard mode.');
   }
   if (counts.stalePrompts) actions.push('Review stale prompts before generating new assets.');
   if (counts.errors) actions.push('Inspect failed shots and retry manually with feedback.');
-  if (counts.shots && counts.frames < counts.shots) actions.push('Generate missing start frames.');
+  if (storyboardWorkflow && counts.shots && counts.storyboards < counts.shots) actions.push('Generate missing storyboard boards.');
+  if (!storyboardWorkflow && counts.shots && counts.frames < counts.shots) actions.push('Generate missing start frames.');
   if (counts.shots && counts.videos < counts.shots) actions.push('Generate missing videos after frames are ready.');
   if (counts.shots && counts.lockedShots < counts.shots) actions.push('Review and lock completed shots.');
 
@@ -166,12 +202,15 @@ export const deriveCheckpointState = (project: Project) => {
   const hasScript = counts.scenes > 0 && counts.shots > 0;
   const hasStyle = !!project.styleAssetUrl;
   const refsComplete = missingRefs.cast.length === 0 && missingRefs.environments.length === 0;
+  const storyboardWorkflow = usesStoryboardWorkflow(project);
   const promptsComplete = hasScript && project.scenes.every((scene) => scene.shots.every((shot) => (
     !!shot.visualPrompt
     && !!shot.motionPrompt
     && shot.motionPrompt !== 'Cinematic camera movement'
   )));
+  const storyboardPromptsComplete = hasScript && project.scenes.every((scene) => scene.shots.every((shot) => !!shot.storyboardPrompt));
   const framesComplete = counts.shots > 0 && counts.frames === counts.shots;
+  const storyboardsComplete = counts.shots > 0 && counts.storyboards === counts.shots;
   const videosComplete = counts.shots > 0 && counts.videos === counts.shots;
   const locksComplete = counts.shots > 0 && counts.lockedShots === counts.shots;
 
@@ -191,10 +230,18 @@ export const deriveCheckpointState = (project: Project) => {
     key = 'studio_review';
     label = 'Studio review';
     summary = 'All shot videos exist. Review quality, lock winners, and handle stale/error states.';
+  } else if (storyboardWorkflow && storyboardsComplete) {
+    key = 'video_generation';
+    label = 'Video generation';
+    summary = 'Storyboard boards are complete. Generate or retry videos from locked boards and cut plans.';
   } else if (framesComplete) {
     key = 'video_generation';
     label = 'Video generation';
     summary = 'Start frames are complete. Generate or retry shot videos, respecting chained-shot dependencies.';
+  } else if (storyboardWorkflow && storyboardPromptsComplete) {
+    key = 'storyboard_generation';
+    label = 'Storyboard generation';
+    summary = 'Storyboard prompts are ready. Generate missing boards and inspect the visual sequence.';
   } else if (promptsComplete) {
     key = 'frame_generation';
     label = 'Frame generation';
@@ -227,8 +274,10 @@ export const deriveCheckpointState = (project: Project) => {
     counts.errors ? `${counts.errors} error state${counts.errors === 1 ? ' needs' : 's need'} triage.` : null,
     missingRefs.cast.length ? `Missing character/entity references: ${missingRefs.cast.join(', ')}.` : null,
     missingRefs.environments.length ? `Missing environment/location references: ${missingRefs.environments.join(', ')}.` : null,
-    hasScript && !promptsComplete ? 'Some shots are missing usable visual or motion prompts.' : null,
-    counts.shots && counts.frames < counts.shots ? `${counts.shots - counts.frames} start frame${counts.shots - counts.frames === 1 ? '' : 's'} missing.` : null,
+    !storyboardWorkflow && hasScript && !promptsComplete ? 'Some shots are missing usable visual or motion prompts.' : null,
+    storyboardWorkflow && hasScript && !storyboardPromptsComplete ? 'Some shots are missing storyboard prompts/cut plans.' : null,
+    !storyboardWorkflow && counts.shots && counts.frames < counts.shots ? `${counts.shots - counts.frames} start frame${counts.shots - counts.frames === 1 ? '' : 's'} missing.` : null,
+    storyboardWorkflow && counts.shots && counts.storyboards < counts.shots ? `${counts.shots - counts.storyboards} storyboard board${counts.shots - counts.storyboards === 1 ? '' : 's'} missing.` : null,
     counts.shots && counts.videos < counts.shots ? `${counts.shots - counts.videos} video${counts.shots - counts.videos === 1 ? '' : 's'} missing.` : null,
     counts.shots && counts.lockedShots < counts.shots ? `${counts.shots - counts.lockedShots} shot${counts.shots - counts.lockedShots === 1 ? '' : 's'} not locked.` : null,
   ].filter(Boolean) as string[];
@@ -244,10 +293,34 @@ export const deriveCheckpointState = (project: Project) => {
   };
 };
 
-export const buildProjectPacket = (project: Project) => {
+const listProjectRenders = async (projectId: string) => {
+  const rows = await selectAll(
+    'assets',
+    { project_id: projectId, category: 'final_render' },
+    { orderBy: 'created_at', ascending: false, limit: 10 },
+  );
+  const renderRows = await selectAll(
+    'renders',
+    { project_id: projectId, status: 'completed' },
+  );
+  const urlByPath = new Map<string, string>();
+  for (const row of renderRows as any[]) {
+    if (row.storage_path && row.video_url) urlByPath.set(row.storage_path, row.video_url);
+  }
+
+  return rows.map((row: any) => ({
+    assetId: row.id,
+    storagePath: row.file_path,
+    videoUrl: urlByPath.get(row.file_path) || null,
+    createdAt: row.created_at,
+  }));
+};
+
+export const buildProjectPacket = async (project: Project) => {
   const castNames = namesById(project.cast);
   const environmentNames = namesById(project.environments);
   const counts = statusCounts(project);
+  const renders = await listProjectRenders(project.id);
 
   return {
     kind: 'lahari.project.packet',
@@ -259,7 +332,9 @@ export const buildProjectPacket = (project: Project) => {
       preset: 'bhakti-music-video',
       videoMode: project.videoMode,
       imageModel: project.imageModel,
+      storyboardProvider: project.storyboardProvider,
       videoModel: project.videoModel,
+      textProvider: project.textProvider,
       aspectRatio: project.aspectRatio,
       videoResolution: project.videoResolution,
       targetDuration: project.targetDuration,
@@ -313,6 +388,11 @@ export const buildProjectPacket = (project: Project) => {
     },
     production: {
       counts,
+      workflow: usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe',
+      renders: {
+        count: renders.length,
+        recent: renders,
+      },
       scenes: project.scenes.map((scene, sceneIndex) => ({
         id: scene.id,
         index: sceneIndex + 1,
@@ -327,14 +407,21 @@ export const buildProjectPacket = (project: Project) => {
           beat: compactText(shot.direction || shot.visualPrompt, 220),
           hasVisualPrompt: !!shot.visualPrompt,
           hasMotionPrompt: !!shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement',
+          hasStoryboardPrompt: !!shot.storyboardPrompt,
+          hasStoryboard: !!shot.storyboardUrl,
           hasFrame: !!shot.imageUrl,
           hasVideo: !!shot.videoUrl,
           locked: shot.locked,
+          storyboardLocked: shot.storyboardLocked,
           promptsStale: shot.promptsStale,
           continuityFrom: shot.continuityFrom,
+          usePrevStoryboardRef: shot.usePrevStoryboardRef,
+          includePrevCutPlan: shot.includePrevCutPlan,
           cast: (shot.castIds || []).map((id) => castNames.get(id) || id),
           environment: shot.environmentId ? environmentNames.get(shot.environmentId) || shot.environmentId : null,
           imageStatus: shot.imageStatus,
+          storyboardPromptStatus: shot.storyboardPromptStatus,
+          storyboardStatus: shot.storyboardStatus,
           videoStatus: shot.videoStatus,
           lastError: compactText(shot.lastError, 250),
         })),
@@ -364,18 +451,22 @@ export const buildProjectReport = (project: Project): string => {
   const missingRefs = missingReferenceNames(project);
   const actions = recommendedActions(project);
   const styleSlots = project.styleExploration?.slots || [];
+  const workflow = usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe';
 
   const sceneLines = project.scenes.map((scene, sceneIndex) => {
     const shotSummary = scene.shots.map((shot, shotIndex) => {
       const flags = [
         shot.imageUrl ? 'frame' : 'no-frame',
+        shot.storyboardUrl ? 'board' : null,
         shot.videoUrl ? 'video' : 'no-video',
         shot.locked ? 'locked' : null,
+        shot.storyboardLocked ? 'board-locked' : null,
         shot.promptsStale ? 'stale' : null,
         shot.lastError ? 'error' : null,
         shot.continuityFrom === 'prev_shot' ? 'chain' : null,
+        shot.usePrevStoryboardRef ? 'prev-board-ref' : null,
       ].filter(Boolean).join(', ');
-      return `  - Shot ${shotIndex + 1} (${shot.duration}s, ${flags}): ${compactText(shot.direction || shot.visualPrompt, 180) || 'No beat/prompt'}`;
+      return `  - Shot ${shotIndex + 1} (${shot.duration}s, ${flags}): ${compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 180) || 'No beat/prompt'}`;
     }).join('\n');
 
     return `### Scene ${sceneIndex + 1}: ${scene.sectionLabel || 'Untitled'} (${scene.startTime || '?'}-${scene.endTime || '?'})
@@ -396,7 +487,8 @@ Generated: ${new Date().toISOString()}
 - Status: ${project.status}
 - Preset: bhakti-music-video
 - Song type: ${project.songType || 'unknown'}${project.isMeditative ? ', meditative' : ''}${project.isNarrative ? ', narrative' : ''}
-- Models: image ${project.imageModel}, video ${project.videoModel}
+- Workflow: ${workflow}
+- Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
 - Format: ${project.aspectRatio}, ${project.videoResolution}, target shot duration ${project.targetDuration || 'unset'}s
 
 ## Production Counts
@@ -404,9 +496,13 @@ Generated: ${new Date().toISOString()}
 - Scenes: ${counts.scenes}
 - Shots: ${counts.shots}
 - Start frames: ${counts.frames}/${counts.shots}
+- Storyboard prompts: ${counts.storyboardPrompts}/${counts.shots}
+- Storyboard boards: ${counts.storyboards}/${counts.shots}
 - Videos: ${counts.videos}/${counts.shots}
 - Locked shots: ${counts.lockedShots}/${counts.shots}
+- Locked storyboards: ${counts.lockedStoryboards}/${counts.shots}
 - Chained shots: ${counts.chainedShots}
+- Previous-board refs: ${counts.storyboardRefContinuity}
 - Stale prompts: ${counts.stalePrompts}
 - Errors: ${counts.errors}
 
@@ -435,6 +531,7 @@ ${md(compactText(project.styleDescription, 900))}
 ## Prompt Readiness
 
 - Shot prompts complete: ${hasUsableShotPrompts(project) ? 'Yes' : 'No'}
+- Storyboard prompts complete: ${counts.shots > 0 && counts.storyboardPrompts === counts.shots ? 'Yes' : 'No'}
 - Style reference locked: ${project.styleAssetUrl ? 'Yes' : 'No'}
 - Character/entity references complete: ${missingRefs.cast.length ? 'No' : 'Yes'}
 - Environment/location references complete: ${missingRefs.environments.length ? 'No' : 'Yes'}
@@ -456,6 +553,151 @@ const imageCard = (title: string, imageUrl?: string | null, meta?: string, body?
     ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ''}
     ${body ? `<p>${escapeHtml(body)}</p>` : ''}
   </article>`;
+};
+
+const videoCard = (title: string, videoUrl?: string | null, meta?: string, body?: string) => {
+  return `<article class="card">
+    <div class="thumb">${videoUrl ? `<video src="${escapeHtml(videoUrl)}" controls preload="metadata"></video>` : '<div class="missing">No video URL</div>'}</div>
+    <h3>${escapeHtml(title)}</h3>
+    ${meta ? `<p class="meta">${escapeHtml(meta)}</p>` : ''}
+    ${body ? `<p>${escapeHtml(body)}</p>` : ''}
+  </article>`;
+};
+
+const sheetHtml = (project: Project, title: string, sections: string, stats?: string): string => {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(project.title)} · ${escapeHtml(title)}</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #111114; color: #f4f4f5; }
+    body { margin: 0; padding: 32px; background: #111114; }
+    header, .section, .text-panel { max-width: 1120px; margin-left: auto; margin-right: auto; }
+    header { margin-bottom: 28px; }
+    h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.1; }
+    h2 { max-width: 1120px; margin: 32px auto 14px; font-size: 18px; }
+    .sub { color: #a1a1aa; margin: 0; }
+    .stats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .pill { border: 1px solid #3f3f46; border-radius: 8px; padding: 6px 10px; color: #d4d4d8; background: #18181b; font-size: 13px; }
+    .grid { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .card { border: 1px solid #27272a; border-radius: 8px; background: #18181b; overflow: hidden; }
+    .thumb { aspect-ratio: 16 / 10; background: #09090b; display: grid; place-items: center; }
+    .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .missing { color: #71717a; font-size: 13px; }
+    h3 { margin: 10px 10px 4px; font-size: 14px; }
+    p { margin: 6px 10px 12px; color: #d4d4d8; font-size: 12px; line-height: 1.4; }
+    .meta { color: #a1a1aa; margin-bottom: 6px; }
+    .text-panel { border: 1px solid #27272a; border-radius: 8px; background: #18181b; padding: 16px; color: #d4d4d8; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${escapeHtml(project.title)}</h1>
+    <p class="sub">${escapeHtml(title)} - ${escapeHtml(project.status)} - ${escapeHtml(project.songType || 'unknown')}</p>
+    ${stats || ''}
+  </header>
+  ${sections}
+</body>
+</html>`;
+};
+
+export const PROJECT_SHEET_TYPES = ['overview', 'style', 'references', 'storyboard', 'renders'] as const;
+export type ProjectSheetType = typeof PROJECT_SHEET_TYPES[number];
+
+export const normalizeProjectSheetType = (value?: string): ProjectSheetType => {
+  const normalized = (value || 'overview').toLowerCase();
+  if ((PROJECT_SHEET_TYPES as readonly string[]).includes(normalized)) return normalized as ProjectSheetType;
+  throw new Error(`Unknown project sheet type "${value}". Expected one of: ${PROJECT_SHEET_TYPES.join(', ')}`);
+};
+
+export const defaultProjectSheetPath = (project: Project, type: ProjectSheetType): string => {
+  return defaultArtifactPath(project, `${type}-sheet.html`);
+};
+
+const buildStats = (counts: ReturnType<typeof statusCounts>) => {
+  return `<div class="stats">
+      <span class="pill">${counts.scenes} scenes</span>
+      <span class="pill">${counts.shots} shots</span>
+      <span class="pill">${counts.storyboards}/${counts.shots} boards</span>
+      <span class="pill">${counts.frames}/${counts.shots} frames</span>
+      <span class="pill">${counts.videos}/${counts.shots} videos</span>
+      <span class="pill">${counts.lockedShots}/${counts.shots} locked</span>
+      <span class="pill">${counts.errors} errors</span>
+    </div>`;
+};
+
+export const buildProjectSheet = async (project: Project, rawType?: string): Promise<string> => {
+  const type = normalizeProjectSheetType(rawType);
+  if (type === 'overview') return buildProjectContactSheet(project);
+
+  const counts = statusCounts(project);
+  const styleSlots = project.styleExploration?.slots || [];
+
+  if (type === 'style') {
+    const cards = [
+      imageCard('Locked style', project.styleAssetUrl, 'selected reference', compactText(project.styleDescription, 220) || undefined),
+      ...styleSlots.map((slot: any) => imageCard(
+        slot.title || 'Style option',
+        slot.imageUrl,
+        'exploration slot',
+        compactText(slot.description, 220) || undefined,
+      )),
+    ].join('\n');
+    const text = `<h2>Style Read</h2><div class="text-panel">${escapeHtml(md(compactText(project.styleDescription, 1400)))}</div>`;
+    return sheetHtml(project, 'Style Sheet', `${text}<h2>Style References</h2><section class="grid">${cards}</section>`, buildStats(counts));
+  }
+
+  if (type === 'references') {
+    const castCards = project.cast.map((member) => imageCard(
+      member.name,
+      member.referenceImageUrl,
+      member.promptsStale ? 'character/entity - stale prompt' : 'character/entity',
+      compactText(member.description, 220) || undefined,
+    )).join('\n');
+    const envCards = project.environments.map((environment) => imageCard(
+      environment.name,
+      environment.referenceImageUrl,
+      environment.promptsStale ? 'environment/location - stale prompt' : 'environment/location',
+      compactText(environment.description, 220) || undefined,
+    )).join('\n');
+    return sheetHtml(project, 'Reference Sheet', `
+  <h2>Characters / Entities</h2>
+  <section class="grid">${castCards || '<p>No cast/entities.</p>'}</section>
+  <h2>Environments / Locations</h2>
+  <section class="grid">${envCards || '<p>No environments/locations.</p>'}</section>`, buildStats(counts));
+  }
+
+  if (type === 'storyboard') {
+    const shotCards = project.scenes.flatMap((scene, sceneIndex) => (
+      scene.shots.map((shot, shotIndex) => {
+        const labels = [
+          `Scene ${sceneIndex + 1}`,
+          `Shot ${shotIndex + 1}`,
+          `${shot.duration}s`,
+          shot.storyboardPromptStatus ? `prompt ${shot.storyboardPromptStatus}` : null,
+          shot.storyboardStatus ? `board ${shot.storyboardStatus}` : null,
+          shot.videoStatus ? `video ${shot.videoStatus}` : null,
+          shot.storyboardLocked ? 'board locked' : null,
+          shot.locked ? 'shot locked' : null,
+          shot.promptsStale ? 'stale' : null,
+        ].filter(Boolean).join(' - ');
+        const body = compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 260) || undefined;
+        return imageCard(`S${sceneIndex + 1}.${shotIndex + 1}`, shot.storyboardUrl || shot.imageUrl, labels, body);
+      })
+    )).join('\n');
+    return sheetHtml(project, 'Storyboard Sheet', `<h2>Storyboard / Start Frames</h2><section class="grid">${shotCards || '<p>No shots.</p>'}</section>`, buildStats(counts));
+  }
+
+  const renders = await listProjectRenders(project.id);
+  const cards = renders.map((render, index) => videoCard(
+    `Render ${index + 1}`,
+    render.videoUrl,
+    render.createdAt || render.storagePath,
+    render.videoUrl ? render.storagePath : `Storage path: ${render.storagePath}`,
+  )).join('\n');
+  return sheetHtml(project, 'Render Sheet', `<h2>Final Renders</h2><section class="grid">${cards || '<p>No final render assets found.</p>'}</section>`, buildStats(counts));
 };
 
 export const buildProjectContactSheet = (project: Project): string => {
@@ -489,12 +731,14 @@ export const buildProjectContactSheet = (project: Project): string => {
         `Shot ${shotIndex + 1}`,
         `${shot.duration}s`,
         shot.continuityFrom === 'prev_shot' ? 'chain' : 'cut',
+        shot.storyboardUrl ? 'board' : null,
         shot.locked ? 'locked' : null,
+        shot.storyboardLocked ? 'board locked' : null,
         shot.promptsStale ? 'stale' : null,
       ].filter(Boolean).join(' · ');
       const title = `S${sceneIndex + 1}.${shotIndex + 1}`;
-      const body = compactText(shot.direction || shot.visualPrompt, 220) || undefined;
-      return imageCard(title, shot.imageUrl, labels, body);
+      const body = compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 220) || undefined;
+      return imageCard(title, shot.storyboardUrl || shot.imageUrl, labels, body);
     })
   )).join('\n');
 
@@ -547,7 +791,7 @@ export const buildProjectContactSheet = (project: Project): string => {
   <h2>Environments / Locations</h2>
   <section class="grid">${envCards || '<p>No environments/locations.</p>'}</section>
 
-  <h2>Storyboard Frames</h2>
+  <h2>Storyboard / Start Frames</h2>
   <section class="grid">${shotCards || '<p>No shots.</p>'}</section>
 </body>
 </html>`;
@@ -574,7 +818,9 @@ export const buildShotPacket = (project: Project, shotId: string) => {
         status: project.status,
         preset: 'bhakti-music-video',
         imageModel: project.imageModel,
+        storyboardProvider: project.storyboardProvider,
         videoModel: project.videoModel,
+        textProvider: project.textProvider,
       },
       scene: {
         id: scene.id,
@@ -592,18 +838,27 @@ export const buildShotPacket = (project: Project, shotId: string) => {
         beat: compactText(shot.direction || shot.visualPrompt, 500),
         visualPrompt: shot.visualPrompt,
         motionPrompt: shot.motionPrompt,
+        storyboardPrompt: shot.storyboardPrompt,
+        storyboardCutPlan: shot.storyboardCutPlan,
+        storyboardPromptStatus: shot.storyboardPromptStatus,
+        storyboardStatus: shot.storyboardStatus,
         endVisualPrompt: shot.endVisualPrompt,
         continuityFrom: shot.continuityFrom,
+        usePrevStoryboardRef: shot.usePrevStoryboardRef,
+        includePrevCutPlan: shot.includePrevCutPlan,
         refinedFromPrevFrame: shot.refinedFromPrevFrame,
         cast: (shot.castIds || []).map((id) => castNames.get(id) || id),
         environment: shot.environmentId ? environmentNames.get(shot.environmentId) || shot.environmentId : null,
+        excludedRefs: shot.excludedRefs,
         promptsStale: shot.promptsStale,
         locked: shot.locked,
+        storyboardLocked: shot.storyboardLocked,
         imageStatus: shot.imageStatus,
         videoStatus: shot.videoStatus,
         lastError: shot.lastError,
         assets: {
           startFrame: shot.imageUrl,
+          storyboard: shot.storyboardUrl,
           endFrame: shot.endImageUrl,
           extractedLastFrame: shot.extractedLastFrameUrl,
           video: shot.videoUrl,
@@ -614,6 +869,9 @@ export const buildShotPacket = (project: Project, shotId: string) => {
           id: previousShot.id,
           visualPrompt: compactText(previousShot.visualPrompt, 300),
           motionPrompt: compactText(previousShot.motionPrompt, 300),
+          storyboardPrompt: compactText(previousShot.storyboardPrompt, 300),
+          storyboardCutPlan: compactText(previousShot.storyboardCutPlan, 300),
+          storyboardUrl: previousShot.storyboardUrl,
           videoUrl: previousShot.videoUrl,
           extractedLastFrameUrl: previousShot.extractedLastFrameUrl,
         } : null,
@@ -621,6 +879,8 @@ export const buildShotPacket = (project: Project, shotId: string) => {
           id: nextShot.id,
           visualPrompt: compactText(nextShot.visualPrompt, 300),
           motionPrompt: compactText(nextShot.motionPrompt, 300),
+          storyboardPrompt: compactText(nextShot.storyboardPrompt, 300),
+          storyboardCutPlan: compactText(nextShot.storyboardCutPlan, 300),
           continuityFrom: nextShot.continuityFrom,
         } : null,
       },
@@ -645,7 +905,9 @@ const sessionState = (project: Project, note?: string | null) => {
       status: project.status,
       preset: 'bhakti-music-video',
       imageModel: project.imageModel,
+      storyboardProvider: project.storyboardProvider,
       videoModel: project.videoModel,
+      textProvider: project.textProvider,
       updatedAt: project.updatedAt,
     },
     checkpoint,

@@ -1,3 +1,23 @@
+import fs from 'fs';
+import path from 'path';
+import dotenv from 'dotenv';
+
+const loadFirstExistingEnv = (): string | null => {
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    path.join(process.cwd(), '..', 'lahari-media-engine', '.env'),
+    path.join(process.cwd(), '..', '.env'),
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    dotenv.config({ path: candidate, override: false, quiet: true });
+    return candidate;
+  }
+
+  return null;
+};
+
 const testSupabaseKey = async (url: string, key: string): Promise<boolean> => {
   try {
     const res = await fetch(`${url}/rest/v1/lahari_projects?select=id&limit=1`, {
@@ -18,16 +38,17 @@ const testSupabaseKey = async (url: string, key: string): Promise<boolean> => {
  * .env service key has gone stale. This must run before importing modules that
  * initialize the shared Supabase client.
  */
-export const prepareCodexReadEnv = async (): Promise<{ keyMode: 'service' | 'anon' | 'missing'; warning?: string }> => {
+export const prepareCodexReadEnv = async (): Promise<{ keyMode: 'service' | 'anon' | 'missing'; warning?: string; envFile?: string }> => {
+  const envFile = loadFirstExistingEnv();
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_KEY;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
 
-  if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.' };
+  if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.', envFile: envFile || undefined };
   if (!process.env.SUPABASE_URL) process.env.SUPABASE_URL = url;
 
   if (serviceKey && await testSupabaseKey(url, serviceKey)) {
-    return { keyMode: 'service' };
+    return { keyMode: 'service', envFile: envFile || undefined };
   }
 
   if (anonKey && await testSupabaseKey(url, anonKey)) {
@@ -35,28 +56,32 @@ export const prepareCodexReadEnv = async (): Promise<{ keyMode: 'service' | 'ano
     return {
       keyMode: 'anon',
       warning: 'SUPABASE_SERVICE_KEY was rejected, using VITE_SUPABASE_ANON_KEY for read-only Codex tools.',
+      envFile: envFile || undefined,
     };
   }
 
   return {
     keyMode: 'missing',
     warning: 'No valid Supabase key found. Refresh SUPABASE_SERVICE_KEY or VITE_SUPABASE_ANON_KEY.',
+    envFile: envFile || undefined,
   };
 };
 
-export const prepareCodexWriteEnv = async (): Promise<{ keyMode: 'service' | 'missing'; warning?: string }> => {
+export const prepareCodexWriteEnv = async (): Promise<{ keyMode: 'service' | 'missing'; warning?: string; envFile?: string }> => {
+  const envFile = loadFirstExistingEnv();
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_KEY;
 
-  if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.' };
+  if (!url) return { keyMode: 'missing', warning: 'SUPABASE_URL or VITE_SUPABASE_URL is required.', envFile: envFile || undefined };
   if (!process.env.SUPABASE_URL) process.env.SUPABASE_URL = url;
 
   if (serviceKey && await testSupabaseKey(url, serviceKey)) {
-    return { keyMode: 'service' };
+    return { keyMode: 'service', envFile: envFile || undefined };
   }
 
   return {
     keyMode: 'missing',
     warning: 'A valid SUPABASE_SERVICE_KEY is required for Lahari write/apply tools. Refusing to fall back to anon key for mutations.',
+    envFile: envFile || undefined,
   };
 };

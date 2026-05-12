@@ -44,7 +44,7 @@ server.registerTool('get_project_packet', {
 }, async ({ projectId }) => {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(studio.buildProjectPacket(project));
+  return textResult(await studio.buildProjectPacket(project));
 });
 
 server.registerTool('get_shot_packet', {
@@ -90,6 +90,39 @@ server.registerTool('write_project_artifacts', {
     projectId,
     artifacts,
     note: 'Local artifacts only. No Lahari database rows or assets were mutated.',
+  });
+});
+
+server.registerTool('write_project_sheets', {
+  title: 'Write focused project sheets',
+  description: 'Read-only with local file output. Writes focused HTML evidence sheets under .lahari/codex: overview, style, references, storyboard, and/or renders.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    sheetTypes: z.array(z.enum(['overview', 'style', 'references', 'storyboard', 'renders'])).optional().describe('Sheet types to write. Default: style, references, storyboard, renders.'),
+    outputDir: z.string().optional().describe('Optional output directory. Defaults to .lahari/codex.'),
+  },
+}, async ({ projectId, sheetTypes, outputDir }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  const types = sheetTypes?.length ? sheetTypes : ['style', 'references', 'storyboard', 'renders'];
+  const artifacts: { type: string; path: string }[] = [];
+
+  for (const rawType of types) {
+    const sheetType = studio.normalizeProjectSheetType(rawType);
+    const outPath = outputDir
+      ? `${outputDir.replace(/\/$/, '')}/${project.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'lahari-project'}-${sheetType}-sheet.html`
+      : studio.defaultProjectSheetPath(project, sheetType);
+    artifacts.push({
+      type: `${sheetType}-sheet`,
+      path: studio.writeArtifact(outPath, await studio.buildProjectSheet(project, sheetType)),
+    });
+  }
+
+  return textResult({
+    kind: 'lahari.sheets',
+    projectId,
+    artifacts,
+    note: 'Local HTML artifacts only. No Lahari database rows or assets were mutated.',
   });
 });
 

@@ -241,6 +241,7 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- project packet <projectId>`
 - CLI: `npm run lahari -- shot packet <projectId> <shotId>`
 - CLI: `npm run lahari -- project report <projectId> [out.md]`
+- CLI: `npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]`
 - CLI: `npm run lahari -- project contact-sheet <projectId> [out.html]`
 - CLI: `npm run lahari -- session attach <projectId> [note...]`
 - CLI: `npm run lahari -- session state <projectId>`
@@ -257,6 +258,7 @@ The MCP server currently exposes read-only/local-output tools plus one explicit 
 - `get_project_packet`
 - `get_shot_packet`
 - `write_project_artifacts`
+- `write_project_sheets`
 - `attach_director_session`
 - `get_director_session`
 - `add_director_note`
@@ -265,6 +267,25 @@ The MCP server currently exposes read-only/local-output tools plus one explicit 
 - `apply_shot_prompt_preview`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
+
+Local MCP command:
+
+```bash
+cd /Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native
+npm run lahari:mcp
+```
+
+For local Codex use, register that command as the Lahari MCP server. The server loads `.env` from this worktree first and then falls back to the sibling main checkout at `../lahari-media-engine/.env`, so the Codex worktree can stay clean while using the same local Supabase credentials.
+
+Read-only tools may use `VITE_SUPABASE_ANON_KEY` if the service key is stale. Mutating apply tools refuse anon fallback and require `SUPABASE_SERVICE_KEY`.
+
+Current v1 execution list:
+
+1. Keep packets aligned with the current app schema: text provider, storyboard provider, storyboard prompts/boards, render history, stale/error state.
+2. Expand visual artifacts into separate style, reference, storyboard, shot-history, and render sheets. Current implementation covers style, references, storyboard, and renders.
+3. Turn deterministic reports into a real director diagnosis with bottleneck, weak links, and next approved action.
+4. Add preview/apply pairs for storyboard prompt rewrites and selected safe state changes.
+5. Add generation tools only after each reports cost, write blast radius, and rollback/fork path.
 
 Director sessions are local working memory under `.lahari/sessions/<projectId>/`:
 
