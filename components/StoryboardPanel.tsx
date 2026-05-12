@@ -20,7 +20,12 @@ import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { getStoryboardHistory } from '../services/api';
 import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
 
-type SubTab = 'storyboard' | 'video';
+// Exported so ShotCard can hold the sub-tab as the single source of truth
+// and key the displayed media (storyboard image vs. video) off the same
+// value the StoryboardPanel sub-tabs control. Without this lift, clicking
+// "Video" only swapped the controls below, leaving the storyboard image
+// stuck above — daily friction.
+export type StoryboardSubTab = 'storyboard' | 'video';
 type SaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
 interface StoryboardPanelProps {
@@ -50,6 +55,13 @@ interface StoryboardPanelProps {
   onGenerateVideo: (sceneId: string, shotId: string, promptOverride?: string, refs?: ShotRefInput[]) => void;
 
   setModalImage: (url: string | null) => void;
+
+  // Sub-tab state owned by the parent (ShotCard) so the displayed media
+  // above and the controls below switch in lockstep. Optional: when not
+  // provided the panel falls back to its own local state for backwards
+  // compatibility with any non-storyboard-mode call sites.
+  subTab?: StoryboardSubTab;
+  onSubTabChange?: (next: StoryboardSubTab) => void;
 }
 
 export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
@@ -60,8 +72,19 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   onUpdateShot,
   onGenerateVideo,
   setModalImage,
+  subTab: subTabProp,
+  onSubTabChange,
 }) => {
-  const [subTab, setSubTab] = useState<SubTab>('storyboard');
+  // Controlled/uncontrolled bridge: when the parent passes subTab + onSubTabChange,
+  // the panel reads from those (parent-owned). When not, fall back to local state.
+  // Lets ShotCard own the source of truth so the media display upstairs stays in
+  // sync with the controls down here.
+  const [subTabLocal, setSubTabLocal] = useState<StoryboardSubTab>('storyboard');
+  const subTab = subTabProp ?? subTabLocal;
+  const setSubTab = (next: StoryboardSubTab) => {
+    if (onSubTabChange) onSubTabChange(next);
+    else setSubTabLocal(next);
+  };
   const [refineMode, setRefineMode] = useState<StoryboardRefineMode>('replan');
 
   // Cut plan is controlled — local state mirrors the active version's text.

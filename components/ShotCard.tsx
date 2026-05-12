@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { VideoScene, VideoShot, GenerationStatus, ApiProject } from '../types';
 import { ShotVideoPreview } from './ShotVideoPreview';
 import { PromptToolkit } from './PromptToolkit';
-import { StoryboardPanel } from './StoryboardPanel';
+import { StoryboardPanel, type StoryboardSubTab } from './StoryboardPanel';
 import { ShotVersionHistory } from './ShotVersionHistory';
 import type { ShotRefInput, StoryboardRefineMode } from '../services/api';
 
@@ -112,6 +112,19 @@ export const ShotCard: React.FC<ShotCardProps> = ({
 }) => {
   // Local state
   const [showFrames, setShowFrames] = useState(false);
+  // Single source of truth for which storyboard sub-tab is active. Owned here
+  // (not in StoryboardPanel) so the media area above and the controls below
+  // switch together. Click "Video" → media swaps to the generated clip; click
+  // "Storyboard" → media swaps back to the board image. Only meaningful when
+  // isStoryboardMode is true; ignored otherwise.
+  //
+  // Initial default: if a video already exists, the artist is likely
+  // reviewing the finished result, so land on Video. Otherwise start on
+  // Storyboard where the planning/generation happens. State persists from
+  // that point — no auto-switching mid-workflow.
+  const [storyboardSubTab, setStoryboardSubTab] = useState<StoryboardSubTab>(
+    shot.videoUrl ? 'video' : 'storyboard',
+  );
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
   const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
@@ -278,17 +291,29 @@ export const ShotCard: React.FC<ShotCardProps> = ({
       )}
       {/* Media: Video or Frames */}
       {showMediaSection && <div className="relative">
-        {/* Storyboard mode: video (when present) or ordered storyboard image — no start/end keyframes */}
+        {/* Storyboard mode: explicit sub-tab control. Click Storyboard → show
+            the board image; click Video → show the generated clip. No more
+            "video silently wins if it exists" — the artist drives. */}
         {isStoryboardMode ? (
-          shot.videoUrl && !showFrames ? (
-            <div className="bg-black">
-              <ShotVideoPreview
-                videoUrl={shot.videoUrl}
-                audioUrl={project.audioPath ? project.audioPath : undefined}
-                globalStartSec={parseTimeToSec(scene.startTime) + scene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)}
-                durationSec={shot.duration}
-              />
-            </div>
+          storyboardSubTab === 'video' ? (
+            shot.videoUrl ? (
+              <div className="bg-black">
+                <ShotVideoPreview
+                  videoUrl={shot.videoUrl}
+                  audioUrl={project.audioPath ? project.audioPath : undefined}
+                  globalStartSec={parseTimeToSec(scene.startTime) + scene.shots.slice(0, shotIdx).reduce((acc, s) => acc + (s.duration || 0), 0)}
+                  durationSec={shot.duration}
+                />
+              </div>
+            ) : (
+              <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418]">
+                {shot.videoStatus === GenerationStatus.LOADING ? (
+                  <div className="text-xs text-zinc-400">Generating video…</div>
+                ) : (
+                  <div className="text-xs text-zinc-500">No video yet — generate from the controls below.</div>
+                )}
+              </div>
+            )
           ) : (
             <div className="relative min-h-[160px] flex items-center justify-center bg-[#141418] group/sb">
               {shot.storyboardUrl ? (
@@ -518,6 +543,8 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               onUpdateShot={onUpdateShot}
               onGenerateVideo={onGenerateVideo}
               setModalImage={setModalImage}
+              subTab={storyboardSubTab}
+              onSubTabChange={setStoryboardSubTab}
             />
           ) : (() => {
             const autoVeoPrompt = buildAutoVeoPrompt();
