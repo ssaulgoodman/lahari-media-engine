@@ -228,10 +228,36 @@ export const ShotCard: React.FC<ShotCardProps> = ({
         <div className="flex items-center gap-1 flex-shrink-0">
           {shot.videoUrl && (
             <div className="flex gap-px bg-white/[0.04] rounded overflow-hidden mr-2">
-              <button onClick={() => setShowFrames(false)} className={`text-[11px] px-2 py-1 font-medium transition-colors ${!showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`} title="Show video">Video</button>
+              {/* In storyboard mode this toolbar toggle drives the same state
+                  as the StoryboardPanel's sub-tabs below (storyboardSubTab).
+                  Two surfaces, one source of truth — clicking either keeps
+                  the media display, the panel sub-tabs, and the active-tab
+                  styling all in lockstep. In keyframe mode it falls back to
+                  the legacy showFrames toggle, which only this toolbar uses. */}
               <button
-                onClick={() => setShowFrames(true)}
-                className={`text-[11px] px-2 py-1 font-medium transition-colors ${showFrames ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
+                onClick={() => {
+                  if (isStoryboardMode) setStoryboardSubTab('video');
+                  else setShowFrames(false);
+                }}
+                className={`text-[11px] px-2 py-1 font-medium transition-colors ${
+                  (isStoryboardMode ? storyboardSubTab === 'video' : !showFrames)
+                    ? 'bg-white/[0.1] text-white'
+                    : 'text-zinc-400 hover:text-zinc-300'
+                }`}
+                title="Show video"
+              >
+                Video
+              </button>
+              <button
+                onClick={() => {
+                  if (isStoryboardMode) setStoryboardSubTab('storyboard');
+                  else setShowFrames(true);
+                }}
+                className={`text-[11px] px-2 py-1 font-medium transition-colors ${
+                  (isStoryboardMode ? storyboardSubTab === 'storyboard' : showFrames)
+                    ? 'bg-white/[0.1] text-white'
+                    : 'text-zinc-400 hover:text-zinc-300'
+                }`}
                 title={isStoryboardMode ? 'Show ordered storyboard' : 'Show start + end frames'}
               >
                 {isStoryboardMode ? 'Storyboard' : 'Frames'}
