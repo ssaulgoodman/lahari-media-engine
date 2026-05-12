@@ -401,7 +401,10 @@ export const generateStoryboardVersion = async (opts: {
   const promptBase = String(ctx.shot.storyboard_prompt || '').trim();
   const cutPlanText = String(ctx.shot.storyboard_cut_plan || '').trim();
   if (!promptBase) throw new Error('Write a storyboard prompt before rendering an image');
-  if (!cutPlanText) throw new Error('Write a cut plan before rendering an image');
+  // Cut plan is for the downstream Seedance video step — it doesn't gate or
+  // feed image gen. Frontend already treats it as optional ("Optional" label
+  // since commit 34a9f3c) so artists who deliberately empty it to fall back
+  // to Seedance's "follow storyboard" default shouldn't get blocked here.
 
   const isRefine = Boolean(opts.artistNote?.trim() || opts.previousVersionId);
   const previousVersion = isRefine
@@ -429,15 +432,17 @@ export const generateStoryboardVersion = async (opts: {
   const artistRefNote = opts.artistReferenceImagePath
     ? `\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan.`
     : '';
+  // Edit mode = "this storyboard image is good, change this one thing."
+  // The image renderer doesn't render motion, timestamps, or cut sequencing,
+  // so the cut plan is irrelevant context — at best ignored, at worst
+  // bleeds visible text/arrows into the panels. Send only the base prompt
+  // (which describes the target image) + the artist's edit instruction.
   const prompt = opts.artistNote?.trim() && refineMode === 'edit_image'
     ? `${promptBase}
 
 Artist image edit note:
 ${opts.artistNote.trim()}
-${artistRefNote}
-
-Keep the saved cut plan unless the note explicitly requires a visible correction:
-${cutPlanText}`
+${artistRefNote}`
     : promptBase;
 
   await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
