@@ -239,6 +239,7 @@ Implemented first read-only tools:
 
 - CLI: `npm run lahari -- project list [limit]`
 - CLI: `npm run lahari -- project packet <projectId>`
+- CLI: `npm run lahari -- project actions <projectId>`
 - CLI: `npm run lahari -- shot packet <projectId> <shotId>`
 - CLI: `npm run lahari -- project report <projectId> [out.md]`
 - CLI: `npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]`
@@ -263,6 +264,7 @@ The MCP server currently exposes read-only/local-output tools plus explicit muta
 
 - `list_projects`
 - `get_project_packet`
+- `get_project_actions`
 - `get_shot_packet`
 - `write_project_artifacts`
 - `write_project_sheets`

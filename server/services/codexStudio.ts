@@ -1849,3 +1849,85 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
     note: 'Generated shot video, updated the active video pointer, and attempted last-frame extraction.',
   };
 };
+
+export const buildProjectActionList = (project: Project) => {
+  const diagnosis = deriveDirectorDiagnosis(project);
+  const actions: any[] = [];
+
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    for (const [shotIndex, shot] of scene.shots.entries()) {
+      const label = shotLabel(sceneIndex, shotIndex);
+      const beat = compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 180);
+
+      if (shot.storyboardPrompt && (!shot.storyboardUrl || shot.storyboardStatus === 'stale' || shot.storyboardStatus === 'error')) {
+        const plan = planGenerateStoryboard(project, shot.id);
+        actions.push({
+          id: `generate-storyboard:${shot.id}`,
+          label: `Generate storyboard board for ${label}`,
+          kind: 'generate_storyboard',
+          shot: { id: shot.id, label, beat },
+          canRun: plan.canRun,
+          paid: plan.paid,
+          estimatedCost: plan.estimatedCost,
+          prerequisites: plan.prerequisites,
+          cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
+          mcpTool: 'apply_generate_storyboard',
+          plan,
+        });
+      }
+
+      if (shot.storyboardUrl && !shot.storyboardLocked) {
+        actions.push({
+          id: `review-storyboard:${shot.id}`,
+          label: `Review and lock storyboard board for ${label}`,
+          kind: 'review_storyboard',
+          shot: { id: shot.id, label, beat },
+          canRun: false,
+          paid: false,
+          prerequisites: ['No native lock-storyboard apply tool yet; use the Lahari web studio review control.'],
+        });
+      }
+
+      if ((!shot.videoUrl || shot.videoStatus === 'stale' || shot.videoStatus === 'error') && !shot.locked) {
+        const plan = planGenerateVideo(project, shot.id);
+        actions.push({
+          id: `generate-video:${shot.id}`,
+          label: `Generate video for ${label}`,
+          kind: 'generate_video',
+          shot: { id: shot.id, label, beat },
+          canRun: plan.canRun,
+          paid: plan.paid,
+          estimatedCost: plan.estimatedCost,
+          prerequisites: plan.prerequisites,
+          cli: `npm run lahari -- apply generate-video ${project.id} ${shot.id}`,
+          mcpTool: 'apply_generate_video',
+          plan,
+        });
+      }
+
+      if (shot.videoUrl && !shot.locked) {
+        actions.push({
+          id: `review-video:${shot.id}`,
+          label: `Review and lock video for ${label}`,
+          kind: 'review_video',
+          shot: { id: shot.id, label, beat },
+          canRun: false,
+          paid: false,
+          prerequisites: ['No native lock-shot apply tool yet; use the Lahari web studio review control.'],
+        });
+      }
+    }
+  }
+
+  return {
+    kind: 'lahari.project.actions',
+    generatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+    },
+    diagnosis,
+    actions: actions.slice(0, 20),
+  };
+};

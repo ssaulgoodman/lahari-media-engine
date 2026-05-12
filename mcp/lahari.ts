@@ -47,6 +47,18 @@ server.registerTool('get_project_packet', {
   return textResult(await studio.buildProjectPacket(project));
 });
 
+server.registerTool('get_project_actions', {
+  title: 'Get project action list',
+  description: 'Read-only. Returns a compact menu of legal next actions for a Lahari project, including CLI commands, MCP tool names, prerequisites, and cost estimates where available.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+  },
+}, async ({ projectId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.buildProjectActionList(project));
+});
+
 server.registerTool('get_shot_packet', {
   title: 'Get shot packet',
   description: 'Read-only. Returns one shot with its scene, prompts, assets, and previous/next context.',
