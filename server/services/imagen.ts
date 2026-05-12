@@ -117,17 +117,21 @@ export const generateStyleOptions = async (
         `${styleNotes}, as vintage 16mm film with warm analog grain and nostalgic color grading`,
       ]
     : [
-        `Hyperrealistic cinematic portrait of ${deity}, 35mm Kodak film look, natural light`,
-        `${deity} in dramatic Caravaggio-style chiaroscuro, deep shadows, single light source, oil painting realism`,
-        `${deity} in ethereal divine light, high-key photography, golden bloom, heavenly atmosphere, lens flare`,
-        `${deity} as vintage 16mm film still, warm analog grain, faded colors, nostalgic Indian cinema aesthetic`,
+        // Default seeds are deliberately medium-neutral. The artist's locked
+        // style preset (or uploaded reference) is the visual ground truth;
+        // hard-coding "hyperrealistic" / "film still" here was leaking realism
+        // into stylized projects. See docs/cinematic-leak-audit-2026-05-12.md.
+        `Reference frame for ${deity}, devotional Indian visual treatment, natural light, balanced composition`,
+        `${deity} rendered with dramatic chiaroscuro shadows and a single warm light source, deep grounded mood`,
+        `${deity} in ethereal divine light with a high-key palette, soft bloom, devotional atmosphere`,
+        `${deity} with warm earthy color and tactile material texture, nostalgic Indian devotional treatment`,
       ];
 
   const results: { style: string; assetPath: string }[] = [];
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `Cinematic film still. ${direction}. Focus on lighting, atmosphere, and visual style. High production value, no text, no watermark.`;
+      const prompt = `${direction}. Focus on lighting, atmosphere, and visual treatment. High production value, no text, no watermark.`;
       const response = await ai.models.generateImages({
         model: 'imagen-4.0-generate-001',
         prompt,
@@ -206,9 +210,14 @@ export const buildCharacterPrompt = (
   character: { name: string; description: string },
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
+  // Medium-neutral prompt: the locked style image (Image styleIdx) is the
+  // ground truth for medium and rendering approach. Hard-coding "cinematic"
+  // / "natural cinematic lighting" / "real film still" here was leaking
+  // realism into stylized projects (miniature, painterly, illustrated). See
+  // docs/cinematic-leak-audit-2026-05-12.md.
   let prompt = opts?.styleIdx
-    ? `Generate ONE cinematic character reference portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
-    : `Generate ONE cinematic character reference portrait.`;
+    ? `Generate ONE character reference portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
+    : `Generate ONE character reference portrait.`;
   prompt += `\n\n${character.name} — ${character.description}`;
   if (opts?.userRefIdx) {
     prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography). The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW to render them.`;
@@ -220,9 +229,9 @@ export const buildCharacterPrompt = (
 - Do NOT include props, weapons, lamps, offerings, or ritual items in hand
 - Focus on: face, skin, expression, costume, ornaments, jewelry, crown/headpiece, hair
 - Plain or softly blurred background — the character should be isolated for reuse
-- Eye-level framing, natural cinematic lighting`;
+- Eye-level framing; lighting follows the style image`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
   return prompt;
 };
 
@@ -305,16 +314,18 @@ export const buildEnvironmentPrompt = (
   environment: { name: string; description: string },
   opts?: { styleIdx?: number; userRefIdx?: number }
 ): string => {
+  // Medium-neutral. Style image is the visual ground truth — don't fight it
+  // in text. See docs/cinematic-leak-audit-2026-05-12.md.
   let prompt = opts?.styleIdx
-    ? `Generate ONE cinematic environment shot. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach. No characters or figures.`
-    : `Generate ONE cinematic environment shot. No characters or figures.`;
+    ? `Generate ONE environment shot. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach. No characters or figures.`
+    : `Generate ONE environment shot. No characters or figures.`;
   prompt += `\n\n${environment.name} — ${environment.description}`;
   if (opts?.userRefIdx) {
     prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood. The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW it's rendered.`;
   }
   prompt += `\n\nWide establishing shot, full environment visible, empty scene.`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
+Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
   return prompt;
 };
 
@@ -467,7 +478,10 @@ This shot should begin from that exact continuity state — matching pose, camer
     prompt += `\n\nDirector note: ${opts.userFeedback}`;
   }
 
-  prompt += `\n\nSingle cinematic frame. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a film still.`;
+  // Medium-neutral close. The style image carries the medium signal — adding
+  // "cinematic frame" / "film still" in text was pulling stylized projects
+  // back toward realism. See docs/cinematic-leak-audit-2026-05-12.md.
+  prompt += `\n\nSingle frame. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
 
   parts.push({ text: prompt });
 
@@ -616,7 +630,7 @@ IMAGE 2 — END FRAME: The closing moment of this shot, after the motion describ
     prompt += `\n\nDirector note: ${opts.userFeedback}`;
   }
 
-  prompt += `\n\nTwo cinematic frames. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like film stills.`;
+  prompt += `\n\nTwo frames. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
 
   parts.push({ text: prompt });
 

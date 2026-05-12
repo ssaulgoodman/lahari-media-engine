@@ -49,7 +49,7 @@ const castLine = (input: StoryboardRdInput) =>
 // because the planner needs them to decide clip boundaries and beats.
 const sceneContext = (input: StoryboardRdInput) => `Song: ${input.title}
 Video intent: ${input.concept}
-Mood: ${input.mood || 'cinematic'}
+Mood: ${input.mood || 'devotional'}
 ${input.songType && input.songType !== 'song' ? `Song type: ${input.songType}\n` : ''}Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
 Scene overview: ${input.sceneNarrative}
 ${input.musicalCue ? `Musical structure cue: ${input.musicalCue}\n` : ''}${input.sceneLyrics ? `Lyrics/phrase: ${input.sceneLyrics}\n` : ''}Cast available in scene: ${castLine(input)}
@@ -180,16 +180,16 @@ Shot: ${input.clipDirection}
 ${charactersLine}
 ${settingLine}
 
-Each panel is a different cinematic moment from this same ${input.clipDuration}s shot — different framings, angles, beats — telling one visual arc. Match the reference images for style, character identity, costume, and environment.
+Each panel is a different moment from this same ${input.clipDuration}s shot — different framings, angles, beats — telling one visual arc. Match the reference images for style, character identity, costume, and environment.
 
 No text, captions, arrows, panel numbers, or readable marks inside any panel. The board itself is what we use; descriptions live outside the image.`;
   }
 
   const panelSpec = variant === 'six_panel_music_video'
-    ? `Create a six-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`
+    ? `Create a six-panel production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`
     : variant === 'filmstrip_minimal_cuts'
       ? `Create a clean horizontal filmstrip storyboard for this one ${input.clipDuration}s Lahari music-video clip, using four panels and minimal internal cuts.`
-      : `Create a four-panel cinematic production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`;
+      : `Create a four-panel production storyboard for this one ${input.clipDuration}s Lahari music-video clip.`;
 
   const cutGuidance = variant === 'filmstrip_minimal_cuts'
     ? `The panels should imply a calm edited sequence with only 2-3 cuts: opening, one meaningful angle change, emotional landing.`
@@ -208,7 +208,7 @@ ${cutGuidance}
 
 Storyboard contract:
 - Treat the board as one edited scene, not separate concept frames.
-- Each panel must be its own true 16:9 cinematic film frame, about 1.78:1.
+- Each panel must be its own true 16:9 frame, about 1.78:1.
 - All panels must use the exact same width and height.
 - Do not make panels panoramic, cinemascope, ultra-wide, or poster-shaped.
 - Place the panels on a neutral storyboard board with clean spacing. Unused empty board space is allowed.
@@ -269,7 +269,7 @@ Follow the panels left-to-right across each row, then continue to the next row i
   }
 
   if (variant === 'shot_timing_only') {
-    return `Generate a ${input.clipDuration}s cinematic Lahari music-video clip.
+    return `Generate a ${input.clipDuration}s Lahari music-video clip.
 
 ${clipContext(input)}
 
@@ -293,7 +293,7 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
   // sequencing rules, 24fps quality boilerplate) confused Seedance more
   // than it helped — the model's defaults are already fine for the music-
   // video format. Was ~80 lines; now ~10.
-  return `Animate the storyboard @image1 into one ${input.clipDuration}s cinematic clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
+  return `Animate the storyboard @image1 into one ${input.clipDuration}s clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
 
 Shot: ${input.clipDirection}
 

@@ -432,7 +432,7 @@ Use the refine_direction tool.`,
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userFeedback', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic character REFERENCE portrait. Match the visual style EXACTLY from Image 1.
+    template: `Generate ONE character REFERENCE portrait. Match the visual style EXACTLY from Image 1.
 
 {{character.name}} — {{character.description}}
 
@@ -465,7 +465,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic environment shot. Match the visual style EXACTLY from Image 1. No characters or figures.
+    template: `Generate ONE environment shot. Match the visual style EXACTLY from Image 1. No characters or figures.
 
 {{environment.name}} — {{environment.description}}
 
@@ -625,7 +625,7 @@ Concept: {{concept}}. Mood: {{mood}}. Pacing: {{musicalCue}}.
 Shot: {{clipDirection}}
 Cast: {{castNames || "none"}}
 Setting: {{environmentName || "unspecified"}}
-Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different cinematic frame from the same clip with visible action and clear camera angle.
+Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different frame from the same clip with visible action and clear camera angle.
 
 {{prevStoryboardImage ? "Continuity: the prev shot's locked storyboard is attached as vision input — match its color/light treatment and screen direction." : ""}}
 {{prevCutPlanText ? "Prev shot cut plan (text context):\\n" + prevCutPlanText : ""}}
@@ -902,7 +902,7 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     ],
     template: `(Trimmed from ~80 lines to ~10 — the old "animation contract" + 24fps quality boilerplate confused Seedance more than it helped.)
 
-Animate the storyboard @image1 into one {{clipDuration}}s cinematic clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
+Animate the storyboard @image1 into one {{clipDuration}}s clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
 
 Shot: {{clipDirection}}
 
