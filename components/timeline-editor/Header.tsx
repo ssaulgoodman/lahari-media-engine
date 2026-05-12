@@ -18,6 +18,7 @@ import {
   Save,
   RotateCcw,
   Check,
+  Scissors,
 } from 'lucide-react';
 import useStore from './store';
 import { useCurrentPlayerFrame } from './use-current-frame';
@@ -78,8 +79,26 @@ const Header: React.FC = () => {
   const projectId = useStore((s) => s.projectId);
   const bumpResetToken = useStore((s) => s.bumpResetToken);
   const setLastSavedAt = useStore((s) => s.setLastSavedAt);
+  const splitActiveAtPlayhead = useStore((s) => s.splitActiveAtPlayhead);
+  const trackItemsMap = useStore((s) => s.trackItemsMap);
   const currentFrame = useCurrentPlayerFrame(playerRef);
   const disabled = !activeIds.length;
+
+  // Cheap enable check: gates the Split button on "is a splittable item
+  // selected, and is the playhead inside its range?" The playhead read here
+  // is currentFrame (already reactive via useCurrentPlayerFrame), so the
+  // button enables/disables as the artist scrubs.
+  const canSplit = (() => {
+    if (activeIds.length !== 1) return false;
+    const item = trackItemsMap[activeIds[0]] as any;
+    if (!item) return false;
+    if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'image') return false;
+    const T = (currentFrame * 1000) / fps;
+    const df = item.display?.from ?? 0;
+    const dt = item.display?.to ?? 0;
+    const minGap = 1000 / fps;
+    return T > df + minGap && T < dt - minGap;
+  })();
 
   // Cheap clock for the "Saved Xs ago" pill — 30s cadence (vs the naïve 1s
   // ticker I wrote first). Only runs while a save is actually on screen, and
@@ -182,6 +201,14 @@ const Header: React.FC = () => {
           title="Delete selected"
         >
           <Trash size={15} />
+        </button>
+        <button
+          style={canSplit ? btn : btnDisabled}
+          disabled={!canSplit}
+          onClick={() => splitActiveAtPlayhead()}
+          title="Split at playhead (S)"
+        >
+          <Scissors size={14} />
         </button>
 
         <div style={{ width: 1, height: 18, background: '#27272a', margin: '0 6px' }} />

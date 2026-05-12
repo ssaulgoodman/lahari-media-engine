@@ -1,4 +1,4 @@
-import CanvasTimeline from '@designcombo/timeline';
+import CanvasTimeline, { generateId } from '@designcombo/timeline';
 import { ITimelineScaleState, ITrack, ITrackItem, ITransition } from '@designcombo/types';
 import StateManager from '@designcombo/state';
 import { PlayerRef } from '@remotion/player';
@@ -70,6 +70,16 @@ interface ITimelineStore {
   ) => void;
   addTransition: (transition: ITransition) => void;
   removeTransition: (transitionId: string) => void;
+  // Slices the currently-selected item into two at the playhead. v1 contract:
+  //   - exactly one item selected (activeIds.length === 1)
+  //   - item is video / audio / image (no captions/text/effects splits in v1)
+  //   - playhead lands strictly inside the item, at least one frame from
+  //     either edge (else: silent no-op)
+  // Same source media on both halves; trim ranges split at the cut offset.
+  // Transition rewiring is conservative: outgoing transitions move to the
+  // right half, incoming transitions stay on the left (left's id is unchanged).
+  // Returns true when a split actually happened so callers can flash UI.
+  splitActiveAtPlayhead: () => boolean;
 }
 
 const useStore = create<ITimelineStore>((set, get) => ({
@@ -150,6 +160,109 @@ const useStore = create<ITimelineStore>((set, get) => ({
         { kind: 'update', updateHistory: true },
       );
     }
+  },
+
+  splitActiveAtPlayhead: () => {
+    const s = get();
+    if (s.activeIds.length !== 1) return false;
+    const itemId = s.activeIds[0];
+    const item = s.trackItemsMap[itemId] as any;
+    if (!item) return false;
+    if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'image') {
+      return false;
+    }
+
+    // Read playhead from Remotion's player. getCurrentFrame() returns an
+    // integer frame, so converting to ms via `frame * 1000 / fps` lands on
+    // an exact frame boundary — no rounding needed, no sub-frame drift.
+    const frame = s.playerRef?.current?.getCurrentFrame?.();
+    if (frame == null) return false;
+    const T = (frame * 1000) / s.fps;
+
+    const df = item.display?.from ?? 0;
+    const dt = item.display?.to ?? 0;
+    if (dt <= df) return false;
+
+    // Refuse to create zero-or-sub-frame fragments. Without this, an
+    // accidental click at the very edge of a clip would produce a 1-frame
+    // sliver that's painful to grab and unhelpful for the artist.
+    const minGapMs = 1000 / s.fps;
+    if (T <= df + minGapMs || T >= dt - minGapMs) return false;
+
+    // Trim is optional on the schema but always populated for items seeded
+    // by TimelineEditor. Fall back to a full-range trim for safety on
+    // hand-added items that omit it.
+    const trim = item.trim ?? { from: 0, to: dt - df };
+    const cutOffset = T - df;
+    const rightId = generateId();
+
+    const left = {
+      ...item,
+      display: { from: df, to: T },
+      trim: { from: trim.from, to: trim.from + cutOffset },
+    };
+    const right = {
+      ...item,
+      id: rightId,
+      display: { from: T, to: dt },
+      trim: { from: trim.from + cutOffset, to: trim.to },
+      metadata: {
+        ...(item.metadata || {}),
+        // Convention used by the seed path + addVideoClip: resourceId ==
+        // item id. Mirror it on the new half so anything keying off
+        // resourceId stays consistent.
+        resourceId: rightId,
+      },
+    };
+
+    // Insert the right id immediately after the left id in both the global
+    // trackItemIds order and the owning track's items[] array. Anything
+    // listening to a stable id order (e.g. the pack reflow's sort) will
+    // place the halves contiguously.
+    const idx = s.trackItemIds.indexOf(itemId);
+    if (idx === -1) return false;
+    const nextItemIds = [...s.trackItemIds];
+    nextItemIds.splice(idx + 1, 0, rightId);
+
+    const nextTracks = s.tracks.map((t) => {
+      const arr = t.items as string[];
+      if (!arr.includes(itemId)) return t;
+      const updated = [...arr];
+      updated.splice(updated.indexOf(itemId) + 1, 0, rightId);
+      return { ...t, items: updated };
+    });
+
+    // Transitions: outgoing (fromId === itemId) attaches to the new right
+    // half — that's the side that ends at the next clip boundary now.
+    // Incoming (toId === itemId) stays on the left (left's id is
+    // unchanged). We intentionally do NOT try to be clever about a
+    // transition whose duration would now exceed the half it lives on —
+    // that's a v2 problem; for v1 the artist can re-add it.
+    const nextTransitionsMap = { ...s.transitionsMap };
+    for (const tid of Object.keys(nextTransitionsMap)) {
+      const tr = nextTransitionsMap[tid];
+      if (tr.fromId === itemId) {
+        nextTransitionsMap[tid] = { ...tr, fromId: rightId };
+      }
+    }
+
+    const nextItemsMap = {
+      ...s.trackItemsMap,
+      [itemId]: left,
+      [rightId]: right,
+    };
+
+    s.stateManager?.updateState(
+      {
+        trackItemIds: nextItemIds,
+        trackItemsMap: nextItemsMap,
+        tracks: nextTracks,
+        transitionsMap: nextTransitionsMap,
+      },
+      { kind: 'update', updateHistory: true },
+    );
+
+    return true;
   },
 }));
 

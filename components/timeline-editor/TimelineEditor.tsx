@@ -690,26 +690,38 @@ const TimelineEditor: React.FC<Props> = ({
 
   // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo. Routes through the store's
   // session-only history handlers (not designcombo's diff history).
+  // S (no modifier) = split selected item at the playhead — the store action
+  // is a silent no-op when the playhead isn't inside a splittable item.
   useEffect(() => {
     if (!stateManager) return;
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      if (e.key !== 'z' && e.key !== 'Z') return;
+      // Always ignore typing into form controls / contentEditable. Otherwise
+      // hitting `S` while renaming a clip would slice the clip in two.
       const t = e.target as HTMLElement | null;
       if (t) {
         const tag = t.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
       }
-      const { performUndo, performRedo } = useStore.getState();
-      if (e.shiftKey) {
-        if (!performRedo) return;
-        e.preventDefault();
-        performRedo();
-      } else {
-        if (!performUndo) return;
-        e.preventDefault();
-        performUndo();
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        const { performUndo, performRedo } = useStore.getState();
+        if (e.shiftKey) {
+          if (!performRedo) return;
+          e.preventDefault();
+          performRedo();
+        } else {
+          if (!performUndo) return;
+          e.preventDefault();
+          performUndo();
+        }
+        return;
+      }
+
+      if (!mod && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+        const { splitActiveAtPlayhead } = useStore.getState();
+        const did = splitActiveAtPlayhead();
+        if (did) e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);
