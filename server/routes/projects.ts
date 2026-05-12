@@ -12,6 +12,13 @@ import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js'
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
+// Registry-first-entry defaults so a future reorder in the constants files
+// auto-propagates to getFullProject hydration. Old projects with null columns
+// (pre-queue.ts-default-fill) get the current default instead of a stale
+// hardcoded one.
+import { IMAGE_MODELS } from '../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
@@ -451,9 +458,9 @@ const getFullProject = async (projectId: string) => {
     })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
-    imageModel: project.image_model || 'nano-banana-2',
-    storyboardProvider: project.storyboard_provider || 'gpt-image-2',
-    videoModel: project.video_model || 'veo-3.1',
+    imageModel: project.image_model || IMAGE_MODELS[0].key,
+    storyboardProvider: project.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
+    videoModel: project.video_model || VIDEO_MODELS[0].key,
     aspectRatio: project.aspect_ratio || '16:9',
     videoResolution: project.video_resolution || '720p',
     lastScriptPrompt: project.last_script_prompt || undefined,
