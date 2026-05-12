@@ -198,7 +198,7 @@ const Header: React.FC = () => {
           style={disabled ? btnDisabled : btn}
           disabled={disabled}
           onClick={() => dispatch(LAYER_DELETE, { payload: { trackItemIds: activeIds }, options: {} })}
-          title="Delete selected"
+          title="Delete selected (Del/Backspace)"
         >
           <Trash size={15} />
         </button>
