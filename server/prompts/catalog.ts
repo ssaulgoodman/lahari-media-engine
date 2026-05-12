@@ -688,17 +688,17 @@ Continuity notes: one short sentence naming the spatial map and screen direction
     stage: 'studio',
     model: 'gpt-image-2 / nano-banana-2',
     modelLabel: 'Storyboard image provider',
-    triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists.",
-    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs.',
+    triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too.",
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only.',
     variables: [
-      { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot' },
+      { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
       { name: 'storyboardProvider', description: 'Project storyboard provider: gpt-image-2 or nano-banana-2' },
-      { name: 'referenceImages', description: 'Locked style, cast, environment refs; previous storyboard image is included in edit_image refine mode' },
-      { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction' },
+      { name: 'referenceImages', description: 'Locked style, cast, environment refs (filtered by shot.excluded_refs.storyboard). In edit_image refine mode, the previous storyboard image is prepended; an artist-attached refinement ref is appended last.' },
+      { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction.' },
     ],
     template: `{{storyboardPrompt}}
 
-{{editImageMode ? "Artist image edit note:\\n" + artistNote + "\\n\\nKeep the saved cut plan unless the note explicitly requires a visible correction." : ""}}`,
+{{editImageMode ? "Artist image edit note:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan." : "") : ""}}`,
     source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion / renderWithProvider' },
   },
   {
@@ -708,17 +708,17 @@ Continuity notes: one short sentence naming the spatial map and screen direction
     model: 'gpt-5.5 planner or storyboard image provider',
     modelLabel: 'Redo = OpenAI planner; Edit = selected image provider',
     triggeredBy: "Fires when you enter a natural-language note and click 'Refine' in storyboard mode.",
-    summary: 'Refine has two modes. Redo rewrites saved storyboardPrompt + cutPlanText only. Edit image renders a new storyboard version from the current image, saved prompt, refs, and artist note.',
+    summary: 'Refine has two modes. Redo (replan) calls the planner to rewrite saved storyboardPrompt + cutPlanText; the artist must click Generate after to render a new image. Edit (edit_image) calls the image provider directly with the previous storyboard image + the saved prompt + the artist note — text fields untouched. Edit prompt does NOT include the cut plan (image renderer does not use it).',
     variables: [
-      { name: 'artistNote', description: 'Natural-language refinement note' },
+      { name: 'artistNote', description: 'Natural-language refinement note (required, route 400s if empty)' },
       { name: 'refineMode', description: 'replan or edit_image' },
-      { name: 'currentPrompt', description: 'Saved storyboardPrompt' },
-      { name: 'currentCutPlan', description: 'Saved storyboard_cut_plan' },
-      { name: 'baseStoryboardPrompt', description: 'Canonical source brief for this shot' },
-      { name: 'referenceImages', description: 'Locked style/cast/environment refs; previous storyboard image added in edit_image mode' },
+      { name: 'currentPrompt', description: 'Saved storyboardPrompt (used in both modes — as revision context for replan, as base prompt for edit_image)' },
+      { name: 'currentCutPlan', description: 'Saved storyboard_cut_plan (replan only — Edit does not send this)' },
+      { name: 'baseStoryboardPrompt', description: 'Canonical source brief for this shot (replan only)' },
+      { name: 'referenceImages', description: 'replan: only the artist-attached refinement ref is sent (planner is treated as text-only). edit_image: previous storyboard image (prepended), locked style/cast/env refs filtered by shot.excluded_refs.storyboard, then artist-attached ref (appended).' },
       { name: 'artistReferenceImage', description: 'Optional image uploaded with the refine note' },
     ],
-    template: `REDO / replan mode:
+    template: `REDO / replan mode (planner — rewrites text fields):
 Rewrite the saved storyboard render prompt and cut plan using the artist note.
 
 Artist note:
@@ -731,7 +731,16 @@ Current cut plan:
 {{currentCutPlan}}
 
 Original source brief:
-{{baseStoryboardPrompt}}`,
+{{baseStoryboardPrompt}}
+
+---
+
+EDIT / edit_image mode (image provider — renders a new image):
+{{currentPrompt}}
+
+Artist image edit note:
+{{artistNote}}
+{{artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan." : ""}}`,
     source: { file: 'server/routes/generate-shots.ts + server/services/storyboard.ts', lines: 'refine-storyboard / writeStoryboardPrompt / generateStoryboardVersion' },
   },
   {
