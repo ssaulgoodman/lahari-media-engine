@@ -358,18 +358,37 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Sub-tabs: Storyboard | Video — same visual rhythm as PromptToolkit */}
-      <div className="flex items-center gap-4">
+      {/* Sub-tabs: Storyboard | Video. Visible clickable affordance — small
+          padding + underline on active so the tab state is obvious and the
+          button is clearly a button, not passive text. Clicking either also
+          swaps the media displayed above via the lifted state in ShotCard. */}
+      <div className="flex items-center gap-1">
         <button
+          type="button"
           onClick={() => setSubTab('storyboard')}
-          className={`text-sm font-medium transition-colors ${subTab === 'storyboard' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-        >Storyboard</button>
+          className={`relative text-sm font-medium px-2 py-1 rounded cursor-pointer transition-colors ${
+            subTab === 'storyboard'
+              ? 'text-white'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]'
+          }`}
+        >
+          Storyboard
+          {subTab === 'storyboard' && <span className="absolute left-2 right-2 -bottom-px h-px bg-white/70" />}
+        </button>
         <button
+          type="button"
           onClick={() => setSubTab('video')}
-          className={`text-sm font-medium transition-colors ${subTab === 'video' ? 'text-white' : 'text-zinc-400 hover:text-zinc-300'}`}
-        >Video</button>
+          className={`relative text-sm font-medium px-2 py-1 rounded cursor-pointer transition-colors ${
+            subTab === 'video'
+              ? 'text-white'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03]'
+          }`}
+        >
+          Video
+          {subTab === 'video' && <span className="absolute left-2 right-2 -bottom-px h-px bg-white/70" />}
+        </button>
         {isLocked && (
-          <span className="text-[10px] uppercase tracking-wider text-emerald-300/80 bg-emerald-500/10 px-1.5 py-0.5 rounded font-mono">
+          <span className="ml-3 text-[10px] uppercase tracking-wider text-emerald-300/80 bg-emerald-500/10 px-1.5 py-0.5 rounded font-mono">
             Locked
           </span>
         )}
