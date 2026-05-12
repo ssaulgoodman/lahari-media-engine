@@ -274,6 +274,16 @@ const VersionCard: React.FC<{
     addVideoClip(version.url, label);
   };
 
+  // No server-generated thumbnails today, so the <video> element has to paint
+  // its own frame. preload="metadata" alone leaves Chrome/Safari blank on a
+  // sliced inline player (you see the bg-black not a frame). The #t=0.1
+  // media-fragment trick forces a seek-to-0.1s on load and reliably renders
+  // the first real frame across browsers. Safari is the strictest about
+  // this; Firefox/Chrome are more forgiving. Use this everywhere we want a
+  // static thumbnail from a video URL.
+  const previewUrl = version.thumbnailUrl ?? `${version.url}#t=0.1`;
+  const isImage = !!version.thumbnailUrl;
+
   if (compact) {
     return (
       <button
@@ -282,10 +292,10 @@ const VersionCard: React.FC<{
         className="relative aspect-video w-12 rounded overflow-hidden bg-black/30 border border-white/[0.06] hover:border-white/[0.2] transition-colors group"
         title={`Append ${label} to timeline`}
       >
-        {version.thumbnailUrl ? (
-          <img src={version.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+        {isImage ? (
+          <img src={previewUrl} alt="" className="w-full h-full object-cover" />
         ) : (
-          <video src={version.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+          <video src={previewUrl} className="w-full h-full object-cover" muted playsInline preload="metadata" />
         )}
       </button>
     );
@@ -300,10 +310,10 @@ const VersionCard: React.FC<{
       }`}
       title={`Append ${label} to timeline`}
     >
-      {version.thumbnailUrl ? (
-        <img src={version.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+      {isImage ? (
+        <img src={previewUrl} alt="" className="w-full h-full object-cover" />
       ) : (
-        <video src={version.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+        <video src={previewUrl} className="w-full h-full object-cover" muted playsInline preload="metadata" />
       )}
       {isActive && (
         <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-black/60 text-white px-1 py-0.5 rounded font-mono">

@@ -4,6 +4,7 @@ import { incrementColumn, insertRow, selectAll, selectOne, updateRows } from '..
 import { storageUrl } from '../storage.js';
 import { generateOpenAIImageFromPrompt, OpenAIRefImage } from './openai-image.js';
 import { generateNanoBanana2 } from './segmind-image.js';
+import { generateImageWithRefs, imagePartFromPath, type ContentPart } from './imagen.js';
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
 import { buildContextChain, logCall } from '../xray.js';
 import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
@@ -429,6 +430,7 @@ const renderWithProvider = async (
   refs: OpenAIRefImage[],
 ): Promise<{ storagePath: string; model: string; provider: string; costEstimate: number; size?: string }> => {
   const provider = getStoryboardProvider(providerKey);
+
   if (provider.provider === 'openai') {
     const [storagePath] = await generateOpenAIImageFromPrompt(prompt, { aspectRatio, refs, count: 1 });
     return {
@@ -437,6 +439,34 @@ const renderWithProvider = async (
       provider: provider.key,
       costEstimate: estimateStoryboardCost(1),
       size: aspectRatio === '9:16' ? '1024x1536' : aspectRatio === '1:1' ? '1024x1024' : '1536x1024',
+    };
+  }
+
+  if (provider.provider === 'google') {
+    // Nano Banana Pro (gemini-3-pro-image-preview) — multimodal API. The
+    // existing generateImageWithRefs helper consumes a `parts` array of
+    // text + inlineData segments. Translate the storyboard ref shape (text
+    // label + filepath or inlineData) into that protocol. Numbered labels
+    // ("Image N = ...") match the convention the keyframe pipeline uses so
+    // the model interprets refs the same way across stages.
+    const parts: ContentPart[] = [{ text: prompt }];
+    for (let i = 0; i < refs.length; i++) {
+      const ref = refs[i];
+      parts.push({ text: `Image ${i + 1} = ${ref.label}` });
+      if (ref.imagePath) {
+        parts.push(await imagePartFromPath(ref.imagePath));
+      } else if (ref.inlineData) {
+        parts.push({ inlineData: { mimeType: ref.inlineData.mimeType, data: ref.inlineData.data } });
+      }
+    }
+    const storagePath = await generateImageWithRefs(parts, aspectRatio);
+    return {
+      storagePath,
+      model: provider.runtimeModel,
+      provider: provider.key,
+      // Gemini image gen is per-image priced; matches the rough cost band
+      // we use for shot frame gen.
+      costEstimate: Number(process.env.GEMINI_STORYBOARD_RENDER_COST_ESTIMATE || 0.04),
     };
   }
 
