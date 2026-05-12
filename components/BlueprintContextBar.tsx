@@ -7,6 +7,7 @@ import { Markdown } from './Markdown';
 import { IMAGE_MODELS } from '../constants/imageModels';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
 import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
+import { TEXT_PROVIDERS } from '../constants/textProviders';
 import { Dropdown } from './Dropdown';
 
 export type Phase = 'concept' | 'script' | 'style' | 'characters' | 'environments';
@@ -313,6 +314,17 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 value={project.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
                 onChange={v => onUpdateProject({ storyboardProvider: v })}
                 options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
+              />
+            </div>
+            {/* Text model — controls concept, style, script, and storyboard
+                prompt writer. One project-level setting maps to every text
+                stage via constants/textProviders.ts → text-provider.ts. */}
+            <div className="flex-1 px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Text model</div>
+              <Dropdown
+                value={project.textProvider || TEXT_PROVIDERS[0].key}
+                onChange={v => onUpdateProject({ textProvider: v })}
+                options={TEXT_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
             </div>
             <div className="flex-[1.4] px-5 py-3 space-y-1">

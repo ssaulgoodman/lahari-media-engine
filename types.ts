@@ -190,6 +190,7 @@ export interface ApiProject {
   imageModel: string;
   storyboardProvider: import('./constants/storyboardProviders').StoryboardProviderKey;
   videoModel: string;
+  textProvider: import('./constants/textProviders').TextProviderKey;
   aspectRatio: '16:9' | '9:16' | '1:1';
   videoResolution: '720p' | '1080p';
   lastScriptPrompt?: string;

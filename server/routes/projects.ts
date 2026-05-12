@@ -19,6 +19,7 @@ import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
+import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
@@ -461,6 +462,7 @@ const getFullProject = async (projectId: string) => {
     imageModel: project.image_model || IMAGE_MODELS[0].key,
     storyboardProvider: project.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
     videoModel: project.video_model || VIDEO_MODELS[0].key,
+    textProvider: project.text_provider || TEXT_PROVIDERS[0].key,
     aspectRatio: project.aspect_ratio || '16:9',
     videoResolution: project.video_resolution || '720p',
     lastScriptPrompt: project.last_script_prompt || undefined,
@@ -927,7 +929,7 @@ router.patch('/:id/concept', async (req, res) => {
 
 // Update project settings
 router.patch('/:id', async (req, res) => {
-  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, aspectRatio, videoResolution } = req.body;
+  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, textProvider, aspectRatio, videoResolution } = req.body;
   const updates: Record<string, any> = {};
 
   if (title !== undefined) updates.title = title;
@@ -935,6 +937,7 @@ router.patch('/:id', async (req, res) => {
   if (imageModel !== undefined) updates.image_model = imageModel;
   if (storyboardProvider !== undefined) updates.storyboard_provider = storyboardProvider;
   if (videoModel !== undefined) updates.video_model = videoModel;
+  if (textProvider !== undefined) updates.text_provider = textProvider;
   if (aspectRatio !== undefined) updates.aspect_ratio = aspectRatio;
   if (videoResolution !== undefined) updates.video_resolution = videoResolution;
   if (targetDuration !== undefined) updates.target_duration = targetDuration;

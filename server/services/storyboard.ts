@@ -5,6 +5,8 @@ import { storageUrl } from '../storage.js';
 import { generateOpenAIImageFromPrompt, OpenAIRefImage } from './openai-image.js';
 import { generateNanoBanana2 } from './segmind-image.js';
 import { generateImageWithRefs, imagePartFromPath, type ContentPart } from './imagen.js';
+import { generateText } from './text-provider.js';
+import { getTextProvider, type TextProviderKey } from '../../constants/textProviders.js';
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
 import { buildContextChain, logCall } from '../xray.js';
 import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
@@ -271,7 +273,12 @@ export const writeStoryboardPrompt = async (opts: {
   const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
   const variant = opts.variant || 'adaptive_numbered_storyboard';
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
-  const model = process.env.OPENAI_STORYBOARD_PLANNER_MODEL || 'gpt-5.5';
+  // Provider selection: per-project setting. Falls back to the registry's
+  // first entry (Claude Opus) when text_provider is null on the row. The
+  // env-var override (OPENAI_STORYBOARD_PLANNER_MODEL) is no longer
+  // consulted — overrides now happen per-project via the dropdown.
+  const providerKey = ctx.project.text_provider as TextProviderKey | undefined;
+  const providerSpec = getTextProvider(providerKey);
   const currentPrompt = ctx.shot.storyboard_prompt || '';
   const currentCutPlan = ctx.shot.storyboard_cut_plan || '';
   const artistRefNote = opts.artistReferenceImagePath
@@ -359,25 +366,20 @@ Return only JSON with keys:
       const meta = plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath);
       return meta?.excludableKey === 'prev_storyboard';
     });
-    const response = await (getOpenAIClient().responses.create as any)({
-      model,
-      input: [{
-        role: 'user',
-        content: [
-          { type: 'input_text', text: prompt },
-          ...plannerVisionRefs.map((ref) => ({ type: 'input_image', image_url: storageUrl(ref.imagePath) })),
-        ],
-      }],
-      reasoning: { effort: process.env.OPENAI_STORYBOARD_PLANNER_REASONING_EFFORT || 'low' },
-      text: { format: { type: 'json_object' } },
+
+    // Dispatched through text-provider.ts. The provider abstraction handles
+    // each vendor's JSON-mode and vision-input conventions; we just pass the
+    // request and parse the text response with extractJsonObject as before.
+    const { text: outputText, model: actualModel } = await generateText(providerKey, {
+      userPrompt: prompt,
+      inputImages: plannerVisionRefs.map((ref) => ({
+        url: storageUrl(ref.imagePath),
+        label: plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath)?.label,
+      })),
+      jsonMode: true,
+      reasoning: 'low',
+      maxTokens: 4096,
     });
-    const outputText = response.output_text || (response.output || [])
-      .filter((item: any) => item.type === 'message')
-      .flatMap((item: any) => item.content || [])
-      .filter((content: any) => content.type === 'output_text' && content.text)
-      .map((content: any) => content.text)
-      .join('\n')
-      .trim();
     const parsed = extractJsonObject(outputText);
     const storyboardPrompt = String(parsed.storyboardPrompt || '').trim();
     const cutPlanText = String(parsed.cutPlanText || '').trim();
@@ -403,7 +405,7 @@ Return only JSON with keys:
     await logCall({
       projectId: opts.projectId,
       stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
-      model,
+      model: providerSpec.runtimeModel,
       prompt,
       referenceInputs: plannerRefs.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
@@ -422,7 +424,7 @@ Return only JSON with keys:
     await logCall({
       projectId: opts.projectId,
       stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
-      model,
+      model: providerSpec.runtimeModel,
       prompt,
       referenceInputs: withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath).refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),
