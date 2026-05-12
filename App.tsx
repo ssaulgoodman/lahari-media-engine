@@ -1510,10 +1510,18 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
             {PIPELINE_STEPS.map((step) => {
               const isActive = currentStep === step.id;
+              // Render is gated on a data-derived signal (any shot has a video)
+              // instead of project.status because `in_production` is never set
+              // server-side and status can otherwise drift on forks / legacy
+              // projects, locking artists out of Render even though they have
+              // material to assemble. Studio keeps the status check because it
+              // gates access to AI-gen surfaces, not to artist-owned assembly.
+              const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
               const isAccessible =
                 step.id === AppStep.UPLOAD ||
-                (project && (step.id === AppStep.BLUEPRINT)) ||
-                (project && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status) && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
+                (project && step.id === AppStep.BLUEPRINT) ||
+                (project && step.id === AppStep.STUDIO && project.scenes.length > 0 && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status)) ||
+                (project && step.id === AppStep.RENDER && hasRenderableContent);
 
               return (
                 <button
