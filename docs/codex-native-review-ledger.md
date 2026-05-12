@@ -4,7 +4,7 @@
 
 **How to use.** Codex builds; this ledger tracks what's been agreed, what's open, what shipped, what proved right, what got invalidated. Entries are added on every substantive review pass. Status changes are dated.
 
-**Last touched:** 2026-05-13 by Codex after the first durable event-journal pass.
+**Last touched:** 2026-05-13 — Codex implemented FU1-FU4 and render lifecycle events after Claude's review of `789536b`.
 
 ---
 
@@ -47,7 +47,16 @@ Web studio actions (lock shot, reject board, add note, regenerate) must land in 
 
 **Concrete shape shipped:** `lahari_director_events` table. Backend writes structured rows on core artist/Codex decisions: locks, unlocks, prompt edits, clears, reverts, storyboard prompt writes/refines, generations, and Codex preview applies. On session attach, Codex reads events newer than the local cursor and folds them into the journal narrative.
 
-**Still open:** explicit artist notes/reject reasons, fuller coverage across style/character/environment decisions, and UI affordances for writing intentional notes.
+**Follow-ups from review of `789536b`:**
+
+- **FU1 — Tighten error swallowing.** Status: **shipped**. Only missing-table rollout errors are warn-and-continue; other insert/read failures log loudly with projectId/eventType.
+- **FU2 — Stop spreading full `result` objects into `payload`.** Status: **shipped**. Generation events now store compact result pointers instead of full response bodies.
+- **FU3 — Strictly monotonic cursor.** Status: **shipped**. Added `seq bigserial`; `state.json` stores `lastSeq`; attach reads `seq > lastSeq`.
+- **FU4 — Remove 50-event read cap when paginating after a cursor.** Status: **shipped**. After-cursor reads page ascending until exhausted; limit only applies to no-cursor tail reads.
+
+**Coverage gaps to wire next (R1 phase 2):** lock-concept, refine-concept, lock-style / lock-style-preset / upload-and-lock-style / unlock-style / refine-style-direction / visualize-style, generate-looks + character lock/unlock + character look refine, generate-environment-look + env lock/unlock, web-triggered generate-script / refine-script / write-shot-prompts, queue publish, fork, delete, re-run analyze-audio. Render start/complete/fail is now wired.
+
+**Replay idempotency note:** apply tools currently record a second event on retry. Not blocking now (visible in log), but mandatory before any auto-retry path. Consider uniqueness on `(event_type, payload->>'previewId')` for apply events.
 
 **Why it matters:** Single largest gap between the current architecture and the "Codex inhabits Lahari" vision. Until this exists, the journal is Codex-only memory and accumulated taste leaks out every session.
 
@@ -242,7 +251,7 @@ When a gap shows up in Codex/Claude Code: file it upstream, route around it with
 
 Things I might be wrong about. Worth revisiting as we learn.
 
-- **W1.** Maybe the journal can stay one-directional (DB events → journal on session attach) without a structured events table, just by querying recent DB updates and timestamps. Cheaper. Try this before building the events table?
+- **W1. INVALIDATED 2026-05-13.** Tried the structured events table (`lahari_director_events` in `789536b`) directly without first exploring the "just query DB updates" approach. The structured-event approach was clearly correct: it captures *intent* (locked vs cleared vs reverted) which raw row diffs can't recover, gives clean source attribution (web vs codex vs system), and gives the journal a clean ingestion shape. Don't relitigate.
 - **W2.** MCP tool-count ceiling is a heuristic, not measured. If Codex's tool-selection holds up to 40+ tools in practice, R9 is over-engineered.
 - **W3.** Realtime might be overkill if artists work asynchronously and never have web studio open while Codex is acting. Polling-on-tab-focus could be enough. Watch the actual usage pattern.
 - **W4.** "One Codex session = one song" assumes long sessions. If sessions get fragmented (Codex's session UX nudges restart), Lahari director sessions in `.lahari/sessions/` should carry the weight and Codex sessions become disposable. Architecture supports this — just don't optimize Codex-session continuity prematurely.
@@ -255,3 +264,7 @@ Things I might be wrong about. Worth revisiting as we learn.
 Dated entries as recommendations move through status. Append-only.
 
 - 2026-05-13 — Ledger created. R1-R15 raised. P1-P8 stated. Surface as of commit `a6332e9` (M1 + M2 shipped, M3 partial).
+- 2026-05-13 — Codex shipped R3 first pass in `e0616a8` (deep-link routing through `App.tsx` + `codexStudio.ts` URL construction). Status: `shipped first pass`. Watch item: shot-card-level anchoring still pending.
+- 2026-05-13 — Codex shipped R1 first pass in `789536b` (durable event journal). Schema and rollout strategy are correct. Verification: build green (tsc + git diff --check + vite build). Follow-ups FU1-FU4 captured under R1; coverage gaps listed (concept/style/cast/env/render not yet wired). **W1 invalidated** — structured events table was the right call, raw-row-diff approach abandoned.
+- 2026-05-13 — Codex updated P1/P6/P7 statuses to "shipped in AGENTS/docs" / "shipped first pass" in this ledger between commits. Verified against actual code; updates are accurate.
+- 2026-05-13 — Codex implemented FU1-FU4 from Claude's review plus render lifecycle events. Event cursor is now `seq`, payloads are compact pointers, after-cursor reads page until exhausted, non-table-missing event failures log loudly, and render start/fail/complete writes durable events.

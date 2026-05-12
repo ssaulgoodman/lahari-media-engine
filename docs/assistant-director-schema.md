@@ -167,6 +167,7 @@ This is the bridge between web studio activity and future Codex director session
 | Column | Type | Purpose |
 |---|---|---|
 | `id` | `uuid` pk | Event id |
+| `seq` | `bigserial` | Strictly monotonic session cursor |
 | `project_id` | `text` | FK → `lahari_projects.id` |
 | `user_id` | `uuid` nullable | Supabase auth user when action came from the web studio |
 | `source` | `text` | `web` / `codex` / `system` |
@@ -178,7 +179,7 @@ This is the bridge between web studio activity and future Codex director session
 | `created_at` | `timestamptz` | Event time |
 
 Use cases:
-- `attach_director_session` pulls events newer than the local session cursor and appends them to `.lahari/sessions/<projectId>/journal.md`.
+- `attach_director_session` pulls events with `seq > lastSeq` from the local session cursor and appends them to `.lahari/sessions/<projectId>/journal.md`.
 - Web studio actions write lock/unlock/edit/clear/revert/generate events.
 - Codex apply tools write preview-apply and generation events.
 

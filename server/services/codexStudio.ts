@@ -6,7 +6,7 @@ import type { getFullProject } from '../routes/projects.js';
 import { planScenes, refineScript, writeShotPrompts } from './claude.js';
 import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
 import { generateShotVideo } from './videoGeneration.js';
-import { listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
+import { eventResultPointers, listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
 import { getModelMinDuration } from './segmind.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
@@ -1017,13 +1017,17 @@ const journalEntry = (title: string, body: string): string => {
   return `\n\n## ${new Date().toISOString()} — ${title}\n\n${body.trim()}\n`;
 };
 
-const readSessionEventCursor = (projectId: string): string | null => {
+const readSessionEventCursor = (projectId: string): { seq: number | null; createdAt: string | null } => {
   try {
     const raw = fs.readFileSync(sessionStatePath(projectId), 'utf8');
     const parsed = JSON.parse(raw);
-    return parsed?.directorEvents?.lastSyncedAt || null;
+    const seq = Number(parsed?.directorEvents?.lastSeq);
+    return {
+      seq: Number.isFinite(seq) ? seq : null,
+      createdAt: parsed?.directorEvents?.lastSyncedAt || null,
+    };
   } catch {
-    return null;
+    return { seq: null, createdAt: null };
   }
 };
 
@@ -1035,11 +1039,13 @@ const formatDirectorEvents = (events: DirectorEvent[]): string => {
   }).join('\n');
 };
 
-const eventSyncSummary = (events: DirectorEvent[], previousCursor: string | null = null) => {
+const eventSyncSummary = (events: DirectorEvent[], previousCursor: { seq: number | null; createdAt: string | null } = { seq: null, createdAt: null }) => {
   const last = events[events.length - 1] || null;
+  const lastSeq = typeof last?.seq === 'number' ? last.seq : previousCursor.seq;
   return {
     newEvents: events.length,
-    lastSyncedAt: last?.created_at || previousCursor,
+    lastSeq,
+    lastSyncedAt: last?.created_at || previousCursor.createdAt,
     recentEvents: events.slice(-10).map((event) => ({
       id: event.id,
       createdAt: event.created_at,
@@ -1052,7 +1058,7 @@ const eventSyncSummary = (events: DirectorEvent[], previousCursor: string | null
   };
 };
 
-const sessionState = (project: Project, note?: string | null, directorEvents = eventSyncSummary([], null)) => {
+const sessionState = (project: Project, note?: string | null, directorEvents = eventSyncSummary([], { seq: null, createdAt: null })) => {
   const checkpoint = deriveCheckpointState(project);
   const diagnosis = deriveDirectorDiagnosis(project);
   return {
@@ -1095,7 +1101,11 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   fs.mkdirSync(dir, { recursive: true });
 
   const previousEventCursor = readSessionEventCursor(project.id);
-  const newEvents = await listDirectorEvents(project.id, { after: previousEventCursor, limit: 100 });
+  const newEvents = await listDirectorEvents(project.id, {
+    afterSeq: previousEventCursor.seq,
+    afterCreatedAt: previousEventCursor.seq === null ? previousEventCursor.createdAt : null,
+    limit: 100,
+  });
   const state = sessionState(project, note, eventSyncSummary(newEvents, previousEventCursor));
   const workbench = await hydrateProjectWorkbench(project);
 
@@ -1939,7 +1949,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
       artistNote: artistNote || null,
       provider: plan.provider,
       estimatedCost: plan.estimatedCost,
-      result,
+      result: eventResultPointers(result),
     },
   });
 
@@ -1979,7 +1989,7 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
       mode: plan.mode,
       model: plan.model,
       estimatedCost: plan.estimatedCost,
-      result,
+      result: eventResultPointers(result),
     },
   });
 

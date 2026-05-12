@@ -16,7 +16,7 @@ import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
-import { recordDirectorEvent } from '../services/directorEvents.js';
+import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -361,7 +361,10 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
       entityType: 'shot',
       entityId: shotId,
       summary: 'Artist generated a storyboard board in the web studio.',
-      payload: { variant: req.body?.variant || 'adaptive_numbered_storyboard', result },
+      payload: {
+        variant: req.body?.variant || 'adaptive_numbered_storyboard',
+        result: eventResultPointers(result),
+      },
     });
     res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
   } catch (err: any) {
@@ -416,7 +419,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', upload.single('referenceImag
           previousVersionId: req.body?.previousVersionId || null,
           variant: req.body?.variant || 'adaptive_numbered_storyboard',
           artistReferenceImagePath: artistReferenceImagePath || null,
-          result,
+          result: eventResultPointers(result),
         },
       });
       res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });

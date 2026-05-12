@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import { selectOne, updateRows } from '../database.js';
 import { generateShotVideo } from '../services/videoGeneration.js';
-import { recordDirectorEvent } from '../services/directorEvents.js';
+import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
 
@@ -76,7 +76,7 @@ export const mountVideoRoutes = (router: Router) => {
         payload: {
           promptOverride: req.body?.promptOverride || null,
           refs: req.body?.refs || null,
-          result,
+          result: eventResultPointers(result),
         },
       });
       res.json(await getFullProject(projectId));
