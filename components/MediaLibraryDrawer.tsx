@@ -285,17 +285,13 @@ const VersionCard: React.FC<{
   //      Set on shots that have an extracted last-frame asset in metadata.
   //   2. posterFallback — the shot's storyboard image (storyboard mode) or
   //      start frame (keyframe mode). Loadable PNG/JPG that paints
-  //      immediately. May not match THIS specific video version exactly,
-  //      but it's the right shot at minimum — way better than a blank box
-  //      until the video itself loads.
-  //   3. The video's first frame via the #t=0.1 media-fragment trick.
-  //      preload="auto" + the fragment means the browser actually
-  //      downloads enough to paint, not just metadata. preload="metadata"
-  //      was leaving Chrome/Safari blank.
-  //
-  // The <video> still renders as the actual element so artists can hover
-  // (future enhancement: hover-play preview). poster attribute provides the
-  // instant paint while the video downloads.
+  //      immediately as the <video poster=...>. Most cards never need to
+  //      load the actual video at all — the poster is what the artist sees.
+  //   3. The video itself with src={url}#t=0.1 + preload="metadata". We
+  //      don't auto-download bytes anymore (was preload="auto") — the
+  //      poster already gave us an instant paint, so there's no need to
+  //      pull MBs per thumbnail card. preload="metadata" still loads
+  //      enough to seek if the artist hovers / clicks to play later.
   const explicitThumb = version.thumbnailUrl || null;
   const showAsImage = !!explicitThumb;
   const posterUrl = explicitThumb || posterFallback;
@@ -317,7 +313,7 @@ const VersionCard: React.FC<{
             className="w-full h-full object-cover"
             muted
             playsInline
-            preload="auto"
+            preload="metadata"
           />
         )}
       </button>

@@ -184,16 +184,25 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
   }
 
   // Output-format dispatch:
-  //   jsonSchema → response_format: json_schema (strict, native)
+  //   jsonSchema → response_format: json_schema (non-strict — see note)
   //   jsonMode   → response_format: json_object (loose)
   //   neither    → plain text
+  //
+  // strict: true is intentionally OFF. OpenAI's strict mode requires every
+  // object to set additionalProperties:false and every defined property to
+  // be in `required` — our concept/style/refine schemas have optional
+  // fields like `language` and `lyricsSummary` that don't satisfy that
+  // constraint, and turning strict on without a recursive schema
+  // normalizer 400s the request. Non-strict still passes the schema as a
+  // guide; the existing extractJsonObject() / try-catch parse path is
+  // robust to the rare cases the model drifts. If we tighten schemas
+  // (all-required-with-nullable) later we can flip strict back on.
   const textOpts: Record<string, any> = {};
   if (req.jsonSchema) {
     textOpts.format = {
       type: 'json_schema',
       name: req.jsonSchema.name,
       schema: req.jsonSchema.schema,
-      strict: true,
     };
   } else if (req.jsonMode) {
     textOpts.format = { type: 'json_object' };
@@ -223,6 +232,17 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
 
 // ─── Google (Gemini) ───────────────────────────────────────────────────────
 
+/** Fetch an HTTPS URL and return base64 + mimeType. Gemini's vision input
+ *  uses inlineData (not fileData — fileData.fileUri is for Files API
+ *  uploads, not arbitrary public URLs). Matches imagen.ts's pattern. */
+const fetchImageAsInline = async (url: string, fallbackMime?: string): Promise<{ mimeType: string; data: string }> => {
+  const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  if (!res.ok) throw new Error(`Failed to fetch image for Gemini (${res.status}): ${url}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const mimeType = (res.headers.get('content-type') || fallbackMime || 'image/png').split(';')[0].trim();
+  return { mimeType, data: buffer.toString('base64') };
+};
+
 const runGoogle = async (model: string, req: TextRequest): Promise<TextResponse> => {
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY required');
   const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -232,10 +252,16 @@ const runGoogle = async (model: string, req: TextRequest): Promise<TextResponse>
   parts.push({ text: req.userPrompt });
   for (const img of req.inputImages ?? []) {
     if (img.label) parts.push({ text: img.label });
-    if (img.url) {
-      parts.push({ fileData: { mimeType: img.mimeType || 'image/png', fileUri: img.url } });
-    } else if (img.data) {
+    if (img.data) {
+      // Caller already gave us base64 (artist upload). Use as-is.
       parts.push({ inlineData: { mimeType: img.mimeType || 'image/png', data: img.data } });
+    } else if (img.url) {
+      // Storage URL — fetch and inline. fileData.fileUri does NOT accept
+      // arbitrary HTTPS URLs (it's for Files API upload references), so
+      // we have to download + base64 here. Done in parallel-ish via the
+      // outer Promise.all in image-heavy callers.
+      const inline = await fetchImageAsInline(img.url, img.mimeType);
+      parts.push({ inlineData: inline });
     }
   }
 
