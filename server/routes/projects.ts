@@ -528,6 +528,14 @@ const getFullProject = async (projectId: string) => {
           return { storyboard: sanitize(parsed.storyboard), video: sanitize(parsed.video) };
         })(),
         continuityFrom: shot.continuity_from || 'cut',
+        // Storyboard continuity flags. usePrevStoryboardRef is explicit
+        // boolean; includePrevCutPlan is nullable (null = "use smart default
+        // server-side"). Surfacing both lets the StoryboardPanel render the
+        // current state without computing the default in two places.
+        usePrevStoryboardRef: !!shot.use_prev_storyboard_ref,
+        includePrevCutPlan: shot.include_prev_cut_plan === null || shot.include_prev_cut_plan === undefined
+          ? null
+          : !!shot.include_prev_cut_plan,
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
         endVisualPrompt: shot.end_visual_prompt || undefined,
@@ -1378,6 +1386,19 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   const { duration } = req.body;
   if (duration !== undefined && typeof duration === 'number' && duration > 0) {
     await updateRows('shots', { id: shotId }, { duration, prompts_stale: true });
+  }
+
+  // Storyboard continuity flags — see migrations/2026-05-12_add_storyboard_continuity.sql.
+  // use_prev_storyboard_ref is an explicit boolean; include_prev_cut_plan
+  // is nullable to distinguish "artist hasn't decided" (null → smart
+  // default applies server-side) from "explicit true/false".
+  const { usePrevStoryboardRef, includePrevCutPlan } = req.body;
+  if (usePrevStoryboardRef !== undefined) {
+    await updateRows('shots', { id: shotId }, { use_prev_storyboard_ref: !!usePrevStoryboardRef });
+  }
+  if (includePrevCutPlan !== undefined) {
+    const v = includePrevCutPlan === null ? null : !!includePrevCutPlan;
+    await updateRows('shots', { id: shotId }, { include_prev_cut_plan: v });
   }
 
   // Per-step ref exclusion for storyboard mode. Payload shape:

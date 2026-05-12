@@ -168,6 +168,29 @@ const withArtistRef = (
   };
 };
 
+/** Find the previous shot in the same scene by sort_order. Used for
+ *  storyboard continuity refs — the shot the artist is handing off from.
+ *  Returns null on the first shot of any scene (no in-scene predecessor) or
+ *  when the shot row can't be resolved. */
+export const findPrevShotInScene = async (shot: any): Promise<any | null> => {
+  if (!shot?.scene_id || shot.sort_order == null) return null;
+  if (shot.sort_order === 0) return null;
+  const sceneShots = await selectAll('shots', { scene_id: shot.scene_id });
+  return sceneShots.find((s: any) => s.sort_order === shot.sort_order - 1) || null;
+};
+
+/** Resolve `shot.include_prev_cut_plan` into the actual boolean the planner
+ *  should use. Nullable column means "artist hasn't decided → use the smart
+ *  default": true when shot is tagged as a continuation AND a previous shot
+ *  exists in the same scene; false otherwise. Explicit true/false from the
+ *  artist always wins. */
+export const resolveIncludePrevCutPlan = (shot: any, prevShot: any | null): boolean => {
+  if (shot?.include_prev_cut_plan === true) return true;
+  if (shot?.include_prev_cut_plan === false) return false;
+  if (!prevShot) return false;
+  return shot?.continuity_from === 'prev_shot';
+};
+
 export const loadStoryboardContext = async (projectId: string, shotId: string): Promise<StoryboardContext> => {
   const project = await selectOne('projects', { id: projectId });
   if (!project) throw new Error('Project not found');
@@ -195,6 +218,22 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
   }
   if (environment?.reference_asset_id) {
     addRef(refs, refMeta, `Environment reference: ${environment.name}`, await selectOne('assets', { id: environment.reference_asset_id }), `env:${environment.id}`);
+  }
+
+  // Continuity ref: when the artist enables "use prev storyboard", look up
+  // the previous shot in the same scene and attach its locked storyboard
+  // image as another ref. Slots into the existing per-step exclusion model
+  // via excludableKey 'prev_storyboard' so it can be dropped just like any
+  // other chip. Skipped silently when the prev shot has no storyboard yet —
+  // the artist gets visual feedback (no chip) instead of a silent error.
+  if (shot.use_prev_storyboard_ref) {
+    const prevShot = await findPrevShotInScene(shot);
+    if (prevShot?.storyboard_asset_id) {
+      const prevAsset = await selectOne('assets', { id: prevShot.storyboard_asset_id });
+      if (prevAsset?.file_path) {
+        addRef(refs, refMeta, 'Previous shot storyboard (continuity)', prevAsset, 'prev_storyboard');
+      }
+    }
   }
 
   const concept = buildConceptSummary(project);
@@ -237,12 +276,34 @@ export const writeStoryboardPrompt = async (opts: {
   const artistRefNote = opts.artistReferenceImagePath
     ? `\nThe artist also attached a visual reference image. Use it only to understand the requested refinement, composition, gesture, board layout, or mood. Do not copy unrelated identity/style details from it.`
     : '';
+
+  // Continuity from previous shot — two independent flags both come from
+  // shot row state. include_prev_cut_plan resolves through the smart-default
+  // helper (null → derive from continuity_from). use_prev_storyboard_ref is
+  // an explicit boolean; when on, loadStoryboardContext above already
+  // attached the prev shot's storyboard as a 'prev_storyboard' ref.
+  const prevShot = await findPrevShotInScene(ctx.shot);
+  const includePrevCutPlan = resolveIncludePrevCutPlan(ctx.shot, prevShot);
+  const prevCutPlanTail = includePrevCutPlan && prevShot?.storyboard_cut_plan
+    ? String(prevShot.storyboard_cut_plan).trim()
+    : '';
+  const continuityBlock = prevCutPlanTail
+    ? `\n\nPrevious shot ended with the following cut plan:\n${prevCutPlanTail}\n\nContinue from that visual state. Do not re-establish location, character positions, or camera if the previous shot just covered them — open this shot from where the previous one left off.`
+    : '';
+  // Vision-continuity instruction: only meaningful when the planner is
+  // actually getting the previous storyboard image. Refs filter below
+  // controls whether we send it; this note tells the model how to use it.
+  const prevStoryboardRef = ctx.refMeta.find((r) => r.excludableKey === 'prev_storyboard');
+  const prevStoryboardNote = prevStoryboardRef
+    ? `\n\nThe attached image labeled "Previous shot storyboard (continuity)" is the previous shot's board. Read its last panel as the handoff state for this shot — match character positions, screen direction, and lighting from there. Do not copy its composition wholesale.`
+    : '';
+
   const prompt = opts.artistNote?.trim()
     ? `Rewrite the saved storyboard render prompt and cut plan using the artist note.
 
 Artist note:
 ${opts.artistNote.trim()}
-${artistRefNote}
+${artistRefNote}${prevStoryboardNote}${continuityBlock}
 
 Current storyboard render prompt:
 ${currentPrompt || '(none)'}
@@ -264,7 +325,7 @@ Return only JSON with keys:
 2. cutPlanText: a text-only numbered cut plan with timestamps, camera, action, and Seedance motion cues. This text will later drive the video prompt.
 
 Source brief:
-${basePrompt}
+${basePrompt}${prevStoryboardNote}${continuityBlock}
 
 Return only JSON with keys:
 {
@@ -277,15 +338,23 @@ Return only JSON with keys:
 
   try {
     const plannerRefs = withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath);
+    // Vision inputs to the planner: the artist's attached refine ref (if any)
+    // PLUS the previous-shot storyboard ref when continuity is on. Other
+    // composition refs (style/cast/env images) are intentionally NOT sent —
+    // the planner is text-only by design; vision is reserved for handoff
+    // context and explicit artist guidance.
+    const plannerVisionRefs = plannerRefs.refs.filter((ref) => {
+      if (ref.imagePath === opts.artistReferenceImagePath) return true;
+      const meta = plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath);
+      return meta?.excludableKey === 'prev_storyboard';
+    });
     const response = await (getOpenAIClient().responses.create as any)({
       model,
       input: [{
         role: 'user',
         content: [
           { type: 'input_text', text: prompt },
-          ...plannerRefs.refs
-            .filter((ref) => ref.imagePath === opts.artistReferenceImagePath)
-            .map((ref) => ({ type: 'input_image', image_url: storageUrl(ref.imagePath) })),
+          ...plannerVisionRefs.map((ref) => ({ type: 'input_image', image_url: storageUrl(ref.imagePath) })),
         ],
       }],
       reasoning: { effort: process.env.OPENAI_STORYBOARD_PLANNER_REASONING_EFFORT || 'low' },

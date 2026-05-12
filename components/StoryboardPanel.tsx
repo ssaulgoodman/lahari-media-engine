@@ -146,14 +146,29 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   if (shotEnv) boundRefs.push({ type: 'env', id: shotEnv.id });
   if (project.styleAssetUrl) boundRefs.push({ type: 'style' });
 
+  // Previous shot in the same scene — used to power the "+ Prev storyboard"
+  // continuity chip. Lookup is local to the loaded project; gen-time resolution
+  // happens server-side independently. We surface here only the data the chip
+  // needs to render: the prev shot's storyboard image (for thumbnail) and
+  // whether it exists at all (controls the button's enabled state).
+  const prevShotInScene: VideoShot | undefined = (() => {
+    const idx = scene.shots.findIndex(s => s.id === shot.id);
+    return idx > 0 ? scene.shots[idx - 1] : undefined;
+  })();
+  const prevStoryboardUrl = prevShotInScene?.storyboardUrl;
+  const continuityChipDisabled = !prevShotInScene || !prevStoryboardUrl;
+  const continuityChipActive = !!shot.usePrevStoryboardRef && !continuityChipDisabled;
+
   // Richer chip metadata for the per-tab ref exclusion UI. Mirrors the server's
   // composition refs (style + locked cast + locked env). Order matches what
   // gets sent to the generator: style first, then cast, then env — keeps the
   // chip row visually aligned with the prompt's "Reference bindings" ordering.
+  // The continuity chip (prev storyboard) is appended last when active.
   const refChips: { key: string; label: string; imageUrl?: string }[] = [];
   if (project.styleAssetUrl) refChips.push({ key: 'style', label: 'Style', imageUrl: project.styleAssetUrl });
   for (const c of shotCast) refChips.push({ key: `cast:${c.id}`, label: c.name, imageUrl: c.referenceImageUrl });
   if (shotEnv) refChips.push({ key: `env:${shotEnv.id}`, label: shotEnv.name, imageUrl: shotEnv.referenceImageUrl });
+  if (continuityChipActive) refChips.push({ key: 'prev_storyboard', label: 'Prev storyboard', imageUrl: prevStoryboardUrl });
   const excludedStoryboard = shot.excludedRefs?.storyboard || [];
   const excludedVideo = shot.excludedRefs?.video || [];
   const toggleRefExclusion = (tab: 'storyboard' | 'video', key: string) => {
@@ -398,9 +413,22 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
                   <span>{chip.label}</span>
                   <button
                     type="button"
-                    onClick={() => toggleRefExclusion(subTab, chip.key)}
+                    onClick={() => {
+                      // Continuity chip's × turns the master flag off
+                      // entirely (so it disappears from both tabs). For all
+                      // other chips × is per-tab exclusion as usual.
+                      if (chip.key === 'prev_storyboard') {
+                        onUpdateShot(scene.id, shot.id, { usePrevStoryboardRef: false });
+                      } else {
+                        toggleRefExclusion(subTab, chip.key);
+                      }
+                    }}
                     className={`ml-0.5 transition-colors ${isExcluded ? 'text-zinc-400 hover:text-emerald-400' : 'text-zinc-500 hover:text-red-400'}`}
-                    title={isExcluded ? `Add ${chip.label} back to this generation` : `Drop ${chip.label} from this generation`}
+                    title={
+                      chip.key === 'prev_storyboard'
+                        ? 'Remove the previous-shot continuity ref'
+                        : isExcluded ? `Add ${chip.label} back to this generation` : `Drop ${chip.label} from this generation`
+                    }
                   >
                     {isExcluded ? (
                       <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -416,7 +444,72 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
                 </div>
               );
             })}
+            {/* Continuity affordance — appears at the end of the chip row.
+                When inactive: shown as a thin "+ Prev storyboard" button that
+                turns continuity on (subject to having a prev shot with a
+                board to reference). When active: the chip itself is already
+                rendered above with the standard × removal behavior; nothing
+                extra here. */}
+            {!continuityChipActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (continuityChipDisabled) return;
+                  onUpdateShot(scene.id, shot.id, { usePrevStoryboardRef: true });
+                }}
+                disabled={continuityChipDisabled}
+                className={`group/cont flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border transition-colors ${
+                  continuityChipDisabled
+                    ? 'border-white/[0.04] bg-transparent text-zinc-600 cursor-not-allowed'
+                    : 'border-white/[0.06] bg-transparent text-zinc-400 hover:border-white/[0.15] hover:text-zinc-200 hover:bg-white/[0.02]'
+                }`}
+                title={
+                  !prevShotInScene
+                    ? 'No previous shot in this scene'
+                    : !prevStoryboardUrl
+                    ? 'Previous shot has no storyboard yet'
+                    : "Attach the previous shot's storyboard as a continuity ref. Sent to the planner as visual handoff context and to the image renderer as an extra @image ref."
+                }
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Prev storyboard</span>
+              </button>
+            )}
           </div>
+        );
+      })()}
+
+      {/* Continuity text toggle — sends the previous shot's cut plan to the
+          planner as text context. Separate from the chip row because text is
+          not visual (no thumbnail, no per-tab exclusion). Only shown on the
+          Storyboard sub-tab; planner only runs from there. Smart default:
+          checked when continuity_from === 'prev_shot' AND a prev shot exists.
+          Artist can flip with explicit true/false; null means "follow the
+          default." */}
+      {subTab === 'storyboard' && !isLocked && (() => {
+        const hasPrev = !!prevShotInScene;
+        const explicit = shot.includePrevCutPlan;
+        const smartDefault = hasPrev && shot.continuityFrom === 'prev_shot';
+        const effective = explicit === true ? true : explicit === false ? false : smartDefault;
+        const isDefault = explicit === null || explicit === undefined;
+        return (
+          <label className={`flex items-center gap-2 text-[11px] ${hasPrev ? 'text-zinc-400 hover:text-zinc-300 cursor-pointer' : 'text-zinc-600 cursor-not-allowed'}`}>
+            <input
+              type="checkbox"
+              disabled={!hasPrev}
+              checked={effective}
+              onChange={(e) => {
+                // Flip away from smart default → explicit true/false.
+                onUpdateShot(scene.id, shot.id, { includePrevCutPlan: e.target.checked });
+              }}
+              className="h-3 w-3 rounded border-white/10 bg-transparent accent-white"
+            />
+            <span>Include previous cut plan as text context</span>
+            {isDefault && hasPrev && (
+              <span className="text-zinc-600">(default: {smartDefault ? 'on' : 'off'})</span>
+            )}
+            {!hasPrev && <span className="text-zinc-600">— no previous shot in scene</span>}
+          </label>
         );
       })()}
 
