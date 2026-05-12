@@ -770,7 +770,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined, project.text_provider);
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -885,7 +885,7 @@ router.post('/:id/refine-concept', async (req, res) => {
 
   try {
     const projectId = paramStr(req.params.id);
-    const refined = await refineConceptDirection(current, feedback);
+    const refined = await refineConceptDirection(current, feedback, project.text_provider);
     await updateRows('projects', { id: projectId }, {
       locked_concept: JSON.stringify(refined),
       updated_at: new Date().toISOString(),
@@ -1045,7 +1045,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
     let meaningError: string | undefined;
     if (lyrics && !project.meaning) {
       try {
-        meaning = await summarizeMeaning(project.title || 'Untitled', 'Unknown', lyrics, '');
+        meaning = await summarizeMeaning(project.title || 'Untitled', 'Unknown', lyrics, '', project.text_provider);
       } catch (e: any) {
         console.warn(`[${projectId}] meaning failed:`, e);
         meaningError = String(e);

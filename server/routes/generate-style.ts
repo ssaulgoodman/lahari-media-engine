@@ -121,6 +121,7 @@ export const mountStyleRoutes = (router: Router) => {
         project.song_type || undefined,
         project.is_narrative ?? undefined,
         project.is_meditative ?? undefined,
+        project.text_provider,
       );
       const durationMs = Date.now() - t0;
 
@@ -216,7 +217,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     try {
       const t0 = Date.now();
-      const refined = await refineStyleDirection(description, feedback, concept);
+      const refined = await refineStyleDirection(description, feedback, concept, project.text_provider);
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: project.id }, { style_generation_prompt: null });
@@ -273,6 +274,7 @@ export const mountStyleRoutes = (router: Router) => {
   router.post('/:id/upload-and-lock-style', upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Image required' });
     const projectId = paramStr(req.params.id);
+    const projectForProvider = await selectOne('projects', { id: projectId });
 
     try {
       const ext = req.file.mimetype.includes('png') ? 'png' : req.file.mimetype.includes('jpeg') ? 'jpg' : 'png';
@@ -284,7 +286,7 @@ export const mountStyleRoutes = (router: Router) => {
       let styleDesc = 'User-uploaded style reference';
       try {
         const imageBase64 = req.file.buffer.toString('base64');
-        styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
+        styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype, projectForProvider?.text_provider);
       } catch (err: any) {
         console.warn(`[${projectId}] style analysis failed, using default description:`, err.message);
       }
@@ -324,11 +326,12 @@ export const mountStyleRoutes = (router: Router) => {
     if (!req.file) return res.status(400).json({ error: 'Image required' });
     const projectId = paramStr(req.params.id);
     const prompt = 'Analyze uploaded style reference image for visual style description';
+    const projectForProvider = await selectOne('projects', { id: projectId });
 
     try {
       const imageBase64 = req.file.buffer.toString('base64');
       const t0 = Date.now();
-      const styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
+      const styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype, projectForProvider?.text_provider);
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: projectId }, { style_description: styleDesc, updated_at: new Date().toISOString() });

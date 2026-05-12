@@ -112,9 +112,10 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
         failedImageMime: refMime,
         referenceImageBase64: userRefBase64,
         referenceImageMime: userRefMime,
+        textProvider: project.text_provider,
       });
       genPrompt = rewritten.visualPrompt;
-      console.log(`[${project.id}] Claude rewrote generation prompt for ${member.name}: ${genPrompt.substring(0, 100)}...`);
+      console.log(`[${project.id}] Rewrote character look prompt for ${member.name}: ${genPrompt.substring(0, 100)}...`);
     } catch (err: any) {
       console.warn(`[${project.id}] Prompt rewrite failed, using feedback as director note: ${err.message}`);
       genPrompt += `\n\nDirector note: ${feedback}`;
@@ -347,9 +348,10 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
         failedImageMime: refMime,
         referenceImageBase64: userEnvRefBase64,
         referenceImageMime: userEnvRefMime,
+        textProvider: project.text_provider,
       });
       genPrompt = rewritten.visualPrompt;
-      console.log(`[${project.id}] Claude rewrote generation prompt for env ${env.name}: ${genPrompt.substring(0, 100)}...`);
+      console.log(`[${project.id}] Rewrote env look prompt for ${env.name}: ${genPrompt.substring(0, 100)}...`);
     } catch (err: any) {
       console.warn(`[${project.id}] Env prompt rewrite failed, using note as director note: ${err.message}`);
       genPrompt += `\n\nDirector note: ${userNote}`;

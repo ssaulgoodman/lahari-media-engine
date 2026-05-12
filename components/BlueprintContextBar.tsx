@@ -316,9 +316,13 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
             </div>
-            {/* Text model — controls concept, style, script, and storyboard
-                prompt writer. One project-level setting maps to every text
-                stage via constants/textProviders.ts → text-provider.ts. */}
+            {/* Text model — controls concept, style, refines (frame, motion,
+                chained-shot, char/env look, style refine, concept refine),
+                meaning summary, image-style analyzer, and storyboard prompt
+                writer. Script writer is intentionally NOT routed here — it
+                uses Claude Opus's extended thinking + a validation loop
+                that doesn't port cleanly to other vendors yet. The label
+                makes that gap explicit so the artist isn't surprised. */}
             <div className="flex-1 px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Text model</div>
               <Dropdown
@@ -326,6 +330,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 onChange={v => onUpdateProject({ textProvider: v })}
                 options={TEXT_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
+              <div className="text-[10px] text-zinc-500 leading-tight">Script writer always uses Claude Opus.</div>
             </div>
             <div className="flex-[1.4] px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>

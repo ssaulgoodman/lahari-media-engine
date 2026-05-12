@@ -81,6 +81,7 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
+      textProvider: project.text_provider,
     });
 
     // Update the visual prompt with the rewritten version
@@ -704,6 +705,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
+      textProvider: project.text_provider,
     });
 
     // Save rewritten prompt — user sees it update, then generates separately
@@ -786,6 +788,7 @@ router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceIm
       endFrameMime: endMime,
       referenceImageBase64: userRefBase64,
       referenceImageMime: userRefMime,
+      textProvider: project.text_provider,
     });
 
     await updateRows('shots', { id: shot.id }, {

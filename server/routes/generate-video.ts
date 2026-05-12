@@ -310,6 +310,7 @@ export const mountVideoRoutes = (router: Router) => {
               currentMotionPrompt: nextShot.motion_prompt || 'Cinematic camera movement',
               characterNames: nextCast.map((c: any) => c.name),
               environmentName: nextEnv?.name,
+              textProvider: project.text_provider,
             });
             await updateRows('shots', { id: nextShot.id }, {
               visual_prompt: refreshed.visualPrompt,

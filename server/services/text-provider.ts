@@ -1,37 +1,40 @@
 /**
  * Unified text-generation interface across Anthropic, OpenAI, and Google.
  *
- * Each stage in the pipeline that produces TEXT — concept writer, style
- * brainstorm, script writer, storyboard prompt writer — calls this instead
- * of a vendor-specific SDK directly. The project's `text_provider` column
- * controls which model handles the call.
+ * Every stage in the pipeline that produces TEXT — concept writer, style
+ * brainstorm, all refines, storyboard prompt writer, meaning summary,
+ * style-image analysis — calls this instead of a vendor-specific SDK
+ * directly. The project's `text_provider` column controls which model
+ * handles every call.
  *
- * Design choices:
+ * Three response patterns are unified:
  *
- * - Vendor SDKs already exist and work; we don't replace them. This module
- *   is a thin dispatcher that picks the right SDK per request and surfaces
- *   one consistent response shape.
+ *   1. Plain text                                      — leave both jsonMode and jsonSchema unset
+ *   2. Loose JSON (caller parses with extractJsonObject) — set jsonMode: true
+ *   3. Strict structured JSON via vendor-native schema  — set jsonSchema: { name, schema }
  *
- * - JSON output is the dominant pattern (every consumer returns structured
- *   data today). We expose a `jsonMode` flag that providers honor natively
- *   when they can (OpenAI Responses, Gemini responseMimeType); for Anthropic
- *   we lean on prompt engineering — the caller still needs to parse with
- *   their existing extractJsonObject() helper.
+ * Schema mode is what concept gen, style brainstorm, and their refines
+ * use — each vendor has its own structured-output API and we translate:
  *
- * - Vision inputs are passed as HTTP URLs (storage paths resolved by callers
- *   to public storageUrl). Each provider downloads/encodes its own way.
+ *   Anthropic → tools[] with input_schema, force tool_use, read tool_use.input
+ *   OpenAI    → response_format: { type: 'json_schema', json_schema: { ... } }
+ *   Gemini    → config.responseSchema + responseMimeType: 'application/json'
  *
- * - No tool-use abstraction. The existing tool-use callers (concept gen,
- *   style brainstorm, planScenes) continue to use the Anthropic SDK directly
- *   in claude.ts — the dispatcher path is only used by consumers that don't
- *   need tools. We can fold tool-using consumers in later if useful, but
- *   forcing the abstraction now would be premature.
+ * Refines fall back to each provider's cheap sibling model
+ * (TextProviderSpec.refineModel) when useRefineModel is true. Concept gen,
+ * style brainstorm, storyboard planner, and meaning summary all use the
+ * primary runtimeModel.
+ *
+ * Script writer is INTENTIONALLY not routed through this module — it uses
+ * Anthropic-specific extended thinking + a validation loop that doesn't
+ * port cleanly to the other vendors. planScenes / refineScript /
+ * writeShotPrompts continue to call Anthropic directly in claude.ts.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
-import { getTextProvider, type TextProviderKey } from '../../constants/textProviders.js';
+import { getTextProvider, type TextProviderKey, type TextProviderSpec } from '../../constants/textProviders.js';
 
 export interface TextRequest {
   /** Plain instruction + content text. Most callers stuff everything here. */
@@ -40,24 +43,34 @@ export interface TextRequest {
    *  goes; Anthropic puts it in `system`, OpenAI prepends as a system role,
    *  Gemini stuffs into the first user content. */
   systemPrompt?: string;
-  /** Vision inputs as resolved public HTTP URLs. Each provider fetches and
-   *  encodes per its SDK. Pass an empty array or omit when text-only. */
-  inputImages?: { url: string; label?: string }[];
-  /** Hint that we want strict JSON output. OpenAI and Gemini enforce
-   *  natively; Anthropic gets a prompt suffix instructing JSON-only. */
+  /** Vision inputs. Provide either `url` (public HTTPS — each provider
+   *  fetches it themselves) OR inline `data` + `mimeType` (already
+   *  base64-encoded — for artist uploads that haven't been persisted to
+   *  storage yet). Pass an empty array or omit when text-only. */
+  inputImages?: { url?: string; data?: string; mimeType?: string; label?: string }[];
+  /** Hint that we want loose JSON output. OpenAI / Gemini enforce natively;
+   *  Anthropic gets a prompt suffix instructing JSON-only. Caller parses.
+   *  Ignored when jsonSchema is set (schema implies strict JSON). */
   jsonMode?: boolean;
-  /** Reasoning effort hint where supported (OpenAI Responses, Gemini
-   *  thinkingConfig). Anthropic supports extended thinking but we don't
-   *  pipe it through here — concept/script callers that need it use the
-   *  Anthropic SDK directly. */
+  /** Strict structured output. When set, the dispatcher uses each vendor's
+   *  native structured-output API and returns `parsedJson` already typed
+   *  per the schema. Caller does not need to JSON.parse the text. */
+  jsonSchema?: { name: string; description?: string; schema: Record<string, any> };
+  /** Reasoning effort hint where supported. */
   reasoning?: 'low' | 'medium' | 'high';
   /** Max output tokens. Falls back to a sensible per-provider default. */
   maxTokens?: number;
+  /** Refines use the cheap sibling per provider (refineModel) instead of
+   *  the primary runtimeModel. Defaults to false. */
+  useRefineModel?: boolean;
 }
 
 export interface TextResponse {
-  /** Raw text output. Caller parses JSON if it asked for jsonMode. */
+  /** Raw text output. Always populated. For jsonSchema requests this is the
+   *  JSON-serialised structured result. */
   text: string;
+  /** Parsed JSON, populated only when jsonSchema was set on the request. */
+  parsedJson?: any;
   /** Concrete model id used (handy for logCall / telemetry). */
   model: string;
 }
@@ -67,10 +80,11 @@ export const generateText = async (
   req: TextRequest,
 ): Promise<TextResponse> => {
   const spec = getTextProvider(providerKey);
+  const model = req.useRefineModel && spec.refineModel ? spec.refineModel : spec.runtimeModel;
   switch (spec.provider) {
-    case 'anthropic': return runAnthropic(spec.runtimeModel, req);
-    case 'openai':    return runOpenAI(spec.runtimeModel, req);
-    case 'google':    return runGoogle(spec.runtimeModel, req);
+    case 'anthropic': return runAnthropic(model, req);
+    case 'openai':    return runOpenAI(model, req);
+    case 'google':    return runGoogle(model, req);
     default:
       throw new Error(`Unknown text provider: ${spec.provider}`);
   }
@@ -82,37 +96,70 @@ const runAnthropic = async (model: string, req: TextRequest): Promise<TextRespon
   if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY required');
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  // JSON mode: Anthropic has no native JSON-only flag. Append the standard
-  // "Return only valid JSON" instruction so the model knows the response
-  // should parse cleanly. Caller still uses extractJsonObject() in case the
-  // model wraps in code fences or adds explanatory text.
-  const userText = req.jsonMode
-    ? `${req.userPrompt}\n\nReturn ONLY valid JSON. No surrounding prose, no code fences.`
-    : req.userPrompt;
-
   const content: Anthropic.MessageParam['content'] = [];
   for (const img of req.inputImages ?? []) {
-    // Anthropic accepts image URLs directly via type:'image' source url.
     if (img.label) content.push({ type: 'text', text: img.label });
-    content.push({ type: 'image', source: { type: 'url', url: img.url } });
+    if (img.url) {
+      content.push({ type: 'image', source: { type: 'url', url: img.url } });
+    } else if (img.data) {
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: (img.mimeType || 'image/png') as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+          data: img.data,
+        },
+      });
+    }
   }
+
+  // jsonMode (loose): suffix the user prompt with an instruction to return
+  // only JSON. The caller still parses defensively. jsonSchema (strict)
+  // takes precedence — when present, we use tool_use which guarantees the
+  // shape and the suffix becomes redundant.
+  const userText = req.jsonSchema
+    ? req.userPrompt
+    : req.jsonMode
+      ? `${req.userPrompt}\n\nReturn ONLY valid JSON. No surrounding prose, no code fences.`
+      : req.userPrompt;
   content.push({ type: 'text', text: userText });
+
+  // Schema mode: define a single tool whose input_schema is the caller's
+  // schema and force the model to use it. Tool use is Anthropic's native
+  // path for guaranteed-valid structured output.
+  const tools = req.jsonSchema
+    ? [{
+        name: req.jsonSchema.name,
+        description: req.jsonSchema.description || 'Return the structured response',
+        input_schema: req.jsonSchema.schema as any,
+      }]
+    : undefined;
+  const toolChoice = req.jsonSchema
+    ? { type: 'tool' as const, name: req.jsonSchema.name }
+    : undefined;
 
   const response = await client.messages.create({
     model,
     max_tokens: req.maxTokens ?? 4096,
     ...(req.systemPrompt ? { system: req.systemPrompt } : {}),
+    ...(tools ? { tools, tool_choice: toolChoice! } : {}),
     messages: [{ role: 'user', content }],
   });
 
-  // Concatenate text blocks (Anthropic returns content as an array of typed
-  // blocks; we want the plain text union).
+  if (req.jsonSchema) {
+    const toolBlock = response.content.find((b: any) => b.type === 'tool_use') as
+      | Anthropic.ToolUseBlock
+      | undefined;
+    if (!toolBlock) throw new Error('Anthropic returned no tool_use block for jsonSchema request');
+    const parsedJson = toolBlock.input;
+    return { text: JSON.stringify(parsedJson), parsedJson, model };
+  }
+
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('')
     .trim();
-
   return { text, model };
 };
 
@@ -124,20 +171,39 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
 
   const content: any[] = [];
   if (req.systemPrompt) {
-    // Responses API doesn't have a separate system role; we prepend.
     content.push({ type: 'input_text', text: req.systemPrompt });
   }
   content.push({ type: 'input_text', text: req.userPrompt });
   for (const img of req.inputImages ?? []) {
     if (img.label) content.push({ type: 'input_text', text: img.label });
-    content.push({ type: 'input_image', image_url: img.url });
+    if (img.url) {
+      content.push({ type: 'input_image', image_url: img.url });
+    } else if (img.data) {
+      content.push({ type: 'input_image', image_url: `data:${img.mimeType || 'image/png'};base64,${img.data}` });
+    }
+  }
+
+  // Output-format dispatch:
+  //   jsonSchema → response_format: json_schema (strict, native)
+  //   jsonMode   → response_format: json_object (loose)
+  //   neither    → plain text
+  const textOpts: Record<string, any> = {};
+  if (req.jsonSchema) {
+    textOpts.format = {
+      type: 'json_schema',
+      name: req.jsonSchema.name,
+      schema: req.jsonSchema.schema,
+      strict: true,
+    };
+  } else if (req.jsonMode) {
+    textOpts.format = { type: 'json_object' };
   }
 
   const response = await (client.responses.create as any)({
     model,
     input: [{ role: 'user', content }],
     ...(req.reasoning ? { reasoning: { effort: req.reasoning } } : {}),
-    ...(req.jsonMode ? { text: { format: { type: 'json_object' } } } : {}),
+    ...(Object.keys(textOpts).length ? { text: textOpts } : {}),
     ...(req.maxTokens ? { max_output_tokens: req.maxTokens } : {}),
   });
 
@@ -148,7 +214,11 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
     .map((c: any) => c.text)
     .join('\n')).trim();
 
-  return { text, model };
+  let parsedJson: any | undefined;
+  if (req.jsonSchema || req.jsonMode) {
+    try { parsedJson = JSON.parse(text); } catch { /* leave undefined; caller can fall back to text */ }
+  }
+  return { text, parsedJson, model };
 };
 
 // ─── Google (Gemini) ───────────────────────────────────────────────────────
@@ -162,20 +232,35 @@ const runGoogle = async (model: string, req: TextRequest): Promise<TextResponse>
   parts.push({ text: req.userPrompt });
   for (const img of req.inputImages ?? []) {
     if (img.label) parts.push({ text: img.label });
-    // Gemini accepts URLs directly via fileData for public HTTPS URLs.
-    // This keeps us from having to download + base64 every image on each
-    // request — for storyboard refs that's a real cost saving.
-    parts.push({ fileData: { mimeType: 'image/png', fileUri: img.url } });
+    if (img.url) {
+      parts.push({ fileData: { mimeType: img.mimeType || 'image/png', fileUri: img.url } });
+    } else if (img.data) {
+      parts.push({ inlineData: { mimeType: img.mimeType || 'image/png', data: img.data } });
+    }
   }
+
+  // Gemini structured-output dispatch:
+  //   jsonSchema → responseSchema + responseMimeType
+  //   jsonMode   → responseMimeType only (model decides shape)
+  //   neither    → plain text
+  const config: Record<string, any> = {};
+  if (req.jsonSchema) {
+    config.responseMimeType = 'application/json';
+    config.responseSchema = req.jsonSchema.schema;
+  } else if (req.jsonMode) {
+    config.responseMimeType = 'application/json';
+  }
+  if (req.reasoning) {
+    config.thinkingConfig = {
+      thinkingBudget: req.reasoning === 'high' ? 16384 : req.reasoning === 'medium' ? 8192 : 2048,
+    };
+  }
+  if (req.maxTokens) config.maxOutputTokens = req.maxTokens;
 
   const response = await client.models.generateContent({
     model,
     contents: [{ role: 'user', parts }],
-    config: {
-      ...(req.jsonMode ? { responseMimeType: 'application/json' } : {}),
-      ...(req.reasoning ? { thinkingConfig: { thinkingBudget: req.reasoning === 'high' ? 16384 : req.reasoning === 'medium' ? 8192 : 2048 } } : {}),
-      ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
-    },
+    config,
   });
 
   const text = ((response as any).text || (response as any).candidates?.[0]?.content?.parts
@@ -183,8 +268,12 @@ const runGoogle = async (model: string, req: TextRequest): Promise<TextResponse>
     ?.map((p: any) => p.text)
     ?.join('') || '').trim();
 
-  return { text, model };
+  let parsedJson: any | undefined;
+  if (req.jsonSchema || req.jsonMode) {
+    try { parsedJson = JSON.parse(text); } catch { /* leave undefined */ }
+  }
+  return { text, parsedJson, model };
 };
 
-// Re-export for caller convenience so they don't have to import from constants.
-export { type TextProviderKey };
+// Re-export for caller convenience.
+export { type TextProviderKey, type TextProviderSpec };
