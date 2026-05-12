@@ -40,6 +40,9 @@ storage/*.db
 .lahari/
 skills/
 skills-lock.json
+.lahari/
+.npm-cache/
+supabase/.temp/
 storage/*.db-shm
 storage/*.db-wal
 storage/lahari.db.bak*

@@ -39,6 +39,11 @@ COPY src ./src
 # at build time means the first request isn't slowed by a 100MB download.
 RUN npx remotion browser ensure
 
+# Pre-bundle the Remotion composition into /app/bundle so render-job.ts can
+# skip the ~15-30s bundle step on cold Modal containers. Runtime check is in
+# src/render.ts (existsSync on bundle/index.html → reuse pre-built dir).
+RUN npm run prebundle
+
 ENV NODE_ENV=production
 ENV PORT=3030
 ENV RUN_BOOT_BENCHMARK=1

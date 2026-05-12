@@ -15,12 +15,41 @@ interface QueueItem {
   album: string;
   audio_uploaded: boolean;
   srts_ready: boolean;
+  render_count: number;
+  // Per-user fork stats from listQueue() — see server/services/supabase.ts.
+  others_done: number;
+  others_wip: number;
+  has_active_fork: boolean;
+  has_done_fork: boolean;
+  // Current user's mnemonic label for this song. Edited inline on the
+  // dashboard via setSongNote. Server-scoped to the auth user — never
+  // contains another user's note.
+  user_note: string | null;
 }
 
 interface Props {
   onStartProduction: (queueId: string) => Promise<void> | void;
   onOpenProject: (projectId: string) => void;
+  onViewRenders?: (projectId: string, title: string) => void;
 }
+
+type ActionKey = 'start' | 'continue' | 'open' | 'needs-audio';
+
+/** Action button vocabulary — one verb per row, derived from per-user fork
+ *  state. Filter chips at the top filter by this same vocabulary so what an
+ *  artist sees on a row matches what the filter promises.
+ *
+ *  Priority: active beats done. If the user somehow has both an active fork
+ *  AND a completed fork for the same queue row (edge case — e.g. they
+ *  published once, then started a new variation), "Continue" wins because
+ *  that's the work they care about right now. Past renders are reachable via
+ *  the Renders button. */
+const getAction = (item: QueueItem): ActionKey => {
+  if (item.has_active_fork) return 'continue';
+  if (item.has_done_fork) return 'open';
+  if (!item.audio_uploaded) return 'needs-audio';
+  return 'start';
+};
 
 const FILTER_KEY = 'lahari-queue-filters';
 
@@ -30,16 +59,107 @@ const formatDuration = (secs: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject }) => {
+/** Inline mnemonic note next to the song name. Click to edit, blur or
+ *  Enter to save, Esc to cancel. Empty submission clears the note. Errors
+ *  revert local state to whatever the server confirmed. Optimistic local
+ *  cache lives in the parent (see `onChange` in the row render) so a
+ *  list refetch mid-edit doesn't clobber the artist's value. */
+const NoteCell: React.FC<{
+  songId: string;
+  initialNote: string | null;
+  onChange: (note: string | null) => void;
+}> = ({ songId, initialNote, onChange }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initialNote ?? '');
+  const [saving, setSaving] = useState(false);
+  // Sync draft when the row's initial value changes (e.g. after a refetch).
+  // Only when NOT actively editing — never overwrite the artist's in-progress
+  // typing with a stale server value.
+  useEffect(() => {
+    if (!editing) setDraft(initialNote ?? '');
+  }, [initialNote, editing]);
+
+  const commit = async (next: string) => {
+    const trimmed = next.trim();
+    // No-op short circuit: same value as server already has.
+    if (trimmed === (initialNote ?? '')) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await api.setSongNote(songId, trimmed);
+      onChange(result.note);
+    } catch {
+      // Revert on failure — surface nothing fancy, the artist can retry.
+      setDraft(initialNote ?? '');
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        maxLength={200}
+        disabled={saving}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => commit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); }
+          if (e.key === 'Escape') { setDraft(initialNote ?? ''); setEditing(false); }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        placeholder="add a note…"
+        className="text-[11px] italic text-zinc-300 bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 outline-none focus:border-white/20 min-w-[120px] max-w-[240px]"
+      />
+    );
+  }
+
+  // Display mode: muted italic if note exists, faint "+ note" affordance on
+  // row hover if not. Click stops propagation so editing doesn't also
+  // trigger any future row click handlers.
+  if (initialNote) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        className="text-[11px] italic text-zinc-400 hover:text-white transition-colors truncate max-w-[240px]"
+        title="Click to edit note"
+      >
+        · {initialNote}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      className="text-[10px] text-zinc-600 hover:text-zinc-300 transition-opacity opacity-0 group-hover:opacity-100 flex-shrink-0"
+      title="Add a personal note for this song"
+    >
+      + note
+    </button>
+  );
+};
+
+export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, onViewRenders }) => {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [deities, setDeities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<'priority' | 'duration_asc' | 'duration_desc'>('priority');
 
-  // Persisted filters
-  const [statusFilter, setStatusFilter] = useState(() => {
-    try { return JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}').status || 'all'; } catch { return 'all'; }
+  // Persisted filters — actionFilter replaces the old statusFilter so the
+  // chip vocabulary matches the action button on each row.
+  const [actionFilter, setActionFilter] = useState<'all' | ActionKey>(() => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}').action;
+      return v === 'start' || v === 'continue' || v === 'open' || v === 'needs-audio' ? v : 'all';
+    } catch { return 'all'; }
   });
   const [deityFilter, setDeityFilter] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}').deity || ''; } catch { return ''; }
@@ -48,16 +168,17 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
     try { return JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}').search || ''; } catch { return ''; }
   });
 
-  // Persist filters
   useEffect(() => {
-    sessionStorage.setItem(FILTER_KEY, JSON.stringify({ status: statusFilter, deity: deityFilter, search }));
-  }, [statusFilter, deityFilter, search]);
+    sessionStorage.setItem(FILTER_KEY, JSON.stringify({ action: actionFilter, deity: deityFilter, search }));
+  }, [actionFilter, deityFilter, search]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Action filtering happens client-side — server returns full list so we
+      // can compute per-user actions without re-fetching when chips change.
       const [q, d] = await Promise.all([
-        api.listQueue({ status: statusFilter !== 'all' ? statusFilter : undefined, deity: deityFilter || undefined }),
+        api.listQueue({ deity: deityFilter || undefined }),
         api.getQueueDeities(),
       ]);
       setItems(q);
@@ -67,7 +188,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, deityFilter]);
+  }, [deityFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -75,40 +196,38 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
     if (!item.audio_uploaded) return;
     setStarting(item.id);
     try {
-      // Await the handler so the spinner stays on for the entire pull-audio +
-      // create-project round-trip (10-15s). Previously this was fire-and-forget
-      // so the spinner flashed off instantly and the user saw nothing.
       await onStartProduction(item.id);
     } finally {
       setStarting(null);
     }
   };
 
-  const filtered = (search
-    ? items.filter(i =>
-        i.song_name?.toLowerCase().includes(search.toLowerCase())
-        || i.isrc?.toLowerCase().includes(search.toLowerCase())
-        || i.album?.toLowerCase().includes(search.toLowerCase())
-      )
-    : items
-  ).sort((a, b) => {
-    if (sortBy === 'duration_asc') return a.duration_seconds - b.duration_seconds;
-    if (sortBy === 'duration_desc') return b.duration_seconds - a.duration_seconds;
-    return a.priority - b.priority;
-  });
+  // Compute action per item once; reuse for filter + render.
+  const itemsWithAction = items.map(i => ({ item: i, action: getAction(i) }));
 
-  // Stats from full list (before search filter)
-  const stats = {
-    total: items.length,
-    queued: items.filter(i => i.status === 'queued').length,
-    in_progress: items.filter(i => i.status === 'in_progress').length,
-    review: items.filter(i => i.status === 'review').length,
-    completed: items.filter(i => i.status === 'completed').length,
-    hasAudio: items.filter(i => i.audio_uploaded).length,
-    hasSrt: items.filter(i => i.srts_ready).length,
+  const counts = {
+    all: itemsWithAction.length,
+    start: itemsWithAction.filter(x => x.action === 'start').length,
+    continue: itemsWithAction.filter(x => x.action === 'continue').length,
+    open: itemsWithAction.filter(x => x.action === 'open').length,
   };
 
-  const hasFilters = statusFilter !== 'all' || deityFilter || search;
+  const filtered = (search
+    ? itemsWithAction.filter(x =>
+        x.item.song_name?.toLowerCase().includes(search.toLowerCase())
+        || x.item.isrc?.toLowerCase().includes(search.toLowerCase())
+        || x.item.album?.toLowerCase().includes(search.toLowerCase())
+      )
+    : itemsWithAction
+  )
+    .filter(x => actionFilter === 'all' || x.action === actionFilter)
+    .sort((a, b) => {
+      if (sortBy === 'duration_asc') return a.item.duration_seconds - b.item.duration_seconds;
+      if (sortBy === 'duration_desc') return b.item.duration_seconds - a.item.duration_seconds;
+      return a.item.priority - b.item.priority;
+    });
+
+  const hasFilters = actionFilter !== 'all' || deityFilter || search;
 
   return (
     <div className="max-w-6xl mx-auto pb-32 space-y-6">
@@ -116,31 +235,35 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
       <div>
         <h2 className="text-lg font-display font-medium text-white">Music Video Queue</h2>
         <p className="text-sm text-zinc-400 mt-0.5">
-          {filtered.length === stats.total
-            ? `${stats.total} songs`
-            : `${filtered.length} of ${stats.total} songs`}
+          {filtered.length === counts.all
+            ? `${counts.all} songs`
+            : `${filtered.length} of ${counts.all} songs`}
         </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { key: 'queued', label: 'Queued', count: stats.queued, color: 'text-zinc-400', ring: 'ring-zinc-500' },
-          { key: 'in_progress', label: 'In Progress', count: stats.in_progress, color: 'text-blue-400', ring: 'ring-blue-500' },
-          { key: 'review', label: 'Review', count: stats.review, color: 'text-amber-400', ring: 'ring-amber-500' },
-          { key: 'completed', label: 'Complete', count: stats.completed, color: 'text-emerald-400', ring: 'ring-emerald-500' },
-        ].map(card => {
-          const isActive = statusFilter === card.key;
+      {/* Action filter chips — vocabulary matches the action button per row. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {([
+          { key: 'all',      label: 'All',      count: counts.all },
+          { key: 'start',    label: 'Start',    count: counts.start },
+          { key: 'continue', label: 'Continue', count: counts.continue },
+          { key: 'open',     label: 'Open',     count: counts.open },
+        ] as const).map(chip => {
+          const isActive = actionFilter === chip.key;
           return (
             <button
-              key={card.key}
-              onClick={() => setStatusFilter(isActive ? 'all' : card.key)}
-              className={`surface rounded-xl px-4 py-3 text-left transition-all hover:bg-white/[0.04] ${
-                isActive ? `ring-1 ${card.ring}` : ''
+              key={chip.key}
+              onClick={() => setActionFilter(chip.key)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                isActive
+                  ? 'bg-white text-black'
+                  : 'surface-inset text-zinc-300 hover:text-white hover:bg-white/[0.06]'
               }`}
             >
-              <p className={`text-2xl font-semibold font-mono ${card.color}`}>{card.count}</p>
-              <p className="text-[11px] text-zinc-400 mt-0.5">{card.label}</p>
+              <span>{chip.label}</span>
+              <span className={`text-[11px] font-mono ${isActive ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                {chip.count}
+              </span>
             </button>
           );
         })}
@@ -172,7 +295,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
 
         {hasFilters && (
           <button
-            onClick={() => { setStatusFilter('all'); setDeityFilter(''); setSearch(''); }}
+            onClick={() => { setActionFilter('all'); setDeityFilter(''); setSearch(''); }}
             className="text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors flex items-center gap-1"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -192,7 +315,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
       {/* Table */}
       <div className="border border-white/[0.06] rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[36px_1fr_90px_70px_120px_100px_110px] px-4 py-2.5 text-[11px] text-zinc-400 uppercase tracking-wide border-b border-white/[0.04] bg-white/[0.01]">
+        <div className="grid grid-cols-[36px_1fr_90px_70px_180px_180px] px-4 py-2.5 text-[11px] text-zinc-400 uppercase tracking-wide border-b border-white/[0.04] bg-white/[0.01]">
           <span>#</span>
           <span>Song</span>
           <span>Deity</span>
@@ -203,7 +326,6 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
             Dur. {sortBy === 'duration_asc' ? '↑' : sortBy === 'duration_desc' ? '↓' : ''}
           </button>
           <span>Pipeline</span>
-          <span>Status</span>
           <span></span>
         </div>
 
@@ -222,29 +344,41 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
         )}
 
         {/* Rows */}
-        {filtered.map((item, idx) => {
-          const hasProject = !!item.lahari_project_id;
-          const canStart = item.audio_uploaded && item.status === 'queued';
-
+        {filtered.map(({ item, action }, idx) => {
+          const showRenders = onViewRenders && item.render_count > 0 && item.lahari_project_id;
+          const hasOthers = item.others_done > 0 || item.others_wip > 0;
           return (
             <div
               key={item.id}
-              className={`grid grid-cols-[36px_1fr_90px_70px_120px_100px_110px] px-4 py-2.5 items-center border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors group ${
+              className={`grid grid-cols-[36px_1fr_90px_70px_180px_180px] px-4 py-2.5 items-center border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors group ${
                 idx % 2 === 0 ? '' : 'bg-white/[0.01]'
               }`}
             >
               <span className="text-xs text-zinc-400 font-mono">{item.priority}</span>
 
               <div className="min-w-0">
-                <div className="text-xs text-white truncate">{item.song_name}</div>
+                <div className="text-xs text-white truncate flex items-center gap-2">
+                  <span className="truncate">{item.song_name}</span>
+                  <NoteCell
+                    songId={item.song_id}
+                    initialNote={item.user_note}
+                    onChange={(note) => {
+                      // Optimistic local update so the row keeps the new value
+                      // across the next listQueue refetch race.
+                      setItems((prev) =>
+                        prev.map((row) => (row.song_id === item.song_id ? { ...row, user_note: note } : row)),
+                      );
+                    }}
+                  />
+                </div>
                 <div className="text-[11px] text-zinc-400 truncate">{item.album} · {item.isrc}</div>
               </div>
 
               <span className="text-xs text-zinc-300">{item.deity}</span>
               <span className="text-xs text-zinc-400 font-mono">{formatDuration(item.duration_seconds)}</span>
 
-              {/* Pipeline pills */}
-              <div className="flex items-center gap-1">
+              {/* Pipeline pills + Others dots */}
+              <div className="flex items-center gap-1.5">
                 <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
                   item.audio_uploaded ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>Audio</span>
@@ -252,32 +386,61 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                   item.srts_ready ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>SRT</span>
                 <span className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
-                  item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
+                  item.render_count > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>Video</span>
+                {hasOthers && (
+                  <span
+                    className="flex items-center gap-1 ml-1 text-[11px]"
+                    title={`${item.others_done} other artist${item.others_done === 1 ? '' : 's'} published · ${item.others_wip} still WIP`}
+                  >
+                    {item.others_done > 0 && (
+                      <span className="flex items-center gap-0.5 text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span className="font-mono tabular-nums">{item.others_done}</span>
+                      </span>
+                    )}
+                    {item.others_wip > 0 && (
+                      <span className="flex items-center gap-0.5 text-amber-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        <span className="font-mono tabular-nums">{item.others_wip}</span>
+                      </span>
+                    )}
+                  </span>
+                )}
               </div>
 
-              {/* Status */}
-              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full w-fit ${
-                item.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400'
-                  : item.status === 'in_progress' ? 'bg-blue-500/10 text-blue-400'
-                  : item.status === 'review' ? 'bg-amber-500/10 text-amber-400'
-                  : 'bg-white/[0.04] text-zinc-400'
-              }`}>
-                {item.status === 'in_progress' ? 'In Progress'
-                  : item.status === 'completed' ? 'Done'
-                  : item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-              </span>
-
-              {/* Action */}
-              <div className="flex justify-end">
-                {hasProject ? (
+              {/* Action — Start / Continue / Open / Needs audio */}
+              <div className="flex justify-end items-center gap-1">
+                {showRenders && (
                   <button
-                    onClick={() => onOpenProject(item.lahari_project_id!)}
-                    className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                    onClick={() => onViewRenders!(item.lahari_project_id!, item.song_name)}
+                    className="text-xs text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
+                    title="View renders"
                   >
-                    Open
+                    Renders
                   </button>
-                ) : canStart ? (
+                )}
+                {action === 'open' && (
+                  <button
+                    onClick={() => handleStart(item)}
+                    disabled={starting === item.id}
+                    className="text-xs text-zinc-300 hover:text-white px-3 py-1 rounded hover:bg-white/[0.06] transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {starting === item.id && <div className="w-3 h-3 border-2 border-zinc-400 border-t-white rounded-full animate-spin"></div>}
+                    {starting === item.id ? 'Opening…' : 'Open'}
+                  </button>
+                )}
+                {action === 'continue' && (
+                  <button
+                    onClick={() => handleStart(item)}
+                    disabled={starting === item.id}
+                    className="text-xs bg-white text-black px-3 py-1.5 rounded font-medium hover:bg-zinc-200 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                  >
+                    {starting === item.id && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
+                    {starting === item.id ? 'Opening…' : 'Continue'}
+                  </button>
+                )}
+                {action === 'start' && (
                   <button
                     onClick={() => handleStart(item)}
                     disabled={starting === item.id}
@@ -286,9 +449,10 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject })
                     {starting === item.id && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin"></div>}
                     {starting === item.id ? 'Starting…' : 'Start'}
                   </button>
-                ) : !item.audio_uploaded ? (
+                )}
+                {action === 'needs-audio' && (
                   <span className="text-[11px] text-zinc-400">Needs audio</span>
-                ) : null}
+                )}
               </div>
             </div>
           );

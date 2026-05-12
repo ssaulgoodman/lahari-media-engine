@@ -12,12 +12,17 @@
  */
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, selectAll, selectOne } from '../database.js';
+import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
 
 const router = Router();
 
 const paramStr = (val: string | string[]): string =>
   Array.isArray(val) ? val[0] : val;
+
+const activeRenderWindowMs = () => {
+  const minutes = Number(process.env.MAX_RENDER_MINUTES || 65);
+  return Math.max(1, minutes) * 60 * 1000;
+};
 
 router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
@@ -46,34 +51,83 @@ router.post('/:id/render', async (req, res) => {
     return res.status(400).json({ error: 'timeline is required' });
   }
 
+  const existing = await selectAll('renders', { project_id: projectId, status: ['rendering', 'pending_finalize'] }, {
+    orderBy: 'created_at',
+    ascending: false,
+    limit: 1,
+  });
+  const activeRender = existing[0];
+  if (activeRender?.created_at) {
+    const ageMs = Date.now() - new Date(activeRender.created_at).getTime();
+    if (Number.isFinite(ageMs) && ageMs < activeRenderWindowMs()) {
+      return res.status(409).json({
+        error: 'A render is already running or finalizing for this project. Wait for it to finish or fail before starting another.',
+        renderId: activeRender.id,
+        status: activeRender.status,
+      });
+    }
+  }
+
   const renderId = uuidv4();
   await insertRow('renders', {
     id: renderId,
     project_id: projectId,
     status: 'rendering',
+    progress: 0,
+    stage: 'queued',
+    last_heartbeat_at: new Date().toISOString(),
   });
 
   // Fire-and-forget. The renderer will call /api/renders/callback/:renderId
-  // when it's done. `.catch` swallows the unhandled rejection; real failures
-  // surface via the renderer's failure callback. If the renderer is completely
-  // unreachable we'll never hear back and the render row stays 'rendering'
-  // until someone retries (or a future stale-detection job flips it).
-  fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-renderer-secret': rendererSecret,
-    },
-    body: JSON.stringify({ renderId, projectId, timeline }),
-  }).catch(async (err) => {
-    console.error(`[render ${renderId}] upstream fetch threw:`, err?.message || err);
-    const { updateRows } = await import('../database.js');
-    await updateRows('renders', { id: renderId }, {
-      status: 'failed',
-      error: err?.message || 'renderer unreachable',
-      updated_at: new Date().toISOString(),
-    }).catch(() => {});
-  });
+  // when it's done. Immediate request failures flip the row here; deeper
+  // renderer failures surface via the callback. If the renderer dies without
+  // either path, the render watchdog will fail the stale row.
+  void (async () => {
+    try {
+      const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-renderer-secret': rendererSecret,
+        },
+        body: JSON.stringify({ renderId, projectId, timeline }),
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        const message = `renderer rejected render request: HTTP ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`;
+        console.error(`[render ${renderId}] ${message}`);
+        await updateRows('renders', { id: renderId }, {
+          status: 'failed',
+          error: message,
+          error_code: 'renderer_rejected',
+          stage: 'failed',
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
+      } else {
+        const body = await response.json().catch(() => null);
+        const modalFunctionCallId =
+          typeof body?.modalFunctionCallId === 'string' && body.modalFunctionCallId
+            ? body.modalFunctionCallId
+            : null;
+        await updateRows('renders', { id: renderId, status: 'rendering' }, {
+          ...(modalFunctionCallId ? { modal_function_call_id: modalFunctionCallId } : {}),
+          stage: 'accepted',
+          progress: 0.01,
+          last_heartbeat_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      console.error(`[render ${renderId}] upstream fetch threw:`, err?.message || err);
+      await updateRows('renders', { id: renderId }, {
+        status: 'failed',
+        error: err?.message || 'renderer unreachable',
+        error_code: 'renderer_unreachable',
+        stage: 'failed',
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
+  })();
 
   return res.status(202).json({ renderId, status: 'rendering' });
 });
@@ -88,14 +142,30 @@ router.get('/:id/render-status', async (req, res) => {
   });
   const latest = rows[0];
   if (!latest) {
-    return res.json({ renderId: null, status: 'idle', videoUrl: null, error: null, renderMs: null });
+    return res.json({
+      renderId: null,
+      status: 'idle',
+      videoUrl: null,
+      error: null,
+      errorCode: null,
+      renderMs: null,
+      progress: null,
+      stage: null,
+      lastHeartbeatAt: null,
+      modalFunctionCallId: null,
+    });
   }
   return res.json({
     renderId: latest.id,
     status: latest.status,
     videoUrl: latest.video_url || null,
     error: latest.error || null,
+    errorCode: latest.error_code || null,
     renderMs: latest.render_ms || null,
+    progress: latest.progress === null || latest.progress === undefined ? null : Number(latest.progress),
+    stage: latest.stage || null,
+    lastHeartbeatAt: latest.last_heartbeat_at || null,
+    modalFunctionCallId: latest.modal_function_call_id || null,
   });
 });
 

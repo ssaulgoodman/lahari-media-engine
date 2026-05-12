@@ -11,6 +11,7 @@
     "lahari": "tsx cli/lahari.ts",
     "lahari:mcp": "tsx mcp/lahari.ts",
     "start": "NODE_ENV=production tsx server/index.ts",
+    "seedance:rd": "tsx scripts/seedance-storyboard-rd.ts",
     "preview": "vite preview"
   },
   "dependencies": {

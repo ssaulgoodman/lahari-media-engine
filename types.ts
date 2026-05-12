@@ -75,6 +75,29 @@ export interface VideoShot {
   promptsStale?: boolean;
   videoUrl?: string;
   videoStatus: GenerationStatus;
+  storyboardUrl?: string;
+  storyboardAssetId?: string;
+  storyboardVersionId?: string;
+  storyboardStatus: GenerationStatus;
+  storyboardLocked?: boolean;
+  storyboardUserFeedback?: string;
+  storyboardPrompt?: string;
+  storyboardCutPlan?: string;
+  storyboardPromptStatus?: GenerationStatus;
+  storyboardPromptUserFeedback?: string;
+  lipsyncEnabled?: boolean;
+  /** Per-step ref exclusion for storyboard mode. Keys: 'style' |
+   *  'cast:<castMemberId>' | 'env:<environmentId>'. Two independent lists
+   *  because storyboard image gen and Seedance video gen have different
+   *  ref appetites (Seedance often wants only the locked storyboard image). */
+  excludedRefs?: { storyboard: string[]; video: string[] };
+  /** When true, the previous shot in the same scene's locked storyboard is
+   *  attached as a continuity ref — sent to the planner as vision input and
+   *  to the image renderer as an @imageN ref. */
+  usePrevStoryboardRef?: boolean;
+  /** Nullable: null means "use smart default" (true when continuity_from is
+   *  'prev_shot' and a prev shot exists in scene). True/false override. */
+  includePrevCutPlan?: boolean | null;
   useNextAsEndFrame: boolean;
   error?: string;
   lastError?: string;
@@ -106,6 +129,21 @@ export interface ConceptOption {
     artStyle?: string;
     colorPalette?: string;
   };
+}
+
+export interface StylePreset {
+  key: string;
+  title: string;
+  description: string;
+  /** Curated static anchor image — what this preset generally looks like, shown
+   *  before the artist runs a project-specific visualize. Resolved server-side. */
+  previewImageUrl?: string;
+}
+
+/** Per-project cache of preset visualizations. Keyed by preset key.
+ *  Survives unlock so the artist can revisit without paying for regen. */
+export interface PresetSlotCache {
+  [presetKey: string]: { imageUrl?: string; assetId?: string };
 }
 
 export interface CastMember {
@@ -142,7 +180,7 @@ export interface ApiProject {
   styleDescription?: string;
   styleAssetUrl?: string;
   styleGenerationPrompt?: string;
-  styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string } } | null;
+  styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string }; presetSlots?: PresetSlotCache } | null;
   colorPalette?: string;
   videoMode: VideoMode;
   songType?: string;
@@ -150,7 +188,9 @@ export interface ApiProject {
   isMeditative?: boolean;
   analysisStep?: string;
   imageModel: string;
+  storyboardProvider: import('./constants/storyboardProviders').StoryboardProviderKey;
   videoModel: string;
+  textProvider: import('./constants/textProviders').TextProviderKey;
   aspectRatio: '16:9' | '9:16' | '1:1';
   videoResolution: '720p' | '1080p';
   lastScriptPrompt?: string;

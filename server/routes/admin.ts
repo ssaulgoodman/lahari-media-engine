@@ -87,6 +87,45 @@ router.get('/errors', auth, async (req, res) => {
   }
 });
 
+// GET /api/admin/active-renders — pre-deploy safety check. Returns the count
+// and list of rows currently active. Use this before a Modal redeploy:
+// any in-flight render gets SIGKILL'd when the container is replaced, so
+// confirm count=0 before pushing.
+router.get('/active-renders', auth, async (_req, res) => {
+  try {
+    const { data, error } = await getSB()
+      .from(T.renders)
+      .select('id, project_id, status, progress, stage, last_heartbeat_at, modal_function_call_id, created_at, updated_at')
+      .in('status', ['rendering', 'pending_finalize'])
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+
+    const rows = (data || []).map((r: any) => {
+      const ageMin = Math.round((Date.now() - new Date(r.created_at).getTime()) / 60000);
+      return {
+        id: r.id,
+        project_id: r.project_id,
+        status: r.status,
+        progress: r.progress === null || r.progress === undefined ? null : Number(r.progress),
+        stage: r.stage || null,
+        last_heartbeat_at: r.last_heartbeat_at || null,
+        modal_function_call_id: r.modal_function_call_id || null,
+        updated_at: r.updated_at,
+        created_at: r.created_at,
+        age_minutes: ageMin,
+      };
+    });
+
+    res.json({
+      count: rows.length,
+      safe_to_redeploy: rows.length === 0,
+      rows,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Migration endpoint removed — was POST /migrate-to-supabase, used once on
 // 2026-04-16. Depended on better-sqlite3. Migration is complete.
 

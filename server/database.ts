@@ -28,6 +28,7 @@ const T = {
   cast_members: 'lahari_cast_members',
   environments: 'lahari_environments',
   assets: 'lahari_assets',
+  storyboard_versions: 'lahari_storyboard_versions',
   chat_messages: 'lahari_chat_messages',
   ai_calls: 'lahari_ai_calls',
   renders: 'lahari_renders',

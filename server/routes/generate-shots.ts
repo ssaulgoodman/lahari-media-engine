@@ -15,11 +15,18 @@ import { SEGMIND_MODELS } from '../services/segmind.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
+import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const parseJson = <T>(value: any, fallback: T): T => {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value as T;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+};
 
 export const mountShotRoutes = (router: Router) => {
 
@@ -74,6 +81,7 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
+      textProvider: project.text_provider,
     });
 
     // Update the visual prompt with the rewritten version
@@ -114,10 +122,11 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   const scene = await selectOne('scenes', { id: shot.scene_id });
+  const ignoreContinuity = String(project.video_model || '').startsWith('seedance');
 
   // Sequential enforcement only for continuity-linked shots.
   // Hard-cut shots are independent and can generate in parallel.
-  if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+  if (!ignoreContinuity && shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
     const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
     if (prevShot && !prevShot.video_asset_id) {
       return res.status(400).json({ error: 'Previous shot must have a generated video first (continuity dependency)' });
@@ -170,7 +179,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
         const endAssetId = shot.end_image_asset_id || shot.extracted_last_frame_asset_id;
         if (endAssetId) { const path = await resolveAssetPath(endAssetId); if (path) additionalRefs.push({ imagePath: path }); }
       } else if (ref.type === 'continuity') {
-        if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+        if (!ignoreContinuity && shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
           const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
           const cid = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
           if (cid) prevShotEndFramePath = await resolveAssetPath(cid);
@@ -200,7 +209,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
         if (path) environmentRef = { name: env.name, imagePath: path };
       }
     }
-    if (shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
+    if (!ignoreContinuity && shot.continuity_from === 'prev_shot' && shot.sort_order > 0) {
       const prevShot = await findShot(shot.scene_id, shot.sort_order - 1);
       const cid = prevShot?.extracted_last_frame_asset_id || prevShot?.end_image_asset_id;
       if (cid) prevShotEndFramePath = await resolveAssetPath(cid);
@@ -298,6 +307,166 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
+});
+
+// ─── Write / Render / Refine / Lock Storyboard ─────────────────────
+
+router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    const result = await writeStoryboardPrompt({
+      projectId,
+      shotId,
+      artistNote: req.body?.feedback || req.body?.artistNote,
+      variant: req.body?.variant || 'adaptive_numbered_storyboard',
+    });
+    res.json({ ok: true, ...result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard prompt write failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    const result = await generateStoryboardVersion({
+      projectId,
+      shotId,
+      variant: req.body?.variant || 'adaptive_numbered_storyboard',
+    });
+    res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard generation failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/refine-storyboard', upload.single('referenceImage'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  const feedback = req.body?.feedback;
+  if (!feedback?.trim()) return res.status(400).json({ error: 'Feedback required' });
+
+  try {
+    let artistReferenceImagePath: string | undefined;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname).slice(1) || 'png';
+      artistReferenceImagePath = await saveBuffer(req.file.buffer, 'images', ext);
+      await insertRow('assets', {
+        id: uuidv4(),
+        project_id: projectId,
+        shot_id: shotId,
+        category: 'storyboard_refine_ref',
+        file_path: artistReferenceImagePath,
+        prompt: feedback,
+      });
+    }
+
+    const refineMode = req.body?.refineMode === 'edit_image' ? 'edit_image' : 'replan';
+    if (refineMode === 'edit_image') {
+      const result = await generateStoryboardVersion({
+        projectId,
+        shotId,
+        artistNote: feedback,
+        previousVersionId: req.body?.previousVersionId,
+        refineMode,
+        variant: req.body?.variant || 'adaptive_numbered_storyboard',
+        artistReferenceImagePath,
+      });
+      res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+      return;
+    }
+
+    const result = await writeStoryboardPrompt({
+      projectId,
+      shotId,
+      artistNote: feedback,
+      variant: req.body?.variant || 'adaptive_numbered_storyboard',
+      artistReferenceImagePath,
+    });
+    res.json({ ok: true, ...result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard refinement failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/lock-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    await lockStoryboardVersion(projectId, shotId, req.body?.versionId);
+    res.json({ ok: true, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard lock failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/unlock-storyboard', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+
+  try {
+    await unlockStoryboardVersion(projectId, shotId);
+    res.json({ ok: true, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard unlock failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.patch('/:id/shots/:shotId/storyboard-plan', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  const cutPlanText = String(req.body?.cutPlanText || '').trim();
+  const storyboardPrompt = req.body?.storyboardPrompt === undefined ? undefined : String(req.body.storyboardPrompt || '').trim();
+
+  if (!cutPlanText) return res.status(400).json({ error: 'cutPlanText required' });
+  if (storyboardPrompt !== undefined && !storyboardPrompt) return res.status(400).json({ error: 'storyboardPrompt cannot be empty' });
+
+  try {
+    await updateStoryboardCutPlan(projectId, shotId, cutPlanText, storyboardPrompt);
+    res.json({ ok: true, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard plan update failed:`, err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/:id/shots/:shotId/storyboard-history', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const rows = await selectAll('storyboard_versions', { shot_id: shotId }, { orderBy: 'created_at', ascending: false });
+  const assetIds = rows.map((row: any) => row.asset_id).filter(Boolean);
+  const assets = assetIds.length ? await selectAll('assets', { id: assetIds }) : [];
+  const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
+
+  res.json({
+    versions: rows.map((row: any) => {
+      const asset = assetMap.get(row.asset_id);
+      const metadata = parseJson<Record<string, any>>(row.metadata, {});
+      return {
+        id: row.id,
+        assetId: row.asset_id,
+        imageUrl: asset ? storageUrl(asset.file_path) : undefined,
+        parentVersionId: row.parent_version_id || undefined,
+        artistNote: row.artist_note || undefined,
+        openaiResponseId: row.openai_response_id || undefined,
+        reasoningModel: row.reasoning_model || undefined,
+        imageModel: row.image_model || undefined,
+        cutPlanText: metadata.cutPlanText || undefined,
+        continuityNotes: metadata.continuityNotes || undefined,
+        locked: !!row.locked,
+        createdAt: row.created_at,
+      };
+    }),
+  });
 });
 
 // End frame and frame-pair endpoints removed — the new workflow captures the
@@ -536,6 +705,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
       failedImageMime: mime,
       referenceImageBase64: req.file ? req.file.buffer.toString('base64') : undefined,
       referenceImageMime: req.file ? (req.file.mimetype || 'image/png') : undefined,
+      textProvider: project.text_provider,
     });
 
     // Save rewritten prompt — user sees it update, then generates separately
@@ -618,6 +788,7 @@ router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceIm
       endFrameMime: endMime,
       referenceImageBase64: userRefBase64,
       referenceImageMime: userRefMime,
+      textProvider: project.text_provider,
     });
 
     await updateRows('shots', { id: shot.id }, {
@@ -646,6 +817,28 @@ router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceIm
 router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { end_image_asset_id: null, end_image_status: 'idle', video_status: 'stale' });
+  res.json({ ok: true });
+});
+
+// Cancel an in-flight image generation — flips a stuck `loading` row back
+// to idle so the artist can retry. Server work (if any) keeps running but
+// its terminal write is harmless on an idle row.
+router.post('/:id/shots/:shotId/cancel-image', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot = await selectOne('shots', { id: shotId });
+  if (shot?.image_status === 'loading') {
+    await updateRows('shots', { id: shotId }, { image_status: 'idle' });
+  }
+  res.json({ ok: true });
+});
+
+// Cancel an in-flight video generation — same pattern as cancel-image.
+router.post('/:id/shots/:shotId/cancel-video', async (req, res) => {
+  const shotId = paramStr(req.params.shotId);
+  const shot = await selectOne('shots', { id: shotId });
+  if (shot?.video_status === 'loading') {
+    await updateRows('shots', { id: shotId }, { video_status: 'idle' });
+  }
   res.json({ ok: true });
 });
 
@@ -702,7 +895,8 @@ router.post('/:id/shots/:shotId/delete-ref', async (req, res) => {
 router.post('/:id/shots/:shotId/lock', async (req, res) => {
   const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
-  if (!shot.image_asset_id) return res.status(400).json({ error: 'Start frame required to lock' });
+  const hasFrameSource = !!shot.image_asset_id || (!!shot.storyboard_locked && !!shot.storyboard_asset_id);
+  if (!hasFrameSource) return res.status(400).json({ error: 'Start frame or locked storyboard required to lock' });
   if (!shot.video_asset_id) return res.status(400).json({ error: 'Video must be generated before locking' });
 
   await updateRows('shots', { id: shot.id }, { locked: 1 });
@@ -722,8 +916,10 @@ router.post('/:id/shots/:shotId/unlock', async (req, res) => {
 router.post('/:id/scenes/:sceneId/lock-all', async (req, res) => {
   const sceneId = paramStr(req.params.sceneId);
   const shots = await selectAll('shots', { scene_id: sceneId });
-  // Only lock shots that have both start frame + video
-  const lockable = shots.filter((s: any) => s.image_asset_id && s.video_asset_id && !s.locked);
+  // Only lock shots that have video plus either a start frame or a locked storyboard.
+  const lockable = shots.filter((s: any) =>
+    (s.image_asset_id || (s.storyboard_locked && s.storyboard_asset_id)) && s.video_asset_id && !s.locked
+  );
   for (const shot of lockable) {
     await updateRows('shots', { id: shot.id }, { locked: 1 });
   }

@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import { selectOne, selectColumns, insertRow, updateRows } from '../database.js';
+import { selectOne, selectColumns, insertRow, updateRows, selectAll } from '../database.js';
 import { saveBuffer, storageUrl } from '../storage.js';
 import { buildStylePrompt } from '../services/imagen.js';
 import { brainstormStyleDirections, refineStyleDirection, analyzeImageStyle } from '../services/claude.js';
@@ -13,10 +13,87 @@ import { getImageGenerationModelName, getImageService } from '../services/image-
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireAsset } from './scope-helpers.js';
+import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 export const mountStyleRoutes = (router: Router) => {
+  const markStyleDependentsStale = async (projectId: string) => {
+    // On first style lock these are no-ops; on later swaps this surfaces the
+    // "Outdated" indicator so refs and shot prompts do not look falsely valid.
+    await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
+    await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
+    const scenes = await selectAll('scenes', { project_id: projectId });
+    for (const scene of scenes) {
+      await updateRows('shots', { scene_id: scene.id }, { prompts_stale: true });
+    }
+  };
+
+  // ─── Curated Style Presets ─────────────────────────────────────────
+
+  router.get('/:id/style-presets', async (_req, res) => {
+    // Resolve the curated preview image path to a public URL per preset.
+    const presets = STYLE_PRESETS.map(p => ({
+      key: p.key,
+      title: p.title,
+      description: p.description,
+      previewImageUrl: storageUrl(p.previewImagePath),
+    }));
+    res.json({ presets });
+  });
+
+  // Lock a curated style preset directly as the project style. No
+  // visualization step — the preset IS the style image. We point a new
+  // project-scoped asset row at the preset's shared file path (same shared
+  // file_path pattern forks use) and apply the same downstream-stale logic
+  // /lock-style uses.
+  //
+  // style_description is INTENTIONALLY empty: the image carries everything
+  // downstream prompts need (buildCharacterPrompt and friends already only
+  // reference the style image by index, never the description text). Storing
+  // the preset description would leak prose into the concept-regen hint path
+  // and re-introduce the "warm hues" pollution the artist was seeing.
+  router.post('/:id/lock-style-preset', async (req, res) => {
+    const project = await selectOne('projects', { id: paramStr(req.params.id) });
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const { presetKey } = req.body || {};
+    const preset = typeof presetKey === 'string' ? getStylePreset(presetKey) : undefined;
+    if (!preset) return res.status(400).json({ error: 'Valid presetKey required' });
+
+    const assetId = uuidv4();
+    await insertRow('assets', {
+      id: assetId,
+      project_id: project.id,
+      category: 'style',
+      file_path: preset.previewImagePath,
+      prompt: `Curated preset: ${preset.title}`,
+      metadata: JSON.stringify({ stylePresetKey: preset.key, stylePresetTitle: preset.title, curatedPreset: true }),
+    });
+
+    await updateRows('projects', { id: project.id }, {
+      status: 'style_locked',
+      style_asset_id: assetId,
+      style_description: '',
+      updated_at: new Date().toISOString(),
+    });
+
+    await markStyleDependentsStale(project.id);
+
+    await logCall({
+      projectId: project.id,
+      stage: 'lock-style-preset',
+      model: 'n/a',
+      prompt: `Locked curated style preset: ${preset.title}`,
+      contextChain: await buildContextChain(project.id),
+      responseSummary: `Locked preset ${preset.key} as project style — no image gen, shared curated file path.`,
+      outputAssetIds: [assetId],
+      durationMs: 0,
+      costEstimate: 0,
+    });
+
+    res.json(await getFullProject(project.id));
+  });
 
   // ─── Brainstorm Style Directions (text only, no images) ─────────────
 
@@ -44,6 +121,7 @@ export const mountStyleRoutes = (router: Router) => {
         project.song_type || undefined,
         project.is_narrative ?? undefined,
         project.is_meditative ?? undefined,
+        project.text_provider,
       );
       const durationMs = Date.now() - t0;
 
@@ -139,7 +217,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     try {
       const t0 = Date.now();
-      const refined = await refineStyleDirection(description, feedback, concept);
+      const refined = await refineStyleDirection(description, feedback, concept, project.text_provider);
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: project.id }, { style_generation_prompt: null });
@@ -186,6 +264,8 @@ export const mountStyleRoutes = (router: Router) => {
       updated_at: new Date().toISOString(),
     });
 
+    await markStyleDependentsStale(projectId);
+
     res.json(await getFullProject(projectId));
   });
 
@@ -194,6 +274,7 @@ export const mountStyleRoutes = (router: Router) => {
   router.post('/:id/upload-and-lock-style', upload.single('image'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Image required' });
     const projectId = paramStr(req.params.id);
+    const projectForProvider = await selectOne('projects', { id: projectId });
 
     try {
       const ext = req.file.mimetype.includes('png') ? 'png' : req.file.mimetype.includes('jpeg') ? 'jpg' : 'png';
@@ -205,7 +286,7 @@ export const mountStyleRoutes = (router: Router) => {
       let styleDesc = 'User-uploaded style reference';
       try {
         const imageBase64 = req.file.buffer.toString('base64');
-        styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
+        styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype, projectForProvider?.text_provider);
       } catch (err: any) {
         console.warn(`[${projectId}] style analysis failed, using default description:`, err.message);
       }
@@ -217,6 +298,7 @@ export const mountStyleRoutes = (router: Router) => {
         style_description: styleDesc,
         updated_at: new Date().toISOString(),
       });
+      await markStyleDependentsStale(projectId);
 
       await logCall({
         projectId,
@@ -244,11 +326,12 @@ export const mountStyleRoutes = (router: Router) => {
     if (!req.file) return res.status(400).json({ error: 'Image required' });
     const projectId = paramStr(req.params.id);
     const prompt = 'Analyze uploaded style reference image for visual style description';
+    const projectForProvider = await selectOne('projects', { id: projectId });
 
     try {
       const imageBase64 = req.file.buffer.toString('base64');
       const t0 = Date.now();
-      const styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype);
+      const styleDesc = await analyzeImageStyle(imageBase64, req.file.mimetype, projectForProvider?.text_provider);
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: projectId }, { style_description: styleDesc, updated_at: new Date().toISOString() });

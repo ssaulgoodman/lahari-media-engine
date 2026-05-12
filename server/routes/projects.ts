@@ -12,9 +12,22 @@ import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js'
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
+// Registry-first-entry defaults so a future reorder in the constants files
+// auto-propagates to getFullProject hydration. Old projects with null columns
+// (pre-queue.ts-default-fill) get the current default instead of a stale
+// hardcoded one.
+import { IMAGE_MODELS } from '../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { VIDEO_MODELS } from '../../constants/videoModels.js';
+import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
+const parseJson = <T,>(value: any, fallback: T): T => {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value as T;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+};
 
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
@@ -70,7 +83,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200
 // shared (same files on disk) so disk usage stays near-zero. Caller can
 // then run destructive operations on the new project while the original
 // stays frozen as a snapshot.
-const forkProject = async (sourceId: string): Promise<string> => {
+const forkProject = async (
+  sourceId: string,
+  opts?: { newUserId?: string; newSourceQueueId?: string | null },
+): Promise<string> => {
   const src: any = await selectOne('projects', { id: sourceId });
   if (!src) throw new Error('Source project not found');
 
@@ -101,6 +117,7 @@ const forkProject = async (sourceId: string): Promise<string> => {
   const srcEnvs = await selectAll('environments', { project_id: sourceId });
   const srcAssets = await selectAll('assets', { project_id: sourceId });
   const srcScenes = await selectAll('scenes', { project_id: sourceId }, { orderBy: 'sort_order' });
+  const srcStoryboardVersions = await selectAll('storyboard_versions', { project_id: sourceId });
 
   const castMap = new Map<string, string>();
   srcCast.forEach(c => castMap.set(c.id, uuidv4()));
@@ -110,8 +127,15 @@ const forkProject = async (sourceId: string): Promise<string> => {
   srcAssets.forEach(a => assetMap.set(a.id, uuidv4()));
   const sceneMap = new Map<string, string>();
   srcScenes.forEach(s => sceneMap.set(s.id, uuidv4()));
+  const shotMap = new Map<string, string>();
+  const storyboardVersionMap = new Map<string, string>();
+  srcStoryboardVersions.forEach(v => storyboardVersionMap.set(v.id, uuidv4()));
 
   const remapAsset = (oldId: string | null | undefined) => oldId ? (assetMap.get(oldId) || null) : null;
+  const remapStoryboardRefs = (refs: any) => parseJson<any[]>(refs, []).map((ref) => ({
+    ...ref,
+    assetId: remapAsset(ref.assetId) || ref.assetId,
+  }));
 
   // Project row — copy everything, remap style_asset_id, new id + parent.
   const now = new Date().toISOString();
@@ -130,6 +154,7 @@ const forkProject = async (sourceId: string): Promise<string> => {
     meaning: src.meaning,
     video_mode: src.video_mode,
     image_model: src.image_model,
+    storyboard_provider: src.storyboard_provider || 'gpt-image-2',
     target_duration: src.target_duration,
     cost_estimate: src.cost_estimate,
     style_exploration: (() => {
@@ -138,6 +163,14 @@ const forkProject = async (sourceId: string): Promise<string> => {
       let se = JSON.parse(src.style_exploration);
       if (se.slots) se.slots = se.slots.map((s: any) => ({ ...s, assetId: remapAsset(s.assetId) || s.assetId }));
       if (se.userSlot?.assetId) se.userSlot = { ...se.userSlot, assetId: remapAsset(se.userSlot.assetId) || se.userSlot.assetId };
+      if (se.presetSlots) {
+        se.presetSlots = Object.fromEntries(
+          Object.entries(se.presetSlots as Record<string, any>).map(([k, v]: [string, any]) => [
+            k,
+            { ...v, assetId: remapAsset(v?.assetId) || v?.assetId },
+          ])
+        );
+      }
       return JSON.stringify(se);
     })(),
     video_model: src.video_model,
@@ -147,8 +180,9 @@ const forkProject = async (sourceId: string): Promise<string> => {
     last_concept_prompt: src.last_concept_prompt,
     last_write_shots_prompt: src.last_write_shots_prompt,
     style_generation_prompt: src.style_generation_prompt,
-    user_id: src.user_id,
+    user_id: opts?.newUserId ?? src.user_id,
     parent_project_id: sourceId,
+    source_queue_id: opts && 'newSourceQueueId' in opts ? opts.newSourceQueueId : src.source_queue_id,
     created_at: now,
     updated_at: now,
   });
@@ -213,13 +247,15 @@ const forkProject = async (sourceId: string): Promise<string> => {
       const shots = await selectAll('shots', { scene_id: s.id }, { orderBy: 'sort_order' });
       const newSceneId = sceneMap.get(s.id)!;
       for (const shot of shots) {
+        const newShotId = uuidv4();
+        shotMap.set(shot.id, newShotId);
         let newCastIds = '[]';
         try {
           const ids = JSON.parse(shot.cast_ids || '[]') as string[];
           newCastIds = JSON.stringify(ids.map((id: string) => castMap.get(id) || id).filter(Boolean));
         } catch {}
         allShotRows.push({
-          id: uuidv4(),
+          id: newShotId,
           scene_id: newSceneId,
           visual_prompt: shot.visual_prompt,
           motion_prompt: shot.motion_prompt,
@@ -227,6 +263,18 @@ const forkProject = async (sourceId: string): Promise<string> => {
           cast_ids: newCastIds,
           image_asset_id: remapAsset(shot.image_asset_id),
           video_asset_id: remapAsset(shot.video_asset_id),
+          storyboard_asset_id: remapAsset(shot.storyboard_asset_id),
+          storyboard_version_id: shot.storyboard_version_id
+            ? (storyboardVersionMap.get(shot.storyboard_version_id) || null)
+            : null,
+          storyboard_status: shot.storyboard_status,
+          storyboard_locked: shot.storyboard_locked,
+          storyboard_user_feedback: shot.storyboard_user_feedback,
+          storyboard_prompt: shot.storyboard_prompt,
+          storyboard_cut_plan: shot.storyboard_cut_plan,
+          storyboard_prompt_status: shot.storyboard_prompt_status,
+          storyboard_prompt_user_feedback: shot.storyboard_prompt_user_feedback,
+          lipsync_enabled: shot.lipsync_enabled,
           image_status: shot.image_status,
           video_status: shot.video_status,
           critique: shot.critique,
@@ -250,6 +298,36 @@ const forkProject = async (sourceId: string): Promise<string> => {
     }
     if (allShotRows.length > 0) {
       await insertMany('shots', allShotRows);
+    }
+
+    const storyboardVersionRows = srcStoryboardVersions
+      .map((version: any) => {
+        const newShotId = shotMap.get(version.shot_id);
+        const newAssetId = remapAsset(version.asset_id);
+        if (!newShotId || !newAssetId) return null;
+        return {
+          id: storyboardVersionMap.get(version.id),
+          project_id: newId,
+          shot_id: newShotId,
+          asset_id: newAssetId,
+          parent_version_id: version.parent_version_id
+            ? (storyboardVersionMap.get(version.parent_version_id) || null)
+            : null,
+          openai_response_id: version.openai_response_id,
+          openai_image_call_ids: version.openai_image_call_ids,
+          reasoning_model: version.reasoning_model,
+          image_model: version.image_model,
+          prompt: version.prompt,
+          artist_note: version.artist_note,
+          refs: remapStoryboardRefs(version.refs),
+          metadata: version.metadata,
+          locked: version.locked,
+          created_at: version.created_at,
+        };
+      })
+      .filter(Boolean);
+    if (storyboardVersionRows.length > 0) {
+      await insertMany('storyboard_versions', storyboardVersionRows as any[]);
     }
   }
 
@@ -287,6 +365,7 @@ const getFullProject = async (projectId: string) => {
     if (shot.end_image_asset_id) assetIds.add(shot.end_image_asset_id);
     if (shot.extracted_last_frame_asset_id) assetIds.add(shot.extracted_last_frame_asset_id);
     if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
+    if (shot.storyboard_asset_id) assetIds.add(shot.storyboard_asset_id);
   }
   for (const c of cast) { if (c.reference_asset_id) assetIds.add(c.reference_asset_id); }
   for (const e of environments) { if (e.reference_asset_id) assetIds.add(e.reference_asset_id); }
@@ -332,6 +411,7 @@ const getFullProject = async (projectId: string) => {
       shot.endImageUrl = resolveUrl(shot.end_image_asset_id);
       shot.extractedLastFrameUrl = resolveUrl(shot.extracted_last_frame_asset_id);
       shot.videoUrl = resolveUrl(shot.video_asset_id);
+      shot.storyboardUrl = resolveUrl(shot.storyboard_asset_id);
       shot.castIds = JSON.parse(shot.cast_ids || '[]');
       shot.critique = shot.critique ? JSON.parse(shot.critique) : undefined;
       shot.refImages = shotRefsByShot.get(shot.id) || [];
@@ -379,8 +459,10 @@ const getFullProject = async (projectId: string) => {
     })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
-    imageModel: project.image_model || 'gemini-3-pro',
-    videoModel: project.video_model || 'veo-3.1',
+    imageModel: project.image_model || IMAGE_MODELS[0].key,
+    storyboardProvider: project.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
+    videoModel: project.video_model || VIDEO_MODELS[0].key,
+    textProvider: project.text_provider || TEXT_PROVIDERS[0].key,
     aspectRatio: project.aspect_ratio || '16:9',
     videoResolution: project.video_resolution || '720p',
     lastScriptPrompt: project.last_script_prompt || undefined,
@@ -414,7 +496,7 @@ const getFullProject = async (projectId: string) => {
       narrativeDescription: s.narrative_description || '',
       shots: (s.shots || []).map((shot: any) => ({
         id: shot.id,
-        direction: shot.direction || undefined,
+        direction: shot.direction || '',
         visualPrompt: shot.visual_prompt || '',
         motionPrompt: shot.motion_prompt || 'Cinematic camera movement',
         duration: shot.duration,
@@ -422,7 +504,40 @@ const getFullProject = async (projectId: string) => {
         imageUrl: shot.imageUrl,
         endImageUrl: shot.endImageUrl,
         extractedLastFrameUrl: shot.extractedLastFrameUrl,
+        storyboardUrl: shot.storyboardUrl,
+        storyboardAssetId: shot.storyboard_asset_id || undefined,
+        storyboardVersionId: shot.storyboard_version_id || undefined,
+        storyboardStatus: shot.storyboard_status || 'idle',
+        storyboardLocked: !!shot.storyboard_locked,
+        storyboardUserFeedback: shot.storyboard_user_feedback || undefined,
+        storyboardPrompt: shot.storyboard_prompt || undefined,
+        storyboardCutPlan: shot.storyboard_cut_plan || undefined,
+        storyboardPromptStatus: shot.storyboard_prompt_status || 'idle',
+        storyboardPromptUserFeedback: shot.storyboard_prompt_user_feedback || undefined,
+        lipsyncEnabled: !!shot.lipsync_enabled,
+        excludedRefs: (() => {
+          // Per-tab ref exclusion for storyboard mode (see migration
+          // 2026-05-11_add_shot_excluded_refs.sql). Stored as JSONB with
+          // {storyboard, video} arrays of string keys. Default both empty
+          // when column is missing or malformed so the frontend can treat
+          // any shot consistently.
+          const raw = shot.excluded_refs;
+          if (!raw) return { storyboard: [], video: [] };
+          const parsed = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+          if (!parsed || typeof parsed !== 'object') return { storyboard: [], video: [] };
+          const sanitize = (v: any): string[] =>
+            Array.isArray(v) ? v.filter((k: any) => typeof k === 'string') : [];
+          return { storyboard: sanitize(parsed.storyboard), video: sanitize(parsed.video) };
+        })(),
         continuityFrom: shot.continuity_from || 'cut',
+        // Storyboard continuity flags. usePrevStoryboardRef is explicit
+        // boolean; includePrevCutPlan is nullable (null = "use smart default
+        // server-side"). Surfacing both lets the StoryboardPanel render the
+        // current state without computing the default in two places.
+        usePrevStoryboardRef: !!shot.use_prev_storyboard_ref,
+        includePrevCutPlan: shot.include_prev_cut_plan === null || shot.include_prev_cut_plan === undefined
+          ? null
+          : !!shot.include_prev_cut_plan,
         refinedFromPrevFrame: !!shot.refined_from_prev_frame,
         endImageStatus: shot.end_image_status || 'idle',
         endVisualPrompt: shot.end_visual_prompt || undefined,
@@ -456,16 +571,59 @@ router.get('/', async (req, res) => {
     'projects',
     'id, title, status, created_at, updated_at, parent_project_id',
     { user_id: req.userId },
-    { orderBy: 'created_at', ascending: false }
+    { orderBy: 'updated_at', ascending: false }
   );
-  res.json(rows.map((r: any) => ({
+
+  // One extra query: count final_render assets per project so the sidebar can
+  // show "Renders (N)" without N round-trips.
+  const ids = rows.map((r: any) => r.id);
+  const renderCounts = new Map<string, number>();
+  const activityTimes = new Map<string, string>();
+  const noteActivity = (projectId: string, value?: string | null) => {
+    if (!value) return;
+    const current = activityTimes.get(projectId);
+    if (!current || new Date(value).getTime() > new Date(current).getTime()) {
+      activityTimes.set(projectId, value);
+    }
+  };
+  for (const r of rows) noteActivity(r.id, r.updated_at || r.created_at);
+
+  if (ids.length > 0) {
+    const { data: assetRows, error } = await getSB()
+      .from(T.assets)
+      .select('project_id, category, created_at')
+      .in('project_id', ids);
+    if (error) throw new Error(`DB select assets: ${error.message}`);
+    for (const a of (assetRows as any[]) || []) {
+      if (a.category === 'final_render') {
+        renderCounts.set(a.project_id, (renderCounts.get(a.project_id) || 0) + 1);
+      }
+      noteActivity(a.project_id, a.created_at);
+    }
+
+    const { data: callRows, error: callError } = await getSB()
+      .from(T.ai_calls)
+      .select('project_id, created_at')
+      .in('project_id', ids);
+    if (callError) throw new Error(`DB select ai_calls: ${callError.message}`);
+    for (const c of (callRows as any[]) || []) {
+      noteActivity(c.project_id, c.created_at);
+    }
+  }
+
+  const summaries = rows.map((r: any) => ({
     id: r.id,
     title: r.title,
     status: r.status,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    lastActivityAt: activityTimes.get(r.id) || r.updated_at || r.created_at,
     parentProjectId: r.parent_project_id || undefined,
-  })));
+    renderCount: renderCounts.get(r.id) || 0,
+  }));
+
+  summaries.sort((a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime());
+  res.json(summaries);
 });
 
 // Get single project (full state)
@@ -493,7 +651,8 @@ router.post('/', upload.single('audio'), async (req, res) => {
     title,
     status: 'analyzing',
     audio_path: audioPath,
-    image_model: 'gemini-3-pro',
+    image_model: 'nano-banana-2',
+    storyboard_provider: 'gpt-image-2',
     user_id: req.userId,
   });
 
@@ -611,7 +770,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined, project.text_provider);
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -726,7 +885,7 @@ router.post('/:id/refine-concept', async (req, res) => {
 
   try {
     const projectId = paramStr(req.params.id);
-    const refined = await refineConceptDirection(current, feedback);
+    const refined = await refineConceptDirection(current, feedback, project.text_provider);
     await updateRows('projects', { id: projectId }, {
       locked_concept: JSON.stringify(refined),
       updated_at: new Date().toISOString(),
@@ -770,13 +929,15 @@ router.patch('/:id/concept', async (req, res) => {
 
 // Update project settings
 router.patch('/:id', async (req, res) => {
-  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, videoModel, aspectRatio, videoResolution } = req.body;
+  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, textProvider, aspectRatio, videoResolution } = req.body;
   const updates: Record<string, any> = {};
 
   if (title !== undefined) updates.title = title;
   if (videoMode !== undefined) updates.video_mode = videoMode;
   if (imageModel !== undefined) updates.image_model = imageModel;
+  if (storyboardProvider !== undefined) updates.storyboard_provider = storyboardProvider;
   if (videoModel !== undefined) updates.video_model = videoModel;
+  if (textProvider !== undefined) updates.text_provider = textProvider;
   if (aspectRatio !== undefined) updates.aspect_ratio = aspectRatio;
   if (videoResolution !== undefined) updates.video_resolution = videoResolution;
   if (targetDuration !== undefined) updates.target_duration = targetDuration;
@@ -884,7 +1045,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
     let meaningError: string | undefined;
     if (lyrics && !project.meaning) {
       try {
-        meaning = await summarizeMeaning(project.title || 'Untitled', 'Unknown', lyrics, '');
+        meaning = await summarizeMeaning(project.title || 'Untitled', 'Unknown', lyrics, '', project.text_provider);
       } catch (e: any) {
         console.warn(`[${projectId}] meaning failed:`, e);
         meaningError = String(e);
@@ -1125,9 +1286,9 @@ router.delete('/:id/renders/:assetId', async (req, res) => {
   // Remove the mp4 from Supabase Storage (failure here isn't fatal — the row
   // removal below is the source of truth) and then drop the assets row.
   //
-  // Renderer-uploaded renders live in a separate bucket (RENDER_STORAGE_BUCKET,
-  // default `videos`) to match the renderer's SUPABASE_BUCKET. Legacy assets
-  // with no matching `lahari_renders` row fall back to the default bucket.
+  // Renderer-uploaded renders live in the renderer's SUPABASE_BUCKET. Production
+  // Modal currently sets SUPABASE_BUCKET=videos, so the backend default matches
+  // that. Override RENDER_STORAGE_BUCKET only if the renderer bucket changes.
   const renderBucket = process.env.RENDER_STORAGE_BUCKET ?? 'videos';
   const deleteBucket = renderRow ? renderBucket : undefined;
   try {
@@ -1189,11 +1350,14 @@ router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
 });
 
 router.patch('/:id/shots/:shotId', async (req, res) => {
-  const { visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom } = req.body;
+  const { direction, visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom, lipsyncEnabled } = req.body;
   const shotId = paramStr(req.params.shotId);
 
   // Manual edits to the prompt invalidate the auto-refresh chip — it meant
   // "this text was written by the vision rewrite", not "this text is current".
+  if (direction !== undefined) {
+    await updateRows('shots', { id: shotId }, { direction, prompts_stale: true });
+  }
   if (visualPrompt !== undefined) {
     await updateRows('shots', { id: shotId }, { visual_prompt: visualPrompt, refined_from_prev_frame: 0 });
   }
@@ -1202,6 +1366,9 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   }
   if (useNextAsEndFrame !== undefined) {
     await updateRows('shots', { id: shotId }, { use_next_as_end_frame: useNextAsEndFrame ? 1 : 0 });
+  }
+  if (lipsyncEnabled !== undefined) {
+    await updateRows('shots', { id: shotId }, { lipsync_enabled: !!lipsyncEnabled });
   }
   if (userFeedback !== undefined) {
     await updateRows('shots', { id: shotId }, { user_feedback: userFeedback || null });
@@ -1223,6 +1390,35 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   if (duration !== undefined && typeof duration === 'number' && duration > 0) {
     await updateRows('shots', { id: shotId }, { duration, prompts_stale: true });
   }
+
+  // Storyboard continuity flags — see migrations/2026-05-12_add_storyboard_continuity.sql.
+  // use_prev_storyboard_ref is an explicit boolean; include_prev_cut_plan
+  // is nullable to distinguish "artist hasn't decided" (null → smart
+  // default applies server-side) from "explicit true/false".
+  const { usePrevStoryboardRef, includePrevCutPlan } = req.body;
+  if (usePrevStoryboardRef !== undefined) {
+    await updateRows('shots', { id: shotId }, { use_prev_storyboard_ref: !!usePrevStoryboardRef });
+  }
+  if (includePrevCutPlan !== undefined) {
+    const v = includePrevCutPlan === null ? null : !!includePrevCutPlan;
+    await updateRows('shots', { id: shotId }, { include_prev_cut_plan: v });
+  }
+
+  // Per-step ref exclusion for storyboard mode. Payload shape:
+  //   excludedRefs: { storyboard?: string[], video?: string[] }
+  // Sanitized server-side: only string keys, both arrays present in the
+  // stored JSON so the column has stable shape downstream.
+  const { excludedRefs } = req.body;
+  if (excludedRefs !== undefined && excludedRefs && typeof excludedRefs === 'object') {
+    const sanitize = (v: any): string[] =>
+      Array.isArray(v) ? v.filter((k: any) => typeof k === 'string') : [];
+    const payload = {
+      storyboard: sanitize(excludedRefs.storyboard),
+      video: sanitize(excludedRefs.video),
+    };
+    await updateRows('shots', { id: shotId }, { excluded_refs: JSON.stringify(payload) });
+  }
+
   res.json({ ok: true });
 });
 

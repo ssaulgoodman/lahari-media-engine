@@ -43,11 +43,51 @@ function parseSrtToTimestamped(srt: string): string {
 const router = Router();
 
 // List queue with optional filters
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const { status, deity, search } = _req.query as any;
-    const items = await listQueue({ status, deity, search });
+    const { status, deity, search } = req.query as any;
+    const items = await listQueue({ status, deity, search, currentUserId: req.userId });
     res.json(items);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Per-user, per-song mnemonic note. Empty/whitespace → DELETE the row so
+// the dashboard re-shows the bare song name. Non-empty → UPSERT. 200-char
+// cap matches the table CHECK constraint; we return 400 rather than letting
+// Postgres reject it so the frontend gets a clean message.
+router.put('/notes/:songId', async (req, res) => {
+  const songId = req.params.songId;
+  const userId = req.userId;
+  if (!userId) return res.status(401).json({ error: 'Auth required' });
+  if (!songId) return res.status(400).json({ error: 'songId required' });
+
+  const raw = String(req.body?.note ?? '');
+  const trimmed = raw.trim();
+
+  if (trimmed && trimmed.length > 200) {
+    return res.status(400).json({ error: 'Note must be 200 characters or fewer' });
+  }
+
+  try {
+    const sb = getSB();
+    if (!trimmed) {
+      await sb.from('lahari_song_notes')
+        .delete()
+        .eq('user_id', userId)
+        .eq('song_id', songId);
+      return res.json({ note: null });
+    }
+    const { error } = await sb.from('lahari_song_notes')
+      .upsert({
+        user_id: userId,
+        song_id: songId,
+        note: trimmed,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,song_id' });
+    if (error) throw new Error(error.message);
+    res.json({ note: trimmed });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -75,26 +115,34 @@ router.post('/:queueId/start', async (req, res) => {
     const item = items.find(i => i.id === queueId);
     if (!item) return res.status(404).json({ error: 'Queue item not found' });
 
-    // Check if THIS user already has a project for this queue item
+    // Check if THIS user already has a project for this queue item.
+    // Prefer non-completed projects so the action button's promise matches:
+    // "Continue" on the dashboard should hit the active fork, not the
+    // archived completed one if both exist for this user.
     const { data: existingProjects } = await getSB()
       .from(T.projects)
-      .select('id')
+      .select('id, status')
       .eq('source_queue_id', queueId)
-      .eq('user_id', req.userId)
-      .limit(1);
+      .eq('user_id', req.userId);
     if (existingProjects?.length) {
-      const project = await getFullProject(existingProjects[0].id);
+      const active = existingProjects.find((p: any) => p.status !== 'completed');
+      const pick = active || existingProjects[0];
+      const project = await getFullProject(pick.id);
       if (project) return res.json({ project, queueItem: item });
     }
 
     // Also check the legacy link (projects created before source_queue_id existed)
+    // — only honour it if it's YOUR project. If another user's project sits in
+    // lahari_project_id we deliberately ignore it and fall through to create a
+    // fresh project for this user. Forking from someone else mid-queue is
+    // unclear when multiple artists are working in parallel — defer that path
+    // until we have an explicit "fork from X" affordance.
     if (item.lahari_project_id) {
       const existing = await selectOne('projects', { id: item.lahari_project_id });
       if (existing && existing.user_id === req.userId) {
         const project = await getFullProject(item.lahari_project_id);
         if (project) return res.json({ project, queueItem: item });
       }
-      // Different user's project — fall through to create a new one
     }
 
     // Get audio URL — prefer Supabase Storage, fall back to Google Drive
@@ -125,7 +173,17 @@ router.post('/:queueId/start', async (req, res) => {
       song_type: cached.cached_song_type || null,
       is_narrative: cached.cached_is_narrative ?? null,
       is_meditative: cached.cached_is_meditative ?? null,
+      // Defaults aligned with constants/*.ts first-entry conventions.
+      // Image: Nano Banana Pro (gemini-3-pro) — strongest ref-image
+      // conditioning. Storyboard: Nano Banana 2 — cheapest board renderer.
+      // Video: Seedance 2.0 Fast — storyboard-mode workhorse. Pacing:
+      // 15s — matches Seedance's typical clip length so the script
+      // planner generates one storyboard-controlled shot per scene
+      // segment instead of fragmenting into short cuts.
       image_model: 'gemini-3-pro',
+      storyboard_provider: 'nano-banana-2',
+      video_model: 'seedance-2.0-fast',
+      target_duration: 15,
       user_id: req.userId,
       source_queue_id: queueId,
     });

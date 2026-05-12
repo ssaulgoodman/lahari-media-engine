@@ -2,12 +2,24 @@
  * Prompt catalog — the read-only reference for every AI prompt in the pipeline.
  *
  * NOTE FOR FUTURE CHANGES: this file is hand-synced with the actual prompt
- * strings in services/claude.ts, services/imagen.ts, services/gemini.ts, and
- * the inline Veo assembly in routes/generate.ts. When you tweak a prompt in
- * the service, update its `template` here so the Prompts page stays truthful.
+ * strings in services/claude.ts, services/imagen.ts, services/gemini.ts,
+ * services/openai-script.ts, services/storyboard.ts,
+ * services/seedance-storyboard-rd.ts, and routes/generate-video.ts. When you
+ * tweak a prompt in the service, update its `template` here so the Prompts page
+ * stays truthful.
  *
  * Phase 1 = display only. Phase 2 moves to server/prompts/<name>.ts templates
  * with runtime interpolation + per-project overrides.
+ *
+ * Text-provider routing (2026-05-12): every entry below whose `model` column
+ * says "Claude Opus" or "Claude Sonnet" for a text stage is actually routed
+ * through `project.text_provider`. Three options: `claude-opus` (default,
+ * Opus 4.7 primary / Sonnet 4.6 refine), `gpt-5.5`, `gemini-3-pro` (Gemini
+ * 3 Pro primary / Gemini 3.1 Flash refine). The only text stages NOT routed
+ * are the script writer trio: planScenes, refineScript, writeShotPrompts —
+ * they stay on Claude Opus because the extended-thinking + validation-loop
+ * retry semantics don't port cleanly to OpenAI / Gemini. The storyboard
+ * planner IS routed (uses `useRefineModel: true` to keep cost low).
  */
 
 export type PromptStage =
@@ -161,11 +173,12 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
     summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Uses song type + meditative/narrative signals to keep devotional songs from drifting into generic plot logic.',
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
-      { name: 'concept', description: 'Locked concept (deity, theme, mood)' },
+      { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
+      { name: 'concept', description: 'Locked concept (deity, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
-      { name: 'pacing', description: 'Shot duration in seconds (default 8)' },
+      { name: 'pacing', description: 'Shot duration in seconds (default 15 — matches Seedance storyboard-mode workhorse clip length)' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
       { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },
@@ -180,7 +193,14 @@ DIRECTOR STYLE:
 
 SONG TYPE (from audio analysis): {{songType}}, {{traits}}
 
-[concept, lyrics, meaning, musical structure injected]
+CONCEPT:
+Deity/subject: {{concept.deity}}
+Direction: {{concept.conceptDirection}}
+Core idea: {{concept.theme}}
+Expanded brief: {{concept.description}}
+Mood: {{concept.mood}}
+
+[lyrics, meaning, musical structure injected]
 
 ═══ PACING RULES (extended thinking reasons through this) ═══
 Base shot length: {{pacing}} seconds.
@@ -188,6 +208,14 @@ For each scene: number_of_shots = ceil(scene_duration / {{pacing}})
 Every shot is {{pacing}}s except the LAST shot which gets the remainder.
 Example: 21s at 8s → ceil(21/8) = 3 shots (8+8+5).
 Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
+
+SEEDANCE STORYBOARD PACING (when videoModel starts with "seedance"):
+- A Lahari shot is one storyboard-controlled clip, not one continuous camera take.
+- Each shot may contain internal cuts and angles, but it must stay one clear story/music idea.
+- Prefer 15s when the phrase supports a real mini-scene.
+- Allowed range: 4-15s. Use 4-8s only for short transitions or quick devotional responses.
+- Shot durations inside each scene must add exactly to the scene duration.
+- direction should be a practical edited beat sequence that a storyboard can show.
 ═══════════════════════════════════════════════════════════════
 
 Uses extended thinking (8K budget) so Claude reasons through pacing math.
@@ -209,7 +237,92 @@ SCENE rules:
 - Not every sacred name or attribute needs a literal illustration
 - Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields
 - Build progression across the scene: invocation -> deepening presence -> surrender`,
-    source: { file: 'server/services/claude.ts', lines: '303-415' },
+    source: { file: 'server/services/claude.ts', lines: 'planScenes' },
+  },
+  {
+    id: 'plan-scenes-openai',
+    name: 'Plan script (GPT-5.5 experiment)',
+    stage: 'blueprint',
+    model: 'gpt-5.5',
+    modelLabel: 'GPT-5.5 (Responses structured output)',
+    triggeredBy: 'Experimental script generation path when scriptProvider/openai runtime flag is selected.',
+    summary: 'Alternative script planner tuned to be practical and shootable, with the same cast/environment/scene/shot JSON contract and validation loop as the Claude planner.',
+    variables: [
+      { name: 'videoMode', description: '"montage" or "cinematic"' },
+      { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
+      { name: 'concept', description: 'Locked concept (deity, direction, theme, expanded description, mood)' },
+      { name: 'lyrics', description: 'Full lyrics' },
+      { name: 'meaning', description: 'Meaning summary' },
+      { name: 'musicalStructure', description: 'Sections with timestamps' },
+      { name: 'pacing', description: 'Base shot duration for keyframe mode' },
+      { name: 'minShotDuration', description: 'Video model minimum clip length' },
+      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'isNarrative', description: 'Has dramatic arc?' },
+      { name: 'isMeditative', description: 'Contemplative/inward?' },
+      { name: 'userNote', description: 'Optional director note' },
+    ],
+    template: `You are the practical script planner for Lahari, an AI music-video tool for devotional songs.
+
+Your job is production structure: cast, reusable locations, scenes, and what physically happens in each shot.
+Write for assets that artists can actually generate and storyboard. Be concrete, calm, and shootable.
+
+Do not write pompous poetry. Do not use vague phrases like "divine grace flows", "cosmic energy blooms", or "the universe awakens" unless you translate them into visible human action, ritual action, or a simple physical image.
+Do not include camera directions, lens choices, color palette, art style, rendering language, or overbuilt fantasy architecture in the script. Storyboard and cinematography steps happen later.
+Avoid impossible crowds, dozens of extras, elaborate VFX, and prop chaos unless the song explicitly demands it.
+
+DIRECTOR STYLE: {{videoMode}}
+SONG TYPE: {{songType}}, {{traits}}
+
+CONCEPT:
+Deity/subject: {{concept.deity}}
+Direction: {{concept.conceptDirection}}
+Core idea: {{concept.theme}}
+Expanded brief: {{concept.description}}
+Mood: {{concept.mood}}
+
+LYRICS:
+{{lyrics}}
+
+MEANING:
+{{meaning}}
+
+MUSICAL STRUCTURE:
+{{musicalStructure}}
+
+{{videoModel startsWith seedance ? "
+SEEDANCE STORYBOARD PACING:
+- A Lahari shot is one storyboard-controlled clip, not one continuous camera take.
+- Each shot may contain internal cuts and angles, but it must be one clear story/music idea.
+- Prefer 15s when the phrase supports a real mini-scene.
+- Allowed range: 4-15s. Use 4-8s only for short transitions or quick devotional responses.
+- Shot durations inside each scene must add exactly to the scene duration.
+- direction should be a practical edited beat sequence that a storyboard can show.
+" : "
+STANDARD PACING:
+- Base shot length is {{pacing}}s.
+- For each scene, write exactly ceil(scene_duration / {{pacing}}) shots.
+- The app will assign deterministic durations later.
+- Video model minimum clip length is {{minShotDuration}}s.
+"}}
+
+Return only JSON matching the strict schema.
+
+CAST:
+- Include only characters actually needed.
+- Include the deity and key human figures by proper names.
+- Descriptions are neutral reusable reference identities: physical appearance, cultural identity, costume, ornaments. No action, no props in hands, no art style.
+
+ENVIRONMENTS:
+- Use 2-3 reusable locations unless the song truly needs more.
+- Descriptions are physical spaces only: landscape/architecture/scale/atmosphere. No art style.
+
+SCENES:
+- Follow musical structure timestamps exactly.
+- narrativeDescription is plain and concrete, 1-2 sentences.
+- Every shot must have environmentName from your environment list.
+- Every visible character must be in castNames.
+- direction = what happens in the clip. In Seedance mode it can be 2-5 internal beats, but keep one coherent clip idea.`,
+    source: { file: 'server/services/openai-script.ts', lines: 'buildPrompt' },
   },
   {
     id: 'brainstorm-style-directions',
@@ -297,6 +410,12 @@ Revise the direction incorporating the feedback. Keep it cohesive and internally
 Use the refine_direction tool.`,
     source: { file: 'server/services/claude.ts', lines: '472-493' },
   },
+  // Note: curated style presets no longer involve any AI prompt. The /lock-
+  // style-preset endpoint points a new project-scoped asset row at the
+  // preset's shared curated file_path and writes style_asset_id directly —
+  // no text-to-image step. The old "visualize curated style preset" prompt
+  // entry was removed when that path was deleted (it was generating fresh
+  // images from description text without ever reading the curated file).
   // ─── Looks ────────────────────────────────────────────────────────
   {
     id: 'character-look',
@@ -373,6 +492,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
     variables: [
       { name: 'shots', description: 'List of shots with id, direction, duration, cast, scene context' },
       { name: 'cast', description: 'Character descriptions' },
+      { name: 'videoModel', description: 'Selected video model; adds Seedance-specific motion prompt guidance' },
       { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },
       { name: 'isMeditative', description: 'Contemplative/inward?' },
@@ -424,19 +544,35 @@ BAD motionPrompt:
 
 {{songType}}, {{traits}}
 Mood: {{concept.mood}}
+Video model: {{videoModel}}
 
 CHARACTERS:
 {{castList}}
 {{userNote}}{{previousBatchTail}}
 SHOTS TO WRITE:
 {{shotList}}
+{{videoModel startsWith seedance ? "
+SEEDANCE 2.0 PROMPTING MODE:
+- Think like a production storyboard: each motionPrompt should read as a timed action cue for this exact shot duration, not a loose mood sentence.
+- Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
+- Use each shot's listed duration when helpful: \"Over 5s...\" or \"During the final second...\" for holds, reveals, and beat hits.
+- Lahari provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
+- You may reference the song rhythm visually: \"on the vocal phrase\", \"on the drum accent\", \"as the line resolves\", \"with the chant pulse\". Keep it visible and editorial.
+- Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
+- If the start frame must stay consistent, say so positively: \"maintain the same face, costume, and temple geometry while...\"
+- Avoid multi-shot language inside one Lahari shot unless the direction explicitly requires a transition. Lahari stitches separate clips later.
+" : "
+VIDEO MODEL PROMPTING MODE:
+- The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
+- Do not request generated audio, dialogue, subtitles, or sound effects.
+"}}
 {{meditativeGuidance}}
 For EACH shot, write using the write_shot_prompts tool:
 
 - visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
   ONLY include characters listed in that shot's Cast field.
 
-- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, or environmental motion. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
+- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, environmental motion, and visible timing against the song when useful. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
 
 - continuityFrom: 'cut' or 'prev_shot'.
   Use 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment — a gaze becoming a close-up, stillness cracking into recognition, a slow reveal continuing across an edit point.
@@ -453,6 +589,115 @@ BEFORE RETURNING, CHECK THE SEQUENCE:
 
 Match the IDs exactly.`,
     source: { file: 'server/services/claude.ts', lines: 'writeShotPrompts' },
+  },
+  {
+    id: 'seedance-storyboard-image',
+    name: 'Write Seedance storyboard prompt',
+    stage: 'studio',
+    model: 'per-project text_provider (refine sibling)',
+    modelLabel: 'Claude Sonnet / GPT-5.5 / Gemini 3.1 Flash (refine tier)',
+    triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
+    summary: 'Text-only planner step. Converts one Seedance shot brief into two saved artifacts: storyboardPrompt for the image renderer (panel actions baked INLINE so the image model knows what to draw per panel) and cutPlanText for Seedance video. Routes through project.text_provider using the cheap refine model (Sonnet / GPT-5.5 / Gemini Flash). Now ~750-char source brief — old "storyboard contract" / "style and quality" boilerplate stripped because it confused the image model.',
+    variables: [
+      { name: 'title', description: 'Song title' },
+      { name: 'concept', description: 'Locked concept summary' },
+      { name: 'sceneLabel', description: 'Scene/section label for context only' },
+      { name: 'sceneNarrative', description: 'Scene overview for context only' },
+      { name: 'musicalCue', description: 'Audio-analysis musical structure cue' },
+      { name: 'clipDirection', description: 'Exact shot direction to storyboard' },
+      { name: 'clipDuration', description: 'Seedance clip duration, 4-15s' },
+      { name: 'sceneLyrics', description: 'Lyric/phrase cue if present' },
+      { name: 'castNames', description: 'Characters visible in this clip' },
+      { name: 'environmentName', description: 'Environment reference name' },
+      { name: 'prevStoryboardImage', description: 'Optional prev shot storyboard (vision input) when shot.use_prev_storyboard_ref is true' },
+      { name: 'prevCutPlanText', description: 'Optional prev shot cut plan (text context) when shot.include_prev_cut_plan resolves true (smart default: continuity_from === prev_shot)' },
+      { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
+      { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
+    ],
+    template: `Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
+
+1. storyboardPrompt: ONE short image-render prompt (~300 words max) for a storyboard renderer. PUT THE PER-PANEL ACTIONS INSIDE THIS PROMPT so the image model knows what to draw in each panel — they are NOT in a separate field. Keep it lean: no "contract" bullet lists, no animation rules, no style/quality boilerplate. The locked style/cast/env reference images carry style and identity.
+2. cutPlanText: numbered cut plan with timestamps, camera, action, motion cue per panel. This drives the downstream Seedance video prompt only — image renderer does NOT see this.
+
+Source brief (trimmed ~750 chars):
+Storyboard a {{rows}}x{{cols}} grid for one {{clipDuration}}s clip of {{title}}.
+Concept: {{concept}}. Mood: {{mood}}. Pacing: {{musicalCue}}.
+Shot: {{clipDirection}}
+Cast: {{castNames || "none"}}
+Setting: {{environmentName || "unspecified"}}
+Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different cinematic frame from the same clip with visible action and clear camera angle.
+
+{{prevStoryboardImage ? "Continuity: the prev shot's locked storyboard is attached as vision input — match its color/light treatment and screen direction." : ""}}
+{{prevCutPlanText ? "Prev shot cut plan (text context):\\n" + prevCutPlanText : ""}}
+{{artistNote ? "Artist note (refine):\\n" + artistNote : ""}}
+
+Return:
+storyboardPrompt: "..."
+cutPlanText:
+Panel 1 [MM:SS-MM:SS] camera:<...>; action:<...>; motion:<...>
+Panel 2 ...`,
+    source: { file: 'server/services/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'writeStoryboardPrompt / buildStoryboardPrompt' },
+  },
+  {
+    id: 'render-seedance-storyboard-image',
+    name: 'Render Seedance storyboard image',
+    stage: 'studio',
+    model: 'nano-banana-2 / nano-banana-pro / gpt-image-2',
+    modelLabel: 'Storyboard image provider (project storyboard_provider)',
+    triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Three provider options: nano-banana-2 (Segmind, default), nano-banana-pro (Google gemini-3-pro-image-preview), gpt-image-2 (OpenAI).',
+    variables: [
+      { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
+      { name: 'storyboardProvider', description: 'Project storyboard provider: nano-banana-2 | nano-banana-pro | gpt-image-2' },
+      { name: 'referenceImages', description: 'Locked style, cast, environment refs (filtered by shot.excluded_refs.storyboard). When shot.use_prev_storyboard_ref is true, the prev shot\'s locked storyboard is also attached. In edit_image refine mode, the previous storyboard image is prepended; an artist-attached refinement ref is appended last.' },
+      { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction.' },
+    ],
+    template: `{{storyboardPrompt}}
+
+{{editImageMode ? "Artist image edit note:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan." : "") : ""}}`,
+    source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion / renderWithProvider' },
+  },
+  {
+    id: 'seedance-storyboard-refine',
+    name: 'Refine Seedance storyboard',
+    stage: 'studio',
+    model: 'project.text_provider (refine tier) OR storyboard image provider',
+    modelLabel: 'Redo = text-provider refine model (Sonnet/GPT-5.5/Gemini Flash); Edit = project storyboard_provider',
+    triggeredBy: "Fires when you enter a natural-language note and click 'Refine' in storyboard mode.",
+    summary: 'Refine has two modes. Redo (replan) routes through project.text_provider (cheap refine sibling) to rewrite saved storyboardPrompt + cutPlanText; the artist must click Generate after to render a new image. Edit (edit_image) calls the project storyboard_provider directly with the previous storyboard image + the saved prompt + the artist note — text fields untouched. Edit prompt does NOT include the cut plan (image renderer does not use it).',
+    variables: [
+      { name: 'artistNote', description: 'Natural-language refinement note (required, route 400s if empty)' },
+      { name: 'refineMode', description: 'replan or edit_image' },
+      { name: 'currentPrompt', description: 'Saved storyboardPrompt (used in both modes — as revision context for replan, as base prompt for edit_image)' },
+      { name: 'currentCutPlan', description: 'Saved storyboard_cut_plan (replan only — Edit does not send this)' },
+      { name: 'baseStoryboardPrompt', description: 'Canonical source brief for this shot (replan only)' },
+      { name: 'referenceImages', description: 'replan: only the artist-attached refinement ref is sent (planner is treated as text-only). edit_image: previous storyboard image (prepended), locked style/cast/env refs filtered by shot.excluded_refs.storyboard, then artist-attached ref (appended).' },
+      { name: 'artistReferenceImage', description: 'Optional image uploaded with the refine note' },
+    ],
+    template: `REDO / replan mode (planner — rewrites text fields):
+Rewrite the saved storyboard render prompt and cut plan using the artist note.
+
+Artist note:
+{{artistNote}}
+
+Current storyboard render prompt:
+{{currentPrompt}}
+
+Current cut plan:
+{{currentCutPlan}}
+
+Original source brief:
+{{baseStoryboardPrompt}}
+
+---
+
+EDIT / edit_image mode (image provider — renders a new image):
+{{currentPrompt}}
+
+Artist image edit note:
+{{artistNote}}
+{{artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan." : ""}}`,
+    source: { file: 'server/routes/generate-shots.ts + server/services/storyboard.ts', lines: 'refine-storyboard / writeStoryboardPrompt / generateStoryboardVersion' },
   },
   {
     id: 'shot-start-frame',
@@ -570,7 +815,7 @@ Rewrite: theme, mood, conceptDirection. Output via tool.`,
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Refine script' and enter feedback.",
-    summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for pacing.',
+    summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for standard pacing or Seedance storyboard clip durations.',
     variables: [
       { name: 'currentScript', description: 'Full current script (cast, environments, scenes with shots)' },
       { name: 'feedback', description: 'Director feedback' },
@@ -579,12 +824,14 @@ Rewrite: theme, mood, conceptDirection. Output via tool.`,
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
+      { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip duration validation' },
     ],
     template: `Surgical refinement with 5 preservation rules. Extended thinking (8K budget) for pacing math.
-Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
-Validation loop: if shot counts wrong, errors sent back as tool_result.
+Standard mode: shot counts must equal ceil(scene_duration / {{pacing}}); last shot gets the remainder.
+Seedance storyboard mode: each shot is a 4-15s storyboard clip; shot durations must add exactly to the scene duration and each direction may describe 2-5 internal edited beats.
+Validation loop: if shot counts or Seedance durations are wrong, errors are sent back as tool_result.
 Same plan_music_video tool output.`,
-    source: { file: 'server/services/claude.ts', lines: '439-548' },
+    source: { file: 'server/services/claude.ts', lines: 'refineScript' },
   },
   {
     id: 'chained-shot-refresh',
@@ -593,7 +840,7 @@ Same plan_music_video tool output.`,
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6 (vision)',
     triggeredBy: 'Fires automatically after a shot\'s video lands, when the next shot is tagged "prev_shot".',
-    summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so continuity flows from what actually happened while preserving the shot's intended beat.",
+    summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so continuity flows from what actually happened while preserving the shot's intended beat. Skipped in Seedance storyboard mode, where shots do not wait on previous frames.",
     variables: [
       { name: 'prevFrame', description: "Extracted last frame of the previous shot's video" },
       { name: 'shotDirection', description: "Next shot's preserved intent / beat" },
@@ -620,18 +867,51 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
   },
   {
     id: 'shot-video-assembly',
-    name: 'Shot video prompt (Veo/Seedance)',
+    name: 'Shot video prompt (keyframe mode)',
     stage: 'studio',
     model: 'veo-3.1-* / seedance-2.0-*',
     modelLabel: 'Video model (Veo or Seedance)',
     triggeredBy: "Fires when you click the play icon on a shot or 'Generate all videos'.",
-    summary: "motionPrompt only — the video instruction. Ref labels appended only when character/env reference images are actually attached. Artist can override via the Video prompt tab.",
+    summary: "Keyframe path: motionPrompt is the video instruction. Ref labels are appended only when character/env reference images are actually attached. Artist can override via the Video prompt tab. Storyboard mode uses the separate Seedance storyboard video prompt.",
     variables: [
       { name: 'motionPrompt', description: "Shot's video instruction (action + camera)" },
       { name: 'refLabels', description: 'Auto-appended when ref images attached, e.g. "Maintain Priya\'s appearance from reference"' },
     ],
     template: `{{motionPrompt}}. {{refLabels}}`,
     source: { file: 'server/routes/generate-video.ts', lines: 'Veo prompt builder in generate-video endpoint' },
+  },
+  {
+    id: 'seedance-storyboard-video',
+    name: 'Seedance video from locked storyboard',
+    stage: 'studio',
+    model: 'seedance-2.0-*',
+    modelLabel: 'Seedance 2.0 via Segmind',
+    triggeredBy: "Fires when you click 'Generate video' in the Storyboard panel's Video sub-tab.",
+    summary: 'Builds the Seedance prompt around @image1 as the locked ordered storyboard, @image2+ as locked consistency refs, and the saved cut plan as the motion/edit guide.',
+    variables: [
+      { name: 'storyboardImage', description: '@image1, the locked storyboard grid' },
+      { name: 'referenceImages', description: '@image2+ locked style, character, and environment identity anchors' },
+      { name: 'rows', description: 'Storyboard grid rows (2 for both sizes today)' },
+      { name: 'cols', description: 'Storyboard grid columns (2 for clips <10s, 3 for clips ≥10s)' },
+      { name: 'cutPlanText', description: 'Saved shot progression text from the active storyboard version' },
+      { name: 'clipDuration', description: 'Seedance clip duration, 4-15s' },
+      { name: 'mood', description: 'Mood word from the project (e.g. contemplative)' },
+      { name: 'musicalCue', description: 'Pacing cue from audio analysis, optional' },
+      { name: 'clipDirection', description: 'Exact shot direction for this clip' },
+      { name: 'lipsyncEnabled', description: 'Per-shot toggle; when true the shot audio slice is sent as audio 1 for subtle visible vocal lip-sync' },
+    ],
+    template: `(Trimmed from ~80 lines to ~10 — the old "animation contract" + 24fps quality boilerplate confused Seedance more than it helped.)
+
+Animate the storyboard @image1 into one {{clipDuration}}s cinematic clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
+
+Shot: {{clipDirection}}
+
+{{refBindings ? "Identity refs (do not redesign):\\n" + refBindings : ""}}
+{{cutPlanText ? "\\nPanel beats:\\n" + cutPlanText : ""}}
+{{lipsyncEnabled ? "\\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural." : ""}}
+
+Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`,
+    source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt (board_plus_timing variant)' },
   },
 
   // ─── Utilities ────────────────────────────────────────────────────

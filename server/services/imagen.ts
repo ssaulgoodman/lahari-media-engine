@@ -19,7 +19,7 @@ const detectImageExt = (base64: string): string => {
 
 // ─── Multimodal Image Generation (gemini-3-pro-image-preview) ───────
 
-type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+export type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 
 /**
  * Generate an image using gemini-3-pro-image-preview with reference images.

@@ -14,8 +14,12 @@ type RefImage = {
   inlineData?: { mimeType: string; data: string };
 };
 
+export type OpenAIRefImage = RefImage;
+
 const OPENAI_MODEL = getImageModel('gpt-image-2').runtimeModel;
+const OPENAI_RESPONSES_IMAGE_MODEL = process.env.OPENAI_RESPONSES_IMAGE_MODEL || 'gpt-5.5';
 const MAX_OPENAI_INPUT_IMAGES = 10;
+const SUPPORTS_INPUT_FIDELITY = new Set(['gpt-image-1', 'gpt-image-1.5', 'chatgpt-image-latest']);
 
 const getClient = () => {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
@@ -28,7 +32,7 @@ const detectImageExt = (base64: string): string => {
   return 'png';
 };
 
-const sizeForAspectRatio = (aspectRatio = '16:9'): '1536x1024' | '1024x1536' | '1024x1024' => {
+const sizeForAspectRatio = (aspectRatio = '16:9'): string => {
   switch (aspectRatio) {
     case '9:16':
       return '1024x1536';
@@ -62,6 +66,15 @@ const toUploadable = async (ref: RefImage, idx: number): Promise<File> => {
   return new File([buffer], `ref-${idx}.${ext}`, { type: mimeFromExt(ref.imagePath) });
 };
 
+const uploadVisionFile = async (client: OpenAI, ref: RefImage, idx: number): Promise<string> => {
+  const file = await toUploadable(ref, idx);
+  const result = await client.files.create({
+    file,
+    purpose: 'vision' as any,
+  });
+  return result.id;
+};
+
 const saveGeneratedImages = async (response: ImagesResponse): Promise<string[]> => {
   const images = response.data || [];
   const paths: string[] = [];
@@ -80,12 +93,12 @@ const generateFromPrompt = async (
   count = 1
 ): Promise<string[]> => {
   const client = getClient();
-  const size = sizeForAspectRatio(aspectRatio);
+  const size = sizeForAspectRatio(aspectRatio) as any;
   const cappedRefs = refs.slice(0, MAX_OPENAI_INPUT_IMAGES);
 
   if (cappedRefs.length > 0) {
     const files = await Promise.all(cappedRefs.map((ref, idx) => toUploadable(ref, idx)));
-    const response = await client.images.edit({
+    const editRequest: any = {
       model: OPENAI_MODEL,
       image: files,
       prompt: `${buildReferenceIndex(cappedRefs)}${prompt}`,
@@ -93,8 +106,9 @@ const generateFromPrompt = async (
       size,
       quality: 'medium',
       output_format: 'png',
-      input_fidelity: 'high',
-    });
+    };
+    if (SUPPORTS_INPUT_FIDELITY.has(OPENAI_MODEL)) editRequest.input_fidelity = 'high';
+    const response = await client.images.edit(editRequest);
     return saveGeneratedImages(response);
   }
 
@@ -107,6 +121,89 @@ const generateFromPrompt = async (
     output_format: 'png',
   });
   return saveGeneratedImages(response);
+};
+
+export const generateOpenAIImageFromPrompt = async (
+  prompt: string,
+  opts?: {
+    aspectRatio?: string;
+    refs?: OpenAIRefImage[];
+    count?: number;
+  }
+): Promise<string[]> => {
+  return generateFromPrompt(prompt, opts?.aspectRatio || '16:9', opts?.refs || [], opts?.count || 1);
+};
+
+export const generateOpenAIImageWithResponses = async (
+  prompt: string,
+  opts?: {
+    aspectRatio?: string;
+    size?: string;
+    refs?: OpenAIRefImage[];
+    previousResponseId?: string;
+    action?: 'generate' | 'edit' | 'auto';
+    quality?: 'low' | 'medium' | 'high' | 'auto';
+  }
+): Promise<{
+  imagePaths: string[];
+  responseId: string;
+  imageGenerationCallIds: string[];
+  imageGenerationRevisedPrompts: string[];
+  outputText: string;
+  reasoningModel: string;
+  imageModel: string;
+}> => {
+  const client = getClient();
+  const cappedRefs = (opts?.refs || []).slice(0, MAX_OPENAI_INPUT_IMAGES);
+  const fileIds = await Promise.all(cappedRefs.map((ref, idx) => uploadVisionFile(client, ref, idx)));
+  const size = opts?.size || sizeForAspectRatio(opts?.aspectRatio || '16:9');
+
+  const content: any[] = [
+    { type: 'input_text', text: `${buildReferenceIndex(cappedRefs)}${prompt}` },
+    ...fileIds.map((fileId) => ({ type: 'input_image', file_id: fileId, detail: 'high' })),
+  ];
+
+  const imageTool: any = {
+    type: 'image_generation',
+    model: OPENAI_MODEL,
+    action: opts?.action || (opts?.previousResponseId ? 'edit' : 'generate'),
+    output_format: 'png',
+    quality: opts?.quality || 'medium',
+    size,
+  };
+  if (SUPPORTS_INPUT_FIDELITY.has(OPENAI_MODEL)) imageTool.input_fidelity = 'high';
+
+  const response = await (client.responses.create as any)({
+    model: OPENAI_RESPONSES_IMAGE_MODEL,
+    previous_response_id: opts?.previousResponseId,
+    input: [{ role: 'user', content }],
+    tools: [imageTool],
+  });
+
+  const imageCalls = (response.output || []).filter((item: any) => item.type === 'image_generation_call');
+  const outputText = (response.output || [])
+    .filter((item: any) => item.type === 'message')
+    .flatMap((item: any) => item.content || [])
+    .filter((content: any) => content.type === 'output_text' && content.text)
+    .map((content: any) => content.text)
+    .join('\n\n')
+    .trim();
+  const imagePaths: string[] = [];
+  for (const call of imageCalls) {
+    if (!call.result) continue;
+    imagePaths.push(await saveBase64(call.result, 'images', detectImageExt(call.result)));
+  }
+  if (imagePaths.length === 0) throw new Error('No image generated by OpenAI Responses image tool');
+
+  return {
+    imagePaths,
+    responseId: response.id,
+    imageGenerationCallIds: imageCalls.map((call: any) => call.id).filter(Boolean),
+    imageGenerationRevisedPrompts: imageCalls.map((call: any) => call.revised_prompt).filter(Boolean),
+    outputText,
+    reasoningModel: OPENAI_RESPONSES_IMAGE_MODEL,
+    imageModel: OPENAI_MODEL,
+  };
 };
 
 export const generateImageWithRefs = async (

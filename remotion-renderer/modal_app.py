@@ -57,7 +57,7 @@ secrets = [modal.Secret.from_name("lahari-renderer-secrets")]
     secrets=secrets,
     cpu=8.0,            # doubles CapRover's 2 vCPU — expect ~4x wall-clock speedup
     memory=16384,       # 16 GB: Chromium + ffmpeg + bundle fit comfortably
-    timeout=1800,       # 30 min ceiling; a single 5-min song renders well under this
+    timeout=3600,       # 60 min ceiling; a single 5-min song renders well under this, but cross-region asset pulls + occasional Chromium hangs can blow past 30 min
     max_containers=20,  # throttle fan-out so one spike doesn't eat the budget
 )
 def render_job(render_id: str, project_id: str, timeline: dict) -> dict:
@@ -139,7 +139,16 @@ def web():
         # regardless of what happens to this ASGI request. Returns a FunctionCall
         # handle we could query later; we don't need it because the Node CLI
         # POSTs the final result back to the main backend via postCallback.
-        render_job.spawn(render_id, project_id, timeline)
-        return {"accepted": True, "renderId": render_id}
+        call = render_job.spawn(render_id, project_id, timeline)
+        modal_function_call_id = (
+            getattr(call, "object_id", None)
+            or getattr(call, "function_call_id", None)
+            or getattr(call, "call_id", None)
+        )
+        return {
+            "accepted": True,
+            "renderId": render_id,
+            "modalFunctionCallId": modal_function_call_id,
+        }
 
     return api

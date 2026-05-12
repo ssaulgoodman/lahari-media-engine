@@ -9,9 +9,11 @@ import { ChatAssistant } from './components/ChatAssistant';
 import { XRayPanel } from './components/XRayPanel';
 import { Dashboard } from './components/Dashboard';
 import { PromptsLibrary } from './components/PromptsLibrary';
+import { RendersModal } from './components/RendersModal';
 import { getVideoModel } from './constants/videoModels';
 import { useAuth } from './contexts/AuthContext';
 import * as api from './services/api';
+import { notifyBulkComplete } from './lib/notify';
 
 const PIPELINE_STEPS = [
   { id: AppStep.UPLOAD, label: 'Queue' },
@@ -33,7 +35,9 @@ type ProjectSummary = {
   status: string;
   createdAt: string;
   updatedAt: string;
+  lastActivityAt?: string;
   parentProjectId?: string;
+  renderCount?: number;
 };
 
 // Humanize a timestamp: "3m ago", "2h ago", "yesterday", "Mar 4".
@@ -130,8 +134,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // Worker pulls from the front; UI reads indexOf for the badge.
   const [frameQueue, setFrameQueue] = useState<string[]>([]);
   const [videoQueue, setVideoQueue] = useState<string[]>([]);
+  const [storyboardPromptQueue, setStoryboardPromptQueue] = useState<string[]>([]);
+  const [storyboardImageQueue, setStoryboardImageQueue] = useState<string[]>([]);
+  const [bulkStopNotice, setBulkStopNotice] = useState<string | null>(null);
+  const bulkStopRef = useRef({ requested: false, controllers: new Set<AbortController>() });
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
+  // Renders viewer (popup) — opened from Dashboard rows or sidebar entries.
+  const [rendersFor, setRendersFor] = useState<{ id: string; title: string } | null>(null);
+
   // Project sidebar
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState<ProjectSummary[]>([]);
@@ -574,6 +585,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleLaunchStudio = async () => {
     if (!project) return;
+    if (project.videoModel?.startsWith('seedance')) {
+      setCurrentStep(AppStep.STUDIO);
+      return;
+    }
     // Skip bulk prompt regeneration if every shot already has a prompt written.
     // User just clicking Launch Studio again after coming back from Blueprint
     // shouldn't burn a Claude call. The explicit "Rewrite all" button in Studio
@@ -708,14 +723,16 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const handleRewriteShotPrompts = async (userNote?: string) => {
     if (!project) return;
+    const signal = startOp('write-prompts');
     setLoading(true);
     setError(null);
     try {
-      const p = await api.writeShotPrompts(project.id, userNote);
+      const p = await api.writeShotPrompts(project.id, userNote, signal);
       setProject(p);
     } catch (err: any) {
-      setError('Failed to rewrite shot prompts: ' + err.message);
+      if (!api.isCancelled(err)) setError('Failed to rewrite shot prompts: ' + err.message);
     } finally {
+      endOp('write-prompts');
       setLoading(false);
     }
   };
@@ -781,8 +798,41 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
-  const handleCancelShotImage = (shotId: string) => abortOp(`image:${shotId}`);
-  const handleCancelShotVideo = (shotId: string) => abortOp(`video:${shotId}`);
+  const handleCancelShotImage = (shotId: string) => {
+    if (!project) return;
+    abortOp(`image:${shotId}`);
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scenes: prev.scenes.map(s => ({
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, imageStatus: GenerationStatus.IDLE } : sh)
+        }))
+      };
+    });
+    void api.cancelShotImage(project.id, shotId).catch((err: any) => {
+      setError(`Cancel image failed: ${err.message}`);
+    });
+  };
+
+  const handleCancelShotVideo = (shotId: string) => {
+    if (!project) return;
+    abortOp(`video:${shotId}`);
+    setProject(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        scenes: prev.scenes.map(s => ({
+          ...s,
+          shots: s.shots.map(sh => sh.id === shotId ? { ...sh, videoStatus: GenerationStatus.IDLE } : sh)
+        }))
+      };
+    });
+    void api.cancelShotVideo(project.id, shotId).catch((err: any) => {
+      setError(`Cancel video failed: ${err.message}`);
+    });
+  };
 
   const handleRefinePrompt = async (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => {
     if (!project) return;
@@ -925,6 +975,127 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const handleGenerateStoryboard = async (shotId: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING });
+    const signal = startOp(`storyboard:${shotId}`);
+    try {
+      const result = await api.generateStoryboard(project.id, shotId, signal);
+      setProject(result.project);
+    } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.IDLE });
+        return;
+      }
+      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
+      setError(`Storyboard generation failed: ${err.message}`);
+    } finally {
+      endOp(`storyboard:${shotId}`);
+    }
+  };
+
+  const handleWriteStoryboardPrompt = async (shotId: string, feedback?: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
+    const signal = startOp(`storyboard-prompt:${shotId}`);
+    try {
+      const result = await api.writeStoryboardPrompt(project.id, shotId, feedback, signal);
+      setProject(result.project);
+    } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.IDLE });
+        return;
+      }
+      updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.ERROR });
+      setError(`Storyboard prompt write failed: ${err.message}`);
+    } finally {
+      endOp(`storyboard-prompt:${shotId}`);
+    }
+  };
+
+  const handleRefineStoryboard = async (
+    shotId: string,
+    feedback: string,
+    previousVersionId?: string,
+    refineMode: api.StoryboardRefineMode = 'replan',
+    referenceImage?: File
+  ) => {
+    if (!project || !feedback.trim()) return;
+    if (refineMode === 'edit_image') {
+      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING, storyboardUserFeedback: feedback });
+    } else {
+      updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
+    }
+    const signal = startOp(`storyboard-refine:${shotId}`);
+    try {
+      const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode, referenceImage, signal);
+      setProject(result.project);
+    } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.IDLE } : { storyboardPromptStatus: GenerationStatus.IDLE });
+        return;
+      }
+      updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.ERROR } : { storyboardPromptStatus: GenerationStatus.ERROR });
+      setError(`Storyboard refinement failed: ${err.message}`);
+    } finally {
+      endOp(`storyboard-refine:${shotId}`);
+    }
+  };
+
+  /** Single stop affordance for any in-flight storyboard work on a shot.
+   *  Only one of {generate, write-prompt, refine} can be running at a time
+   *  per shot, so aborting all three keys is safe and avoids the UI having
+   *  to know which action is actually live. */
+  const handleCancelStoryboard = (shotId: string) => {
+    if (!project) return;
+    abortOp(`storyboard:${shotId}`);
+    abortOp(`storyboard-prompt:${shotId}`);
+    abortOp(`storyboard-refine:${shotId}`);
+    updateShotOptimistic(shotId, {
+      storyboardStatus: GenerationStatus.IDLE,
+      storyboardPromptStatus: GenerationStatus.IDLE,
+    });
+  };
+
+  const handleLockStoryboard = async (shotId: string, versionId?: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardLocked: true });
+    try {
+      const result = await api.lockStoryboard(project.id, shotId, versionId);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardLocked: false });
+      setError(`Storyboard lock failed: ${err.message}`);
+    }
+  };
+
+  const handleUnlockStoryboard = async (shotId: string) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardLocked: false });
+    try {
+      const result = await api.unlockStoryboard(project.id, shotId);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardLocked: true });
+      setError(`Storyboard unlock failed: ${err.message}`);
+    }
+  };
+
+  // Cut plan autosaves on blur — server returns { ok: true } and persists
+  // cutPlanText on the active storyboard version's metadata. We don't refresh
+  // the project (the new text is local to StoryboardPanel and used at video
+  // generation time on the server), but we do let parent surface failures.
+  const handleUpdateStoryboardPlan = async (shotId: string, cutPlanText: string, storyboardPrompt?: string) => {
+    if (!project) return;
+    try {
+      const result = await api.updateStoryboardPlan(project.id, shotId, cutPlanText, storyboardPrompt);
+      if (result?.project) setProject(result.project);
+    } catch (err: any) {
+      setError(`Cut plan save failed: ${err.message}`);
+      throw err;
+    }
+  };
+
   // ─── Bulk Studio actions ────────────────────────────────────────
   // Frank Sinatra doesn't move his pianos — fire everything auto-firable.
   // Each button fires only what's actionable right now; chained shots stay
@@ -935,18 +1106,40 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // "5 at a time, queue the rest" actually means — no artificial sleeps,
   // no fixed batches. Rejections are swallowed into the results array so
   // one failure doesn't abort the whole bulk.
+  const beginBulkRun = () => {
+    bulkStopRef.current.requested = false;
+    bulkStopRef.current.controllers.clear();
+    setBulkStopNotice(null);
+  };
+
+  const stopBulkRun = useCallback(() => {
+    bulkStopRef.current.requested = true;
+    bulkStopRef.current.controllers.forEach(ctrl => ctrl.abort());
+    bulkStopRef.current.controllers.clear();
+    setFrameQueue([]);
+    setVideoQueue([]);
+    setStoryboardPromptQueue([]);
+    setStoryboardImageQueue([]);
+    setBulkStopNotice('Stopped queued jobs. Active generations may still finish and appear when they complete.');
+  }, []);
+
   const runWithConcurrency = async <T,>(
     items: T[],
     limit: number,
-    fn: (item: T) => Promise<any>,
+    fn: (item: T, signal: AbortSignal) => Promise<any>,
     onStart?: (item: T) => void,
   ): Promise<void> => {
     let cursor = 0;
     const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
       while (cursor < items.length) {
+        if (bulkStopRef.current.requested) break;
         const idx = cursor++;
+        if (bulkStopRef.current.requested) break;
         if (onStart) onStart(items[idx]);
-        try { await fn(items[idx]); } catch (err) { /* logged by the handler */ }
+        const ctrl = new AbortController();
+        bulkStopRef.current.controllers.add(ctrl);
+        try { await fn(items[idx], ctrl.signal); } catch (err) { /* logged by the handler */ }
+        finally { bulkStopRef.current.controllers.delete(ctrl); }
       }
     });
     await Promise.all(workers);
@@ -954,12 +1147,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const getReadyFrameTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
+    const ignoreContinuity = p.videoModel?.startsWith('seedance');
     for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
         if (shot.imageUrl) return;
         if (shot.imageStatus === GenerationStatus.LOADING) return;
         if (shot.imageStatus === GenerationStatus.ERROR) return;
-        if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+        if (!ignoreContinuity && shot.continuityFrom === 'prev_shot' && idx > 0) {
           const prev = scene.shots[idx - 1];
           if (!prev?.videoUrl) return;
         }
@@ -969,19 +1163,111 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     return targets;
   };
 
+  const getReadyStoryboardTargets = (p: ApiProject) => {
+    // Image gen needs only the storyboard prompt. Cut plan is for the
+    // downstream Seedance step (see c8385a0 — backend no longer gates image
+    // gen on it). Locked shots are intentionally skipped — artist already
+    // committed to a board. ERROR-status shots ARE included so a single bad
+    // shot can be retried as part of the bulk run instead of forcing the
+    // artist to click each one manually.
+    const targets: { sceneId: string; shotId: string }[] = [];
+    for (const scene of p.scenes) {
+      scene.shots.forEach((shot) => {
+        if (shot.storyboardLocked) return;
+        if (!shot.storyboardPrompt?.trim()) return;
+        if (shot.storyboardStatus === GenerationStatus.LOADING) return;
+        targets.push({ sceneId: scene.id, shotId: shot.id });
+      });
+    }
+    return targets;
+  };
+
+  const getReadyStoryboardPromptTargets = (p: ApiProject) => {
+    const targets: { sceneId: string; shotId: string }[] = [];
+    for (const scene of p.scenes) {
+      scene.shots.forEach((shot) => {
+        if (shot.storyboardPrompt?.trim()) return;
+        if (shot.storyboardPromptStatus === GenerationStatus.LOADING) return;
+        targets.push({ sceneId: scene.id, shotId: shot.id });
+      });
+    }
+    return targets;
+  };
+
+  const handleBulkWriteStoryboardPrompts = async () => {
+    if (!project) return;
+    const targets = getReadyStoryboardPromptTargets(project);
+    if (targets.length === 0) return;
+    beginBulkRun();
+    setStoryboardPromptQueue(targets.map(t => t.shotId));
+    try {
+      await runWithConcurrency(
+        targets,
+        5,
+        (t, signal) => api.writeStoryboardPrompt(project.id, t.shotId, undefined, signal),
+        t => {
+          setStoryboardPromptQueue(q => q.filter(id => id !== t.shotId));
+          updateShotOptimistic(t.shotId, { storyboardPromptStatus: GenerationStatus.LOADING });
+        },
+      );
+      if (bulkStopRef.current.requested) return;
+      const latest = await api.getProject(project.id);
+      setProject(latest);
+      // Bulk-complete notification. Fires regardless of tab focus — the
+      // artist may be deep in another shot while this finished. Stopped
+      // runs intentionally don't notify; the artist clicked Stop and
+      // already knows the state.
+      void notifyBulkComplete('Lahari · Prompts done', `${targets.length} storyboard prompt${targets.length === 1 ? '' : 's'} written.`);
+    } finally {
+      setStoryboardPromptQueue([]);
+    }
+  };
+
+  const handleBulkGenerateStoryboards = async () => {
+    if (!project) return;
+    const targets = getReadyStoryboardTargets(project);
+    if (targets.length === 0) return;
+    beginBulkRun();
+    setStoryboardImageQueue(targets.map(t => t.shotId));
+    try {
+      await runWithConcurrency(
+        targets,
+        2,
+        (t, signal) => api.generateStoryboard(project.id, t.shotId, signal),
+        t => {
+          setStoryboardImageQueue(q => q.filter(id => id !== t.shotId));
+          updateShotOptimistic(t.shotId, { storyboardStatus: GenerationStatus.LOADING });
+        },
+      );
+      if (bulkStopRef.current.requested) return;
+      const latest = await api.getProject(project.id);
+      setProject(latest);
+      void notifyBulkComplete('Lahari · Storyboards done', `${targets.length} board${targets.length === 1 ? '' : 's'} rendered.`);
+    } finally {
+      setStoryboardImageQueue([]);
+    }
+  };
+
   const handleBulkGenerateFrames = async () => {
     if (!project) return;
     let latestProject = project;
+    // Multi-pass: each pass picks up newly-unblocked prev_shot frames as
+    // earlier shots complete. Accumulate the total processed so the
+    // notification body reflects the full job, not just the last pass.
+    let totalFired = 0;
+    beginBulkRun();
     try {
       while (true) {
+        if (bulkStopRef.current.requested) break;
         const targets = getReadyFrameTargets(latestProject);
         if (targets.length === 0) break;
+        totalFired += targets.length;
         const queueIds = targets.map(t => t.shotId);
         setFrameQueue(queueIds);
         await runWithConcurrency(
           targets,
           10,
-          t => api.generateShotImage(latestProject.id, t.shotId),
+          (t, signal) => api.generateShotImage(latestProject.id, t.shotId, undefined, signal),
           t => {
             setFrameQueue(q => q.filter(id => id !== t.shotId));
             setProject(prev => prev ? {
@@ -995,9 +1281,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
             } : prev);
           },
         );
+        if (bulkStopRef.current.requested) break;
         // Refresh to see newly unblocked prev_shot frames
         latestProject = await api.getProject(latestProject.id);
         setProject(latestProject);
+      }
+      if (!bulkStopRef.current.requested && totalFired > 0) {
+        void notifyBulkComplete('Lahari · Frames done', `${totalFired} shot frame${totalFired === 1 ? '' : 's'} generated.`);
       }
     } finally {
       setFrameQueue([]);
@@ -1006,12 +1296,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   const getReadyVideoTargets = (p: ApiProject) => {
     const targets: { sceneId: string; shotId: string }[] = [];
+    const allowStoryboardVideo = p.videoModel?.startsWith('seedance');
+    const ignoreContinuity = allowStoryboardVideo;
     for (const scene of p.scenes) {
       scene.shots.forEach((shot, idx) => {
-        if (!shot.imageUrl || shot.videoUrl) return;
+        const hasVideoSource = !!shot.imageUrl || (allowStoryboardVideo && !!shot.storyboardLocked && !!shot.storyboardUrl);
+        if (!hasVideoSource || shot.videoUrl) return;
         if (shot.videoStatus === GenerationStatus.LOADING) return;
         if (shot.videoStatus === GenerationStatus.ERROR) return;
-        if (shot.continuityFrom === 'prev_shot' && idx > 0) {
+        if (!ignoreContinuity && shot.continuityFrom === 'prev_shot' && idx > 0) {
           const prev = scene.shots[idx - 1];
           if (!prev?.videoUrl) return;
         }
@@ -1024,17 +1317,21 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleBulkGenerateVideos = async () => {
     if (!project) return;
     let latestProject = project;
+    let totalFired = 0;
+    beginBulkRun();
     try {
       while (true) {
+        if (bulkStopRef.current.requested) break;
         const targets = getReadyVideoTargets(latestProject);
         if (targets.length === 0) break;
+        totalFired += targets.length;
         const queueIds = targets.map(t => t.shotId);
         setVideoQueue(queueIds);
         // Throttle to 5 concurrent. Sized for Segmind rate limits.
         await runWithConcurrency(
           targets,
           5,
-          t => api.generateShotVideo(latestProject.id, t.shotId),
+          (t, signal) => api.generateShotVideo(latestProject.id, t.shotId, undefined, undefined, signal),
           t => {
             setVideoQueue(q => q.filter(id => id !== t.shotId));
             setProject(prev => prev ? {
@@ -1048,9 +1345,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
             } : prev);
           },
         );
+        if (bulkStopRef.current.requested) break;
         // Refresh to see newly unblocked prev_shot shots
         latestProject = await api.getProject(latestProject.id);
         setProject(latestProject);
+      }
+      if (!bulkStopRef.current.requested && totalFired > 0) {
+        void notifyBulkComplete('Lahari · Videos done', `${totalFired} shot clip${totalFired === 1 ? '' : 's'} generated.`);
       }
     } finally {
       setVideoQueue([]);
@@ -1102,8 +1403,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     try {
       const result = await api.startProduction(queueId);
       setProject(result.project);
-      // Jump to Blueprint immediately — analysis runs in background
-      setCurrentStep(AppStep.BLUEPRINT);
+      setLookCandidates({});
+      setActiveSceneIdx(0);
+      // For fresh starts (analyzing) jump to Blueprint; for existing/forked
+      // projects route to whatever phase the project is in.
+      if (result.project.status === 'analyzing' || result.project.status === 'analyzed') {
+        setCurrentStep(AppStep.BLUEPRINT);
+      } else {
+        navigateToPhase(result.project);
+      }
       // Poll for analysis completion if still analyzing
       if (result.project.status === 'analyzing') {
         const projectId = result.project.id;
@@ -1202,10 +1510,18 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
             {PIPELINE_STEPS.map((step) => {
               const isActive = currentStep === step.id;
+              // Render is gated on a data-derived signal (any shot has a video)
+              // instead of project.status because `in_production` is never set
+              // server-side and status can otherwise drift on forks / legacy
+              // projects, locking artists out of Render even though they have
+              // material to assemble. Studio keeps the status check because it
+              // gates access to AI-gen surfaces, not to artist-owned assembly.
+              const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
               const isAccessible =
                 step.id === AppStep.UPLOAD ||
-                (project && (step.id === AppStep.BLUEPRINT)) ||
-                (project && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status) && project.scenes.length > 0 && (step.id === AppStep.STUDIO || step.id === AppStep.RENDER));
+                (project && step.id === AppStep.BLUEPRINT) ||
+                (project && step.id === AppStep.STUDIO && project.scenes.length > 0 && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status)) ||
+                (project && step.id === AppStep.RENDER && hasRenderableContent);
 
               return (
                 <button
@@ -1344,6 +1660,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                   <Dashboard
                     onStartProduction={handleStartProduction}
                     onOpenProject={handleOpenProject}
+                    onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
                   />
                 </motion.div>
               )}
@@ -1404,6 +1721,13 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onUpdateShot={handleUpdateShot}
                     onGenerateImage={handleGenerateImage}
                     onGenerateVideo={handleGenerateVideo}
+                    onWriteStoryboardPrompt={handleWriteStoryboardPrompt}
+                    onGenerateStoryboard={handleGenerateStoryboard}
+                    onRefineStoryboard={handleRefineStoryboard}
+                    onCancelStoryboard={handleCancelStoryboard}
+                    onLockStoryboard={handleLockStoryboard}
+                    onUnlockStoryboard={handleUnlockStoryboard}
+                    onUpdateStoryboardPlan={handleUpdateStoryboardPlan}
                     onCancelShotImage={handleCancelShotImage}
                     onCancelShotVideo={handleCancelShotVideo}
                     onLockShot={handleLockShot}
@@ -1412,10 +1736,17 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                     onRefinePrompt={handleRefinePrompt}
                     onUpdateProject={handleUpdateProject}
                     onRewriteShotPrompts={handleRewriteShotPrompts}
+                    onCancelRewritePrompts={() => abortOp('write-prompts')}
                     onBulkGenerateFrames={handleBulkGenerateFrames}
                     onBulkGenerateVideos={handleBulkGenerateVideos}
+                    onBulkWriteStoryboardPrompts={handleBulkWriteStoryboardPrompts}
+                    onBulkGenerateStoryboards={handleBulkGenerateStoryboards}
+                    onCancelBulk={stopBulkRun}
+                    bulkStopNotice={bulkStopNotice}
                     frameQueue={frameQueue}
                     videoQueue={videoQueue}
+                    storyboardPromptQueue={storyboardPromptQueue}
+                    storyboardImageQueue={storyboardImageQueue}
                     onUsePrevLastFrame={handleUsePrevLastFrame}
                     onClearShotFrame={handleClearShotFrame}
                     onGenerateEndFrame={handleGenerateEndFrame}
@@ -1550,8 +1881,9 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                 ) : projectList.length === 0 ? (
                   <p className="text-sm text-zinc-400 text-center py-8">No projects yet</p>
                 ) : (() => {
-                  // Build lineage tree: orig → children → grandchildren, flattened
-                  // with depth so we can indent. Originals sorted by createdAt DESC.
+                  // Build lineage tree: orig -> children -> grandchildren, flattened
+                  // with depth so we can indent. Families sort by latest activity
+                  // anywhere in the lineage, so the thing you just touched floats up.
                   const childrenOf = new Map<string, ProjectSummary[]>();
                   projectList.forEach(p => {
                     if (p.parentProjectId) {
@@ -1563,18 +1895,26 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                   const byId = new Map(projectList.map(p => [p.id, p]));
                   const roots = projectList.filter(p => !p.parentProjectId || !byId.has(p.parentProjectId));
                   const flat: { project: ProjectSummary; depth: number }[] = [];
+                  const activityMs = (p: ProjectSummary) => new Date(p.lastActivityAt || p.updatedAt || p.createdAt).getTime();
+                  const subtreeActivityMs = (p: ProjectSummary): number => Math.max(
+                    activityMs(p),
+                    ...(childrenOf.get(p.id) || []).map(subtreeActivityMs)
+                  );
+                  const sortByActivity = (a: ProjectSummary, b: ProjectSummary) => subtreeActivityMs(b) - subtreeActivityMs(a);
                   const walk = (p: ProjectSummary, depth: number) => {
                     flat.push({ project: p, depth });
-                    const kids = (childrenOf.get(p.id) || []).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                    const kids = (childrenOf.get(p.id) || []).sort(sortByActivity);
                     kids.forEach(k => walk(k, depth + 1));
                   };
-                  roots.forEach(r => walk(r, 0));
+                  roots.sort(sortByActivity).forEach(r => walk(r, 0));
 
                   return (
                     <div className="space-y-px">
                       {flat.map(({ project: p, depth }) => {
                         const isActive = project?.id === p.id;
                         const isFork = !!p.parentProjectId && byId.has(p.parentProjectId);
+                        const lastActivityAt = p.lastActivityAt || p.updatedAt || p.createdAt;
+                        const lastActivityDate = new Date(lastActivityAt.includes('T') || lastActivityAt.includes('Z') ? lastActivityAt : lastActivityAt.replace(' ', 'T') + 'Z');
                         return (
                           <div
                             key={p.id}
@@ -1626,8 +1966,8 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                                   <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
                                     {p.title}
                                   </span>
-                                  <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Started ${new Date(p.createdAt.includes('T') || p.createdAt.includes('Z') ? p.createdAt : p.createdAt.replace(' ', 'T') + 'Z').toLocaleString()}`}>
-                                    {relativeTime(p.createdAt)}
+                                  <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Last activity ${lastActivityDate.toLocaleString()}`}>
+                                    {relativeTime(lastActivityAt)}
                                   </span>
                                 </div>
                               </button>
@@ -1667,6 +2007,19 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                                 </svg>
                               </button>
                             )}
+                            {/* Renders — film icon, opens popup viewer. Only
+                                shown when this project has at least one render. */}
+                            {renamingId !== p.id && (p.renderCount ?? 0) > 0 && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setRendersFor({ id: p.id, title: p.title }); }}
+                                className="absolute right-16 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="View renders"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -1678,6 +2031,15 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           </>
         )}
       </AnimatePresence>
+
+      {/* Renders viewer popup — accessible from Dashboard rows and sidebar entries */}
+      {rendersFor && (
+        <RendersModal
+          projectId={rendersFor.id}
+          projectTitle={rendersFor.title}
+          onClose={() => setRendersFor(null)}
+        />
+      )}
 
       {/* Error toast */}
       <AnimatePresence>

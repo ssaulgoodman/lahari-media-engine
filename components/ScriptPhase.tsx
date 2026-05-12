@@ -16,7 +16,7 @@ interface Props {
   onGenerateScript: (userNote?: string) => void;
   onRefineScript?: (feedback: string) => void;
   onUpdateScene?: (sceneId: string, updates: { narrativeDescription?: string }) => void;
-  onUpdateShot?: (sceneId: string, shotId: string, updates: { visualPrompt?: string; castIds?: string[]; environmentId?: string | null; duration?: number }) => void;
+  onUpdateShot?: (sceneId: string, shotId: string, updates: { direction?: string; visualPrompt?: string; castIds?: string[]; environmentId?: string | null; duration?: number }) => void;
   onCancelScript?: () => void;
   onUnlockScript?: () => void;
   onUpdateProject: (updates: Record<string, any>) => void;
@@ -34,6 +34,7 @@ export const ScriptPhase: React.FC<Props> = ({
   const [showScriptPrompt, setShowScriptPrompt] = useState(false);
   const [expandedScenes, setExpandedScenes] = useState<Set<string>>(new Set());
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  const isSeedanceStoryboard = project.videoModel?.startsWith('seedance');
 
   return (
     <motion.div key="script" {...phaseTransition} className="space-y-6">
@@ -224,7 +225,7 @@ export const ScriptPhase: React.FC<Props> = ({
                             setTimeout(() => setSavedFlash(null), 1500);
                           }
                         }}
-                        className="text-zinc-300 text-sm leading-relaxed truncate outline-none border-b border-dashed border-transparent hover:border-white/[0.15] focus-visible:border-white/30 cursor-text transition-colors"
+                        className="text-zinc-300 text-sm leading-relaxed outline-none border-b border-dashed border-transparent hover:border-white/[0.15] focus-visible:border-white/30 cursor-text transition-colors"
                       >{scene.narrativeDescription}</p>
                       {savedFlash === scene.id && <span className="text-[10px] text-emerald-400/70 ml-2">Saved</span>}
                     </div>
@@ -248,6 +249,9 @@ export const ScriptPhase: React.FC<Props> = ({
                           .filter(Boolean) as string[];
                         const env = shot.environmentId ? project.environments.find(e => e.id === shot.environmentId) : null;
                         const realMotion = shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement' ? shot.motionPrompt : null;
+                        const scriptText = isSeedanceStoryboard
+                          ? (shot.direction || shot.visualPrompt || '')
+                          : (shot.visualPrompt || shot.direction || '');
                         return (
                         <div key={shot.id} className="flex gap-3 p-3 surface-inset rounded-lg">
                           <div className="text-xs font-mono text-zinc-400 w-6 pt-0.5 shrink-0">S{sIdx + 1}</div>
@@ -257,14 +261,17 @@ export const ScriptPhase: React.FC<Props> = ({
                               suppressContentEditableWarning
                               onBlur={e => {
                                 const val = e.currentTarget.textContent?.trim();
-                                if (val && val !== shot.visualPrompt) {
+                                if (!val || val === scriptText) return;
+                                if (isSeedanceStoryboard) {
+                                  onUpdateShot?.(scene.id, shot.id, { direction: val });
+                                } else {
                                   onUpdateShot?.(scene.id, shot.id, { visualPrompt: val });
+                                }
                                   setSavedFlash(shot.id);
                                   setTimeout(() => setSavedFlash(null), 1500);
-                                }
                               }}
                               className="text-sm text-zinc-300 leading-relaxed outline-none border-b border-dashed border-transparent hover:border-white/[0.15] focus-visible:border-white/30 cursor-text transition-colors"
-                            >{shot.visualPrompt || '—'}</div>
+                            >{scriptText || '—'}</div>
                             {savedFlash === shot.id && <span className="text-[10px] text-emerald-400/70">Saved</span>}
                             {realMotion && (
                               <div className="text-sm text-zinc-400 leading-relaxed">{realMotion}</div>

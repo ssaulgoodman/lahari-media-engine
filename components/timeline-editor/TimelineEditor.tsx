@@ -98,8 +98,9 @@ const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<num
   });
 
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
-// creates one when the timeline is empty). Used by the manual-upload button.
-const addVideoClip = (src: string, name?: string) => {
+// creates one when the timeline is empty). Used by the manual-upload button
+// and the MediaLibraryDrawer (any external surface adding a clip).
+export const addVideoClip = (src: string, name?: string) => {
   const id = generateId();
   const from = nextStartMs();
   const existingTrack = useStore.getState().tracks.find((t) => t.type === 'video');
@@ -690,26 +691,48 @@ const TimelineEditor: React.FC<Props> = ({
 
   // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z = redo. Routes through the store's
   // session-only history handlers (not designcombo's diff history).
+  // S (no modifier) = split selected item at the playhead — the store action
+  // is a silent no-op when the playhead isn't inside a splittable item.
   useEffect(() => {
     if (!stateManager) return;
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      if (e.key !== 'z' && e.key !== 'Z') return;
+      // Always ignore typing into form controls / contentEditable. Otherwise
+      // hitting `S` while renaming a clip would slice the clip in two.
       const t = e.target as HTMLElement | null;
       if (t) {
         const tag = t.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
       }
-      const { performUndo, performRedo } = useStore.getState();
-      if (e.shiftKey) {
-        if (!performRedo) return;
-        e.preventDefault();
-        performRedo();
-      } else {
-        if (!performUndo) return;
-        e.preventDefault();
-        performUndo();
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        const { performUndo, performRedo } = useStore.getState();
+        if (e.shiftKey) {
+          if (!performRedo) return;
+          e.preventDefault();
+          performRedo();
+        } else {
+          if (!performUndo) return;
+          e.preventDefault();
+          performUndo();
+        }
+        return;
+      }
+
+      if (!mod && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+        const { splitActiveAtPlayhead } = useStore.getState();
+        const did = splitActiveAtPlayhead();
+        if (did) e.preventDefault();
+        return;
+      }
+
+      // Delete/Backspace = remove selected clip(s). The store action handles
+      // the editor policy: video/image deletes ripple closed; audio deletes do
+      // not shift the song bed.
+      if (!mod && !e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+        const { deleteActiveItems } = useStore.getState();
+        const did = deleteActiveItems();
+        if (did) e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);

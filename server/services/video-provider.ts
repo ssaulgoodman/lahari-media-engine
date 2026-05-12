@@ -10,6 +10,7 @@ type VideoProvider = 'segmind' | 'vertex';
 export type VideoGenerationOptions = {
   endImagePath?: string;
   referenceImagePaths?: string[];
+  referenceAudioPaths?: string[];
   resolution?: '720p' | '1080p';
   aspectRatio?: '16:9' | '9:16';
   durationSec?: number;
@@ -34,8 +35,8 @@ const shouldFallbackToVertex = (err: any): boolean => {
     return false;
   }
 
-  if (category === 'model_unavailable') return true;
-  if ([408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
+  if (category === 'model_unavailable' || category === 'insufficient_credits') return true;
+  if ([402, 403, 408, 409, 425, 429, 500, 502, 503, 504].includes(status)) return true;
 
   return [
     'fetch failed',
@@ -48,6 +49,12 @@ const shouldFallbackToVertex = (err: any): boolean => {
     'bad gateway',
     'gateway timeout',
     'internal server error',
+    'insufficient credits',
+    'insufficient credit',
+    'out of credits',
+    'not enough credits',
+    'payment required',
+    'billing',
   ].some(needle => text.includes(needle));
 };
 
@@ -57,16 +64,25 @@ const summarizeError = (err: any): string => {
 };
 
 export const generateVideoWithFallback = async (
-  startImagePath: string,
+  startImagePath: string | undefined,
   motionPrompt: string,
   opts?: VideoGenerationOptions
 ): Promise<VideoGenerationResult> => {
+  const modelKey = opts?.modelKey || 'veo-3.1-fast';
+  const canUseVertexModel = isVertexVeoModelKey(modelKey);
+
+  // Env override: VIDEO_PROVIDER=vertex skips Segmind entirely for Veo models.
+  // Useful when Segmind is out of credits or down. Seedance models still go to
+  // Segmind (Vertex doesn't have them).
+  if (process.env.VIDEO_PROVIDER === 'vertex' && canUseVertexModel && hasVertexVideoConfig()) {
+    console.log(`[video-provider] VIDEO_PROVIDER=vertex — going direct to Vertex for ${modelKey}`);
+    return await generateVertexVideo(startImagePath, motionPrompt, { ...opts, modelKey });
+  }
+
   try {
     const result = await generateSegmindVideo(startImagePath, motionPrompt, opts);
     return { ...result, provider: 'segmind' };
   } catch (segmindErr: any) {
-    const modelKey = opts?.modelKey || 'veo-3.1-fast';
-    const canUseVertexModel = isVertexVeoModelKey(modelKey);
 
     if (!canUseVertexModel || !shouldFallbackToVertex(segmindErr)) {
       throw segmindErr;

@@ -18,9 +18,43 @@ export interface VideoModelSpec {
   supportsRefs: boolean;
   /** Whether refs work alongside start/end frames (Veo=true, Seedance=false due to mutual exclusivity). */
   refsWithFrames: boolean;
+  /** Resolutions accepted by this provider/model endpoint. */
+  resolutions: Array<'720p' | '1080p'>;
 }
 
+// Order matters: first entry is the default video model for new projects
+// and what getVideoModel() returns when no key is set. Seedance 2.0 Fast
+// chosen as default — it's the storyboard-mode workhorse (up to 15s
+// clips) and Lahari now defaults to storyboard mode. Veo variants stay
+// available for keyframe-mode runs that need longer ref chains.
+//
+// First entry of `durations` is the model's default shot length; we list
+// 15 first on Seedance so the script-phase pacing picker defaults there.
 export const VIDEO_MODELS: VideoModelSpec[] = [
+  {
+    key: 'seedance-2.0-fast',
+    label: 'Seedance 2.0 Fast',
+    provider: 'segmind',
+    durations: [15, 4, 5, 6, 8, 10, 12],
+    costPerSec: 0.146,
+    note: 'Default. Storyboard clips up to 15s.',
+    supportsLastFrame: true,
+    supportsRefs: true,
+    refsWithFrames: false,
+    resolutions: ['720p'],
+  },
+  {
+    key: 'seedance-2.0',
+    label: 'Seedance 2.0',
+    provider: 'segmind',
+    durations: [15, 4, 5, 6, 8, 10, 12],
+    costPerSec: 0.182,
+    note: 'Higher quality, storyboard clips up to 15s.',
+    supportsLastFrame: true,
+    supportsRefs: true,
+    refsWithFrames: false,
+    resolutions: ['720p'],
+  },
   {
     key: 'veo-3.1-fast',
     label: 'Veo 3.1 Fast',
@@ -30,6 +64,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsLastFrame: true,
     supportsRefs: true,
     refsWithFrames: true,
+    resolutions: ['720p', '1080p'],
   },
   {
     key: 'veo-3.1',
@@ -40,28 +75,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsLastFrame: true,
     supportsRefs: true,
     refsWithFrames: true,
-  },
-  {
-    key: 'seedance-2.0-fast',
-    label: 'Seedance 2.0 Fast',
-    provider: 'segmind',
-    durations: [5, 10],
-    costPerSec: 0.146,
-    note: 'Up to 9 ref images',
-    supportsLastFrame: true,
-    supportsRefs: true,
-    refsWithFrames: false,
-  },
-  {
-    key: 'seedance-2.0',
-    label: 'Seedance 2.0',
-    provider: 'segmind',
-    durations: [5, 10],
-    costPerSec: 0.182,
-    note: 'Higher quality, up to 9 ref images',
-    supportsLastFrame: true,
-    supportsRefs: true,
-    refsWithFrames: false,
+    resolutions: ['720p', '1080p'],
   },
 ];
 

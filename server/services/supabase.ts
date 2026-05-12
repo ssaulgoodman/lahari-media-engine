@@ -34,12 +34,24 @@ export interface QueueItem {
   audio_uploaded?: boolean;
   audio_url?: string | null;
   srts_ready?: boolean;
+  render_count?: number;
+  // Per-user fork stats — computed when `currentUserId` is passed to listQueue.
+  others_done?: number;          // Other users who have published a render for this queue row.
+  others_wip?: number;           // Other users with an in-progress fork.
+  has_active_fork?: boolean;     // Current user has a fork that isn't `completed`.
+  has_done_fork?: boolean;       // Current user has a fork that is `completed`.
+  // Per-user mnemonic label for this song (e.g. "the sculptor video"). Set via
+  // PUT /queue/notes/:songId. Null when the current user hasn't written one,
+  // or when listQueue was called without currentUserId. Other users' notes
+  // are never exposed here — single SELECT scoped to currentUserId.
+  user_note?: string | null;
 }
 
 export const listQueue = async (filters?: {
   status?: string;
   deity?: string;
   search?: string;
+  currentUserId?: string;
 }): Promise<QueueItem[]> => {
   const supabase = getClient();
 
@@ -65,20 +77,100 @@ export const listQueue = async (filters?: {
   const { data, error } = await query;
   if (error) throw new Error(`Supabase error: ${error.message}`);
 
+  // One extra round-trip: count final_render assets for every linked project
+  // so the queue table can show/hide a "Renders (N)" button without per-row
+  // requests. Single IN-list query, aggregated client-side.
+  const projectIds = (data || [])
+    .map((r: any) => r.lahari_project_id)
+    .filter((id: string | null): id is string => !!id);
+  const renderCounts = new Map<string, number>();
+  if (projectIds.length > 0) {
+    const { data: assetRows, error: aErr } = await supabase
+      .from('lahari_assets')
+      .select('project_id')
+      .eq('category', 'final_render')
+      .in('project_id', projectIds);
+    if (aErr) throw new Error(`Supabase error: ${aErr.message}`);
+    for (const a of (assetRows as any[]) || []) {
+      renderCounts.set(a.project_id, (renderCounts.get(a.project_id) || 0) + 1);
+    }
+  }
+
+  // Second aggregation: per-queue-row fork stats, partitioned by current user
+  // vs everyone else. Powers the action button (Start/Continue/Open) and the
+  // "Others" dots. Single query, ~one row per fork — small even at scale.
+  const queueIds = (data || []).map((r: any) => r.id);
+  const forkStats = new Map<string, {
+    othersDone: number;
+    othersWip: number;
+    hasActiveFork: boolean;
+    hasDoneFork: boolean;
+  }>();
+  if (queueIds.length > 0 && filters?.currentUserId) {
+    const { data: projectRows, error: pErr } = await supabase
+      .from('lahari_projects')
+      .select('source_queue_id, user_id, status')
+      .in('source_queue_id', queueIds);
+    if (pErr) throw new Error(`Supabase error: ${pErr.message}`);
+    for (const p of (projectRows as any[]) || []) {
+      const qid = p.source_queue_id as string;
+      if (!qid) continue;
+      const isCurrent = p.user_id === filters.currentUserId;
+      const isDone = p.status === 'completed';
+      const slot = forkStats.get(qid) || { othersDone: 0, othersWip: 0, hasActiveFork: false, hasDoneFork: false };
+      if (isCurrent) {
+        if (isDone) slot.hasDoneFork = true;
+        else slot.hasActiveFork = true;
+      } else {
+        if (isDone) slot.othersDone++;
+        else slot.othersWip++;
+      }
+      forkStats.set(qid, slot);
+    }
+  }
+
+  // Third aggregation: this user's mnemonic notes by song_id. Single query
+  // scoped to currentUserId — never returns other users' notes. Skipped
+  // entirely when listQueue is called without currentUserId (admin paths).
+  const songIds = (data || [])
+    .map((r: any) => r.song_id)
+    .filter((id: string | null): id is string => !!id);
+  const notesBySong = new Map<string, string>();
+  if (songIds.length > 0 && filters?.currentUserId) {
+    const { data: noteRows, error: nErr } = await supabase
+      .from('lahari_song_notes')
+      .select('song_id, note')
+      .eq('user_id', filters.currentUserId)
+      .in('song_id', songIds);
+    if (nErr) throw new Error(`Supabase error: ${nErr.message}`);
+    for (const n of (noteRows as any[]) || []) {
+      notesBySong.set(n.song_id, n.note);
+    }
+  }
+
   // Flatten the join
-  return (data || []).map((row: any) => ({
-    ...row,
-    song_name: row.songs?.song_name,
-    deity: row.songs?.deity,
-    original_language: row.songs?.original_language,
-    duration_seconds: row.songs?.duration_seconds,
-    isrc: row.songs?.isrc,
-    album: row.songs?.album,
-    audio_uploaded: !!(row.songs?.audio_storage_url || row.songs?.drive_audio_url),
-    audio_url: row.songs?.audio_storage_url || row.songs?.drive_audio_url || null,
-    srts_ready: row.songs?.srts_ready,
-    songs: undefined,
-  }));
+  return (data || []).map((row: any) => {
+    const stats = forkStats.get(row.id);
+    return {
+      ...row,
+      song_name: row.songs?.song_name,
+      deity: row.songs?.deity,
+      original_language: row.songs?.original_language,
+      duration_seconds: row.songs?.duration_seconds,
+      isrc: row.songs?.isrc,
+      album: row.songs?.album,
+      audio_uploaded: !!(row.songs?.audio_storage_url || row.songs?.drive_audio_url),
+      audio_url: row.songs?.audio_storage_url || row.songs?.drive_audio_url || null,
+      srts_ready: row.songs?.srts_ready,
+      render_count: row.lahari_project_id ? (renderCounts.get(row.lahari_project_id) || 0) : 0,
+      others_done: stats?.othersDone ?? 0,
+      others_wip: stats?.othersWip ?? 0,
+      has_active_fork: stats?.hasActiveFork ?? false,
+      has_done_fork: stats?.hasDoneFork ?? false,
+      user_note: notesBySong.get(row.song_id) ?? null,
+      songs: undefined,
+    };
+  });
 };
 
 export const updateQueueItem = async (

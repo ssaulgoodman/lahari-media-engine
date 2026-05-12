@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ApiProject } from '../types';
+import { ApiProject, StylePreset } from '../types';
 import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { Markdown } from './Markdown';
@@ -197,6 +197,40 @@ export const StylePhase: React.FC<Props> = ({
   const [uploadedStyleFile, setUploadedStyleFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const styleDirectUploadRef = useRef<HTMLInputElement>(null);
+  // Curated style presets — fetched once per project mount.
+  // Flow: artist clicks "Use this style" on a preset → backend points a new
+  // project-scoped asset row at the preset's curated file_path and locks
+  // directly. No visualization step — the preset IS the style image, and
+  // re-rendering it from description text just bled "warm hues" pollution
+  // into every project (the old visualize path was generating fresh from
+  // prose, never reading the curated file). Downstream-stale logic is
+  // identical to onLockStyle.
+  const [presets, setPresets] = useState<StylePreset[]>([]);
+  const [presetLockingKey, setPresetLockingKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getStylePresets(project.id)
+      .then(r => { if (!cancelled) setPresets(r.presets || []); })
+      .catch(() => { if (!cancelled) setPresets([]); });
+    return () => { cancelled = true; };
+  }, [project.id]);
+
+  const handleLockPreset = async (preset: StylePreset) => {
+    if (presetLockingKey) return;
+    setPresetLockingKey(preset.key);
+    try {
+      // Locks the curated preset image directly — no description text is
+      // stored on the project (the image carries everything downstream
+      // needs; buildCharacterPrompt and friends only reference the image).
+      const updated = await api.lockStylePreset(project.id, preset.key);
+      if (onSetProject) onSetProject(updated);
+    } catch (err: any) {
+      showActionError(`Preset lock failed: ${err.message}`);
+    } finally {
+      setPresetLockingKey(null);
+    }
+  };
 
   // Auto-persist style exploration to DB
   const styleExplorationInitRef = useRef(true);
@@ -207,6 +241,10 @@ export const StylePhase: React.FC<Props> = ({
     }
     if (styleSlots.length === 0 && !userSlot.description) return;
     const timer = setTimeout(() => {
+      // presetSlots is intentionally NOT persisted here anymore — presets no
+      // longer have a per-project visualize cache (lock is direct from the
+      // curated file). Legacy presetSlots data on existing projects is
+      // preserved by the server-side merge in PATCH /projects/:id.
       const payload = {
         slots: styleSlots.filter(s => !s.isGenerating && !s.isRefining).map(s => ({ title: s.title, description: s.description, imageUrl: s.imageUrl, assetId: s.assetId })),
         userSlot: userSlot.description ? { title: userSlot.title, description: userSlot.description, imageUrl: userSlot.imageUrl, assetId: userSlot.assetId } : undefined,
@@ -318,6 +356,79 @@ export const StylePhase: React.FC<Props> = ({
     }
   };
 
+  // Preset grid — shared between the fully-unlocked branch and the
+  // locked-Explorer view so the artist can swap to another preset
+  // without first issuing a real /unlock-style. One-click lock: the
+  // curated preset image IS the style image; we don't re-render it.
+  const presetGridSection = presets.length > 0 ? (
+    <div className="surface rounded-xl p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-medium text-white mb-1">Curated Styles</h3>
+        <p className="text-zinc-400 text-xs">
+          Pick a curated style frame. Click "Use this style" to lock it as your project style — the image becomes the visual ground truth for every shot, character, and environment.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {presets.map(preset => {
+          const isLocking = presetLockingKey === preset.key;
+          const anyBusy = !!presetLockingKey || isLocking;
+          return (
+            <div
+              key={preset.key}
+              className="surface-inset rounded-lg overflow-hidden border border-transparent hover:border-white/[0.08] transition-colors"
+            >
+              {/* Image — clickable to zoom. Curated anchor; never per-project. */}
+              <div
+                className="relative aspect-video bg-black/30 cursor-zoom-in group"
+                onClick={() => preset.previewImageUrl && onOpenModal(preset.previewImageUrl)}
+              >
+                {preset.previewImageUrl ? (
+                  <img
+                    src={preset.previewImageUrl}
+                    alt={preset.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[11px] text-zinc-500">
+                    No preview
+                  </div>
+                )}
+                {isLocking && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+
+              {/* Title + description. Description is for the artist's
+                  selection — it is NOT stored on the project or sent to any
+                  downstream model. */}
+              <div className="px-4 py-3 space-y-1.5">
+                <div className="text-sm font-medium text-white">{preset.title}</div>
+                <p className="text-xs text-zinc-400 leading-relaxed">{preset.description}</p>
+              </div>
+
+              {/* Action — single button, locks immediately. */}
+              <div className="px-4 pb-4">
+                <button
+                  type="button"
+                  onClick={() => handleLockPreset(preset)}
+                  disabled={anyBusy}
+                  className="w-full px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                >
+                  {isLocking && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                  {isLocking ? 'Locking…' : 'Use this style'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <motion.div key="style" {...phaseTransition} className="space-y-6">
       {isLockedPhase('style', project.status) ? (
@@ -389,6 +500,8 @@ export const StylePhase: React.FC<Props> = ({
                 </div>
               )}
 
+              {presetGridSection}
+
               <div className="flex gap-2 items-center">
                 <AutoGrowTextarea
                   value={brainstormNotes}
@@ -437,11 +550,13 @@ export const StylePhase: React.FC<Props> = ({
         </div>
       ) : (
         <div className="space-y-5">
+          {presetGridSection}
+
           <div className="surface rounded-xl p-5 space-y-4">
             <div>
               <h3 className="text-sm font-medium text-white mb-1">Art Style Exploration</h3>
               <p className="text-zinc-400 text-xs">
-                Claude brainstorms 4 visual directions. You choose which to visualize as images.
+                Or brainstorm 4 custom visual directions and pick one to visualize.
               </p>
             </div>
 
