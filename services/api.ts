@@ -181,19 +181,21 @@ export const getStylePresets = async (projectId: string) => {
   return handleResponse(res);
 };
 
-/** Visualize a curated preset for THIS project. Does NOT lock — the artist must
- *  hit lockStyle after. Returns { assetId, url, cached } where cached=true means
- *  no AI work happened and the previous render was returned from the per-project
- *  presetSlots cache. Pass force=true to bypass cache and regenerate. */
-export const visualizeStylePreset = async (
+/** Lock a curated preset directly as the project style. No visualization step —
+ *  the preset IS the style image. Backend points a new project-scoped asset row
+ *  at the preset's shared file_path (same pattern forks use) and runs the
+ *  standard /lock-style downstream-stale logic. style_description is set to
+ *  empty server-side so prose can't leak into the concept-regen hint path.
+ *  Returns the full updated project. */
+export const lockStylePreset = async (
   projectId: string,
   presetKey: string,
-  opts?: { force?: boolean; signal?: AbortSignal }
-): Promise<{ assetId: string; url: string; cached: boolean }> => {
-  const res = await authFetch(`${API}/projects/${projectId}/visualize-style-preset`, {
+  opts?: { signal?: AbortSignal }
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/lock-style-preset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ presetKey, force: opts?.force }),
+    body: JSON.stringify({ presetKey }),
     signal: opts?.signal,
   });
   return handleResponse(res);

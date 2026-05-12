@@ -400,30 +400,12 @@ Revise the direction incorporating the feedback. Keep it cohesive and internally
 Use the refine_direction tool.`,
     source: { file: 'server/services/claude.ts', lines: '472-493' },
   },
-  {
-    id: 'visualize-style-preset',
-    name: 'Visualize curated style preset',
-    stage: 'blueprint',
-    model: 'project image model',
-    modelLabel: 'Configured image provider',
-    triggeredBy: "Fires when you click 'Visualize for this project' on a curated style preset.",
-    summary: 'Turns one curated devotional preset description into a project-specific style reference image, then caches it in styleExploration.presetSlots.',
-    variables: [
-      { name: 'presetTitle', description: 'Curated preset title, e.g. Sacred Golden Serenity' },
-      { name: 'presetDescription', description: 'Curated transferable visual treatment' },
-      { name: 'subject', description: 'Concept deity/subject or project title' },
-    ],
-    template: `Create ONE cinematic style reference image for a devotional music video.
-
-Subject/context: {{subject}}
-Visual direction: {{presetDescription}}
-
-This is a reusable STYLE REFERENCE, not a scene illustration.
-Show transferable visual language: lighting, color palette, atmosphere, texture, material treatment, and camera feel.
-Do not make a character reference portrait, poster, collage, or text image.
-No watermark, logo, typography, captions, or readable text.`,
-    source: { file: 'server/routes/generate-style.ts + server/services/imagen.ts', lines: 'visualize-style-preset / buildStylePrompt' },
-  },
+  // Note: curated style presets no longer involve any AI prompt. The /lock-
+  // style-preset endpoint points a new project-scoped asset row at the
+  // preset's shared curated file_path and writes style_asset_id directly —
+  // no text-to-image step. The old "visualize curated style preset" prompt
+  // entry was removed when that path was deleted (it was generating fresh
+  // images from description text without ever reading the curated file).
   // ─── Looks ────────────────────────────────────────────────────────
   {
     id: 'character-look',

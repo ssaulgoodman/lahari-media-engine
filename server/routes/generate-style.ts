@@ -42,102 +42,57 @@ export const mountStyleRoutes = (router: Router) => {
     res.json({ presets });
   });
 
-  // Visualize a preset for THIS project. Does NOT lock — that happens via the
-  // existing /lock-style endpoint once the artist decides. Mirrors the
-  // brainstorm/visualize pattern so presets share the same flow.
+  // Lock a curated style preset directly as the project style. No
+  // visualization step — the preset IS the style image. We point a new
+  // project-scoped asset row at the preset's shared file path (same shared
+  // file_path pattern forks use) and apply the same downstream-stale logic
+  // /lock-style uses.
   //
-  // Cache strategy: project.style_exploration.presetSlots[key] holds the
-  // previously-generated assetId for this preset on this project. On revisit
-  // (or after unlock), we return the cached assetId/url without paying for
-  // regeneration. Pass `force: true` to bypass the cache (Regenerate button).
-  router.post('/:id/visualize-style-preset', async (req, res) => {
+  // style_description is INTENTIONALLY empty: the image carries everything
+  // downstream prompts need (buildCharacterPrompt and friends already only
+  // reference the style image by index, never the description text). Storing
+  // the preset description would leak prose into the concept-regen hint path
+  // and re-introduce the "warm hues" pollution the artist was seeing.
+  router.post('/:id/lock-style-preset', async (req, res) => {
     const project = await selectOne('projects', { id: paramStr(req.params.id) });
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const { presetKey, force } = req.body || {};
+    const { presetKey } = req.body || {};
     const preset = typeof presetKey === 'string' ? getStylePreset(presetKey) : undefined;
     if (!preset) return res.status(400).json({ error: 'Valid presetKey required' });
 
-    // Cache check — return previously-generated asset if it still exists.
-    const styleExploration = project.style_exploration ? JSON.parse(project.style_exploration) : {};
-    const presetSlots = styleExploration.presetSlots || {};
-    const cached = presetSlots[preset.key];
-    if (!force && cached?.assetId) {
-      const existingAsset = await selectOne('assets', { id: cached.assetId, project_id: project.id });
-      if (existingAsset?.file_path) {
-        return res.json({
-          assetId: cached.assetId,
-          url: storageUrl(existingAsset.file_path),
-          cached: true,
-        });
-      }
-      // Cache miss — asset row was deleted. Fall through to regenerate.
-    }
+    const assetId = uuidv4();
+    await insertRow('assets', {
+      id: assetId,
+      project_id: project.id,
+      category: 'style',
+      file_path: preset.previewImagePath,
+      prompt: `Curated preset: ${preset.title}`,
+      metadata: JSON.stringify({ stylePresetKey: preset.key, stylePresetTitle: preset.title, curatedPreset: true }),
+    });
 
-    const concept = JSON.parse(project.locked_concept || '{}');
-    const subject = concept.deity || project.title;
-    const genPrompt = buildStylePrompt(preset.description, subject);
+    await updateRows('projects', { id: project.id }, {
+      status: 'style_locked',
+      style_asset_id: assetId,
+      style_description: '',
+      updated_at: new Date().toISOString(),
+    });
 
-    try {
-      console.log(`[${project.id}] Visualizing style preset: ${preset.title}${force ? ' (forced)' : ''}`);
-      const t0 = Date.now();
-      const imageService = getImageService(project.image_model);
-      const assetPath = await imageService.generateSingleStyleImage(
-        preset.description,
-        subject,
-        genPrompt,
-      );
-      const durationMs = Date.now() - t0;
+    await markStyleDependentsStale(project.id);
 
-      const assetId = uuidv4();
-      await insertRow('assets', {
-        id: assetId,
-        project_id: project.id,
-        category: 'style',
-        file_path: assetPath,
-        prompt: `${preset.title}: ${preset.description}`,
-        metadata: JSON.stringify({ stylePresetKey: preset.key, stylePresetTitle: preset.title }),
-      });
+    await logCall({
+      projectId: project.id,
+      stage: 'lock-style-preset',
+      model: 'n/a',
+      prompt: `Locked curated style preset: ${preset.title}`,
+      contextChain: await buildContextChain(project.id),
+      responseSummary: `Locked preset ${preset.key} as project style — no image gen, shared curated file path.`,
+      outputAssetIds: [assetId],
+      durationMs: 0,
+      costEstimate: 0,
+    });
 
-      // Persist into styleExploration.presetSlots so revisits hit the cache.
-      const nextExploration = {
-        ...styleExploration,
-        presetSlots: {
-          ...presetSlots,
-          [preset.key]: { imageUrl: storageUrl(assetPath), assetId },
-        },
-      };
-      await updateRows('projects', { id: project.id }, {
-        style_exploration: JSON.stringify(nextExploration),
-        updated_at: new Date().toISOString(),
-      });
-
-      await logCall({
-        projectId: project.id,
-        stage: 'visualize-style-preset',
-        model: getImageGenerationModelName(project.image_model),
-        prompt: genPrompt,
-        contextChain: await buildContextChain(project.id),
-        responseSummary: `Visualized style preset: ${preset.title}`,
-        outputAssetIds: [assetId],
-        durationMs,
-        costEstimate: 0.01,
-      });
-
-      res.json({ assetId, url: storageUrl(assetPath), cached: false });
-    } catch (err: any) {
-      console.error(`[${project.id}] Visualize style preset failed:`, err);
-      await logCall({
-        projectId: project.id,
-        stage: 'visualize-style-preset',
-        model: getImageGenerationModelName(project.image_model),
-        prompt: genPrompt,
-        contextChain: await buildContextChain(project.id),
-        durationMs: 0,
-        error: err.message,
-      });
-      res.status((err as any).statusCode || 500).json({ error: err.message });
-    }
+    res.json(await getFullProject(project.id));
   });
 
   // ─── Brainstorm Style Directions (text only, no images) ─────────────
