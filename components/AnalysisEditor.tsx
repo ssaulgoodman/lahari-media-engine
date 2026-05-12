@@ -88,9 +88,14 @@ export const AnalysisEditor: React.FC<Props> = ({
   };
 
   // Ready to launch?
+  // Gate on the locked style IMAGE, not the description text. Curated preset
+  // locks intentionally store an empty style_description (the image is the
+  // ground truth; storing prose would leak pollution into concept-regen
+  // hints — see commit c8385a0 / 103cbd7). Using styleDescription here
+  // silently broke the Launch button for any project that locked a preset.
   const everyoneHasLook = project.cast.length > 0 && project.cast.every(c => !!c.referenceImageUrl);
   const everyEnvHasLook = project.environments.length === 0 || project.environments.every(e => !!e.referenceImageUrl);
-  const showLaunch = !!project.styleDescription && everyoneHasLook && everyEnvHasLook && project.scenes.length > 0;
+  const showLaunch = !!project.styleAssetUrl && everyoneHasLook && everyEnvHasLook && project.scenes.length > 0;
 
   return (
     <div className="max-w-5xl mx-auto pb-32">
