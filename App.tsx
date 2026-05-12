@@ -1163,13 +1163,18 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   };
 
   const getReadyStoryboardTargets = (p: ApiProject) => {
+    // Image gen needs only the storyboard prompt. Cut plan is for the
+    // downstream Seedance step (see c8385a0 — backend no longer gates image
+    // gen on it). Locked shots are intentionally skipped — artist already
+    // committed to a board. ERROR-status shots ARE included so a single bad
+    // shot can be retried as part of the bulk run instead of forcing the
+    // artist to click each one manually.
     const targets: { sceneId: string; shotId: string }[] = [];
     for (const scene of p.scenes) {
       scene.shots.forEach((shot) => {
-        if (shot.storyboardLocked || shot.storyboardUrl) return;
+        if (shot.storyboardLocked) return;
         if (!shot.storyboardPrompt?.trim()) return;
         if (shot.storyboardStatus === GenerationStatus.LOADING) return;
-        if (shot.storyboardStatus === GenerationStatus.ERROR) return;
         targets.push({ sceneId: scene.id, shotId: shot.id });
       });
     }
@@ -1182,7 +1187,6 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       scene.shots.forEach((shot) => {
         if (shot.storyboardPrompt?.trim()) return;
         if (shot.storyboardPromptStatus === GenerationStatus.LOADING) return;
-        if (shot.storyboardPromptStatus === GenerationStatus.ERROR) return;
         targets.push({ sceneId: scene.id, shotId: shot.id });
       });
     }

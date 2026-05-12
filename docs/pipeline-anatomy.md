@@ -549,7 +549,9 @@ When an upstream field changes after downstream work exists, downstream entities
 | `cast_members.description` edited | All shots referencing that cast member |
 | `environments.description` edited | All shots referencing that environment |
 
-Cleared when: generation_prompt is regenerated/refined, or artist edits the generation_prompt directly.
+Cleared when: generation_prompt is regenerated/refined, artist edits the generation_prompt directly, or the storyboard planner rewrites `storyboard_prompt` + `storyboard_cut_plan`.
+
+**Known caveat:** `lahari_shots.prompts_stale` is currently shared by keyframe prompts and storyboard prompts. In storyboard mode, rewriting the storyboard prompt clears the shared flag because the planner has re-read cast/env refs. If the artist later switches back to keyframe mode, the old `visual_prompt` can look fresh even though it was not rewritten. Future schema should split this into `visual_prompt_stale` and `storyboard_prompt_stale`.
 
 **Only fires when going back** — linear flow (concept → script → style → chars → envs → studio) never triggers staleness. This is specifically for the "go back and tweak upstream" workflow.
 

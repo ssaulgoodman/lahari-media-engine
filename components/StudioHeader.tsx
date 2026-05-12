@@ -83,18 +83,26 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
       return true;
     }).length;
   }, 0);
+  // Storyboard image bulk: only the storyboard prompt is required (cut plan
+  // is for downstream Seedance, doesn't gate image gen). Locked shots are
+  // skipped because the artist already committed. ERROR-status shots are
+  // included so a single bad shot retries in the same bulk run. Must stay in
+  // sync with `getReadyStoryboardTargets` in App.tsx — mismatch means the
+  // count and the handler disagree about what's eligible.
   const storyboardsToFire = scenes.reduce((acc, s) => {
     return acc + s.shots.filter(shot => {
-      if (shot.storyboardLocked || shot.storyboardUrl) return false;
+      if (shot.storyboardLocked) return false;
       if (!shot.storyboardPrompt?.trim()) return false;
-      if (shot.storyboardStatus === GenerationStatus.LOADING || shot.storyboardStatus === GenerationStatus.ERROR) return false;
+      if (shot.storyboardStatus === GenerationStatus.LOADING) return false;
       return true;
     }).length;
   }, 0);
+  // Storyboard prompt bulk: shots with no prompt yet. ERROR-status shots are
+  // included for retry, matching `getReadyStoryboardPromptTargets` in App.tsx.
   const storyboardPromptsToWrite = scenes.reduce((acc, s) => {
     return acc + s.shots.filter(shot => {
       if (shot.storyboardPrompt?.trim()) return false;
-      if (shot.storyboardPromptStatus === GenerationStatus.LOADING || shot.storyboardPromptStatus === GenerationStatus.ERROR) return false;
+      if (shot.storyboardPromptStatus === GenerationStatus.LOADING) return false;
       return true;
     }).length;
   }, 0);
@@ -224,7 +232,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               onClick={async () => { setBulkRunning('storyboards'); try { await onBulkGenerateStoryboards?.(); } finally { setBulkRunning(null); } }}
               disabled={!onBulkGenerateStoryboards || storyboardsToFire === 0 || bulkRunning !== null}
               className="text-[11px] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.06] rounded-md px-2.5 py-1 transition-colors disabled:opacity-40 flex items-center gap-1.5"
-              title={storyboardsToFire > 0 ? `${storyboardProvider.label}: ${storyboardProvider.note}` : 'Write prompts first, or all storyboard images are generated/locked.'}
+              title={storyboardsToFire > 0 ? `${storyboardProvider.label}: ${storyboardProvider.note}` : 'Write board prompts first, or all storyboard images are locked.'}
             >
               {bulkRunning === 'storyboards' && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
               {bulkRunning === 'storyboards' ? 'Rendering…' : <>Board images <span className="text-zinc-400">({storyboardsToFire})</span></>}
