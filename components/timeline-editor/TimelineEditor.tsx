@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { dispatch } from '@designcombo/events';
 import StateManager, {
   ADD_VIDEO,
-  LAYER_DELETE,
   TIMELINE_SCALE_CHANGED,
 } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
@@ -726,16 +725,13 @@ const TimelineEditor: React.FC<Props> = ({
         return;
       }
 
-      // Delete/Backspace = remove selected clip(s). The same pack reflow
-      // that runs after a trim closes the gap automatically, so this is
-      // effectively a ripple delete. No modifier required — Backspace on
-      // its own is the convention every editor (Premiere/FCP/Resolve) uses
-      // and our input-focus guard above keeps it from firing while typing.
+      // Delete/Backspace = remove selected clip(s). The store action handles
+      // the editor policy: video/image deletes ripple closed; audio deletes do
+      // not shift the song bed.
       if (!mod && !e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) {
-        const { activeIds } = useStore.getState();
-        if (activeIds.length === 0) return;
-        e.preventDefault();
-        dispatch(LAYER_DELETE, { payload: { trackItemIds: activeIds }, options: {} });
+        const { deleteActiveItems } = useStore.getState();
+        const did = deleteActiveItems();
+        if (did) e.preventDefault();
       }
     };
     window.addEventListener('keydown', onKey);

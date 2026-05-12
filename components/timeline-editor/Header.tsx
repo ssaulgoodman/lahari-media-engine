@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { dispatch } from '@designcombo/events';
 import {
   TIMELINE_SCALE_CHANGED,
-  LAYER_DELETE,
 } from '@designcombo/state';
 import {
   Maximize2,
@@ -79,6 +78,7 @@ const Header: React.FC = () => {
   const projectId = useStore((s) => s.projectId);
   const bumpResetToken = useStore((s) => s.bumpResetToken);
   const setLastSavedAt = useStore((s) => s.setLastSavedAt);
+  const deleteActiveItems = useStore((s) => s.deleteActiveItems);
   const splitActiveAtPlayhead = useStore((s) => s.splitActiveAtPlayhead);
   const trackItemsMap = useStore((s) => s.trackItemsMap);
   const currentFrame = useCurrentPlayerFrame(playerRef);
@@ -197,7 +197,7 @@ const Header: React.FC = () => {
         <button
           style={disabled ? btnDisabled : btn}
           disabled={disabled}
-          onClick={() => dispatch(LAYER_DELETE, { payload: { trackItemIds: activeIds }, options: {} })}
+          onClick={() => deleteActiveItems()}
           title="Delete selected (Del/Backspace)"
         >
           <Trash size={15} />

@@ -70,6 +70,10 @@ interface ITimelineStore {
   ) => void;
   addTransition: (transition: ITransition) => void;
   removeTransition: (transitionId: string) => void;
+  // Deletes the active item(s). Video/image deletes ripple closed so the common
+  // "split, remove middle" edit does what artists expect. Audio deletes are
+  // non-ripple so the song bed does not unexpectedly shift.
+  deleteActiveItems: () => boolean;
   // Slices the currently-selected item into two at the playhead. v1 contract:
   //   - exactly one item selected (activeIds.length === 1)
   //   - item is video / audio / image (no captions/text/effects splits in v1)
@@ -160,6 +164,107 @@ const useStore = create<ITimelineStore>((set, get) => ({
         { kind: 'update', updateHistory: true },
       );
     }
+  },
+
+  deleteActiveItems: () => {
+    const s = get();
+    if (!s.stateManager) return false;
+    const deleteIds = new Set(
+      s.activeIds.filter((id) => Boolean(s.trackItemsMap[id])),
+    );
+    if (deleteIds.size === 0) return false;
+
+    const nextItemsMap: Record<string, ITrackItem> = { ...s.trackItemsMap };
+    for (const id of deleteIds) {
+      delete nextItemsMap[id];
+    }
+
+    let nextItemIds = s.trackItemIds.filter((id) => !deleteIds.has(id));
+
+    const nextTransitionsMap: Record<string, ITransition> = {};
+    for (const [id, tr] of Object.entries(s.transitionsMap)) {
+      if (deleteIds.has(tr.fromId) || deleteIds.has(tr.toId)) continue;
+      if (!nextItemsMap[tr.fromId] || !nextItemsMap[tr.toId]) continue;
+      nextTransitionsMap[id] = tr;
+    }
+    const nextTransitionIds = s.transitionIds.filter((id) => nextTransitionsMap[id]);
+
+    const tracksWithoutDeleted = s.tracks.map((track) => ({
+      ...track,
+      items: (track.items as string[]).filter((id) => !deleteIds.has(id)),
+    }));
+
+    const visualTracks = tracksWithoutDeleted.filter(
+      (track) => track.type === 'video' || track.type === 'image',
+    );
+    const mainVisualTrack = visualTracks[0];
+    let nextTracks = tracksWithoutDeleted;
+
+    if (mainVisualTrack) {
+      const orderIndex = new Map(nextItemIds.map((id, idx) => [id, idx]));
+      const pooledVisualItems = visualTracks
+        .flatMap((track) =>
+          (track.items as string[])
+            .map((id) => nextItemsMap[id] as any)
+            .filter(Boolean),
+        )
+        .sort((a, b) => {
+          const byTime = (a.display?.from ?? 0) - (b.display?.from ?? 0);
+          if (byTime !== 0) return byTime;
+          return (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0);
+        });
+
+      let cursor = 0;
+      const packedVisualIds: string[] = [];
+      for (const item of pooledVisualItems) {
+        const from = item.display?.from ?? 0;
+        const to = item.display?.to ?? from;
+        const width = Math.max(0, to - from);
+        nextItemsMap[item.id] = {
+          ...item,
+          display: { from: cursor, to: cursor + width },
+          trackId: mainVisualTrack.id,
+        };
+        packedVisualIds.push(item.id);
+        cursor += width;
+      }
+
+      nextTracks = tracksWithoutDeleted
+        .filter((track) => {
+          if (track === mainVisualTrack) return pooledVisualItems.length > 0;
+          return track.type !== 'video' && track.type !== 'image';
+        })
+        .map((track) =>
+          track === mainVisualTrack
+            ? { ...track, items: packedVisualIds }
+            : track,
+        );
+
+      const visualIdSet = new Set(packedVisualIds);
+      const nonVisualIds = nextItemIds.filter((id) => !visualIdSet.has(id));
+      nextItemIds = [...packedVisualIds, ...nonVisualIds];
+    }
+
+    let nextDuration = 0;
+    for (const item of Object.values(nextItemsMap) as any[]) {
+      const to = item?.display?.to ?? 0;
+      if (to > nextDuration) nextDuration = to;
+    }
+
+    s.stateManager.updateState(
+      {
+        activeIds: [],
+        duration: nextDuration || 5000,
+        trackItemIds: nextItemIds,
+        trackItemsMap: nextItemsMap,
+        tracks: nextTracks,
+        transitionIds: nextTransitionIds,
+        transitionsMap: nextTransitionsMap,
+      },
+      { kind: 'update', updateHistory: true },
+    );
+
+    return true;
   },
 
   splitActiveAtPlayhead: () => {
