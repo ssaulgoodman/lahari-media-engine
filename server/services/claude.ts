@@ -321,7 +321,7 @@ export const planScenes = async (
   input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
-  const pacing = input.basePacing || 8;
+  const pacing = input.basePacing || 15;
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
@@ -535,7 +535,7 @@ export const refineScript = async (
   context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
-  const pacing = context.basePacing || 8;
+  const pacing = context.basePacing || 15;
   const minDuration = context.minShotDuration || 4;
   const isSeedanceStoryboard = context.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;

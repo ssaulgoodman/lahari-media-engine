@@ -168,7 +168,7 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
-      { name: 'pacing', description: 'Shot duration in seconds (default 8)' },
+      { name: 'pacing', description: 'Shot duration in seconds (default 15 — matches Seedance storyboard-mode workhorse clip length)' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
       { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },

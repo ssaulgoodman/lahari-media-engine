@@ -183,7 +183,7 @@ const buildPrompt = (
   input: PlanScenesInput,
   errors?: string[],
 ): string => {
-  const pacing = input.basePacing || 8;
+  const pacing = input.basePacing || 15;
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
@@ -264,7 +264,7 @@ export const planScenesOpenAI = async (
   input: PlanScenesInput
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string; model: string }> => {
   const client = getClient();
-  const pacing = input.basePacing || 8;
+  const pacing = input.basePacing || 15;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance') || false;
   const seedanceMaxDuration = 15;
   const maxAttempts = 3;

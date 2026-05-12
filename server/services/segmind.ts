@@ -60,7 +60,9 @@ export type SegmindModelKey = keyof typeof SEGMIND_MODELS;
 
 /** Smallest valid duration for a given model (or default model). */
 export const getModelMinDuration = (modelKey?: string): number => {
-  const model = SEGMIND_MODELS[(modelKey || 'veo-3.1-fast') as SegmindModelKey];
+  // Default aligned with constants/videoModels.ts first entry — Seedance
+  // 2.0 Fast is the storyboard-mode default. Was veo-3.1-fast.
+  const model = SEGMIND_MODELS[(modelKey || 'seedance-2.0-fast') as SegmindModelKey];
   if (!model) return 4;
   return Math.min(...model.durations);
 };
@@ -80,7 +82,8 @@ export const generateSegmindVideo = async (
     modelKey?: SegmindModelKey;
   }
 ): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
-  const modelKey: SegmindModelKey = opts?.modelKey || 'veo-3.1-fast';
+  // Default aligned with constants/videoModels.ts first entry. Was veo-3.1-fast.
+  const modelKey: SegmindModelKey = opts?.modelKey || 'seedance-2.0-fast';
   const model = SEGMIND_MODELS[modelKey];
   if (!model) throw new Error(`Unknown Segmind model: ${modelKey}`);
 

@@ -44,7 +44,7 @@ router.post('/:id/generate-script', async (req, res) => {
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
-      basePacing: project.target_duration || 8,
+      basePacing: project.target_duration || 15,
       minShotDuration: getModelMinDuration(project.video_model),
       videoModel: project.video_model || undefined,
       userNote,
@@ -121,7 +121,7 @@ router.post('/:id/generate-script', async (req, res) => {
       });
 
       // Calculate per-shot durations: base pacing for all, last shot gets remainder (clamped)
-      const basePacing = project.target_duration || 8;
+      const basePacing = project.target_duration || 15;
       const sceneStartSec = parseTimestamp(scene.startTime);
       const sceneEndSec = parseTimestamp(scene.endTime);
       const sceneDuration = Math.max(0, sceneEndSec - sceneStartSec);
@@ -248,7 +248,7 @@ router.post('/:id/refine-script', async (req, res) => {
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
-      basePacing: project.target_duration || 8,
+      basePacing: project.target_duration || 15,
       minShotDuration: getModelMinDuration(project.video_model),
       videoModel: project.video_model || undefined,
     });
@@ -318,7 +318,7 @@ router.post('/:id/refine-script', async (req, res) => {
       // Calculate per-shot durations: standard mode uses base pacing +
       // remainder; Seedance storyboard mode preserves the planner's 4-15s
       // clip durations.
-      const basePacing = project.target_duration || 8;
+      const basePacing = project.target_duration || 15;
       const isSeedanceStoryboard = String(project.video_model || '').startsWith('seedance');
       const sceneStartSec = parseTimestamp(scene.startTime);
       const sceneEndSec = parseTimestamp(scene.endTime);
