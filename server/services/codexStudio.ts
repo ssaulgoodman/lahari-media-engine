@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { selectAll, selectColumns, updateRows, insertRow, deleteRows } from '../database.js';
+import { selectAll, selectColumns, updateRows, insertRow, deleteRows, rpcVoid } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { planScenes, refineScript, writeShotPrompts } from './claude.js';
 import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
@@ -2949,77 +2949,10 @@ export const rollbackRewriteScriptPreview = async (previewJsonPath: string, proj
     throw new Error('Refusing rollback because the current script no longer matches the preview after-state.');
   }
 
-  const currentScenes = await selectColumns('scenes', 'id', { project_id: project.id });
-  for (const scene of currentScenes) {
-    await deleteRows('shots', { scene_id: scene.id });
-  }
-  await deleteRows('scenes', { project_id: project.id });
-  await deleteRows('cast_members', { project_id: project.id });
-  await deleteRows('environments', { project_id: project.id });
-
-  for (const [idx, member] of preview.beforeRows.cast.entries()) {
-    await insertRow('cast_members', {
-      id: member.id,
-      project_id: project.id,
-      name: member.name,
-      description: member.description || '',
-      generation_prompt: member.generationPrompt || null,
-      prompts_stale: !!member.promptsStale,
-      reference_asset_id: member.referenceAssetId || null,
-      sort_order: idx,
-    });
-  }
-  for (const [idx, environment] of preview.beforeRows.environments.entries()) {
-    await insertRow('environments', {
-      id: environment.id,
-      project_id: project.id,
-      name: environment.name,
-      description: environment.description || '',
-      generation_prompt: environment.generationPrompt || null,
-      prompts_stale: !!environment.promptsStale,
-      reference_asset_id: environment.referenceAssetId || null,
-      sort_order: idx,
-    });
-  }
-  for (const [sceneIndex, scene] of preview.beforeRows.scenes.entries()) {
-    await insertRow('scenes', {
-      id: scene.id,
-      project_id: project.id,
-      section_label: scene.sectionLabel || `Scene ${sceneIndex + 1}`,
-      start_time: scene.startTime || '',
-      end_time: scene.endTime || '',
-      lyrics: scene.lyrics || '',
-      narrative_description: scene.narrativeDescription || '',
-      sort_order: sceneIndex,
-    });
-    for (const [shotIndex, shot] of scene.shots.entries()) {
-      await insertRow('shots', {
-        id: shot.id,
-        scene_id: scene.id,
-        direction: shot.direction || '',
-        visual_prompt: shot.visualPrompt || '',
-        motion_prompt: shot.motionPrompt || '',
-        duration: shot.duration || project.targetDuration || 15,
-        cast_ids: JSON.stringify(shot.castIds || []),
-        environment_id: shot.environmentId || null,
-        continuity_from: shot.continuityFrom || 'cut',
-        prompts_stale: !!shot.promptsStale,
-        use_next_as_end_frame: shot.useNextAsEndFrame ? 1 : 0,
-        lipsync_enabled: !!shot.lipsyncEnabled,
-        use_prev_storyboard_ref: !!shot.usePrevStoryboardRef,
-        include_prev_cut_plan: shot.includePrevCutPlan ?? null,
-        excluded_refs: JSON.stringify(shot.excludedRefs || { storyboard: [], video: [] }),
-        sort_order: shotIndex,
-        image_status: 'idle',
-        video_status: 'idle',
-      });
-    }
-  }
-  await updateRows('projects', { id: project.id }, {
-    status: preview.beforeProject.status,
-    last_script_prompt: preview.beforeProject.lastScriptPrompt || null,
-    last_write_shots_prompt: preview.beforeProject.lastWriteShotsPrompt || null,
-    updated_at: new Date().toISOString(),
+  await rpcVoid('lahari_rollback_script_preview', {
+    p_project_id: project.id,
+    p_before_project: preview.beforeProject,
+    p_before_rows: preview.beforeRows,
   });
 
   const journalPath = sessionJournalPath(project.id);

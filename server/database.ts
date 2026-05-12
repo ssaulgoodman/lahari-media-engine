@@ -163,6 +163,12 @@ export const rpc = async (fnName: string, params: Record<string, any> = {}): Pro
   return data;
 };
 
+/** Raw RPC call for mutation helpers that should run inside Postgres transactions. */
+export const rpcVoid = async (fnName: string, params: Record<string, any> = {}): Promise<void> => {
+  const { error } = await getSB().rpc(fnName, params);
+  if (error) throw new Error(`DB rpc ${fnName}: ${error.message}`);
+};
+
 // ─── Convenience: select with custom column list ─────────────────────
 
 export const selectColumns = async (

@@ -261,6 +261,9 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- apply rewrite-script <preview.json>`
 - CLI: `npm run lahari -- apply rewrite-shot-prompts <preview.json>`
 - CLI: `npm run lahari -- apply rewrite-storyboard-prompt <preview.json>`
+- CLI: `npm run lahari -- rollback rewrite-script <preview.json>`
+- CLI: `npm run lahari -- rollback rewrite-shot-prompts <preview.json>`
+- CLI: `npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>`
 - CLI: `npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]`
 - CLI: `npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]`
 - MCP: `npm run lahari:mcp`
@@ -289,6 +292,9 @@ The MCP server currently exposes read-only/local-output tools plus explicit muta
 - `apply_script_preview`
 - `apply_shot_prompt_preview`
 - `apply_storyboard_prompt_preview`
+- `rollback_script_preview`
+- `rollback_shot_prompt_preview`
+- `rollback_storyboard_prompt_preview`
 - `apply_generate_storyboard`
 - `apply_generate_video`
 
@@ -346,7 +352,7 @@ Preview artifacts live under `.lahari/previews/<projectId>/`. The first preview 
 
 Applying a preview is a separate command/tool. `apply-plan rewrite-shot-prompts` is read-only and validates drift. `apply rewrite-shot-prompts` / `apply_shot_prompt_preview` requires a valid `SUPABASE_SERVICE_KEY`, refuses anon fallback, updates only the previewed shot prompt fields, and appends to the local director journal. This is the intended Codex permission boundary.
 
-Rollback is a first-class apply primitive. `rollback rewrite-shot-prompts`, `rollback rewrite-storyboard-prompt`, and `rollback rewrite-script` restore a preview's `before` snapshot after validating current state still matches the preview `after` state. Script rollback requires previews generated after rollback snapshots were added.
+Rollback is a first-class apply primitive. `rollback rewrite-shot-prompts`, `rollback rewrite-storyboard-prompt`, and `rollback rewrite-script` restore a preview's `before` snapshot after validating current state still matches the preview `after` state. Script rollback requires previews generated after rollback snapshots were added and runs through the `lahari_rollback_script_preview` Postgres RPC so the scene/cast/environment/shot restore is atomic once the migration is applied.
 
 Second milestone:
 
