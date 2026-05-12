@@ -293,6 +293,77 @@ export const deriveCheckpointState = (project: Project) => {
   };
 };
 
+const shotLabel = (sceneIndex: number, shotIndex: number) => `S${sceneIndex + 1}.${shotIndex + 1}`;
+
+export const deriveDirectorDiagnosis = (project: Project) => {
+  const checkpoint = deriveCheckpointState(project);
+  const counts = checkpoint.counts;
+  const storyboardWorkflow = usesStoryboardWorkflow(project);
+  const weakShots: string[] = [];
+  const riskNotes: string[] = [];
+
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    for (const [shotIndex, shot] of scene.shots.entries()) {
+      const label = shotLabel(sceneIndex, shotIndex);
+      const beat = compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 120);
+      const reasons = [
+        shot.lastError ? 'error' : null,
+        shot.promptsStale ? 'stale prompt' : null,
+        storyboardWorkflow && !shot.storyboardPrompt ? 'missing storyboard prompt' : null,
+        storyboardWorkflow && !shot.storyboardUrl ? 'missing board' : null,
+        !storyboardWorkflow && !shot.imageUrl ? 'missing start frame' : null,
+        !shot.videoUrl ? 'missing video' : null,
+        shot.videoStatus === 'stale' ? 'video stale' : null,
+        shot.storyboardStatus === 'error' ? 'board error' : null,
+        shot.videoStatus === 'error' ? 'video error' : null,
+        shot.videoUrl && !shot.locked ? 'needs lock review' : null,
+        storyboardWorkflow && shot.storyboardUrl && !shot.storyboardLocked ? 'board needs lock review' : null,
+      ].filter(Boolean);
+      if (!reasons.length) continue;
+      weakShots.push(`${label}: ${reasons.join(', ')}${beat ? ` - ${beat}` : ''}`);
+    }
+  }
+
+  if (project.videoModel?.startsWith('seedance') && !storyboardWorkflow) {
+    riskNotes.push('Project uses Seedance but has no storyboard artifacts yet; confirm whether it should be in storyboard mode.');
+  }
+  if (storyboardWorkflow && counts.storyboardPrompts > 0 && counts.storyboards === 0) {
+    riskNotes.push('Storyboard prompts exist but no boards are rendered; visual review is blocked until boards are generated.');
+  }
+  if (counts.videos > 0 && counts.lockedShots < counts.videos) {
+    riskNotes.push(`${counts.videos - counts.lockedShots} generated video${counts.videos - counts.lockedShots === 1 ? '' : 's'} still need artist lock/reject review.`);
+  }
+  if (counts.storyboards > 0 && storyboardWorkflow && counts.lockedStoryboards < counts.storyboards) {
+    const unlockedBoards = counts.storyboards - counts.lockedStoryboards;
+    riskNotes.push(`${unlockedBoards} storyboard board${unlockedBoards === 1 ? '' : 's'} still ${unlockedBoards === 1 ? 'needs' : 'need'} lock/reject review.`);
+  }
+  if (!project.styleAssetUrl) riskNotes.push('No locked style asset; downstream visual consistency will drift.');
+  if (checkpoint.openIssues.length === 0 && riskNotes.length === 0) {
+    riskNotes.push('No deterministic risks found. Next review should be visual/taste-based, not inventory-based.');
+  }
+
+  const nextApprovedAction = checkpoint.recommendedActions[0] || (
+    counts.videos === counts.shots && counts.lockedShots === counts.shots
+      ? 'Generate a final render or review render history.'
+      : 'Open the focused evidence sheets and perform visual/taste review.'
+  );
+
+  return {
+    kind: 'lahari.director.diagnosis',
+    generatedAt: new Date().toISOString(),
+    checkpoint: {
+      key: checkpoint.key,
+      label: checkpoint.label,
+      summary: checkpoint.summary,
+    },
+    productionRead: `${checkpoint.label}: ${checkpoint.summary}`,
+    bottleneck: checkpoint.openIssues[0] || nextApprovedAction,
+    weakLinks: weakShots.slice(0, 8),
+    riskNotes: riskNotes.slice(0, 8),
+    nextApprovedAction,
+  };
+};
+
 const listProjectRenders = async (projectId: string) => {
   const rows = await selectAll(
     'assets',
@@ -427,6 +498,7 @@ export const buildProjectPacket = async (project: Project) => {
         })),
       })),
     },
+    diagnosis: deriveDirectorDiagnosis(project),
     recommendedActions: recommendedActions(project),
   };
 };
@@ -452,6 +524,7 @@ export const buildProjectReport = (project: Project): string => {
   const actions = recommendedActions(project);
   const styleSlots = project.styleExploration?.slots || [];
   const workflow = usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe';
+  const diagnosis = deriveDirectorDiagnosis(project);
 
   const sceneLines = project.scenes.map((scene, sceneIndex) => {
     const shotSummary = scene.shots.map((shot, shotIndex) => {
@@ -490,6 +563,18 @@ Generated: ${new Date().toISOString()}
 - Workflow: ${workflow}
 - Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
 - Format: ${project.aspectRatio}, ${project.videoResolution}, target shot duration ${project.targetDuration || 'unset'}s
+
+## Director Diagnosis
+
+- Production read: ${diagnosis.productionRead}
+- Bottleneck: ${diagnosis.bottleneck}
+- Next approved action: ${diagnosis.nextApprovedAction}
+
+Weak links:
+${diagnosis.weakLinks.length ? diagnosis.weakLinks.map((item) => `- ${item}`).join('\n') : '- No deterministic weak links found.'}
+
+Risk notes:
+${diagnosis.riskNotes.length ? diagnosis.riskNotes.map((item) => `- ${item}`).join('\n') : '- No deterministic risks found.'}
 
 ## Production Counts
 
@@ -896,6 +981,7 @@ const journalEntry = (title: string, body: string): string => {
 
 const sessionState = (project: Project, note?: string | null) => {
   const checkpoint = deriveCheckpointState(project);
+  const diagnosis = deriveDirectorDiagnosis(project);
   return {
     kind: 'lahari.director.session',
     updatedAt: new Date().toISOString(),
@@ -911,6 +997,7 @@ const sessionState = (project: Project, note?: string | null) => {
       updatedAt: project.updatedAt,
     },
     checkpoint,
+    diagnosis,
     note: note || null,
     files: {
       state: sessionStatePath(project.id),
@@ -946,7 +1033,7 @@ export const attachDirectorSession = (project: Project, note?: string) => {
     : '- No open issues from deterministic checks.';
   const noteBlock = note ? `\n\nOperator note: ${note}` : '';
 
-  fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
+  fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}\n\nBottleneck: ${state.diagnosis.bottleneck}\nNext approved action: ${state.diagnosis.nextApprovedAction}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
 
   return {
     kind: 'lahari.director.session.attached',
