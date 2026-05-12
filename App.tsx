@@ -13,6 +13,7 @@ import { RendersModal } from './components/RendersModal';
 import { getVideoModel } from './constants/videoModels';
 import { useAuth } from './contexts/AuthContext';
 import * as api from './services/api';
+import { notifyBulkComplete } from './lib/notify';
 
 const PIPELINE_STEPS = [
   { id: AppStep.UPLOAD, label: 'Queue' },
@@ -1212,6 +1213,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       if (bulkStopRef.current.requested) return;
       const latest = await api.getProject(project.id);
       setProject(latest);
+      // Bulk-complete notification. Fires regardless of tab focus — the
+      // artist may be deep in another shot while this finished. Stopped
+      // runs intentionally don't notify; the artist clicked Stop and
+      // already knows the state.
+      void notifyBulkComplete('Lahari · Prompts done', `${targets.length} storyboard prompt${targets.length === 1 ? '' : 's'} written.`);
     } finally {
       setStoryboardPromptQueue([]);
     }
@@ -1236,6 +1242,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       if (bulkStopRef.current.requested) return;
       const latest = await api.getProject(project.id);
       setProject(latest);
+      void notifyBulkComplete('Lahari · Storyboards done', `${targets.length} board${targets.length === 1 ? '' : 's'} rendered.`);
     } finally {
       setStoryboardImageQueue([]);
     }
@@ -1244,12 +1251,17 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleBulkGenerateFrames = async () => {
     if (!project) return;
     let latestProject = project;
+    // Multi-pass: each pass picks up newly-unblocked prev_shot frames as
+    // earlier shots complete. Accumulate the total processed so the
+    // notification body reflects the full job, not just the last pass.
+    let totalFired = 0;
     beginBulkRun();
     try {
       while (true) {
         if (bulkStopRef.current.requested) break;
         const targets = getReadyFrameTargets(latestProject);
         if (targets.length === 0) break;
+        totalFired += targets.length;
         const queueIds = targets.map(t => t.shotId);
         setFrameQueue(queueIds);
         await runWithConcurrency(
@@ -1273,6 +1285,9 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
         // Refresh to see newly unblocked prev_shot frames
         latestProject = await api.getProject(latestProject.id);
         setProject(latestProject);
+      }
+      if (!bulkStopRef.current.requested && totalFired > 0) {
+        void notifyBulkComplete('Lahari · Frames done', `${totalFired} shot frame${totalFired === 1 ? '' : 's'} generated.`);
       }
     } finally {
       setFrameQueue([]);
@@ -1302,12 +1317,14 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const handleBulkGenerateVideos = async () => {
     if (!project) return;
     let latestProject = project;
+    let totalFired = 0;
     beginBulkRun();
     try {
       while (true) {
         if (bulkStopRef.current.requested) break;
         const targets = getReadyVideoTargets(latestProject);
         if (targets.length === 0) break;
+        totalFired += targets.length;
         const queueIds = targets.map(t => t.shotId);
         setVideoQueue(queueIds);
         // Throttle to 5 concurrent. Sized for Segmind rate limits.
@@ -1332,6 +1349,9 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
         // Refresh to see newly unblocked prev_shot shots
         latestProject = await api.getProject(latestProject.id);
         setProject(latestProject);
+      }
+      if (!bulkStopRef.current.requested && totalFired > 0) {
+        void notifyBulkComplete('Lahari · Videos done', `${totalFired} shot clip${totalFired === 1 ? '' : 's'} generated.`);
       }
     } finally {
       setVideoQueue([]);
