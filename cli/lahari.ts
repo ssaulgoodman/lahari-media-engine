@@ -21,14 +21,17 @@ Usage:
   npm run lahari -- session state <projectId>
   npm run lahari -- session note <projectId> <note...>
   npm run lahari -- session journal <projectId>
+  npm run lahari -- preview rewrite-script <projectId> [note...]
   npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
   npm run lahari -- preview rewrite-storyboard-prompt <projectId> <shotId> [note...]
   npm run lahari -- plan generate-storyboard <projectId> <shotId>
   npm run lahari -- plan generate-video <projectId> <shotId>
   npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>
   npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>
+  npm run lahari -- apply-plan rewrite-script <preview.json>
   npm run lahari -- apply rewrite-shot-prompts <preview.json>
   npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
+  npm run lahari -- apply rewrite-script <preview.json>
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
   npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 
@@ -60,7 +63,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'generate-storyboard' || action === 'generate-video');
+  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video');
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
@@ -151,6 +154,13 @@ const main = async () => {
     return;
   }
 
+  if (domain === 'preview' && action === 'rewrite-script' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.previewRewriteScript(project, note), null, 2));
+    return;
+  }
+
   if (domain === 'preview' && action === 'rewrite-storyboard-prompt' && projectId && arg4) {
     const project = await studio.getFullProject(projectId);
     const note = rest.filter(Boolean).join(' ') || undefined;
@@ -184,6 +194,13 @@ const main = async () => {
     return;
   }
 
+  if (domain === 'apply-plan' && action === 'rewrite-script' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.getRewriteScriptApplyPlan(projectId, project), null, 2));
+    return;
+  }
+
   if (domain === 'apply' && action === 'rewrite-shot-prompts' && projectId) {
     const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
     const project = await studio.getFullProject(preview.project.id);
@@ -195,6 +212,13 @@ const main = async () => {
     const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
     const project = await studio.getFullProject(preview.project.id);
     console.log(JSON.stringify(await studio.applyRewriteStoryboardPromptPreview(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'rewrite-script' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.applyRewriteScriptPreview(projectId, project), null, 2));
     return;
   }
 

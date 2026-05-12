@@ -202,6 +202,19 @@ server.registerTool('preview_rewrite_shot_prompts', {
   return textResult(await studio.previewRewriteShotPrompts(project, note));
 });
 
+server.registerTool('preview_rewrite_script', {
+  title: 'Preview script rewrite',
+  description: 'Paid AI call, preview-only. Generates or refines the full script into local preview artifacts without mutating the Lahari database.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    note: z.string().optional().describe('Optional director note to steer the script rewrite.'),
+  },
+}, async ({ projectId, note }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.previewRewriteScript(project, note));
+});
+
 server.registerTool('preview_rewrite_storyboard_prompt', {
   title: 'Preview storyboard prompt rewrite',
   description: 'Paid AI call, preview-only. Rewrites one shot storyboard prompt and cut plan into local preview artifacts without mutating the Lahari database.',
@@ -268,6 +281,19 @@ server.registerTool('plan_apply_storyboard_prompt_preview', {
   return textResult(await studio.getRewriteStoryboardPromptApplyPlan(previewJsonPath, project));
 });
 
+server.registerTool('plan_apply_script_preview', {
+  title: 'Plan applying script preview',
+  description: 'Read-only. Validates a saved script preview and reports exact mutation blast radius before apply.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.getRewriteScriptApplyPlan(previewJsonPath, project));
+});
+
 server.registerTool('apply_shot_prompt_preview', {
   title: 'Apply shot prompt preview',
   description: 'Mutating. Applies a saved shot prompt preview to Supabase after validating project/shot drift. Updates shot prompts, continuity, stale flags, project prompt cache, and local director journal.',
@@ -300,6 +326,23 @@ server.registerTool('apply_storyboard_prompt_preview', {
   const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
   const project = await studio.getFullProject(preview.project.id);
   return textResult(await studio.applyRewriteStoryboardPromptPreview(previewJsonPath, project));
+});
+
+server.registerTool('apply_script_preview', {
+  title: 'Apply script preview',
+  description: 'Mutating. Applies a saved script preview to Supabase after validating drift and refusing downstream visual work. Replaces cast, environments, scenes, and shots.',
+  inputSchema: {
+    previewJsonPath: z.string().min(1).describe('Path to a .lahari preview JSON artifact.'),
+  },
+}, async ({ previewJsonPath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_script_preview.');
+
+  const studio = await loadStudio();
+  const preview = JSON.parse(fs.readFileSync(previewJsonPath, 'utf8'));
+  const project = await studio.getFullProject(preview.project.id);
+  return textResult(await studio.applyRewriteScriptPreview(previewJsonPath, project));
 });
 
 server.registerTool('apply_generate_storyboard', {

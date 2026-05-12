@@ -1,10 +1,12 @@
 import fs from 'fs';
 import path from 'path';
-import { selectAll, selectColumns, updateRows } from '../database.js';
+import { v4 as uuidv4 } from 'uuid';
+import { selectAll, selectColumns, updateRows, insertRow, deleteRows } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
-import { writeShotPrompts } from './claude.js';
+import { planScenes, refineScript, writeShotPrompts } from './claude.js';
 import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
 import { generateShotVideo } from './videoGeneration.js';
+import { getModelMinDuration } from './segmind.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
@@ -2153,5 +2155,345 @@ Local Codex notes live here. This file is not overwritten by hydration.
     baseDir,
     sourceOfTruth: 'Supabase remains canonical; these files are a local Codex workbench mirror.',
     artifacts,
+  };
+};
+
+type ScriptPreviewFile = {
+  kind: 'lahari.preview.rewrite_script';
+  previewId: string;
+  generatedAt: string;
+  project: { id: string; title: string; status: string; videoModel?: string; textProvider?: string };
+  mode: 'generate' | 'refine';
+  model: string;
+  userNote: string | null;
+  beforeFingerprint: string;
+  beforeCounts: { cast: number; environments: number; scenes: number; shots: number };
+  afterCounts: { cast: number; environments: number; scenes: number; shots: number };
+  script: { cast: any[]; environments: any[]; scenes: any[] };
+  artifacts: { markdownPath: string; jsonPath: string; promptPath: string };
+  note: string;
+};
+
+const musicalStructureText = (project: Project): string => {
+  return project.musicalStructure.length
+    ? project.musicalStructure.map((section: any) => `${section.label || 'Section'} [${section.startTime || '?'}-${section.endTime || '?'}] ${section.energyLevel || ''} ${section.description || ''}`).join('\n')
+    : '';
+};
+
+const buildScriptDraft = (project: Project) => {
+  const castById = namesById(project.cast);
+  const environmentById = namesById(project.environments);
+  return {
+    cast: project.cast.map((member) => ({ name: member.name, description: member.description || '' })),
+    environments: project.environments.map((environment) => ({ name: environment.name, description: environment.description || '' })),
+    scenes: project.scenes.map((scene) => ({
+      sectionLabel: scene.sectionLabel,
+      startTime: scene.startTime,
+      endTime: scene.endTime,
+      narrativeDescription: scene.narrativeDescription,
+      shots: scene.shots.map((shot) => ({
+        direction: shot.direction || shot.visualPrompt || '',
+        duration: shot.duration,
+        castNames: (shot.castIds || []).map((id) => castById.get(id) || id),
+        environmentName: shot.environmentId ? environmentById.get(shot.environmentId) || '' : '',
+      })),
+    })),
+  };
+};
+
+const scriptFingerprint = (project: Project): string => {
+  return JSON.stringify(buildScriptDraft(project));
+};
+
+const scriptCounts = (script: { cast: any[]; environments: any[]; scenes: any[] }) => ({
+  cast: script.cast?.length || 0,
+  environments: script.environments?.length || 0,
+  scenes: script.scenes?.length || 0,
+  shots: (script.scenes || []).reduce((sum, scene) => sum + (scene.shots?.length || 0), 0),
+});
+
+const hasDownstreamVisualWork = (project: Project): boolean => {
+  return project.cast.some((member) => !!member.referenceImageUrl)
+    || project.environments.some((environment) => !!environment.referenceImageUrl)
+    || project.scenes.some((scene) => scene.shots.some((shot) => (
+      !!shot.imageUrl
+      || !!shot.storyboardUrl
+      || !!shot.videoUrl
+      || !!shot.locked
+      || !!shot.storyboardLocked
+    )));
+};
+
+const buildScriptPreviewMarkdown = (preview: ScriptPreviewFile): string => {
+  const cast = preview.script.cast.length
+    ? preview.script.cast.map((member) => `- ${member.name}: ${member.description || 'No description.'}`).join('\n')
+    : '- No cast/entities proposed.';
+  const environments = preview.script.environments.length
+    ? preview.script.environments.map((environment) => `- ${environment.name}: ${environment.description || 'No description.'}`).join('\n')
+    : '- No environments proposed.';
+  const scenes = preview.script.scenes.length
+    ? preview.script.scenes.map((scene, sceneIndex) => {
+      const shots = (scene.shots || []).map((shot: any, shotIndex: number) => {
+        const castNames = (shot.castNames || []).join(', ') || 'None';
+        return `- ${shotLabel(sceneIndex, shotIndex)} (${shot.duration || '?'}s, cast: ${castNames}, env: ${shot.environmentName || 'None'}): ${shot.direction || 'No direction.'}`;
+      }).join('\n');
+      return `## Scene ${sceneIndex + 1}: ${scene.sectionLabel || 'Untitled'} (${scene.startTime || '?'}-${scene.endTime || '?'})
+
+${md(scene.narrativeDescription)}
+
+${shots || 'No shots.'}`;
+    }).join('\n\n')
+    : 'No scenes proposed.';
+
+  return `# Script Preview
+
+Generated: ${preview.generatedAt}
+Preview ID: \`${preview.previewId}\`
+Project: ${preview.project.title}
+Project ID: \`${preview.project.id}\`
+Mode: ${preview.mode}
+Model: ${preview.model}
+User note: ${preview.userNote || 'None'}
+
+This is a preview only. No Lahari database rows, assets, frames, videos, references, or locks were changed.
+
+## Counts
+
+- Before: ${preview.beforeCounts.cast} cast, ${preview.beforeCounts.environments} environments, ${preview.beforeCounts.scenes} scenes, ${preview.beforeCounts.shots} shots
+- After: ${preview.afterCounts.cast} cast, ${preview.afterCounts.environments} environments, ${preview.afterCounts.scenes} scenes, ${preview.afterCounts.shots} shots
+
+## Cast / Entities
+
+${cast}
+
+## Environments / Locations
+
+${environments}
+
+## Scenes And Shots
+
+${scenes}
+`;
+};
+
+export const previewRewriteScript = async (project: Project, userNote?: string) => {
+  if (!project.lockedConcept) throw new Error('Project has no locked concept. Lock a concept before script preview.');
+  if (!project.audioPath) throw new Error('Project has no audio file.');
+  const beforeScript = buildScriptDraft(project);
+  const mode: 'generate' | 'refine' = project.scenes.length ? 'refine' : 'generate';
+  const context = {
+    concept: project.lockedConcept || {},
+    videoMode: project.videoMode || 'montage',
+    lyrics: project.lyrics || '',
+    meaning: project.meaning || '',
+    musicalStructure: musicalStructureText(project),
+    basePacing: project.targetDuration || 15,
+    minShotDuration: getModelMinDuration(project.videoModel),
+    videoModel: project.videoModel || undefined,
+  };
+  const result = mode === 'refine'
+    ? await refineScript(beforeScript, userNote || 'Improve the script for stronger narrative clarity, continuity, and production feasibility while preserving what works.', context)
+    : await planScenes({
+      ...context,
+      userNote,
+      songType: project.songType || undefined,
+      isNarrative: project.isNarrative ?? undefined,
+      isMeditative: project.isMeditative ?? undefined,
+    });
+
+  const now = new Date().toISOString();
+  const previewId = `${safeTimestamp()}-script`;
+  const promptPath = defaultPreviewPath(project, previewId, 'runtime-prompt.txt');
+  const jsonPath = defaultPreviewPath(project, previewId, 'preview.json');
+  const markdownPath = defaultPreviewPath(project, previewId, 'preview.md');
+  const script = {
+    cast: result.cast || [],
+    environments: result.environments || [],
+    scenes: result.scenes || [],
+  };
+  const preview: ScriptPreviewFile = {
+    kind: 'lahari.preview.rewrite_script',
+    previewId,
+    generatedAt: now,
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      videoModel: project.videoModel,
+      textProvider: project.textProvider,
+    },
+    mode,
+    model: mode === 'refine' ? 'claude-opus-4-7' : 'claude-opus-4-7',
+    userNote: userNote || null,
+    beforeFingerprint: scriptFingerprint(project),
+    beforeCounts: scriptCounts(beforeScript),
+    afterCounts: scriptCounts(script),
+    script,
+    artifacts: { markdownPath, jsonPath, promptPath },
+    note: 'Preview only. Applying this preview replaces cast, environments, scenes, and shots, and is refused when downstream visual work exists.',
+  };
+
+  writeArtifact(promptPath, result.prompt);
+  writeArtifact(jsonPath, `${JSON.stringify(preview, null, 2)}\n`);
+  writeArtifact(markdownPath, buildScriptPreviewMarkdown(preview));
+  return preview;
+};
+
+const readScriptPreview = (previewJsonPath: string): ScriptPreviewFile => {
+  const resolved = path.resolve(previewJsonPath);
+  if (!fs.existsSync(resolved)) throw new Error(`Preview JSON not found: ${resolved}`);
+  const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  if (parsed?.kind !== 'lahari.preview.rewrite_script') {
+    throw new Error('Preview JSON is not a lahari.preview.rewrite_script artifact.');
+  }
+  if (!parsed.project?.id || !parsed.script?.scenes) {
+    throw new Error('Preview JSON is missing project or script data.');
+  }
+  return parsed as ScriptPreviewFile;
+};
+
+export const getRewriteScriptApplyPlan = async (previewJsonPath: string, project: Project) => {
+  const preview = readScriptPreview(previewJsonPath);
+  if (preview.project.id !== project.id) {
+    throw new Error(`Preview belongs to project ${preview.project.id}, not loaded project ${project.id}.`);
+  }
+  const drifted = scriptFingerprint(project) !== preview.beforeFingerprint;
+  const downstreamVisualWork = hasDownstreamVisualWork(project);
+  const hasScript = preview.afterCounts.scenes > 0 && preview.afterCounts.shots > 0;
+  const canApply = hasScript && !drifted && !downstreamVisualWork;
+
+  return {
+    kind: 'lahari.apply_plan.rewrite_script',
+    previewId: preview.previewId,
+    previewPath: path.resolve(previewJsonPath),
+    project: { id: project.id, title: project.title, status: project.status },
+    mode: preview.mode,
+    counts: {
+      before: preview.beforeCounts,
+      after: preview.afterCounts,
+      drifted: drifted ? 1 : 0,
+      downstreamVisualWork: downstreamVisualWork ? 1 : 0,
+    },
+    canApply,
+    willChange: [
+      'Replace cast/entity rows for this project.',
+      'Replace environment/location rows for this project.',
+      'Replace all scenes and shots for this project.',
+      'Set project status to scripted.',
+      'Update last_script_prompt from preview runtime prompt.',
+    ],
+    note: !hasScript
+      ? 'Refusing to apply an empty script preview.'
+      : drifted
+      ? 'Refusing to apply because the current script drifted. Regenerate a fresh preview.'
+      : downstreamVisualWork
+      ? 'Refusing to apply because downstream visual work exists. Fork first or use the web studio destructive flow deliberately.'
+      : 'Ready to apply. This replaces script structure only; no assets exist yet.',
+  };
+};
+
+export const applyRewriteScriptPreview = async (previewJsonPath: string, project: Project) => {
+  const preview = readScriptPreview(previewJsonPath);
+  const plan = await getRewriteScriptApplyPlan(previewJsonPath, project);
+  if (!plan.canApply) throw new Error(plan.note);
+
+  await deleteRows('cast_members', { project_id: project.id });
+  await deleteRows('environments', { project_id: project.id });
+  for (const scene of project.scenes) {
+    await deleteRows('shots', { scene_id: scene.id });
+  }
+  await deleteRows('scenes', { project_id: project.id });
+
+  const castNameToId = new Map<string, string>();
+  for (let index = 0; index < preview.script.cast.length; index++) {
+    const member = preview.script.cast[index];
+    const id = uuidv4();
+    castNameToId.set(String(member.name || '').toLowerCase(), id);
+    await insertRow('cast_members', {
+      id,
+      project_id: project.id,
+      name: member.name || `Character ${index + 1}`,
+      description: member.description || '',
+      sort_order: index,
+    });
+  }
+
+  const environmentNameToId = new Map<string, string>();
+  for (let index = 0; index < preview.script.environments.length; index++) {
+    const environment = preview.script.environments[index];
+    const id = uuidv4();
+    environmentNameToId.set(String(environment.name || '').toLowerCase(), id);
+    await insertRow('environments', {
+      id,
+      project_id: project.id,
+      name: environment.name || `Environment ${index + 1}`,
+      description: environment.description || '',
+      sort_order: index,
+    });
+  }
+
+  for (let sceneIndex = 0; sceneIndex < preview.script.scenes.length; sceneIndex++) {
+    const scene = preview.script.scenes[sceneIndex];
+    const sceneId = uuidv4();
+    await insertRow('scenes', {
+      id: sceneId,
+      project_id: project.id,
+      section_label: scene.sectionLabel || `Scene ${sceneIndex + 1}`,
+      start_time: scene.startTime || '0:00',
+      end_time: scene.endTime || '0:00',
+      lyrics: scene.lyrics || '',
+      narrative_description: scene.narrativeDescription || '',
+      sort_order: sceneIndex,
+    });
+
+    for (let shotIndex = 0; shotIndex < (scene.shots || []).length; shotIndex++) {
+      const shot = scene.shots[shotIndex];
+      const castIds = (shot.castNames || [])
+        .map((name: string) => castNameToId.get(String(name).toLowerCase()))
+        .filter(Boolean);
+      const environmentId = shot.environmentName
+        ? environmentNameToId.get(String(shot.environmentName).toLowerCase()) || null
+        : null;
+      await insertRow('shots', {
+        id: uuidv4(),
+        scene_id: sceneId,
+        direction: shot.direction || '',
+        visual_prompt: '',
+        motion_prompt: '',
+        duration: Number(shot.duration || project.targetDuration || 15),
+        cast_ids: JSON.stringify(castIds),
+        environment_id: environmentId,
+        use_next_as_end_frame: project.videoMode === 'cinematic' ? 1 : 0,
+        sort_order: shotIndex,
+        image_status: 'idle',
+        video_status: 'idle',
+      });
+    }
+  }
+
+  const promptText = preview.artifacts?.promptPath && fs.existsSync(preview.artifacts.promptPath)
+    ? fs.readFileSync(preview.artifacts.promptPath, 'utf8')
+    : undefined;
+  await updateRows('projects', { id: project.id }, {
+    status: 'scripted',
+    ...(promptText ? { last_script_prompt: promptText } : {}),
+    updated_at: new Date().toISOString(),
+  });
+
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry('applied script preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nMode: ${preview.mode}\nScenes: ${preview.afterCounts.scenes}\nShots: ${preview.afterCounts.shots}\n\nNo assets, frames, videos, or locks existed at apply time.`));
+
+  return {
+    kind: 'lahari.apply.rewrite_script',
+    previewId: preview.previewId,
+    projectId: project.id,
+    scenesWritten: preview.afterCounts.scenes,
+    shotsWritten: preview.afterCounts.shots,
+    journalPath,
+    note: 'Applied preview to Supabase. Replaced cast, environments, scenes, and shots; project is now scripted.',
   };
 };
