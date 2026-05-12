@@ -185,17 +185,38 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
   // On mount: restore from localStorage, fall back to most recent project
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedId = params.get('project') || params.get('projectId');
+    const linkedStep = params.get('step');
+    const linkedShot = params.get('shot') || params.get('shotId');
     const savedId = localStorage.getItem('lahari:projectId');
     const savedStepRaw = localStorage.getItem('lahari:step');
     const savedStep = savedStepRaw !== null ? Number(savedStepRaw) as AppStep : null;
+    const stepFromParam = (value: string | null): AppStep | null => {
+      if (value === 'queue') return AppStep.UPLOAD;
+      if (value === 'blueprint') return AppStep.BLUEPRINT;
+      if (value === 'studio') return AppStep.STUDIO;
+      if (value === 'render') return AppStep.RENDER;
+      return null;
+    };
+    const focusLinkedShot = (p: ApiProject) => {
+      if (!linkedShot) return;
+      const sceneIndex = p.scenes.findIndex(scene => scene.shots.some(shot => shot.id === linkedShot));
+      if (sceneIndex >= 0) setActiveSceneIdx(sceneIndex);
+    };
 
     const load = async () => {
       try {
-        if (savedId) {
-          const p = await api.getProject(savedId);
+        const preferredId = linkedId || savedId;
+        if (preferredId) {
+          const p = await api.getProject(preferredId);
           if (p) {
             setProject(p);
-            if (savedStep !== null && savedStep >= AppStep.UPLOAD && savedStep <= AppStep.RENDER) {
+            focusLinkedShot(p);
+            const linkedStepValue = stepFromParam(linkedStep);
+            if (linkedStepValue !== null) {
+              setCurrentStep(linkedStepValue);
+            } else if (!linkedId && savedStep !== null && savedStep >= AppStep.UPLOAD && savedStep <= AppStep.RENDER) {
               setCurrentStep(savedStep);
             } else {
               navigateToPhase(p);

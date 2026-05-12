@@ -34,6 +34,24 @@ const slugify = (value: string): string => {
     .slice(0, 80) || 'lahari-project';
 };
 
+const appBaseUrl = () => (
+  process.env.LAHARI_STUDIO_URL
+  || process.env.APP_URL
+  || process.env.PUBLIC_APP_URL
+  || 'https://lahari-media-engine-production.up.railway.app'
+).replace(/\/+$/, '');
+
+const studioStepParam = (step: 'queue' | 'blueprint' | 'studio' | 'render') => step;
+
+export const webStudioUrl = (projectId: string, opts: { step?: 'queue' | 'blueprint' | 'studio' | 'render'; shotId?: string; action?: string } = {}): string => {
+  const params = new URLSearchParams();
+  params.set('project', projectId);
+  if (opts.step) params.set('step', studioStepParam(opts.step));
+  if (opts.shotId) params.set('shot', opts.shotId);
+  if (opts.action) params.set('action', opts.action);
+  return `${appBaseUrl()}/?${params.toString()}`;
+};
+
 export const defaultArtifactPath = (project: Project, suffix: string): string => {
   return path.join(process.cwd(), '.lahari', 'codex', `${slugify(project.title)}-${suffix}`);
 };
@@ -429,6 +447,7 @@ export const buildProjectPacket = async (project: Project) => {
       targetDuration: project.targetDuration,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
+      webUrl: webStudioUrl(project.id, { step: 'studio' }),
     },
     source: {
       audioPath: project.audioPath,
@@ -1013,6 +1032,7 @@ const sessionState = (project: Project, note?: string | null) => {
       videoModel: project.videoModel,
       textProvider: project.textProvider,
       updatedAt: project.updatedAt,
+      webUrl: webStudioUrl(project.id, { step: 'studio' }),
     },
     checkpoint,
     diagnosis,
@@ -1020,10 +1040,12 @@ const sessionState = (project: Project, note?: string | null) => {
     files: {
       state: sessionStatePath(project.id),
       journal: sessionJournalPath(project.id),
+      workbench: defaultProjectWorkbenchDir(project),
       directorReport: defaultArtifactPath(project, 'director-report.md'),
       contactSheet: defaultArtifactPath(project, 'contact-sheet.html'),
     },
     guardrails: [
+      'Supabase is canonical project truth; .lahari files are Codex desk copies.',
       'Read-only inspection is allowed without approval.',
       'Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.',
       'Use preview/diff artifacts before overwriting creative work.',
@@ -1031,12 +1053,13 @@ const sessionState = (project: Project, note?: string | null) => {
   };
 };
 
-export const attachDirectorSession = (project: Project, note?: string) => {
+export const attachDirectorSession = async (project: Project, note?: string) => {
   const dir = sessionDir(project.id);
   fs.mkdirSync(dir, { recursive: true });
 
   const state = sessionState(project, note);
   fs.writeFileSync(sessionStatePath(project.id), `${JSON.stringify(state, null, 2)}\n`);
+  const workbench = await hydrateProjectWorkbench(project);
 
   const journalPath = sessionJournalPath(project.id);
   if (!fs.existsSync(journalPath)) {
@@ -1056,9 +1079,17 @@ export const attachDirectorSession = (project: Project, note?: string) => {
   return {
     kind: 'lahari.director.session.attached',
     projectId: project.id,
+    projectTitle: project.title,
+    suggestedCodexSessionTitle: `Lahari - ${project.title}`,
+    artistOpening: `Working on ${project.title}`,
+    webUrl: webStudioUrl(project.id, { step: 'studio' }),
     statePath: sessionStatePath(project.id),
     journalPath,
+    workbenchDir: workbench.baseDir,
+    workbenchArtifacts: workbench.artifacts,
     checkpoint: state.checkpoint,
+    diagnosis: state.diagnosis,
+    sourceOfTruth: 'Supabase is canonical; .lahari files are local Codex desk copies.',
   };
 };
 
@@ -1737,6 +1768,7 @@ export const planGenerateStoryboard = (project: Project, shotId: string) => {
       model: provider.runtimeModel,
       provider: provider.provider,
     },
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
     paid: true,
     estimatedCost: costEstimate,
     canRun: prerequisites.length === 0,
@@ -1803,6 +1835,7 @@ export const planGenerateVideo = (project: Project, shotId: string) => {
       supportsRefs: model.supportsRefs,
       supportsLastFrame: model.supportsLastFrame,
     },
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-video' }),
     paid: true,
     estimatedCost,
     canRun: prerequisites.length === 0,
@@ -1837,6 +1870,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
       willChange: plan.willChange,
     },
     result,
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Generated storyboard board, updated the active storyboard pointer, unlocked the board for review, and marked video stale.',
   };
 };
@@ -1862,6 +1896,7 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
       willChange: plan.willChange,
     },
     result,
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-video' }),
     note: 'Generated shot video, updated the active video pointer, and attempted last-frame extraction.',
   };
 };
@@ -1886,6 +1921,7 @@ export const buildProjectActionList = (project: Project) => {
           paid: plan.paid,
           estimatedCost: plan.estimatedCost,
           prerequisites: plan.prerequisites,
+          webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
           cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
           mcpTool: 'apply_generate_storyboard',
           plan,
@@ -1900,6 +1936,7 @@ export const buildProjectActionList = (project: Project) => {
           shot: { id: shot.id, label, beat },
           canRun: false,
           paid: false,
+          webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard' }),
           prerequisites: ['No native lock-storyboard apply tool yet; use the Lahari web studio review control.'],
         });
       }
@@ -1915,6 +1952,7 @@ export const buildProjectActionList = (project: Project) => {
           paid: plan.paid,
           estimatedCost: plan.estimatedCost,
           prerequisites: plan.prerequisites,
+          webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-video' }),
           cli: `npm run lahari -- apply generate-video ${project.id} ${shot.id}`,
           mcpTool: 'apply_generate_video',
           plan,
@@ -1929,6 +1967,7 @@ export const buildProjectActionList = (project: Project) => {
           shot: { id: shot.id, label, beat },
           canRun: false,
           paid: false,
+          webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-video' }),
           prerequisites: ['No native lock-shot apply tool yet; use the Lahari web studio review control.'],
         });
       }
@@ -1989,8 +2028,10 @@ export const buildStoryboardPromptReview = (project: Project) => {
         nextNativeAction: plan?.canRun ? {
           kind: 'generate_storyboard',
           cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
+          webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
           estimatedCost: plan.estimatedCost,
         } : null,
+        webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard-prompt' }),
         rewriteCommand: `npm run lahari -- preview rewrite-storyboard-prompt ${project.id} ${shot.id}`,
       });
     }

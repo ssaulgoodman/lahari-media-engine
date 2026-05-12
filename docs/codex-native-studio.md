@@ -326,6 +326,8 @@ Project workbenches are local Codex desk copies under `.lahari/projects/<project
 
 Supabase remains the source of truth. The workbench is a local Codex mirror for reading, diffing, drafting, and long-session continuity. Official writes still go through typed apply tools.
 
+Artist-facing sessions should start with "open this song/project," not "hydrate." `attach_director_session` is the front door: it refreshes the durable director session, hydrates the local workbench, returns a suggested Codex session title, and includes a web studio deep link. The `project hydrate` primitive remains available for debugging or explicit refreshes.
+
 Director sessions are local working memory under `.lahari/sessions/<projectId>/`:
 
 - `state.json` is the latest deterministic checkpoint read.
@@ -333,6 +335,8 @@ Director sessions are local working memory under `.lahari/sessions/<projectId>/`
 - Reports and contact sheets remain generated snapshots under `.lahari/codex/`.
 
 The state file is not the source of truth for the project. Supabase remains truth; the session files preserve production context, open questions, and decisions for a long-lived Codex thread.
+
+Web studio deep links use query parameters such as `?project=<id>&step=studio&shot=<shotId>&action=review-video`. The web app opens the requested project/step and focuses the shot's scene when possible. These links are the visual approval surface for paid generation, lock/reject review, and shot-level decisions.
 
 Preview artifacts live under `.lahari/previews/<projectId>/`. The first preview action is `rewrite-shot-prompts`: it calls the real shot prompt writer, writes before/after Markdown + JSON + runtime prompt artifacts, and does not mutate Supabase. It is still a paid AI call, so Codex should ask before running it when operating autonomously.
 

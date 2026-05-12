@@ -130,7 +130,7 @@ const main = async () => {
   if (domain === 'session' && action === 'attach' && projectId) {
     const project = await studio.getFullProject(projectId);
     const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
-    console.log(JSON.stringify(studio.attachDirectorSession(project, note), null, 2));
+    console.log(JSON.stringify(await studio.attachDirectorSession(project, note), null, 2));
     return;
   }
 

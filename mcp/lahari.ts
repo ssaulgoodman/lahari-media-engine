@@ -165,7 +165,7 @@ server.registerTool('write_project_sheets', {
 
 server.registerTool('attach_director_session', {
   title: 'Attach director session',
-  description: 'Local-file only. Creates or refreshes a Codex director session for a Lahari project under .lahari/sessions.',
+  description: 'Local-file only. Opens a Lahari project as the current director session, refreshes .lahari/sessions, hydrates the .lahari/projects workbench, and returns a web studio link.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     note: z.string().optional().describe('Optional operator note to append to the journal.'),
@@ -173,7 +173,7 @@ server.registerTool('attach_director_session', {
 }, async ({ projectId, note }) => {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(studio.attachDirectorSession(project, note));
+  return textResult(await studio.attachDirectorSession(project, note));
 });
 
 server.registerTool('get_director_session', {
