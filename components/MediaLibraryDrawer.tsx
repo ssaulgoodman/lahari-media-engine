@@ -234,11 +234,15 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
         <span className="font-mono text-zinc-600">{list.length}v</span>
       </div>
 
-      {/* Active version — larger card, ring outline. Drag handle = whole card. */}
+      {/* Active version — larger card, ring outline. Drag handle = whole card.
+          posterFallback = the storyboard image (storyboard mode) or the
+          start frame (keyframe mode). These are guaranteed-loadable PNG/JPG
+          assets that paint instantly while the video metadata loads. */}
       <VersionCard
         version={active}
         label={`Shot ${shotNumber}`}
         isActive
+        posterFallback={shot.storyboardUrl || shot.imageUrl}
       />
 
       {/* Older versions — compact chips. Skipped entirely if only one version
@@ -251,6 +255,7 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
               version={v}
               label={`Shot ${shotNumber} · v${list.length - 1 - i}`}
               compact
+              posterFallback={shot.storyboardUrl || shot.imageUrl}
             />
           ))}
         </div>
@@ -266,7 +271,8 @@ const VersionCard: React.FC<{
   label: string;
   isActive?: boolean;
   compact?: boolean;
-}> = ({ version, label, isActive, compact }) => {
+  posterFallback?: string;
+}> = ({ version, label, isActive, compact, posterFallback }) => {
   const handleAdd = () => {
     // Cloning intent: the canonical shot stays untouched; we just append a
     // copy of this version's video URL to the timeline. The artist can then
@@ -274,15 +280,25 @@ const VersionCard: React.FC<{
     addVideoClip(version.url, label);
   };
 
-  // No server-generated thumbnails today, so the <video> element has to paint
-  // its own frame. preload="metadata" alone leaves Chrome/Safari blank on a
-  // sliced inline player (you see the bg-black not a frame). The #t=0.1
-  // media-fragment trick forces a seek-to-0.1s on load and reliably renders
-  // the first real frame across browsers. Safari is the strictest about
-  // this; Firefox/Chrome are more forgiving. Use this everywhere we want a
-  // static thumbnail from a video URL.
-  const previewUrl = version.thumbnailUrl ?? `${version.url}#t=0.1`;
-  const isImage = !!version.thumbnailUrl;
+  // Thumbnail strategy, in order of preference:
+  //   1. version.thumbnailUrl — server-supplied extracted-last-frame PNG.
+  //      Set on shots that have an extracted last-frame asset in metadata.
+  //   2. posterFallback — the shot's storyboard image (storyboard mode) or
+  //      start frame (keyframe mode). Loadable PNG/JPG that paints
+  //      immediately. May not match THIS specific video version exactly,
+  //      but it's the right shot at minimum — way better than a blank box
+  //      until the video itself loads.
+  //   3. The video's first frame via the #t=0.1 media-fragment trick.
+  //      preload="auto" + the fragment means the browser actually
+  //      downloads enough to paint, not just metadata. preload="metadata"
+  //      was leaving Chrome/Safari blank.
+  //
+  // The <video> still renders as the actual element so artists can hover
+  // (future enhancement: hover-play preview). poster attribute provides the
+  // instant paint while the video downloads.
+  const explicitThumb = version.thumbnailUrl || null;
+  const showAsImage = !!explicitThumb;
+  const posterUrl = explicitThumb || posterFallback;
 
   if (compact) {
     return (
@@ -292,10 +308,17 @@ const VersionCard: React.FC<{
         className="relative aspect-video w-12 rounded overflow-hidden bg-black/30 border border-white/[0.06] hover:border-white/[0.2] transition-colors group"
         title={`Append ${label} to timeline`}
       >
-        {isImage ? (
-          <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+        {showAsImage ? (
+          <img src={explicitThumb!} alt="" className="w-full h-full object-cover" />
         ) : (
-          <video src={previewUrl} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+          <video
+            src={`${version.url}#t=0.1`}
+            poster={posterUrl}
+            className="w-full h-full object-cover"
+            muted
+            playsInline
+            preload="auto"
+          />
         )}
       </button>
     );
@@ -310,10 +333,17 @@ const VersionCard: React.FC<{
       }`}
       title={`Append ${label} to timeline`}
     >
-      {isImage ? (
-        <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+      {showAsImage ? (
+        <img src={explicitThumb!} alt="" className="w-full h-full object-cover" />
       ) : (
-        <video src={previewUrl} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+        <video
+          src={`${version.url}#t=0.1`}
+          poster={posterUrl}
+          className="w-full h-full object-cover"
+          muted
+          playsInline
+          preload="auto"
+        />
       )}
       {isActive && (
         <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-black/60 text-white px-1 py-0.5 rounded font-mono">
