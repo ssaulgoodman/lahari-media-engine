@@ -270,6 +270,76 @@ export const writeStoryboardPrompt = async (opts: {
   storyboardPrompt: string;
   cutPlanText: string;
 }> => {
+  await updateRows('shots', { id: opts.shotId }, { storyboard_prompt_status: 'loading' });
+  const t0 = Date.now();
+
+  try {
+    const result = await planStoryboardPrompt(opts);
+    await updateRows('shots', { id: opts.shotId }, {
+      storyboard_prompt: result.storyboardPrompt,
+      storyboard_cut_plan: result.cutPlanText,
+      storyboard_prompt_status: 'success',
+      storyboard_prompt_user_feedback: opts.artistNote || null,
+      // Clear staleness now that the planner has re-read castIds /
+      // environment_id from DB and folded them into the prompt + cut plan.
+      // Mirrors the keyframe pipeline's clear in refine-prompt (the
+      // equivalent text-rewrite action). Without this, stale stays true
+      // forever after the first cast/env edit and the UI indicator
+      // becomes useless noise.
+      prompts_stale: false,
+      last_error: null,
+    });
+
+    const durationMs = Date.now() - t0;
+    await logCall({
+      projectId: opts.projectId,
+      stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
+      model: result.model,
+      prompt: result.runtimePrompt,
+      referenceInputs: result.referenceInputs,
+      contextChain: await buildContextChain(opts.projectId),
+      responseSummary: `Saved storyboard prompt for shot ${opts.shotId}`,
+      durationMs,
+      costEstimate: result.costEstimate,
+    });
+    await incrementColumn('projects', { id: opts.projectId }, 'cost_estimate', result.costEstimate);
+
+    return { storyboardPrompt: result.storyboardPrompt, cutPlanText: result.cutPlanText };
+  } catch (err: any) {
+    const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
+    const providerSpec = getTextProvider(ctx.project.text_provider as TextProviderKey | undefined);
+    await updateRows('shots', { id: opts.shotId }, {
+      storyboard_prompt_status: 'error',
+      last_error: err.message,
+    });
+    await logCall({
+      projectId: opts.projectId,
+      stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
+      model: providerSpec.runtimeModel,
+      prompt: `Storyboard prompt planning failed for shot ${opts.shotId}`,
+      referenceInputs: [],
+      contextChain: await buildContextChain(opts.projectId),
+      durationMs: Date.now() - t0,
+      error: err.message,
+    });
+    throw err;
+  }
+};
+
+export const planStoryboardPrompt = async (opts: {
+  projectId: string;
+  shotId: string;
+  variant?: StoryboardPromptVariant;
+  artistNote?: string;
+  artistReferenceImagePath?: string;
+}): Promise<{
+  storyboardPrompt: string;
+  cutPlanText: string;
+  runtimePrompt: string;
+  model: string;
+  costEstimate: number;
+  referenceInputs: { type: 'image'; label: string; url: string }[];
+}> => {
   const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
   const variant = opts.variant || 'adaptive_numbered_storyboard';
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
@@ -351,88 +421,44 @@ Return only JSON with keys:
   "cutPlanText": "Panel N — <action> per panel, one line each"
 }`;
 
-  await updateRows('shots', { id: opts.shotId }, { storyboard_prompt_status: 'loading' });
-  const t0 = Date.now();
+  const plannerRefs = withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath);
+  // Vision inputs to the planner: the artist's attached refine ref (if any)
+  // PLUS the previous-shot storyboard ref when continuity is on. Other
+  // composition refs (style/cast/env images) are intentionally NOT sent —
+  // the planner is text-only by design; vision is reserved for handoff
+  // context and explicit artist guidance.
+  const plannerVisionRefs = plannerRefs.refs.filter((ref) => {
+    if (ref.imagePath === opts.artistReferenceImagePath) return true;
+    const meta = plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath);
+    return meta?.excludableKey === 'prev_storyboard';
+  });
 
-  try {
-    const plannerRefs = withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath);
-    // Vision inputs to the planner: the artist's attached refine ref (if any)
-    // PLUS the previous-shot storyboard ref when continuity is on. Other
-    // composition refs (style/cast/env images) are intentionally NOT sent —
-    // the planner is text-only by design; vision is reserved for handoff
-    // context and explicit artist guidance.
-    const plannerVisionRefs = plannerRefs.refs.filter((ref) => {
-      if (ref.imagePath === opts.artistReferenceImagePath) return true;
-      const meta = plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath);
-      return meta?.excludableKey === 'prev_storyboard';
-    });
+  // Dispatched through text-provider.ts. The provider abstraction handles
+  // each vendor's JSON-mode and vision-input conventions; we just pass the
+  // request and parse the text response with extractJsonObject as before.
+  const { text: outputText, model: actualModel } = await generateText(providerKey, {
+    userPrompt: prompt,
+    inputImages: plannerVisionRefs.map((ref) => ({
+      url: storageUrl(ref.imagePath),
+      label: plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath)?.label,
+    })),
+    jsonMode: true,
+    reasoning: 'low',
+    maxTokens: 4096,
+  });
+  const parsed = extractJsonObject(outputText);
+  const storyboardPrompt = String(parsed.storyboardPrompt || '').trim();
+  const cutPlanText = String(parsed.cutPlanText || '').trim();
+  if (!storyboardPrompt || !cutPlanText) throw new Error('Storyboard planner returned empty prompt or cut plan');
 
-    // Dispatched through text-provider.ts. The provider abstraction handles
-    // each vendor's JSON-mode and vision-input conventions; we just pass the
-    // request and parse the text response with extractJsonObject as before.
-    const { text: outputText, model: actualModel } = await generateText(providerKey, {
-      userPrompt: prompt,
-      inputImages: plannerVisionRefs.map((ref) => ({
-        url: storageUrl(ref.imagePath),
-        label: plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath)?.label,
-      })),
-      jsonMode: true,
-      reasoning: 'low',
-      maxTokens: 4096,
-    });
-    const parsed = extractJsonObject(outputText);
-    const storyboardPrompt = String(parsed.storyboardPrompt || '').trim();
-    const cutPlanText = String(parsed.cutPlanText || '').trim();
-    if (!storyboardPrompt || !cutPlanText) throw new Error('Storyboard planner returned empty prompt or cut plan');
-
-    await updateRows('shots', { id: opts.shotId }, {
-      storyboard_prompt: storyboardPrompt,
-      storyboard_cut_plan: cutPlanText,
-      storyboard_prompt_status: 'success',
-      storyboard_prompt_user_feedback: opts.artistNote || null,
-      // Clear staleness now that the planner has re-read castIds /
-      // environment_id from DB and folded them into the prompt + cut plan.
-      // Mirrors the keyframe pipeline's clear in refine-prompt (the
-      // equivalent text-rewrite action). Without this, stale stays true
-      // forever after the first cast/env edit and the UI indicator
-      // becomes useless noise.
-      prompts_stale: false,
-      last_error: null,
-    });
-
-    const durationMs = Date.now() - t0;
-    const costEstimate = estimateStoryboardPlanCost();
-    await logCall({
-      projectId: opts.projectId,
-      stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
-      model: providerSpec.runtimeModel,
-      prompt,
-      referenceInputs: plannerRefs.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
-      contextChain: await buildContextChain(opts.projectId),
-      responseSummary: `Saved storyboard prompt for shot ${opts.shotId}`,
-      durationMs,
-      costEstimate,
-    });
-    await incrementColumn('projects', { id: opts.projectId }, 'cost_estimate', costEstimate);
-
-    return { storyboardPrompt, cutPlanText };
-  } catch (err: any) {
-    await updateRows('shots', { id: opts.shotId }, {
-      storyboard_prompt_status: 'error',
-      last_error: err.message,
-    });
-    await logCall({
-      projectId: opts.projectId,
-      stage: opts.artistNote?.trim() ? 'refine-storyboard-prompt' : 'write-storyboard-prompt',
-      model: providerSpec.runtimeModel,
-      prompt,
-      referenceInputs: withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath).refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
-      contextChain: await buildContextChain(opts.projectId),
-      durationMs: Date.now() - t0,
-      error: err.message,
-    });
-    throw err;
-  }
+  return {
+    storyboardPrompt,
+    cutPlanText,
+    runtimePrompt: prompt,
+    model: actualModel || providerSpec.runtimeModel,
+    costEstimate: estimateStoryboardPlanCost(),
+    referenceInputs: plannerRefs.refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+  };
 };
 
 const renderWithProvider = async (

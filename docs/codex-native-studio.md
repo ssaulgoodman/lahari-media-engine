@@ -248,8 +248,11 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- session note <projectId> <note...>`
 - CLI: `npm run lahari -- session journal <projectId>`
 - CLI: `npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]`
+- CLI: `npm run lahari -- preview rewrite-storyboard-prompt <projectId> <shotId> [note...]`
 - CLI: `npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>`
+- CLI: `npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>`
 - CLI: `npm run lahari -- apply rewrite-shot-prompts <preview.json>`
+- CLI: `npm run lahari -- apply rewrite-storyboard-prompt <preview.json>`
 - MCP: `npm run lahari:mcp`
 
 The MCP server currently exposes read-only/local-output tools plus one explicit mutating apply tool:
@@ -263,8 +266,11 @@ The MCP server currently exposes read-only/local-output tools plus one explicit 
 - `get_director_session`
 - `add_director_note`
 - `preview_rewrite_shot_prompts`
+- `preview_rewrite_storyboard_prompt`
 - `plan_apply_shot_prompt_preview`
+- `plan_apply_storyboard_prompt_preview`
 - `apply_shot_prompt_preview`
+- `apply_storyboard_prompt_preview`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
 
@@ -284,7 +290,7 @@ Current v1 execution list:
 1. Keep packets aligned with the current app schema: text provider, storyboard provider, storyboard prompts/boards, render history, stale/error state.
 2. Expand visual artifacts into separate style, reference, storyboard, shot-history, and render sheets. Current implementation covers style, references, storyboard, and renders.
 3. Turn deterministic reports into a real director diagnosis with bottleneck, weak links, and next approved action.
-4. Add preview/apply pairs for storyboard prompt rewrites and selected safe state changes.
+4. Add preview/apply pairs for storyboard prompt rewrites and selected safe state changes. Current implementation covers one-shot storyboard prompt/cut-plan rewrites.
 5. Add generation tools only after each reports cost, write blast radius, and rollback/fork path.
 
 Director sessions are local working memory under `.lahari/sessions/<projectId>/`:

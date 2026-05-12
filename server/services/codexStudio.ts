@@ -3,6 +3,7 @@ import path from 'path';
 import { selectAll, selectColumns, updateRows } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { writeShotPrompts } from './claude.js';
+import { planStoryboardPrompt } from './storyboard.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
@@ -1447,5 +1448,217 @@ export const applyRewriteShotPromptsPreview = async (previewJsonPath: string, pr
     changedShots: changed.length,
     journalPath,
     note: 'Applied preview to Supabase. Updated visual_prompt, motion_prompt, continuity_from, prompts_stale=false, and project last_write_shots_prompt when available.',
+  };
+};
+
+type StoryboardPromptPreviewFile = {
+  kind: 'lahari.preview.rewrite_storyboard_prompt';
+  previewId: string;
+  generatedAt: string;
+  project: { id: string; title: string; status: string; textProvider?: string; storyboardProvider?: string };
+  shot: {
+    id: string;
+    sceneIndex: number;
+    shotIndex: number;
+    beat: string;
+    before: {
+      storyboardPrompt: string;
+      storyboardCutPlan: string;
+      promptsStale: boolean;
+    };
+    after: {
+      storyboardPrompt: string;
+      storyboardCutPlan: string;
+    };
+  };
+  model: string;
+  costEstimate: number;
+  userNote: string | null;
+  artifacts: { markdownPath: string; jsonPath: string; promptPath: string };
+  note: string;
+};
+
+const buildStoryboardPromptPreviewMarkdown = (preview: StoryboardPromptPreviewFile) => {
+  return `# Storyboard Prompt Preview
+
+Generated: ${preview.generatedAt}
+Preview ID: \`${preview.previewId}\`
+Project: ${preview.project.title}
+Project ID: \`${preview.project.id}\`
+Shot ID: \`${preview.shot.id}\`
+Model: ${preview.model}
+Estimated cost: ${preview.costEstimate}
+User note: ${preview.userNote || 'None'}
+
+This is a preview only. No Lahari database rows, assets, stale flags, frames, videos, or locks were changed.
+
+## Shot
+
+- Scene ${preview.shot.sceneIndex}, Shot ${preview.shot.shotIndex}
+- Beat: ${preview.shot.beat || 'None'}
+- JSON artifact: \`${preview.artifacts.jsonPath}\`
+- Runtime prompt artifact: \`${preview.artifacts.promptPath}\`
+
+## Storyboard Prompt
+
+Before:
+${formatPromptBlock(preview.shot.before.storyboardPrompt)}
+
+After:
+${formatPromptBlock(preview.shot.after.storyboardPrompt)}
+
+## Cut Plan
+
+Before:
+${formatPromptBlock(preview.shot.before.storyboardCutPlan)}
+
+After:
+${formatPromptBlock(preview.shot.after.storyboardCutPlan)}
+`;
+};
+
+export const previewRewriteStoryboardPrompt = async (project: Project, shotId: string, userNote?: string) => {
+  let target: { shot: ProjectShot; sceneIndex: number; shotIndex: number } | null = null;
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    const shotIndex = scene.shots.findIndex((shot) => shot.id === shotId);
+    if (shotIndex >= 0) {
+      target = { shot: scene.shots[shotIndex], sceneIndex: sceneIndex + 1, shotIndex: shotIndex + 1 };
+      break;
+    }
+  }
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+
+  const result = await planStoryboardPrompt({
+    projectId: project.id,
+    shotId,
+    variant: 'adaptive_numbered_storyboard',
+    artistNote: userNote,
+  });
+
+  const now = new Date().toISOString();
+  const previewId = `${now.replace(/[:.]/g, '-')}-storyboard-prompt-${shotId.slice(0, 8)}`;
+  const promptPath = defaultPreviewPath(project, previewId, 'runtime-prompt.txt');
+  const jsonPath = defaultPreviewPath(project, previewId, 'preview.json');
+  const markdownPath = defaultPreviewPath(project, previewId, 'preview.md');
+
+  const preview: StoryboardPromptPreviewFile = {
+    kind: 'lahari.preview.rewrite_storyboard_prompt',
+    previewId,
+    generatedAt: now,
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      textProvider: project.textProvider,
+      storyboardProvider: project.storyboardProvider,
+    },
+    shot: {
+      id: shotId,
+      sceneIndex: target.sceneIndex,
+      shotIndex: target.shotIndex,
+      beat: target.shot.direction || target.shot.storyboardPrompt || target.shot.visualPrompt || '',
+      before: {
+        storyboardPrompt: target.shot.storyboardPrompt || '',
+        storyboardCutPlan: target.shot.storyboardCutPlan || '',
+        promptsStale: !!target.shot.promptsStale,
+      },
+      after: {
+        storyboardPrompt: result.storyboardPrompt,
+        storyboardCutPlan: result.cutPlanText,
+      },
+    },
+    model: result.model,
+    costEstimate: result.costEstimate,
+    userNote: userNote || null,
+    artifacts: { markdownPath, jsonPath, promptPath },
+    note: 'Preview only. No database rows, assets, stale flags, frames, videos, or locks were changed.',
+  };
+
+  writeArtifact(promptPath, result.runtimePrompt);
+  writeArtifact(jsonPath, `${JSON.stringify(preview, null, 2)}\n`);
+  writeArtifact(markdownPath, buildStoryboardPromptPreviewMarkdown(preview));
+  return preview;
+};
+
+const readStoryboardPromptPreview = (previewJsonPath: string): StoryboardPromptPreviewFile => {
+  const resolved = path.resolve(previewJsonPath);
+  if (!fs.existsSync(resolved)) throw new Error(`Preview JSON not found: ${resolved}`);
+  const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  if (parsed?.kind !== 'lahari.preview.rewrite_storyboard_prompt') {
+    throw new Error('Preview JSON is not a lahari.preview.rewrite_storyboard_prompt artifact.');
+  }
+  if (!parsed.project?.id || !parsed.shot?.id) {
+    throw new Error('Preview JSON is missing project or shot ID.');
+  }
+  return parsed as StoryboardPromptPreviewFile;
+};
+
+export const getRewriteStoryboardPromptApplyPlan = async (previewJsonPath: string, project: Project) => {
+  const preview = readStoryboardPromptPreview(previewJsonPath);
+  if (preview.project.id !== project.id) {
+    throw new Error(`Preview belongs to project ${preview.project.id}, not loaded project ${project.id}.`);
+  }
+  const current = project.scenes.flatMap((scene) => scene.shots).find((shot) => shot.id === preview.shot.id);
+  const missingShot = !current;
+  const drifted = current
+    ? (current.storyboardPrompt || '') !== (preview.shot.before.storyboardPrompt || '')
+      || (current.storyboardCutPlan || '') !== (preview.shot.before.storyboardCutPlan || '')
+    : false;
+  const changed = preview.shot.before.storyboardPrompt !== preview.shot.after.storyboardPrompt
+    || preview.shot.before.storyboardCutPlan !== preview.shot.after.storyboardCutPlan;
+
+  return {
+    kind: 'lahari.apply_plan.rewrite_storyboard_prompt',
+    previewId: preview.previewId,
+    previewPath: path.resolve(previewJsonPath),
+    project: { id: project.id, title: project.title, status: project.status },
+    shotId: preview.shot.id,
+    counts: {
+      changed: changed ? 1 : 0,
+      missingShots: missingShot ? 1 : 0,
+      driftedShots: drifted ? 1 : 0,
+    },
+    canApply: changed && !missingShot && !drifted,
+    note: missingShot
+      ? 'Refusing to apply because the previewed shot no longer exists.'
+      : drifted
+      ? 'Refusing to apply because the current storyboard prompt/cut plan drifted. Regenerate a fresh preview.'
+      : changed
+      ? 'Ready to apply. This will update storyboard_prompt, storyboard_cut_plan, storyboard_prompt_status, prompts_stale=false, and mark storyboard/video stale for review.'
+      : 'Nothing changed in the preview.',
+  };
+};
+
+export const applyRewriteStoryboardPromptPreview = async (previewJsonPath: string, project: Project) => {
+  const preview = readStoryboardPromptPreview(previewJsonPath);
+  const plan = await getRewriteStoryboardPromptApplyPlan(previewJsonPath, project);
+  if (!plan.canApply) throw new Error(plan.note);
+  const current = project.scenes.flatMap((scene) => scene.shots).find((shot) => shot.id === preview.shot.id);
+
+  await updateRows('shots', { id: preview.shot.id }, {
+    storyboard_prompt: preview.shot.after.storyboardPrompt,
+    storyboard_cut_plan: preview.shot.after.storyboardCutPlan,
+    storyboard_prompt_status: 'success',
+    storyboard_prompt_user_feedback: preview.userNote,
+    prompts_stale: false,
+    ...(current?.storyboardUrl ? { storyboard_status: 'stale' } : {}),
+    ...(current?.videoUrl ? { video_status: 'stale' } : {}),
+    last_error: null,
+  });
+
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry('applied storyboard prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShot updated: ${preview.shot.id}\n\nExisting storyboard/video outputs were marked stale for review when present. No assets or locks were changed.`));
+
+  return {
+    kind: 'lahari.apply.rewrite_storyboard_prompt',
+    previewId: preview.previewId,
+    projectId: project.id,
+    shotId: preview.shot.id,
+    journalPath,
+    note: 'Applied preview to Supabase. Updated storyboard prompt/cut plan, cleared prompt stale state, and marked existing storyboard/video outputs stale.',
   };
 };

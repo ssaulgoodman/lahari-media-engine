@@ -20,8 +20,11 @@ Usage:
   npm run lahari -- session note <projectId> <note...>
   npm run lahari -- session journal <projectId>
   npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
+  npm run lahari -- preview rewrite-storyboard-prompt <projectId> <shotId> [note...]
   npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>
+  npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>
   npm run lahari -- apply rewrite-shot-prompts <preview.json>
+  npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
 
 Output:
   JSON packets and local review artifacts designed for Codex inspection and future MCP wrapping.
@@ -51,7 +54,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && action === 'rewrite-shot-prompts');
+  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt');
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
@@ -130,6 +133,13 @@ const main = async () => {
     return;
   }
 
+  if (domain === 'preview' && action === 'rewrite-storyboard-prompt' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const note = rest.filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.previewRewriteStoryboardPrompt(project, arg4, note), null, 2));
+    return;
+  }
+
   if (domain === 'apply-plan' && action === 'rewrite-shot-prompts' && projectId) {
     const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
     const project = await studio.getFullProject(preview.project.id);
@@ -137,10 +147,24 @@ const main = async () => {
     return;
   }
 
+  if (domain === 'apply-plan' && action === 'rewrite-storyboard-prompt' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.getRewriteStoryboardPromptApplyPlan(projectId, project), null, 2));
+    return;
+  }
+
   if (domain === 'apply' && action === 'rewrite-shot-prompts' && projectId) {
     const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
     const project = await studio.getFullProject(preview.project.id);
     console.log(JSON.stringify(await studio.applyRewriteShotPromptsPreview(projectId, project), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'rewrite-storyboard-prompt' && projectId) {
+    const preview = JSON.parse(fs.readFileSync(projectId, 'utf8'));
+    const project = await studio.getFullProject(preview.project.id);
+    console.log(JSON.stringify(await studio.applyRewriteStoryboardPromptPreview(projectId, project), null, 2));
     return;
   }
 
