@@ -98,8 +98,9 @@ const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<num
   });
 
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
-// creates one when the timeline is empty). Used by the manual-upload button.
-const addVideoClip = (src: string, name?: string) => {
+// creates one when the timeline is empty). Used by the manual-upload button
+// and the MediaLibraryDrawer (any external surface adding a clip).
+export const addVideoClip = (src: string, name?: string) => {
   const id = generateId();
   const from = nextStartMs();
   const existingTrack = useStore.getState().tracks.find((t) => t.type === 'video');

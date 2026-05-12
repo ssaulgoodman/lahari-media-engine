@@ -3,6 +3,7 @@ import { ApiProject } from '../types';
 import TimelineEditor, { InitialClip } from './timeline-editor/TimelineEditor';
 import useStore from './timeline-editor/store';
 import { loadSnapshot } from './timeline-editor/persistence';
+import { MediaLibraryDrawer } from './MediaLibraryDrawer';
 import {
   startRender,
   getRenderStatus,
@@ -371,6 +372,11 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             </p>
           </div>
         )}
+
+        {/* Media library — bottom drawer over the timeline. Self-hides when
+            the project has no rendered shots yet. Click the handle at the
+            bottom to expand; click any version card to append to timeline. */}
+        <MediaLibraryDrawer project={project} />
 
         {historyOpen && (
           <div className="absolute top-3 right-3 w-80 max-h-[calc(100%-1.5rem)] bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl backdrop-blur-sm flex flex-col overflow-hidden z-10">
