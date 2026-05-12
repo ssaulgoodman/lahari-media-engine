@@ -72,6 +72,18 @@ server.registerTool('hydrate_project_workbench', {
   return textResult(await studio.hydrateProjectWorkbench(project, outputDir));
 });
 
+server.registerTool('review_storyboard_prompts', {
+  title: 'Review storyboard prompts',
+  description: 'Read-only. Reviews all storyboard prompts/cut plans for missing, stale, overlong, or blocked states and returns rewrite/generation commands.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+  },
+}, async ({ projectId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.buildStoryboardPromptReview(project));
+});
+
 server.registerTool('get_shot_packet', {
   title: 'Get shot packet',
   description: 'Read-only. Returns one shot with its scene, prompts, assets, and previous/next context.',

@@ -1948,6 +1948,71 @@ export const buildProjectActionList = (project: Project) => {
   };
 };
 
+export const buildStoryboardPromptReview = (project: Project) => {
+  const items: any[] = [];
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    for (const [shotIndex, shot] of scene.shots.entries()) {
+      const promptLength = (shot.storyboardPrompt || '').length;
+      const cutPlanLength = (shot.storyboardCutPlan || '').length;
+      const issues = [
+        !shot.storyboardPrompt ? 'missing storyboard prompt' : null,
+        !shot.storyboardCutPlan ? 'missing cut plan' : null,
+        shot.promptsStale ? 'prompt stale' : null,
+        shot.storyboardPromptStatus === 'error' ? 'prompt writer error' : null,
+        shot.storyboardStatus === 'error' ? 'board generation error' : null,
+        promptLength > 5000 ? 'prompt likely too long for reliable image following' : null,
+        shot.storyboardUrl && !shot.storyboardLocked ? 'board needs review/lock before video' : null,
+        project.videoModel?.startsWith('seedance') && !shot.storyboardLocked && !shot.imageUrl ? 'video blocked until board is locked or start frame exists' : null,
+      ].filter(Boolean);
+      if (!issues.length) continue;
+      const boardNeedsGeneration = !shot.storyboardUrl || shot.storyboardStatus === 'stale' || shot.storyboardStatus === 'error';
+      const plan = shot.storyboardPrompt && boardNeedsGeneration
+        ? planGenerateStoryboard(project, shot.id)
+        : null;
+      items.push({
+        shot: {
+          id: shot.id,
+          label: shotLabel(sceneIndex, shotIndex),
+          scene: scene.sectionLabel,
+          beat: compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 220),
+          duration: shot.duration,
+        },
+        issues,
+        stats: {
+          storyboardPromptChars: promptLength,
+          cutPlanChars: cutPlanLength,
+          hasBoard: !!shot.storyboardUrl,
+          boardLocked: !!shot.storyboardLocked,
+          hasVideo: !!shot.videoUrl,
+          videoLocked: !!shot.locked,
+        },
+        nextNativeAction: plan?.canRun ? {
+          kind: 'generate_storyboard',
+          cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
+          estimatedCost: plan.estimatedCost,
+        } : null,
+        rewriteCommand: `npm run lahari -- preview rewrite-storyboard-prompt ${project.id} ${shot.id}`,
+      });
+    }
+  }
+
+  return {
+    kind: 'lahari.storyboard_prompt.review',
+    generatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+      storyboardProvider: project.storyboardProvider,
+      videoModel: project.videoModel,
+    },
+    summary: {
+      totalIssues: items.reduce((sum, item) => sum + item.issues.length, 0),
+      shotsWithIssues: items.length,
+    },
+    items,
+  };
+};
+
 const buildBriefMarkdown = (project: Project, actionList: ReturnType<typeof buildProjectActionList>): string => {
   const counts = statusCounts(project);
   const diagnosis = actionList.diagnosis;

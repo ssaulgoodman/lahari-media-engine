@@ -13,6 +13,7 @@ Usage:
   npm run lahari -- project packet <projectId>
   npm run lahari -- project actions <projectId>
   npm run lahari -- project hydrate <projectId> [outputDir]
+  npm run lahari -- project storyboard-review <projectId>
   npm run lahari -- project report <projectId> [out.md]
   npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]
   npm run lahari -- project contact-sheet <projectId> [out.html]
@@ -86,6 +87,12 @@ const main = async () => {
   if (domain === 'project' && action === 'hydrate' && projectId) {
     const project = await studio.getFullProject(projectId);
     console.log(JSON.stringify(await studio.hydrateProjectWorkbench(project, arg4), null, 2));
+    return;
+  }
+
+  if (domain === 'project' && action === 'storyboard-review' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.buildStoryboardPromptReview(project), null, 2));
     return;
   }
 
