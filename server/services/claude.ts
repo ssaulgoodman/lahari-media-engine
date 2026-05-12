@@ -101,7 +101,7 @@ ${meaning}`;
 
   if (directorBrief) {
     // Path B: Director has a specific vision — generate ONE concept.
-    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    prompt = `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 ${songContext}
 
@@ -112,7 +112,7 @@ Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their 
 
 Return EXACTLY 1 concept in the concepts array.`;
   } else {
-    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    prompt = `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 ${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
@@ -176,7 +176,7 @@ export const refineConceptDirection = async (
   feedback: string,
   textProvider?: string,
 ): Promise<any> => {
-  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+  const prompt = `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 CURRENT LOCKED CONCEPT:
 - Title: ${currentConcept.title || ''}
@@ -568,7 +568,7 @@ Do not create zero-second cuts or filler shots.`
     : `SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
 Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.`;
 
-  const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
+  const prompt = `You are a visionary music video director refining an existing devotional music video script based on the director's feedback. The visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
 
 CONCEPT:
 ${formatConceptForScriptPrompt(context.concept)}
@@ -764,9 +764,11 @@ VIDEO MODEL PROMPTING MODE:
 - The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
 - Do not request generated audio, dialogue, subtitles, or sound effects.`;
 
-  const prompt = `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
+  const prompt = `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
-WRITE CINEMATIC PROMPTS THAT ARE RENDERABLE.
+WRITE PROMPTS THAT ARE RENDERABLE.
+
+The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words. The locked style reference is the ground truth for medium; words like "cinematic" pull stylized projects back toward realism.
 
 These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
 
@@ -807,7 +809,7 @@ BAD motionPrompt:
 "Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
 
 ${songTypeSignal}
-Mood: ${context.concept.mood || 'Cinematic'}
+Mood: ${context.concept.mood || 'devotional'}
 Video model: ${context.videoModel || 'default'}
 
 CHARACTERS:
@@ -932,7 +934,7 @@ Do NOT describe characters, scenes, environments, or narrative.
 These descriptions will be used as image generation prompts — be concrete, not literary.
 
 QUALITY GUIDELINES for the image generation downstream:
-- Avoid overly AI/CGI/fantasy look — should feel cinematic or painterly, grounded and intentional
+- Avoid overly AI/CGI/fantasy look — every direction should feel grounded and intentional in its chosen medium (photographic, painterly, illustrated, miniature, mixed-media, etc.)
 - Avoid excessive intricate details that muddy the image — every element should have clear intention
 - If stylized, it should be tasteful and deliberate, not generic digital art or AI slop
 - Think intentional reference image, not generic concept art`;
@@ -1028,7 +1030,7 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.`;
     useRefineModel: true,
     inputImages: [{ data: imageBase64, mimeType }],
   });
-  return text || 'Cinematic, high contrast.';
+  return text || '';
 };
 
 // ─── Refine Shot Prompt (vision + rewrite) ──────────────────────────

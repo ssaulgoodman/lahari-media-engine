@@ -1,5 +1,7 @@
 # Cinematic-realism Leak Audit + Fix Plan
 
+**STATUS as of 2026-05-12 evening:** Tiers 1, 2, and 3 all shipped. The narrow `visual_medium` enum was rejected in favor of a fully generic approach — see "Tier 3 (revised, shipped)" at the bottom. A separate storyboard-consistency restoration also landed in the same batch as Tier 3.
+
 **Trigger:** today's stylized-style project came out reading "cinematic realism" even though the locked style image was non-realistic and all the per-shot refs were correct.
 
 **Root cause in one line:** the locked style image is *supposed* to be the visual ground truth, but every downstream image-gen prompt hardcodes the words **"cinematic"** and **"film still"** in the request text. Image models weight text + reference images jointly, so the text is fighting the style image — and on stylized prompts (painterly, miniature, illustrated, mixed-media) the text wins enough of the time to leak realism back in.
@@ -169,3 +171,53 @@ Skip if Tier 3 is good enough — most artists will set medium explicitly anyway
 **Tier 3 next session.** Requires migration + UI + thinking about the persona strings. Don't rush.
 
 **Tier 3.5 only if a non-cinematic preset gets added.** Not worth the code right now.
+
+---
+
+## Tier 3 (revised, shipped 2026-05-12 evening)
+
+The original Tier 3 plan proposed a `visual_medium` column + dropdown + 5-option enum (cinematic / painterly / illustrated / miniature / mixed_media / other) + `mediumPersona()` helper. That was rejected as too-narrow forcing. What we shipped instead:
+
+### Approach: trust the locked style image, delete the forcing language
+
+No schema change. No migration. No new UI surface. The locked style image is already the source of truth for visual medium — we just (a) stopped fighting it with cinema text in persona strings, and (b) actually passed it as vision input to the one stage that needed to read it.
+
+### Changes
+
+**Persona strips in `claude.ts` (text-side):**
+- `generateConceptOptions` (both Path A and Path B), `refineConceptDirection`, `refineScript`: replaced `"You are a visionary film director specializing in Indian mythological and devotional cinema"` with neutral `"You are a visionary music video director planning an Indian devotional music video"` + an explicit note that visual medium is decided separately via the locked style reference.
+- `writeShotPrompts`: replaced `"You are a cinematographer"` → `"You are an art director / shot writer"`, replaced `"WRITE CINEMATIC PROMPTS THAT ARE RENDERABLE"` → `"WRITE PROMPTS THAT ARE RENDERABLE"`. Added an explicit anti-cinema instruction: don't dictate art style / color palette / "cinematic"/"film still" framing in words — the style image is the ground truth.
+- `brainstormStyleDirections` quality guideline: replaced `"should feel cinematic or painterly"` with medium-agnostic `"grounded and intentional in its chosen medium (photographic, painterly, illustrated, miniature, mixed-media, etc.)"`.
+- `analyzeImageStyle` fallback: dropped `'Cinematic, high contrast.'` → empty string.
+- `concept.mood || 'Cinematic'` fallback → `'devotional'`.
+
+**Storyboard planner overhaul in `storyboard.ts`:**
+- **Flipped `plannerVisionRefs` filter** to include the locked style ref (key `'style'`), not just the artist refine ref and prev storyboard ref. The planner now actually sees what medium it's planning for.
+- **Added new persona line to both planner-prompt variants** (`artistNote` refine path and the convert-from-source-brief path): `"You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is the visual ground truth — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it."`
+- **Restored inter-panel consistency demand** (the line that the trim regression had dropped). The planner is now explicitly required to put a consistency instruction inside `storyboardPrompt`, naming which ref controls which aspect (style → medium/lighting/palette; characters → identity/costume; environment → physical space). Word cap raised from 300 → 330 to accommodate the line. Explicit ban on `"cinematic film still"` language.
+
+**Seedance video prompt in `seedance-storyboard-rd.ts`:**
+- Restored one-sentence identity-continuity instruction: `"Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels."` This was load-bearing in the pre-trim version; the trim had reduced it to a weak `"identity anchor only"` label.
+
+**Catalog updates** (`server/prompts/catalog.ts`):
+- Mirror all persona text changes in the displayed templates.
+- Updated `seedance-storyboard-image` entry: model column unchanged, but added `styleImage` to the variables list, rewrote the template + summary to reflect the new planner persona / inter-panel consistency demand / style-image vision input.
+- Updated `seedance-storyboard-video` template to include the restored identity-continuity sentence.
+
+### What this gets
+
+- Works for any locked style — cinematic, painterly, miniature, illustrated, mixed-media, batik, kalamkari, anything. The image is the spec.
+- Zero artist config. Nothing new to set per project.
+- Backward compatible for existing cinematic projects: their locked style image is already cinema-shaped, so the planner sees a cinema-shaped image and outputs cinema-shaped panel directions. Same behavior, just now driven by the image rather than text bias.
+- Fixes the inter-panel style-drift regression that came in with the storyboard-prompt trim.
+
+### Risk
+
+Lower than the original Tier 3 plan (no migration, no UI, no enum to maintain). Two real risk surfaces:
+
+1. **Planner now sees the style image alongside the other vision inputs** (artist refine ref, prev-storyboard ref when continuity is on). Extra vision tokens per planner call. Mitigation: tested with the existing token budget — still well under the 4096 `maxTokens` cap.
+2. **Planner might over-index on the style image** and ignore the shot direction text, collapsing every panel into "variations on the style frame" instead of "shot beats". Mitigation: the new persona explicitly says *"read it to understand the medium and match it"* — bounded to medium, not composition.
+
+### Tier 3.5 — still skipped
+
+Preset metadata for `medium` is still not worth the code. All current presets are cinema-realistic and the audit fix above handles them. If a non-cinematic preset gets added later, just paint the curated PNG in that medium — the planner will read it.

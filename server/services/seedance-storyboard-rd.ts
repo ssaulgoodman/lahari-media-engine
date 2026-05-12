@@ -300,6 +300,8 @@ Shot: ${input.clipDirection}
 ${refBindings ? `Identity refs (do not redesign):\n${refBindings}` : ''}
 ${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}
 
+Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
+
 Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`;
 };
 
