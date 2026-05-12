@@ -217,23 +217,25 @@ Claude receives explicit structural guidance based on the chosen mode:
 
 **Status:** Fixed. Prompt visible, refine clears stale prompts, legacy URLs handled.
 
-### 4b.5: Curated Style Presets
+### 4b.5: Curated Style Presets (direct-lock — no AI step)
 
-**Source:** [`server/style-presets.ts`](../server/style-presets.ts) · Route: `server/routes/generate-style.ts` → `GET /:id/style-presets`, `POST /:id/visualize-style-preset`, then `POST /:id/lock-style`
+**Source:** [`server/style-presets.ts`](../server/style-presets.ts) · Route: `server/routes/generate-style.ts` → `GET /:id/style-presets`, `POST /:id/lock-style-preset`
 
 | | |
 |---|---|
-| **Model** | Same image provider as style visualization (project image model) |
-| **Input** | Curated preset title + description + project concept subject |
-| **Output** | Project-specific style reference image cached in `project.style_exploration.presetSlots[presetKey]` |
-| **Artist control** | Preview curated anchor image, visualize for this project, regenerate, then lock through the same style-lock path |
-| **generation_prompt** | Built by `buildStylePrompt(preset.description, subject)` |
+| **Model** | None — zero AI calls. |
+| **Input** | `{ presetKey }` |
+| **Output** | A new project-scoped `lahari_assets` row pointing at the preset's shared curated `previewImagePath`; `style_asset_id` set; `style_description: ''` (empty on purpose). Downstream marked stale. |
+| **Artist control** | Click any of the four preset cards in the Style phase → one-shot lock. No visualize / regenerate step. |
+| **generation_prompt** | None — the curated PNG is the ground truth. |
 
-Four devotional presets are currently registered: Sacred Golden Serenity, Pure Temple Morning, Warm Incense Devotion, and Sacred Teal Riverlight. Their static anchor previews live in Supabase Storage at `styles/presets/<key>.png` and are backed up in [`docs/assets/style-presets/`](assets/style-presets/).
+Four devotional presets are currently registered: Sacred Golden Serenity, Pure Temple Morning, Warm Incense Devotion, and Sacred Teal Riverlight. Their curated anchor PNGs live in Supabase Storage at `styles/presets/<key>.png` and are backed up in [`docs/assets/style-presets/`](assets/style-presets/).
 
-Preset lock is not a special path: the UI calls normal `/lock-style` with the cached preset asset id. `/lock-style` and direct `/upload-and-lock-style` both mark cast, environments, and shots stale so old refs do not look valid after a style swap.
+**Important:** the old `POST /:id/visualize-style-preset` endpoint was **removed**. That path was generating a fresh image from the description text and ignoring the curated PNG entirely — it produced drift, not the curated look. The new `lock-style-preset` route points the project's style asset directly at the curated file_path (same shared-asset pattern as forks), runs the standard `/lock-style` downstream-stale logic, and skips any text-to-image work.
 
-**Status:** DONE — presets are visible in unlocked style and locked-style Explorer mode, project renders are cached, and lock staleness is standardized.
+`style_description` is intentionally left empty for preset locks (the curated image is ground truth; storing description prose would leak into the concept-regen hint path).
+
+**Status:** DONE — preset locking is one click, no AI cost, no drift.
 
 ### 4c: Refine
 
@@ -248,18 +250,20 @@ Preset lock is not a special path: the UI calls normal `/lock-style` with the ca
 
 **Status:** Good.
 
-### 4d: Lock + Enrich
+### 4d: Lock (no enrich)
 
-**Source:** [`server/services/claude.ts:528`](../server/services/claude.ts#L528) · Route: `server/routes/generate-style.ts` → `POST /:id/lock-style`
+**Source:** Route: `server/routes/generate-style.ts` → `POST /:id/lock-style`
 
 | | |
 |---|---|
-| **Model** | Claude Sonnet vision (claude.ts → `enrichStyleDNA`) |
-| **Input** | Locked style image + current style description |
-| **Output** | Enriched `style_description` — visible/editable style metadata and critique context. The locked style image, not this text, is the downstream visual ground truth. |
-| **Artist control** | Can edit `style_description` after enrichment |
+| **Model** | None — pure DB mutation. |
+| **Input** | `{ assetId }` (from brainstorm slot, upload, or preset) |
+| **Output** | `style_asset_id` set, downstream cast/env/shots marked `prompts_stale`. |
+| **Artist control** | Pick a brainstorm slot, upload, or click a preset card. |
 
-**Status:** Good. Style description is visible and editable, but no longer injected into image-generation prompts when the style image is available.
+The old `enrichStyleDNA` Claude vision call was deleted on 2026-04-24 — it was producing prose that nothing downstream actually consumed (the image-gen prompts stopped reading `style_description` once the locked image became ground truth). `style_description` survives as an editable text field but plays no role in generation; it's there for artist notes only. Preset locks deliberately leave it empty.
+
+**Status:** DONE. Style image is the sole visual ground truth.
 
 ---
 
@@ -349,13 +353,15 @@ The prompt now stays intentionally lean:
 
 | | |
 |---|---|
-| **Planner model** | OpenAI Responses API, default `gpt-5.5` (`OPENAI_STORYBOARD_PLANNER_MODEL` override), low reasoning by default |
-| **Renderer model** | Project `storyboard_provider`: `gpt-image-2` through OpenAI or `nano-banana-2` through Segmind |
-| **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs |
-| **Saved outputs before image** | `shot.storyboard_prompt` + `shot.storyboard_cut_plan` + `storyboard_prompt_status` |
+| **Planner model** | Routes through `project.text_provider` (refine tier) — Claude Sonnet 4.6 (default), GPT-5.5, or Gemini 3.1 Flash. Was hardcoded to OpenAI Responses + `gpt-5.5` before the text-provider picker shipped (2026-05-12). |
+| **Renderer model** | Project `storyboard_provider`: `nano-banana-2` (Segmind, default), `nano-banana-pro` (Google `gemini-3-pro-image-preview`), or `gpt-image-2` (OpenAI). |
+| **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs. **Per-shot continuity (opt-in):** when `shot.use_prev_storyboard_ref` is true the prev shot's locked storyboard is attached as vision input to the planner AND as `@imageN` to the renderer. Separate `shot.include_prev_cut_plan` checkbox (nullable; smart-default checked when `continuity_from === 'prev_shot'`) prepends prev shot's cut plan as text context to the planner. |
+| **Saved outputs before image** | `shot.storyboard_prompt` (image-render prompt with per-panel actions baked INLINE — the image model knows what to draw per panel from this field alone) + `shot.storyboard_cut_plan` (text motion/cut guide for Seedance) + `storyboard_prompt_status` |
 | **Rendered output** | Ordered storyboard image/version in `lahari_storyboard_versions`, with provider/model metadata |
-| **Artist control** | Write/Rewrite prompt, edit prompt/cut plan directly, refine in Redo or Edit mode, generate/regenerate image, lock/unlock, history |
+| **Artist control** | Write/Rewrite prompt, edit prompt/cut plan directly, refine in Redo or Edit mode, generate/regenerate image, lock/unlock, history. Per-shot `+ Prev storyboard` toggle + "Include previous cut plan as text context" checkbox. |
 | **generation_prompt** | Two fields: `storyboard_prompt` is the image-render prompt; `storyboard_cut_plan` is the text motion/cut guide used later by Seedance |
+
+**Prompt size discipline (trimmed 2026-05-12):** the planner instruction caps `storyboardPrompt` at ~300 words and forbids "storyboard contract" bullet lists, animation rules, and style/quality boilerplate that the artist called "absolute dog shit" before. Source brief went from ~4300 chars to ~750. Critical fix: per-panel actions now live INSIDE `storyboardPrompt` (not just in `cutPlanText`) so the image renderer doesn't have to infer what each panel shows. The downstream Seedance video prompt was trimmed from ~80 lines to ~10 in the same pass — the long "animation contract" was confusing Seedance more than helping.
 
 **Storyboard contract:** one board per Lahari shot, not one scene board. The board may contain internal cuts and camera angles, but it remains one cohesive 4-15s Seedance clip. Panels are ordered left-to-right, then top-to-bottom; visible panel numbers, captions, labels, and other readable text are not allowed because video models can render them into the final clip.
 
@@ -513,8 +519,13 @@ Render is async because Railway cannot hold long HTTP requests. `/render` insert
 **Phase 4 efficiency now in code:**
 - Renderer pre-stages every remote video/image/audio URL from `trackItemsMap[*].details.src` into `/tmp/lahari-render-<renderId>-*`, serves those staged files over a loopback HTTP server for Remotion, and cleans the temp files in `finally`.
 - Docker pre-bundles the Remotion composition so cold containers can skip the runtime bundler pass when the baked bundle is present.
+- **FFmpeg fast path** (`RENDER_ENGINE=ffmpeg`, default): the renderer calls `canRenderWithFfmpeg(inputProps)` on each job. Eligible timelines (no transitions, no visual effects, no playback-rate changes, no overlapping clips, only video/image/audio items, all srcs resolvable) take the FFmpeg concat path → `libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -movflags +faststart` + amix for audio. Order-of-magnitude faster than Remotion SSR for plain timelines. Ineligible timelines fall back to Remotion automatically; `track('render_engine_fallback', ...)` fires so we can measure how often the fast path covers real workloads. See `remotion-renderer/src/ffmpeg-render.ts`.
 
-**Still planned:** cancel-on-watchdog and timeline-hash dedup. See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
+**Render gate is data-derived** (top-nav Render tab) — accessible the moment ANY shot has a `videoUrl`, not based on `project.status` string. Fixes the case where status drifted (forks, legacy projects) but the artist has rendered material to assemble.
+
+**Media Library drawer** (`components/MediaLibraryDrawer.tsx`) — bottom-anchored drawer over the timeline canvas. Two layers: horizontal scene picker (S1 S2 ...) → shots in that scene as a horizontal row, each shot showing its active video (ring outline) + older versions as small chips. Click any version → appended to the timeline at the end as a fresh clip (the canonical shot data isn't modified). Self-hides on projects with no rendered material. Three-tier thumbnail strategy: server-extracted last-frame asset → shot's storyboard or start frame poster (instant paint via `<video poster=...>`) → `#t=0.1` URL-fragment seek with `preload="metadata"`. Phase 2 will add a Pickups tab with upload + custom-ref generation.
+
+**Still planned:** cancel-on-watchdog and timeline-hash dedup (E5). See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
 
 ---
 
@@ -527,6 +538,22 @@ Auto-scores generated frames against the prompt + style + character refs. Not cu
 ---
 
 ## Cross-cutting Issues
+
+### Text provider routing (2026-05-12)
+
+One project-level setting (`project.text_provider`) controls every text-generation stage **except the script writer**. Three options:
+
+| Key | Label | Primary model | Refine model |
+|---|---|---|---|
+| `claude-opus` (default) | Claude Opus 4.7 | `claude-opus-4-7` | `claude-sonnet-4-6` |
+| `gpt-5.5` | GPT-5.5 | `gpt-5.5` | `gpt-5.5` |
+| `gemini-3-pro` | Gemini 3 Pro | `gemini-3-pro-preview` | `gemini-3.1-flash-preview` |
+
+**Routed (responds to picker):** concept gen + refine, style brainstorm + refine, meaning summary, image-style analyzer, frame/motion/chained-shot refines, character + environment look refines, storyboard prompt writer.
+
+**Not routed (always Claude Opus):** `planScenes`, `refineScript`, `writeShotPrompts`. The script writer stack uses Anthropic extended thinking + a validation loop with retry semantics that doesn't port cleanly to OpenAI / Gemini. The UI surfaces this as a "Script writer always uses Claude Opus" sub-label under the Text model dropdown.
+
+**Implementation:** `server/services/text-provider.ts` is the unified dispatcher. One `generateText(providerKey, req)` API. Each provider's branch handles native conventions: Anthropic tool_use, OpenAI `response_format: json_schema` (non-strict — schemas have optional fields), Gemini `responseSchema` + `responseMimeType`. Vision inputs accept HTTPS URL (fetched + base64'd for Gemini; native for Anthropic/OpenAI) or inline base64 (artist uploads). Refines use the cheap sibling via `useRefineModel: true` on the request, keeping the cost-tier discipline from the old Sonnet-vs-Opus split.
 
 ### Hardcoded "devotional" framing
 Present in: concept prompt ([claude.ts:66](../server/services/claude.ts#L66)), script prompt ([claude.ts:162](../server/services/claude.ts#L162)), style brainstorm ([claude.ts:397](../server/services/claude.ts#L397)), critique ([gemini.ts:161](../server/services/gemini.ts#L161)).
@@ -587,4 +614,4 @@ The pipeline anatomy IS the agent's knowledge base. Every field mapping, every d
 
 ---
 
-*Last updated: 2026-05-11*
+*Last updated: 2026-05-12*
