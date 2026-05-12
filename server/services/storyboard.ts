@@ -317,21 +317,31 @@ ${basePrompt}
 
 Return only JSON with keys:
 {
-  "storyboardPrompt": "complete image-render prompt for a storyboard renderer",
-  "cutPlanText": "numbered text-only cut plan with timestamps, camera, action, and Seedance motion cues"
+  "storyboardPrompt": "the actual prompt sent to the image model — must include the panel layout, subject/setting context, AND per-panel action descriptions (Panel 1: ..., Panel 2: ..., one line each describing what visibly happens). Plus the ref-image rules and the no-text-in-panels rule. Under ~300 words. No 'contract' bullet lists, no animation rules, no quality boilerplate.",
+  "cutPlanText": "the same per-panel beats reformatted for the video model. Format: 'Panel N — <action>'. One short line per panel. No timestamps, no camera-jargon fields."
 }`
     : `Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
 
-1. storyboardPrompt: the exact image-render prompt for a storyboard renderer. It should ask for one clean storyboard sheet, coherent cinematic panels, thin white panel borders acceptable, no captions or readable text inside panels, and no printed panel numbers unless absolutely unavoidable. It should include the reference-use rules and enough visual/camera detail for the renderer, but it must not ask the image model to explain itself.
-2. cutPlanText: a text-only numbered cut plan with timestamps, camera, action, and Seedance motion cues. This text will later drive the video prompt.
+1. storyboardPrompt — the actual prompt the storyboard image model will read. It MUST include:
+   - The panel layout (grid spec, 16:9 panels, borders, background)
+   - One-line subject/shot context (what the moment is)
+   - **Per-panel action descriptions**, one short sentence per panel, in order. Without these the image model invents incoherent panels — this is the most important part. Format: "Panel 1: <framing> — <action>". Use plain visual language, not camera jargon.
+   - Reference-image rules (character/style/env match)
+   - No-text-in-panels rule (no captions, numbers, labels, arrows)
+
+   Keep the whole thing under ~300 words. Do NOT include "contract" bullet lists, animation rules, emotional-arc instructions, or quality boilerplate ("masterpiece", "ultra-HD", etc.) — image models follow short clear prompts dramatically better than long ones.
+
+2. cutPlanText — the same panel beats reformatted for the video model. ONE LINE PER PANEL. Format: "Panel N — <action>". Plain action beats, no timestamps, no separate camera/action/motion-cue fields.
+
+The panel actions appear in BOTH outputs — image model needs them inline to know what to draw per panel, video model needs them as a clean list to understand the beats.
 
 Source brief:
 ${basePrompt}${prevStoryboardNote}${continuityBlock}
 
 Return only JSON with keys:
 {
-  "storyboardPrompt": "complete image-render prompt for a storyboard renderer",
-  "cutPlanText": "numbered text-only cut plan with timestamps, camera, action, and Seedance motion cues"
+  "storyboardPrompt": "complete image-model prompt with per-panel actions inline",
+  "cutPlanText": "Panel N — <action> per panel, one line each"
 }`;
 
   await updateRows('shots', { id: opts.shotId }, { storyboard_prompt_status: 'loading' });

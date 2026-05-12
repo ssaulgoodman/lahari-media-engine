@@ -157,63 +157,32 @@ export const buildStoryboardPrompt = (
 ): string => {
   if (variant === 'adaptive_numbered_storyboard') {
     const layout = panelLayout(input.clipDuration);
-    const moodLine = input.mood ? `Mood: ${input.mood}\n` : '';
-    const musicalCueLine = input.musicalCue ? `Pacing cue from the music: ${input.musicalCue}\n` : '';
-    const sceneContextLine = input.sceneNarrative
-      ? `Scene this clip is part of: ${input.sceneNarrative}\n`
+
+    // Trimmed prompt — image models choke on long instruction lists with
+    // multiple sections of rules. Earlier version was ~4300 chars; this
+    // is ~750. Keeps the absolute essentials: layout, subject context,
+    // ref discipline, the no-text rule. Drops "storyboard contract"
+    // bullets, redundant style instructions, 180° rule explanations,
+    // and the heavy panel-by-panel decision checklist — the model
+    // does this naturally if asked clearly.
+    const charactersLine = input.castNames.length
+      ? `Characters: ${input.castNames.join(', ')}`
+      : '';
+    const settingLine = input.environmentName
+      ? `Setting: ${input.environmentName}`
       : '';
 
-    return `Create a numbered cinematic storyboard for one Lahari devotional music-video clip.
+    return `${layout.count}-panel storyboard for one ${input.clipDuration}s shot of a Lahari devotional music video.
 
-Use a ${layout.rows}x${layout.cols} grid (${layout.count} panels) read left-to-right, top-to-bottom. Clean white background, thin white borders, generous spacing between and around every panel. Editorial minimalist storyboard layout, professional pitch-deck style.
+Layout: ${layout.rows}×${layout.cols} grid, panels read left-to-right then top-to-bottom. Identical 16:9 panels, thin white borders, white background.
 
-Song: ${input.title}
-Concept: ${input.concept}
-${moodLine}${musicalCueLine}${sceneContextLine}Shot description: ${input.clipDirection}
-Clip length: ${input.clipDuration}s
-Characters in this shot: ${input.castNames.length ? input.castNames.join(', ') : 'no recurring character'}
-Setting: ${input.environmentName || 'not specified'}
+Shot: ${input.clipDirection}
+${charactersLine}
+${settingLine}
 
-Reference images:
-- Style image — copy its lighting, colors, and art style.
-- Character images — match each character's face, body, and outfit.
-- Environment image — keep the same place and layout in every panel.
+Each panel is a different cinematic moment from this same ${input.clipDuration}s shot — different framings, angles, beats — telling one visual arc. Match the reference images for style, character identity, costume, and environment.
 
-You're directing this clip's visual edit. The scene gives you the wider moment this clip belongs to; the shot description is the specific moment you draw. For each panel, decide:
-
-- the framing (wide / medium / close / extreme close)
-- the camera angle (eye / low / high / overhead / over-shoulder)
-- whether the camera moves (static, push, pull, pan, tilt, rack-focus) or holds
-- where characters stand, where they look, what they do
-- which part of the environment is visible and how light falls
-- why this cut earns its place — new information, deeper emotion, or a beat hit
-- where in the ${input.clipDuration}s window this panel sits
-
-Across the panels, design a coherent arc: open (establish), build (deepen the moment), land (the strongest visual or emotional beat), resolve (a final image that releases the tension). Keep a stable spatial map — characters and key objects on consistent sides of the frame across cuts (the 180° rule).
-
-Storyboard contract:
-- Treat the board as one edited scene, not separate concept frames. Every panel must be a plausible frame from the same ${input.clipDuration}s clip.
-- Each panel is a true 16:9 cinematic film frame, all panels with identical width and height. Do not stretch, crop, stack vertically, or distort panels to fill the canvas.
-- Maintain 100% visual consistency across all panels: same art style, same lighting mood, same character designs, same color palette, same environment details, same costumes and jewelry.
-- Only the characters listed in "Characters in this shot" appear with identity in this clip. Other named characters mentioned elsewhere in the brief (concept or scene context) belong to the broader scene, not this clip — don't draw them. Anonymous background figures the shot description itself calls for (crowds of devotees, villagers, distant sages, temple staff) are fine; keep them out of the foreground unless the shot calls for it.
-- Use only culturally authentic objects, gestures, and elements that belong to the shot, the references, and the devotional Bhakti context.
-- Every panel must show visible action, a clear camera angle, and a step in the emotional progression — not a static repeat of the previous panel.
-- Mark each panel with a small clean panel number only — just the digit ("1", "2", "3"…) in a corner. Do not write descriptions, captions, arrows, subtitles, speech bubbles, logos, watermarks, or any other readable text inside the panels. Panel descriptions live outside the image, in the shot progression below.
-
-Style and quality:
-- Live-action cinematic realism, high-end Indian devotional film quality.
-- Sharp focus, natural skin and fabric detail, real-world materials, physically accurate lighting.
-- Spiritually uplifting, emotionally moving, serene yet vibrant Bhakti devotional atmosphere.
-- Ultra-high resolution, subtle film grain, masterpiece quality.
-
-Then, outside the image, return a concise shot progression in plain text using this exact shape. Use exactly the same number of panels as the image:
-
-Shot progression:
-Panel 1 [MM:SS-MM:SS] - camera: <shot type and any movement>; action: <what happens visibly in this panel>; motion cue: <the specific camera move or beat the video model should preserve, e.g. "slow push-in over 3s" or "rack focus on a chime hit">
-Panel 2 [MM:SS-MM:SS] - camera: ...; action: ...; motion cue: ...
-(repeat for every panel actually drawn)
-
-Continuity notes: one short sentence naming the spatial map and screen direction you preserved.`;
+No text, captions, arrows, panel numbers, or readable marks inside any panel. The board itself is what we use; descriptions live outside the image.`;
   }
 
   const panelSpec = variant === 'six_panel_music_video'
@@ -314,38 +283,24 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
     ? refs.map((ref, idx) => `- @image${idx + 2} = ${ref.label} — identity anchor only`).join('\n')
     : '- @image2..N = locked style, character, and environment refs — identity anchors only';
   const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
-  const layout = panelLayout(input.clipDuration);
   const lipsyncInstruction = opts?.lipsyncEnabled
-    ? `
-Audio reference:
-- audio 1 is the exact song segment for this clip. Use it only as a visual timing and lip-sync reference; do not generate or preserve audio.
-- If a singing or chanting face is clearly visible in the storyboard progression, add subtle mouth movement aligned to audio 1's vocal phrasing.
-- If the face is turned away, too small, obscured, or the passage is instrumental, keep the mouth natural and still. Do not invent dialogue or exaggerated mouth shapes.
-`
+    ? `\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural.`
     : '';
 
-  return `Animate this ${layout.rows}×${layout.cols} storyboard grid into one cohesive ${input.clipDuration}s music-video clip. Follow @image1's panels left-to-right across each row, then continue to the next row.
+  // Trimmed video prompt. The image model handles composition; this prompt
+  // exists to (1) say "follow @image1," (2) name the shot in one line, and
+  // (3) lock identity to refs. Everything else (animation contract, cut
+  // sequencing rules, 24fps quality boilerplate) confused Seedance more
+  // than it helped — the model's defaults are already fine for the music-
+  // video format. Was ~80 lines; now ~10.
+  return `Animate the storyboard @image1 into one ${input.clipDuration}s cinematic clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
 
-@image1 is the source of truth for composition, blocking, screen direction, cut order, and camera progression. Do not render text, panel numbers, borders, gutters, or split-screen artifacts from the board into the video.
+Shot: ${input.clipDirection}
 
-Reference bindings:
-- @image1 = the locked storyboard grid
-${refBindings}
-${lipsyncInstruction}
+${refBindings ? `Identity refs (do not redesign):\n${refBindings}` : ''}
+${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}
 
-${clipContext(input)}
-
-Locked shot progression (motion and cut guide):
-${cutPlan}
-
-Animation contract:
-- Camera movement: simple and physically plausible — pushes, pulls, pans, tilts, rack-focus. No impossible swings or vertigo zooms unless the shot progression names them.
-- Preserve character identity (face, body, costume, jewelry) and environment geometry across cuts to match the references.
-- The storyboard composes; the references only anchor identity. Render only objects called for by the storyboard or the shot progression text.
-- Soft slow-motion feel on emotional, singing, and dancing moments.
-- Do not generate audio; the song is mixed separately.
-
-Generate one cohesive ${input.clipDuration}s edited clip with smooth cinematic camera movement. 24fps, masterpiece quality.`;
+Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`;
 };
 
 export const buildPromptPack = (input: StoryboardRdInput): string => {
