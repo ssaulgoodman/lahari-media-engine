@@ -50,10 +50,21 @@ const Timeline: React.FC = () => {
       onScroll: (v: { scrollLeft: number; scrollTop: number }) => setScrollLeft(v.scrollLeft),
     });
 
+    // Wires up the canvas-library's wheel handler + visible scrollbar. Without
+    // this call the timeline has no horizontal scroll — zoom in past the
+    // viewport and you can't reach the offscreen content.
+    canvas.initScrollbars({
+      scrollbarWidth: 8,
+      scrollbarColor: 'rgba(161,161,170,0.45)',
+      extraMarginX: 200,
+      extraMarginY: 0,
+    });
+
     canvasRef.current = canvas;
     setTimeline(canvas);
 
     return () => {
+      canvas.disposeScrollbars?.();
       canvas.purge();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
