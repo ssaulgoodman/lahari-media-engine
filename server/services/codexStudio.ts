@@ -6,6 +6,7 @@ import type { getFullProject } from '../routes/projects.js';
 import { planScenes, refineScript, writeShotPrompts } from './claude.js';
 import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
 import { generateShotVideo } from './videoGeneration.js';
+import { listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
 import { getModelMinDuration } from './segmind.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
@@ -1016,7 +1017,42 @@ const journalEntry = (title: string, body: string): string => {
   return `\n\n## ${new Date().toISOString()} — ${title}\n\n${body.trim()}\n`;
 };
 
-const sessionState = (project: Project, note?: string | null) => {
+const readSessionEventCursor = (projectId: string): string | null => {
+  try {
+    const raw = fs.readFileSync(sessionStatePath(projectId), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed?.directorEvents?.lastSyncedAt || null;
+  } catch {
+    return null;
+  }
+};
+
+const formatDirectorEvents = (events: DirectorEvent[]): string => {
+  if (!events.length) return '- No web studio or Codex apply events since the last attach.';
+  return events.map((event) => {
+    const target = event.entity_type && event.entity_id ? ` (${event.entity_type}:${event.entity_id})` : '';
+    return `- ${event.created_at} [${event.source}/${event.event_type}]${target} ${event.summary}`;
+  }).join('\n');
+};
+
+const eventSyncSummary = (events: DirectorEvent[], previousCursor: string | null = null) => {
+  const last = events[events.length - 1] || null;
+  return {
+    newEvents: events.length,
+    lastSyncedAt: last?.created_at || previousCursor,
+    recentEvents: events.slice(-10).map((event) => ({
+      id: event.id,
+      createdAt: event.created_at,
+      source: event.source,
+      eventType: event.event_type,
+      entityType: event.entity_type,
+      entityId: event.entity_id,
+      summary: event.summary,
+    })),
+  };
+};
+
+const sessionState = (project: Project, note?: string | null, directorEvents = eventSyncSummary([], null)) => {
   const checkpoint = deriveCheckpointState(project);
   const diagnosis = deriveDirectorDiagnosis(project);
   return {
@@ -1036,6 +1072,7 @@ const sessionState = (project: Project, note?: string | null) => {
     },
     checkpoint,
     diagnosis,
+    directorEvents,
     note: note || null,
     files: {
       state: sessionStatePath(project.id),
@@ -1057,8 +1094,9 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   const dir = sessionDir(project.id);
   fs.mkdirSync(dir, { recursive: true });
 
-  const state = sessionState(project, note);
-  fs.writeFileSync(sessionStatePath(project.id), `${JSON.stringify(state, null, 2)}\n`);
+  const previousEventCursor = readSessionEventCursor(project.id);
+  const newEvents = await listDirectorEvents(project.id, { after: previousEventCursor, limit: 100 });
+  const state = sessionState(project, note, eventSyncSummary(newEvents, previousEventCursor));
   const workbench = await hydrateProjectWorkbench(project);
 
   const journalPath = sessionJournalPath(project.id);
@@ -1073,8 +1111,10 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
     ? state.checkpoint.openIssues.map((issue) => `- ${issue}`).join('\n')
     : '- No open issues from deterministic checks.';
   const noteBlock = note ? `\n\nOperator note: ${note}` : '';
+  const eventBlock = `\n\nChanges since last attach:\n${formatDirectorEvents(newEvents)}`;
 
-  fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}\n\nBottleneck: ${state.diagnosis.bottleneck}\nNext approved action: ${state.diagnosis.nextApprovedAction}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
+  fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}${eventBlock}\n\nBottleneck: ${state.diagnosis.bottleneck}\nNext approved action: ${state.diagnosis.nextApprovedAction}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
+  fs.writeFileSync(sessionStatePath(project.id), `${JSON.stringify(state, null, 2)}\n`);
 
   return {
     kind: 'lahari.director.session.attached',
@@ -1089,6 +1129,7 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
     workbenchArtifacts: workbench.artifacts,
     checkpoint: state.checkpoint,
     diagnosis: state.diagnosis,
+    directorEvents: state.directorEvents,
     sourceOfTruth: 'Supabase is canonical; .lahari files are local Codex desk copies.',
   };
 };
@@ -1487,6 +1528,21 @@ export const applyRewriteShotPromptsPreview = async (previewJsonPath: string, pr
     fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('applied shot prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShots updated: ${preview.shots.length}\nChanged shots: ${changed.length}\n\nNo frames, videos, assets, or locks were changed.`));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'shot_prompts_preview_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Applied shot prompt preview ${preview.previewId}; ${preview.shots.length} shots updated, ${changed.length} changed.`,
+    payload: {
+      previewId: preview.previewId,
+      previewJsonPath: path.resolve(previewJsonPath),
+      shotsUpdated: preview.shots.length,
+      changedShots: changed.length,
+      changedShotIds: changed.map((shot) => shot.id),
+    },
+  });
 
   return {
     kind: 'lahari.apply.rewrite_shot_prompts',
@@ -1700,6 +1756,21 @@ export const applyRewriteStoryboardPromptPreview = async (previewJsonPath: strin
     fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('applied storyboard prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShot updated: ${preview.shot.id}\n\nExisting storyboard/video outputs were marked stale for review when present. No assets or locks were changed.`));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_prompt_preview_applied',
+    entityType: 'shot',
+    entityId: preview.shot.id,
+    summary: `Applied storyboard prompt preview ${preview.previewId} for ${shotLabel(preview.shot.sceneIndex - 1, preview.shot.shotIndex - 1)}.`,
+    payload: {
+      previewId: preview.previewId,
+      previewJsonPath: path.resolve(previewJsonPath),
+      shotId: preview.shot.id,
+      markedStoryboardStale: !!current?.storyboardUrl,
+      markedVideoStale: !!current?.videoUrl,
+    },
+  });
 
   return {
     kind: 'lahari.apply.rewrite_storyboard_prompt',
@@ -1857,6 +1928,20 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     shotId,
     artistNote,
   });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_generated',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex generated a storyboard board for ${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}.`,
+    payload: {
+      artistNote: artistNote || null,
+      provider: plan.provider,
+      estimatedCost: plan.estimatedCost,
+      result,
+    },
+  });
 
   return {
     kind: 'lahari.generation_result.storyboard',
@@ -1882,6 +1967,21 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
   }
 
   const result = await generateShotVideo(project.id, shotId, { promptOverride });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'video_generated',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex generated a video for ${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}.`,
+    payload: {
+      promptOverride: promptOverride || null,
+      mode: plan.mode,
+      model: plan.model,
+      estimatedCost: plan.estimatedCost,
+      result,
+    },
+  });
 
   return {
     kind: 'lahari.generation_result.video',
@@ -2592,6 +2692,21 @@ export const applyRewriteScriptPreview = async (previewJsonPath: string, project
     fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('applied script preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nMode: ${preview.mode}\nScenes: ${preview.afterCounts.scenes}\nShots: ${preview.afterCounts.shots}\n\nNo assets, frames, videos, or locks existed at apply time.`));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'script_preview_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Applied script preview ${preview.previewId}; wrote ${preview.afterCounts.scenes} scenes and ${preview.afterCounts.shots} shots.`,
+    payload: {
+      previewId: preview.previewId,
+      previewJsonPath: path.resolve(previewJsonPath),
+      mode: preview.mode,
+      scenesWritten: preview.afterCounts.scenes,
+      shotsWritten: preview.afterCounts.shots,
+    },
+  });
 
   return {
     kind: 'lahari.apply.rewrite_script',

@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { selectOne, updateRows } from '../database.js';
 import { generateShotVideo } from '../services/videoGeneration.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
 
@@ -40,6 +41,16 @@ export const mountVideoRoutes = (router: Router) => {
       extracted_last_frame_asset_id: framePair,
       video_status: 'success', last_error: null,
     });
+    await recordDirectorEvent({
+      projectId: paramStr(req.params.id),
+      userId: req.userId,
+      source: 'web',
+      eventType: 'shot_video_reverted',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist restored a previous video version.',
+      payload: { assetId, extractedLastFrameAssetId: framePair },
+    });
 
     res.json(await getFullProject(paramStr(req.params.id)));
   });
@@ -48,11 +59,27 @@ export const mountVideoRoutes = (router: Router) => {
 
   router.post('/:id/shots/:shotId/generate-video', async (req, res) => {
     try {
-      await generateShotVideo(paramStr(req.params.id), paramStr(req.params.shotId), {
+      const projectId = paramStr(req.params.id);
+      const shotId = paramStr(req.params.shotId);
+      const result = await generateShotVideo(projectId, shotId, {
         promptOverride: req.body?.promptOverride,
         refs: req.body?.refs,
       });
-      res.json(await getFullProject(paramStr(req.params.id)));
+      await recordDirectorEvent({
+        projectId,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'video_generated',
+        entityType: 'shot',
+        entityId: shotId,
+        summary: 'Artist generated a shot video in the web studio.',
+        payload: {
+          promptOverride: req.body?.promptOverride || null,
+          refs: req.body?.refs || null,
+          result,
+        },
+      });
+      res.json(await getFullProject(projectId));
     } catch (err: any) {
       res.status(err.statusCode || 500).json({ error: err.message });
     }

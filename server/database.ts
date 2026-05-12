@@ -29,6 +29,7 @@ const T = {
   environments: 'lahari_environments',
   assets: 'lahari_assets',
   storyboard_versions: 'lahari_storyboard_versions',
+  director_events: 'lahari_director_events',
   chat_messages: 'lahari_chat_messages',
   ai_calls: 'lahari_ai_calls',
   renders: 'lahari_renders',

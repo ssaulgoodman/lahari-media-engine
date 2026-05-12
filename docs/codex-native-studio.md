@@ -336,6 +336,10 @@ Director sessions are local working memory under `.lahari/sessions/<projectId>/`
 
 The state file is not the source of truth for the project. Supabase remains truth; the session files preserve production context, open questions, and decisions for a long-lived Codex thread.
 
+Artist and operator decisions that need to survive across Codex sessions live in `lahari_director_events`. Web studio mutations and Codex apply tools write compact events for locks, unlocks, prompt edits, clears, reverts, generation, and preview applies. `attach_director_session` reads events newer than the last session cursor and writes a "Changes since last attach" block into the local journal.
+
+Realtime sync uses three lanes over Supabase Realtime: `postgres_changes` for persisted project row changes, broadcast channels for ephemeral progress like "Codex is generating shot 4", and optional presence for "Codex is attached." Broadcast/presence are not memory; the durable event table is.
+
 Web studio deep links use query parameters such as `?project=<id>&step=studio&shot=<shotId>&action=review-video`. The web app opens the requested project/step and focuses the shot's scene when possible. These links are the visual approval surface for paid generation, lock/reject review, and shot-level decisions.
 
 Preview artifacts live under `.lahari/previews/<projectId>/`. The first preview action is `rewrite-shot-prompts`: it calls the real shot prompt writer, writes before/after Markdown + JSON + runtime prompt artifacts, and does not mutate Supabase. It is still a paid AI call, so Codex should ask before running it when operating autonomously.

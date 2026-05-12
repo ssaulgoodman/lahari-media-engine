@@ -16,6 +16,7 @@ import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -322,6 +323,19 @@ router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
       artistNote: req.body?.feedback || req.body?.artistNote,
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
     });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_prompt_written',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist wrote or rewrote the storyboard prompt in the web studio.',
+      payload: {
+        artistNote: req.body?.feedback || req.body?.artistNote || null,
+        variant: req.body?.variant || 'adaptive_numbered_storyboard',
+      },
+    });
     res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard prompt write failed:`, err);
@@ -338,6 +352,16 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
       projectId,
       shotId,
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
+    });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_generated',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist generated a storyboard board in the web studio.',
+      payload: { variant: req.body?.variant || 'adaptive_numbered_storyboard', result },
     });
     res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
   } catch (err: any) {
@@ -378,6 +402,23 @@ router.post('/:id/shots/:shotId/refine-storyboard', upload.single('referenceImag
         variant: req.body?.variant || 'adaptive_numbered_storyboard',
         artistReferenceImagePath,
       });
+      await recordDirectorEvent({
+        projectId,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'storyboard_refined',
+        entityType: 'shot',
+        entityId: shotId,
+        summary: 'Artist refined the storyboard image in the web studio.',
+        payload: {
+          feedback,
+          refineMode,
+          previousVersionId: req.body?.previousVersionId || null,
+          variant: req.body?.variant || 'adaptive_numbered_storyboard',
+          artistReferenceImagePath: artistReferenceImagePath || null,
+          result,
+        },
+      });
       res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
       return;
     }
@@ -388,6 +429,20 @@ router.post('/:id/shots/:shotId/refine-storyboard', upload.single('referenceImag
       artistNote: feedback,
       variant: req.body?.variant || 'adaptive_numbered_storyboard',
       artistReferenceImagePath,
+    });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_prompt_refined',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist refined the storyboard prompt in the web studio.',
+      payload: {
+        feedback,
+        variant: req.body?.variant || 'adaptive_numbered_storyboard',
+        artistReferenceImagePath: artistReferenceImagePath || null,
+      },
     });
     res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {
@@ -402,6 +457,16 @@ router.post('/:id/shots/:shotId/lock-storyboard', async (req, res) => {
 
   try {
     await lockStoryboardVersion(projectId, shotId, req.body?.versionId);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_locked',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist locked the active storyboard board.',
+      payload: { versionId: req.body?.versionId || null },
+    });
     res.json({ ok: true, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard lock failed:`, err);
@@ -415,6 +480,15 @@ router.post('/:id/shots/:shotId/unlock-storyboard', async (req, res) => {
 
   try {
     await unlockStoryboardVersion(projectId, shotId);
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_unlocked',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist unlocked the storyboard board for more work.',
+    });
     res.json({ ok: true, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard unlock failed:`, err);
@@ -815,8 +889,18 @@ router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceIm
 
 // Clear end frame — removes the lastFrame constraint, video generates freely
 router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { end_image_asset_id: null, end_image_status: 'idle', video_status: 'stale' });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_end_frame_cleared',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: 'Artist cleared the active end frame; video was marked stale.',
+  });
   res.json({ ok: true });
 });
 
@@ -844,8 +928,18 @@ router.post('/:id/shots/:shotId/cancel-video', async (req, res) => {
 
 // Clear extracted last frame — removes the ffmpeg-extracted frame from a previous video gen
 router.post('/:id/shots/:shotId/clear-extracted-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { extracted_last_frame_asset_id: null });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_extracted_frame_cleared',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: 'Artist cleared the extracted last-frame continuity reference.',
+  });
   res.json({ ok: true });
 });
 
@@ -893,6 +987,7 @@ router.post('/:id/shots/:shotId/delete-ref', async (req, res) => {
 // ─── Lock Shot ───────────────────────────────────────────────────────
 
 router.post('/:id/shots/:shotId/lock', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
   const hasFrameSource = !!shot.image_asset_id || (!!shot.storyboard_locked && !!shot.storyboard_asset_id);
@@ -900,20 +995,40 @@ router.post('/:id/shots/:shotId/lock', async (req, res) => {
   if (!shot.video_asset_id) return res.status(400).json({ error: 'Video must be generated before locking' });
 
   await updateRows('shots', { id: shot.id }, { locked: 1 });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_locked',
+    entityType: 'shot',
+    entityId: shot.id,
+    summary: 'Artist locked the shot.',
+  });
   res.json({ ok: true });
 });
 
 router.post('/:id/shots/:shotId/unlock', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shot = await selectOne('shots', { id: paramStr(req.params.shotId) });
   if (!shot) return res.status(404).json({ error: 'Shot not found' });
 
   await updateRows('shots', { id: shot.id }, { locked: 0 });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_unlocked',
+    entityType: 'shot',
+    entityId: shot.id,
+    summary: 'Artist unlocked the shot for more work.',
+  });
   res.json({ ok: true });
 });
 
 // ─── Batch lock/unlock all shots in a scene ────────────────────────
 
 router.post('/:id/scenes/:sceneId/lock-all', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const sceneId = paramStr(req.params.sceneId);
   const shots = await selectAll('shots', { scene_id: sceneId });
   // Only lock shots that have video plus either a start frame or a locked storyboard.
@@ -923,12 +1038,32 @@ router.post('/:id/scenes/:sceneId/lock-all', async (req, res) => {
   for (const shot of lockable) {
     await updateRows('shots', { id: shot.id }, { locked: 1 });
   }
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'scene_shots_locked',
+    entityType: 'scene',
+    entityId: sceneId,
+    summary: `Artist locked ${lockable.length} lockable shots in the scene.`,
+    payload: { lockedShotIds: lockable.map((shot: any) => shot.id), skipped: shots.length - lockable.length },
+  });
   res.json({ ok: true, locked: lockable.length, skipped: shots.length - lockable.length });
 });
 
 router.post('/:id/scenes/:sceneId/unlock-all', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const sceneId = paramStr(req.params.sceneId);
   await getSB().from(T.shots).update({ locked: 0 }).eq('scene_id', sceneId);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'scene_shots_unlocked',
+    entityType: 'scene',
+    entityId: sceneId,
+    summary: 'Artist unlocked all shots in the scene.',
+  });
   res.json({ ok: true });
 });
 
@@ -969,6 +1104,7 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
 });
 
 router.post('/:id/shots/:shotId/revert-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const { assetId } = req.body || {};
   if (!assetId) return res.status(400).json({ error: 'assetId required' });
@@ -982,11 +1118,22 @@ router.post('/:id/shots/:shotId/revert-frame', async (req, res) => {
     image_asset_id: assetId,
     image_status: 'success', last_error: null,
   });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_frame_reverted',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: 'Artist restored a previous start-frame version.',
+    payload: { assetId },
+  });
 
   res.json({ ok: true });
 });
 
 router.post('/:id/shots/:shotId/revert-end-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const { assetId } = req.body || {};
   if (!assetId) return res.status(400).json({ error: 'assetId required' });
@@ -1000,6 +1147,16 @@ router.post('/:id/shots/:shotId/revert-end-frame', async (req, res) => {
     end_image_asset_id: assetId,
     end_image_status: 'success', last_error: null,
     video_status: 'stale',
+  });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_end_frame_reverted',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: 'Artist restored a previous end-frame version; video was marked stale.',
+    payload: { assetId },
   });
 
   res.json({ ok: true });

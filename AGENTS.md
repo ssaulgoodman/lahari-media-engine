@@ -105,6 +105,8 @@ Generated local artifacts live under `.lahari/` and are intentionally ignored:
 - `.lahari/sessions/<projectId>/` - `state.json` and `journal.md`
 - `.lahari/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
 
+Durable artist/operator decisions are written to Supabase `lahari_director_events`. `session attach` reads new events since the last attach and appends them into `.lahari/sessions/<projectId>/journal.md`. Realtime transport is separate: persisted row changes should use Supabase `postgres_changes`, ephemeral operation progress should use broadcast channels, and optional "Codex attached" affordances should use presence.
+
 Permission boundary:
 
 - Read-only inspection and local artifacts are safe to run.

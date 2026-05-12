@@ -20,6 +20,7 @@ import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
@@ -1325,6 +1326,7 @@ router.get('/:id/xray', async (req, res) => {
 // ─── Scene Updates ──────────────────────────────────────────────────
 
 router.patch('/:id/scenes/:sceneId', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const { narrativeDescription } = req.body;
   const sceneId = paramStr(req.params.sceneId);
   const updates: Record<string, any> = {};
@@ -1334,6 +1336,16 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
     // Scene narrative change → shots in this scene are stale
     if (narrativeDescription !== undefined) {
       await updateRows('shots', { scene_id: sceneId }, { prompts_stale: true });
+      await recordDirectorEvent({
+        projectId,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'scene_narrative_edited',
+        entityType: 'scene',
+        entityId: sceneId,
+        summary: 'Artist edited scene narrative; shot prompts in the scene were marked stale.',
+        payload: { narrativeDescription },
+      });
     }
   }
   res.json({ ok: true });
@@ -1344,51 +1356,74 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
 // Clear the start frame on a shot — keeps the video (if any) intact.
 // Also unlocks the shot since a locked shot requires a start frame + video.
 router.post('/:id/shots/:shotId/clear-frame', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   await updateRows('shots', { id: shotId }, { image_asset_id: null, image_status: 'idle', locked: 0 });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'shot_frame_cleared',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: 'Artist cleared the active start frame; the shot was unlocked.',
+  });
   res.json({ ok: true });
 });
 
 router.patch('/:id/shots/:shotId', async (req, res) => {
   const { direction, visualPrompt, motionPrompt, endVisualPrompt, useNextAsEndFrame, userFeedback, continuityFrom, lipsyncEnabled } = req.body;
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
+  const eventTypes: string[] = [];
 
   // Manual edits to the prompt invalidate the auto-refresh chip — it meant
   // "this text was written by the vision rewrite", not "this text is current".
   if (direction !== undefined) {
     await updateRows('shots', { id: shotId }, { direction, prompts_stale: true });
+    eventTypes.push('direction');
   }
   if (visualPrompt !== undefined) {
     await updateRows('shots', { id: shotId }, { visual_prompt: visualPrompt, refined_from_prev_frame: 0 });
+    eventTypes.push('visual_prompt');
   }
   if (motionPrompt !== undefined) {
     await updateRows('shots', { id: shotId }, { motion_prompt: motionPrompt, refined_from_prev_frame: 0 });
+    eventTypes.push('motion_prompt');
   }
   if (useNextAsEndFrame !== undefined) {
     await updateRows('shots', { id: shotId }, { use_next_as_end_frame: useNextAsEndFrame ? 1 : 0 });
+    eventTypes.push('use_next_as_end_frame');
   }
   if (lipsyncEnabled !== undefined) {
     await updateRows('shots', { id: shotId }, { lipsync_enabled: !!lipsyncEnabled });
+    eventTypes.push('lipsync_enabled');
   }
   if (userFeedback !== undefined) {
     await updateRows('shots', { id: shotId }, { user_feedback: userFeedback || null });
+    eventTypes.push('user_feedback');
   }
   if (endVisualPrompt !== undefined) {
     await updateRows('shots', { id: shotId }, { end_visual_prompt: endVisualPrompt || null });
+    eventTypes.push('end_visual_prompt');
   }
   if (continuityFrom !== undefined && (continuityFrom === 'cut' || continuityFrom === 'prev_shot')) {
     await updateRows('shots', { id: shotId }, { continuity_from: continuityFrom });
+    eventTypes.push('continuity_from');
   }
   const { castIds, environmentId } = req.body;
   if (castIds !== undefined) {
     await updateRows('shots', { id: shotId }, { cast_ids: JSON.stringify(castIds), prompts_stale: true });
+    eventTypes.push('cast_ids');
   }
   if (environmentId !== undefined) {
     await updateRows('shots', { id: shotId }, { environment_id: environmentId || null, prompts_stale: true });
+    eventTypes.push('environment_id');
   }
   const { duration } = req.body;
   if (duration !== undefined && typeof duration === 'number' && duration > 0) {
     await updateRows('shots', { id: shotId }, { duration, prompts_stale: true });
+    eventTypes.push('duration');
   }
 
   // Storyboard continuity flags — see migrations/2026-05-12_add_storyboard_continuity.sql.
@@ -1398,10 +1433,12 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   const { usePrevStoryboardRef, includePrevCutPlan } = req.body;
   if (usePrevStoryboardRef !== undefined) {
     await updateRows('shots', { id: shotId }, { use_prev_storyboard_ref: !!usePrevStoryboardRef });
+    eventTypes.push('use_prev_storyboard_ref');
   }
   if (includePrevCutPlan !== undefined) {
     const v = includePrevCutPlan === null ? null : !!includePrevCutPlan;
     await updateRows('shots', { id: shotId }, { include_prev_cut_plan: v });
+    eventTypes.push('include_prev_cut_plan');
   }
 
   // Per-step ref exclusion for storyboard mode. Payload shape:
@@ -1417,6 +1454,20 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
       video: sanitize(excludedRefs.video),
     };
     await updateRows('shots', { id: shotId }, { excluded_refs: JSON.stringify(payload) });
+    eventTypes.push('excluded_refs');
+  }
+
+  if (eventTypes.length) {
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'shot_fields_edited',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: `Artist edited shot fields: ${eventTypes.join(', ')}.`,
+      payload: { fields: eventTypes, body: req.body },
+    });
   }
 
   res.json({ ok: true });
