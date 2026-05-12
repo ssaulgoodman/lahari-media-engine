@@ -4,6 +4,7 @@ import { selectAll, selectColumns, updateRows } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { writeShotPrompts } from './claude.js';
 import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
+import { generateShotVideo } from './videoGeneration.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
@@ -1821,5 +1822,30 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     },
     result,
     note: 'Generated storyboard board, updated the active storyboard pointer, unlocked the board for review, and marked video stale.',
+  };
+};
+
+export const applyGenerateVideo = async (project: Project, shotId: string, promptOverride?: string) => {
+  const plan = planGenerateVideo(project, shotId);
+  if (!plan.canRun) {
+    throw new Error(`Cannot generate video: ${plan.prerequisites.join(' ')}`);
+  }
+
+  const result = await generateShotVideo(project.id, shotId, { promptOverride });
+
+  return {
+    kind: 'lahari.generation_result.video',
+    generatedAt: new Date().toISOString(),
+    project: plan.project,
+    shot: plan.shot,
+    mode: plan.mode,
+    model: plan.model,
+    estimatedCost: plan.estimatedCost,
+    appliedPlan: {
+      willOverwrite: plan.willOverwrite,
+      willChange: plan.willChange,
+    },
+    result,
+    note: 'Generated shot video, updated the active video pointer, and attempted last-frame extraction.',
   };
 };

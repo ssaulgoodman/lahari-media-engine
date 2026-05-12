@@ -28,6 +28,7 @@ Usage:
   npm run lahari -- apply rewrite-shot-prompts <preview.json>
   npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
+  npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 
 Output:
   JSON packets and local review artifacts designed for Codex inspection and future MCP wrapping.
@@ -57,7 +58,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'generate-storyboard');
+  const wantsWrite = domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'generate-storyboard' || action === 'generate-video');
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
@@ -187,6 +188,13 @@ const main = async () => {
     const project = await studio.getFullProject(projectId);
     const note = rest.filter(Boolean).join(' ') || undefined;
     console.log(JSON.stringify(await studio.applyGenerateStoryboard(project, arg4, note), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'generate-video' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const promptOverride = rest.filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.applyGenerateVideo(project, arg4, promptOverride), null, 2));
     return;
   }
 

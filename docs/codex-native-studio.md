@@ -256,6 +256,7 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- apply rewrite-shot-prompts <preview.json>`
 - CLI: `npm run lahari -- apply rewrite-storyboard-prompt <preview.json>`
 - CLI: `npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]`
+- CLI: `npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]`
 - MCP: `npm run lahari:mcp`
 
 The MCP server currently exposes read-only/local-output tools plus explicit mutating apply tools:
@@ -277,6 +278,7 @@ The MCP server currently exposes read-only/local-output tools plus explicit muta
 - `apply_shot_prompt_preview`
 - `apply_storyboard_prompt_preview`
 - `apply_generate_storyboard`
+- `apply_generate_video`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
 

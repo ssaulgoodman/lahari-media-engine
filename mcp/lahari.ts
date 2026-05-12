@@ -295,6 +295,24 @@ server.registerTool('apply_generate_storyboard', {
   return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
 });
 
+server.registerTool('apply_generate_video', {
+  title: 'Generate shot video',
+  description: 'Mutating and paid. Generates a new video for one shot after validating prerequisites. Updates the active video pointer and attempts last-frame extraction.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    promptOverride: z.string().optional().describe('Optional prompt override for keyframe-mode video generation.'),
+  },
+}, async ({ projectId, shotId, promptOverride }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_generate_video.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyGenerateVideo(project, shotId, promptOverride));
+});
+
 async function main() {
   const env = await prepareCodexReadEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
