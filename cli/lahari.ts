@@ -21,6 +21,8 @@ Usage:
   npm run lahari -- session journal <projectId>
   npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
   npm run lahari -- preview rewrite-storyboard-prompt <projectId> <shotId> [note...]
+  npm run lahari -- plan generate-storyboard <projectId> <shotId>
+  npm run lahari -- plan generate-video <projectId> <shotId>
   npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>
   npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>
   npm run lahari -- apply rewrite-shot-prompts <preview.json>
@@ -137,6 +139,18 @@ const main = async () => {
     const project = await studio.getFullProject(projectId);
     const note = rest.filter(Boolean).join(' ') || undefined;
     console.log(JSON.stringify(await studio.previewRewriteStoryboardPrompt(project, arg4, note), null, 2));
+    return;
+  }
+
+  if (domain === 'plan' && action === 'generate-storyboard' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.planGenerateStoryboard(project, arg4), null, 2));
+    return;
+  }
+
+  if (domain === 'plan' && action === 'generate-video' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.planGenerateVideo(project, arg4), null, 2));
     return;
   }
 

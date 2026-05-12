@@ -191,6 +191,32 @@ server.registerTool('preview_rewrite_storyboard_prompt', {
   return textResult(await studio.previewRewriteStoryboardPrompt(project, shotId, note));
 });
 
+server.registerTool('plan_generate_storyboard', {
+  title: 'Plan storyboard generation',
+  description: 'Read-only. Reports prerequisites, estimated cost, state changes, and approval wording before generating a storyboard board.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+  },
+}, async ({ projectId, shotId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.planGenerateStoryboard(project, shotId));
+});
+
+server.registerTool('plan_generate_video', {
+  title: 'Plan video generation',
+  description: 'Read-only. Reports prerequisites, estimated cost, state changes, and approval wording before generating a shot video.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+  },
+}, async ({ projectId, shotId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.planGenerateVideo(project, shotId));
+});
+
 server.registerTool('plan_apply_shot_prompt_preview', {
   title: 'Plan applying shot prompt preview',
   description: 'Read-only. Validates a saved shot prompt preview and reports the exact mutation blast radius before apply.',

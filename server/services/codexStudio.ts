@@ -5,9 +5,9 @@ import type { getFullProject } from '../routes/projects.js';
 import { writeShotPrompts } from './claude.js';
 import { planStoryboardPrompt } from './storyboard.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
-import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
-import { VIDEO_MODELS } from '../../constants/videoModels.js';
+import { getVideoModel, VIDEO_MODELS } from '../../constants/videoModels.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
 type ProjectShot = Project['scenes'][number]['shots'][number];
@@ -1660,5 +1660,138 @@ export const applyRewriteStoryboardPromptPreview = async (previewJsonPath: strin
     shotId: preview.shot.id,
     journalPath,
     note: 'Applied preview to Supabase. Updated storyboard prompt/cut plan, cleared prompt stale state, and marked existing storyboard/video outputs stale.',
+  };
+};
+
+const findProjectShot = (project: Project, shotId: string): { shot: ProjectShot; sceneIndex: number; shotIndex: number } | null => {
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    const shotIndex = scene.shots.findIndex((shot) => shot.id === shotId);
+    if (shotIndex >= 0) return { shot: scene.shots[shotIndex], sceneIndex: sceneIndex + 1, shotIndex: shotIndex + 1 };
+  }
+  return null;
+};
+
+const roundCost = (cost: number): number => Number(cost.toFixed(3));
+
+export const planGenerateStoryboard = (project: Project, shotId: string) => {
+  const target = findProjectShot(project, shotId);
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+  const provider = getStoryboardProvider(project.storyboardProvider);
+  const shot = target.shot;
+  const prerequisites = [
+    shot.storyboardPrompt ? null : 'Saved storyboard_prompt is required.',
+    shot.locked ? 'Shot is locked; unlock before generating a new storyboard board.' : null,
+  ].filter(Boolean) as string[];
+  const willOverwrite = !!shot.storyboardUrl;
+  const willChange = [
+    'Create a new shot_storyboard asset and storyboard_versions row.',
+    'Set this shot storyboard_asset_id/storyboard_version_id to the new board.',
+    'Set storyboard_status=success and storyboard_locked=false.',
+    'Set video_status=stale so video is reviewed/regenerated against the new board.',
+    willOverwrite ? 'Replace the active storyboard pointer; old board remains in version history.' : null,
+  ].filter(Boolean) as string[];
+  const costEstimate = roundCost(provider.provider === 'segmind'
+    ? Number(process.env.SEGMIND_STORYBOARD_RENDER_COST_ESTIMATE || 0.03)
+    : provider.provider === 'google'
+    ? Number(process.env.GEMINI_STORYBOARD_RENDER_COST_ESTIMATE || 0.04)
+    : Number(process.env.OPENAI_STORYBOARD_RENDER_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0.12));
+
+  return {
+    kind: 'lahari.generation_plan.storyboard',
+    generatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+      storyboardProvider: project.storyboardProvider,
+      aspectRatio: project.aspectRatio,
+    },
+    shot: {
+      id: shot.id,
+      sceneIndex: target.sceneIndex,
+      shotIndex: target.shotIndex,
+      beat: compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 260),
+      hasStoryboardPrompt: !!shot.storyboardPrompt,
+      hasStoryboard: !!shot.storyboardUrl,
+      storyboardLocked: !!shot.storyboardLocked,
+      videoStatus: shot.videoStatus,
+    },
+    provider: {
+      key: provider.key,
+      model: provider.runtimeModel,
+      provider: provider.provider,
+    },
+    paid: true,
+    estimatedCost: costEstimate,
+    canRun: prerequisites.length === 0,
+    prerequisites,
+    willOverwrite,
+    willChange,
+    approval: `Generate a new storyboard board for ${project.title} ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)} using ${provider.label}. Estimated cost: $${costEstimate.toFixed(3)}. ${willOverwrite ? 'This will replace the active board pointer and keep the old board in history.' : 'This will create the first active board for this shot.'}`,
+  };
+};
+
+export const planGenerateVideo = (project: Project, shotId: string) => {
+  const target = findProjectShot(project, shotId);
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+  const shot = target.shot;
+  const model = getVideoModel(project.videoModel);
+  const storyboardMode = model.key.startsWith('seedance') && !!shot.storyboardLocked && !!shot.storyboardUrl;
+  const prerequisites = [
+    storyboardMode || shot.imageUrl ? null : model.key.startsWith('seedance')
+      ? 'Locked storyboard board or start frame is required.'
+      : 'Start frame is required.',
+    model.key.startsWith('seedance') && shot.storyboardUrl && !shot.storyboardLocked ? 'Storyboard board exists but is not locked.' : null,
+    shot.locked ? 'Shot is locked; unlock before regenerating video.' : null,
+  ].filter(Boolean) as string[];
+  const duration = Number(shot.duration || model.durations[0] || 5);
+  const estimatedCost = roundCost(duration * model.costPerSec);
+  const willOverwrite = !!shot.videoUrl;
+  const willChange = [
+    'Create a new shot_video asset.',
+    'Set this shot video_asset_id to the new video.',
+    'Attempt to extract and store the real last frame.',
+    'Set video_status=success on completion.',
+    storyboardMode ? 'Use locked storyboard board as the primary Seedance reference.' : 'Use start keyframe as the primary video reference.',
+    willOverwrite ? 'Replace the active video pointer; old video remains in asset history.' : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    kind: 'lahari.generation_plan.video',
+    generatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+      videoModel: project.videoModel,
+      aspectRatio: project.aspectRatio,
+      videoResolution: project.videoResolution,
+    },
+    shot: {
+      id: shot.id,
+      sceneIndex: target.sceneIndex,
+      shotIndex: target.shotIndex,
+      beat: compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 260),
+      duration,
+      hasStartFrame: !!shot.imageUrl,
+      hasStoryboard: !!shot.storyboardUrl,
+      storyboardLocked: !!shot.storyboardLocked,
+      hasVideo: !!shot.videoUrl,
+      locked: !!shot.locked,
+      videoStatus: shot.videoStatus,
+    },
+    mode: storyboardMode ? 'storyboard' : 'keyframe',
+    model: {
+      key: model.key,
+      label: model.label,
+      costPerSec: model.costPerSec,
+      supportsRefs: model.supportsRefs,
+      supportsLastFrame: model.supportsLastFrame,
+    },
+    paid: true,
+    estimatedCost,
+    canRun: prerequisites.length === 0,
+    prerequisites,
+    willOverwrite,
+    willChange,
+    approval: `Generate a ${duration}s ${model.label} video for ${project.title} ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)} in ${storyboardMode ? 'storyboard' : 'keyframe'} mode. Estimated cost: $${estimatedCost.toFixed(3)}. ${willOverwrite ? 'This will replace the active video pointer and keep the old video in history.' : 'This will create the first active video for this shot.'}`,
   };
 };

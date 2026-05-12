@@ -249,6 +249,8 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- session journal <projectId>`
 - CLI: `npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]`
 - CLI: `npm run lahari -- preview rewrite-storyboard-prompt <projectId> <shotId> [note...]`
+- CLI: `npm run lahari -- plan generate-storyboard <projectId> <shotId>`
+- CLI: `npm run lahari -- plan generate-video <projectId> <shotId>`
 - CLI: `npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>`
 - CLI: `npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>`
 - CLI: `npm run lahari -- apply rewrite-shot-prompts <preview.json>`
@@ -267,6 +269,8 @@ The MCP server currently exposes read-only/local-output tools plus one explicit 
 - `add_director_note`
 - `preview_rewrite_shot_prompts`
 - `preview_rewrite_storyboard_prompt`
+- `plan_generate_storyboard`
+- `plan_generate_video`
 - `plan_apply_shot_prompt_preview`
 - `plan_apply_storyboard_prompt_preview`
 - `apply_shot_prompt_preview`
