@@ -14,11 +14,12 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 ```
 
 **Env vars required:**
-- `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts) and Gemini 3 Pro audio/vision (gemini.ts). **Not used by Veo anymore** — that migrated to Vertex AI.
+- `GEMINI_API_KEY` — Turiya Tier-2 key. Used for Gemini 3 Pro Image (imagen.ts), Gemini 3 Pro audio/vision (gemini.ts), AND Gemini 3 Pro text (when artist picks Gemini in the text-provider picker — see "Text provider routing" below).
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` — Seedance storyboard generation runs as a **two-step pipeline**: a cheap text planner writes the storyboard prompt + cut plan (default `gpt-5.5`, override via `OPENAI_STORYBOARD_PLANNER_MODEL`), then the image renderer renders the board itself. Image step is configurable per-project via `project.storyboard_provider` — `gpt-image-2` (OpenAI) or `nano-banana-2` (Segmind). Also used by the optional GPT script-writer experiment.
-- `SCRIPT_WRITER_PROVIDER=openai` (optional) — routes `generate-script` to GPT-5.5 instead of Claude Opus for testing more practical, less literary scripts. Defaults to Claude. `OPENAI_SCRIPT_MODEL` can override the model id.
+- `OPENAI_API_KEY` — used by: GPT-5.5 text-provider option (concept, style, refines, storyboard prompt), Seedance storyboard image renderer when `gpt-image-2` is the provider, and the optional GPT script-writer experiment.
+- `SCRIPT_WRITER_PROVIDER=openai` (optional) — opt-in switch for `generate-script` only. The text-provider picker explicitly does NOT route script-writing (uses Anthropic extended thinking + a validation loop that doesn't port cleanly). Set this env to force GPT-5.5 for script gen globally. `OPENAI_SCRIPT_MODEL` overrides the model id.
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
+- `RENDER_ENGINE` (optional, defaults `ffmpeg`) — engine selection on the Modal renderer. `ffmpeg` (default) uses the fast FFmpeg concat path for eligible timelines (no transitions, no visual effects, all standard cuts) and falls back to Remotion for the rest. `remotion` forces Remotion for everything. See `remotion-renderer/src/ffmpeg-render.ts` → `canRenderWithFfmpeg`. `FFMPEG_PRESET` (default `veryfast`), `FFMPEG_CRF` (default `26`), `FFMPEG_AUDIO_BITRATE` (default `192k`) tune the encode.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
 - `CORS_ORIGINS` — comma-separated in prod
@@ -73,7 +74,7 @@ All modules mount on the same router instance — param validators and scope hel
 2. **Blueprint** (7 components, orchestrated by `AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Opus with **extended thinking** — reasons through pacing math before writing. Validation loop retries if shot counts don't fit scene durations. Max 3 attempts, hard fail. **Director mode**: Montage (standalone visual moments, hard cuts) vs Cinematic (flowing continuity, connected movement) — Claude receives explicit guidance on shot style.)
-   - Style (Claude brainstorm → image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to the image model.) **Curated style presets**: 4 pre-canned style frames (see `server/style-presets.ts`) with curated anchor preview images in Supabase at `styles/presets/<key>.png` (backed up in repo at `docs/assets/style-presets/`). Presets follow the same visualize → lock flow as brainstorm slots — `POST /visualize-style-preset` generates a project-specific render and caches the assetId in `project.style_exploration.presetSlots[key]` so revisits after unlock are free. Locking a preset goes through the same `/lock-style` path as brainstorm slots; `/lock-style` always marks downstream stale (cast / environments / shots), first-lock is a no-op.
+   - Style (Claude brainstorm → image visualize → Claude vision enrich DNA. **Style image is ground truth** — no style DNA text sent to the image model.) **Curated style presets**: 4 pre-canned style frames (see `server/style-presets.ts`) with curated anchor preview images in Supabase at `styles/presets/<key>.png` (backed up in repo at `docs/assets/style-presets/`). **Presets lock DIRECTLY** — one click on a preset card calls `POST /lock-style-preset { presetKey }` which points a new project-scoped asset row at the preset's shared `previewImagePath` (same file_path pattern as forks) and runs the standard `/lock-style` downstream-stale logic. No visualize / re-render step. `style_description` is intentionally empty for preset locks (the curated image is ground truth; storing description prose would leak into the concept-regen hint path). The old `/visualize-style-preset` endpoint was removed — it was generating fresh images from description text and ignoring the curated PNG entirely. `/lock-style` (brainstorm slots, uploads) still marks downstream stale; first-lock is a no-op.
    - Characters — unified toolkit: Ref chips (style image) → Prompt (editable) → Generate → Refine. Description collapsed.
    - Environments — same unified toolkit pattern as characters.
    - Auto-writes shot prompts (Claude Opus) with full context at the end.
@@ -82,27 +83,54 @@ All modules mount on the same router instance — param validators and scope hel
    - **Last frame** — end visual prompt + generate end frame + AI refine
    - **Video** — motion prompt (editable, the video instruction sent to Veo) + generate (Veo/Seedance) + AI refine
    - **Full chain** — read-only diagnostic view of the complete prompt chain
-   - **Seedance storyboard mode** — replaces keyframe tabs with `StoryboardPanel`. **Two-step pipeline**: (1) `POST /write-storyboard-prompt` runs a cheap text planner (default `gpt-5.5`, configurable) → saves `shot.storyboard_prompt` (the image-render prompt) and `shot.storyboard_cut_plan` (the Seedance video prompt). Both editable inline. The planner does the real work for the cut plan; the image prompt is largely a near-copy of the deterministic `buildStoryboardPrompt(...)` source brief. (2) `POST /generate-storyboard` renders the board via the project's `storyboard_provider` (`gpt-image-2` or `nano-banana-2`) using **only** the storyboard prompt + locked refs — cut plan is NOT sent to the image renderer (it's for the downstream Seedance step). Artist can refine, regenerate, then lock. Refine has two modes: **Redo** (`replan`) re-runs the planner and rewrites the text fields only — artist must click Generate after to render a new image. **Edit** (`edit_image`) calls the image provider directly with the previous storyboard image + current prompt + artist edit instruction; text fields untouched. Lock and image gen no longer require a cut plan — artist can deliberately empty it to fall back to Seedance's "follow storyboard order" default. After cast/env edits in Script, `prompts_stale = true` propagates; UI surfaces an "Outdated" pill on the prompt label, an amber ring on Rewrite, and an amber dot on Generate. Rewrite clears the flag. Bulk **Board images** button regenerates any unlocked board (rendered or not); only locked shots are skipped.
+   - **Seedance storyboard mode** — replaces keyframe tabs with `StoryboardPanel`. **Two-step pipeline**: (1) `POST /write-storyboard-prompt` runs the text planner (model picked by `project.text_provider`) → saves `shot.storyboard_prompt` (the image-render prompt, INCLUDES per-panel action descriptions inline so the image model knows what to draw in each panel) and `shot.storyboard_cut_plan` (panel beats reformatted for Seedance). Both editable inline. Prompts are deliberately short — the planner instruction caps storyboardPrompt at ~300 words and forbids "contract" bullet lists / animation rules / quality boilerplate that confused the image model. (2) `POST /generate-storyboard` renders the board via the project's `storyboard_provider` (`nano-banana-2` default, `nano-banana-pro` for Google's gemini-3-pro-image-preview, or `gpt-image-2`) using **only** the storyboard prompt + locked refs. Cut plan is NOT sent to the image renderer. Refine has two modes: **Redo** (`replan`) re-runs the planner; artist must click Generate after to render a new image. **Edit** (`edit_image`) calls the image provider directly with the previous storyboard image + current prompt + artist edit instruction; text fields untouched. Lock and image gen do NOT require a cut plan — artist can deliberately empty it to fall back to Seedance's "follow storyboard order" default. After cast/env edits in Script, `prompts_stale = true` propagates; UI surfaces an "Outdated" pill on the prompt label, an amber ring on Rewrite, and an amber dot on Generate. Rewrite clears the flag. Bulk **Board images** button regenerates any unlocked board (rendered or not); only locked shots are skipped. **Per-shot continuity (opt-in):** the chip row has a `+ Prev storyboard` button (disabled when no prev shot in scene or prev has no board) — toggles `shot.use_prev_storyboard_ref`. When on, the previous shot's locked storyboard is attached as vision input to the planner AND as an `@imageN` ref to the image renderer. Separate "Include previous cut plan as text context" checkbox (`shot.include_prev_cut_plan`, nullable for smart-default) prepends prev shot's cut plan to the planner as text. Smart default: checked when `continuity_from === 'prev_shot'` AND a prev shot exists. **Sub-tab ↔ media sync:** clicking Storyboard / Video sub-tabs (or the toolbar Storyboard / Video buttons in the shot card header) swaps both the controls AND the media displayed above. Single source of truth lifted to `ShotCard`'s `storyboardSubTab` state; toolbar and panel buttons stay in lockstep. Initial sub-tab defaults to `video` if `videoUrl` exists on mount.
    - All tabs follow same pattern: Refs → Prompt (with @mention) → Generate → Refine
    - @mention picker in prompt area: type `@` to reference Style, characters, environments
    - Version history panel with 4 tabs (First frame / Last frame / Storyboard / Clip) — revert to any previous generation
    - Lock shot (requires start + video)
-4. **Render** (`StepRender.tsx`) — Artist arranges shots + applies effects/transitions in the timeline editor (`components/timeline-editor/`). Render button POSTs the render-authoritative subset of the editor's zustand store to `/api/projects/:id/render`, which proxies to the sibling `remotion-renderer` service (Hono + Remotion SSR, own Docker image). Renderer pre-stages every remote asset (parallel fetch into `/tmp`, served back to Chromium via a per-render loopback HTTP server) to skip the cross-region pull bottleneck during frame rendering, then runs `renderMedia()`, uploads the mp4 to Supabase Storage, returns the public URL. Client then calls `/api/queue/publish-url/:projectId` to register the asset + mark the queue row completed. **Timeline editor controls**: horizontal scrollbar + mousewheel scroll (via `canvas.initScrollbars()`), split-at-playhead (`S` shortcut or Scissors button — frame-snapped to fps so no sub-frame drift, conservatively drops transitions that no longer fit either half), ripple delete (Trash button or Delete/Backspace — closes gaps on video/image tracks, audio bed stays put). See `docs/remotion-renderer.md` and `docs/render-pipeline-overhaul-2026-05-11.md`.
+4. **Render** (`StepRender.tsx`) — Artist arranges shots + applies effects/transitions in the timeline editor (`components/timeline-editor/`). Render button POSTs the render-authoritative subset of the editor's zustand store to `/api/projects/:id/render`, which proxies to the sibling `remotion-renderer` service (Hono + Remotion SSR + FFmpeg fast path, own Docker image).
+
+   **Render gate** (top-nav Render tab) is data-derived — accessible the moment ANY shot has a `videoUrl`, not based on `project.status` string. Fixes the case where status drifted (forks, legacy projects) but the artist has rendered material to assemble. (`in_production` status is intentionally not gated on; `lahari_projects.status` is never updated to it server-side — known dead state.)
+
+   **Engine selection on Modal renderer**: default `RENDER_ENGINE=ffmpeg`. The renderer calls `canRenderWithFfmpeg(inputProps)` on each job. Eligible timelines (no transitions, no visual effects, no playback-rate changes, no overlapping clips, only video/image/audio items, all srcs resolvable) take the FFmpeg concat path → `libx264 -preset veryfast -crf 26 -pix_fmt yuv420p -movflags +faststart` + amix for audio. Ineligible timelines fall back to Remotion. Asset pre-staging runs in both paths (parallel fetch into `/tmp`, served back via per-render loopback HTTP server with `#t=0.1` for thumbnails). `track('render_engine_fallback', ...)` fires on the Remotion fallback so we can measure how often the fast path covers real workloads.
+
+   **Timeline editor controls**: horizontal scrollbar + mousewheel scroll (via `canvas.initScrollbars()`), split-at-playhead (`S` shortcut or Scissors button — frame-snapped to fps so no sub-frame drift, conservatively drops transitions that no longer fit either half), ripple delete (Trash button or Delete/Backspace — closes gaps on video/image tracks, audio bed stays put).
+
+   **Media Library drawer** (`components/MediaLibraryDrawer.tsx`) — bottom-anchored drawer over the timeline canvas. Two layers: horizontal scene picker (S1 S2 ...) → shots in that scene as a horizontal row, each shot showing its active video (ring outline) + older versions as small chips. Click any version → appended to the timeline at the end as a fresh clip (the canonical shot data isn't modified). Self-hides on projects with no rendered material. Thumbnail strategy: `version.thumbnailUrl` if server has one (extracted last frame asset), else `posterFallback` from the shot's storyboard or start frame image (instant paint via `<video poster=...>`), else `#t=0.1` URL-fragment seek with `preload="metadata"`.
+
+   See `docs/remotion-renderer.md` and `docs/render-pipeline-overhaul-2026-05-11.md`.
 
 ### AI Models
 
 | Stage | Model | Service | Transport |
 |-------|-------|---------|-----------|
 | Audio analysis, vision describe | `gemini-3-pro-preview` | gemini.ts | Gemini Developer API (`GEMINI_API_KEY`) |
-| Concept, script, script refine, style brainstorm, shot prompts | `claude-opus-4-7` | claude.ts | Anthropic API |
-| Meaning, style refine/enrich, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt | `claude-sonnet-4-6` | claude.ts | Anthropic API |
-| All image gen (default) | `nano-banana-2` via Segmind | segmind-image.ts | Segmind API |
-| Image gen alternates | `gemini-3-pro-image-preview` → fallback `gemini-3.1-flash-image-preview` ; `gpt-image-2` | imagen.ts / openai-image.ts | Gemini Developer API / OpenAI |
+| Concept, style brainstorm, meaning, all refines, storyboard prompt writer | per-project `text_provider` — Claude Opus 4.7 (default) / GPT-5.5 / Gemini 3 Pro | claude.ts → text-provider.ts | Anthropic / OpenAI / Google (unified dispatcher) |
+| Script writer (planScenes, refineScript, writeShotPrompts) | `claude-opus-4-7` — NOT routed through text-provider | claude.ts (direct Anthropic) | Anthropic API |
+| Image gen — default | `gemini-3-pro-image-preview` ("Nano Banana Pro") → fallback `gemini-3.1-flash-image-preview` | imagen.ts | Gemini Developer API |
+| Image gen — alternates | `nano-banana-2` (Segmind), `gpt-image-2` (OpenAI) — per-project via `image_model` | segmind-image.ts / openai-image.ts | Segmind / OpenAI |
 | Script experiment | `gpt-5.5` (opt-in via `scriptProvider: "openai"` / `SCRIPT_WRITER_PROVIDER=openai`) | openai-script.ts | OpenAI Responses API structured output |
-| Seedance storyboard — planner step | `gpt-5.5` (configurable via `OPENAI_STORYBOARD_PLANNER_MODEL`) | storyboard.ts (`writeStoryboardPrompt`) | OpenAI Responses API |
-| Seedance storyboard — image step | `gpt-image-2` (OpenAI) **or** `nano-banana-2` (Segmind) — per-project via `storyboard_provider` | storyboard.ts → openai-image.ts / segmind-image.ts | OpenAI / Segmind |
-| Video (default) | `veo-3.1-fast` ($0.10/s); `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
-| Video (alt) | `seedance-2.0-fast` ($0.146/s); `seedance-2.0` ($0.182/s) | segmind.ts | Segmind API |
+| Seedance storyboard — image step | `nano-banana-2` (default), `nano-banana-pro` (Google `gemini-3-pro-image-preview`), or `gpt-image-2` — per-project via `storyboard_provider` | storyboard.ts → imagen.ts / openai-image.ts / segmind-image.ts | Google / OpenAI / Segmind |
+| Video — default | `seedance-2.0-fast` ($0.146/s) | segmind.ts | Segmind API |
+| Video — alternates | `seedance-2.0` ($0.182/s), `veo-3.1-fast` ($0.10/s), `veo-3.1` ($0.20/s) | segmind.ts | Segmind API |
+
+### Text provider routing (concept / style / refines / storyboard prompt)
+
+One project-level setting (`project.text_provider`) controls every text-generation stage EXCEPT the script writer. Three options:
+
+| Key | Label | Primary model | Refine model |
+|---|---|---|---|
+| `claude-opus` (default) | Claude Opus 4.7 | `claude-opus-4-7` | `claude-sonnet-4-6` |
+| `gpt-5.5` | GPT-5.5 | `gpt-5.5` | `gpt-5.5` |
+| `gemini-3-pro` | Gemini 3 Pro | `gemini-3-pro-preview` | `gemini-3.1-flash-preview` |
+
+**Routed (responds to picker):** concept gen + refine, style brainstorm + refine, meaning summary, image-style analyzer, frame/motion/chained-shot refines, character + environment look refines, storyboard prompt writer.
+
+**Not routed (always Claude Opus):** `planScenes`, `refineScript`, `writeShotPrompts`. The script writer stack uses Anthropic extended thinking + a validation loop with retry semantics that doesn't port cleanly to OpenAI / Gemini. The UI surfaces this as a "Script writer always uses Claude Opus." sub-label under the Text model dropdown.
+
+**Implementation:** `server/services/text-provider.ts` is the unified dispatcher. One `generateText(providerKey, req)` API. Each provider's branch handles its native conventions: Anthropic tool_use for structured output, OpenAI `response_format: json_schema` (non-strict — schemas have optional fields), Gemini `responseSchema` + `responseMimeType`. Vision inputs accept either HTTPS URL (fetched + base64'd for Gemini; native for Anthropic/OpenAI) or inline base64 (for artist uploads).
+
+**Refines use the cheap sibling** via `useRefineModel: true` on the request — kept the cost-tier discipline from the old Sonnet-vs-Opus split.
 
 **All video gen via Segmind**: `segmind.ts` is the unified provider for all video models. Simple REST API — POST JSON with `x-api-key`, get video binary back. No polling. Requires `SEGMIND_API_KEY`. Veo models accept `image` + `last_frame` + `reference_images` URLs together. **Seedance constraint**: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes `first_frame_url`; storyboard mode intentionally sends no `first_frame_url` and sends the locked storyboard as `@image1` plus locked style/cast/environment refs as `reference_images`. `ffmpeg.ts` provides `extractLastFrame` (provider-independent). **Duration rounding**: `generateSegmindVideo` picks the smallest model duration >= shot duration (not nearest). A 5s shot on Veo Fast (8s only) sends 8s. `getModelMinDuration()` helper returns the floor for a given model key.
 
@@ -246,10 +274,11 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 ### Database
 
 Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `image_model`, `storyboard_provider` (image renderer for storyboard mode: `gpt-image-2` | `nano-banana-2`), `parent_project_id` (fork lineage), `source_queue_id` (links project to queue item for multi-user support), `style_exploration` JSON (now includes `presetSlots: { [presetKey]: { imageUrl, assetId } }` for per-project preset visualization cache — survives unlock)
-- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `storyboard_asset_id`, `storyboard_version_id`, `storyboard_locked`, `storyboard_status`, `storyboard_prompt` (editable text from planner), `storyboard_cut_plan` (editable text from planner), `storyboard_prompt_status`, `storyboard_prompt_user_feedback`, `prompts_stale`)
-- `lahari_storyboard_versions` — storyboard history per shot. Columns include `openai_response_id`, `openai_image_call_ids`, `reasoning_model` (legacy OpenAI-specific; null on Nano Banana 2 / non-OpenAI runs), plus the generic `image_model`, `prompt`, `refs`, `parent_version`, `locked` flag, `metadata.cutPlanText` (legacy — canonical text now lives on the shot row).
-- `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
+- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `image_model`, `storyboard_provider` (storyboard image renderer: `nano-banana-2` | `nano-banana-pro` | `gpt-image-2`), `text_provider` (text-stage model: `claude-opus` | `gpt-5.5` | `gemini-3-pro` — see "Text provider routing"), `parent_project_id` (fork lineage), `source_queue_id` (links project to queue item for multi-user support), `style_exploration` JSON (legacy `presetSlots` cache; new preset locks bypass this entirely — see "Style (Blueprint)")
+- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `storyboard_asset_id`, `storyboard_version_id`, `storyboard_locked`, `storyboard_status`, `storyboard_prompt`, `storyboard_cut_plan`, `storyboard_prompt_status`, `storyboard_prompt_user_feedback`, `excluded_refs` JSONB `{storyboard, video}` for per-step ref exclusion in storyboard mode, `use_prev_storyboard_ref` boolean (continuity vision ref), `include_prev_cut_plan` nullable boolean (continuity text context, null = smart default from `continuity_from`), `prompts_stale`)
+- `lahari_storyboard_versions` — storyboard history per shot. Columns include `openai_response_id`, `openai_image_call_ids`, `reasoning_model` (legacy OpenAI-specific; null on Nano Banana 2 / Nano Banana Pro / non-OpenAI runs), plus the generic `image_model`, `prompt`, `refs`, `parent_version`, `locked` flag, `metadata.cutPlanText` (legacy — canonical text now lives on the shot row).
+- `lahari_song_notes` — per-user mnemonic notes shown next to song names on the queue dashboard. Composite PK `(user_id, song_id)`. Note text capped at 200 chars by CHECK constraint. Empty/whitespace updates delete the row (see `PUT /api/queue/notes/:songId`).
+- `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history; `category: 'pickup_clip'` reserved for the future Media Library pickup uploads), `lahari_chat_messages`, `lahari_ai_calls`
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
 ### Fork system
@@ -285,16 +314,17 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 ### Key API Endpoints
 
 **Queue:**
-- `GET /api/queue` — list with joined song data
+- `GET /api/queue` — list with joined song data + the current user's per-song mnemonic notes (`user_note` field, null when unset).
 - `POST /api/queue/:queueId/start` — pull audio + SRT, create Lahari project (responds immediately, analysis runs in background). Uses `source_queue_id` to find existing project for this user. Caches analysis on `songs` table for future users.
 - `PATCH /api/queue/:queueId` — update status / video_url
+- `PUT /api/queue/notes/:songId` — set/clear the current user's mnemonic note for a song. Empty/whitespace body deletes the row. 200-char cap.
 
 **Blueprint:**
 - `POST /api/projects/:id/generate-concepts` (userNote optional)
 - `POST /api/projects/:id/generate-script` (userNote optional; experimental `scriptProvider: "openai"` switches to GPT-5.5)
-- `POST /api/projects/:id/brainstorm-styles`, `visualize-style`, `refine-style-direction`, `analyze-style-image`, `lock-style` (always marks downstream stale), `unlock-style`
+- `POST /api/projects/:id/brainstorm-styles`, `refine-style-direction`, `analyze-style-image`, `lock-style` (always marks downstream stale), `unlock-style`, `upload-and-lock-style`
 - `GET  /api/projects/:id/style-presets` — returns 4 curated presets each with `previewImageUrl` resolved from Supabase
-- `POST /api/projects/:id/visualize-style-preset` — body: `{ presetKey, force? }`. Generates a project-specific render for the preset, persists to `style_exploration.presetSlots[key]`, returns `{ assetId, url, cached }`. Does NOT lock. Lock via `/lock-style` with the returned `assetId`.
+- `POST /api/projects/:id/lock-style-preset` — body: `{ presetKey }`. Locks the curated preset image directly as the project style. No visualization step. Inserts a project-scoped `assets` row pointing at the shared `preset.previewImagePath`, sets `style_asset_id` + `style_description: ''` + status `style_locked`, marks downstream stale. Returns the full updated project.
 - `POST /api/projects/:id/generate-looks`, `lock-character`, `advance-characters`
 - `POST /api/projects/:id/generate-environment-look`, `lock-environment`, `advance-environments`
 - `POST /api/projects/:id/write-shot-prompts`
@@ -357,13 +387,13 @@ The `index.html` `<style>` block has a commented spec. Short version:
 
 ## Video models
 
-Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/segmind.ts` (`SEGMIND_MODELS`). All four models route through Segmind:
-- `veo-3.1-fast` — 8s fixed, $0.10/s, supports last frame
-- `veo-3.1` — 4s/6s/8s, $0.20/s, supports last frame
-- `seedance-2.0-fast` — 5s/10s, $0.146/s, frame URLs OR ref images (mutually exclusive)
-- `seedance-2.0` — 5s/10s, $0.182/s, frame URLs OR ref images (mutually exclusive)
+Registry lives in `constants/videoModels.ts` and must stay in sync with `server/services/segmind.ts` (`SEGMIND_MODELS`). All four models route through Segmind. **First entry is the default** for new projects:
+- `seedance-2.0-fast` — 4/5/6/8/10/12/15s, $0.146/s. Default. Storyboard-mode workhorse. Frame URLs OR ref images (mutually exclusive).
+- `seedance-2.0` — same durations, $0.182/s. Higher quality.
+- `veo-3.1-fast` — 8s fixed, $0.10/s, supports last frame + refs together.
+- `veo-3.1` — 4/6/8s, $0.20/s, supports last frame + refs together.
 
-Pacing buttons in the Script phase are derived from the selected model's `durations`.
+Pacing default is **15s** (matches Seedance Fast's longest clip; one storyboard-controlled shot per ~15s scene segment). Pacing buttons in the Script phase are derived from the selected model's `durations`.
 
 ### Version history
 
@@ -379,9 +409,12 @@ Endpoints: `GET /:id/shots/:shotId/history` (frame/video categories), `GET /:id/
 - **Infra: Supabase → Mumbai** (ap-south-1) + **Railway → Singapore** — artists are in India, current setup crosses the Pacific twice per query.
 - **Refine chat history** — multi-turn refinement (store conversation per shot/tab so Claude remembers prior attempts)
 - **Video auto-fallback** — Veo RAI block → Seedance + ffmpeg trim. Error classification done, retry logic needed.
+- **Route script writer through text-provider** — planScenes / refineScript / writeShotPrompts are the only stages still hardcoded to Claude Opus. The extended-thinking + validation-loop pattern doesn't port cleanly to OpenAI / Gemini without a per-provider re-implementation of the retry semantics. ~4-6 hrs to do properly. Surface as an artist option once shipped.
+- **OpenAI strict-mode schema normalizer** — text-provider.ts ships with `strict: true` OFF on OpenAI structured outputs because our concept/style/refine schemas have optional fields like `language` and `lyricsSummary` that fail strict's all-required + additionalProperties:false requirements. Future cleanup: write a recursive normalizer that auto-adds `additionalProperties: false` and converts optional fields to `type: ["string", "null"]`. Then flip strict back on.
+- **Pickup Generator + Media Library tab 2** — current Media Library is read-only (existing shot video versions). Phase 2 adds a Pickups tab with upload + a "Generate pickup" form (single-shot generation with custom refs, model, duration, count). Plan in chat history; design locked but not built.
 - **Render pipeline Phase 4 — E5 timeline-hash dedup** — short-circuit re-renders of identical timelines. E1 (asset pre-staging) and E2 (Docker bundle bake) shipped. Notes in `docs/render-pipeline-overhaul-2026-05-11.md`.
-- **Storyboard prompt template bypass** — planner's `storyboardPrompt` output is ~95% a near-copy of `buildStoryboardPrompt()`. Could save the template output directly and use the planner only for `cutPlanText`. Cheaper + more predictable structure. Need a separate text-only refine path for the storyboard prompt.
 - **Split `prompts_stale`** — currently shared by keyframe `visual_prompt` and storyboard `storyboard_prompt`. Rewriting one clears it for both; if the artist switches modes the other can look fresh when it isn't. Future schema: `visual_prompt_stale` + `storyboard_prompt_stale`.
+- **`in_production` status is dead state** — no server code currently writes this value to `lahari_projects.status`. Render gate works around it by being data-derived (`some shot has video`). Either delete the enum value or wire something to set it (probably first lock-storyboard / first video gen).
 - **Wire Runway Gen-4 Turbo** ($0.05/s) and/or **Kling 3.0** ($0.084/s) as direct-API models.
 - **X-Ray overhaul** — current panel is a log dump. Needs visual flow graph, prompt archaeology, cost dashboard.
 - **Assistant director agent** — persistent chat agent with access to all edit/refine endpoints as tools.
