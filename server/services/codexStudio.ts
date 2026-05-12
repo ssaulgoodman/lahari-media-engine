@@ -47,6 +47,16 @@ export const writeArtifact = (filePath: string, content: string) => {
   return resolved;
 };
 
+const writeArtifactIfMissing = (filePath: string, content: string) => {
+  const resolved = path.resolve(filePath);
+  if (fs.existsSync(resolved)) return resolved;
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, content);
+  return resolved;
+};
+
+const safeTimestamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+
 const escapeHtml = (value?: string | null): string => {
   return (value || '')
     .replace(/&/g, '&amp;')
@@ -70,6 +80,10 @@ const sessionStatePath = (projectId: string): string => {
 
 const sessionJournalPath = (projectId: string): string => {
   return path.join(sessionDir(projectId), 'journal.md');
+};
+
+export const defaultProjectWorkbenchDir = (project: Project): string => {
+  return path.join(process.cwd(), '.lahari', 'projects', project.id);
 };
 
 const readTextFileIfExists = (filePath: string): string | null => {
@@ -1929,5 +1943,215 @@ export const buildProjectActionList = (project: Project) => {
     },
     diagnosis,
     actions: actions.slice(0, 20),
+  };
+};
+
+const buildBriefMarkdown = (project: Project, actionList: ReturnType<typeof buildProjectActionList>): string => {
+  const counts = statusCounts(project);
+  const diagnosis = actionList.diagnosis;
+  const actionLines = actionList.actions.length
+    ? actionList.actions.slice(0, 10).map((action: any) => `- ${action.label} (${action.canRun ? 'native' : 'manual'}${action.estimatedCost ? `, ~$${action.estimatedCost}` : ''})`).join('\n')
+    : '- No immediate actions found.';
+
+  return `# ${project.title}
+
+Hydrated: ${new Date().toISOString()}
+Project ID: ${project.id}
+
+## Current Read
+
+${diagnosis.productionRead}
+
+- Status: ${project.status}
+- Workflow: ${usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe'}
+- Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
+- Format: ${project.aspectRatio}, ${project.videoResolution}
+- Counts: ${counts.scenes} scenes, ${counts.shots} shots, ${counts.storyboards}/${counts.shots} boards, ${counts.videos}/${counts.shots} videos, ${counts.lockedShots}/${counts.shots} locked shots
+
+## Bottleneck
+
+${diagnosis.bottleneck}
+
+## Weak Links
+
+${diagnosis.weakLinks.length ? diagnosis.weakLinks.map((item) => `- ${item}`).join('\n') : '- None from deterministic checks.'}
+
+## Risk Notes
+
+${diagnosis.riskNotes.length ? diagnosis.riskNotes.map((item) => `- ${item}`).join('\n') : '- None from deterministic checks.'}
+
+## Next Actions
+
+${actionLines}
+`;
+};
+
+const buildAudioAnalysisMarkdown = (project: Project): string => {
+  const sections = project.musicalStructure.length
+    ? project.musicalStructure.map((section: any) => `- ${section.label || 'Section'} ${section.startTime || '?'}-${section.endTime || '?'}${section.energyLevel ? `, energy ${section.energyLevel}` : ''}: ${section.description || ''}`).join('\n')
+    : '- No musical structure saved.';
+
+  return `# Audio Analysis
+
+Project: ${project.title}
+Hydrated: ${new Date().toISOString()}
+
+## Classification
+
+- Song type: ${project.songType || 'unknown'}
+- Narrative: ${project.isNarrative ?? 'unknown'}
+- Meditative: ${project.isMeditative ?? 'unknown'}
+
+## Meaning
+
+${md(project.meaning)}
+
+## Musical Structure
+
+${sections}
+
+## Lyrics
+
+${md(project.lyrics)}
+`;
+};
+
+const buildConceptNotesMarkdown = (project: Project): string => {
+  const locked = project.lockedConcept;
+  const options = project.conceptOptions.length
+    ? project.conceptOptions.map((option: any, index: number) => `## Option ${index + 1}: ${option.title || option.deity || 'Untitled'}
+
+${md(option.description || option.conceptDirection || JSON.stringify(option, null, 2))}`).join('\n\n')
+    : 'No concept options saved.';
+
+  return `# Concept Notes
+
+Project: ${project.title}
+Hydrated: ${new Date().toISOString()}
+
+## Locked Concept
+
+${locked ? `### ${locked.title || locked.deity || 'Untitled'}
+
+${md(locked.description || locked.conceptDirection || JSON.stringify(locked, null, 2))}` : 'No locked concept.'}
+
+## Saved Options
+
+${options}
+`;
+};
+
+const buildScriptMarkdown = (project: Project): string => {
+  const cast = project.cast.length
+    ? project.cast.map((member) => `- ${member.name}: ${member.description || 'No description.'}`).join('\n')
+    : '- No cast/entities saved.';
+  const environments = project.environments.length
+    ? project.environments.map((environment) => `- ${environment.name}: ${environment.description || 'No description.'}`).join('\n')
+    : '- No environments/locations saved.';
+  const scenes = project.scenes.length
+    ? project.scenes.map((scene, sceneIndex) => {
+      const shots = scene.shots.map((shot, shotIndex) => `- ${shotLabel(sceneIndex, shotIndex)} (${shot.duration}s): ${shot.direction || shot.visualPrompt || shot.storyboardPrompt || 'No beat.'}`).join('\n');
+      return `## Scene ${sceneIndex + 1}: ${scene.sectionLabel || 'Untitled'} (${scene.startTime || '?'}-${scene.endTime || '?'})
+
+${md(scene.narrativeDescription)}
+
+${shots || 'No shots.'}`;
+    }).join('\n\n')
+    : 'No scenes saved.';
+
+  return `# Script
+
+Project: ${project.title}
+Hydrated: ${new Date().toISOString()}
+
+## Cast / Entities
+
+${cast}
+
+## Environments / Locations
+
+${environments}
+
+## Scenes And Shots
+
+${scenes}
+`;
+};
+
+const buildStoryboardPromptsMarkdown = (project: Project): string => {
+  const scenes = project.scenes.length
+    ? project.scenes.map((scene, sceneIndex) => {
+      const shots = scene.shots.map((shot, shotIndex) => `## ${shotLabel(sceneIndex, shotIndex)}: ${compactText(shot.direction, 120) || 'Shot'}
+
+- Shot ID: ${shot.id}
+- Duration: ${shot.duration}s
+- Storyboard status: ${shot.storyboardStatus || 'idle'}${shot.storyboardLocked ? ', locked' : ''}
+- Video status: ${shot.videoStatus || 'idle'}${shot.locked ? ', locked' : ''}
+
+### Storyboard Prompt
+
+${md(shot.storyboardPrompt)}
+
+### Cut Plan
+
+${md(shot.storyboardCutPlan)}
+
+### Visual Prompt
+
+${md(shot.visualPrompt)}
+
+### Motion Prompt
+
+${md(shot.motionPrompt)}
+`).join('\n');
+      return `# Scene ${sceneIndex + 1}: ${scene.sectionLabel || 'Untitled'}
+
+${shots}`;
+    }).join('\n\n')
+    : 'No storyboard prompts saved.';
+
+  return `# Storyboard Prompts
+
+Project: ${project.title}
+Hydrated: ${new Date().toISOString()}
+
+${scenes}
+`;
+};
+
+export const hydrateProjectWorkbench = async (project: Project, outputDir?: string) => {
+  const baseDir = path.resolve(outputDir || defaultProjectWorkbenchDir(project));
+  const snapshotDir = path.join(baseDir, 'snapshots');
+  const packet = await buildProjectPacket(project);
+  const actionList = buildProjectActionList(project);
+  const timestamp = safeTimestamp();
+  const artifacts = [
+    { type: 'brief', path: writeArtifact(path.join(baseDir, 'brief.md'), buildBriefMarkdown(project, actionList)) },
+    { type: 'audio-analysis', path: writeArtifact(path.join(baseDir, 'audio-analysis.md'), buildAudioAnalysisMarkdown(project)) },
+    { type: 'concept-notes', path: writeArtifact(path.join(baseDir, 'concept-notes.md'), buildConceptNotesMarkdown(project)) },
+    { type: 'script', path: writeArtifact(path.join(baseDir, 'script.md'), buildScriptMarkdown(project)) },
+    { type: 'storyboard-prompts', path: writeArtifact(path.join(baseDir, 'storyboard-prompts.md'), buildStoryboardPromptsMarkdown(project)) },
+    { type: 'action-plan', path: writeArtifact(path.join(baseDir, 'action-plan.json'), `${JSON.stringify(actionList, null, 2)}\n`) },
+    { type: 'packet-snapshot', path: writeArtifact(path.join(snapshotDir, `${timestamp}-packet.json`), `${JSON.stringify(packet, null, 2)}\n`) },
+    { type: 'actions-snapshot', path: writeArtifact(path.join(snapshotDir, `${timestamp}-actions.json`), `${JSON.stringify(actionList, null, 2)}\n`) },
+    { type: 'director-notes', path: writeArtifactIfMissing(path.join(baseDir, 'director-notes.md'), `# Director Notes
+
+Project: ${project.title}
+Project ID: ${project.id}
+
+Local Codex notes live here. This file is not overwritten by hydration.
+`) },
+  ];
+
+  return {
+    kind: 'lahari.project.workbench',
+    generatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+    },
+    baseDir,
+    sourceOfTruth: 'Supabase remains canonical; these files are a local Codex workbench mirror.',
+    artifacts,
   };
 };

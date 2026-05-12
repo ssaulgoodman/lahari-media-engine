@@ -59,6 +59,19 @@ server.registerTool('get_project_actions', {
   return textResult(studio.buildProjectActionList(project));
 });
 
+server.registerTool('hydrate_project_workbench', {
+  title: 'Hydrate project workbench',
+  description: 'Read-only with local file output. Pulls canonical Supabase state and writes a local Codex workbench under .lahari/projects/<projectId>.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    outputDir: z.string().optional().describe('Optional output directory. Defaults to .lahari/projects/<projectId>.'),
+  },
+}, async ({ projectId, outputDir }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.hydrateProjectWorkbench(project, outputDir));
+});
+
 server.registerTool('get_shot_packet', {
   title: 'Get shot packet',
   description: 'Read-only. Returns one shot with its scene, prompts, assets, and previous/next context.',

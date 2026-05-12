@@ -240,6 +240,7 @@ Implemented first read-only tools:
 - CLI: `npm run lahari -- project list [limit]`
 - CLI: `npm run lahari -- project packet <projectId>`
 - CLI: `npm run lahari -- project actions <projectId>`
+- CLI: `npm run lahari -- project hydrate <projectId> [outputDir]`
 - CLI: `npm run lahari -- shot packet <projectId> <shotId>`
 - CLI: `npm run lahari -- project report <projectId> [out.md]`
 - CLI: `npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]`
@@ -265,6 +266,7 @@ The MCP server currently exposes read-only/local-output tools plus explicit muta
 - `list_projects`
 - `get_project_packet`
 - `get_project_actions`
+- `hydrate_project_workbench`
 - `get_shot_packet`
 - `write_project_artifacts`
 - `write_project_sheets`
@@ -302,6 +304,19 @@ Current v1 execution list:
 3. Turn deterministic reports into a real director diagnosis with bottleneck, weak links, and next approved action.
 4. Add preview/apply pairs for storyboard prompt rewrites and selected safe state changes. Current implementation covers one-shot storyboard prompt/cut-plan rewrites.
 5. Add generation tools only after each reports cost, write blast radius, and rollback/fork path.
+
+Project workbenches are local Codex desk copies under `.lahari/projects/<projectId>/`:
+
+- `brief.md` is the current production read, bottleneck, risks, and next actions.
+- `audio-analysis.md` mirrors meaning, lyrics, classification, and structure.
+- `concept-notes.md` mirrors locked concept and saved options.
+- `script.md` mirrors cast, environments, scenes, and shot beats.
+- `storyboard-prompts.md` mirrors storyboard prompts, cut plans, and motion prompts.
+- `action-plan.json` is the current native/manual action menu.
+- `snapshots/` stores packet/action JSON snapshots for drift comparison.
+- `director-notes.md` is local-only and is not overwritten by hydration.
+
+Supabase remains the source of truth. The workbench is a local Codex mirror for reading, diffing, drafting, and long-session continuity. Official writes still go through typed apply tools.
 
 Director sessions are local working memory under `.lahari/sessions/<projectId>/`:
 
