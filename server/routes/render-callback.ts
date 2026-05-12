@@ -19,6 +19,12 @@ const router = Router();
 const paramStr = (val: string | string[]): string =>
   Array.isArray(val) ? val[0] : val;
 
+const compactRendererError = (error: unknown) => {
+  const text = String(error || 'renderer failed');
+  if (text.length <= 2000) return text;
+  return `${text.slice(0, 500)}\n... renderer error truncated; preserving tail ...\n${text.slice(-1400)}`;
+};
+
 const clampProgress = (value: unknown): number | null => {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
@@ -78,7 +84,7 @@ router.post('/callback/:renderId', async (req, res) => {
     if (error) {
       await updateRows('renders', { id: renderId }, {
         status: 'failed',
-        error: String(error).slice(0, 2000),
+        error: compactRendererError(error),
         error_code: typeof req.body?.errorCode === 'string' ? req.body.errorCode.slice(0, 80) : 'renderer_failed',
         stage: 'failed',
         render_ms: typeof renderMs === 'number' ? renderMs : null,

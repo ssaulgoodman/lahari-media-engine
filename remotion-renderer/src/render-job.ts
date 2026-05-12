@@ -308,40 +308,16 @@ export const runRenderJob = async ({
     }
 
     await reportProgress(useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames', 0.08, true);
-    let engine: 'ffmpeg' | 'remotion' = useFfmpeg ? 'ffmpeg' : 'remotion';
-    let result: Awaited<ReturnType<typeof renderTimeline>>;
-    if (useFfmpeg) {
-      try {
-        result = await withHardCap(
-          renderTimelineWithFfmpeg(stagedAssets.inputProps, (progress) => {
+    const engine = useFfmpeg ? 'ffmpeg' : 'remotion';
+    const result = await withHardCap(
+      useFfmpeg
+        ? renderTimelineWithFfmpeg(stagedAssets.inputProps, (progress) => {
             void reportProgress('ffmpeg_rendering', 0.08 + progress * 0.79);
-          }),
-        );
-      } catch (err: any) {
-        const message = err?.message || String(err);
-        console.warn(`[render ${renderId}] FFmpeg failed, falling back to Remotion: ${message}`);
-        track('render_engine_fallback', projectId, {
-          renderId,
-          requestedEngine: 'ffmpeg',
-          fallbackEngine: 'remotion',
-          reason: 'ffmpeg_runtime_failed',
-          error: message.slice(0, 1000),
-        });
-        await reportProgress('rendering_frames', 0.08, true);
-        engine = 'remotion';
-        result = await withHardCap(
-          renderTimeline(stagedAssets.inputProps, (progress) => {
+          })
+        : renderTimeline(stagedAssets.inputProps, (progress) => {
             void reportProgress('rendering_frames', 0.08 + progress * 0.79);
           }),
-        );
-      }
-    } else {
-      result = await withHardCap(
-        renderTimeline(stagedAssets.inputProps, (progress) => {
-          void reportProgress('rendering_frames', 0.08 + progress * 0.79);
-        }),
-      );
-    }
+    );
     outputPath = result.outputPath;
 
     await reportProgress('validating_output', 0.9, true);
