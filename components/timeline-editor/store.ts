@@ -235,16 +235,44 @@ const useStore = create<ITimelineStore>((set, get) => ({
     // Transitions: outgoing (fromId === itemId) attaches to the new right
     // half — that's the side that ends at the next clip boundary now.
     // Incoming (toId === itemId) stays on the left (left's id is
-    // unchanged). We intentionally do NOT try to be clever about a
-    // transition whose duration would now exceed the half it lives on —
-    // that's a v2 problem; for v1 the artist can re-add it.
+    // unchanged).
+    //
+    // Validity check: a transition's duration must fit within both endpoint
+    // clips' durations (it's a crossfade region that lives inside both).
+    // After split, the affected half is shorter than the original clip, so
+    // a transition that fit before may no longer fit. Drop those — the
+    // Remotion `TransitionSeries` renderer can produce garbage frames or
+    // throw when asked to play a transition longer than its host clip.
+    // Conservative posture: silent drop. Artist gets clean state + undo;
+    // they can re-add a shorter transition explicitly if they want one.
+    const leftDuration = T - df;
+    const rightDuration = dt - T;
+    const droppedTransitionIds = new Set<string>();
     const nextTransitionsMap = { ...s.transitionsMap };
     for (const tid of Object.keys(nextTransitionsMap)) {
       const tr = nextTransitionsMap[tid];
-      if (tr.fromId === itemId) {
-        nextTransitionsMap[tid] = { ...tr, fromId: rightId };
+      const trDuration = tr.duration ?? 0;
+      if (tr.toId === itemId) {
+        // Incoming: stays on left half. Drop if it no longer fits.
+        if (trDuration > leftDuration) {
+          droppedTransitionIds.add(tid);
+        }
+      } else if (tr.fromId === itemId) {
+        // Outgoing: moves to the right half. Drop if it no longer fits;
+        // otherwise rewire the fromId pointer.
+        if (trDuration > rightDuration) {
+          droppedTransitionIds.add(tid);
+        } else {
+          nextTransitionsMap[tid] = { ...tr, fromId: rightId };
+        }
       }
     }
+    for (const tid of droppedTransitionIds) {
+      delete nextTransitionsMap[tid];
+    }
+    const nextTransitionIds = droppedTransitionIds.size
+      ? s.transitionIds.filter((id) => !droppedTransitionIds.has(id))
+      : s.transitionIds;
 
     const nextItemsMap = {
       ...s.trackItemsMap,
@@ -257,6 +285,7 @@ const useStore = create<ITimelineStore>((set, get) => ({
         trackItemIds: nextItemIds,
         trackItemsMap: nextItemsMap,
         tracks: nextTracks,
+        transitionIds: nextTransitionIds,
         transitionsMap: nextTransitionsMap,
       },
       { kind: 'update', updateHistory: true },
