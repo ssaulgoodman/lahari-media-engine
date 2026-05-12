@@ -45,7 +45,7 @@ const numberEnv = (name: string, fallback: number) => {
 };
 
 const ffmpegPreset = () => process.env.FFMPEG_PRESET || 'veryfast';
-const ffmpegCrf = () => String(Math.round(numberEnv('FFMPEG_CRF', 26)));
+const ffmpegCrf = () => String(Math.round(numberEnv('FFMPEG_CRF', 23)));
 
 const seconds = (ms: number) => Math.max(0, ms / 1000);
 const frameMs = (fps: number) => 1000 / fps;
@@ -57,6 +57,30 @@ const hasNonDefaultEffects = (details: any) => {
     if (details?.[key] !== undefined && Number(details[key]) !== defaultValue) return true;
   }
   return false;
+};
+
+const hasLayoutOverrides = (details: any) => {
+  if (!details) return false;
+  const layoutKeys = [
+    'top',
+    'left',
+    'right',
+    'bottom',
+    'x',
+    'y',
+    'width',
+    'height',
+    'scale',
+    'scaleX',
+    'scaleY',
+    'rotate',
+    'rotation',
+    'transform',
+    'objectFit',
+    'objectPosition',
+    'crop',
+  ];
+  return layoutKeys.some((key) => details[key] !== undefined && details[key] !== null);
 };
 
 const itemSrc = (item: TimelineItem) => {
@@ -94,8 +118,14 @@ export const canRenderWithFfmpeg = (inputProps: TimelineRenderProps): Eligibilit
     if (!itemSrc(item)) {
       return { ok: false, reason: `${item.type} item is missing details.src` };
     }
-    if ((item.type === 'video' || item.type === 'image') && hasNonDefaultEffects((item as any).details || {})) {
-      return { ok: false, reason: 'timeline has visual effects' };
+    if (item.type === 'video' || item.type === 'image') {
+      const details = (item as any).details || {};
+      if (hasNonDefaultEffects(details)) {
+        return { ok: false, reason: 'timeline has visual effects' };
+      }
+      if (hasLayoutOverrides(details)) {
+        return { ok: false, reason: 'timeline has custom visual positioning' };
+      }
     }
   }
 
