@@ -308,6 +308,13 @@ Return only JSON with keys:
       storyboard_cut_plan: cutPlanText,
       storyboard_prompt_status: 'success',
       storyboard_prompt_user_feedback: opts.artistNote || null,
+      // Clear staleness now that the planner has re-read castIds /
+      // environment_id from DB and folded them into the prompt + cut plan.
+      // Mirrors the keyframe pipeline's clear in refine-prompt (the
+      // equivalent text-rewrite action). Without this, stale stays true
+      // forever after the first cast/env edit and the UI indicator
+      // becomes useless noise.
+      prompts_stale: false,
       last_error: null,
     });
 

@@ -505,6 +505,11 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
 }) => {
   const saving = saveState === 'saving';
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
+  // Cast / environment changed in Script since this storyboard was planned.
+  // Only meaningful once a prompt actually exists — otherwise "stale" is
+  // unintuitive. Cleared server-side by writeStoryboardPrompt.
+  const promptStale = !!shot.promptsStale && promptText.trim().length > 0;
+  const stalenessHint = 'Cast or environment changed since this prompt was written. Rewrite to bring the prompt + cut plan back in sync with the refs.';
 
   return (
     <>
@@ -518,6 +523,14 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             Storyboard prompt
             {shot.storyboardPromptStatus === GenerationStatus.LOADING && <span className="text-[10px] normal-case tracking-normal text-zinc-300">Writing…</span>}
             {promptRequired && <span className="text-[10px] normal-case tracking-normal text-amber-300">Prompt required</span>}
+            {promptStale && !isWritingPrompt && (
+              <span
+                className="text-[10px] normal-case tracking-normal text-amber-300/80"
+                title={stalenessHint}
+              >
+                Outdated
+              </span>
+            )}
             {recentlyRefined && !isPromptCollapsed && (
               <span className="text-[10px] normal-case tracking-normal text-amber-300/80">Updated</span>
             )}
@@ -571,7 +584,11 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           <button
             onClick={() => onWriteStoryboardPrompt(shot.id)}
             disabled={isWritingPrompt || isGenerating || saving}
-            className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+            // Stale → subtle amber ring nominates Rewrite as the recommended
+            // next action. No size change; reads as "this one first" without
+            // shouting.
+            className={`px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5 ${promptStale ? 'ring-1 ring-amber-400/40' : ''}`}
+            title={promptStale ? stalenessHint : undefined}
           >
             {isWritingPrompt && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
             {isWritingPrompt ? 'Writing…' : promptText.trim() ? 'Rewrite prompt' : 'Write prompt'}
@@ -594,9 +611,28 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             onClick={() => onGenerateStoryboard(shot.id)}
             disabled={isGenerating || saving || promptRequired || cutPlanRequired}
             className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
-            title={promptRequired ? 'Write a storyboard prompt first.' : cutPlanRequired ? 'Run "Write prompt" first — image gen needs the planner output (also fills the video prompt over in the Video tab).' : undefined}
+            // Tooltip priority: required-fields error > staleness hint >
+            // nothing. Staleness only surfaces after the first storyboard
+            // exists; before that the artist hasn't seen any output yet so
+            // "outdated" is meaningless.
+            title={
+              promptRequired
+                ? 'Write a storyboard prompt first.'
+                : cutPlanRequired
+                ? 'Run "Write prompt" first — image gen needs the planner output (also fills the video prompt over in the Video tab).'
+                : promptStale && hasStoryboard
+                ? stalenessHint
+                : undefined
+            }
           >
             {isGenerating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+            {/* Amber dot when the prompt is stale AND a storyboard already
+                exists — warns the artist the next render will use
+                out-of-date text. Solid amber-500 reads on the white button;
+                amber-300/80 (used elsewhere) is too pale on white. */}
+            {promptStale && hasStoryboard && !isGenerating && (
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            )}
             {isGenerating ? 'Rendering…' : hasStoryboard ? 'Regenerate image' : 'Generate image'}
           </button>
           {isGenerating && (
