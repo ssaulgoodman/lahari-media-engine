@@ -1,6 +1,7 @@
 import { stat, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { stageTimelineAssets } from './asset-staging';
+import { canRenderWithFfmpeg, renderTimelineWithFfmpeg } from './ffmpeg-render';
 import { shutdownPosthog, track, trackError } from './posthog';
 import { renderTimeline } from './render';
 import { projectExists, uploadRender, writeTerminalFallback } from './storage';
@@ -52,6 +53,11 @@ const CALLBACK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000, 45000, 6
 const renderHardCapMinutes = () => {
   const parsed = Number(process.env.RENDER_HARD_CAP_MINUTES || 50);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+};
+
+const renderEngine = () => {
+  const engine = (process.env.RENDER_ENGINE || 'ffmpeg').toLowerCase();
+  return engine === 'remotion' ? 'remotion' : 'ffmpeg';
 };
 
 const withJitter = (ms: number) => {
@@ -289,10 +295,28 @@ export const runRenderJob = async ({
       await reportProgress('bundling', 0.04, true);
     }
 
+    const ffmpegEligibility = canRenderWithFfmpeg(stagedAssets.inputProps);
+    const useFfmpeg = renderEngine() === 'ffmpeg' && ffmpegEligibility.ok;
+    if (renderEngine() === 'ffmpeg' && !ffmpegEligibility.ok) {
+      console.log(`[render ${renderId}] falling back to Remotion: ${ffmpegEligibility.reason}`);
+      track('render_engine_fallback', projectId, {
+        renderId,
+        requestedEngine: 'ffmpeg',
+        fallbackEngine: 'remotion',
+        reason: ffmpegEligibility.reason,
+      });
+    }
+
+    await reportProgress(useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames', 0.08, true);
+    const engine = useFfmpeg ? 'ffmpeg' : 'remotion';
     const result = await withHardCap(
-      renderTimeline(stagedAssets.inputProps, (progress) => {
-        void reportProgress('rendering_frames', 0.08 + progress * 0.79);
-      }),
+      useFfmpeg
+        ? renderTimelineWithFfmpeg(stagedAssets.inputProps, (progress) => {
+            void reportProgress('ffmpeg_rendering', 0.08 + progress * 0.79);
+          })
+        : renderTimeline(stagedAssets.inputProps, (progress) => {
+            void reportProgress('rendering_frames', 0.08 + progress * 0.79);
+          }),
     );
     outputPath = result.outputPath;
 
@@ -314,6 +338,7 @@ export const runRenderJob = async ({
     );
     track('render_completed', projectId, {
       renderId,
+      engine,
       renderMs,
       sizeBytes: upload.sizeBytes,
       durationInFrames: result.durationInFrames,

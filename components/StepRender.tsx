@@ -41,6 +41,8 @@ const renderStageLabel = (stage?: string | null) => {
       return 'Preparing render';
     case 'rendering_frames':
       return 'Rendering frames';
+    case 'ffmpeg_rendering':
+      return 'Rendering fast path';
     case 'validating_output':
       return 'Checking output';
     case 'uploading':
