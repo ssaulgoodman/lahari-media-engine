@@ -477,16 +477,21 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
                   onUpdateShot(scene.id, shot.id, { usePrevStoryboardRef: true });
                 }}
                 disabled={continuityChipDisabled}
+                // Disabled state intentionally still visible — same border
+                // weight as the active state, just muted text. Faint outlines
+                // were getting lost on the page; the artist needs to see the
+                // affordance even when it's not actionable so the feature
+                // is discoverable.
                 className={`group/cont flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] border transition-colors ${
                   continuityChipDisabled
-                    ? 'border-white/[0.04] bg-transparent text-zinc-600 cursor-not-allowed'
-                    : 'border-white/[0.06] bg-transparent text-zinc-400 hover:border-white/[0.15] hover:text-zinc-200 hover:bg-white/[0.02]'
+                    ? 'border-white/[0.08] bg-white/[0.01] text-zinc-500 cursor-not-allowed'
+                    : 'border-white/[0.08] bg-white/[0.02] text-zinc-300 hover:border-white/[0.2] hover:text-white hover:bg-white/[0.04]'
                 }`}
                 title={
                   !prevShotInScene
                     ? 'No previous shot in this scene'
                     : !prevStoryboardUrl
-                    ? 'Previous shot has no storyboard yet'
+                    ? 'Previous shot has no storyboard yet — generate it first'
                     : "Attach the previous shot's storyboard as a continuity ref. Sent to the planner as visual handoff context and to the image renderer as an extra @image ref."
                 }
               >
@@ -500,25 +505,31 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
 
       {/* Continuity text toggle — sends the previous shot's cut plan to the
           planner as text context. Separate from the chip row because text is
-          not visual (no thumbnail, no per-tab exclusion). Only shown on the
-          Storyboard sub-tab; planner only runs from there. Smart default:
-          checked when continuity_from === 'prev_shot' AND a prev shot exists.
-          Artist can flip with explicit true/false; null means "follow the
-          default." */}
-      {subTab === 'storyboard' && !isLocked && (() => {
+          not visual (no thumbnail, no per-tab exclusion). Always rendered on
+          the Storyboard sub-tab so the affordance is discoverable; disabled
+          with tooltip when the artist can't act on it right now (locked
+          storyboard, or no prev shot in scene). Smart default: checked when
+          continuity_from === 'prev_shot' AND a prev shot exists. Null
+          column means "use the default"; explicit true/false overrides. */}
+      {subTab === 'storyboard' && (() => {
         const hasPrev = !!prevShotInScene;
         const explicit = shot.includePrevCutPlan;
         const smartDefault = hasPrev && shot.continuityFrom === 'prev_shot';
         const effective = explicit === true ? true : explicit === false ? false : smartDefault;
         const isDefault = explicit === null || explicit === undefined;
+        const interactive = hasPrev && !isLocked;
+        const reason = !hasPrev
+          ? '— no previous shot in scene'
+          : isLocked
+          ? '— unlock the storyboard to change'
+          : '';
         return (
-          <label className={`flex items-center gap-2 text-[11px] ${hasPrev ? 'text-zinc-400 hover:text-zinc-300 cursor-pointer' : 'text-zinc-600 cursor-not-allowed'}`}>
+          <label className={`flex items-center gap-2 text-[11px] ${interactive ? 'text-zinc-400 hover:text-zinc-300 cursor-pointer' : 'text-zinc-600 cursor-not-allowed'}`}>
             <input
               type="checkbox"
-              disabled={!hasPrev}
+              disabled={!interactive}
               checked={effective}
               onChange={(e) => {
-                // Flip away from smart default → explicit true/false.
                 onUpdateShot(scene.id, shot.id, { includePrevCutPlan: e.target.checked });
               }}
               className="h-3 w-3 rounded border-white/10 bg-transparent accent-white"
@@ -527,7 +538,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
             {isDefault && hasPrev && (
               <span className="text-zinc-600">(default: {smartDefault ? 'on' : 'off'})</span>
             )}
-            {!hasPrev && <span className="text-zinc-600">— no previous shot in scene</span>}
+            {reason && <span className="text-zinc-600">{reason}</span>}
           </label>
         );
       })()}
