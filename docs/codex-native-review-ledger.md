@@ -545,7 +545,7 @@ Apply-only scope:
 
 ### R29 — Project config and prompt override design
 
-Status: **designed first pass** · Raised: 2026-05-13
+Status: **designed, review fixes applied** · Raised: 2026-05-13
 
 R29 is the editable project-config umbrella for R22. Phase 1 is deliberately narrow: per-project preferences and storyboard/video prompt overrides. Later phases can add glossary, taste notes, decisions, and richer inheritance once the core path proves itself.
 
@@ -555,8 +555,10 @@ Phase 1 objects:
 - `.lahari/projects/<projectId>/config/preferences.json`
 - `.lahari/projects/<projectId>/config/prompts/storyboard.md`
 - `.lahari/projects/<projectId>/config/prompts/video.md`
-- Supabase canonical tables for persisted project config and prompt overrides
-- apply tools: `apply_project_preferences`, `apply_project_prompt_override`
+- Supabase canonical tables for persisted project config and prompt overrides (`project_id` / `scope_id` are `text`, matching existing Lahari IDs)
+- apply tools: `apply_project_preferences`, `apply_project_prompt_override`, `revert_project_prompt_override`
+- history from day one: apply inserts a new active override row and marks the old one inactive; revert reactivates the previous row or falls back to global
+- no preview tool by design: Codex edits the desk-copy file and the apply tool validates/persists after approval
 
 **Why it matters:** Project-specific taste improvements should be project-owned configuration, not tier-3 engine edits. This gives Codex a safe editable surface for model choices and prompt recipes while keeping Supabase canonical.
 
@@ -605,3 +607,5 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Codex shipped R25 storyboard lifecycle in `e9accaf`: `write_storyboard_prompt`, `bulk_write_storyboard_prompts`, `generate_storyboard` (alias, kept `apply_generate_storyboard`), `bulk_generate_storyboards`, `refine_storyboard_image`. Guardrails: bulk tools take optional `shotIds`, defaults skip locked/non-needed shots, `force` exists but gated on approval, single generate refuses to overwrite locked boards. Tests + audit green.
 - 2026-05-13 — Claude reviewed `e9accaf`. Image-gen tools (`refine_storyboard_image`, `bulk_generate_storyboards`, `generate_storyboard`) are doctrine-compliant tool calls. **Two tools are transitional debt:** `write_storyboard_prompt` and `bulk_write_storyboard_prompts` wrap backend `writeStoryboardPrompt` which round-trips through `text-provider.ts` → LLM. This violates doctrine §4 (text-writing should be Codex-native). **Decision: keep as transitional** so the live testing loop stays unblocked; deprecate when R28 ships apply-only `apply_storyboard_prompt` / `apply_storyboard_prompts_bulk` that take Codex-written content. Do not extend this pattern to new text tools.
 - 2026-05-13 — **Doctrine clarification for R28 scope:** apply-only variants for Codex-native text generation should cover concept, script, shot prompts, storyboard prompts, and video prompts. Each tool takes pre-written structured content from Codex, validates against constraints, persists via existing apply path, records a director event. No LLM call inside the tool. Web studio retains backend `generate-*` / `refine-*` endpoints for non-Codex users.
+- 2026-05-13 — Codex shipped R29 design doc in `f1bf3b6` (`docs/r29-project-config-design.md`). Phase 1 scope: project preferences + project-level storyboard/video prompt overrides. Schema: `lahari_project_config` (preferences) + `lahari_project_prompt_overrides` (prompts, scope columns for future scene/shot). Inheritance: shot → scene → project → global. Drift via baseHash. Read path folded into `attach_director_session`. R28/R29 boundary explicit: R28 applies content; R29 stores recipes.
+- 2026-05-13 — Claude reviewed R29 design. Solid overall. **Schema fixes required before implementation:** `project_id` must be `text` not `uuid` (matches existing `lahari_projects.id`); `scope_id` must be `text null` not `uuid null` (matches existing scene/shot IDs). **Missing pieces to add before implementation:** (1) hash file refresh after apply succeeds; (2) explicit revert path — `revert_project_prompt_override(projectId, kind)` recommended over body-empty deactivate; (3) one-line callout that there's no preview tool by design (Codex IS the preview); (4) rollback strategy — use `active=false` on previous row, INSERT new active row instead of UPDATE in place, makes rollback = re-activate previous. **Open question answers:** (Q1) project config overrides `lahari_projects` columns for phase 1, deprecate later; (Q2) yes to history rows from day one via `active` toggle; (Q3) phase 1 web studio shows only a "Codex overrides active" badge, no inline editing. **Implementation order tweak:** wire backend planner/builder to read overrides BEFORE adding apply tools, to verify read path is null-safe before allowing writes.

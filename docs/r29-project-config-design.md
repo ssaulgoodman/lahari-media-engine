@@ -74,7 +74,7 @@ Phase 1 should add two small canonical surfaces.
 `lahari_project_config`
 
 ```sql
-project_id uuid primary key references lahari_projects(id) on delete cascade,
+project_id text primary key references lahari_projects(id) on delete cascade,
 preferences jsonb not null default '{}',
 updated_at timestamptz not null default now(),
 updated_by uuid null
@@ -84,10 +84,10 @@ updated_by uuid null
 
 ```sql
 id uuid primary key default gen_random_uuid(),
-project_id uuid not null references lahari_projects(id) on delete cascade,
+project_id text not null references lahari_projects(id) on delete cascade,
 kind text not null check (kind in ('storyboard', 'video')),
 scope_type text not null default 'project' check (scope_type in ('project', 'scene', 'shot')),
-scope_id uuid null,
+scope_id text null,
 body text not null,
 metadata jsonb not null default '{}',
 active boolean not null default true,
@@ -98,6 +98,8 @@ unique(project_id, kind, scope_type, scope_id)
 ```
 
 For phase 1, only `scope_type = 'project'` is required. The scoped columns exist so scene/shot overrides can land later without a table rewrite.
+
+IDs intentionally use `text`, not `uuid`, because the existing Lahari schema uses text IDs for `lahari_projects`, `lahari_scenes`, and `lahari_shots`.
 
 ## Inheritance
 
@@ -185,6 +187,32 @@ Output:
 
 Both tools record `lahari_director_events` with `source = 'codex'`.
 
+There is no preview tool for R29 by design. Codex is the preview surface: it edits the local desk-copy file, the user reviews the diff/content in Codex or the browser, and the apply tool only validates and persists approved content.
+
+`revert_project_prompt_override`
+
+Input:
+
+```json
+{
+  "projectId": "text id",
+  "kind": "storyboard",
+  "scopeType": "project",
+  "scopeId": null,
+  "baseHash": "sha256 of current active override"
+}
+```
+
+Behavior:
+
+- compare `baseHash` against the current active override hash
+- set the current active override row to `active = false`
+- if a previous inactive override exists for the same key, re-activate the most recent previous row
+- if none exists, leave no active override so generation falls back to global
+- record a director event
+
+This is clearer than overloading `apply_project_prompt_override` with an empty body.
+
 ## Read Path
 
 `attach_director_session` should include config in its response so Codex does not need a separate first call:
@@ -211,6 +239,8 @@ Both tools record `lahari_director_events` with `source = 'codex'`.
 ```
 
 `hydrateProjectWorkbench` should write the config files and `hashes.json`.
+
+After any successful config apply or revert, the response must include the new canonical hash for the touched file. Codex should update `.lahari/projects/<projectId>/config/hashes.json` immediately, or re-run attach/hydrate before further config edits. The next `attach_director_session` also rewrites config files and hashes from Supabase.
 
 ## Backend Integration
 
@@ -275,6 +305,13 @@ Apply tools compare the submitted `baseHash` to the current canonical hash. On m
 
 No silent overwrites.
 
+Prompt overrides should keep history from day one. Do not update the active row in place. On apply:
+
+1. mark any existing active row for `(project_id, kind, scope_type, scope_id)` as `active = false`
+2. insert a new `active = true` row with the new body
+
+Rollback/revert then becomes re-activating the previous row or falling back to global when no previous row exists.
+
 ## Relationship To R28
 
 R28 handles apply-only content tools for project state, especially storyboard prompts and video prompts. R29 handles reusable project config and prompt recipes.
@@ -291,14 +328,15 @@ Both are needed. R29 makes the project smarter; R28 applies concrete generated c
 1. Add migrations for `lahari_project_config` and `lahari_project_prompt_overrides`.
 2. Add read helpers and hash helpers.
 3. Extend `hydrateProjectWorkbench` and `attachDirectorSession` to write/include config.
-4. Add `apply_project_preferences`.
-5. Add `apply_project_prompt_override`.
-6. Wire storyboard planner/video prompt builder to read project overrides.
-7. Add MCP tools and CLI smoke commands.
-8. Smoke on the current director-test project without changing global prompts.
+4. Wire storyboard planner/video prompt builder to read overrides, with null-safe behavior verified before any writes exist.
+5. Add `apply_project_preferences`.
+6. Add `apply_project_prompt_override`.
+7. Add `revert_project_prompt_override`.
+8. Add MCP tools and CLI smoke commands.
+9. Smoke on the current director-test project without changing global prompts.
 
-## Open Questions
+## Decisions
 
-- Should model preferences eventually move fully out of `lahari_projects`, or should project config override them while the old columns remain UI-compatible?
-- Should prompt overrides support inactive history rows from day one, or is one active row per scope enough for phase 1?
-- Should the web studio expose these project config files directly, or should it only show a compact "Codex overrides active" badge for now?
+- Model preferences in project config override `lahari_projects` columns for phase 1. The web studio keeps reading/writing the old columns. Later, after the config layer proves itself, the old columns can be deprecated.
+- Prompt overrides keep inactive history rows from day one. Apply inserts a new active row instead of updating in place.
+- The web studio gets no inline config editor in phase 1. It may show a compact badge such as "Codex overrides active: storyboard" so the artist knows generation is using project-local recipes.
