@@ -574,6 +574,24 @@ Phase 1 objects:
 
 ---
 
+### R30 — Rename `.lahari/` → `lahari/` for sidebar visibility
+
+Status: **proposed** · Raised: 2026-05-13
+
+Codex Desktop and Claude Code sidebars hide dot-prefixed directories by default. That makes ~60% of `.lahari/` invisible to the artist — including their own session journal, project brief, script notes, storyboard prompts, director notes, and project config. Wrong default for content the artist should browse.
+
+**Recommendation:** rename top-level `.lahari/` to `lahari/`. Single visible directory. Plumbing files (audit JSONL, hashes.json, snapshots, state.json) live in subdirectories and are visible-but-ignorable like `node_modules/`.
+
+**Cost:** ~2-3 hours of mechanical find-and-replace across `server/services/codexStudio*/`, `server/services/projectConfig.ts`, `server/services/lahariAudit.ts`, CLI, MCP, skill shards, docs, `.gitignore`. Plus a one-time `mv .lahari lahari` per worktree.
+
+**When:** after the live test pass (so current session state isn't disrupted mid-test), before R28 implementation (so R28's new apply tools land at the right paths from the start, no cleanup pass).
+
+**Why two-dir split rejected:** could split into `studio/` (human-visible) + `.lahari/` (plumbing) but adds complexity for small gain. Plumbing inside `lahari/` is visible but obviously machine-data; artists learn to ignore it like they ignore build output.
+
+**Why it matters:** R17 distribution lands artists into a workspace where their session memory and project files should be discoverable without learning `ls -a`. The dot-prefix was a copy-paste from `.git`/`.vscode` precedent that's wrong for human-readable content.
+
+---
+
 ## Risks / Watch List
 
 Things I might be wrong about. Worth revisiting as we learn.
@@ -585,6 +603,8 @@ Things I might be wrong about. Worth revisiting as we learn.
 - **W5.** The plugin distribution timing question is downstream of all of this. Don't relitigate until R10's gates are concrete and met.
 - **W6.** CLI audit fallback could make MCP discipline feel optional. Keep the product rule MCP-first in director mode; CLI audit is a safety net, not the primary operating path.
 - **W7.** Project-local prompt catalogs can become a second source of truth if file edits are not imported through typed apply tools. Desk-copy files are useful; production overrides must live in Supabase.
+- **W8.** Codex Desktop / Claude Code MCP hot-reload gap: registered MCP servers don't appear in active chat sessions until app restart. Upstream limitation, not a Lahari bug. R18 enforcement (skill refuses CLI fallback when MCP not visible) handles the user-facing failure mode. File as feature request with OpenAI/Anthropic when stable surface exists.
+- **W9.** R29 phase 2 (concept/script/shot_prompts overrides) overlaps with R28 (Codex-native apply for the same content). If R28 ships first and Codex sessions stop hitting backend LLMs entirely, R29 phase 2's value collapses to "web studio users only." Decide phase 2 scope only after observing post-R28 usage.
 
 ---
 
