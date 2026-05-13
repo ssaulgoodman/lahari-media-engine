@@ -190,6 +190,18 @@ Video gens: 60-90s. Renders: minutes. The artist will context-switch and forget.
 
 ---
 
+### R11A — Director/engine friction capture
+
+Status: **shipped first pass** · Raised: 2026-05-13 · Updated: 2026-05-13
+
+Parallel testing uses two Codex sessions on the same worktree: one director session operating a real song, one engine session fixing what breaks. The handoff needs evidence, not memory.
+
+**Shipped first pass:** every Lahari MCP call writes redacted JSONL start/finish audit rows to `.lahari/audit/<projectId>/<date>-calls.jsonl` or `_unscoped`. CLI command `npm run lahari -- audit tail [projectId|_unscoped] [n]` prints recent entries for engine debugging. MCP tool `lahari_capture_issue` lets the director session write `.lahari/issues/<timestamp>-<severity>.json` with a summary, suggested fix, and recent audit tail.
+
+**Why it matters:** Makes real-project testing debuggable. The engine session can see exactly which tool ran, how long it took, what it returned in summary, and what Codex thought was wrong.
+
+---
+
 ### R12 — Session-bind UX (title + attach + journal read)
 
 Status: **shipped** · Raised: 2026-05-13 · Updated: 2026-05-13

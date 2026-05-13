@@ -297,6 +297,7 @@ The MCP server currently exposes read-only/local-output tools plus explicit muta
 - `rollback_storyboard_prompt_preview`
 - `apply_generate_storyboard`
 - `apply_generate_video`
+- `lahari_capture_issue`
 
 This keeps MCP as an adapter, not the architecture. The shared domain logic lives in `server/services/codexStudio.ts`, and the CLI wraps the same functions.
 
@@ -345,6 +346,14 @@ The state file is not the source of truth for the project. Supabase remains trut
 Artist and operator decisions that need to survive across Codex sessions live in `lahari_director_events`. Web studio mutations and Codex apply tools write compact events for locks, unlocks, prompt edits, clears, reverts, generation, render lifecycle, and preview applies. `attach_director_session` reads events newer than the last monotonic `seq` cursor and writes a "Changes since last attach" block into the local journal.
 
 Realtime sync uses three lanes over Supabase Realtime: `postgres_changes` for persisted project row changes, broadcast channels for ephemeral progress like "Codex is generating shot 4", and optional presence for "Codex is attached." Broadcast/presence are not memory; the durable event table is.
+
+Testing with parallel director + engine sessions uses `.lahari/` as the handoff seam. Every MCP tool call writes a redacted start/finish audit event under `.lahari/audit/<projectId>/<date>-calls.jsonl` (or `_unscoped` when no project ID is known), including duration, errors, and compact output summary. Engine sessions can inspect the trail with:
+
+```bash
+npm run lahari -- audit tail <projectId> 20
+```
+
+If the director session notices unexpected tool behavior or incoherent project state, it should call `lahari_capture_issue`. That writes `.lahari/issues/<timestamp>-<severity>.json` with the summary, suggested fix, and recent audit tail, so the engine session can debug from evidence rather than vibes.
 
 Web studio deep links use query parameters such as `?project=<id>&step=studio&shot=<shotId>&action=review-video`. The web app opens the requested project/step and focuses the shot's scene when possible. These links are the visual approval surface for paid generation, lock/reject review, and shot-level decisions.
 

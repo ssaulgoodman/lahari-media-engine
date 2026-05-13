@@ -57,6 +57,16 @@ The default when the artist returns to a song is to **resume** the existing Code
 6. If mutation is needed, explain what will change and ask for approval.
 7. After a tool call, summarize the outcome and update the working notes.
 
+## Friction Capture
+
+If a Lahari tool returns unexpected output, project state does not make sense, a deep link or action plan feels wrong, or you cannot reconcile the web studio with the packet, call `lahari_capture_issue` instead of guessing. Include severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.
+
+Tool-call audit logs are written under `.lahari/audit/<projectId>/`. An engine session can inspect them with:
+
+```bash
+npm run lahari -- audit tail <projectId> 20
+```
+
 ## Taste Checks
 
 Concept:

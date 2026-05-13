@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as z from 'zod/v4';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
+import { captureLahariIssue, recordMcpAudit } from '../server/services/lahariAudit.js';
 
 const loadStudio = async () => {
   const [{ getFullProject }, studio] = await Promise.all([
@@ -24,7 +25,27 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
-server.registerTool('list_projects', {
+const registerAuditedTool = (
+  name: string,
+  config: Parameters<typeof server.registerTool>[1],
+  handler: (args: any) => Promise<any>
+) => {
+  server.registerTool(name, config, async (args: any) => {
+    const startedAt = new Date().toISOString();
+    const start = Date.now();
+    recordMcpAudit({ phase: 'start', tool: name, args, startedAt });
+    try {
+      const result = await handler(args);
+      recordMcpAudit({ phase: 'finish', tool: name, args, result, durationMs: Date.now() - start, startedAt });
+      return result;
+    } catch (error) {
+      recordMcpAudit({ phase: 'finish', tool: name, args, error, durationMs: Date.now() - start, startedAt });
+      throw error;
+    }
+  });
+};
+
+registerAuditedTool('list_projects', {
   title: 'List Lahari projects',
   description: 'Read-only. Lists recent Lahari projects with status, song classification, and model settings.',
   inputSchema: {
@@ -35,7 +56,7 @@ server.registerTool('list_projects', {
   return textResult(await studio.listProjects(limit?.toString()));
 });
 
-server.registerTool('get_project_packet', {
+registerAuditedTool('get_project_packet', {
   title: 'Get project packet',
   description: 'Read-only. Returns a compact Codex-oriented packet for one Lahari project.',
   inputSchema: {
@@ -47,7 +68,7 @@ server.registerTool('get_project_packet', {
   return textResult(await studio.buildProjectPacket(project));
 });
 
-server.registerTool('get_project_actions', {
+registerAuditedTool('get_project_actions', {
   title: 'Get project action list',
   description: 'Read-only. Returns a compact menu of legal next actions for a Lahari project, including CLI commands, MCP tool names, prerequisites, and cost estimates where available.',
   inputSchema: {
@@ -59,7 +80,7 @@ server.registerTool('get_project_actions', {
   return textResult(studio.buildProjectActionList(project));
 });
 
-server.registerTool('hydrate_project_workbench', {
+registerAuditedTool('hydrate_project_workbench', {
   title: 'Hydrate project workbench',
   description: 'Read-only with local file output. Pulls canonical Supabase state and writes a local Codex workbench under .lahari/projects/<projectId>.',
   inputSchema: {
@@ -72,7 +93,7 @@ server.registerTool('hydrate_project_workbench', {
   return textResult(await studio.hydrateProjectWorkbench(project, outputDir));
 });
 
-server.registerTool('review_storyboard_prompts', {
+registerAuditedTool('review_storyboard_prompts', {
   title: 'Review storyboard prompts',
   description: 'Read-only. Reviews all storyboard prompts/cut plans for missing, stale, overlong, or blocked states and returns rewrite/generation commands.',
   inputSchema: {
@@ -84,7 +105,7 @@ server.registerTool('review_storyboard_prompts', {
   return textResult(studio.buildStoryboardPromptReview(project));
 });
 
-server.registerTool('get_shot_packet', {
+registerAuditedTool('get_shot_packet', {
   title: 'Get shot packet',
   description: 'Read-only. Returns one shot with its scene, prompts, assets, and previous/next context.',
   inputSchema: {
@@ -97,7 +118,7 @@ server.registerTool('get_shot_packet', {
   return textResult(studio.buildShotPacket(project, shotId));
 });
 
-server.registerTool('write_project_artifacts', {
+registerAuditedTool('write_project_artifacts', {
   title: 'Write project review artifacts',
   description: 'Read-only with local file output. Writes a director report Markdown file and/or HTML contact sheet under .lahari/codex by default. Does not mutate Lahari DB or assets.',
   inputSchema: {
@@ -130,7 +151,7 @@ server.registerTool('write_project_artifacts', {
   });
 });
 
-server.registerTool('write_project_sheets', {
+registerAuditedTool('write_project_sheets', {
   title: 'Write focused project sheets',
   description: 'Read-only with local file output. Writes focused HTML evidence sheets under .lahari/codex: overview, style, references, storyboard, and/or renders.',
   inputSchema: {
@@ -163,7 +184,7 @@ server.registerTool('write_project_sheets', {
   });
 });
 
-server.registerTool('attach_director_session', {
+registerAuditedTool('attach_director_session', {
   title: 'Attach director session',
   description: 'Local-file only. Opens a Lahari project as the current director session, refreshes .lahari/sessions, hydrates the .lahari/projects workbench, and returns a web studio link.',
   inputSchema: {
@@ -176,7 +197,7 @@ server.registerTool('attach_director_session', {
   return textResult(await studio.attachDirectorSession(project, note));
 });
 
-server.registerTool('get_director_session', {
+registerAuditedTool('get_director_session', {
   title: 'Get director session',
   description: 'Read-only/local-file. Returns the current derived checkpoint plus saved session state and journal when present.',
   inputSchema: {
@@ -188,7 +209,7 @@ server.registerTool('get_director_session', {
   return textResult(studio.getDirectorSession(project));
 });
 
-server.registerTool('add_director_note', {
+registerAuditedTool('add_director_note', {
   title: 'Add director journal note',
   description: 'Local-file only. Appends an operator/Codex note to the project director journal and refreshes local state.',
   inputSchema: {
@@ -201,7 +222,7 @@ server.registerTool('add_director_note', {
   return textResult(studio.addDirectorSessionNote(project, note));
 });
 
-server.registerTool('preview_rewrite_shot_prompts', {
+registerAuditedTool('preview_rewrite_shot_prompts', {
   title: 'Preview shot prompt rewrite',
   description: 'Paid AI call, preview-only. Rewrites shot visual/motion prompts into local preview artifacts without mutating the Lahari database.',
   inputSchema: {
@@ -214,7 +235,7 @@ server.registerTool('preview_rewrite_shot_prompts', {
   return textResult(await studio.previewRewriteShotPrompts(project, note));
 });
 
-server.registerTool('preview_rewrite_script', {
+registerAuditedTool('preview_rewrite_script', {
   title: 'Preview script rewrite',
   description: 'Paid AI call, preview-only. Generates or refines the full script into local preview artifacts without mutating the Lahari database.',
   inputSchema: {
@@ -227,7 +248,7 @@ server.registerTool('preview_rewrite_script', {
   return textResult(await studio.previewRewriteScript(project, note));
 });
 
-server.registerTool('preview_rewrite_storyboard_prompt', {
+registerAuditedTool('preview_rewrite_storyboard_prompt', {
   title: 'Preview storyboard prompt rewrite',
   description: 'Paid AI call, preview-only. Rewrites one shot storyboard prompt and cut plan into local preview artifacts without mutating the Lahari database.',
   inputSchema: {
@@ -241,7 +262,7 @@ server.registerTool('preview_rewrite_storyboard_prompt', {
   return textResult(await studio.previewRewriteStoryboardPrompt(project, shotId, note));
 });
 
-server.registerTool('plan_generate_storyboard', {
+registerAuditedTool('plan_generate_storyboard', {
   title: 'Plan storyboard generation',
   description: 'Read-only. Reports prerequisites, estimated cost, state changes, and approval wording before generating a storyboard board.',
   inputSchema: {
@@ -254,7 +275,7 @@ server.registerTool('plan_generate_storyboard', {
   return textResult(studio.planGenerateStoryboard(project, shotId));
 });
 
-server.registerTool('plan_generate_video', {
+registerAuditedTool('plan_generate_video', {
   title: 'Plan video generation',
   description: 'Read-only. Reports prerequisites, estimated cost, state changes, and approval wording before generating a shot video.',
   inputSchema: {
@@ -267,7 +288,7 @@ server.registerTool('plan_generate_video', {
   return textResult(studio.planGenerateVideo(project, shotId));
 });
 
-server.registerTool('plan_apply_shot_prompt_preview', {
+registerAuditedTool('plan_apply_shot_prompt_preview', {
   title: 'Plan applying shot prompt preview',
   description: 'Read-only. Validates a saved shot prompt preview and reports the exact mutation blast radius before apply.',
   inputSchema: {
@@ -280,7 +301,7 @@ server.registerTool('plan_apply_shot_prompt_preview', {
   return textResult(await studio.getRewriteShotPromptsApplyPlan(previewJsonPath, project));
 });
 
-server.registerTool('plan_apply_storyboard_prompt_preview', {
+registerAuditedTool('plan_apply_storyboard_prompt_preview', {
   title: 'Plan applying storyboard prompt preview',
   description: 'Read-only. Validates a saved storyboard prompt preview and reports exact mutation blast radius before apply.',
   inputSchema: {
@@ -293,7 +314,7 @@ server.registerTool('plan_apply_storyboard_prompt_preview', {
   return textResult(await studio.getRewriteStoryboardPromptApplyPlan(previewJsonPath, project));
 });
 
-server.registerTool('plan_apply_script_preview', {
+registerAuditedTool('plan_apply_script_preview', {
   title: 'Plan applying script preview',
   description: 'Read-only. Validates a saved script preview and reports exact mutation blast radius before apply.',
   inputSchema: {
@@ -306,7 +327,7 @@ server.registerTool('plan_apply_script_preview', {
   return textResult(await studio.getRewriteScriptApplyPlan(previewJsonPath, project));
 });
 
-server.registerTool('apply_shot_prompt_preview', {
+registerAuditedTool('apply_shot_prompt_preview', {
   title: 'Apply shot prompt preview',
   description: 'Mutating. Applies a saved shot prompt preview to Supabase after validating project/shot drift. Updates shot prompts, continuity, stale flags, project prompt cache, and local director journal.',
   inputSchema: {
@@ -323,7 +344,7 @@ server.registerTool('apply_shot_prompt_preview', {
   return textResult(await studio.applyRewriteShotPromptsPreview(previewJsonPath, project));
 });
 
-server.registerTool('apply_storyboard_prompt_preview', {
+registerAuditedTool('apply_storyboard_prompt_preview', {
   title: 'Apply storyboard prompt preview',
   description: 'Mutating. Applies a saved storyboard prompt preview to Supabase after validating drift. Updates storyboard prompt/cut plan and marks storyboard/video stale for review.',
   inputSchema: {
@@ -340,7 +361,7 @@ server.registerTool('apply_storyboard_prompt_preview', {
   return textResult(await studio.applyRewriteStoryboardPromptPreview(previewJsonPath, project));
 });
 
-server.registerTool('apply_script_preview', {
+registerAuditedTool('apply_script_preview', {
   title: 'Apply script preview',
   description: 'Mutating. Applies a saved script preview to Supabase after validating drift and refusing downstream visual work. Replaces cast, environments, scenes, and shots.',
   inputSchema: {
@@ -357,7 +378,7 @@ server.registerTool('apply_script_preview', {
   return textResult(await studio.applyRewriteScriptPreview(previewJsonPath, project));
 });
 
-server.registerTool('rollback_shot_prompt_preview', {
+registerAuditedTool('rollback_shot_prompt_preview', {
   title: 'Rollback shot prompt preview',
   description: 'Mutating. Restores shot prompt fields from a saved preview before-snapshot after validating current state still matches the preview after-state.',
   inputSchema: {
@@ -374,7 +395,7 @@ server.registerTool('rollback_shot_prompt_preview', {
   return textResult(await studio.rollbackRewriteShotPromptsPreview(previewJsonPath, project));
 });
 
-server.registerTool('rollback_storyboard_prompt_preview', {
+registerAuditedTool('rollback_storyboard_prompt_preview', {
   title: 'Rollback storyboard prompt preview',
   description: 'Mutating. Restores storyboard prompt fields from a saved preview before-snapshot after validating current state still matches the preview after-state.',
   inputSchema: {
@@ -391,7 +412,7 @@ server.registerTool('rollback_storyboard_prompt_preview', {
   return textResult(await studio.rollbackRewriteStoryboardPromptPreview(previewJsonPath, project));
 });
 
-server.registerTool('rollback_script_preview', {
+registerAuditedTool('rollback_script_preview', {
   title: 'Rollback script preview',
   description: 'Mutating. Restores script/cast/environment rows from a saved preview rollback snapshot after validating current script still matches the preview after-state.',
   inputSchema: {
@@ -408,7 +429,7 @@ server.registerTool('rollback_script_preview', {
   return textResult(await studio.rollbackRewriteScriptPreview(previewJsonPath, project));
 });
 
-server.registerTool('apply_generate_storyboard', {
+registerAuditedTool('apply_generate_storyboard', {
   title: 'Generate storyboard board',
   description: 'Mutating and paid. Generates a new storyboard board for one shot after validating prerequisites. Updates the active storyboard pointer, unlocks the board for review, and marks video stale.',
   inputSchema: {
@@ -426,7 +447,7 @@ server.registerTool('apply_generate_storyboard', {
   return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
 });
 
-server.registerTool('apply_generate_video', {
+registerAuditedTool('apply_generate_video', {
   title: 'Generate shot video',
   description: 'Mutating and paid. Generates a new video for one shot after validating prerequisites. Updates the active video pointer and attempts last-frame extraction.',
   inputSchema: {
@@ -442,6 +463,20 @@ server.registerTool('apply_generate_video', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyGenerateVideo(project, shotId, promptOverride));
+});
+
+registerAuditedTool('lahari_capture_issue', {
+  title: 'Capture Lahari director issue',
+  description: 'Local-file only. Call this when tool behavior, project state, or director-session flow seems wrong. Writes a compact issue file for the engine session to debug later.',
+  inputSchema: {
+    projectId: z.string().optional().describe('Optional Lahari project ID if the issue is project-specific.'),
+    severity: z.enum(['low', 'mid', 'high']).describe('How disruptive the issue is.'),
+    summary: z.string().min(1).describe('What went wrong, in one clear sentence or short paragraph.'),
+    suggestedFix: z.string().optional().describe('Optional suspected fix or next debugging lead.'),
+    recentToolCalls: z.unknown().optional().describe('Optional recent tool-call context. If omitted, the tool includes the latest audit entries.'),
+  },
+}, async ({ projectId, severity, summary, suggestedFix, recentToolCalls }) => {
+  return textResult(captureLahariIssue({ projectId, severity, summary, suggestedFix, recentToolCalls }));
 });
 
 async function main() {

@@ -2,6 +2,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
+import { formatAuditTail } from '../server/services/lahariAudit.js';
 import { runLahariSetup } from '../server/services/lahariSetup.js';
 
 const usage = () => {
@@ -11,6 +12,7 @@ Codex-native studio helpers.
 
 Usage:
   npm run lahari -- setup [--check]
+  npm run lahari -- audit tail [projectId|_unscoped] [n]
   npm run lahari -- project list [limit]
   npm run lahari -- project packet <projectId>
   npm run lahari -- project actions <projectId>
@@ -71,6 +73,13 @@ const main = async () => {
 
   if (domain === 'setup') {
     await runLahariSetup({ skipRegister: action === '--check' });
+    return;
+  }
+
+  if (domain === 'audit' && action === 'tail') {
+    const projectScope = projectId === '_unscoped' ? null : projectId;
+    const limit = Number(arg4 || 20);
+    console.log(formatAuditTail(projectScope, Number.isFinite(limit) ? limit : 20));
     return;
   }
 
