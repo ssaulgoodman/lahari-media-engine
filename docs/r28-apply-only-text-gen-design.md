@@ -449,17 +449,19 @@ The skill should also teach the **retry-on-validation-error loop** explicitly:
 
 > When an apply tool returns `error: validation_failed`, the tool's `message` and `field` tell you exactly what to fix. Compress, simplify, or correct as instructed. Retry with the same baseHash. Do not pass `force: true` to skip validation.
 
-## Open Questions
+## Locked Decisions (formerly open questions)
 
-1. **Should `apply_shot_prompts` accept a single shot shape too, not just an array?** Convenience for single-shot edits. Either: keep array-only (Codex always wraps in `[{...}]`) or expose two tools (single + bulk). Recommendation: array-only — fewer tools in the MCP surface, Codex wraps trivially.
+These were called out as open questions on first draft; Saul + Claude locked them on 2026-05-13. Implementation should follow these defaults; revisit only if a concrete reason emerges.
 
-2. **Should `apply_script` always use an atomic RPC, or accept partial updates?** Partial would let Codex edit one scene without rebuilding the whole script. Schema is harder; constraint checking is harder. Recommendation: atomic-only for R28 phase 1; partial-script-edit is a future R# if demand emerges.
+1. **`apply_shot_prompts` is array-only.** Even when editing one shot, Codex wraps in `[{...}]`. No separate single-shot tool. Reasoning: minimizes MCP tool count (tool-picking accuracy degrades past ~30 tools); the wrap is trivial; no separate code path to maintain.
 
-3. **Should the deprecated R25 tools alias to the new apply tools internally?** I.e., `write_storyboard_prompt` calls `apply_storyboard_prompt` with backend-generated content? Adds complexity. Recommendation: no — keep them as separate code paths (the deprecated tools wrap the existing backend LLM call; the new tools take Codex content). Code duplication is fine for a transitional surface.
+2. **`apply_script` is atomic-only.** Codex submits the full script every time; the apply tool wipes existing rows and inserts via atomic Postgres RPC. Reasoning: code reuse with RB-FU1's rollback RPC; clean drift detection via single fingerprint; surgical script edits still available through the existing `preview_rewrite_script` + `apply_rewrite_script_preview` path. Partial-script-edit is a future R# if Codex-native demand for it emerges.
 
-4. **Should drift detection be optional from day one (omit `baseHash` to skip the check)?** Currently the spec says `baseHash` is optional and only checked when provided. This means Codex can apply blind if it doesn't have the hash. Pro: flexible. Con: silent overwrites possible. Recommendation: keep optional for now; skill teaches "always pass baseHash from the most recent read."
+3. **Deprecated R25 tools stay as separate code paths.** `write_storyboard_prompt` and `bulk_write_storyboard_prompts` keep their existing backend-LLM-wrapper implementation through the 3-step deprecation (description warning → warn-level log → removal). No aliasing to the new `apply_storyboard_prompt`. Reasoning: code duplication is fine for transitional surface that's going away; coupling the deprecated tools to the new validation/error shape is throwaway work.
 
-5. **Should events bundle bulk applies or per-shot?** Bulk is simpler to read in the journal ("Codex applied prompts to 12 shots") but loses per-shot granularity. Per-shot matches existing patterns (web studio events are per-shot). Recommendation: per-shot, matches existing journal shape.
+4. **`baseHash` is optional from day one.** Tool checks only when provided. Reasoning: required would block (a) first-time content writes where no current state exists, and (b) intentional repair writes without a recent read. The `lahari-director` skill teaches "always pass baseHash from your most recent read" — discipline + optional flag covers 99% of safety with an escape hatch for edge cases.
+
+5. **Bulk applies record per-shot director events, not one bundle.** Matches existing journal patterns (web studio events are per-shot). Reasoning: better narrative granularity for the journal, better analytics for "what did Codex touch in the last N hours," tiny cost (events table is cheap). Bundle wins one row at the cost of journal quality.
 
 ## Cross-References
 
