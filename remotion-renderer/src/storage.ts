@@ -66,6 +66,8 @@ export const writeTerminalFallback = async (
     video_url: typeof payload.videoUrl === 'string' ? payload.videoUrl : null,
     storage_path: typeof payload.storagePath === 'string' ? payload.storagePath : null,
     render_ms: typeof payload.renderMs === 'number' ? payload.renderMs : null,
+    render_engine: typeof payload.renderEngine === 'string' ? payload.renderEngine.slice(0, 40) : null,
+    ffmpeg_fallback_reason: typeof payload.ffmpegFallbackReason === 'string' ? payload.ffmpegFallbackReason.slice(0, 500) : null,
     error: isError ? String(payload.error).slice(0, 2000) : null,
     error_code: isError
       ? typeof payload.errorCode === 'string' ? payload.errorCode.slice(0, 80) : 'renderer_failed'

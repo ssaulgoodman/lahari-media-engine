@@ -876,6 +876,8 @@ export interface RenderStatusResponse {
   stage: string | null;
   lastHeartbeatAt: string | null;
   modalFunctionCallId: string | null;
+  renderEngine: string | null;
+  ffmpegFallbackReason: string | null;
 }
 
 // Kicks off an async render. Backend returns 202 immediately with a renderId;

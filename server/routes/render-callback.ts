@@ -50,10 +50,16 @@ router.post('/progress/:renderId', async (req, res) => {
 
   const progress = clampProgress(req.body?.progress);
   const stage = typeof req.body?.stage === 'string' ? req.body.stage.slice(0, 80) : 'rendering';
+  const renderEngine = typeof req.body?.renderEngine === 'string' ? req.body.renderEngine.slice(0, 40) : null;
+  const ffmpegFallbackReason = typeof req.body?.ffmpegFallbackReason === 'string'
+    ? req.body.ffmpegFallbackReason.slice(0, 500)
+    : null;
 
   await updateRows('renders', { id: renderId, status: 'rendering' }, {
     ...(progress !== null ? { progress } : {}),
     stage,
+    ...(renderEngine ? { render_engine: renderEngine } : {}),
+    ...(ffmpegFallbackReason ? { ffmpeg_fallback_reason: ffmpegFallbackReason } : {}),
     last_heartbeat_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
@@ -79,6 +85,10 @@ router.post('/callback/:renderId', async (req, res) => {
   }
 
   const { videoUrl, storagePath, renderMs, error } = req.body ?? {};
+  const renderEngine = typeof req.body?.renderEngine === 'string' ? req.body.renderEngine.slice(0, 40) : null;
+  const ffmpegFallbackReason = typeof req.body?.ffmpegFallbackReason === 'string'
+    ? req.body.ffmpegFallbackReason.slice(0, 500)
+    : null;
 
   try {
     if (error) {
@@ -88,6 +98,8 @@ router.post('/callback/:renderId', async (req, res) => {
         error_code: typeof req.body?.errorCode === 'string' ? req.body.errorCode.slice(0, 80) : 'renderer_failed',
         stage: 'failed',
         render_ms: typeof renderMs === 'number' ? renderMs : null,
+        ...(renderEngine ? { render_engine: renderEngine } : {}),
+        ...(ffmpegFallbackReason ? { ffmpeg_fallback_reason: ffmpegFallbackReason } : {}),
         updated_at: new Date().toISOString(),
       });
       return res.json({ ok: true });
@@ -110,6 +122,8 @@ router.post('/callback/:renderId', async (req, res) => {
       video_url: videoUrl,
       storage_path: storagePath,
       render_ms: typeof renderMs === 'number' ? renderMs : null,
+      ...(renderEngine ? { render_engine: renderEngine } : {}),
+      ...(ffmpegFallbackReason ? { ffmpeg_fallback_reason: ffmpegFallbackReason } : {}),
       progress: 1,
       stage: 'completed',
       last_heartbeat_at: new Date().toISOString(),

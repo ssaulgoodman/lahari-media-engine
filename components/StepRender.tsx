@@ -273,6 +273,8 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       stage: 'queued',
       lastHeartbeatAt: null,
       modalFunctionCallId: null,
+      renderEngine: null,
+      ffmpegFallbackReason: null,
     });
     try {
       const started = await startRender(project.id, {
@@ -498,6 +500,20 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
                 {progress !== null ? `${Math.round(progress * 100)}%` : '...'}
               </span>
             </div>
+            {(renderMeta?.renderEngine || renderMeta?.ffmpegFallbackReason) && (
+              <div className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                {renderMeta.renderEngine && (
+                  <span className="text-zinc-300">
+                    {renderMeta.renderEngine === 'ffmpeg' ? 'FFmpeg fast path' : 'Remotion'}
+                  </span>
+                )}
+                {renderMeta.ffmpegFallbackReason && (
+                  <span className="block text-amber-300/80">
+                    FFmpeg fallback: {renderMeta.ffmpegFallbackReason}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="mt-2 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
               <div
                 className="h-full rounded-full bg-emerald-400 transition-all duration-500"
