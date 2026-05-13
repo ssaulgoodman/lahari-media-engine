@@ -47,6 +47,10 @@ Usage:
   npm run lahari -- rollback rewrite-shot-prompts <preview.json>
   npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>
   npm run lahari -- rollback rewrite-script <preview.json>
+  npm run lahari -- apply write-storyboard-prompt <projectId> <shotId> [artist note...]
+  npm run lahari -- apply bulk-write-storyboard-prompts <projectId> [artist note...]
+  npm run lahari -- apply refine-storyboard-image <projectId> <shotId> <feedback...>
+  npm run lahari -- apply bulk-generate-storyboards <projectId> [artist note...]
   npm run lahari -- apply lock-storyboard <projectId> <shotId> [versionId]
   npm run lahari -- apply unlock-storyboard <projectId> <shotId>
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
@@ -201,7 +205,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard'))
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards'))
     || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
@@ -398,6 +402,35 @@ const main = async () => {
     const project = await studio.getFullProject(projectId);
     const note = rest.filter(Boolean).join(' ') || undefined;
     console.log(JSON.stringify(await studio.applyGenerateStoryboard(project, arg4, note), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'write-storyboard-prompt' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const note = rest.filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.writeStoryboardPromptForShot(project, arg4, { artistNote: note }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'bulk-write-storyboard-prompts' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.bulkWriteStoryboardPrompts(project, { artistNote: note }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'refine-storyboard-image' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const feedback = rest.filter(Boolean).join(' ');
+    if (!feedback) throw new Error('Feedback is required: npm run lahari -- apply refine-storyboard-image <projectId> <shotId> <feedback...>');
+    console.log(JSON.stringify(await studio.refineStoryboardImage(project, arg4, { feedback }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'bulk-generate-storyboards' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    const note = [arg4, ...rest].filter(Boolean).join(' ') || undefined;
+    console.log(JSON.stringify(await studio.bulkGenerateStoryboards(project, { artistNote: note }), null, 2));
     return;
   }
 

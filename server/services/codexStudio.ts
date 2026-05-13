@@ -4,10 +4,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectColumns, updateRows, insertRow, deleteRows, rpcVoid } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { planScenes, refineScript, writeShotPrompts } from './claude.js';
-import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion } from './storyboard.js';
+import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion, writeStoryboardPrompt } from './storyboard.js';
 import { generateShotVideo } from './videoGeneration.js';
 import { eventResultPointers, listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
 import { getModelMinDuration } from './segmind.js';
+import type { StoryboardPromptVariant } from './seedance-storyboard-rd.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
@@ -1802,6 +1803,29 @@ const findProjectShot = (project: Project, shotId: string): { shot: ProjectShot;
 
 const roundCost = (cost: number): number => Number(cost.toFixed(3));
 
+const allProjectShots = (project: Project) => {
+  const items: { shot: ProjectShot; sceneIndex: number; shotIndex: number }[] = [];
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    for (const [shotIndex, shot] of scene.shots.entries()) {
+      items.push({ shot, sceneIndex: sceneIndex + 1, shotIndex: shotIndex + 1 });
+    }
+  }
+  return items;
+};
+
+const filterShotTargets = (project: Project, shotIds?: string[]) => {
+  const requested = new Set((shotIds || []).filter(Boolean));
+  const targets = allProjectShots(project).filter((target) => !requested.size || requested.has(target.shot.id));
+  if (requested.size && targets.length !== requested.size) {
+    const found = new Set(targets.map((target) => target.shot.id));
+    const missing = [...requested].filter((id) => !found.has(id));
+    throw new Error(`Shot(s) not found in project: ${missing.join(', ')}`);
+  }
+  return targets;
+};
+
+const storyboardPromptCostEstimate = () => roundCost(Number(process.env.STORYBOARD_PROMPT_WRITE_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_PLAN_COST_ESTIMATE || 0.02));
+
 export const planGenerateStoryboard = (project: Project, shotId: string) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
@@ -1810,6 +1834,7 @@ export const planGenerateStoryboard = (project: Project, shotId: string) => {
   const prerequisites = [
     shot.storyboardPrompt ? null : 'Saved storyboard_prompt is required.',
     shot.locked ? 'Shot is locked; unlock before generating a new storyboard board.' : null,
+    shot.storyboardLocked ? 'Storyboard board is locked; unlock before generating a replacement board.' : null,
   ].filter(Boolean) as string[];
   const willOverwrite = !!shot.storyboardUrl;
   const willChange = [
@@ -1973,6 +1998,135 @@ export const buildStoryboardStatus = (project: Project) => {
   };
 };
 
+export const writeStoryboardPromptForShot = async (project: Project, shotId: string, opts: {
+  artistNote?: string;
+  variant?: StoryboardPromptVariant;
+  artistReferenceImagePath?: string;
+} = {}) => {
+  const target = findProjectShot(project, shotId);
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+  if (target.shot.locked) throw new Error('Cannot write storyboard prompt: shot is locked.');
+
+  const result = await writeStoryboardPrompt({
+    projectId: project.id,
+    shotId,
+    variant: opts.variant,
+    artistNote: opts.artistNote,
+    artistReferenceImagePath: opts.artistReferenceImagePath,
+  });
+  const estimatedCost = storyboardPromptCostEstimate();
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: opts.artistNote ? 'storyboard_prompt_refined' : 'storyboard_prompt_written',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex ${opts.artistNote ? 'refined' : 'wrote'} storyboard prompt and cut plan for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}.`,
+    payload: {
+      artistNote: opts.artistNote || null,
+      variant: opts.variant || 'adaptive_numbered_storyboard',
+      estimatedCost,
+      promptChars: result.storyboardPrompt.length,
+      cutPlanChars: result.cutPlanText.length,
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.write_storyboard_prompt',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    shot: {
+      id: shotId,
+      label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+      beat: compactText(target.shot.direction || target.shot.visualPrompt, 220),
+    },
+    paid: true,
+    estimatedCost,
+    result: {
+      storyboardPromptChars: result.storyboardPrompt.length,
+      cutPlanChars: result.cutPlanText.length,
+      storyboardPrompt: compactText(result.storyboardPrompt, 900),
+      cutPlanText: compactText(result.cutPlanText, 700),
+    },
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard-prompt' }),
+    note: 'Saved storyboard_prompt and storyboard_cut_plan on the shot.',
+  };
+};
+
+export const bulkWriteStoryboardPrompts = async (project: Project, opts: {
+  shotIds?: string[];
+  force?: boolean;
+  artistNote?: string;
+  variant?: StoryboardPromptVariant;
+  artistReferenceImagePath?: string;
+} = {}) => {
+  const targets = filterShotTargets(project, opts.shotIds);
+  const selected = targets.filter(({ shot }) => {
+    if (shot.locked) return false;
+    if (opts.force) return true;
+    return !shot.storyboardPrompt || shot.storyboardPromptStatus === 'error';
+  });
+  const skipped = targets
+    .filter((target) => !selected.some((item) => item.shot.id === target.shot.id))
+    .map(({ shot, sceneIndex, shotIndex }) => ({
+      shotId: shot.id,
+      label: shotLabel(sceneIndex - 1, shotIndex - 1),
+      reason: shot.locked ? 'shot locked' : opts.force ? 'not selected' : 'prompt already present',
+    }));
+  const estimatedCost = roundCost(selected.length * storyboardPromptCostEstimate());
+  const results: any[] = [];
+
+  for (const target of selected) {
+    try {
+      const result = await writeStoryboardPromptForShot(project, target.shot.id, opts);
+      results.push({ shotId: target.shot.id, label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1), ok: true, result: result.result });
+    } catch (error) {
+      results.push({
+        shotId: target.shot.id,
+        label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_prompts_bulk_written',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Codex bulk wrote storyboard prompts for ${results.filter((row) => row.ok).length} shot(s).`,
+    payload: {
+      requestedShotIds: opts.shotIds || null,
+      force: !!opts.force,
+      estimatedCost,
+      results: results.map((row) => ({ shotId: row.shotId, label: row.label, ok: row.ok, error: row.error || null })),
+      skipped,
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.bulk_write_storyboard_prompts',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    paid: true,
+    estimatedCost,
+    counts: {
+      requested: targets.length,
+      selected: selected.length,
+      succeeded: results.filter((row) => row.ok).length,
+      failed: results.filter((row) => !row.ok).length,
+      skipped: skipped.length,
+    },
+    results,
+    skipped,
+    note: opts.force
+      ? 'Force mode rewrote selected unlocked storyboard prompts.'
+      : 'Default mode wrote only missing/error storyboard prompts and skipped locked or already-ready shots.',
+  };
+};
+
 export const planGenerateVideo = (project: Project, shotId: string) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
@@ -2080,6 +2234,147 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     result,
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Generated storyboard board, updated the active storyboard pointer, unlocked the board for review, and marked video stale.',
+  };
+};
+
+export const bulkGenerateStoryboards = async (project: Project, opts: {
+  shotIds?: string[];
+  force?: boolean;
+  artistNote?: string;
+} = {}) => {
+  const targets = filterShotTargets(project, opts.shotIds);
+  const candidates = targets.map((target) => {
+    const shot = target.shot;
+    const plan = shot.storyboardPrompt ? planGenerateStoryboard(project, shot.id) : null;
+    const shouldRun = !!plan
+      && plan.canRun
+      && !shot.storyboardLocked
+      && (opts.force || !shot.storyboardUrl || shot.storyboardStatus === 'stale' || shot.storyboardStatus === 'error');
+    const skipReason = shot.locked ? 'shot locked'
+      : shot.storyboardLocked ? 'storyboard locked'
+      : !shot.storyboardPrompt ? 'missing storyboard prompt'
+      : !plan?.canRun ? plan?.prerequisites.join('; ') || 'not runnable'
+      : !opts.force && shot.storyboardUrl && shot.storyboardStatus !== 'stale' && shot.storyboardStatus !== 'error' ? 'board already present'
+      : null;
+    return { ...target, plan, shouldRun, skipReason };
+  });
+  const selected = candidates.filter((target) => target.shouldRun && target.plan);
+  const skipped = candidates
+    .filter((target) => !target.shouldRun)
+    .map((target) => ({
+      shotId: target.shot.id,
+      label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+      reason: target.skipReason || 'not selected',
+    }));
+  const estimatedCost = roundCost(selected.reduce((sum, target) => sum + Number(target.plan?.estimatedCost || 0), 0));
+  const results: any[] = [];
+
+  for (const target of selected) {
+    try {
+      const result = await applyGenerateStoryboard(project, target.shot.id, opts.artistNote);
+      results.push({
+        shotId: target.shot.id,
+        label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+        ok: true,
+        estimatedCost: result.estimatedCost,
+        result: eventResultPointers(result.result),
+        webUrl: result.webUrl,
+      });
+    } catch (error) {
+      results.push({
+        shotId: target.shot.id,
+        label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboards_bulk_generated',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Codex bulk generated storyboard boards for ${results.filter((row) => row.ok).length} shot(s).`,
+    payload: {
+      requestedShotIds: opts.shotIds || null,
+      force: !!opts.force,
+      artistNote: opts.artistNote || null,
+      estimatedCost,
+      results: results.map((row) => ({ shotId: row.shotId, label: row.label, ok: row.ok, error: row.error || null, result: row.result || null })),
+      skipped,
+    },
+  });
+
+  return {
+    kind: 'lahari.generation_result.bulk_storyboards',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title, storyboardProvider: project.storyboardProvider },
+    paid: true,
+    estimatedCost,
+    counts: {
+      requested: targets.length,
+      selected: selected.length,
+      succeeded: results.filter((row) => row.ok).length,
+      failed: results.filter((row) => !row.ok).length,
+      skipped: skipped.length,
+    },
+    results,
+    skipped,
+    note: opts.force
+      ? 'Force mode generated storyboard boards for selected unlocked shots with saved prompts.'
+      : 'Default mode generated only missing/stale/error unlocked storyboard boards with saved prompts.',
+  };
+};
+
+export const refineStoryboardImage = async (project: Project, shotId: string, opts: {
+  feedback: string;
+  previousVersionId?: string;
+  artistReferenceImagePath?: string;
+}) => {
+  const target = findProjectShot(project, shotId);
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+  if (target.shot.locked) throw new Error('Cannot refine storyboard image: shot is locked.');
+  if (!target.shot.storyboardUrl && !opts.previousVersionId) {
+    throw new Error('Cannot refine storyboard image: generate a storyboard board first.');
+  }
+  const plan = planGenerateStoryboard(project, shotId);
+  const result = await generateStoryboardVersion({
+    projectId: project.id,
+    shotId,
+    artistNote: opts.feedback,
+    previousVersionId: opts.previousVersionId,
+    refineMode: 'edit_image',
+    artistReferenceImagePath: opts.artistReferenceImagePath,
+  });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_refined',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex refined the storyboard image for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}.`,
+    payload: {
+      feedback: opts.feedback,
+      previousVersionId: opts.previousVersionId || target.shot.storyboardVersionId || null,
+      provider: plan.provider,
+      estimatedCost: plan.estimatedCost,
+      result: eventResultPointers(result),
+    },
+  });
+
+  return {
+    kind: 'lahari.generation_result.refine_storyboard_image',
+    generatedAt: new Date().toISOString(),
+    project: plan.project,
+    shot: plan.shot,
+    provider: plan.provider,
+    paid: true,
+    estimatedCost: plan.estimatedCost,
+    result,
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
+    note: 'Refined storyboard image in edit-image mode, updated active storyboard pointer, unlocked board for review, and marked video stale.',
   };
 };
 

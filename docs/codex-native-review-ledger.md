@@ -327,7 +327,7 @@ Observed during director test: `codex mcp list` showed `lahari` registered and e
 
 ### R20 — Out-of-band generation must hydrate Blueprint candidates on load
 
-Status: **agreed** · Raised: 2026-05-13
+Status: **shipped** · Raised: 2026-05-13
 
 Observed during director test: Codex generated character and environment candidates out-of-band. The assets existed in the DB (character/environment candidates were present), but the Blueprint UI did not show them because no candidate was locked yet and the frontend mostly relied on UI-local generation state for the candidate grids.
 
@@ -445,7 +445,7 @@ The first MCP-path director test exposed the missing primitives around storyboar
 - `lock_storyboard` / `unlock_storyboard` — let Codex lock good boards after visual review and reopen them when needed.
 - `get_storyboard_status` — compact per-shot readiness/progress view: prompt status, board status, lock state, stale flags, video readiness.
 
-**Shipped first slice:** `get_storyboard_status`, `lock_storyboard`, and `unlock_storyboard` are now exposed through MCP, CLI, and `buildProjectActionList`. Remaining work is prompt write/bulk-write, board generation aliases/bulk, and edit-image storyboard refinement.
+**Shipped:** `get_storyboard_status`, `write_storyboard_prompt`, `bulk_write_storyboard_prompts`, `generate_storyboard` alias, `bulk_generate_storyboards`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard` are exposed through MCP. CLI supports the same core apply commands for engine smoke/debugging. Bulk tools accept optional `shotIds`, skip locked shots, default to missing/error/stale work, and require explicit `force` for rewrites/regeneration.
 
 **Why it matters:** Storyboard prompting and board generation are the highest-tax v1 director workflows. Codex needs primitives that match the artist's natural loop: write prompt, generate board, inspect, refine image, lock, move to next shot or bulk-fill missing work.
 

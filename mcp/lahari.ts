@@ -117,6 +117,47 @@ registerAuditedTool('get_storyboard_status', {
   return textResult(studio.buildStoryboardStatus(project));
 });
 
+registerAuditedTool('write_storyboard_prompt', {
+  title: 'Write storyboard prompt',
+  description: 'Mutating and paid text call. Writes saved storyboard_prompt and storyboard_cut_plan for one shot using the backend storyboard planner.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    artistNote: z.string().optional().describe('Optional steering note for the planner.'),
+    variant: z.enum(['adaptive_numbered_storyboard', 'four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts']).optional().describe('Storyboard prompt variant. Defaults to adaptive_numbered_storyboard.'),
+    artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
+  },
+}, async ({ projectId, shotId, artistNote, variant, artistReferenceImagePath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for write_storyboard_prompt.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.writeStoryboardPromptForShot(project, shotId, { artistNote, variant, artistReferenceImagePath }));
+});
+
+registerAuditedTool('bulk_write_storyboard_prompts', {
+  title: 'Bulk write storyboard prompts',
+  description: 'Mutating and paid text calls. Writes missing/error storyboard prompts by default for selected unlocked shots. Use force only after explicit approval.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotIds: z.array(z.string().min(1)).optional().describe('Optional explicit shot subset. Defaults to all eligible shots.'),
+    force: z.boolean().optional().describe('Rewrite selected unlocked shots even when a prompt already exists. Requires explicit approval.'),
+    artistNote: z.string().optional().describe('Optional steering note for every selected shot.'),
+    variant: z.enum(['adaptive_numbered_storyboard', 'four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts']).optional().describe('Storyboard prompt variant. Defaults to adaptive_numbered_storyboard.'),
+    artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
+  },
+}, async ({ projectId, shotIds, force, artistNote, variant, artistReferenceImagePath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for bulk_write_storyboard_prompts.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.bulkWriteStoryboardPrompts(project, { shotIds, force, artistNote, variant, artistReferenceImagePath }));
+});
+
 registerAuditedTool('get_shot_packet', {
   title: 'Get shot packet',
   description: 'Read-only. Returns one shot with its scene, prompts, assets, and previous/next context.',
@@ -457,6 +498,63 @@ registerAuditedTool('apply_generate_storyboard', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
+});
+
+registerAuditedTool('generate_storyboard', {
+  title: 'Generate storyboard board',
+  description: 'Alias for apply_generate_storyboard. Mutating and paid. Generates a new storyboard board for one shot after validating prerequisites.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    artistNote: z.string().optional().describe('Optional refinement/render note to pass to storyboard generation.'),
+  },
+}, async ({ projectId, shotId, artistNote }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for generate_storyboard.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
+});
+
+registerAuditedTool('bulk_generate_storyboards', {
+  title: 'Bulk generate storyboard boards',
+  description: 'Mutating and paid. Generates boards for selected unlocked shots with saved prompts. Default only targets missing/stale/error boards; force requires explicit approval.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotIds: z.array(z.string().min(1)).optional().describe('Optional explicit shot subset. Defaults to all eligible shots.'),
+    force: z.boolean().optional().describe('Regenerate selected unlocked shots even when a board already exists. Requires explicit approval.'),
+    artistNote: z.string().optional().describe('Optional render note to pass to each storyboard generation.'),
+  },
+}, async ({ projectId, shotIds, force, artistNote }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for bulk_generate_storyboards.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.bulkGenerateStoryboards(project, { shotIds, force, artistNote }));
+});
+
+registerAuditedTool('refine_storyboard_image', {
+  title: 'Refine storyboard image',
+  description: 'Mutating and paid. Uses storyboard edit-image mode to refine the active board or a specified previous version from artist feedback.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    feedback: z.string().min(1).describe('Concrete visual edit feedback from the artist/director.'),
+    previousVersionId: z.string().optional().describe('Optional storyboard version to edit. Defaults to active version.'),
+    artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
+  },
+}, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for refine_storyboard_image.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.refineStoryboardImage(project, shotId, { feedback, previousVersionId, artistReferenceImagePath }));
 });
 
 registerAuditedTool('lock_storyboard', {
