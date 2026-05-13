@@ -30,11 +30,18 @@ export const IMAGE_MODELS: ImageModelSpec[] = [
   {
     key: 'nano-banana-2',
     label: 'Nano Banana 2',
-    provider: 'segmind',
-    runtimeModel: 'nano-banana-2',
+    // TEMP routing: Segmind credits exhausted 2026-05-13. Switched to Google
+    // Developer API path; under the hood now runs `gemini-3.1-flash-image-preview`
+    // (Google's Nano Banana 2 equivalent, Flash tier). Image quality is close
+    // to Segmind's nano-banana-2; ref-conditioning is Gemini-native so refs
+    // behave like the Nano Banana Pro path, just on the smaller model.
+    // TO RESTORE SEGMIND when credits are back: set provider='segmind' and
+    // runtimeModel='nano-banana-2'. No other changes needed.
+    provider: 'google',
+    runtimeModel: 'gemini-3.1-flash-image-preview',
     supportsRefs: true,
-    maxRefs: 14,
-    note: 'Cheaper alternative via Segmind. Unrelated to Google\'s Nano Banana lineage despite the name.',
+    maxRefs: 10,
+    note: 'Routed to Google Gemini 3.1 Flash Image while Segmind credits are out.',
   },
   {
     key: 'gpt-image-2',

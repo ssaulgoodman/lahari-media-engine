@@ -183,8 +183,24 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
     }
   }
 
+  const openAiSchema = (schema: any): any => {
+    if (!schema || typeof schema !== 'object') return schema;
+    if (Array.isArray(schema)) return schema.map(openAiSchema);
+    const next: Record<string, any> = {};
+    for (const [key, value] of Object.entries(schema)) {
+      next[key] = openAiSchema(value);
+    }
+    if (next.type === 'object') {
+      next.additionalProperties = false;
+      if (next.properties && typeof next.properties === 'object' && !Array.isArray(next.properties)) {
+        next.required = Object.keys(next.properties);
+      }
+    }
+    return next;
+  };
+
   // Output-format dispatch:
-  //   jsonSchema → response_format: json_schema (non-strict — see note)
+  //   jsonSchema → response_format: json_schema
   //   jsonMode   → response_format: json_object (loose)
   //   neither    → plain text
   //
@@ -202,7 +218,7 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
     textOpts.format = {
       type: 'json_schema',
       name: req.jsonSchema.name,
-      schema: req.jsonSchema.schema,
+      schema: openAiSchema(req.jsonSchema.schema),
     };
   } else if (req.jsonMode) {
     textOpts.format = { type: 'json_object' };
