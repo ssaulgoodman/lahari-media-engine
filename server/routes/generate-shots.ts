@@ -947,6 +947,16 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
     selectAll('assets', { shot_id: shotId, category: 'shot_video' }, { orderBy: 'created_at', ascending: false }),
   ]);
 
+  const videoThumbIds = videos
+    .map((a: any) => {
+      try { return JSON.parse(a.metadata || '{}').extracted_last_frame_asset_id || null; } catch { return null; }
+    })
+    .filter(Boolean);
+  const thumbAssets = videoThumbIds.length > 0
+    ? await selectAll('assets', { id: videoThumbIds })
+    : [];
+  const thumbById = new Map(thumbAssets.map((a: any) => [a.id, a]));
+
   const mapAsset = (a: any, currentId: string | null) => ({
     assetId: a.id,
     url: storageUrl(a.file_path),
@@ -960,9 +970,10 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
     video: videos.map(a => {
       let thumbId: string | null = null;
       try { thumbId = JSON.parse(a.metadata || '{}').extracted_last_frame_asset_id || null; } catch {}
+      const thumbAsset = thumbId ? thumbById.get(thumbId) : null;
       return {
         ...mapAsset(a, shot.video_asset_id),
-        thumbnailUrl: thumbId ? storageUrl(frames.find((f: any) => f.id === thumbId)?.file_path || '') || null : null,
+        thumbnailUrl: thumbAsset?.file_path ? storageUrl(thumbAsset.file_path) : null,
       };
     }),
   });

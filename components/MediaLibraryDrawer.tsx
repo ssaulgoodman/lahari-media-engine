@@ -293,8 +293,10 @@ const VersionCard: React.FC<{
   //      pull MBs per thumbnail card. preload="metadata" still loads
   //      enough to seek if the artist hovers / clicks to play later.
   const explicitThumb = version.thumbnailUrl || null;
-  const showAsImage = !!explicitThumb;
-  const posterUrl = explicitThumb || posterFallback;
+  const [explicitThumbFailed, setExplicitThumbFailed] = useState(false);
+  useEffect(() => { setExplicitThumbFailed(false); }, [explicitThumb]);
+  const showAsImage = !!explicitThumb && !explicitThumbFailed;
+  const posterUrl = showAsImage ? explicitThumb : posterFallback;
 
   if (compact) {
     return (
@@ -305,7 +307,7 @@ const VersionCard: React.FC<{
         title={`Append ${label} to timeline`}
       >
         {showAsImage ? (
-          <img src={explicitThumb!} alt="" className="w-full h-full object-cover" />
+          <img src={explicitThumb!} alt="" className="w-full h-full object-cover" onError={() => setExplicitThumbFailed(true)} />
         ) : (
           <video
             src={`${version.url}#t=0.1`}
@@ -330,7 +332,7 @@ const VersionCard: React.FC<{
       title={`Append ${label} to timeline`}
     >
       {showAsImage ? (
-        <img src={explicitThumb!} alt="" className="w-full h-full object-cover" />
+        <img src={explicitThumb!} alt="" className="w-full h-full object-cover" onError={() => setExplicitThumbFailed(true)} />
       ) : (
         <video
           src={`${version.url}#t=0.1`}
