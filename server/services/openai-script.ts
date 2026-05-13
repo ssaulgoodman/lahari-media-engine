@@ -253,7 +253,23 @@ export const planScenesOpenAI = async (
       ];
     }
 
-    const response = await (client.responses.create as any)(requestBody);
+    let response: any;
+    try {
+      response = await (client.responses.create as any)(requestBody);
+    } catch (err: any) {
+      // If we're chaining and the create call itself failed (e.g. server
+      // dropped the previous response, TTL expired, transient API error),
+      // drop the chain and rebuild on next attempt. First-attempt failures
+      // (no chain yet) propagate — they're real auth/quota/network errors,
+      // not chain corruption.
+      if (previousResponseId) {
+        console.warn(`[planScenesOpenAI] Chained retry failed (${err?.message || err}); dropping chain, will rebuild prompt on next attempt`);
+        previousResponseId = null;
+        lastErrors = [`OpenAI chained retry error: ${err?.message || String(err)}`];
+        continue;
+      }
+      throw err;
+    }
     previousResponseId = response?.id || null;
 
     let candidate: ScriptPlan;
@@ -405,7 +421,21 @@ export const refineScriptOpenAI = async (
       ];
     }
 
-    const response = await (client.responses.create as any)(requestBody);
+    let response: any;
+    try {
+      response = await (client.responses.create as any)(requestBody);
+    } catch (err: any) {
+      // Same chain-fallback as planScenesOpenAI — if the chained retry's
+      // create call fails (TTL, server-side state lost), drop the chain
+      // and rebuild on next attempt. First-attempt failures propagate.
+      if (previousResponseId) {
+        console.warn(`[refineScriptOpenAI] Chained retry failed (${err?.message || err}); dropping chain, will rebuild prompt on next attempt`);
+        previousResponseId = null;
+        lastErrors = [`OpenAI chained retry error: ${err?.message || String(err)}`];
+        continue;
+      }
+      throw err;
+    }
     previousResponseId = response?.id || null;
 
     let candidate: ScriptPlan;

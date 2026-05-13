@@ -476,7 +476,11 @@ IMPORTANT — character and environment assignment:
 
     if (attempt >= maxAttempts) {
       console.error(`[planScenes] Failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
-      throw new Error(`Script generation failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try regenerating or adjust pacing.`);
+      // Surface the actual validator errors. The shared validator catches
+      // more than just shot-count mismatches (env/cast reference
+      // hallucinations too); the previous "shot counts don't fit"
+      // message misled on those failure modes.
+      throw new Error(`Script generation failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
     }
 
     // ═══ RETRY: Anthropic-native — send errors back via tool_result chain ═══
@@ -631,7 +635,9 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
     if (attempt >= maxAttempts) {
       console.error(`[refineScript] Failed after ${maxAttempts} attempts: ${errors.join('; ')}`);
-      throw new Error(`Script refinement failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try again.`);
+      // Same reasoning as planScenes throw — surface actual errors so
+      // env/cast reference failures aren't hidden behind a shot-count msg.
+      throw new Error(`Script refinement failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
     }
 
     messages = [

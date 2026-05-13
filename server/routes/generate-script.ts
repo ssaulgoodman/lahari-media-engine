@@ -40,6 +40,12 @@ router.post('/:id/generate-script', async (req, res) => {
   const projectProvider = String(project.text_provider || '').toLowerCase();
   const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
   const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
+  // Gemini script writer not yet implemented — fall through to Claude with a
+  // warning so it's visible in logs that the dropdown choice isn't honored.
+  // Sub-label in BlueprintContextBar also tells the artist "Gemini coming".
+  if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
+    console.warn(`[generate-script] text_provider='${resolvedProvider}' picked but Gemini script writer not implemented yet; falling back to Claude Opus.`);
+  }
   const concept = JSON.parse(project.locked_concept || '{}');
 
   const scriptProviderLabel = useOpenAIScriptWriter ? 'openai' : 'claude';
@@ -225,6 +231,9 @@ router.post('/:id/refine-script', async (req, res) => {
   const projectProvider = String(project.text_provider || '').toLowerCase();
   const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
   const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
+  if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
+    console.warn(`[refine-script] text_provider='${resolvedProvider}' picked but Gemini script writer not implemented yet; falling back to Claude Opus.`);
+  }
 
   const concept = JSON.parse(project.locked_concept || '{}');
   const existingCast = await selectAll('cast_members', { project_id: project.id }, { orderBy: 'sort_order' });
@@ -414,6 +423,9 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   const projectProvider = String(project.text_provider || '').toLowerCase();
   const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
   const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
+  if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
+    console.warn(`[write-shot-prompts] text_provider='${resolvedProvider}' picked but Gemini script writer not implemented yet; falling back to Claude Opus.`);
+  }
 
   const concept = JSON.parse(project.locked_concept || '{}');
   const cast = await selectAll('cast_members', { project_id: project.id }, { orderBy: 'sort_order', ascending: true });
