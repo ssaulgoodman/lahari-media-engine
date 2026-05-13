@@ -78,7 +78,17 @@ When in doubt, ask: "Surgical edit to panel N, or full rewrite of the shot?"
 
 - Image generation itself — that's a tool call. This skill only writes the text the tool consumes.
 - Refining the *image* after generation — that's the `refine_storyboard_image` tool path (image-gen, takes prompt + image + feedback). The skill here is about writing prompts, not iterating boards visually.
-- Video prompts derived from cut plans — see `video-prompt-craft` (not yet written).
+
+## Also Covers: Motion Prompts (Keyframe-Mode Video)
+
+The same rubric applies to motion prompts (the `motion_prompt` field used by Veo and keyframe-mode video gen). A motion prompt is one sentence to a short paragraph describing what changes from the start frame — same "describe action, not film grammar," same "concrete over interior," same anti-cinematic-vocab discipline.
+
+The differences:
+- Motion prompts are shorter (typically 100-400 chars, hard cap 2000) because the video model uses the start frame to anchor everything else.
+- Motion prompts describe motion *over time*, not panel-by-panel. "She lowers her body to the stone over the first second, then exhales, eyes closing" — temporal beats inside one continuous shot.
+- No panel ordering, no panel borders, no per-panel actions. The shot is one continuous take.
+
+When R28's `apply_video_prompt` ships, this is the rubric Codex follows. There is no separate `video-prompt-craft` shard — motion prompts and storyboard panel actions share enough that one skill covers both.
 
 ## Cross-References
 
