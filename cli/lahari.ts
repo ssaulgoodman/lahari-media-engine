@@ -4,6 +4,11 @@ import fs from 'fs';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
 import { formatAuditTail } from '../server/services/lahariAudit.js';
 import { runLahariSetup } from '../server/services/lahariSetup.js';
+import { IMAGE_MODELS, getImageModel } from '../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS, getStoryboardProvider } from '../constants/storyboardProviders.js';
+import { TEXT_PROVIDERS, getTextProvider } from '../constants/textProviders.js';
+import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels.js';
+import { getImageGenerationModelName, getStyleOptionsModelName } from '../server/services/image-provider.js';
 
 const usage = () => {
   console.log(`Lahari CLI
@@ -13,6 +18,7 @@ Codex-native studio helpers.
 Usage:
   npm run lahari -- setup [--check]
   npm run lahari -- audit tail [projectId|_unscoped] [n]
+  npm run lahari -- doctor providers [projectId]
   npm run lahari -- project list [limit]
   npm run lahari -- project packet <projectId>
   npm run lahari -- project actions <projectId>
@@ -63,6 +69,110 @@ const loadStudio = async (mode: 'read' | 'write' = 'read') => {
   return { getFullProject, ...studio };
 };
 
+const providerDoctor = async (projectId?: string) => {
+  const snapshot: Record<string, any> = {
+    kind: 'lahari.doctor.providers',
+    generatedAt: new Date().toISOString(),
+    defaults: {
+      textProvider: TEXT_PROVIDERS[0].key,
+      imageModel: IMAGE_MODELS[0].key,
+      storyboardProvider: STORYBOARD_PROVIDERS[0].key,
+      videoModel: VIDEO_MODELS[0].key,
+    },
+    registries: {
+      textProviders: TEXT_PROVIDERS.map(provider => ({
+        key: provider.key,
+        label: provider.label,
+        provider: provider.provider,
+        runtimeModel: provider.runtimeModel,
+        refineModel: provider.refineModel || provider.runtimeModel,
+        note: provider.note,
+      })),
+      imageModels: IMAGE_MODELS.map(model => ({
+        key: model.key,
+        label: model.label,
+        provider: model.provider,
+        runtimeModel: model.runtimeModel,
+        imageGenerationRuntime: getImageGenerationModelName(model.key),
+        styleOptionsRuntime: getStyleOptionsModelName(model.key),
+        supportsRefs: model.supportsRefs,
+        maxRefs: model.maxRefs,
+        note: model.note,
+      })),
+      storyboardProviders: STORYBOARD_PROVIDERS.map(provider => ({
+        key: provider.key,
+        label: provider.label,
+        provider: provider.provider,
+        runtimeModel: provider.runtimeModel,
+        note: provider.note,
+      })),
+      videoModels: VIDEO_MODELS.map(model => ({
+        key: model.key,
+        label: model.label,
+        provider: model.provider,
+        durations: model.durations,
+        defaultDuration: model.durations[0],
+        costPerSec: model.costPerSec,
+        supportsLastFrame: model.supportsLastFrame,
+        supportsRefs: model.supportsRefs,
+        refsWithFrames: model.refsWithFrames,
+        resolutions: model.resolutions,
+        note: model.note,
+      })),
+    },
+    warnings: [
+      ...IMAGE_MODELS
+        .filter(model => /while Segmind credits are out|TEMP routing/i.test(model.note || ''))
+        .map(model => `${model.key} image model is currently routed to ${model.provider}/${model.runtimeModel}.`),
+      ...STORYBOARD_PROVIDERS
+        .filter(provider => /while Segmind credits are out|TEMP routing/i.test(provider.note || ''))
+        .map(provider => `${provider.key} storyboard provider is currently routed to ${provider.provider}/${provider.runtimeModel}.`),
+    ],
+  };
+
+  if (projectId) {
+    const studio = await loadStudio('read');
+    const project = await studio.getFullProject(projectId);
+    const text = getTextProvider(project.textProvider);
+    const image = getImageModel(project.imageModel);
+    const storyboard = getStoryboardProvider(project.storyboardProvider);
+    const video = getVideoModel(project.videoModel);
+    snapshot.project = {
+      id: project.id,
+      title: project.title,
+      selections: {
+        textProvider: {
+          key: text.key,
+          provider: text.provider,
+          runtimeModel: text.runtimeModel,
+          refineModel: text.refineModel || text.runtimeModel,
+        },
+        imageModel: {
+          key: image.key,
+          provider: image.provider,
+          runtimeModel: image.runtimeModel,
+          imageGenerationRuntime: getImageGenerationModelName(image.key),
+          styleOptionsRuntime: getStyleOptionsModelName(image.key),
+        },
+        storyboardProvider: {
+          key: storyboard.key,
+          provider: storyboard.provider,
+          runtimeModel: storyboard.runtimeModel,
+        },
+        videoModel: {
+          key: video.key,
+          provider: video.provider,
+          durations: video.durations,
+          defaultDuration: video.durations[0],
+          costPerSec: video.costPerSec,
+        },
+      },
+    };
+  }
+
+  return snapshot;
+};
+
 const main = async () => {
   const [domain, action, projectId, arg4, ...rest] = process.argv.slice(2);
 
@@ -80,6 +190,11 @@ const main = async () => {
     const projectScope = projectId === '_unscoped' ? null : projectId;
     const limit = Number(arg4 || 20);
     console.log(formatAuditTail(projectScope, Number.isFinite(limit) ? limit : 20));
+    return;
+  }
+
+  if (domain === 'doctor' && action === 'providers') {
+    console.log(JSON.stringify(await providerDoctor(projectId), null, 2));
     return;
   }
 
