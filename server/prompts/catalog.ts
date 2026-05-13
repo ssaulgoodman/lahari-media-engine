@@ -145,7 +145,7 @@ Under 150 words. Write in English.`,
       { name: 'context', description: 'Optional song context' },
       { name: 'userNote', description: 'Optional director note to steer the concepts' },
     ],
-    template: `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    template: `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 SONG: {{title}} ({{language}})
 SONG TYPE (from audio analysis): {{songType}}, {{traits}}
@@ -374,7 +374,7 @@ Do NOT describe characters, scenes, environments, or narrative.
 These descriptions will be used as image generation prompts — be concrete, not literary.
 
 QUALITY GUIDELINES for the image generation downstream:
-- Avoid overly AI/CGI/fantasy look — should feel cinematic or painterly, grounded and intentional
+- Avoid overly AI/CGI/fantasy look — every direction should feel grounded and intentional in its chosen medium (photographic, painterly, illustrated, miniature, mixed-media, etc.)
 - Avoid excessive intricate details that muddy the image — every element should have clear intention
 - If stylized, it should be tasteful and deliberate, not generic digital art or AI slop
 - Think intentional reference image, not generic concept art`,
@@ -432,7 +432,7 @@ Use the refine_direction tool.`,
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userFeedback', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic character REFERENCE portrait. Match the visual style EXACTLY from Image 1.
+    template: `Generate ONE character REFERENCE portrait. Match the visual style EXACTLY from Image 1.
 
 {{character.name}} — {{character.description}}
 
@@ -465,7 +465,7 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `Generate ONE cinematic environment shot. Match the visual style EXACTLY from Image 1. No characters or figures.
+    template: `Generate ONE environment shot. Match the visual style EXACTLY from Image 1. No characters or figures.
 
 {{environment.name}} — {{environment.description}}
 
@@ -500,9 +500,11 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
       { name: 'userNote', description: 'Optional director note' },
       { name: 'previousBatchTail', description: 'Tail of previous batch for continuity context' },
     ],
-    template: `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
+    template: `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
-WRITE CINEMATIC PROMPTS THAT ARE RENDERABLE.
+WRITE PROMPTS THAT ARE RENDERABLE.
+
+The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words. The locked style reference is the ground truth for medium; words like "cinematic" pull stylized projects back toward realism.
 
 These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
 
@@ -597,7 +599,7 @@ Match the IDs exactly.`,
     model: 'per-project text_provider (refine sibling)',
     modelLabel: 'Claude Sonnet / GPT-5.5 / Gemini 3.1 Flash (refine tier)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
-    summary: 'Text-only planner step. Converts one Seedance shot brief into two saved artifacts: storyboardPrompt for the image renderer (panel actions baked INLINE so the image model knows what to draw per panel) and cutPlanText for Seedance video. Routes through project.text_provider using the cheap refine model (Sonnet / GPT-5.5 / Gemini Flash). Now ~750-char source brief — old "storyboard contract" / "style and quality" boilerplate stripped because it confused the image model.',
+    summary: 'Planner step. Converts one Seedance shot brief into two saved artifacts: storyboardPrompt for the image renderer (panel actions baked INLINE so the image model knows what to draw per panel) and cutPlanText for Seedance video. Routes through project.text_provider using the cheap refine model (Sonnet / GPT-5.5 / Gemini Flash). The locked style image is now sent as a VISION input to the planner so it can adjust the medium language in its output for stylized projects (miniature, painterly, illustrated, etc.) — previously it was text-only and inherited cinema bias. Output must include an explicit inter-panel consistency demand (style/identity/environment stay consistent across all panels) — the trimmed-prompt regression had dropped that line and panels were drifting apart.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'concept', description: 'Locked concept summary' },
@@ -609,15 +611,16 @@ Match the IDs exactly.`,
       { name: 'sceneLyrics', description: 'Lyric/phrase cue if present' },
       { name: 'castNames', description: 'Characters visible in this clip' },
       { name: 'environmentName', description: 'Environment reference name' },
+      { name: 'styleImage', description: 'Locked style reference (vision input — always sent so the planner can read the medium and adjust output language)' },
       { name: 'prevStoryboardImage', description: 'Optional prev shot storyboard (vision input) when shot.use_prev_storyboard_ref is true' },
       { name: 'prevCutPlanText', description: 'Optional prev shot cut plan (text context) when shot.include_prev_cut_plan resolves true (smart default: continuity_from === prev_shot)' },
       { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
       { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
     ],
-    template: `Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
+    template: `You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is attached as vision input — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts:
 
-1. storyboardPrompt: ONE short image-render prompt (~300 words max) for a storyboard renderer. PUT THE PER-PANEL ACTIONS INSIDE THIS PROMPT so the image model knows what to draw in each panel — they are NOT in a separate field. Keep it lean: no "contract" bullet lists, no animation rules, no style/quality boilerplate. The locked style/cast/env reference images carry style and identity.
-2. cutPlanText: numbered cut plan with timestamps, camera, action, motion cue per panel. This drives the downstream Seedance video prompt only — image renderer does NOT see this.
+1. storyboardPrompt: ONE short image-render prompt (~330 words max). MUST include the panel layout + per-panel action descriptions inline + an explicit inter-panel consistency demand: style/lighting/palette from the style ref, character identity (face/costume/jewelry) from cast refs, environment geometry from the env ref — all stay CONSISTENT across every panel. Without this line panels drift apart and look like different scenes. Keep it lean: no "contract" bullet lists, no animation rules, no quality boilerplate, no "cinematic film still" language — cinema language fights non-realistic locked styles.
+2. cutPlanText: one short action line per panel. Format: "Panel N — <action>". No timestamps, no separate camera/action/motion-cue fields. Drives the downstream Seedance video prompt only.
 
 Source brief (trimmed ~750 chars):
 Storyboard a {{rows}}x{{cols}} grid for one {{clipDuration}}s clip of {{title}}.
@@ -625,7 +628,7 @@ Concept: {{concept}}. Mood: {{mood}}. Pacing: {{musicalCue}}.
 Shot: {{clipDirection}}
 Cast: {{castNames || "none"}}
 Setting: {{environmentName || "unspecified"}}
-Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different cinematic frame from the same clip with visible action and clear camera angle.
+Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different frame from the same clip with visible action and clear camera angle.
 
 {{prevStoryboardImage ? "Continuity: the prev shot's locked storyboard is attached as vision input — match its color/light treatment and screen direction." : ""}}
 {{prevCutPlanText ? "Prev shot cut plan (text context):\\n" + prevCutPlanText : ""}}
@@ -902,13 +905,15 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     ],
     template: `(Trimmed from ~80 lines to ~10 — the old "animation contract" + 24fps quality boilerplate confused Seedance more than it helped.)
 
-Animate the storyboard @image1 into one {{clipDuration}}s cinematic clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
+Animate the storyboard @image1 into one {{clipDuration}}s clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
 
 Shot: {{clipDirection}}
 
 {{refBindings ? "Identity refs (do not redesign):\\n" + refBindings : ""}}
 {{cutPlanText ? "\\nPanel beats:\\n" + cutPlanText : ""}}
 {{lipsyncEnabled ? "\\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural." : ""}}
+
+Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
 
 Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`,
     source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt (board_plus_timing variant)' },

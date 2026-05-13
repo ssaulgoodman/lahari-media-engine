@@ -95,7 +95,7 @@ router.get('/active-renders', auth, async (_req, res) => {
   try {
     const { data, error } = await getSB()
       .from(T.renders)
-      .select('id, project_id, status, progress, stage, last_heartbeat_at, modal_function_call_id, created_at, updated_at')
+      .select('id, project_id, status, progress, stage, render_engine, ffmpeg_fallback_reason, last_heartbeat_at, modal_function_call_id, created_at, updated_at')
       .in('status', ['rendering', 'pending_finalize'])
       .order('created_at', { ascending: true });
     if (error) throw new Error(error.message);
@@ -108,6 +108,8 @@ router.get('/active-renders', auth, async (_req, res) => {
         status: r.status,
         progress: r.progress === null || r.progress === undefined ? null : Number(r.progress),
         stage: r.stage || null,
+        render_engine: r.render_engine || null,
+        ffmpeg_fallback_reason: r.ffmpeg_fallback_reason || null,
         last_heartbeat_at: r.last_heartbeat_at || null,
         modal_function_call_id: r.modal_function_call_id || null,
         updated_at: r.updated_at,

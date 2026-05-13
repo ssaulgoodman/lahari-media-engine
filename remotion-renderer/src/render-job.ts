@@ -139,7 +139,7 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>):
 
 const postProgress = async (
   renderId: string,
-  payload: { stage: string; progress?: number },
+  payload: { stage: string; progress?: number; renderEngine?: string; ffmpegFallbackReason?: string | null },
 ) => {
   const base = process.env.MAIN_BACKEND_URL;
   const sharedSecret = process.env.RENDERER_SHARED_SECRET;
@@ -253,6 +253,8 @@ export const runRenderJob = async ({
   let lastProgressPostAt = 0;
   let lastProgress = 0;
   let lastStage = 'starting';
+  let selectedEngine: 'ffmpeg' | 'remotion' | undefined;
+  let selectedFfmpegFallbackReason: string | null = null;
   const reportProgress = async (stage: string, progress?: number, force = false) => {
     const now = Date.now();
     const clamped = typeof progress === 'number' ? Math.max(0, Math.min(1, progress)) : undefined;
@@ -297,18 +299,27 @@ export const runRenderJob = async ({
 
     const ffmpegEligibility = canRenderWithFfmpeg(stagedAssets.inputProps);
     const useFfmpeg = renderEngine() === 'ffmpeg' && ffmpegEligibility.ok;
+    const fallbackReason = !ffmpegEligibility.ok ? ffmpegEligibility.reason : null;
     if (renderEngine() === 'ffmpeg' && !ffmpegEligibility.ok) {
-      console.log(`[render ${renderId}] falling back to Remotion: ${ffmpegEligibility.reason}`);
+      console.log(`[render ${renderId}] falling back to Remotion: ${fallbackReason}`);
       track('render_engine_fallback', projectId, {
         renderId,
         requestedEngine: 'ffmpeg',
         fallbackEngine: 'remotion',
-        reason: ffmpegEligibility.reason,
+        reason: fallbackReason,
       });
     }
 
-    await reportProgress(useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames', 0.08, true);
     const engine = useFfmpeg ? 'ffmpeg' : 'remotion';
+    selectedEngine = engine;
+    selectedFfmpegFallbackReason = fallbackReason;
+    await reportProgress(useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames', 0.08, true);
+    await postProgress(renderId, {
+      stage: useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames',
+      progress: 0.08,
+      renderEngine: engine,
+      ffmpegFallbackReason: fallbackReason,
+    });
     const result = await withHardCap(
       useFfmpeg
         ? renderTimelineWithFfmpeg(stagedAssets.inputProps, (progress) => {
@@ -354,6 +365,8 @@ export const runRenderJob = async ({
       width: result.width,
       height: result.height,
       renderMs,
+      renderEngine: engine,
+      ffmpegFallbackReason: fallbackReason,
     };
     await reportProgress('finalizing', 0.98, true);
     await postCallback(renderId, payload);
@@ -364,7 +377,13 @@ export const runRenderJob = async ({
     const renderMs = Date.now() - startedAt;
     console.error(`[render] failed render=${renderId} project=${projectId}`, message);
     trackError(projectId, e, { renderId, renderMs, errorCode });
-    await postCallback(renderId, { error: message, errorCode, renderMs });
+    await postCallback(renderId, {
+      error: message,
+      errorCode,
+      renderMs,
+      ...(selectedEngine ? { renderEngine: selectedEngine } : {}),
+      ...(selectedFfmpegFallbackReason ? { ffmpegFallbackReason: selectedFfmpegFallbackReason } : {}),
+    });
     return { ok: false, error: message, renderMs };
   } finally {
     clearInterval(heartbeat);

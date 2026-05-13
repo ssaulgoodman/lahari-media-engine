@@ -182,6 +182,8 @@ router.get('/:id/render-status', async (req, res) => {
       stage: null,
       lastHeartbeatAt: null,
       modalFunctionCallId: null,
+      renderEngine: null,
+      ffmpegFallbackReason: null,
     });
   }
   return res.json({
@@ -195,6 +197,8 @@ router.get('/:id/render-status', async (req, res) => {
     stage: latest.stage || null,
     lastHeartbeatAt: latest.last_heartbeat_at || null,
     modalFunctionCallId: latest.modal_function_call_id || null,
+    renderEngine: latest.render_engine || null,
+    ffmpegFallbackReason: latest.ffmpeg_fallback_reason || null,
   });
 });
 

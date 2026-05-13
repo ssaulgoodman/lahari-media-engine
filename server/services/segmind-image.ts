@@ -218,10 +218,11 @@ export const generateStyleOptions = async (
         `${styleNotes}, as tactile handmade folk-art cinema with natural material texture`,
       ]
     : [
-        `Hyperrealistic cinematic devotional film still of ${deity}, natural temple light`,
+        // Medium-neutral defaults — see docs/cinematic-leak-audit-2026-05-12.md.
+        `Devotional reference frame of ${deity}, natural temple light, balanced composition`,
         `${deity} in dramatic chiaroscuro with deep shadows, single warm lamp source`,
         `${deity} in ethereal golden devotional light, soft bloom, ceremonial atmosphere`,
-        `${deity} as tactile handmade folk-art cinema, natural pigments, material texture`,
+        `${deity} as tactile handmade folk-art, natural pigments, material texture`,
       ];
 
   const settled = await Promise.allSettled(
@@ -253,6 +254,10 @@ export const generateCharacterLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted
+  // for signature parity with imagen.ts; Segmind's nano-banana-2 is the
+  // single model, the registry's runtimeModel is informational here.
+  _model?: string,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
   if (styleImagePath) refs.push({ label: 'Style reference only', imagePath: styleImagePath });
@@ -274,6 +279,8 @@ export const generateEnvironmentLooks = async (
   userRefImagePath?: string,
   userNote?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _model?: string,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
   if (styleImagePath) refs.push({ label: 'Style reference only', imagePath: styleImagePath });
@@ -307,7 +314,9 @@ export const generateShotStartFrame = async (opts: {
   if (opts.prevShotEndFramePath) refs.push({ label: 'Continuity reference from previous shot', imagePath: opts.prevShotEndFramePath });
   if (opts.failedImagePath && opts.userFeedback) refs.push({ label: `Rejected previous attempt: ${opts.userFeedback}`, imagePath: opts.failedImagePath });
 
-  let prompt = `Generate one cinematic start frame for this Lahari shot.
+  // Medium-neutral — the style reference is the visual ground truth. See
+  // docs/cinematic-leak-audit-2026-05-12.md.
+  let prompt = `Generate one start frame for this Lahari shot.
 
 Scene: ${opts.visualPrompt}
 
@@ -317,7 +326,7 @@ Preserve character identities from character references. Match the environment r
     prompt += `\n\nPrevious shot ended with: ${opts.continuityDescription}. Begin from that continuity state where possible.`;
   }
   if (opts.userFeedback) prompt += `\n\nDirector note: ${opts.userFeedback}`;
-  prompt += `\n\nSingle cinematic frame. No text, no watermark. Avoid generic fantasy, excessive AI gloss, and copying reference-image layouts.`;
+  prompt += `\n\nSingle frame. No text, no watermark. Avoid generic fantasy, excessive AI gloss, and copying reference-image layouts.`;
 
   return generateNanoBanana2(prompt, opts.aspectRatio || '16:9', refs);
 };
@@ -348,7 +357,7 @@ Motion: ${opts.motionPrompt}
 
 The start-frame reference shows the beginning. Generate what the camera sees moments later after the motion. Keep the same characters, costumes, environment, and style.`;
   if (opts.userFeedback) prompt += `\n\nDirector note: ${opts.userFeedback}`;
-  prompt += `\n\nSingle cinematic frame. No text, no watermark.`;
+  prompt += `\n\nSingle frame. No text, no watermark.`;
 
   return generateNanoBanana2(prompt, '16:9', refs);
 };

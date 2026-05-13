@@ -229,7 +229,8 @@ const runFfmpeg = (
         onProgress?.(1);
         resolve();
       } else {
-        reject(new Error(`ffmpeg render failed with exit ${code}: ${stderr.trim()}`));
+        const tail = stderr.trim().slice(-4000);
+        reject(new Error(`ffmpeg render failed with exit ${code}. stderr tail:\n${tail}`));
       }
     });
   });
@@ -243,7 +244,7 @@ export const renderTimelineWithFfmpeg = async (
   const totalSec = seconds(inputProps.durationMs);
   const visualInputs = buildVisualInputs(inputProps);
   const audioInputs = buildAudioInputs(inputProps);
-  const args = ['-hide_banner', '-y'];
+  const args = ['-hide_banner', '-loglevel', 'warning', '-stats', '-y'];
   const visualLabels: string[] = [];
   const audioLabels: string[] = [];
   let inputIndex = 0;
@@ -292,7 +293,8 @@ export const renderTimelineWithFfmpeg = async (
   }
 
   const outputPath = path.join(tmpdir(), `lahari-ffmpeg-render-${randomUUID()}.mp4`);
-  args.push('-filter_complex', filter, '-map', '[vout]');
+  const filterComplex = filter.replace(/;+$/, '');
+  args.push('-filter_complex', filterComplex, '-map', '[vout]');
   if (audioLabels.length > 0) args.push('-map', '[aout]');
   args.push(
     '-t', String(totalSec),

@@ -8,6 +8,12 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { generateText } from './text-provider.js';
+import {
+  validateScriptStructure,
+  buildCorrectivePrompt,
+  assignDeterministicDurations,
+  parseTimestamp as parseScriptTimestamp,
+} from './script-validation.js';
 
 const getClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -101,7 +107,7 @@ ${meaning}`;
 
   if (directorBrief) {
     // Path B: Director has a specific vision — generate ONE concept.
-    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    prompt = `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 ${songContext}
 
@@ -112,7 +118,7 @@ Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their 
 
 Return EXACTLY 1 concept in the concepts array.`;
   } else {
-    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    prompt = `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 ${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
@@ -176,7 +182,7 @@ export const refineConceptDirection = async (
   feedback: string,
   textProvider?: string,
 ): Promise<any> => {
-  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+  const prompt = `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 CURRENT LOCKED CONCEPT:
 - Title: ${currentConcept.title || ''}
@@ -308,12 +314,9 @@ const formatConceptForScriptPrompt = (concept: any): string => {
   return lines.filter(line => !line.endsWith(': ')).join('\n');
 };
 
-// Parse "M:SS" or "MM:SS" to seconds
-const parseTimestamp = (t: string): number => {
-  if (!t || !t.includes(':')) return 0;
-  const parts = t.split(':').map(Number);
-  return parts[0] * 60 + (parts[1] || 0);
-};
+// parseTimestamp moved to ./script-validation.ts (shared with openai/gemini
+// planners). Re-export as local name to keep the rest of this file unchanged.
+const parseTimestamp = parseScriptTimestamp;
 
 export const planScenes = async (
   input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string }
@@ -453,32 +456,15 @@ IMPORTANT — character and environment assignment:
     const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
     if (!candidate.environments) candidate.environments = [];
 
-    // ═══ VALIDATE: Check shot counts/durations fit scene durations ═══
-    const errors: string[] = [];
-    for (const scene of candidate.scenes) {
-      const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
-      if (sceneDuration <= 0) continue;
-      if ((scene.shots?.length || 0) === 0) {
-        errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
-      }
-      if (isSeedanceStoryboard) {
-        const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
-        shotDurations.forEach((duration: number, idx: number) => {
-          if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
-          if (duration > 0 && duration < 4) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
-          if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
-        });
-        const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
-        if (Math.abs(total - sceneDuration) > 0.01) {
-          errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): shot durations add to ${total}s, must add to ${sceneDuration}s exactly.`);
-        }
-      } else {
-        const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
-        if ((scene.shots?.length || 0) !== expectedShots) {
-          errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} shots expected.`);
-        }
-      }
-    }
+    // ═══ VALIDATE via shared helper ═══
+    // Same validator is used by openai-script.ts and gemini-script.ts.
+    // Validates shot counts (keyframe mode) or duration sums (Seedance mode)
+    // plus cast/env name references and missing-direction checks.
+    const errors = validateScriptStructure(candidate, {
+      pacing,
+      isSeedanceStoryboard: !!isSeedanceStoryboard,
+      seedanceMaxDuration,
+    });
 
     if (errors.length === 0) {
       data = candidate;
@@ -490,37 +476,30 @@ IMPORTANT — character and environment assignment:
 
     if (attempt >= maxAttempts) {
       console.error(`[planScenes] Failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
-      throw new Error(`Script generation failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try regenerating or adjust pacing.`);
+      // Surface the actual validator errors. The shared validator catches
+      // more than just shot-count mismatches (env/cast reference
+      // hallucinations too); the previous "shot counts don't fit"
+      // message misled on those failure modes.
+      throw new Error(`Script generation failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
     }
 
-    // ═══ RETRY: Send validation errors back in the same conversation ═══
+    // ═══ RETRY: Anthropic-native — send errors back via tool_result chain ═══
+    // OpenAI/Gemini planners use different mechanisms for the same logical
+    // step (previous_response_id / rebuild-prompt). Each provider owns its
+    // own retry semantics; the validation function is shared.
     messages = [
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Remember: Seedance storyboard shots must each be 4-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Remember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.`}` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: buildCorrectivePrompt(errors, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard, seedanceMaxDuration }) }
       ] },
     ];
   }
 
   if (!data) throw new Error('Script generation failed after all attempts');
 
-  // ═══ Assign deterministic durations ═══
-  for (const scene of data.scenes) {
-    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
-    if (sceneDuration <= 0 || !scene.shots?.length) continue;
-    const shotCount = scene.shots.length;
-    for (let i = 0; i < shotCount; i++) {
-      if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
-        scene.shots[i].duration = Number(scene.shots[i].duration);
-      } else if (i < shotCount - 1) {
-        scene.shots[i].duration = pacing;
-      } else {
-        const usedTime = (shotCount - 1) * pacing;
-        scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
-      }
-    }
-  }
+  // ═══ Assign deterministic durations via shared helper ═══
+  assignDeterministicDurations(data, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard });
 
   return { ...data, prompt };
 };
@@ -568,7 +547,7 @@ Do not create zero-second cuts or filler shots.`
     : `SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
 Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.`;
 
-  const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
+  const prompt = `You are a visionary music video director refining an existing devotional music video script based on the director's feedback. The visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
 
 CONCEPT:
 ${formatConceptForScriptPrompt(context.concept)}
@@ -639,32 +618,12 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
     const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
     if (!candidate.environments) candidate.environments = [];
 
-    // Validate shot counts/durations
-    const errors: string[] = [];
-    for (const scene of candidate.scenes) {
-      const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
-      if (sceneDuration <= 0) continue;
-      if ((scene.shots?.length || 0) === 0) {
-        errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
-      }
-      if (isSeedanceStoryboard) {
-        const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
-        shotDurations.forEach((duration: number, idx: number) => {
-          if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
-          if (duration > 0 && duration < 4) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
-          if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
-        });
-        const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
-        if (Math.abs(total - sceneDuration) > 0.01) {
-          errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): shot durations add to ${total}s, must add to ${sceneDuration}s exactly.`);
-        }
-      } else {
-        const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
-        if ((scene.shots?.length || 0) !== expectedShots) {
-          errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} expected.`);
-        }
-      }
-    }
+    // Validate via shared helper (same logic as planScenes + openai/gemini)
+    const errors = validateScriptStructure(candidate, {
+      pacing,
+      isSeedanceStoryboard: !!isSeedanceStoryboard,
+      seedanceMaxDuration,
+    });
 
     if (errors.length === 0) {
       data = candidate;
@@ -676,36 +635,24 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
     if (attempt >= maxAttempts) {
       console.error(`[refineScript] Failed after ${maxAttempts} attempts: ${errors.join('; ')}`);
-      throw new Error(`Script refinement failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try again.`);
+      // Same reasoning as planScenes throw — surface actual errors so
+      // env/cast reference failures aren't hidden behind a shot-count msg.
+      throw new Error(`Script refinement failed validation after ${maxAttempts} attempts: ${errors.join('; ')}`);
     }
 
     messages = [
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Seedance storyboard shots must each be 4-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Shots per scene = ceil(scene_duration / ${pacing}). Fix and resubmit.`}` }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: buildCorrectivePrompt(errors, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard, seedanceMaxDuration }) }
       ] },
     ];
   }
 
   if (!data) throw new Error('Script refinement failed');
 
-  // Assign durations
-  for (const scene of data.scenes) {
-    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
-    if (sceneDuration <= 0 || !scene.shots?.length) continue;
-    const shotCount = scene.shots.length;
-    for (let i = 0; i < shotCount; i++) {
-      if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
-        scene.shots[i].duration = Number(scene.shots[i].duration);
-      } else if (i < shotCount - 1) {
-        scene.shots[i].duration = pacing;
-      } else {
-        const usedTime = (shotCount - 1) * pacing;
-        scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
-      }
-    }
-  }
+  // Assign durations via shared helper
+  assignDeterministicDurations(data, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard });
 
   return { ...data, prompt };
 };
@@ -764,9 +711,11 @@ VIDEO MODEL PROMPTING MODE:
 - The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
 - Do not request generated audio, dialogue, subtitles, or sound effects.`;
 
-  const prompt = `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
+  const prompt = `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
-WRITE CINEMATIC PROMPTS THAT ARE RENDERABLE.
+WRITE PROMPTS THAT ARE RENDERABLE.
+
+The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words. The locked style reference is the ground truth for medium; words like "cinematic" pull stylized projects back toward realism.
 
 These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
 
@@ -807,7 +756,7 @@ BAD motionPrompt:
 "Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
 
 ${songTypeSignal}
-Mood: ${context.concept.mood || 'Cinematic'}
+Mood: ${context.concept.mood || 'devotional'}
 Video model: ${context.videoModel || 'default'}
 
 CHARACTERS:
@@ -932,7 +881,7 @@ Do NOT describe characters, scenes, environments, or narrative.
 These descriptions will be used as image generation prompts — be concrete, not literary.
 
 QUALITY GUIDELINES for the image generation downstream:
-- Avoid overly AI/CGI/fantasy look — should feel cinematic or painterly, grounded and intentional
+- Avoid overly AI/CGI/fantasy look — every direction should feel grounded and intentional in its chosen medium (photographic, painterly, illustrated, miniature, mixed-media, etc.)
 - Avoid excessive intricate details that muddy the image — every element should have clear intention
 - If stylized, it should be tasteful and deliberate, not generic digital art or AI slop
 - Think intentional reference image, not generic concept art`;
@@ -1028,7 +977,7 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.`;
     useRefineModel: true,
     inputImages: [{ data: imageBase64, mimeType }],
   });
-  return text || 'Cinematic, high contrast.';
+  return text || '';
 };
 
 // ─── Refine Shot Prompt (vision + rewrite) ──────────────────────────

@@ -377,7 +377,7 @@ export const planStoryboardPrompt = async (opts: {
     : '';
 
   const prompt = opts.artistNote?.trim()
-    ? `Rewrite the saved storyboard render prompt and cut plan using the artist note.
+    ? `You are an art director refining one storyboard for a devotional music video. The locked style reference image is the visual ground truth — read it to understand the medium and match it. Rewrite the saved storyboard render prompt and cut plan using the artist note.
 
 Artist note:
 ${opts.artistNote.trim()}
@@ -394,19 +394,19 @@ ${basePrompt}
 
 Return only JSON with keys:
 {
-  "storyboardPrompt": "the actual prompt sent to the image model — must include the panel layout, subject/setting context, AND per-panel action descriptions (Panel 1: ..., Panel 2: ..., one line each describing what visibly happens). Plus the ref-image rules and the no-text-in-panels rule. Under ~300 words. No 'contract' bullet lists, no animation rules, no quality boilerplate.",
+  "storyboardPrompt": "the actual prompt sent to the image model — must include the panel layout, subject/setting context, per-panel action descriptions (Panel 1: ..., Panel 2: ..., one line each describing what visibly happens), AND an explicit inter-panel consistency demand naming what each locked ref controls (style → medium/lighting/palette; characters → identity/costume; environment → physical space). Plus the no-text-in-panels rule. Under ~330 words. No 'contract' bullet lists, no animation rules, no quality boilerplate, no 'cinematic film still' language — image models read short clear prompts better, and cinema language fights non-realistic locked styles.",
   "cutPlanText": "the same per-panel beats reformatted for the video model. Format: 'Panel N — <action>'. One short line per panel. No timestamps, no camera-jargon fields."
 }`
-    : `Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
+    : `You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is the visual ground truth — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
 
 1. storyboardPrompt — the actual prompt the storyboard image model will read. It MUST include:
    - The panel layout (grid spec, 16:9 panels, borders, background)
    - One-line subject/shot context (what the moment is)
    - **Per-panel action descriptions**, one short sentence per panel, in order. Without these the image model invents incoherent panels — this is the most important part. Format: "Panel 1: <framing> — <action>". Use plain visual language, not camera jargon.
-   - Reference-image rules (character/style/env match)
+   - **Inter-panel consistency demand (REQUIRED — this is the line that prevents panels from drifting into different scenes):** explicitly instruct the image model to keep visual style, lighting/palette, character identity (face, costume, jewelry), and environment geometry CONSISTENT across every panel. State which locked reference controls which aspect: style reference → medium/lighting/palette; character references → identity/costume; environment reference → physical space.
    - No-text-in-panels rule (no captions, numbers, labels, arrows)
 
-   Keep the whole thing under ~300 words. Do NOT include "contract" bullet lists, animation rules, emotional-arc instructions, or quality boilerplate ("masterpiece", "ultra-HD", etc.) — image models follow short clear prompts dramatically better than long ones.
+   Keep the whole thing under ~330 words. Do NOT include "contract" bullet lists, animation rules, emotional-arc instructions, or quality boilerplate ("masterpiece", "ultra-HD", "cinematic film still", etc.) — image models follow short clear prompts dramatically better than long ones, and "cinematic"-style language fights non-realistic locked styles.
 
 2. cutPlanText — the same panel beats reformatted for the video model. ONE LINE PER PANEL. Format: "Panel N — <action>". Plain action beats, no timestamps, no separate camera/action/motion-cue fields.
 
@@ -417,20 +417,22 @@ ${basePrompt}${prevStoryboardNote}${continuityBlock}
 
 Return only JSON with keys:
 {
-  "storyboardPrompt": "complete image-model prompt with per-panel actions inline",
+  "storyboardPrompt": "complete image-model prompt with per-panel actions inline AND the inter-panel consistency demand",
   "cutPlanText": "Panel N — <action> per panel, one line each"
 }`;
 
   const plannerRefs = withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath);
-  // Vision inputs to the planner: the artist's attached refine ref (if any)
-  // PLUS the previous-shot storyboard ref when continuity is on. Other
-  // composition refs (style/cast/env images) are intentionally NOT sent —
-  // the planner is text-only by design; vision is reserved for handoff
-  // context and explicit artist guidance.
+  // Vision inputs to the planner. Originally "text-only by design", but
+  // that policy made the planner blind to the project's visual medium —
+  // stylized projects inherited cinema bias because the planner couldn't
+  // see what was actually locked. New policy: send artist refs, previous
+  // storyboard continuity refs, and the locked style image. Cast/env refs
+  // still stay out of the planner; they handle identity downstream in the
+  // image renderer.
   const plannerVisionRefs = plannerRefs.refs.filter((ref) => {
     if (ref.imagePath === opts.artistReferenceImagePath) return true;
     const meta = plannerRefs.refMeta.find((m) => m.filePath === ref.imagePath);
-    return meta?.excludableKey === 'prev_storyboard';
+    return meta?.excludableKey === 'prev_storyboard' || meta?.excludableKey === 'style';
   });
 
   // Dispatched through text-provider.ts. The provider abstraction handles
@@ -497,7 +499,12 @@ const renderWithProvider = async (
         parts.push({ inlineData: { mimeType: ref.inlineData.mimeType, data: ref.inlineData.data } });
       }
     }
-    const storagePath = await generateImageWithRefs(parts, aspectRatio);
+    // Pass the spec's runtimeModel so the artist's exact pick runs (no
+    // Pro→Flash auto-fallback in explicit-model mode). When the registry
+    // flips a model between providers — e.g. `nano-banana-2` was Segmind,
+    // now Google `gemini-3.1-flash-image-preview` — this guarantees the
+    // dispatched model matches the label.
+    const storagePath = await generateImageWithRefs(parts, aspectRatio, provider.runtimeModel);
     return {
       storagePath,
       model: provider.runtimeModel,

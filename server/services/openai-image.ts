@@ -243,15 +243,16 @@ export const generateStyleOptions = async (
         `${styleNotes}, as vintage 16mm film with warm analog grain and nostalgic color grading`,
       ]
     : [
-        `Hyperrealistic cinematic portrait of ${deity}, 35mm Kodak film look, natural light`,
-        `${deity} in dramatic Caravaggio-style chiaroscuro, deep shadows, single light source, oil painting realism`,
-        `${deity} in ethereal divine light, high-key photography, golden bloom, heavenly atmosphere, lens flare`,
-        `${deity} as vintage 16mm film still, warm analog grain, faded colors, nostalgic Indian cinema aesthetic`,
+        // Medium-neutral defaults — see docs/cinematic-leak-audit-2026-05-12.md.
+        `Reference frame for ${deity}, devotional Indian visual treatment, natural light, balanced composition`,
+        `${deity} rendered with dramatic chiaroscuro shadows and a single warm light source, deep grounded mood`,
+        `${deity} in ethereal divine light with a high-key palette, soft bloom, devotional atmosphere`,
+        `${deity} with warm earthy color and tactile material texture, nostalgic Indian devotional treatment`,
       ];
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `Cinematic film still. ${direction}. Focus on lighting, atmosphere, and visual style. High production value, no text, no watermark.`;
+      const prompt = `${direction}. Focus on lighting, atmosphere, and visual treatment. High production value, no text, no watermark.`;
       const [assetPath] = await generateFromPrompt(prompt, '16:9', [], 1);
       return { style: direction, assetPath };
     })
@@ -279,6 +280,10 @@ export const generateCharacterLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted for
+  // signature parity with imagen.ts; OpenAI's image service has a single
+  // model (gpt-image-2) so the registry's runtimeModel is informational here.
+  _model?: string,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
@@ -300,6 +305,8 @@ export const generateEnvironmentLooks = async (
   userRefImagePath?: string,
   userNote?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _model?: string,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
@@ -347,7 +354,9 @@ This shot should begin from that exact continuity state — matching pose, camer
   }
 
   if (opts.userFeedback) prompt += `\n\nDirector note: ${opts.userFeedback}`;
-  prompt += `\n\nSingle cinematic frame. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a film still.`;
+  // Medium-neutral — style image is the ground truth. See
+  // docs/cinematic-leak-audit-2026-05-12.md.
+  prompt += `\n\nSingle frame. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
 
   const [assetPath] = await generateFromPrompt(prompt, opts.aspectRatio || '16:9', refs, 1);
   return assetPath;

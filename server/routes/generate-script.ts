@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, selectColumns, insertRow, updateRows, deleteRows, incrementColumn, maxVal } from '../database.js';
 import { storageUrl, readAsBase64, mimeFromExt } from '../storage.js';
 import { planScenes, refineScript, writeShotPrompts } from '../services/claude.js';
-import { planScenesOpenAI } from '../services/openai-script.js';
+import { planScenesOpenAI, refineScriptOpenAI, writeShotPromptsOpenAI } from '../services/openai-script.js';
 import { getModelMinDuration } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -28,8 +28,25 @@ router.post('/:id/generate-script', async (req, res) => {
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file' });
 
   const { userNote } = req.body || {};
-  const requestedProvider = String(req.body?.scriptProvider || process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
-  const useOpenAIScriptWriter = requestedProvider === 'openai' || requestedProvider === 'gpt-5.5';
+  // Provider resolution priority:
+  //   1. Body override (legacy escape hatch — `scriptProvider: "openai"`)
+  //   2. Project's text_provider (set by the Blueprint dropdown)
+  //   3. Global env (legacy — SCRIPT_WRITER_PROVIDER)
+  //   4. Default: Claude Opus
+  // Each provider has its own per-stage retry semantics inside its file
+  // (Anthropic tool_use chain, OpenAI previous_response_id, Gemini
+  // rebuild-prompt). Validation function is shared via script-validation.ts.
+  const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();
+  const envProvider = String(process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
+  const projectProvider = String(project.text_provider || '').toLowerCase();
+  const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
+  const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
+  // Gemini script writer not yet implemented — fall through to Claude with a
+  // warning so it's visible in logs that the dropdown choice isn't honored.
+  // Sub-label in BlueprintContextBar also tells the artist "Gemini coming".
+  if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
+    console.warn(`[generate-script] text_provider='${resolvedProvider}' picked but Gemini script writer not implemented yet; falling back to Claude Opus.`);
+  }
   const concept = JSON.parse(project.locked_concept || '{}');
 
   const scriptProviderLabel = useOpenAIScriptWriter ? 'openai' : 'claude';
@@ -227,6 +244,17 @@ router.post('/:id/refine-script', async (req, res) => {
   const project = await selectOne('projects', { id: paramStr(req.params.id) });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
+  // Provider resolution matches generate-script (project.text_provider →
+  // legacy body/env override → default Claude).
+  const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();
+  const envProvider = String(process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
+  const projectProvider = String(project.text_provider || '').toLowerCase();
+  const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
+  const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
+  if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
+    console.warn(`[refine-script] text_provider='${resolvedProvider}' picked but Gemini script writer not implemented yet; falling back to Claude Opus.`);
+  }
+
   const concept = JSON.parse(project.locked_concept || '{}');
   const existingCast = await selectAll('cast_members', { project_id: project.id }, { orderBy: 'sort_order' });
   const existingEnvs = await selectAll('environments', { project_id: project.id }, { orderBy: 'sort_order' });
@@ -262,7 +290,7 @@ router.post('/:id/refine-script', async (req, res) => {
     console.log(`[${project.id}] Refining script with feedback: ${feedback.substring(0, 100)}...`);
     const t0 = Date.now();
 
-    const data = await refineScript(currentScript, feedback, {
+    const refineInput = {
       concept,
       videoMode: project.video_mode || 'montage',
       lyrics: project.lyrics || '',
@@ -271,7 +299,10 @@ router.post('/:id/refine-script', async (req, res) => {
       basePacing: project.target_duration || 15,
       minShotDuration: getModelMinDuration(project.video_model),
       videoModel: project.video_model || undefined,
-    });
+    };
+    const data = useOpenAIScriptWriter
+      ? await refineScriptOpenAI({ currentScript, feedback, ...refineInput })
+      : await refineScript(currentScript, feedback, refineInput);
     const durationMs = Date.now() - t0;
 
     // Build name→id maps for existing cast/envs (preserve references)
@@ -421,6 +452,16 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   if (!project.style_asset_id) return res.status(400).json({ error: 'Style not locked yet' });
   const userNote: string | undefined = req.body?.userNote;
 
+  // Provider resolution matches generate-script / refine-script.
+  const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();
+  const envProvider = String(process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
+  const projectProvider = String(project.text_provider || '').toLowerCase();
+  const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
+  const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
+  if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
+    console.warn(`[write-shot-prompts] text_provider='${resolvedProvider}' picked but Gemini script writer not implemented yet; falling back to Claude Opus.`);
+  }
+
   const concept = JSON.parse(project.locked_concept || '{}');
   const cast = await selectAll('cast_members', { project_id: project.id }, { orderBy: 'sort_order', ascending: true });
   const scenes = await selectAll('scenes', { project_id: project.id }, { orderBy: 'sort_order', ascending: true });
@@ -454,7 +495,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
 
     for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
       const batch = allShots.slice(i, i + BATCH_SIZE);
-      const result = await writeShotPrompts(batch, {
+      const writeShotCtx = {
         cast: cast.map((c: any) => ({ name: c.name, description: c.description })),
         concept,
         userNote,
@@ -462,7 +503,10 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         isNarrative: project.is_narrative ?? undefined,
         isMeditative: project.is_meditative ?? undefined,
         videoModel: project.video_model || undefined,
-      }, previousBatchTail);
+      };
+      const result = useOpenAIScriptWriter
+        ? await writeShotPromptsOpenAI({ shots: batch, ...writeShotCtx, previousBatchTail })
+        : await writeShotPrompts(batch, writeShotCtx, previousBatchTail);
       const prompts = result.shots;
       batchPrompts.push(
         allShots.length > BATCH_SIZE
