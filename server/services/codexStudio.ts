@@ -9,6 +9,14 @@ import { generateShotVideo } from './videoGeneration.js';
 import { eventResultPointers, listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
 import { getModelMinDuration } from './segmind.js';
 import type { StoryboardPromptVariant } from './seedance-storyboard-rd.js';
+import {
+  applyProjectPreferences,
+  applyProjectPromptOverride,
+  getProjectConfigState,
+  revertProjectPromptOverride,
+  writeProjectConfigDeskCopy,
+  type ProjectPromptOverrideKind,
+} from './projectConfig.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { getStoryboardProvider, STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
@@ -430,6 +438,7 @@ export const buildProjectPacket = async (project: Project) => {
   const environmentNames = namesById(project.environments);
   const counts = statusCounts(project);
   const renders = await listProjectRenders(project.id);
+  const projectConfig = await getProjectConfigState(project);
 
   return {
     kind: 'lahari.project.packet',
@@ -535,6 +544,20 @@ export const buildProjectPacket = async (project: Project) => {
           videoStatus: shot.videoStatus,
           lastError: compactText(shot.lastError, 250),
         })),
+      })),
+    },
+    projectConfig: {
+      preferences: projectConfig.preferences.preferences,
+      preferencesHash: projectConfig.preferences.hash,
+      warnings: projectConfig.preferences.warnings,
+      promptOverrides: Object.values(projectConfig.prompts).map((prompt) => ({
+        kind: prompt.kind,
+        scopeType: prompt.scopeType,
+        scopeId: prompt.scopeId,
+        active: prompt.active,
+        source: prompt.source,
+        hash: prompt.hash,
+        updatedAt: prompt.updatedAt,
       })),
     },
     diagnosis: deriveDirectorDiagnosis(project),
@@ -1059,7 +1082,12 @@ const eventSyncSummary = (events: DirectorEvent[], previousCursor: { seq: number
   };
 };
 
-const sessionState = (project: Project, note?: string | null, directorEvents = eventSyncSummary([], { seq: null, createdAt: null })) => {
+const sessionState = (
+  project: Project,
+  note?: string | null,
+  directorEvents = eventSyncSummary([], { seq: null, createdAt: null }),
+  projectConfig?: Awaited<ReturnType<typeof getProjectConfigState>>,
+) => {
   const checkpoint = deriveCheckpointState(project);
   const diagnosis = deriveDirectorDiagnosis(project);
   return {
@@ -1080,6 +1108,18 @@ const sessionState = (project: Project, note?: string | null, directorEvents = e
     checkpoint,
     diagnosis,
     directorEvents,
+    projectConfig: projectConfig ? {
+      preferences: projectConfig.preferences.preferences,
+      preferencesHash: projectConfig.preferences.hash,
+      warnings: projectConfig.preferences.warnings,
+      promptOverrides: Object.values(projectConfig.prompts).map((prompt) => ({
+        kind: prompt.kind,
+        active: prompt.active,
+        source: prompt.source,
+        hash: prompt.hash,
+        updatedAt: prompt.updatedAt,
+      })),
+    } : null,
     note: note || null,
     files: {
       state: sessionStatePath(project.id),
@@ -1107,8 +1147,8 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
     afterCreatedAt: previousEventCursor.seq === null ? previousEventCursor.createdAt : null,
     limit: 100,
   });
-  const state = sessionState(project, note, eventSyncSummary(newEvents, previousEventCursor));
   const workbench = await hydrateProjectWorkbench(project);
+  const state = sessionState(project, note, eventSyncSummary(newEvents, previousEventCursor), workbench.projectConfig);
 
   const journalPath = sessionJournalPath(project.id);
   if (!fs.existsSync(journalPath)) {
@@ -1138,6 +1178,7 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
     journalPath,
     workbenchDir: workbench.baseDir,
     workbenchArtifacts: workbench.artifacts,
+    projectConfig: state.projectConfig,
     checkpoint: state.checkpoint,
     diagnosis: state.diagnosis,
     directorEvents: state.directorEvents,
@@ -2446,6 +2487,121 @@ export const unlockStoryboardBoard = async (project: Project, shotId: string) =>
   };
 };
 
+export const applyProjectPreferencesConfig = async (
+  project: Project,
+  preferences: unknown,
+  baseHash?: string | null,
+) => {
+  const result = await applyProjectPreferences(project, preferences, baseHash);
+  const configCopy = await writeProjectConfigDeskCopy(project, defaultProjectWorkbenchDir(project));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_preferences_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: 'Codex applied project-level generation preferences.',
+    payload: {
+      baseHash: baseHash || null,
+      newHash: result.hash,
+      preferences: result.preferences,
+      configPath: configCopy.preferencesPath,
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.project_preferences',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    preferences: result.preferences,
+    hash: result.hash,
+    warnings: result.warnings,
+    localFiles: {
+      preferences: configCopy.preferencesPath,
+      hashes: configCopy.hashesPath,
+    },
+    note: 'Applied project preferences. Supabase is canonical; local config hashes were refreshed.',
+  };
+};
+
+export const applyProjectPromptOverrideConfig = async (
+  project: Project,
+  kind: ProjectPromptOverrideKind,
+  body: string,
+  baseHash?: string | null,
+) => {
+  const result = await applyProjectPromptOverride(project.id, kind, body, baseHash);
+  const configCopy = await writeProjectConfigDeskCopy(project, defaultProjectWorkbenchDir(project));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_prompt_override_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Codex applied the project ${kind} prompt override.`,
+    payload: {
+      kind,
+      baseHash: baseHash || null,
+      newHash: result.hash,
+      overrideId: result.overrideId,
+      configPath: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.project_prompt_override',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    promptOverride: result,
+    localFiles: {
+      prompt: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+      hashes: configCopy.hashesPath,
+    },
+    note: 'Applied project prompt override. There is no preview tool by design: Codex writes the recipe, this tool validates drift and persists it.',
+  };
+};
+
+export const revertProjectPromptOverrideConfig = async (
+  project: Project,
+  kind: ProjectPromptOverrideKind,
+  baseHash?: string | null,
+) => {
+  const result = await revertProjectPromptOverride(project.id, kind, baseHash);
+  const configCopy = await writeProjectConfigDeskCopy(project, defaultProjectWorkbenchDir(project));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_prompt_override_reverted',
+    entityType: 'project',
+    entityId: project.id,
+    summary: result.active
+      ? `Codex reverted the project ${kind} prompt override to the previous active recipe.`
+      : `Codex reverted the project ${kind} prompt override to the global default.`,
+    payload: {
+      kind,
+      baseHash: baseHash || null,
+      newHash: result.hash,
+      overrideId: result.overrideId,
+      source: result.source,
+      configPath: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.revert_project_prompt_override',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    promptOverride: result,
+    localFiles: {
+      prompt: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+      hashes: configCopy.hashesPath,
+    },
+    note: result.active
+      ? 'Reverted to the previous project override and refreshed local config hashes.'
+      : 'No previous override remained active; reverted to the global default and refreshed local config hashes.',
+  };
+};
+
 export const applyGenerateVideo = async (project: Project, shotId: string, promptOverride?: string) => {
   const plan = planGenerateVideo(project, shotId);
   if (!plan.canRun) {
@@ -2820,6 +2976,7 @@ export const hydrateProjectWorkbench = async (project: Project, outputDir?: stri
   const snapshotDir = path.join(baseDir, 'snapshots');
   const packet = await buildProjectPacket(project);
   const actionList = buildProjectActionList(project);
+  const configCopy = await writeProjectConfigDeskCopy(project, baseDir);
   const timestamp = safeTimestamp();
   const artifacts = [
     { type: 'brief', path: writeArtifact(path.join(baseDir, 'brief.md'), buildBriefMarkdown(project, actionList)) },
@@ -2827,6 +2984,10 @@ export const hydrateProjectWorkbench = async (project: Project, outputDir?: stri
     { type: 'concept-notes', path: writeArtifact(path.join(baseDir, 'concept-notes.md'), buildConceptNotesMarkdown(project)) },
     { type: 'script', path: writeArtifact(path.join(baseDir, 'script.md'), buildScriptMarkdown(project)) },
     { type: 'storyboard-prompts', path: writeArtifact(path.join(baseDir, 'storyboard-prompts.md'), buildStoryboardPromptsMarkdown(project)) },
+    { type: 'config-preferences', path: configCopy.preferencesPath },
+    { type: 'config-storyboard-prompt', path: configCopy.storyboardPromptPath },
+    { type: 'config-video-prompt', path: configCopy.videoPromptPath },
+    { type: 'config-hashes', path: configCopy.hashesPath },
     { type: 'action-plan', path: writeArtifact(path.join(baseDir, 'action-plan.json'), `${JSON.stringify(actionList, null, 2)}\n`) },
     { type: 'packet-snapshot', path: writeArtifact(path.join(snapshotDir, `${timestamp}-packet.json`), `${JSON.stringify(packet, null, 2)}\n`) },
     { type: 'actions-snapshot', path: writeArtifact(path.join(snapshotDir, `${timestamp}-actions.json`), `${JSON.stringify(actionList, null, 2)}\n`) },
@@ -2849,6 +3010,7 @@ Local Codex notes live here. This file is not overwritten by hydration.
     baseDir,
     sourceOfTruth: 'Supabase remains canonical; these files are a local Codex workbench mirror.',
     artifacts,
+    projectConfig: configCopy.state,
   };
 };
 

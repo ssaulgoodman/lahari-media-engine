@@ -10,6 +10,7 @@ import { getTextProvider, type TextProviderKey } from '../../constants/textProvi
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
 import { buildContextChain, logCall } from '../xray.js';
 import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
+import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -307,7 +308,8 @@ export const writeStoryboardPrompt = async (opts: {
     return { storyboardPrompt: result.storyboardPrompt, cutPlanText: result.cutPlanText };
   } catch (err: any) {
     const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
-    const providerSpec = getTextProvider(ctx.project.text_provider as TextProviderKey | undefined);
+    const preferences = await getProjectPreferencesState(ctx.project as any);
+    const providerSpec = getTextProvider(preferences.preferences.textProvider as TextProviderKey | undefined);
     await updateRows('shots', { id: opts.shotId }, {
       storyboard_prompt_status: 'error',
       last_error: err.message,
@@ -343,11 +345,16 @@ export const planStoryboardPrompt = async (opts: {
   const ctx = await loadStoryboardContext(opts.projectId, opts.shotId);
   const variant = opts.variant || 'adaptive_numbered_storyboard';
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
+  const projectStoryboardOverride = await getProjectPromptOverride(opts.projectId, 'storyboard');
+  const preferences = await getProjectPreferencesState(ctx.project as any);
+  const projectStoryboardOverrideBlock = projectStoryboardOverride
+    ? `\nProject storyboard recipe override:\n${projectStoryboardOverride.trim()}\n`
+    : '';
   // Provider selection: per-project setting. Falls back to the registry's
   // first entry (Claude Opus) when text_provider is null on the row. The
   // env-var override (OPENAI_STORYBOARD_PLANNER_MODEL) is no longer
   // consulted — overrides now happen per-project via the dropdown.
-  const providerKey = ctx.project.text_provider as TextProviderKey | undefined;
+  const providerKey = preferences.preferences.textProvider as TextProviderKey | undefined;
   const providerSpec = getTextProvider(providerKey);
   const currentPrompt = ctx.shot.storyboard_prompt || '';
   const currentCutPlan = ctx.shot.storyboard_cut_plan || '';
@@ -389,6 +396,7 @@ ${currentPrompt || '(none)'}
 Current cut plan:
 ${currentCutPlan || '(none)'}
 
+${projectStoryboardOverrideBlock}
 Original source brief:
 ${basePrompt}
 
@@ -413,7 +421,7 @@ Return only JSON with keys:
 The panel actions appear in BOTH outputs — image model needs them inline to know what to draw per panel, video model needs them as a clean list to understand the beats.
 
 Source brief:
-${basePrompt}${prevStoryboardNote}${continuityBlock}
+${basePrompt}${projectStoryboardOverrideBlock}${prevStoryboardNote}${continuityBlock}
 
 Return only JSON with keys:
 {
@@ -591,9 +599,10 @@ ${artistRefNote}`
 
   await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
   const t0 = Date.now();
+  const preferences = await getProjectPreferencesState(ctx.project as any);
 
   try {
-    const rendered = await renderWithProvider(ctx.project.storyboard_provider, prompt, ctx.project.aspect_ratio || '16:9', refs);
+    const rendered = await renderWithProvider(preferences.preferences.storyboardProvider, prompt, ctx.project.aspect_ratio || '16:9', refs);
     const assetId = uuidv4();
     const versionId = uuidv4();
     const durationMs = Date.now() - t0;
@@ -677,7 +686,7 @@ ${artistRefNote}`
     await logCall({
       projectId: opts.projectId,
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
-      model: getStoryboardProvider(ctx.project.storyboard_provider).runtimeModel,
+      model: getStoryboardProvider(preferences.preferences.storyboardProvider).runtimeModel,
       prompt,
       referenceInputs: refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
       contextChain: await buildContextChain(opts.projectId),

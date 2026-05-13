@@ -93,13 +93,20 @@ metadata jsonb not null default '{}',
 active boolean not null default true,
 created_at timestamptz not null default now(),
 updated_at timestamptz not null default now(),
-updated_by uuid null,
-unique(project_id, kind, scope_type, scope_id)
+updated_by uuid null
 ```
 
 For phase 1, only `scope_type = 'project'` is required. The scoped columns exist so scene/shot overrides can land later without a table rewrite.
 
 IDs intentionally use `text`, not `uuid`, because the existing Lahari schema uses text IDs for `lahari_projects`, `lahari_scenes`, and `lahari_shots`.
+
+Do not add a plain table-level uniqueness constraint on `(project_id, kind, scope_type, scope_id)`, because history rows are kept from day one. Use a partial unique index for active rows:
+
+```sql
+create unique index lahari_project_prompt_overrides_one_active_idx
+  on lahari_project_prompt_overrides (project_id, kind, scope_type, coalesce(scope_id, ''))
+  where active;
+```
 
 ## Inheritance
 

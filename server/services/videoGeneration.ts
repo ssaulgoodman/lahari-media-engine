@@ -10,6 +10,7 @@ import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
 import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
 import { parseTimestamp } from '../routes/scope-helpers.js';
+import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
 
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
@@ -49,7 +50,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     throw error;
   }
 
-  const videoModelKey = (project.video_model || 'veo-3.1-fast') as SegmindModelKey;
+  const projectPreferences = await getProjectPreferencesState(project as any);
+  const videoModelKey = (projectPreferences.preferences.videoModel || 'veo-3.1-fast') as SegmindModelKey;
   const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
   const useStoryboardMode = modelSpec.family === 'seedance' && !!shot.storyboard_locked && !!shot.storyboard_asset_id;
 
@@ -170,13 +172,19 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       if (refLabels.length) veoPromptParts.push(refLabels.join('. '));
     }
 
-    const storyboardPrompt = useStoryboardMode
+    const storyboardPromptBase = useStoryboardMode
       ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
         cutPlanText: storyboardCutPlanText,
         refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
         lipsyncEnabled: !!shot.lipsync_enabled,
       })
       : '';
+    const projectVideoOverride = useStoryboardMode
+      ? await getProjectPromptOverride(project.id, 'video')
+      : null;
+    const storyboardPrompt = projectVideoOverride
+      ? `${projectVideoOverride.trim()}\n\nBase Lahari storyboard video prompt:\n${storyboardPromptBase}`
+      : storyboardPromptBase;
     const veoPrompt = useStoryboardMode
       ? storyboardPrompt
       : opts.promptOverride?.trim() ? opts.promptOverride.trim() : veoPromptParts.join('. ');
@@ -278,7 +286,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
             currentMotionPrompt: nextShot.motion_prompt || 'Cinematic camera movement',
             characterNames: nextCast.map((c: any) => c.name),
             environmentName: nextEnv?.name,
-            textProvider: project.text_provider,
+            textProvider: projectPreferences.preferences.textProvider,
           });
           await updateRows('shots', { id: nextShot.id }, {
             visual_prompt: refreshed.visualPrompt,
@@ -346,7 +354,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     await logCall({
       projectId: project.id,
       stage: 'generate-shot-video',
-      model: project.video_model || 'veo-3.1',
+      model: videoModelKey,
       prompt: shot.motion_prompt || 'Cinematic camera movement',
       referenceInputs: useStoryboardMode && storyboardAsset
         ? [

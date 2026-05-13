@@ -592,6 +592,66 @@ registerAuditedTool('unlock_storyboard', {
   return textResult(await studio.unlockStoryboardBoard(project, shotId));
 });
 
+registerAuditedTool('apply_project_preferences', {
+  title: 'Apply project preferences',
+  description: 'Mutating. Persists Codex-written project model preferences after validating the config base hash. No LLM call.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    preferences: z.object({
+      textProvider: z.string().optional(),
+      imageModel: z.string().optional(),
+      storyboardProvider: z.string().optional(),
+      videoModel: z.string().optional(),
+    }).describe('Project preference object. Unknown or invalid provider keys are rejected/fallback-warned by the engine.'),
+    baseHash: z.string().optional().describe('Hash from .lahari/projects/<projectId>/config/hashes.json. Refuses apply if stale.'),
+  },
+}, async ({ projectId, preferences, baseHash }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_project_preferences.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyProjectPreferencesConfig(project, preferences, baseHash));
+});
+
+registerAuditedTool('apply_project_prompt_override', {
+  title: 'Apply project prompt override',
+  description: 'Mutating. Persists a Codex-written project-level storyboard/video recipe after validating the config base hash. No preview tool by design; Codex is the preview.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    kind: z.enum(['storyboard', 'video']).describe('Which project prompt recipe to apply.'),
+    body: z.string().min(1).describe('Codex-written override body. This is a reusable project recipe, not per-shot generated text.'),
+    baseHash: z.string().optional().describe('Hash from .lahari/projects/<projectId>/config/hashes.json. Refuses apply if stale.'),
+  },
+}, async ({ projectId, kind, body, baseHash }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_project_prompt_override.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyProjectPromptOverrideConfig(project, kind, body, baseHash));
+});
+
+registerAuditedTool('revert_project_prompt_override', {
+  title: 'Revert project prompt override',
+  description: 'Mutating. Reverts the active project prompt recipe to the previous inactive row, or to global default if no previous override exists.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    kind: z.enum(['storyboard', 'video']).describe('Which project prompt recipe to revert.'),
+    baseHash: z.string().optional().describe('Hash from .lahari/projects/<projectId>/config/hashes.json. Refuses apply if stale.'),
+  },
+}, async ({ projectId, kind, baseHash }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for revert_project_prompt_override.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.revertProjectPromptOverrideConfig(project, kind, baseHash));
+});
+
 registerAuditedTool('apply_generate_video', {
   title: 'Generate shot video',
   description: 'Mutating and paid. Generates a new video for one shot after validating prerequisites. Updates the active video pointer and attempts last-frame extraction.',

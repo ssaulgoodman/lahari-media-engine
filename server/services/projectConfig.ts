@@ -1,0 +1,429 @@
+import fs from 'fs';
+import path from 'path';
+import { createHash } from 'crypto';
+import { getSB, T } from '../database.js';
+import type { getFullProject } from '../routes/projects.js';
+import { IMAGE_MODELS } from '../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
+import { VIDEO_MODELS } from '../../constants/videoModels.js';
+
+type Project = Awaited<ReturnType<typeof getFullProject>>;
+
+export type ProjectPromptOverrideKind = 'storyboard' | 'video';
+export type ProjectPromptScopeType = 'project' | 'scene' | 'shot';
+
+export interface ProjectPromptScope {
+  scopeType?: ProjectPromptScopeType;
+  scopeId?: string | null;
+}
+
+export interface ProjectPreferences {
+  textProvider?: string;
+  imageModel?: string;
+  storyboardProvider?: string;
+  videoModel?: string;
+}
+
+export interface ProjectPreferencesState {
+  preferences: Required<ProjectPreferences>;
+  storedPreferences: Record<string, unknown>;
+  hash: string;
+  warnings: string[];
+  source: 'project_config' | 'project_row';
+}
+
+export interface PromptOverrideState {
+  kind: ProjectPromptOverrideKind;
+  scopeType: ProjectPromptScopeType;
+  scopeId: string | null;
+  body: string;
+  hash: string;
+  source: 'project_override' | 'global';
+  overrideId: string | null;
+  updatedAt: string | null;
+  active: boolean;
+}
+
+export interface ProjectConfigState {
+  preferences: ProjectPreferencesState;
+  prompts: Record<ProjectPromptOverrideKind, PromptOverrideState>;
+}
+
+const allowedTextProviders = new Set(TEXT_PROVIDERS.map((provider) => provider.key));
+const allowedImageModels = new Set(IMAGE_MODELS.map((model) => model.key));
+const allowedStoryboardProviders = new Set(STORYBOARD_PROVIDERS.map((provider) => provider.key));
+const allowedVideoModels = new Set(VIDEO_MODELS.map((model) => model.key));
+
+export const hashText = (value: string): string => (
+  createHash('sha256').update(value, 'utf8').digest('hex')
+);
+
+const stableJson = (value: unknown): string => {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableJson(entryValue)}`).join(',')}}`;
+};
+
+export const hashJson = (value: unknown): string => hashText(stableJson(value));
+
+const isMissingConfigTableError = (error: unknown): boolean => {
+  const anyError = error as any;
+  const message = String(anyError?.message || error || '').toLowerCase();
+  const code = String(anyError?.code || '');
+  return code === '42P01'
+    || code === 'PGRST205'
+    || message.includes('lahari_project_config')
+    || message.includes('lahari_project_prompt_overrides')
+    || message.includes('could not find the table');
+};
+
+const promptSeedBody = (kind: ProjectPromptOverrideKind): string => {
+  if (kind === 'storyboard') {
+    return [
+      '# Project Storyboard Prompt Override',
+      '',
+      'No project storyboard override is active.',
+      '',
+      'When Codex applies one here, it should describe the reusable recipe for how storyboard prompts should be written for this project. Per-shot prompt text still belongs on the shot itself.',
+    ].join('\n');
+  }
+  return [
+    '# Project Video Prompt Override',
+    '',
+    'No project video override is active.',
+    '',
+    'When Codex applies one here, it should describe the reusable recipe for how video prompts should be assembled for this project. Per-shot video prompt text still belongs on the shot itself.',
+  ].join('\n');
+};
+
+const projectField = (project: any, camelKey: string, snakeKey: string): string | undefined => (
+  project?.[camelKey] || project?.[snakeKey] || undefined
+);
+
+const basePreferences = (project: Project): Required<ProjectPreferences> => ({
+  textProvider: projectField(project, 'textProvider', 'text_provider') || TEXT_PROVIDERS[0].key,
+  imageModel: projectField(project, 'imageModel', 'image_model') || IMAGE_MODELS[0].key,
+  storyboardProvider: projectField(project, 'storyboardProvider', 'storyboard_provider') || STORYBOARD_PROVIDERS[0].key,
+  videoModel: projectField(project, 'videoModel', 'video_model') || VIDEO_MODELS[0].key,
+});
+
+const cleanPreferences = (
+  input: unknown,
+  base: Required<ProjectPreferences>,
+): { preferences: Required<ProjectPreferences>; stored: Record<string, unknown>; warnings: string[] } => {
+  const raw = (input && typeof input === 'object' && !Array.isArray(input))
+    ? input as Record<string, unknown>
+    : {};
+  const warnings: string[] = [];
+  const stored: Record<string, unknown> = {};
+  const next: Required<ProjectPreferences> = { ...base };
+
+  const assignKey = (
+    key: keyof Required<ProjectPreferences>,
+    allowed: Set<string>,
+    label: string,
+  ) => {
+    const value = raw[key];
+    if (value === undefined || value === null || value === '') return;
+    if (typeof value !== 'string') {
+      warnings.push(`${label} must be a string; using ${base[key]}.`);
+      return;
+    }
+    if (!allowed.has(value)) {
+      warnings.push(`Unknown ${label} "${value}"; using ${base[key]}.`);
+      return;
+    }
+    next[key] = value;
+    stored[key] = value;
+  };
+
+  assignKey('textProvider', allowedTextProviders, 'textProvider');
+  assignKey('imageModel', allowedImageModels, 'imageModel');
+  assignKey('storyboardProvider', allowedStoryboardProviders, 'storyboardProvider');
+  assignKey('videoModel', allowedVideoModels, 'videoModel');
+
+  return { preferences: next, stored, warnings };
+};
+
+const normalizeScope = (scope: ProjectPromptScope = {}): Required<ProjectPromptScope> => ({
+  scopeType: scope.scopeType || 'project',
+  scopeId: scope.scopeType && scope.scopeType !== 'project' ? scope.scopeId ?? null : null,
+});
+
+const applyScopeFilter = (query: any, scopeType: ProjectPromptScopeType, scopeId: string | null) => {
+  let scoped = query.eq('scope_type', scopeType);
+  if (scopeId) scoped = scoped.eq('scope_id', scopeId);
+  else scoped = scoped.is('scope_id', null);
+  return scoped;
+};
+
+const activePromptOverrideRow = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  scope: ProjectPromptScope = {},
+): Promise<any | null> => {
+  const normalized = normalizeScope(scope);
+  try {
+    let query = getSB()
+      .from(T.project_prompt_overrides)
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('kind', kind)
+      .eq('active', true);
+    query = applyScopeFilter(query, normalized.scopeType, normalized.scopeId);
+    const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    if (error) throw error;
+    return data || null;
+  } catch (error) {
+    if (isMissingConfigTableError(error)) return null;
+    throw error;
+  }
+};
+
+const inactivePromptOverrideRows = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  scope: ProjectPromptScope = {},
+): Promise<any[]> => {
+  const normalized = normalizeScope(scope);
+  let query = getSB()
+    .from(T.project_prompt_overrides)
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('kind', kind)
+    .eq('active', false);
+  query = applyScopeFilter(query, normalized.scopeType, normalized.scopeId);
+  const { data, error } = await query.order('updated_at', { ascending: false }).limit(5);
+  if (error) throw error;
+  return data || [];
+};
+
+export const getProjectPreferencesState = async (project: Project): Promise<ProjectPreferencesState> => {
+  const base = basePreferences(project);
+  try {
+    const { data, error } = await getSB()
+      .from(T.project_config)
+      .select('preferences')
+      .eq('project_id', project.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const { preferences, stored, warnings } = cleanPreferences(data?.preferences, base);
+    return {
+      preferences,
+      storedPreferences: stored,
+      hash: hashJson(preferences),
+      warnings,
+      source: data ? 'project_config' : 'project_row',
+    };
+  } catch (error) {
+    if (!isMissingConfigTableError(error)) throw error;
+    return {
+      preferences: base,
+      storedPreferences: {},
+      hash: hashJson(base),
+      warnings: ['Project config table is not available yet; using project row preferences.'],
+      source: 'project_row',
+    };
+  }
+};
+
+export const getPromptOverrideState = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  scope: ProjectPromptScope = {},
+): Promise<PromptOverrideState> => {
+  const normalized = normalizeScope(scope);
+  const row = await activePromptOverrideRow(projectId, kind, normalized);
+  const body = row?.body ?? promptSeedBody(kind);
+  return {
+    kind,
+    scopeType: normalized.scopeType,
+    scopeId: normalized.scopeId,
+    body,
+    hash: hashText(body),
+    source: row ? 'project_override' : 'global',
+    overrideId: row?.id ?? null,
+    updatedAt: row?.updated_at ?? null,
+    active: !!row,
+  };
+};
+
+export const getProjectPromptOverride = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  scope: ProjectPromptScope = {},
+): Promise<string | null> => {
+  const state = await getPromptOverrideState(projectId, kind, scope);
+  return state.source === 'project_override' ? state.body : null;
+};
+
+export const getProjectConfigState = async (project: Project): Promise<ProjectConfigState> => ({
+  preferences: await getProjectPreferencesState(project),
+  prompts: {
+    storyboard: await getPromptOverrideState(project.id, 'storyboard'),
+    video: await getPromptOverrideState(project.id, 'video'),
+  },
+});
+
+const ensureConfigDir = (projectDir: string): string => {
+  const configDir = path.join(projectDir, 'config');
+  fs.mkdirSync(path.join(configDir, 'prompts'), { recursive: true });
+  return configDir;
+};
+
+export const writeProjectConfigDeskCopy = async (
+  project: Project,
+  projectDir: string,
+): Promise<{
+  configDir: string;
+  preferencesPath: string;
+  storyboardPromptPath: string;
+  videoPromptPath: string;
+  hashesPath: string;
+  state: ProjectConfigState;
+}> => {
+  const state = await getProjectConfigState(project);
+  const configDir = ensureConfigDir(projectDir);
+  const preferencesPath = path.join(configDir, 'preferences.json');
+  const storyboardPromptPath = path.join(configDir, 'prompts', 'storyboard.md');
+  const videoPromptPath = path.join(configDir, 'prompts', 'video.md');
+  const hashesPath = path.join(configDir, 'hashes.json');
+
+  fs.writeFileSync(preferencesPath, `${JSON.stringify(state.preferences.preferences, null, 2)}\n`);
+  fs.writeFileSync(storyboardPromptPath, state.prompts.storyboard.body.endsWith('\n') ? state.prompts.storyboard.body : `${state.prompts.storyboard.body}\n`);
+  fs.writeFileSync(videoPromptPath, state.prompts.video.body.endsWith('\n') ? state.prompts.video.body : `${state.prompts.video.body}\n`);
+  fs.writeFileSync(hashesPath, `${JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    preferences: {
+      hash: state.preferences.hash,
+      source: state.preferences.source,
+    },
+    prompts: {
+      storyboard: {
+        hash: state.prompts.storyboard.hash,
+        source: state.prompts.storyboard.source,
+        overrideId: state.prompts.storyboard.overrideId,
+      },
+      video: {
+        hash: state.prompts.video.hash,
+        source: state.prompts.video.source,
+        overrideId: state.prompts.video.overrideId,
+      },
+    },
+  }, null, 2)}\n`);
+
+  return {
+    configDir,
+    preferencesPath,
+    storyboardPromptPath,
+    videoPromptPath,
+    hashesPath,
+    state,
+  };
+};
+
+const driftError = (message: string, currentHash: string, baseHash?: string): Error => {
+  const error = new Error(message) as Error & { code?: string; currentHash?: string; baseHash?: string };
+  error.code = 'config_drift';
+  error.currentHash = currentHash;
+  error.baseHash = baseHash;
+  return error;
+};
+
+export const applyProjectPreferences = async (
+  project: Project,
+  preferencesInput: unknown,
+  baseHash?: string | null,
+): Promise<ProjectPreferencesState> => {
+  const current = await getProjectPreferencesState(project);
+  if (baseHash && baseHash !== current.hash) {
+    throw driftError('Project preferences changed since this desk copy was written. Re-attach or refresh config before applying.', current.hash, baseHash);
+  }
+  const cleaned = cleanPreferences(preferencesInput, basePreferences(project));
+  const { error } = await getSB()
+    .from(T.project_config)
+    .upsert({
+      project_id: project.id,
+      preferences: cleaned.stored,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'project_id' });
+  if (error) throw new Error(`DB upsert project_config: ${error.message}`);
+  return getProjectPreferencesState(project);
+};
+
+const deactivateActivePromptRows = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  scope: Required<ProjectPromptScope>,
+): Promise<void> => {
+  let query = getSB()
+    .from(T.project_prompt_overrides)
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq('project_id', projectId)
+    .eq('kind', kind)
+    .eq('active', true);
+  query = applyScopeFilter(query, scope.scopeType, scope.scopeId);
+  const { error } = await query;
+  if (error) throw new Error(`DB deactivate project_prompt_overrides: ${error.message}`);
+};
+
+export const applyProjectPromptOverride = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  body: string,
+  baseHash?: string | null,
+  scope: ProjectPromptScope = {},
+  metadata: Record<string, unknown> = {},
+): Promise<PromptOverrideState> => {
+  const normalized = normalizeScope(scope);
+  const current = await getPromptOverrideState(projectId, kind, normalized);
+  if (baseHash && baseHash !== current.hash) {
+    throw driftError(`Project ${kind} prompt override changed since this desk copy was written. Re-attach or refresh config before applying.`, current.hash, baseHash);
+  }
+  const nextBody = body.trim();
+  if (!nextBody) throw new Error('Prompt override body cannot be empty. Use revert_project_prompt_override to fall back to global.');
+  await deactivateActivePromptRows(projectId, kind, normalized);
+  const { error } = await getSB()
+    .from(T.project_prompt_overrides)
+    .insert({
+      project_id: projectId,
+      kind,
+      scope_type: normalized.scopeType,
+      scope_id: normalized.scopeId,
+      body: nextBody,
+      metadata,
+      active: true,
+      updated_at: new Date().toISOString(),
+    });
+  if (error) throw new Error(`DB insert project_prompt_overrides: ${error.message}`);
+  return getPromptOverrideState(projectId, kind, normalized);
+};
+
+export const revertProjectPromptOverride = async (
+  projectId: string,
+  kind: ProjectPromptOverrideKind,
+  baseHash?: string | null,
+  scope: ProjectPromptScope = {},
+): Promise<PromptOverrideState> => {
+  const normalized = normalizeScope(scope);
+  const current = await getPromptOverrideState(projectId, kind, normalized);
+  if (baseHash && baseHash !== current.hash) {
+    throw driftError(`Project ${kind} prompt override changed since this desk copy was written. Re-attach or refresh config before reverting.`, current.hash, baseHash);
+  }
+  await deactivateActivePromptRows(projectId, kind, normalized);
+  const previousRows = await inactivePromptOverrideRows(projectId, kind, normalized);
+  const previous = previousRows.find((row) => row.id !== current.overrideId);
+  if (previous) {
+    const { error } = await getSB()
+      .from(T.project_prompt_overrides)
+      .update({ active: true, updated_at: new Date().toISOString() })
+      .eq('id', previous.id);
+    if (error) throw new Error(`DB reactivate project_prompt_overrides: ${error.message}`);
+  }
+  return getPromptOverrideState(projectId, kind, normalized);
+};

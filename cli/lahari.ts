@@ -53,6 +53,9 @@ Usage:
   npm run lahari -- apply bulk-generate-storyboards <projectId> [artist note...]
   npm run lahari -- apply lock-storyboard <projectId> <shotId> [versionId]
   npm run lahari -- apply unlock-storyboard <projectId> <shotId>
+  npm run lahari -- apply project-preferences <projectId> <preferences.json> [baseHash]
+  npm run lahari -- apply project-prompt-override <projectId> <storyboard|video> <body.md> [baseHash]
+  npm run lahari -- rollback project-prompt-override <projectId> <storyboard|video> [baseHash]
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
   npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 
@@ -205,8 +208,8 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards'))
-    || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script'));
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override'))
+    || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'project-prompt-override'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
   if (domain === 'project' && action === 'list') {
@@ -443,6 +446,32 @@ const main = async () => {
   if (domain === 'apply' && action === 'unlock-storyboard' && projectId && arg4) {
     const project = await studio.getFullProject(projectId);
     console.log(JSON.stringify(await studio.unlockStoryboardBoard(project, arg4), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'project-preferences' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const preferences = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    console.log(JSON.stringify(await studio.applyProjectPreferencesConfig(project, preferences, rest[0]), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'project-prompt-override' && projectId && arg4 && rest[0]) {
+    const project = await studio.getFullProject(projectId);
+    const kind = arg4;
+    if (kind !== 'storyboard' && kind !== 'video') throw new Error('kind must be storyboard or video.');
+    const bodyPath = rest[0];
+    const baseHash = rest[1];
+    const body = fs.readFileSync(bodyPath, 'utf8');
+    console.log(JSON.stringify(await studio.applyProjectPromptOverrideConfig(project, kind, body, baseHash), null, 2));
+    return;
+  }
+
+  if (domain === 'rollback' && action === 'project-prompt-override' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const kind = arg4;
+    if (kind !== 'storyboard' && kind !== 'video') throw new Error('kind must be storyboard or video.');
+    console.log(JSON.stringify(await studio.revertProjectPromptOverrideConfig(project, kind, rest[0]), null, 2));
     return;
   }
 
