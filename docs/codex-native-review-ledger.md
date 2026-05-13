@@ -293,7 +293,7 @@ Adds a fourth gate to R10's plugin-distribution checklist: **the director surfac
 
 ### R18 — Director sessions should be MCP-first, CLI-second
 
-Status: **agreed** · Raised: 2026-05-13
+Status: **shipped first pass** · Raised: 2026-05-13
 
 The first real director test exposed an important boundary: Lahari MCP was registered, but the active Codex chat did not expose the `mcp__lahari...` namespace, so the director session used local CLI/service calls. The work succeeded, but it bypassed the MCP audit layer and made `.lahari/audit/<projectId>/` empty.
 
@@ -302,9 +302,9 @@ The first real director test exposed an important boundary: Lahari MCP was regis
 Use MCP in director mode for project reads, attach/session state, previews, applies, rollback, generation plans, issue capture, and any future structured mutation tools. Use CLI for setup, diagnostics, audit tailing, smoke tests, migrations, provider doctor checks, engine debugging, or when no MCP tool exists yet.
 
 **Follow-ups:**
-- Update `AGENTS.md` and `lahari-director` skill with the MCP-first rule.
-- Add CLI audit fallback so escaped/direct CLI calls still leave footprints.
-- Add `setup --check` or a small `mcp doctor` command that tells the user when MCP is registered on disk but missing from the active Codex tool surface.
+- Shipped: `AGENTS.md` and `lahari-director` skill now require an active-chat Lahari MCP visibility check before `attach_director_session`; director sessions must stop and ask for Codex restart/fresh session instead of falling back to CLI.
+- Shipped: CLI calls now write `.lahari/audit/<projectId>/<date>-calls.jsonl` with `source: "cli"` start/finish rows, so escaped/direct CLI calls leave a footprint.
+- Still open: add a dedicated `mcp doctor` command if Codex exposes a reliable active-tool introspection path. For now, active visibility is a manual chat-surface check.
 
 **Why it matters:** "Freedom" here silently routed around observability. The system needs discipline, plus fallback logging when discipline fails.
 
@@ -312,14 +312,14 @@ Use MCP in director mode for project reads, attach/session state, previews, appl
 
 ### R19 — MCP registration is not the same as active tool availability
 
-Status: **agreed** · Raised: 2026-05-13
+Status: **shipped first pass** · Raised: 2026-05-13
 
 Observed during director test: `codex mcp list` showed `lahari` registered and enabled, but the running Codex chat did not expose the Lahari namespace as callable tools. The correct explanation is not "MCP is unavailable"; it is "registered locally, but this session did not load the namespace."
 
 **Follow-ups:**
-- Setup output should say "restart/reopen Codex Desktop after registration" more loudly.
-- Director startup docs should distinguish "registered on disk" from "active in this chat."
-- Add a preflight command/report that lists registered tools and tells the operator whether this specific chat has native Lahari tools visible. If Codex does not expose a programmatic active-tool introspection API, document the manual check.
+- Shipped: setup output now explicitly tells the operator to quit/reopen Codex Desktop after registration, and says director sessions should not fall back to CLI if native Lahari MCP tools are not visible.
+- Shipped: `AGENTS.md` and the skill distinguish registered-on-disk from active-in-this-chat availability through the mandatory visibility check.
+- Still open: active-tool introspection remains manual unless Codex exposes a programmatic API.
 
 **Why it matters:** This is a user-trust bug. If the artist hears "the tool is enabled" but Codex says "I can't call it," the system feels flaky even when the registration is technically correct.
 

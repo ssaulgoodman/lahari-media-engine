@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
-import { formatAuditTail } from '../server/services/lahariAudit.js';
+import { formatAuditTail, recordCliAudit } from '../server/services/lahariAudit.js';
 import { runLahariSetup } from '../server/services/lahariSetup.js';
 import { IMAGE_MODELS, getImageModel } from '../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS, getStoryboardProvider } from '../constants/storyboardProviders.js';
@@ -424,7 +424,37 @@ const main = async () => {
   process.exitCode = 1;
 };
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+const cliAuditArgs = () => {
+  const [domain, action, projectId, arg4, ...rest] = process.argv.slice(2);
+  return { domain, action, projectId, arg4, rest };
+};
+
+const startedAt = new Date().toISOString();
+const start = Date.now();
+recordCliAudit({
+  phase: 'start',
+  command: 'npm run lahari',
+  args: cliAuditArgs(),
+  startedAt,
 });
+
+(async () => {
+  let caughtError: unknown = null;
+  try {
+    await main();
+  } catch (error) {
+    caughtError = error;
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  } finally {
+    const exitError = caughtError || (process.exitCode && process.exitCode !== 0 ? `process exited with code ${process.exitCode}` : null);
+    recordCliAudit({
+      phase: 'finish',
+      command: 'npm run lahari',
+      args: cliAuditArgs(),
+      error: exitError || undefined,
+      durationMs: Date.now() - start,
+      startedAt,
+    });
+  }
+})();

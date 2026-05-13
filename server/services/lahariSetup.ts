@@ -302,5 +302,8 @@ export const runLahariSetup = async (opts: { skipRegister?: boolean } = {}) => {
   }
 
   console.log(`Ready: MCP server "${MCP_SERVER_NAME}" is registered for Codex Desktop and Claude Code.`);
-  console.log('Next: npm run lahari -- project list 10');
+  console.log('Important: quit and reopen Codex Desktop after setup so the active chat tool surface loads the Lahari MCP namespace.');
+  console.log('In a director session, use native Lahari MCP tools first. If they are not visible, do not fall back to CLI; restart/reopen Codex and try a fresh session in this workspace.');
+  console.log('CLI remains for setup, diagnostics, audit tailing, smoke tests, and engine debugging.');
+  console.log('Next after restart: open a project/song and attach with the Lahari MCP tools.');
 };

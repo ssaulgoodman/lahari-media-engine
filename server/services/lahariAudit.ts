@@ -70,7 +70,9 @@ const projectIdFromPath = (value: string) => {
 export const deriveAuditProjectId = (value: unknown): string | null => {
   if (!value || typeof value !== 'object') return null;
   const input = value as Record<string, unknown>;
-  if (typeof input.projectId === 'string' && input.projectId.trim()) return input.projectId.trim();
+  if (typeof input.projectId === 'string' && input.projectId.trim()) {
+    return projectIdFromPath(input.projectId) || input.projectId.trim();
+  }
   if (typeof input.previewJsonPath === 'string') return projectIdFromPath(input.previewJsonPath);
   if (typeof input.project_id === 'string' && input.project_id.trim()) return input.project_id.trim();
   return null;
@@ -143,6 +145,31 @@ export const recordMcpAudit = (entry: {
     errorMessage: entry.error instanceof Error ? entry.error.message : entry.error ? String(entry.error) : undefined,
     resultSize: entry.phase === 'finish' ? resultSize : undefined,
     resultSummary: entry.phase === 'finish' && !entry.error ? resultSummary(entry.result) : undefined,
+    startedAt: entry.startedAt,
+  };
+  appendJsonl(auditLogPath(projectId), event);
+  return event;
+};
+
+export const recordCliAudit = (entry: {
+  phase: AuditPhase;
+  command: string;
+  args?: unknown;
+  error?: unknown;
+  durationMs?: number;
+  startedAt?: string;
+}) => {
+  const projectId = deriveAuditProjectId(entry.args);
+  const event = {
+    ts: new Date().toISOString(),
+    source: 'cli',
+    phase: entry.phase,
+    tool: entry.command,
+    projectId,
+    args: entry.args == null ? undefined : redactAuditValue(entry.args),
+    durationMs: entry.durationMs,
+    ok: entry.phase === 'finish' ? !entry.error : undefined,
+    errorMessage: entry.error instanceof Error ? entry.error.message : entry.error ? String(entry.error) : undefined,
     startedAt: entry.startedAt,
   };
   appendJsonl(auditLogPath(projectId), event);
