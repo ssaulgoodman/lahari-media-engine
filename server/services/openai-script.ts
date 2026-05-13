@@ -1,10 +1,4 @@
 import OpenAI from 'openai';
-import {
-  validateScriptStructure,
-  buildCorrectivePrompt,
-  assignDeterministicDurations,
-  parseTimestamp,
-} from './script-validation.js';
 
 type PlanScenesInput = {
   concept: any;
@@ -42,7 +36,12 @@ const formatConceptForScriptPrompt = (concept: any): string => {
   return lines.filter(line => !line.endsWith(': ')).join('\n');
 };
 
-// parseTimestamp is now in ./script-validation.ts (shared with claude/gemini)
+const parseTimestamp = (t: string): number => {
+  if (!t || !t.includes(':')) return 0;
+  const parts = t.split(':').map(Number);
+  if (parts.some((part) => Number.isNaN(part))) return 0;
+  return parts[0] * 60 + (parts[1] || 0);
+};
 
 const SCRIPT_SCHEMA = {
   type: 'object',
@@ -124,9 +123,61 @@ const extractJsonText = (response: any): string => {
   return text;
 };
 
-// validatePlan moved to ./script-validation.ts (validateScriptStructure).
-// Same logic — keeps openai/claude/gemini planners consistent. Removing the
-// duplicate; calls below were updated to use the imported version.
+const validatePlan = (
+  candidate: ScriptPlan,
+  opts: { pacing: number; isSeedanceStoryboard: boolean; seedanceMaxDuration: number }
+): string[] => {
+  const errors: string[] = [];
+  if (!Array.isArray(candidate.cast)) errors.push('cast must be an array.');
+  if (!Array.isArray(candidate.environments)) errors.push('environments must be an array.');
+  if (!Array.isArray(candidate.scenes)) errors.push('scenes must be an array.');
+  if (errors.length) return errors;
+
+  const envNames = new Set(candidate.environments.map((env: any) => env.name).filter(Boolean));
+  const castNames = new Set(candidate.cast.map((member: any) => member.name).filter(Boolean));
+
+  for (const scene of candidate.scenes) {
+    const label = scene.sectionLabel || 'Untitled scene';
+    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    if (sceneDuration <= 0) continue;
+    if (!Array.isArray(scene.shots) || scene.shots.length === 0) {
+      errors.push(`Scene "${label}" has no shots.`);
+      continue;
+    }
+
+    for (const [idx, shot] of scene.shots.entries()) {
+      if (!shot.direction?.trim()) errors.push(`Scene "${label}" shot ${idx + 1} has no direction.`);
+      if (!shot.environmentName?.trim()) {
+        errors.push(`Scene "${label}" shot ${idx + 1} has no environmentName.`);
+      } else if (envNames.size && !envNames.has(shot.environmentName)) {
+        errors.push(`Scene "${label}" shot ${idx + 1} uses environment "${shot.environmentName}" that is not in environments.`);
+      }
+      for (const name of shot.castNames || []) {
+        if (castNames.size && !castNames.has(name)) errors.push(`Scene "${label}" shot ${idx + 1} uses cast "${name}" that is not in cast.`);
+      }
+    }
+
+    if (opts.isSeedanceStoryboard) {
+      const durations = scene.shots.map((shot: any) => Number(shot.duration || 0));
+      durations.forEach((duration: number, idx: number) => {
+        if (duration <= 0) errors.push(`Scene "${label}" shot ${idx + 1} has invalid duration ${duration}.`);
+        if (duration > 0 && duration < 4) errors.push(`Scene "${label}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
+        if (duration > opts.seedanceMaxDuration) errors.push(`Scene "${label}" shot ${idx + 1} is ${duration}s, above Seedance max ${opts.seedanceMaxDuration}s.`);
+      });
+      const total = durations.reduce((sum: number, duration: number) => sum + duration, 0);
+      if (Math.abs(total - sceneDuration) > 0.01) {
+        errors.push(`Scene "${label}" (${scene.startTime}-${scene.endTime}, ${sceneDuration}s): shot durations add to ${total}s, must add exactly to ${sceneDuration}s.`);
+      }
+    } else {
+      const expectedShots = Math.max(1, Math.ceil(sceneDuration / opts.pacing));
+      if (scene.shots.length !== expectedShots) {
+        errors.push(`Scene "${label}" (${scene.startTime}-${scene.endTime}, ${sceneDuration}s): wrote ${scene.shots.length} shots but expected ${expectedShots}.`);
+      }
+    }
+  }
+
+  return errors;
+};
 
 const buildPrompt = (
   input: PlanScenesInput,
@@ -218,18 +269,16 @@ export const planScenesOpenAI = async (
   const seedanceMaxDuration = 15;
   const maxAttempts = 3;
 
-  const initialPrompt = buildPrompt(input);
+  let prompt = buildPrompt(input);
   let lastErrors: string[] = [];
-  // OpenAI-native retry: after the first attempt, chain via
-  // previous_response_id so the model retains its reasoning state on
-  // server-side. Each retry sends just the corrective text — much cheaper
-  // than rebuilding the full prompt and re-reasoning from scratch. Mirrors
-  // the pattern in openai-image.ts edit mode.
-  let previousResponseId: string | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const requestBody: any = {
+    const response = await (client.responses.create as any)({
       model: OPENAI_SCRIPT_MODEL,
+      input: [
+        { role: 'system', content: 'You return strict JSON for a music video production planner.' },
+        { role: 'user', content: prompt },
+      ],
       reasoning: { effort: OPENAI_SCRIPT_REASONING_EFFORT },
       text: {
         format: {
@@ -240,347 +289,40 @@ export const planScenesOpenAI = async (
         },
       },
       max_output_tokens: 12000,
-    };
-
-    if (previousResponseId) {
-      // Retry turn: short corrective input, server has prior reasoning.
-      requestBody.previous_response_id = previousResponseId;
-      requestBody.input = buildCorrectivePrompt(lastErrors, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
-    } else {
-      requestBody.input = [
-        { role: 'system', content: 'You return strict JSON for a music video production planner.' },
-        { role: 'user', content: initialPrompt },
-      ];
-    }
-
-    const response = await (client.responses.create as any)(requestBody);
-    previousResponseId = response?.id || null;
+    });
 
     let candidate: ScriptPlan;
     try {
       candidate = JSON.parse(extractJsonText(response));
     } catch (err: any) {
       lastErrors = [`OpenAI returned invalid JSON: ${err.message}`];
+      prompt = buildPrompt(input, lastErrors);
       continue;
     }
 
     if (!candidate.environments) candidate.environments = [];
-    lastErrors = validateScriptStructure(candidate, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
-
+    lastErrors = validatePlan(candidate, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
     if (lastErrors.length === 0) {
-      assignDeterministicDurations(candidate, { pacing, isSeedanceStoryboard });
-      console.log(`[planScenesOpenAI] Validation passed on attempt ${attempt}`);
-      return { ...candidate, prompt: initialPrompt, model: OPENAI_SCRIPT_MODEL };
+      for (const scene of candidate.scenes) {
+        const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+        if (sceneDuration <= 0 || !scene.shots?.length) continue;
+        const shotCount = scene.shots.length;
+        for (let i = 0; i < shotCount; i++) {
+          if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
+            scene.shots[i].duration = Number(scene.shots[i].duration);
+          } else if (i < shotCount - 1) {
+            scene.shots[i].duration = pacing;
+          } else {
+            const usedTime = (shotCount - 1) * pacing;
+            scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
+          }
+        }
+      }
+      return { ...candidate, prompt, model: OPENAI_SCRIPT_MODEL };
     }
 
-    console.warn(`[planScenesOpenAI] Attempt ${attempt} failed: ${lastErrors.join('; ')}`);
+    prompt = buildPrompt(input, lastErrors);
   }
 
   throw new Error(`OpenAI script generation failed validation after ${maxAttempts} attempts: ${lastErrors.join('; ')}`);
-};
-
-// ─── Refine Script (OpenAI GPT-5.5) ─────────────────────────────────
-//
-// Mirrors claude.ts → refineScript but uses OpenAI Responses API with
-// previous_response_id for retries. Same shared validator + duration
-// assignment.
-
-type RefineScriptInput = {
-  currentScript: { cast: any[]; environments: any[]; scenes: any[] };
-  feedback: string;
-  concept: any;
-  videoMode: string;
-  lyrics: string;
-  meaning: string;
-  musicalStructure: string;
-  basePacing: number;
-  minShotDuration?: number;
-  videoModel?: string;
-};
-
-const buildRefinePrompt = (input: RefineScriptInput): string => {
-  const pacing = input.basePacing || 15;
-  const minDuration = input.minShotDuration || 4;
-  const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
-  const seedanceMaxDuration = 15;
-
-  const currentJson = JSON.stringify({
-    cast: input.currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
-    environments: input.currentScript.environments.map((e: any) => ({ name: e.name, description: e.description })),
-    scenes: input.currentScript.scenes.map((s: any) => ({
-      sectionLabel: s.sectionLabel || s.section_label,
-      startTime: s.startTime || s.start_time,
-      endTime: s.endTime || s.end_time,
-      narrativeDescription: s.narrativeDescription || s.narrative_description,
-      shots: (s.shots || []).map((sh: any) => ({
-        direction: sh.direction || sh.visual_prompt || '',
-        duration: sh.duration,
-        castNames: sh.castNames || sh.cast_names || [],
-        environmentName: sh.environmentName || sh.environment_name || '',
-      })),
-    })),
-  }, null, 2);
-
-  const pacingGuidance = isSeedanceStoryboard
-    ? `SEEDANCE STORYBOARD PACING:
-A Lahari shot is one storyboard-controlled clip, not one continuous take.
-Allowed range: 4-${seedanceMaxDuration}s per shot. Durations must add exactly to the scene duration.
-If you edit a scene, include duration for every shot. Preserve existing durations in untouched scenes.`
-    : `SHOT BUDGET: Every shot = ${pacing}s. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets remainder. HARD CONSTRAINT.
-Video model minimum clip length: ${minDuration}s — shorter shots are generated at model floor and trimmed in render.`;
-
-  return `You are the practical script editor for Lahari. Refine an existing devotional music video script based on director feedback. Visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
-
-CONCEPT:
-${formatConceptForScriptPrompt(input.concept)}
-
-LYRICS:
-${input.lyrics}
-
-MEANING: ${input.meaning}
-
-MUSICAL STRUCTURE: ${input.musicalStructure}
-
-${pacingGuidance}
-
-═══════════════════════════════════════
-CURRENT SCRIPT (your starting point):
-═══════════════════════════════════════
-${currentJson}
-
-═══════════════════════════════════════
-DIRECTOR'S FEEDBACK:
-═══════════════════════════════════════
-${input.feedback}
-
-═══════════════════════════════════════
-
-SURGICAL REFINEMENT. Not a rewrite.
-
-1. PRESERVE what works. Unchanged scenes come back IDENTICAL — same narratives, shots, cast assignments, environments.
-2. SCOPE changes to what feedback asks for.
-3. RESPECT existing cast and environment names — they are IDs. Don't rename. Add new ones only if feedback requires.
-4. MAINTAIN musical structure. Section labels and timestamps are fixed.
-5. Every shot MUST have castNames + environmentName.
-${isSeedanceStoryboard ? '6. Seedance mode: shot.direction may describe 2-5 internal beats but one cohesive clip. Include shot.duration.' : ''}
-
-Return the COMPLETE updated script (strict JSON) — every scene, not just the changed ones.`;
-};
-
-export const refineScriptOpenAI = async (
-  input: RefineScriptInput
-): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string; model: string }> => {
-  const client = getClient();
-  const pacing = input.basePacing || 15;
-  const isSeedanceStoryboard = input.videoModel?.startsWith('seedance') || false;
-  const seedanceMaxDuration = 15;
-  const maxAttempts = 3;
-
-  const initialPrompt = buildRefinePrompt(input);
-  let lastErrors: string[] = [];
-  let previousResponseId: string | null = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const requestBody: any = {
-      model: OPENAI_SCRIPT_MODEL,
-      reasoning: { effort: OPENAI_SCRIPT_REASONING_EFFORT },
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'lahari_music_video_script',
-          strict: true,
-          schema: SCRIPT_SCHEMA,
-        },
-      },
-      max_output_tokens: 12000,
-    };
-
-    if (previousResponseId) {
-      requestBody.previous_response_id = previousResponseId;
-      requestBody.input = buildCorrectivePrompt(lastErrors, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
-    } else {
-      requestBody.input = [
-        { role: 'system', content: 'You return strict JSON for a music video production planner.' },
-        { role: 'user', content: initialPrompt },
-      ];
-    }
-
-    const response = await (client.responses.create as any)(requestBody);
-    previousResponseId = response?.id || null;
-
-    let candidate: ScriptPlan;
-    try {
-      candidate = JSON.parse(extractJsonText(response));
-    } catch (err: any) {
-      lastErrors = [`OpenAI returned invalid JSON: ${err.message}`];
-      continue;
-    }
-
-    if (!candidate.environments) candidate.environments = [];
-    lastErrors = validateScriptStructure(candidate, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
-
-    if (lastErrors.length === 0) {
-      assignDeterministicDurations(candidate, { pacing, isSeedanceStoryboard });
-      console.log(`[refineScriptOpenAI] Validation passed on attempt ${attempt}`);
-      return { ...candidate, prompt: initialPrompt, model: OPENAI_SCRIPT_MODEL };
-    }
-
-    console.warn(`[refineScriptOpenAI] Attempt ${attempt} failed: ${lastErrors.join('; ')}`);
-  }
-
-  throw new Error(`OpenAI script refinement failed after ${maxAttempts} attempts: ${lastErrors.join('; ')}`);
-};
-
-// ─── Write Shot Prompts (OpenAI GPT-5.5) ───────────────────────────
-//
-// Per-shot visual + motion prompt writer. No scene-level math validation
-// (unlike planScenes/refineScript); the only constraint is that all shot
-// IDs in the response match the IDs we sent. Strict json_schema enforces
-// the shape. If the model returns wrong IDs, we throw — single retry isn't
-// usually worth it for this stage (the prompt sends the full ID list and
-// asks for an exact match; failures are rare).
-
-type WriteShotPromptsInput = {
-  shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[];
-  cast: { name: string; description: string }[];
-  concept: any;
-  userNote?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
-  videoModel?: string;
-  previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[];
-};
-
-const WRITE_SHOT_PROMPTS_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    shots: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string' },
-          visualPrompt: { type: 'string' },
-          motionPrompt: { type: 'string' },
-          continuityFrom: { type: 'string', enum: ['cut', 'prev_shot'] },
-        },
-        required: ['id', 'visualPrompt', 'motionPrompt', 'continuityFrom'],
-      },
-    },
-  },
-  required: ['shots'],
-};
-
-const buildWriteShotPromptsText = (input: WriteShotPromptsInput): string => {
-  const shotList = input.shots.map((s, i) =>
-    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | Lyrics: ${s.sceneLyrics || 'instrumental'}`
-  ).join('\n');
-
-  const castList = input.cast.map(c => `${c.name}: ${c.description}`).join('\n');
-
-  const tailContext = input.previousBatchTail?.length
-    ? `\nPREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\n${input.previousBatchTail.map(t => `[${t.id}]: visual: "${t.visualPrompt}" | motion: "${t.motionPrompt}"`).join('\n')}\n`
-    : '';
-
-  const userNoteBlock = input.userNote ? `\nUSER DIRECTION (apply to this rewrite): ${input.userNote}\n` : '';
-  const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
-  const traits = [input.isNarrative ? 'narrative' : null, input.isMeditative ? 'meditative' : null].filter(Boolean);
-  const songTypeSignal = typeLabel || traits.length
-    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
-    : '';
-
-  const meditativeGuidance = input.isMeditative ? `
-MEDITATIVE GUIDANCE:
-- Favor stillness, patience, and negative space.
-- A still face, a trembling hand, a single flame can carry weight.
-- Show sacred presence through atmosphere and reaction, not VFX.` : '';
-
-  const modelGuidance = input.videoModel?.startsWith('seedance') ? `
-SEEDANCE 2.0 PROMPTING:
-- motionPrompt = timed action cue for this exact shot duration.
-- Name subject + visible change + camera move in clean order.
-- Use duration when helpful ("over 5s...", "during the final second...").
-- Lahari mixes the song in render. Do NOT request generated audio.
-- Reference song rhythm visually only ("on the vocal phrase", "as the line resolves").
-- Simple, physically plausible camera.
-- If start frame must stay consistent: "maintain the same face, costume, geometry while...".` : `
-VIDEO MODEL PROMPTING:
-- Model gets a start frame; song is added in render. motionPrompt describes visible action + camera only.
-- Do NOT request generated audio, dialogue, subtitles, or SFX.`;
-
-  return `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
-
-WRITE PROMPTS THAT ARE RENDERABLE.
-
-The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words.
-
-Every sentence must describe something visible or animateable. No metaphor, no inner emotion. Avoid "seems to", "as if", or invisible causes (grace, presence, devotion). Describe the visible effect directly.
-
-But do not become schematic. Avoid "left half", "right half", "split-focus", "perfect symmetry" unless the shot truly depends on that arrangement.
-
-Translate emotion into physical evidence: a still face, a hand tightening, a flame settling, moisture on stone, a body lowering into prostration, distance between two figures.
-
-${songTypeSignal}
-Mood: ${input.concept?.mood || 'devotional'}
-Video model: ${input.videoModel || 'default'}
-
-CHARACTERS:
-${castList}
-${userNoteBlock}${tailContext}
-SHOTS TO WRITE:
-${shotList}
-${modelGuidance}
-${meditativeGuidance}
-
-For EACH shot:
-- id: must match the [id] above EXACTLY.
-- visualPrompt: the start frame. Brief: camera position, shot scale, subject placement, spatial relationship, location, one key visible detail. ONLY characters listed in that shot's Cast. Don't invent geography.
-- motionPrompt: one sentence. What changes — character action, camera movement, environmental motion. Name camera verb if it moves (push-in, pan, tracking, pull-back). Simplest truthful motion. A static hold is valid.
-- continuityFrom: 'cut' (default) or 'prev_shot' (when this shot directly intensifies/reveals/sustains the previous moment). First shot of a scene is ALWAYS 'cut'.
-
-Match the IDs exactly. Return one entry per shot.`;
-};
-
-export const writeShotPromptsOpenAI = async (
-  input: WriteShotPromptsInput
-): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string; model: string }> => {
-  const client = getClient();
-  const prompt = buildWriteShotPromptsText(input);
-
-  const response = await (client.responses.create as any)({
-    model: OPENAI_SCRIPT_MODEL,
-    reasoning: { effort: OPENAI_SCRIPT_REASONING_EFFORT },
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'lahari_shot_prompts',
-        strict: true,
-        schema: WRITE_SHOT_PROMPTS_SCHEMA,
-      },
-    },
-    max_output_tokens: 12000,
-    input: [
-      { role: 'system', content: 'You return strict JSON for a music video shot writer.' },
-      { role: 'user', content: prompt },
-    ],
-  });
-
-  const parsed = JSON.parse(extractJsonText(response));
-  const outputShots = parsed.shots || [];
-
-  // Validate IDs match exactly (preserves the same guard claude.ts implies
-  // via tool_use schema). Drop unknowns and warn if any expected shot is
-  // missing — the route handler treats unknowns as fatal.
-  const expectedIds = new Set(input.shots.map((s) => s.id));
-  const returnedIds = new Set(outputShots.map((s: any) => s.id));
-  const missing = [...expectedIds].filter((id) => !returnedIds.has(id));
-  if (missing.length) {
-    throw new Error(`OpenAI shot writer skipped shot IDs: ${missing.join(', ')}`);
-  }
-  const filtered = outputShots.filter((s: any) => expectedIds.has(s.id));
-
-  return { shots: filtered, prompt, model: OPENAI_SCRIPT_MODEL };
 };

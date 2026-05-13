@@ -8,12 +8,6 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { generateText } from './text-provider.js';
-import {
-  validateScriptStructure,
-  buildCorrectivePrompt,
-  assignDeterministicDurations,
-  parseTimestamp as parseScriptTimestamp,
-} from './script-validation.js';
 
 const getClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -314,9 +308,12 @@ const formatConceptForScriptPrompt = (concept: any): string => {
   return lines.filter(line => !line.endsWith(': ')).join('\n');
 };
 
-// parseTimestamp moved to ./script-validation.ts (shared with openai/gemini
-// planners). Re-export as local name to keep the rest of this file unchanged.
-const parseTimestamp = parseScriptTimestamp;
+// Parse "M:SS" or "MM:SS" to seconds
+const parseTimestamp = (t: string): number => {
+  if (!t || !t.includes(':')) return 0;
+  const parts = t.split(':').map(Number);
+  return parts[0] * 60 + (parts[1] || 0);
+};
 
 export const planScenes = async (
   input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string }
@@ -456,15 +453,32 @@ IMPORTANT — character and environment assignment:
     const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
     if (!candidate.environments) candidate.environments = [];
 
-    // ═══ VALIDATE via shared helper ═══
-    // Same validator is used by openai-script.ts and gemini-script.ts.
-    // Validates shot counts (keyframe mode) or duration sums (Seedance mode)
-    // plus cast/env name references and missing-direction checks.
-    const errors = validateScriptStructure(candidate, {
-      pacing,
-      isSeedanceStoryboard: !!isSeedanceStoryboard,
-      seedanceMaxDuration,
-    });
+    // ═══ VALIDATE: Check shot counts/durations fit scene durations ═══
+    const errors: string[] = [];
+    for (const scene of candidate.scenes) {
+      const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+      if (sceneDuration <= 0) continue;
+      if ((scene.shots?.length || 0) === 0) {
+        errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
+      }
+      if (isSeedanceStoryboard) {
+        const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
+        shotDurations.forEach((duration: number, idx: number) => {
+          if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
+          if (duration > 0 && duration < 4) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
+          if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
+        });
+        const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
+        if (Math.abs(total - sceneDuration) > 0.01) {
+          errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): shot durations add to ${total}s, must add to ${sceneDuration}s exactly.`);
+        }
+      } else {
+        const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
+        if ((scene.shots?.length || 0) !== expectedShots) {
+          errors.push(`Scene "${scene.sectionLabel}" (${scene.startTime}–${scene.endTime}, ${sceneDuration}s): you wrote ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} shots expected.`);
+        }
+      }
+    }
 
     if (errors.length === 0) {
       data = candidate;
@@ -479,23 +493,34 @@ IMPORTANT — character and environment assignment:
       throw new Error(`Script generation failed — shot counts don't fit scene durations after ${maxAttempts} attempts. Try regenerating or adjust pacing.`);
     }
 
-    // ═══ RETRY: Anthropic-native — send errors back via tool_result chain ═══
-    // OpenAI/Gemini planners use different mechanisms for the same logical
-    // step (previous_response_id / rebuild-prompt). Each provider owns its
-    // own retry semantics; the validation function is shared.
+    // ═══ RETRY: Send validation errors back in the same conversation ═══
     messages = [
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: buildCorrectivePrompt(errors, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard, seedanceMaxDuration }) }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED. Fix these issues and resubmit:\n\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Remember: Seedance storyboard shots must each be 4-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Remember: shots per scene = ceil(scene_duration / ${pacing}). Recount and fix.`}` }
       ] },
     ];
   }
 
   if (!data) throw new Error('Script generation failed after all attempts');
 
-  // ═══ Assign deterministic durations via shared helper ═══
-  assignDeterministicDurations(data, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard });
+  // ═══ Assign deterministic durations ═══
+  for (const scene of data.scenes) {
+    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    if (sceneDuration <= 0 || !scene.shots?.length) continue;
+    const shotCount = scene.shots.length;
+    for (let i = 0; i < shotCount; i++) {
+      if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
+        scene.shots[i].duration = Number(scene.shots[i].duration);
+      } else if (i < shotCount - 1) {
+        scene.shots[i].duration = pacing;
+      } else {
+        const usedTime = (shotCount - 1) * pacing;
+        scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
+      }
+    }
+  }
 
   return { ...data, prompt };
 };
@@ -614,12 +639,32 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
     const candidate = toolBlock.input as { cast: any[]; environments: any[]; scenes: any[] };
     if (!candidate.environments) candidate.environments = [];
 
-    // Validate via shared helper (same logic as planScenes + openai/gemini)
-    const errors = validateScriptStructure(candidate, {
-      pacing,
-      isSeedanceStoryboard: !!isSeedanceStoryboard,
-      seedanceMaxDuration,
-    });
+    // Validate shot counts/durations
+    const errors: string[] = [];
+    for (const scene of candidate.scenes) {
+      const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+      if (sceneDuration <= 0) continue;
+      if ((scene.shots?.length || 0) === 0) {
+        errors.push(`Scene "${scene.sectionLabel}" has no shots.`);
+      }
+      if (isSeedanceStoryboard) {
+        const shotDurations = (scene.shots || []).map((shot: any) => Number(shot.duration || 0));
+        shotDurations.forEach((duration: number, idx: number) => {
+          if (duration <= 0) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} has invalid duration ${duration}. Durations must be > 0.`);
+          if (duration > 0 && duration < 4) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, below Seedance min 4s.`);
+          if (duration > seedanceMaxDuration) errors.push(`Scene "${scene.sectionLabel}" shot ${idx + 1} is ${duration}s, above Seedance max ${seedanceMaxDuration}s.`);
+        });
+        const total = shotDurations.reduce((sum: number, duration: number) => sum + duration, 0);
+        if (Math.abs(total - sceneDuration) > 0.01) {
+          errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): shot durations add to ${total}s, must add to ${sceneDuration}s exactly.`);
+        }
+      } else {
+        const expectedShots = Math.max(1, Math.ceil(sceneDuration / pacing));
+        if ((scene.shots?.length || 0) !== expectedShots) {
+          errors.push(`Scene "${scene.sectionLabel}" (${sceneDuration}s): ${scene.shots.length} shots but ceil(${sceneDuration}/${pacing}) = ${expectedShots} expected.`);
+        }
+      }
+    }
 
     if (errors.length === 0) {
       data = candidate;
@@ -638,15 +683,29 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
       ...messages,
       { role: 'assistant', content: response.content },
       { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: toolBlock.id, content: buildCorrectivePrompt(errors, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard, seedanceMaxDuration }) }
+        { type: 'tool_result', tool_use_id: toolBlock.id, content: `VALIDATION FAILED:\n${errors.join('\n')}\n\n${isSeedanceStoryboard ? `Seedance storyboard shots must each be 4-${seedanceMaxDuration}s and durations must add exactly to each scene duration.` : `Shots per scene = ceil(scene_duration / ${pacing}). Fix and resubmit.`}` }
       ] },
     ];
   }
 
   if (!data) throw new Error('Script refinement failed');
 
-  // Assign durations via shared helper
-  assignDeterministicDurations(data, { pacing, isSeedanceStoryboard: !!isSeedanceStoryboard });
+  // Assign durations
+  for (const scene of data.scenes) {
+    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    if (sceneDuration <= 0 || !scene.shots?.length) continue;
+    const shotCount = scene.shots.length;
+    for (let i = 0; i < shotCount; i++) {
+      if (isSeedanceStoryboard && Number(scene.shots[i].duration || 0) > 0) {
+        scene.shots[i].duration = Number(scene.shots[i].duration);
+      } else if (i < shotCount - 1) {
+        scene.shots[i].duration = pacing;
+      } else {
+        const usedTime = (shotCount - 1) * pacing;
+        scene.shots[i].duration = Math.max(1, sceneDuration - usedTime);
+      }
+    }
+  }
 
   return { ...data, prompt };
 };
