@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectColumns, updateRows, insertRow, deleteRows, rpcVoid } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
 import { planScenes, refineScript, writeShotPrompts } from './claude.js';
-import { generateStoryboardVersion, planStoryboardPrompt } from './storyboard.js';
+import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion } from './storyboard.js';
 import { generateShotVideo } from './videoGeneration.js';
 import { eventResultPointers, listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
 import { getModelMinDuration } from './segmind.js';
@@ -1860,6 +1860,119 @@ export const planGenerateStoryboard = (project: Project, shotId: string) => {
   };
 };
 
+export const buildStoryboardStatus = (project: Project) => {
+  const shots: any[] = [];
+  const summary = {
+    scenes: project.scenes.length,
+    shots: 0,
+    promptsReady: 0,
+    promptsMissing: 0,
+    promptsStale: 0,
+    boardsReady: 0,
+    boardsMissing: 0,
+    boardsStale: 0,
+    boardsLocked: 0,
+    videosReady: 0,
+    videosMissing: 0,
+    videosStale: 0,
+    shotsLocked: 0,
+  };
+
+  for (const [sceneIndex, scene] of project.scenes.entries()) {
+    for (const [shotIndex, shot] of scene.shots.entries()) {
+      summary.shots += 1;
+      if (shot.storyboardPrompt) summary.promptsReady += 1;
+      else summary.promptsMissing += 1;
+      if (shot.promptsStale || shot.storyboardPromptStatus === 'stale') summary.promptsStale += 1;
+      if (shot.storyboardUrl) summary.boardsReady += 1;
+      else summary.boardsMissing += 1;
+      if (shot.storyboardStatus === 'stale') summary.boardsStale += 1;
+      if (shot.storyboardLocked) summary.boardsLocked += 1;
+      if (shot.videoUrl) summary.videosReady += 1;
+      else summary.videosMissing += 1;
+      if (shot.videoStatus === 'stale') summary.videosStale += 1;
+      if (shot.locked) summary.shotsLocked += 1;
+
+      const readiness = [
+        !shot.storyboardPrompt ? 'missing storyboard prompt' : null,
+        shot.promptsStale || shot.storyboardPromptStatus === 'stale' ? 'prompt stale' : null,
+        shot.storyboardPromptStatus === 'error' ? 'prompt writer error' : null,
+        !shot.storyboardUrl ? 'missing board' : null,
+        shot.storyboardStatus === 'stale' ? 'board stale' : null,
+        shot.storyboardStatus === 'error' ? 'board generation error' : null,
+        shot.storyboardUrl && !shot.storyboardLocked ? 'board needs review/lock' : null,
+        project.videoModel?.startsWith('seedance') && shot.storyboardUrl && !shot.storyboardLocked ? 'video blocked until board lock' : null,
+        shot.videoStatus === 'stale' ? 'video stale' : null,
+        shot.lastError ? `last error: ${compactText(shot.lastError, 180)}` : null,
+      ].filter(Boolean);
+
+      const label = shotLabel(sceneIndex, shotIndex);
+      const needsBoard = shot.storyboardPrompt && (!shot.storyboardUrl || shot.storyboardStatus === 'stale' || shot.storyboardStatus === 'error') && !shot.locked;
+      const nextAction = needsBoard ? {
+        kind: 'generate_storyboard',
+        canRun: true,
+        paid: true,
+        cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
+        mcpTool: 'apply_generate_storyboard',
+        webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
+      } : shot.storyboardUrl && !shot.storyboardLocked ? {
+        kind: 'lock_storyboard',
+        canRun: true,
+        paid: false,
+        cli: `npm run lahari -- apply lock-storyboard ${project.id} ${shot.id}`,
+        mcpTool: 'lock_storyboard',
+        webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard' }),
+      } : null;
+
+      shots.push({
+        id: shot.id,
+        label,
+        scene: scene.sectionLabel,
+        beat: compactText(shot.direction || shot.storyboardPrompt || shot.visualPrompt, 220),
+        duration: shot.duration,
+        prompt: {
+          has: !!shot.storyboardPrompt,
+          status: shot.storyboardPromptStatus,
+          chars: (shot.storyboardPrompt || '').length,
+          cutPlanChars: (shot.storyboardCutPlan || '').length,
+          stale: !!shot.promptsStale || shot.storyboardPromptStatus === 'stale',
+        },
+        board: {
+          has: !!shot.storyboardUrl,
+          status: shot.storyboardStatus,
+          locked: !!shot.storyboardLocked,
+          assetId: shot.storyboardAssetId || null,
+          versionId: shot.storyboardVersionId || null,
+          url: shot.storyboardUrl || null,
+        },
+        video: {
+          has: !!shot.videoUrl,
+          status: shot.videoStatus,
+          locked: !!shot.locked,
+          url: shot.videoUrl || null,
+        },
+        readiness,
+        nextAction,
+        webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard' }),
+      });
+    }
+  }
+
+  return {
+    kind: 'lahari.storyboard.status',
+    generatedAt: new Date().toISOString(),
+    project: {
+      id: project.id,
+      title: project.title,
+      status: project.status,
+      storyboardProvider: project.storyboardProvider,
+      videoModel: project.videoModel,
+    },
+    summary,
+    shots,
+  };
+};
+
 export const planGenerateVideo = (project: Project, shotId: string) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
@@ -1970,6 +2083,74 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
   };
 };
 
+export const lockStoryboardBoard = async (project: Project, shotId: string, versionId?: string) => {
+  const target = findProjectShot(project, shotId);
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+  if (!target.shot.storyboardUrl && !versionId) {
+    throw new Error('Cannot lock storyboard: this shot has no active storyboard board.');
+  }
+
+  const targetVersionId = versionId || target.shot.storyboardVersionId || null;
+  await lockStoryboardVersion(project.id, shotId, versionId);
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_locked',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex locked the storyboard board for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}.`,
+    payload: {
+      versionId: targetVersionId,
+      webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.lock_storyboard',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    shot: {
+      id: shotId,
+      label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+      versionId: targetVersionId,
+    },
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
+    note: 'Locked the active storyboard board. Video generation can now use this board as a trusted reference.',
+  };
+};
+
+export const unlockStoryboardBoard = async (project: Project, shotId: string) => {
+  const target = findProjectShot(project, shotId);
+  if (!target) throw new Error(`Shot not found in project: ${shotId}`);
+
+  await unlockStoryboardVersion(project.id, shotId);
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'storyboard_unlocked',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex unlocked the storyboard board for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}.`,
+    payload: {
+      previousVersionId: target.shot.storyboardVersionId || null,
+      webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
+    },
+  });
+
+  return {
+    kind: 'lahari.apply.unlock_storyboard',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    shot: {
+      id: shotId,
+      label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+      previousVersionId: target.shot.storyboardVersionId || null,
+    },
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
+    note: 'Unlocked the storyboard board for further review or regeneration.',
+  };
+};
+
 export const applyGenerateVideo = async (project: Project, shotId: string, promptOverride?: string) => {
   const plan = planGenerateVideo(project, shotId);
   if (!plan.canRun) {
@@ -2044,10 +2225,12 @@ export const buildProjectActionList = (project: Project) => {
           label: `Review and lock storyboard board for ${label}`,
           kind: 'review_storyboard',
           shot: { id: shot.id, label, beat },
-          canRun: false,
+          canRun: true,
           paid: false,
           webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard' }),
-          prerequisites: ['No native lock-storyboard apply tool yet; use the Lahari web studio review control.'],
+          prerequisites: [],
+          cli: `npm run lahari -- apply lock-storyboard ${project.id} ${shot.id}`,
+          mcpTool: 'lock_storyboard',
         });
       }
 

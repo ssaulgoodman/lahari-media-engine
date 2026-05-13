@@ -105,6 +105,18 @@ registerAuditedTool('review_storyboard_prompts', {
   return textResult(studio.buildStoryboardPromptReview(project));
 });
 
+registerAuditedTool('get_storyboard_status', {
+  title: 'Get storyboard status',
+  description: 'Read-only. Returns a compact shot-by-shot storyboard readiness view with prompt, board, video, lock state, and next native action.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+  },
+}, async ({ projectId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(studio.buildStoryboardStatus(project));
+});
+
 registerAuditedTool('get_shot_packet', {
   title: 'Get shot packet',
   description: 'Read-only. Returns one shot with its scene, prompts, assets, and previous/next context.',
@@ -445,6 +457,41 @@ registerAuditedTool('apply_generate_storyboard', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
+});
+
+registerAuditedTool('lock_storyboard', {
+  title: 'Lock storyboard board',
+  description: 'Mutating. Locks the active storyboard board, or a specific storyboard version, after visual review in the web studio.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    versionId: z.string().optional().describe('Optional storyboard version ID. Defaults to the active storyboard version.'),
+  },
+}, async ({ projectId, shotId, versionId }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for lock_storyboard.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.lockStoryboardBoard(project, shotId, versionId));
+});
+
+registerAuditedTool('unlock_storyboard', {
+  title: 'Unlock storyboard board',
+  description: 'Mutating. Unlocks the storyboard board for one shot so it can be revised or regenerated.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+  },
+}, async ({ projectId, shotId }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for unlock_storyboard.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.unlockStoryboardBoard(project, shotId));
 });
 
 registerAuditedTool('apply_generate_video', {

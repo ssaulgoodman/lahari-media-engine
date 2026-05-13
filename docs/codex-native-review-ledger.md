@@ -39,7 +39,7 @@ Web studio actions (lock shot, reject board, add note, regenerate) must land in 
 
 ### R2 — Supabase Realtime for web studio sync
 
-Status: **agreed** · Raised: 2026-05-13
+Status: **partially shipped** · Raised: 2026-05-13
 
 Use Supabase Realtime (already in stack) over three layers:
 - `postgres_changes` per-project subscription on `lahari_projects`, `lahari_scenes`, `lahari_shots`, `lahari_assets`, `lahari_renders` → Codex applies → web studio updates in <200ms.
@@ -444,6 +444,8 @@ The first MCP-path director test exposed the missing primitives around storyboar
 - `refine_storyboard_image` — wraps backend `refine-storyboard` `edit_image` mode with `projectId`, `shotId`, `feedback`, optional `previousVersionId`, optional reference image.
 - `lock_storyboard` / `unlock_storyboard` — let Codex lock good boards after visual review and reopen them when needed.
 - `get_storyboard_status` — compact per-shot readiness/progress view: prompt status, board status, lock state, stale flags, video readiness.
+
+**Shipped first slice:** `get_storyboard_status`, `lock_storyboard`, and `unlock_storyboard` are now exposed through MCP, CLI, and `buildProjectActionList`. Remaining work is prompt write/bulk-write, board generation aliases/bulk, and edit-image storyboard refinement.
 
 **Why it matters:** Storyboard prompting and board generation are the highest-tax v1 director workflows. Codex needs primitives that match the artist's natural loop: write prompt, generate board, inspect, refine image, lock, move to next shot or bulk-fill missing work.
 

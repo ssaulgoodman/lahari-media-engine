@@ -24,6 +24,7 @@ Usage:
   npm run lahari -- project actions <projectId>
   npm run lahari -- project hydrate <projectId> [outputDir]
   npm run lahari -- project storyboard-review <projectId>
+  npm run lahari -- project storyboard-status <projectId>
   npm run lahari -- project report <projectId> [out.md]
   npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]
   npm run lahari -- project contact-sheet <projectId> [out.html]
@@ -46,6 +47,8 @@ Usage:
   npm run lahari -- rollback rewrite-shot-prompts <preview.json>
   npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>
   npm run lahari -- rollback rewrite-script <preview.json>
+  npm run lahari -- apply lock-storyboard <projectId> <shotId> [versionId]
+  npm run lahari -- apply unlock-storyboard <projectId> <shotId>
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
   npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 
@@ -198,7 +201,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video'))
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard'))
     || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
@@ -228,6 +231,12 @@ const main = async () => {
   if (domain === 'project' && action === 'storyboard-review' && projectId) {
     const project = await studio.getFullProject(projectId);
     console.log(JSON.stringify(studio.buildStoryboardPromptReview(project), null, 2));
+    return;
+  }
+
+  if (domain === 'project' && action === 'storyboard-status' && projectId) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(studio.buildStoryboardStatus(project), null, 2));
     return;
   }
 
@@ -389,6 +398,18 @@ const main = async () => {
     const project = await studio.getFullProject(projectId);
     const note = rest.filter(Boolean).join(' ') || undefined;
     console.log(JSON.stringify(await studio.applyGenerateStoryboard(project, arg4, note), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'lock-storyboard' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(await studio.lockStoryboardBoard(project, arg4, rest[0]), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'unlock-storyboard' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    console.log(JSON.stringify(await studio.unlockStoryboardBoard(project, arg4), null, 2));
     return;
   }
 
