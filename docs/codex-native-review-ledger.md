@@ -1,37 +1,12 @@
 # Codex-Native Review Ledger
 
-**Purpose.** Claude's running architectural review of the codex-native-studio lane, kept in-repo for shared accountability. Separate from Codex's planning docs (`codex-native-studio.md`, `world-class-plan.md`, `learning-loop-plan.md`, `assistant-director-plan.md`). This file is opinion + verification, not plan.
+**Purpose.** Status tracking for the codex-native-studio lane: what's been proposed, shipped, validated, or invalidated. Append-only verification log.
 
-**How to use.** Codex builds; this ledger tracks what's been agreed, what's open, what shipped, what proved right, what got invalidated. Entries are added on every substantive review pass. Status changes are dated.
+**Operating principles and architecture rules live in `docs/codex-native-doctrine.md`** — read that for "how the system works." This file is the dated record of decisions and their fates.
 
-**Last touched:** 2026-05-13 — Codex implemented FU1-FU4 and render lifecycle events after Claude's review of `789536b`.
+**How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
----
-
-## Vision Anchor (confirmed)
-
-Lahari should be operable from a polished general-purpose agent harness (Codex Desktop, Claude Code, future ChatGPT desktop), not become a new agent harness itself. The repo is the creative operating system. Codex brings the harness — long threads, worktrees, browser/computer use, skills, MCP, memory. Lahari exposes domain truth as tools, taste as skills, and state as artifacts.
-
-- **Supabase Postgres = source of truth.** Web studio state, `.lahari/` workbench files, Codex in-context understanding are caches.
-- **Web studio = visual workstation.** Stays. Do not rebuild it inside Codex.
-- **Codex = director/operator surface.** Reads packets, calls typed tools, asks before paid/destructive work.
-- **MCP = the bridge.** Vendor-neutral; same server serves Codex Desktop, Claude Code, anything else MCP-aware.
-- **Skills = taste.** Tools = primitives that mutate state. Docs = architecture. Three roles, do not blur.
-
----
-
-## Load-Bearing Principles (agreed)
-
-| # | Principle | Status |
-|---|-----------|--------|
-| P1 | Supabase is source of truth; `.lahari/` is desk copy. Never dual-write. | shipped in AGENTS/docs |
-| P2 | Three-tier permission model: read (free) → preview (paid, no DB write) → apply (DB write, refuses anon key). | agreed, shipped |
-| P3 | Drift detection on every apply: validate preview against current DB state before writing. | agreed, partial |
-| P4 | Cost, blast radius, and rollback path must be in every plan/apply response. | agreed, partial |
-| P5 | Workflows are skills, not tools. Tools provide facts and primitive mutations; composition lives in skills + Codex. | agreed |
-| P6 | One Codex session = one song. Many Codex sessions over time can attach to one Lahari director session. | shipped in AGENTS/docs |
-| P7 | Web studio is the visual review surface. Codex deep-links into it; we do not build native visual review. | shipped first pass |
-| P8 | Tools are small primitives that compose. Codex orchestrates with Linear, Notion, Figma, Slack, browser, etc. | agreed |
+**Last touched:** 2026-05-13 — Ledger slimmed: vision, principles, and discipline lifted to `docs/codex-native-doctrine.md`.
 
 ---
 
@@ -316,19 +291,236 @@ Adds a fourth gate to R10's plugin-distribution checklist: **the director surfac
 
 ---
 
-## Discipline — Things NOT to Build
+### R18 — Director sessions should be MCP-first, CLI-second
 
-Easy to drift on these once gaps appear in Codex's harness. The temptation to plug them with Lahari-side workarounds is the architecture's biggest risk.
+Status: **agreed** · Raised: 2026-05-13
 
-- ❌ No Lahari TUI.
-- ❌ No Lahari chat surface.
-- ❌ No Lahari "agent runner" that operates without Codex/Claude in front.
-- ❌ No custom permission/approval UI — let the harness handle it.
-- ❌ No native visual review tools — deep-link to the web studio.
-- ❌ No critique tools that are just LLM-with-rubric — that's a skill.
-- ❌ No workflow tools (`review_scene`, `pre_lock_audit`, `final_checklist`) — those are skill compositions over primitives.
+The first real director test exposed an important boundary: Lahari MCP was registered, but the active Codex chat did not expose the `mcp__lahari...` namespace, so the director session used local CLI/service calls. The work succeeded, but it bypassed the MCP audit layer and made `.lahari/audit/<projectId>/` empty.
 
-When a gap shows up in Codex/Claude Code: file it upstream, route around it with browser MCP or downloadable HTML, do not build a vertical workaround.
+**Decision:** director sessions should be MCP-first. CLI remains first-class engine infrastructure, but not the default artist-operation lane.
+
+Use MCP in director mode for project reads, attach/session state, previews, applies, rollback, generation plans, issue capture, and any future structured mutation tools. Use CLI for setup, diagnostics, audit tailing, smoke tests, migrations, provider doctor checks, engine debugging, or when no MCP tool exists yet.
+
+**Follow-ups:**
+- Update `AGENTS.md` and `lahari-director` skill with the MCP-first rule.
+- Add CLI audit fallback so escaped/direct CLI calls still leave footprints.
+- Add `setup --check` or a small `mcp doctor` command that tells the user when MCP is registered on disk but missing from the active Codex tool surface.
+
+**Why it matters:** "Freedom" here silently routed around observability. The system needs discipline, plus fallback logging when discipline fails.
+
+---
+
+### R19 — MCP registration is not the same as active tool availability
+
+Status: **agreed** · Raised: 2026-05-13
+
+Observed during director test: `codex mcp list` showed `lahari` registered and enabled, but the running Codex chat did not expose the Lahari namespace as callable tools. The correct explanation is not "MCP is unavailable"; it is "registered locally, but this session did not load the namespace."
+
+**Follow-ups:**
+- Setup output should say "restart/reopen Codex Desktop after registration" more loudly.
+- Director startup docs should distinguish "registered on disk" from "active in this chat."
+- Add a preflight command/report that lists registered tools and tells the operator whether this specific chat has native Lahari tools visible. If Codex does not expose a programmatic active-tool introspection API, document the manual check.
+
+**Why it matters:** This is a user-trust bug. If the artist hears "the tool is enabled" but Codex says "I can't call it," the system feels flaky even when the registration is technically correct.
+
+---
+
+### R20 — Out-of-band generation must hydrate Blueprint candidates on load
+
+Status: **agreed** · Raised: 2026-05-13
+
+Observed during director test: Codex generated character and environment candidates out-of-band. The assets existed in the DB (character/environment candidates were present), but the Blueprint UI did not show them because no candidate was locked yet and the frontend mostly relied on UI-local generation state for the candidate grids.
+
+**Fix:** Blueprint should auto-fetch existing character/environment look candidates on load when an entity has candidates but no locked `reference_asset_id`. Candidate grids should be DB-hydrated, not only populated by the current browser action.
+
+**Why it matters:** Codex and web studio are two operators on the same project. Anything Codex creates must become visible in the browser after reload/focus without needing a UI-originated generation action.
+
+---
+
+### R21 — Provider routing drift needs a doctor check
+
+Status: **agreed** · Raised: 2026-05-13
+
+Observed during director test: `nano-banana-2` was expected to use the updated Google Developer API route from `main`, but the `codex-native-studio` worktree was behind and still routed it through Segmind. The director session patched the local routing after comparing against `main`.
+
+**Follow-ups:**
+- Add `npm run lahari -- doctor providers` to print image/storyboard/text/video provider routing, runtime model names, and obvious mismatch warnings.
+- Include provider routing in setup/check or director attach diagnostics when the selected project uses a non-default model.
+- Keep provider routing changes small and cherry-pickable across `main` and `codex-native-studio` until the branch is merged.
+
+**Why it matters:** Provider routing is production behavior, not just code shape. A stale worktree can spend the wrong credits, hit exhausted providers, or produce different creative outputs than the deployed app.
+
+---
+
+### R22 — Project-local prompt catalogs, edited by Codex
+
+Status: **agreed** · Raised: 2026-05-13
+
+The director session should be able to own and tune the prompt recipes for a specific project instead of only calling backend refine APIs. Start every project from the global templates, then let Codex maintain project-local prompt overrides as the song teaches us what works.
+
+**Boundary:** global catalog stays canonical defaults; project catalog is a working copy/override. Do not let one project's taste edits silently mutate `server/prompts/catalog.ts`.
+
+Suggested desk-copy shape:
+```text
+.lahari/projects/<projectId>/prompts/
+  script-writer.md
+  storyboard-prompt.md
+  video-prompt.md
+  style-critic.md
+  continuity-auditor.md
+```
+
+Production use still needs a typed apply/import path, probably a `lahari_project_prompt_overrides` table keyed by project + prompt kind. `.lahari/` files are editable desk copies; Supabase remains truth for generation behavior.
+
+**V1 scope:** start with storyboard prompt and video prompt overrides. Those are the highest-tax areas and where tiny wording changes most affect output quality. Script prompt ownership can follow once the storyboard/video loop proves itself.
+
+**Why it matters:** The artist and Codex can iteratively make the project smarter without repeatedly asking another API to "refine" when the needed fix is a precise prompt recipe edit.
+
+---
+
+### R23 — Move taste-heavy LLM work into Codex-native editing
+
+Status: **agreed direction** · Raised: 2026-05-13
+
+Longer-term, Lahari should stop building backend LLM endpoints for every taste-heavy language operation. Codex is the better runtime for script writing, storyboard prompt writing, video prompt rewriting, critique, continuity reasoning, and project-specific prompt-catalog tuning because it can use local files, diffs, memory, approvals, and browser context.
+
+Backend/provider tools should stay responsible for things Codex cannot natively do well or safely:
+- image generation
+- video generation
+- audio analysis/transcription
+- storage and DB mutations
+- render orchestration
+- factual project packet reads
+- contact sheets / visual asset surfaces
+
+Codex should increasingly own:
+- script writing and surgical script edits
+- storyboard prompt writing/direct editing
+- video prompt writing/direct editing
+- critique and continuity checks
+- project-local prompt catalog tuning
+- deciding when a provider tool should be called
+
+**Guardrail:** language edits still need preview/diff/apply/rollback and durable events when they affect production state. "Codex-native" does not mean silent DB writes.
+
+**Why it matters:** This is the real agent-native abstraction: Lahari exposes truth and provider primitives; Codex carries taste, iteration, and judgment.
+
+---
+
+### R24 — Explore Codex PermissionRequest hooks for Lahari approvals
+
+Status: **proposed** · Raised: 2026-05-13
+
+Question from director testing: can Lahari use Codex permission-request hooks instead of asking for paid/destructive approval only in natural language?
+
+**Current finding:** Codex hooks can observe permission-request events in this local setup; `~/.codex/hooks.json` already wires `PermissionRequest` to the sound notification script. That is useful for attention and external notification. It does not, by itself, create a Lahari approval request. Hooks fire when Codex itself reaches a permission gate; Lahari still needs to model production approvals through tool boundaries.
+
+**Working boundary:**
+- Codex execution permissions: shell escalation, risky local commands, harness-level permission gates. These can use Codex's native permission UI and hooks for notifications/possibly policy where supported.
+- Lahari production approvals: paid generation, DB writes, lock/unlock, publish, destructive rewrites. These should be typed plan/apply tools with explicit cost/blast-radius/rollback responses. If Codex surfaces a native approval UI for mutating MCP tools/plugins, use it. If not, keep explicit chat approval plus web-studio deep links.
+
+**Do not fake approvals** by forcing Lahari actions through shell escalation just to trigger a Codex permission dialog. That would couple product safety to the wrong subsystem.
+
+**Follow-ups:**
+- Keep `PermissionRequest` hook for sound/notification.
+- Test whether plugin-packaged Lahari mutating tools produce a native approval moment in Codex Desktop.
+- If native approval metadata becomes available for MCP tools, encode Lahari cost/blast-radius/rollback into that approval surface.
+
+**Why it matters:** The approval moment is the product. We want Codex-native permission UX when available, without making Lahari safety depend on fragile natural-language convention or shell-command hacks.
+
+---
+
+### R25 — Complete storyboard lifecycle MCP coverage
+
+Status: **agreed** · Raised: 2026-05-13
+
+The first MCP-path director test exposed the missing primitives around storyboard work. Current MCP can preview/apply a single storyboard prompt rewrite and generate a single storyboard board (`apply_generate_storyboard`), but the director still lacks the full lifecycle needed for efficient shot-by-shot or bulk storyboard work.
+
+**Tools to add:**
+- `write_storyboard_prompt` — write saved `storyboard_prompt` + `storyboard_cut_plan` for one shot using the same backend path as the web studio.
+- `bulk_write_storyboard_prompts` — write missing/error prompts by default; optional force/rewrite with explicit approval.
+- `generate_storyboard` — alias/renamed shape for the current `apply_generate_storyboard` to make the mental model less apply-preview-specific.
+- `bulk_generate_storyboards` — generate boards only for shots with saved prompts and no board by default; optional stale/unlocked regeneration when approved.
+- `refine_storyboard_image` — wraps backend `refine-storyboard` `edit_image` mode with `projectId`, `shotId`, `feedback`, optional `previousVersionId`, optional reference image.
+- `lock_storyboard` / `unlock_storyboard` — let Codex lock good boards after visual review and reopen them when needed.
+- `get_storyboard_status` — compact per-shot readiness/progress view: prompt status, board status, lock state, stale flags, video readiness.
+
+**Why it matters:** Storyboard prompting and board generation are the highest-tax v1 director workflows. Codex needs primitives that match the artist's natural loop: write prompt, generate board, inspect, refine image, lock, move to next shot or bulk-fill missing work.
+
+---
+
+### R26 — Unified local project folder for director desk copy
+
+Status: **agreed** · Raised: 2026-05-13
+
+Current `.lahari/` layout is mechanically useful but too scattered for director mode:
+
+```text
+.lahari/sessions/<projectId>/   # state + journal
+.lahari/projects/<projectId>/   # readable mirror/snapshots
+.lahari/previews/<projectId>/   # pending changes
+.lahari/codex/                  # reports/sheets
+```
+
+The better mental model is one local desk folder per song/project:
+
+```text
+.lahari/projects/<projectId>/
+  state.json
+  journal.md
+  brief.md
+  audio-analysis.md
+  concept-notes.md
+  script.md
+  storyboard-prompts.md
+  action-plan.json
+  previews/
+  sheets/
+  snapshots/
+  issues/
+```
+
+**Migration rule:** keep backward compatibility. Existing tools should continue reading old paths for now, but new artifacts should write into the unified project folder. Later add a lightweight migration/cleanup command.
+
+**Why it matters:** The repo is the creative operating system. For the artist/operator, a song should feel like one folder with memory, state, previews, sheets, and issues together. Supabase stays canonical; `.lahari/projects/<projectId>/` is the local desk copy.
+
+---
+
+### R27 — Optional tldraw infinite-canvas review surface
+
+Status: **pinned for later** · Raised: 2026-05-13
+
+Idea: generate a tldraw-based infinite canvas for operators/artists who prefer spatial review. This is not a replacement for the Lahari web studio. It is a visual planning/review artifact: scenes as lanes, shots as cards, refs pinned nearby, storyboard boards and video clips lined up, arrows for continuity, and notes/status badges around them.
+
+Official tldraw capability check:
+- SDK supports image, video, and bookmark assets as records referenced by shapes.
+- Assets can use hosted URLs/custom storage backends, which maps cleanly to Supabase Storage URLs.
+- Editor/store supports JSON snapshots via `getSnapshot` / `loadSnapshot`.
+- Shapes are JSON records; SDK supports default shapes plus custom editable shapes.
+- Editor APIs can create shapes programmatically.
+- Export APIs can render selected shapes/canvas to image formats.
+
+Possible later shape:
+```text
+npm run lahari -- canvas storyboard <projectId>
+
+.lahari/projects/<projectId>/canvas/
+  storyboard.html
+  storyboard.snapshot.json
+```
+
+MCP/CLI primitive: `write_storyboard_canvas`
+- Reads the project packet.
+- Lays out scenes/shots/refs/status on a tldraw canvas.
+- Opens or deep-links the local HTML in the browser for Codex/browser review.
+- Does not mutate Supabase.
+
+Later import primitive: `import_canvas_notes`
+- Reads sticky notes/comments from the canvas snapshot.
+- Converts them into Lahari issue files or prompt-edit previews.
+- Never mutates Supabase directly.
+
+**Why it matters:** Gives Lahari a "whole song on a wall" review surface for spatial thinkers without building a new production editor. It composes well with Codex browser use and the unified `.lahari/projects/<projectId>/` desk-folder direction.
 
 ---
 
@@ -341,6 +533,8 @@ Things I might be wrong about. Worth revisiting as we learn.
 - **W3.** Realtime might be overkill if artists work asynchronously and never have web studio open while Codex is acting. Polling-on-tab-focus could be enough. Watch the actual usage pattern.
 - **W4.** "One Codex session = one song" assumes long sessions. If sessions get fragmented (Codex's session UX nudges restart), Lahari director sessions in `.lahari/sessions/` should carry the weight and Codex sessions become disposable. Architecture supports this — just don't optimize Codex-session continuity prematurely.
 - **W5.** The plugin distribution timing question is downstream of all of this. Don't relitigate until R10's gates are concrete and met.
+- **W6.** CLI audit fallback could make MCP discipline feel optional. Keep the product rule MCP-first in director mode; CLI audit is a safety net, not the primary operating path.
+- **W7.** Project-local prompt catalogs can become a second source of truth if file edits are not imported through typed apply tools. Desk-copy files are useful; production overrides must live in Supabase.
 
 ---
 
@@ -365,3 +559,8 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Codex shipped RB-FU2/R10 follow-up: setup and MCP env loading now strip empty-string env values before dotenv loads, and setup presence checks use trimmed values. Explicit empty shell exports no longer block `.env` fallback.
 - 2026-05-13 — Saul ran setup on his own terminal. All 12 prerequisites green (env, worktree, Supabase REST + events table + rollback RPC). Codex Desktop MCP registered ✓. **One blocker remains: Claude Code MCP registration failed** due to `claude mcp add` arg-order bug. In Claude Code 2.1.132 the variadic `-e <env...>` flag greedy-consumes the `<name>` positional when env flags precede the name; reproduced and confirmed via direct `claude mcp add` calls. Fix: in `registerClaudeMcp`, move `-e LAHARI_ENV_FILE=...` to after `MCP_SERVER_NAME`. Codex Desktop is already operational; Claude Code path waits on this one-liner reorder.
 - 2026-05-13 — First-session diagnostic: Saul started a Codex Desktop session in the worktree; tools and skill both invisible. (1) MCP `lahari` is registered (`codex mcp list` confirms) but the in-flight session pre-dates the registration — Codex Desktop loads MCP servers at app start, not per-session. Fix: quit + reopen Codex Desktop. (2) `.agents/skills/lahari-director/SKILL.md` is a Claude/Anthropic-skills convention; Codex Desktop doesn't auto-discover that path. Claude inlined the Session Start bootstrap (director-vs-engine, opening move, banned plumbing vocab, resume-vs-new, pointer to full skill file) into `AGENTS.md` so Codex picks it up via the workspace instruction file it already reads. Full skill remains canonical at `.agents/skills/lahari-director/SKILL.md` for taste rubric.
+- 2026-05-13 — First real director-test friction logged from project `13c259ce-57eb-4da3-8b7e-4e78f1940a1d`: (1) registered MCP was not visible as active chat tools, causing local CLI/service fallback and empty MCP audit logs; R18/R19 opened. (2) out-of-band character/environment generation created DB candidates that the Blueprint UI did not hydrate on load until a lock existed; R20 opened. (3) `nano-banana-2` provider routing in `codex-native-studio` drifted from `main` and still pointed to Segmind; R21 opened. These are now tracked as engine follow-ups rather than living only in chat.
+- 2026-05-13 — Directional product decision logged: per-project prompt ownership should use project-local prompt catalogs seeded from global templates, with Codex allowed to tune storyboard/video prompt recipes directly and apply them through typed preview/apply paths. Longer-term boundary: taste-heavy language work moves into Codex-native editing; provider tools keep image/video/audio/render/storage responsibilities. R22/R23 opened.
+- 2026-05-13 — Approval UX exploration logged. Codex `PermissionRequest` hooks are useful for notification/attention and already wired locally for sounds, but Lahari production approvals should remain typed plan/apply tool boundaries unless plugin/MCP mutating tools expose a native Codex approval surface. R24 opened.
+- 2026-05-13 — Storyboard director workflow gaps logged from live MCP testing. Add storyboard prompt write/bulk-write, board generate/bulk-generate, edit-image refine, lock/unlock, and compact status tools. Also logged the local filesystem consolidation direction: new artifacts should live under one `.lahari/projects/<projectId>/` desk folder while old session/preview/codex paths remain readable for compatibility. R25/R26 opened.
+- 2026-05-13 — Quick tldraw capability check completed from official docs. SDK has image/video assets, snapshots, programmatic shapes, custom editable shapes, and export; pinned optional infinite-canvas storyboard/review surface as R27 for later, not a core v1 blocker.

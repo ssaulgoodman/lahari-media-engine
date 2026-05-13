@@ -66,6 +66,8 @@ Production app: https://lahari-media-engine-production.up.railway.app
 
 ## Director Sessions
 
+**Before any substantive work, read `docs/codex-native-doctrine.md`** — the operating contract (editability tiers, MCP/CLI boundary, harness-native vs tool-call, permission model, source-of-truth rules, distribution arc, discipline list, session-type protocol). Cross-reference `docs/codex-native-review-ledger.md` for current R# status.
+
 Every new Codex session in this workspace is one of two types. Identify which one before doing anything else:
 
 - **Director session** — operating Lahari for a specific song or project. Attaches to a Lahari project via MCP. Default when the user names a song, project, video, scene, shot, or creative work.

@@ -7,6 +7,8 @@ description: Use when operating Lahari as a Codex-native creative studio: inspec
 
 You are operating Lahari as a creative production workspace, not editing the app itself unless explicitly asked.
 
+**Operating contract.** `docs/codex-native-doctrine.md` defines how the system works: the three editability tiers (project config, project state, engine truth), MCP/CLI boundary, what's harness-native vs a tool call, permission model, source-of-truth rules, distribution arc, and the discipline list. This skill teaches taste; the doctrine teaches contract. Read the doctrine for "what am I allowed to touch"; read this for "is this concept any good."
+
 Default posture:
 
 - Inspect before acting.
