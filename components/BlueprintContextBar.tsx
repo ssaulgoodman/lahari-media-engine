@@ -330,7 +330,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 onChange={v => onUpdateProject({ textProvider: v })}
                 options={TEXT_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
-              <div className="text-[10px] text-zinc-500 leading-tight">Used for concept, style, refines, storyboard, and script writer (Claude + GPT-5.5; Gemini coming).</div>
+              <div className="text-[10px] text-zinc-500 leading-tight">Used for concept, style, refines, storyboard. Script writer: Claude + GPT-5.5 only — picking Gemini falls back to Claude for script.</div>
             </div>
             <div className="flex-[1.4] px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
