@@ -96,9 +96,16 @@ Status: **partial** · Raised: 2026-05-13
 
 ### R6 — Split `codexStudio.ts` before M3 grows it further
 
-Status: **partial** · Raised: 2026-05-13 · Updated: 2026-05-13
+Status: **shipped first pass** · Raised: 2026-05-13 · Updated: 2026-05-13
 
-File is at 2,564 lines and about to add lock/compare/rollback/critique/style-gen/character-gen. Same shape as the `generate.ts` breakup last month: `packets/`, `sheets/`, `sessions/`, `previews/`, `applies/`, `plans/`. Each apply lives in ~200 lines with its before/after schema co-located.
+Original file had grown past 3,600 lines during R25/R29. First-pass split keeps `server/services/codexStudio.ts` as the public barrel used by CLI/MCP, and moves focused code into:
+- `server/services/codexStudio/core.ts`
+- `server/services/codexStudio/packets.ts`
+- `server/services/codexStudio/sheets.ts`
+- `server/services/codexStudio/plans.ts`
+- `server/services/codexStudio/storyboardOps.ts`
+
+Remaining future split candidates: session/workbench, preview/apply/rollback families, and script preview/apply. Those are more stateful, so they should move after R28 spec lands or when they are next touched.
 
 **Why it matters:** Drift validation is load-bearing and gets easier to keep correct when each apply file owns its own field-level diff logic.
 
@@ -620,3 +627,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Claude shipped R28 spec in `docs/r28-apply-only-text-gen-design.md`. Six apply-only tools (`apply_shot_prompts`, `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_script`, `apply_concept`, `apply_video_prompt`) with full input/validation/error/event specs. Cross-cutting: drift detection via baseHash, structured validation error shape for retry loops, audit symmetry, deprecation path for the two R25 transitional tools (3-step: mark deprecated → warn-level log → remove from MCP). Backend integration reuses existing `updateRows` + atomic RPC pattern from RB-FU1. Web studio compatibility preserved (existing backend endpoints untouched). Implementation order suggested: simplest tool first (`apply_video_prompt`), most-involved last (`apply_script` with atomic RPC).
 - 2026-05-13 — R28 spec open questions locked by Saul + Claude: (1) array-only for `apply_shot_prompts`; (2) atomic-only for `apply_script`; (3) deprecated R25 tools stay as separate code paths through 3-step removal; (4) `baseHash` optional with skill teaching "always pass it"; (5) bulk applies emit per-shot director events, not one bundle. Spec updated with locked decisions; ready for Codex implementation.
 - 2026-05-13 — Codex implemented R29 phase 1. Added `lahari_project_config` + `lahari_project_prompt_overrides` migration with history-preserving partial active index, project config service with drift hashes, `.lahari/projects/<projectId>/config/preferences.json`, `prompts/storyboard.md`, `prompts/video.md`, `hashes.json`, attach/packet summaries, backend preference/override reads in storyboard planner/renderer and storyboard-mode video builder, plus MCP/CLI tools `apply_project_preferences`, `apply_project_prompt_override`, and `revert_project_prompt_override`. Verified with `npm run build`, `npx tsc --noEmit`, and `git diff --check`. Pending: apply migration to Supabase and Claude review.
+- 2026-05-13 — Codex shipped R6 first-pass split. `server/services/codexStudio.ts` reduced from 3,622 lines to 1,729 lines while keeping it as the CLI/MCP public barrel. New focused modules: `codexStudio/core.ts` (shared types/helpers/status), `packets.ts` (project/shot packets), `sheets.ts` (reports/contact sheets), `plans.ts` (action lists/storyboard prompt review), `storyboardOps.ts` (storyboard/video generation and R29 apply/revert ops). Verified with `npm run build`, `npx tsc --noEmit`, and `git diff --check`. Remaining future split: sessions/workbench and preview/apply/rollback families.
