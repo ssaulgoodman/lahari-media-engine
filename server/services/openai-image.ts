@@ -280,6 +280,10 @@ export const generateCharacterLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted for
+  // signature parity with imagen.ts; OpenAI's image service has a single
+  // model (gpt-image-2) so the registry's runtimeModel is informational here.
+  _model?: string,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
@@ -301,6 +305,8 @@ export const generateEnvironmentLooks = async (
   userRefImagePath?: string,
   userNote?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _model?: string,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;

@@ -254,6 +254,10 @@ export const generateCharacterLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted
+  // for signature parity with imagen.ts; Segmind's nano-banana-2 is the
+  // single model, the registry's runtimeModel is informational here.
+  _model?: string,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
   if (styleImagePath) refs.push({ label: 'Style reference only', imagePath: styleImagePath });
@@ -275,6 +279,8 @@ export const generateEnvironmentLooks = async (
   userRefImagePath?: string,
   userNote?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _model?: string,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
   if (styleImagePath) refs.push({ label: 'Style reference only', imagePath: styleImagePath });

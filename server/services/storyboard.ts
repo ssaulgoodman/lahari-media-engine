@@ -476,7 +476,12 @@ const renderWithProvider = async (
         parts.push({ inlineData: { mimeType: ref.inlineData.mimeType, data: ref.inlineData.data } });
       }
     }
-    const storagePath = await generateImageWithRefs(parts, aspectRatio);
+    // Pass the spec's runtimeModel so the artist's exact pick runs (no
+    // Pro→Flash auto-fallback in explicit-model mode). When the registry
+    // flips a model between providers — e.g. `nano-banana-2` was Segmind,
+    // now Google `gemini-3.1-flash-image-preview` — this guarantees the
+    // dispatched model matches the label.
+    const storagePath = await generateImageWithRefs(parts, aspectRatio, provider.runtimeModel);
     return {
       storagePath,
       model: provider.runtimeModel,

@@ -132,6 +132,11 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     console.log(`[${project.id}] Generating looks for ${member.name} via ${getImageGenerationModelName(project.image_model)}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
+    // Pass the registry's runtimeModel so the artist's exact pick runs.
+    // Only relevant for the Gemini path — Segmind/OpenAI services don't
+    // accept a model arg (their service module is the model). When
+    // nano-banana-2 routes through Gemini (Segmind credits out), this
+    // ensures we run Flash, not Pro.
     const imagePaths = await imageService.generateCharacterLooks(
       { name: member.name, description: member.description || '' },
       styleImagePath,
@@ -139,6 +144,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       project.aspect_ratio || '16:9',
       userRefImagePath,
       genPrompt,
+      getImageGenerationModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
 
@@ -373,6 +379,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       userRefImagePath,
       undefined, // feedback already baked into genPrompt by Claude
       genPrompt,
+      getImageGenerationModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
 
