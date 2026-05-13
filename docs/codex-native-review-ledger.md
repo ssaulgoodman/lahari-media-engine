@@ -526,6 +526,42 @@ Later import primitive: `import_canvas_notes`
 
 ---
 
+### R28 — Apply-only text tools replace backend LLM wrappers
+
+Status: **designed direction** · Raised: 2026-05-13
+
+R25 shipped two useful but transitional tools: `write_storyboard_prompt` and `bulk_write_storyboard_prompts`. They wrap backend LLM calls, which violates doctrine §4. Keep them for the live test loop, but do not extend that pattern.
+
+R28 replaces backend LLM-wrapper tools with apply-only primitives. Codex writes the text using the director skill and local project context; the tool validates, persists, records a director event, and returns drift/rollback metadata. The web studio can keep its backend generate/refine endpoints for non-Codex users.
+
+Apply-only scope:
+- `apply_storyboard_prompt` / `apply_storyboard_prompts_bulk`
+- `apply_video_prompt` / `apply_video_prompts_bulk`
+- later: concept, script, and keyframe shot prompt apply-only variants
+
+**Why it matters:** This is the seam that makes Lahari Codex-native instead of another app that calls an LLM behind Codex's back. Codex owns taste-heavy language work; Lahari tools own validation and persistence.
+
+---
+
+### R29 — Project config and prompt override design
+
+Status: **designed first pass** · Raised: 2026-05-13
+
+R29 is the editable project-config umbrella for R22. Phase 1 is deliberately narrow: per-project preferences and storyboard/video prompt overrides. Later phases can add glossary, taste notes, decisions, and richer inheritance once the core path proves itself.
+
+Design doc: [`docs/r29-project-config-design.md`](r29-project-config-design.md)
+
+Phase 1 objects:
+- `.lahari/projects/<projectId>/config/preferences.json`
+- `.lahari/projects/<projectId>/config/prompts/storyboard.md`
+- `.lahari/projects/<projectId>/config/prompts/video.md`
+- Supabase canonical tables for persisted project config and prompt overrides
+- apply tools: `apply_project_preferences`, `apply_project_prompt_override`
+
+**Why it matters:** Project-specific taste improvements should be project-owned configuration, not tier-3 engine edits. This gives Codex a safe editable surface for model choices and prompt recipes while keeping Supabase canonical.
+
+---
+
 ## Risks / Watch List
 
 Things I might be wrong about. Worth revisiting as we learn.
@@ -566,3 +602,6 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — Approval UX exploration logged. Codex `PermissionRequest` hooks are useful for notification/attention and already wired locally for sounds, but Lahari production approvals should remain typed plan/apply tool boundaries unless plugin/MCP mutating tools expose a native Codex approval surface. R24 opened.
 - 2026-05-13 — Storyboard director workflow gaps logged from live MCP testing. Add storyboard prompt write/bulk-write, board generate/bulk-generate, edit-image refine, lock/unlock, and compact status tools. Also logged the local filesystem consolidation direction: new artifacts should live under one `.lahari/projects/<projectId>/` desk folder while old session/preview/codex paths remain readable for compatibility. R25/R26 opened.
 - 2026-05-13 — Quick tldraw capability check completed from official docs. SDK has image/video assets, snapshots, programmatic shapes, custom editable shapes, and export; pinned optional infinite-canvas storyboard/review surface as R27 for later, not a core v1 blocker.
+- 2026-05-13 — Codex shipped R25 storyboard lifecycle in `e9accaf`: `write_storyboard_prompt`, `bulk_write_storyboard_prompts`, `generate_storyboard` (alias, kept `apply_generate_storyboard`), `bulk_generate_storyboards`, `refine_storyboard_image`. Guardrails: bulk tools take optional `shotIds`, defaults skip locked/non-needed shots, `force` exists but gated on approval, single generate refuses to overwrite locked boards. Tests + audit green.
+- 2026-05-13 — Claude reviewed `e9accaf`. Image-gen tools (`refine_storyboard_image`, `bulk_generate_storyboards`, `generate_storyboard`) are doctrine-compliant tool calls. **Two tools are transitional debt:** `write_storyboard_prompt` and `bulk_write_storyboard_prompts` wrap backend `writeStoryboardPrompt` which round-trips through `text-provider.ts` → LLM. This violates doctrine §4 (text-writing should be Codex-native). **Decision: keep as transitional** so the live testing loop stays unblocked; deprecate when R28 ships apply-only `apply_storyboard_prompt` / `apply_storyboard_prompts_bulk` that take Codex-written content. Do not extend this pattern to new text tools.
+- 2026-05-13 — **Doctrine clarification for R28 scope:** apply-only variants for Codex-native text generation should cover concept, script, shot prompts, storyboard prompts, and video prompts. Each tool takes pre-written structured content from Codex, validates against constraints, persists via existing apply path, records a director event. No LLM call inside the tool. Web studio retains backend `generate-*` / `refine-*` endpoints for non-Codex users.
