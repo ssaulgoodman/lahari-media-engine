@@ -70,41 +70,21 @@ Tool-call audit logs are written under `.lahari/audit/<projectId>/`. An engine s
 npm run lahari -- audit tail <projectId> 20
 ```
 
-## Taste Checks
+## Taste Shards
 
-Concept:
+Specific taste rubrics live in focused skill shards. Load the relevant one when the task matches. Each shard has its own description, heuristics, and anti-patterns.
 
-- Does it respect the song type, meaning, language, and emotional energy?
-- Is it too plot-heavy for meditative material?
-- Is it culturally grounded without becoming generic temple fantasy?
-- Does each option offer a genuinely different creative route?
+| Shard | Load when |
+|---|---|
+| `.agents/skills/script-doctor/SKILL.md` | Writing, refining, or critiquing the script — scene structure, shot beats, cast/env assignments, pacing |
+| `.agents/skills/storyboard-prompt-craft/SKILL.md` | Writing or rewriting a shot's storyboard prompt or cut plan; critiquing a board against the prompt |
+| `.agents/skills/style-ref-critic/SKILL.md` | Picking a style preset, brainstorming/critiquing style directions, deciding if a style ref is reusable |
+| `.agents/skills/continuity-auditor/SKILL.md` | Auditing identity / environment / style / chained continuity across a sequence of shots |
+| `.agents/skills/render-triage/SKILL.md` | A generated asset doesn't match intent and you need to decide what to fix before regenerating |
 
-Script:
+**Default read order:** when in doubt about a creative judgment, read the shard whose description matches the task. Don't try to absorb all five at once — load on demand.
 
-- Does the scene structure follow the musical structure?
-- Do shots advance an arc instead of repeating devotional wallpaper?
-- Are character and environment assignments clear?
-- Are beats visible and shootable?
-
-Style:
-
-- Are the directions visually distinct across medium, color temperature, lighting, texture, and reference tradition?
-- Is the selected style reference reusable downstream?
-- Is it a style system rather than a poster, portrait, storyboard frame, or narrative scene?
-
-Shot prompts:
-
-- Are prompts cinematic but renderable?
-- Does the visual prompt describe a start frame, not an inner feeling?
-- Does the motion prompt say what changes from that frame?
-- Are there invented props, rooms, corridors, or characters?
-- Does continuity make sense across cuts and chained shots?
-
-Generated assets:
-
-- Does the output match the prompt and references?
-- Are identity, costume, environment, style, and continuity preserved?
-- Is the failure a prompt issue, model issue, reference issue, or taste issue?
+**Cross-cutting note:** every shard assumes you've already read this skill (lahari-director) for session start, permission, and output style. The shards focus only on the production rubric for their domain.
 
 ## Permission Rules
 
