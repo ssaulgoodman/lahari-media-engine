@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import {
   compactText,
   md,
@@ -16,12 +18,20 @@ import { getProjectConfigState, type ProjectPromptOverrideKind } from '../projec
 export type NotebookFile = {
   path: string;
   content: string;
-  mode: 'mirror' | 'config' | 'journal' | 'instructions';
+  mode: 'mirror' | 'config' | 'journal' | 'instructions' | 'skill';
   writePolicy: 'overwrite' | 'create_if_missing' | 'review_before_overwrite';
   description: string;
 };
 
 const normalizedProjectDir = (project: Project) => `lahari/projects/${project.id}`;
+const LAHARI_SKILL_NAMES = [
+  'lahari-director',
+  'storyboard-prompt-craft',
+  'script-doctor',
+  'continuity-auditor',
+  'style-ref-critic',
+  'render-triage',
+] as const;
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -35,6 +45,8 @@ Supabase is canonical. Files under mirrors/ are read-only desk copies written fr
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
+Project-local Lahari skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
+
 Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
 
 Default ritual:
@@ -44,6 +56,31 @@ Default ritual:
 4. apply approved changes through typed MCP tools
 5. refresh affected notebook files
 `;
+
+const readSkillBody = (skillName: string): string => {
+  const skillPath = path.join(process.cwd(), '.agents', 'skills', skillName, 'SKILL.md');
+  return fs.readFileSync(skillPath, 'utf8');
+};
+
+const buildSkillFiles = (): NotebookFile[] => LAHARI_SKILL_NAMES.flatMap((skillName) => {
+  const content = readSkillBody(skillName);
+  return [
+    {
+      path: `.agents/skills/${skillName}/SKILL.md`,
+      mode: 'skill',
+      writePolicy: 'overwrite',
+      description: `Codex project-local Lahari skill: ${skillName}. Restart/open a fresh session after first write.`,
+      content,
+    },
+    {
+      path: `.claude/skills/${skillName}/SKILL.md`,
+      mode: 'skill',
+      writePolicy: 'overwrite',
+      description: `Claude Code project-local Lahari skill: ${skillName}. Restart/open a fresh session after first write.`,
+      content,
+    },
+  ];
+});
 
 const buildBrief = (project: Project, actions: ReturnType<typeof buildProjectActionList>): string => {
   const counts = statusCounts(project);
@@ -436,6 +473,14 @@ export const buildProjectNotebook = async (project: Project) => {
       content: buildWorkspaceInstructions(project),
     },
     {
+      path: 'CLAUDE.md',
+      mode: 'instructions',
+      writePolicy: 'overwrite',
+      description: 'Claude Code workspace-local Lahari notebook instructions.',
+      content: buildWorkspaceInstructions(project),
+    },
+    ...buildSkillFiles(),
+    {
       path: `${baseDir}/mirrors/brief.md`,
       mode: 'mirror',
       writePolicy: 'overwrite',
@@ -547,6 +592,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite mirrors/ and hashes. Create journal.md only if missing. Before overwriting config/prompts or preferences, check whether the file has unsaved local edits; config files are editable project overrides. Append concise decisions to journal.md.',
+    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting config/prompts or preferences, check whether the file has unsaved local edits; config files are editable project overrides. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

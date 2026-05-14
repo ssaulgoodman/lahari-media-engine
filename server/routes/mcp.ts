@@ -15,7 +15,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: list_projects or attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace. Treat mirrors/ files as read-only desk copies. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md.
+Artist flow: list_projects or attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
 
