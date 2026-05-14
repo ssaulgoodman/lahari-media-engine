@@ -29,6 +29,10 @@ const T = {
   environments: 'lahari_environments',
   assets: 'lahari_assets',
   storyboard_versions: 'lahari_storyboard_versions',
+  director_events: 'lahari_director_events',
+  mcp_tokens: 'lahari_mcp_tokens',
+  project_config: 'lahari_project_config',
+  project_prompt_overrides: 'lahari_project_prompt_overrides',
   chat_messages: 'lahari_chat_messages',
   ai_calls: 'lahari_ai_calls',
   renders: 'lahari_renders',
@@ -160,6 +164,12 @@ export const rpc = async (fnName: string, params: Record<string, any> = {}): Pro
   const { data, error } = await getSB().rpc(fnName, params);
   if (error) throw new Error(`DB rpc ${fnName}: ${error.message}`);
   return data;
+};
+
+/** Raw RPC call for mutation helpers that should run inside Postgres transactions. */
+export const rpcVoid = async (fnName: string, params: Record<string, any> = {}): Promise<void> => {
+  const { error } = await getSB().rpc(fnName, params);
+  if (error) throw new Error(`DB rpc ${fnName}: ${error.message}`);
 };
 
 // ─── Convenience: select with custom column list ─────────────────────

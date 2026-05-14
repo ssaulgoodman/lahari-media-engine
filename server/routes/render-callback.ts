@@ -13,6 +13,7 @@
 import { Router } from 'express';
 import { selectOne, updateRows } from '../database.js';
 import { finalizePublish } from './queue.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const router = Router();
 
@@ -92,15 +93,26 @@ router.post('/callback/:renderId', async (req, res) => {
 
   try {
     if (error) {
+      const errorMessage = String(error).slice(0, 2000);
+      const errorCode = typeof req.body?.errorCode === 'string' ? req.body.errorCode.slice(0, 80) : 'renderer_failed';
       await updateRows('renders', { id: renderId }, {
         status: 'failed',
         error: compactRendererError(error),
-        error_code: typeof req.body?.errorCode === 'string' ? req.body.errorCode.slice(0, 80) : 'renderer_failed',
+        error_code: errorCode,
         stage: 'failed',
         render_ms: typeof renderMs === 'number' ? renderMs : null,
         ...(renderEngine ? { render_engine: renderEngine } : {}),
         ...(ffmpegFallbackReason ? { ffmpeg_fallback_reason: ffmpegFallbackReason } : {}),
         updated_at: new Date().toISOString(),
+      });
+      await recordDirectorEvent({
+        projectId: render.project_id,
+        source: 'system',
+        eventType: 'render_failed',
+        entityType: 'render',
+        entityId: renderId,
+        summary: 'Final render failed.',
+        payload: { renderId, errorCode, error: errorMessage.slice(0, 500), renderMs: typeof renderMs === 'number' ? renderMs : null },
       });
       return res.json({ ok: true });
     }
@@ -129,6 +141,19 @@ router.post('/callback/:renderId', async (req, res) => {
       last_heartbeat_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
+    await recordDirectorEvent({
+      projectId: render.project_id,
+      source: 'system',
+      eventType: 'render_completed',
+      entityType: 'render',
+      entityId: renderId,
+      summary: 'Final render completed and was published back to the queue.',
+      payload: {
+        renderId,
+        storagePath,
+        renderMs: typeof renderMs === 'number' ? renderMs : null,
+      },
+    });
 
     // Surface the race if it bit us — finalizePublish already ran, so the
     // queue + assets row are good; only the render row says `failed`. Log so
@@ -150,6 +175,15 @@ router.post('/callback/:renderId', async (req, res) => {
       stage: 'failed',
       updated_at: new Date().toISOString(),
     }).catch(() => {});
+    await recordDirectorEvent({
+      projectId: render.project_id,
+      source: 'system',
+      eventType: 'render_failed',
+      entityType: 'render',
+      entityId: renderId,
+      summary: 'Render callback failed while finalizing.',
+      payload: { renderId, errorCode: 'callback_failed', error: String(err?.message || 'callback failed').slice(0, 500) },
+    });
     res.status(500).json({ error: err?.message || 'callback failed' });
   }
 });

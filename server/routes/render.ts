@@ -13,6 +13,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const router = Router();
 
@@ -77,6 +78,16 @@ router.post('/:id/render', async (req, res) => {
     stage: 'queued',
     last_heartbeat_at: new Date().toISOString(),
   });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'render_started',
+    entityType: 'render',
+    entityId: renderId,
+    summary: 'Artist started a final render.',
+    payload: { renderId },
+  });
 
   // Fire-and-forget. The renderer will call /api/renders/callback/:renderId
   // when it's done. Immediate request failures flip the row here; deeper
@@ -103,6 +114,15 @@ router.post('/:id/render', async (req, res) => {
           stage: 'failed',
           updated_at: new Date().toISOString(),
         }).catch(() => {});
+        await recordDirectorEvent({
+          projectId,
+          source: 'system',
+          eventType: 'render_failed',
+          entityType: 'render',
+          entityId: renderId,
+          summary: 'Render request was rejected by the renderer.',
+          payload: { renderId, errorCode: 'renderer_rejected', error: message.slice(0, 500) },
+        });
       } else {
         const body = await response.json().catch(() => null);
         const modalFunctionCallId =
@@ -126,6 +146,15 @@ router.post('/:id/render', async (req, res) => {
         stage: 'failed',
         updated_at: new Date().toISOString(),
       }).catch(() => {});
+      await recordDirectorEvent({
+        projectId,
+        source: 'system',
+        eventType: 'render_failed',
+        entityType: 'render',
+        entityId: renderId,
+        summary: 'Render request could not reach the renderer.',
+        payload: { renderId, errorCode: 'renderer_unreachable', error: String(err?.message || 'renderer unreachable').slice(0, 500) },
+      });
     }
   })();
 

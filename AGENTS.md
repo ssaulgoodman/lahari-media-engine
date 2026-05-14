@@ -2,6 +2,30 @@
 
 Guidance for Codex when working in this repo. Keep this file aligned with `CLAUDE.md`, `docs/pipeline-anatomy.md`, and `server/prompts/catalog.ts` when pipeline behavior changes.
 
+## Operating Principle
+
+Supabase is canonical project truth. `.lahari/` files are local Codex desk copies for reading, diffing, drafting, snapshots, and long-session continuity. Do not treat hand-edited `.lahari/` markdown as production state unless a typed apply tool explicitly imports it.
+
+The Lahari web app is the visual studio. Codex Desktop is the director/operator surface. Use web studio deep links for visual approval moments instead of rebuilding visual review inside Codex.
+
+Sessions in this workspace are either:
+
+- **Director sessions** - operating Lahari for one song/project. These attach to a Lahari project on the first tool call, maintain durable memory under `.lahari/sessions/<projectId>/`, and mirror context under `.lahari/projects/<projectId>/`.
+- **Engine sessions** - improving Lahari itself. These edit repo code/docs and are not bound to one Lahari project unless the user explicitly switches into director work.
+
+For artist-facing director work, say "open" or "attach to" the song/project. `hydrate` is an internal implementation detail; do not make the artist learn that word.
+
+## Workspace Layout
+
+`/Users/ssaulgoodman/Code/lahari-media-engine/` is a parent folder, not the git repo root.
+
+Current worktrees:
+
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` - main Lahari app checkout, usually for Claude Code / production work on `main`.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` - Codex-native assistant-director worktree on `codex-native-studio`.
+
+Do not switch the main checkout to `codex-native-studio` for Codex-native work. Open a Codex session in this `lahari-codex-native` worktree instead. Always confirm with `pwd` and `git status --short --branch` before editing.
+
 ## Build & Run
 
 ```bash
@@ -10,6 +34,9 @@ npm run dev          # Backend :3003 (or PORT env), frontend :3002 (Vite proxies
 npm run dev:server   # Backend only
 npm run dev:client   # Frontend only
 npm run build        # Vite production build -> dist/
+npm run lahari -- setup  # validate env/Supabase and register Lahari MCP in Codex + Claude Code
+npm run lahari       # Codex-native Lahari CLI helpers
+npm run lahari:mcp   # Codex-native Lahari MCP adapter
 npm start            # Production: Express serves dist/ + /api + /storage from one origin
 ```
 
@@ -36,6 +63,113 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 - Vertex fallback: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Used only as Veo fallback and by last-frame extraction paths that still need GCP config.
 
 Production app: https://lahari-media-engine-production.up.railway.app
+
+## Director Sessions
+
+**Before any substantive work, read `docs/codex-native-doctrine.md`** — the operating contract (editability tiers, MCP/CLI boundary, harness-native vs tool-call, permission model, source-of-truth rules, distribution arc, discipline list, session-type protocol). Cross-reference `docs/codex-native-review-ledger.md` for current R# status.
+
+Every new Codex session in this workspace is one of two types. Identify which one before doing anything else:
+
+- **Director session** — operating Lahari for a specific song or project. Attaches to a Lahari project via MCP. Default when the user names a song, project, video, scene, shot, or creative work.
+- **Engine session** — improving Lahari itself (code, prompts, infra, docs). Does not attach. Default when the request is about the codebase, refactoring, or fixing Lahari.
+
+If unclear, ask one sentence to clarify.
+
+### Director Session Opening Move
+
+When the user names a project or song:
+
+1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `list_projects`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not fall back to local CLI for director work.
+2. Call the `attach_director_session` MCP tool with the project ID. If the user named a song but you don't have the ID, first call `list_projects` and confirm which one before attaching.
+3. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
+4. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
+5. Tell the artist the suggested session title (`Lahari - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
+
+Your opening message after attaching should:
+
+- Acknowledge the bind in production terms: "Opening Krishna Bhajan…" — not "hydrating the project" or "fetching state."
+- Summarize the production read in one sentence.
+- Name the bottleneck.
+- Mention anything material from `recentEvents` if it changes what to do next.
+- Propose the next action, usually `nextApprovedAction` unless events suggest the artist has moved past it.
+
+Words to avoid in artist-facing text: "hydrate," "workbench," "packet," "checkpoint." These are plumbing the artist does not need to think about. Say what you're going to *do*.
+
+### Resume vs New Session
+
+The default when the artist returns to a song is to **resume** the existing Codex session. The journal accumulates, your context is warm, and the sidebar stays clean. Start a fresh session only if the previous one is polluted with unrelated conversation — a fresh session re-attaches to the same Lahari project and inherits the same `.lahari/sessions/<project_id>/` state and journal.
+
+### Full Operating Skill
+
+The full director rubric (taste checks for concept/script/style/shots/assets, permission rules, output style examples) lives at `.agents/skills/lahari-director/SKILL.md`. Read it when giving creative feedback or proposing changes — it captures the production language and refusal patterns to follow.
+
+## Codex-Native Studio Mode
+
+This branch is also a Codex-native production workspace. The Lahari web app stays the visual studio; Codex Desktop is the operator/director surface. Start with `docs/codex-native-studio.md` for the vision and current tool list.
+
+The shared service for Codex tools is `server/services/codexStudio.ts`. The CLI and MCP are adapters around that service:
+
+```bash
+npm run lahari -- project list [limit]
+npm run lahari -- project packet <projectId>
+npm run lahari -- project actions <projectId>
+npm run lahari -- project hydrate <projectId> [outputDir]   # internal desk-copy primitive
+npm run lahari -- project storyboard-review <projectId>
+npm run lahari -- shot packet <projectId> <shotId>
+npm run lahari -- project report <projectId> [out.md]
+npm run lahari -- project sheet <projectId> <overview|style|references|storyboard|renders> [out.html]
+npm run lahari -- project contact-sheet <projectId> [out.html]
+npm run lahari -- session attach <projectId> [note...]
+npm run lahari -- session state <projectId>
+npm run lahari -- session note <projectId> <note...>
+npm run lahari -- session journal <projectId>
+npm run lahari -- preview rewrite-script <projectId> [note...]
+npm run lahari -- preview rewrite-shot-prompts <projectId> [note...]
+npm run lahari -- preview rewrite-storyboard-prompt <projectId> <shotId> [note...]
+npm run lahari -- plan generate-storyboard <projectId> <shotId>
+npm run lahari -- plan generate-video <projectId> <shotId>
+npm run lahari -- apply-plan rewrite-script <preview.json>
+npm run lahari -- apply-plan rewrite-shot-prompts <preview.json>
+npm run lahari -- apply-plan rewrite-storyboard-prompt <preview.json>
+npm run lahari -- apply rewrite-script <preview.json>
+npm run lahari -- apply rewrite-shot-prompts <preview.json>
+npm run lahari -- apply rewrite-storyboard-prompt <preview.json>
+npm run lahari -- rollback rewrite-script <preview.json>
+npm run lahari -- rollback rewrite-shot-prompts <preview.json>
+npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>
+npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
+npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
+npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
+npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
+npm run lahari -- apply storyboard-prompts-bulk <projectId> <shots.json> [force]
+npm run lahari -- apply concept <projectId> <concept.json> [baseHash]
+npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [baseHash]
+npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
+```
+
+Generated local artifacts live under `.lahari/` and are intentionally ignored:
+
+- `.lahari/codex/` - director reports and contact sheets
+- `.lahari/projects/<projectId>/` - local Codex workbench mirror (`brief.md`, `audio-analysis.md`, `script.md`, `storyboard-prompts.md`, snapshots)
+- `.lahari/sessions/<projectId>/` - `state.json` and `journal.md`
+- `.lahari/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
+
+Durable artist/operator decisions are written to Supabase `lahari_director_events`. `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`. Realtime transport is separate: persisted row changes should use Supabase `postgres_changes`, ephemeral operation progress should use broadcast channels, and optional "Codex attached" affordances should use presence.
+
+Permission boundary:
+
+- Read-only inspection and local artifacts are safe to run.
+- Preview commands are non-mutating but may call paid models, so ask before running them autonomously.
+- Apply commands mutate Supabase and must be explicit user-approved commands. They require a valid `SUPABASE_SERVICE_KEY`; Codex tools may fall back to `VITE_SUPABASE_ANON_KEY` for read-only work, but apply tools refuse anon fallback.
+- Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.
+
+Recommended fresh-session start:
+
+1. `git status --short --branch`
+2. Read `docs/codex-native-studio.md`.
+3. `npm run lahari -- project list 10`
+4. When the artist names a song/project, run `npm run lahari -- session attach <projectId> "starting director session"`; this also refreshes the local workbench.
+5. Report the checkpoint, bottleneck, web studio link, and next safe actions before proposing any mutation.
 
 ## Architecture
 

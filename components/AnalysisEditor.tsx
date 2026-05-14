@@ -9,6 +9,7 @@ import { ScriptPhase } from './ScriptPhase';
 import { StylePhase } from './StylePhase';
 import { CharactersPhase } from './CharactersPhase';
 import { EnvironmentsPhase } from './EnvironmentsPhase';
+import * as api from '../services/api';
 
 interface Props {
   project: ApiProject;
@@ -59,6 +60,9 @@ export const AnalysisEditor: React.FC<Props> = ({
   // Environment look candidates — lifted to orchestrator so they survive tab switches
   const [envLooks, setEnvLooks] = useState<Record<string, { id: string; url: string }[]>>({});
   const [envGenerating, setEnvGenerating] = useState<Set<string>>(new Set());
+  const hydratedCandidateProject = useRef<string | null>(null);
+  const hydratedCharacterCandidates = useRef<Set<string>>(new Set());
+  const hydratedEnvironmentCandidates = useRef<Set<string>>(new Set());
 
   // Shared inline error feedback
   const [actionError, setActionError] = useState<string | null>(null);
@@ -78,6 +82,61 @@ export const AnalysisEditor: React.FC<Props> = ({
       setViewPhase(activePhase);
     }
   }, [activePhase]);
+
+  useEffect(() => {
+    if (hydratedCandidateProject.current !== project.id) {
+      hydratedCandidateProject.current = project.id;
+      hydratedCharacterCandidates.current = new Set();
+      hydratedEnvironmentCandidates.current = new Set();
+    }
+  }, [project.id]);
+
+  useEffect(() => {
+    if (!onSetLookCandidates) return;
+    let cancelled = false;
+    const missingWithNoLoadedCandidates = project.cast.filter(member =>
+      !member.referenceImageUrl &&
+      !(lookCandidates[member.id]?.length) &&
+      !hydratedCharacterCandidates.current.has(member.id)
+    );
+    if (missingWithNoLoadedCandidates.length === 0) return;
+
+    missingWithNoLoadedCandidates.forEach(member => hydratedCharacterCandidates.current.add(member.id));
+    void Promise.all(missingWithNoLoadedCandidates.map(async member => {
+      try {
+        const candidates = await api.getCandidates(project.id, 'character', member.id);
+        if (!cancelled && candidates.length > 0) onSetLookCandidates(member.id, candidates);
+      } catch (err) {
+        console.warn('Failed to hydrate character look candidates', { projectId: project.id, castMemberId: member.id, err });
+      }
+    }));
+
+    return () => { cancelled = true; };
+  }, [project.id, project.cast, lookCandidates, onSetLookCandidates]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const missingWithNoLoadedCandidates = project.environments.filter(environment =>
+      !environment.referenceImageUrl &&
+      !(envLooks[environment.id]?.length) &&
+      !hydratedEnvironmentCandidates.current.has(environment.id)
+    );
+    if (missingWithNoLoadedCandidates.length === 0) return;
+
+    missingWithNoLoadedCandidates.forEach(environment => hydratedEnvironmentCandidates.current.add(environment.id));
+    void Promise.all(missingWithNoLoadedCandidates.map(async environment => {
+      try {
+        const candidates = await api.getCandidates(project.id, 'environment', environment.id);
+        if (!cancelled && candidates.length > 0) {
+          setEnvLooks(prev => ({ ...prev, [environment.id]: candidates }));
+        }
+      } catch (err) {
+        console.warn('Failed to hydrate environment look candidates', { projectId: project.id, environmentId: environment.id, err });
+      }
+    }));
+
+    return () => { cancelled = true; };
+  }, [project.id, project.environments, envLooks]);
 
   // Phase content animation wrapper
   const phaseTransition = {

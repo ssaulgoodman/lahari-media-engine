@@ -12,6 +12,7 @@ import { getModelMinDuration } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, parseTimestamp } from './scope-helpers.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 export const mountScriptRoutes = (router: Router) => {
 
@@ -195,6 +196,25 @@ router.post('/:id/generate-script', async (req, res) => {
 
     await updateRows('projects', { id: project.id }, { status: 'scripted', updated_at: new Date().toISOString() });
     await incrementColumn('projects', { id: project.id }, 'cost_estimate', 0.02);
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'script_generated',
+      entityType: 'project',
+      entityId: project.id,
+      summary: `Artist generated script: ${(data.scenes || []).length} scenes, ${totalShots} shots.`,
+      payload: {
+        sourceProjectId: sourceId,
+        forked: req.body?.fork === true,
+        provider: scriptProviderLabel,
+        scenes: (data.scenes || []).length,
+        shots: totalShots,
+        cast: proposedCast.length,
+        environments: proposedEnvironments.length,
+        userNote: userNote || null,
+      },
+    });
 
     res.json(await getFullProject(project.id));
   } catch (err: any) {
@@ -397,6 +417,21 @@ router.post('/:id/refine-script', async (req, res) => {
       durationMs,
       costEstimate: 0.02,
     });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'script_refined',
+      entityType: 'project',
+      entityId: project.id,
+      summary: `Artist refined the script: ${data.scenes.length} scenes.`,
+      payload: {
+        feedback,
+        scenes: data.scenes.length,
+        cast: data.cast.length,
+        environments: data.environments.length,
+      },
+    });
 
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
@@ -523,6 +558,16 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
 
     await incrementColumn('projects', { id: project.id }, 'cost_estimate', 0.02);
     await updateRows('projects', { id: project.id }, { updated_at: new Date().toISOString() });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'shot_prompts_written',
+      entityType: 'project',
+      entityId: project.id,
+      summary: `Artist wrote shot prompts for ${allShots.length} shots.`,
+      payload: { shots: allShots.length, batches: batchPrompts.length, userNote: userNote || null },
+    });
 
     res.json(await getFullProject(project.id));
   } catch (err: any) {

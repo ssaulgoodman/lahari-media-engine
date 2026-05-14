@@ -28,6 +28,9 @@ import { adminRouter } from './routes/admin.js';
 import { promptsRouter } from './routes/prompts.js';
 import { renderRouter } from './routes/render.js';
 import { renderCallbackRouter } from './routes/render-callback.js';
+import { directorRouter } from './routes/director.js';
+import { mcpTokensRouter } from './routes/mcp-tokens.js';
+import { mcpRouter } from './routes/mcp.js';
 import { requireAuth } from './middleware/auth.js';
 import { startRenderWatchdog } from './render-watchdog.js';
 import { startRenderReconciler } from './render-reconciler.js';
@@ -52,6 +55,9 @@ app.use('/api/projects', requireAuth, generateRouter);
 app.use('/api/projects', requireAuth, renderRouter);
 app.use('/api/queue', requireAuth, queueRouter);
 app.use('/api/prompts', requireAuth, promptsRouter);
+app.use('/api/director', requireAuth, directorRouter);
+app.use('/api/mcp-tokens', requireAuth, mcpTokensRouter);
+app.use('/mcp', mcpRouter);
 // Admin routes use their own x-admin-secret auth
 app.use('/api/admin', adminRouter);
 // Renderer callback — auth via x-renderer-secret, not a user JWT
