@@ -159,7 +159,8 @@ const ConnectPage: React.FC<{
   const codexEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
   const codexAdd = `codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN`;
   const claudeEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
-  const claudeAdd = `claude mcp add lahari --transport http --header 'Authorization: Bearer ${'${LAHARI_MCP_TOKEN}'}' ${mcpUrl()}`;
+  const claudeAdd = `claude mcp add-json lahari '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
+  const claudeFallback = token ? `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}` : `claude mcp add lahari --transport http --header "Authorization: Bearer <token>" ${mcpUrl()}`;
 
   return (
     <div className="min-h-screen bg-[#141418] text-white px-6 py-10">
@@ -215,6 +216,11 @@ const ConnectPage: React.FC<{
                     <button onClick={() => copy(`${claudeEnv}\n${claudeAdd}`)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
                   </div>
                   <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeEnv}{'\n'}{claudeAdd}</pre>
+                  <p className="mt-2 text-[11px] text-zinc-500">Paste exactly as shown; the outer single quotes keep the token variable from expanding before Claude writes the config.</p>
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200">Fallback for older Claude Code versions</summary>
+                    <pre className="mt-2 text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeFallback}</pre>
+                  </details>
                 </div>
               </div>
             </div>
