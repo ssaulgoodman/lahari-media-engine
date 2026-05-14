@@ -236,12 +236,17 @@ export const captureLahariIssue = (input: {
       ? redactAuditValue(input.recentToolCalls)
       : readAuditTail(input.projectId, 20),
   };
-  const filePath = path.join(issuesDir(), `${timestampSlug()}-${input.severity}.json`);
+  const issueFile = `${timestampSlug()}-${input.severity}.json`;
+  const filePath = path.join(issuesDir(), issueFile);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(issue, null, 2)}\n`);
-  return {
+  const result: Record<string, unknown> = {
     ...issue,
-    path: filePath,
-    note: 'Local issue capture only. Read this from an engine session to debug director-session friction.',
+    issueRef: issueFile.replace(/\.json$/, ''),
+    note: 'Issue captured for Lahari engine debugging. Server filesystem paths are intentionally not exposed.',
   };
+  if (process.env.NODE_ENV !== 'production') {
+    result.path = filePath;
+  }
+  return result;
 };
