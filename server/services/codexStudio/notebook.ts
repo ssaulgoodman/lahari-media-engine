@@ -25,6 +25,8 @@ const normalizedProjectDir = (project: Project) => `lahari/projects/${project.id
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
+const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
+
 const buildWorkspaceInstructions = (project: Project): string => `# Lahari Workspace
 
 This folder is the local notebook for Lahari project "${project.title}" (${project.id}).
@@ -48,7 +50,7 @@ const buildBrief = (project: Project, actions: ReturnType<typeof buildProjectAct
   const diagnosis = actions.diagnosis;
   return `# ${project.title}
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project ID: ${project.id}
 Web: ${webStudioUrl(project.id, { step: 'studio' })}
 
@@ -79,7 +81,7 @@ const buildConcept = (project: Project): string => {
   const locked = project.lockedConcept;
   return `# Concept
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
 ## Locked Concept
@@ -101,7 +103,7 @@ const buildAudioAnalysis = (project: Project): string => {
 
   return `# Audio Analysis
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
 ## Classification
@@ -138,7 +140,7 @@ ${shots || 'No shots.'}`;
 
   return `# Script
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 Base fingerprint: ${scriptContentHash(project)}
 
@@ -148,7 +150,7 @@ ${scenes}
 
 const buildStyle = (project: Project): string => `# Style
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
 - Locked style URL: ${project.styleAssetUrl || 'None'}
@@ -161,7 +163,7 @@ ${md(project.styleDescription)}
 
 const buildCast = (project: Project): string => `# Cast / Entities
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
 ${project.cast.length ? project.cast.map((member) => `## ${member.name}
@@ -175,7 +177,7 @@ ${md(member.description)}`).join('\n\n') : 'No cast/entities saved.'}
 
 const buildEnvironments = (project: Project): string => `# Environments / Locations
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
 ${project.environments.length ? project.environments.map((environment) => `## ${environment.name}
@@ -222,7 +224,7 @@ ${md(shot.storyboardCutPlan)}
 
   return `# Shot Prompts
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
 ${body || 'No shots saved.'}
@@ -236,7 +238,7 @@ const buildStoryboardFile = (project: Project, sceneIndex: number, shotIndex: nu
   description: `Storyboard prompt mirror for ${shotLabel(sceneIndex, shotIndex)}.`,
   content: `# ${shotLabel(sceneIndex, shotIndex)} Storyboard
 
-Updated: ${new Date().toISOString()}
+Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 Shot ID: ${shot.id}
 Base hash: ${storyboardPromptHash(shot)}
@@ -392,7 +394,7 @@ export const buildProjectNotebook = async (project: Project) => {
 Project: ${project.title}
 Project ID: ${project.id}
 
-## ${new Date().toISOString()} - Notebook Created
+## ${projectUpdatedAt(project)} - Notebook Created
 
 Opened project and wrote the initial local notebook.
 `,
