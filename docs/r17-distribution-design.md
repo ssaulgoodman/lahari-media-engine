@@ -162,12 +162,47 @@ Tell the artist:
 Separate npm package. Runs as a subprocess of Codex/Claude Code (registered via step 4).
 
 - Reads `~/.lahari/credentials` for the access token
-- Calls Lahari API on Railway via HTTP using `Authorization: Bearer <token>`
-- Backend's `requireAuth` middleware validates the JWT against Supabase Auth (same path as the web studio uses today)
+- Calls **the hosted Director API facade** (see next section) via HTTP using `Authorization: Bearer <token>`
 - Refreshes token automatically when expired
-- Exposes the same tools as today's MCP — `list_projects`, `attach_director_session`, `apply_*` family, generation tools, etc.
+- Exposes the same *tool surface* as today's MCP — `list_projects`, `attach_director_session`, `apply_*` family, generation tools — but each tool is a thin typed HTTP client, not a direct service-layer call
 
-**Key difference from internal MCP**: no `SUPABASE_SERVICE_KEY` anywhere. The MCP server has no DB access of its own. It's purely an HTTP client to the Lahari API on Railway. The artist's identity (and therefore their RLS scope) is the access token.
+**Key difference from today's internal MCP**: today's MCP imports `server/services/codexStudio.ts` directly and uses `SUPABASE_SERVICE_KEY` for DB writes. That stack cannot ship to artists. The npm MCP server has zero engine imports, zero DB access, zero Supabase service key. It's a typed HTTP client. The artist's identity (and therefore their RLS scope) is the access token.
+
+### Hosted Director API facade (the real R17 spine)
+
+Today's `mcp/lahari.ts` and `cli/lahari.ts` both call `server/services/codexStudio.ts` in-process. The npm MCP server cannot do this — it runs on the artist's machine with no engine code and no service key. So Railway must expose the codexStudio surface as authenticated HTTP endpoints.
+
+This is the biggest engineering chunk of R17 and should be built first.
+
+**Endpoint shape** — grouped by domain, not one-route-per-tool:
+
+```
+POST /api/director/session/attach              { projectId } -> session packet
+POST /api/director/session/recent-events       { projectId, sinceSeq? }
+GET  /api/director/projects                    -> list_projects
+POST /api/director/preview/script              { projectId, ... }
+POST /api/director/preview/storyboard-prompt   { projectId, shotId, ... }
+POST /api/director/apply/script                { projectId, baseHash, draft }
+POST /api/director/apply/shot-prompts          { projectId, shots[], force? }
+POST /api/director/apply/storyboard-prompt     { projectId, shotId, ... }
+POST /api/director/apply/concept               { projectId, ... }
+POST /api/director/apply/video-prompt          { projectId, shotId, ... }
+POST /api/director/rollback/script             { projectId, previewId }
+POST /api/director/issues/capture              { ... }
+... etc, one route per codexStudio public function
+```
+
+All routes:
+- Mount under existing `requireAuth` JWT middleware
+- Reuse the same `user_id`-scoped project lookup the web studio uses (no new ownership path)
+- Return structured `{ ok, data, error }` JSON envelopes the MCP server unwraps
+- Log to the same audit shim that wraps CLI today, tagged `source: 'mcp-remote'`
+
+**Implementation note:** the simplest path is a new `server/routes/director.ts` that imports `server/services/codexStudio.ts` and calls its existing functions, with thin request/response translation. The service layer stays unchanged. This is mostly mechanical wiring, not a refactor — likely 1–1.5 days for full surface.
+
+**Versioning:** the facade publishes a version string at `GET /api/director/version`. The MCP server checks at startup and warns if it's older than the API expects. This gives us a compatibility lever once artists are on different `@lahari/mcp-server` versions.
+
+**This must be built and deployed before `@lahari/mcp-server` is useful.** The setup package is downstream of both.
 
 ## Per-harness MCP registration details
 
@@ -236,6 +271,17 @@ await waitForCallback(server, timeout: 5 * 60 * 1000)  // 5 min timeout
 
 The MCP server keeps the credentials file fresh. On every API call, check `expires_at`; if within 5 min of expiry, call Supabase's `auth/v1/token?grant_type=refresh_token` with the stored refresh token, save the new access + refresh tokens to the credentials file, then make the API call.
 
+### Safety notes — must hold before R17 ships
+
+These are the edges that turn a smooth install into a debugging nightmare on someone else's machine. Each one is a setup-script invariant, not an aspirational guideline.
+
+- **State parameter is required and validated.** The localhost callback rejects any response whose `state` doesn't match the one issued by setup. Without this, a malicious page could feed tokens to a listening setup process. `state` is a 32-byte random token, single-use, expires when the local server shuts down.
+- **`/auth/cli-bridge` only relays to localhost.** The bridge endpoint must validate that the `redirect` URL points to `http://localhost:<port>/callback` or `http://127.0.0.1:<port>/callback`. Reject everything else, including `https://`, public hostnames, or other ports/paths. This prevents the bridge from being weaponized as an open token forwarder.
+- **Supabase redirect allowlist explicitly lists `https://lahari.media/auth/cli-bridge`.** Forgetting this is the most common cause of "OAuth completes but no token arrives." Setup's `doctor` command pings the bridge and warns if the redirect chain breaks.
+- **MCP server install is exact-version pinned.** `codex mcp add ... -- npx -y @lahari/mcp-server@X.Y.Z`, not floating latest. Floating versions make artist-machine debugging unreproducible because the artist's MCP can silently upgrade between sessions. `lahari-setup update` is the only path that bumps the pinned version, and it records the bump in `~/.lahari/credentials` so `doctor` can report it.
+- **Credentials file is mode 0600 on write.** Even though it's already in `~/.lahari/`, set the mode explicitly — default umasks vary across machines.
+- **Refresh-token failure does not silently log the artist out.** If refresh returns 401, the MCP server returns a structured `auth_expired` error to the harness so the agent can say "your Lahari session expired — run `npx @lahari/setup login` to sign back in."
+
 ## Templates the bootstrap writes
 
 ### AGENTS.md (artist version)
@@ -249,7 +295,11 @@ Slimmed from engine's AGENTS.md. Director-mode only. Removes engine-session cont
 
 ### Skills
 
-Same five shards as today (`lahari-director` orchestrator + four taste shards). Verbatim copies.
+Same six shards as today (`lahari-director` orchestrator + five taste shards: `storyboard-prompt-craft`, `script-doctor`, `continuity-auditor`, `style-ref-critic`, `render-triage`). Verbatim copies into `<workspace>/.agents/skills/`.
+
+**v1 delivery model — workspace files, not first-class plugin skills.** The artist's `AGENTS.md` explicitly references these shards by path so the harness reads them as workspace operating instructions when the relevant trigger fires. We do *not* depend on Codex/Claude Code recognizing them as registered skills with chips/banners. That UI varies by harness version and is not guaranteed by file placement alone.
+
+When Codex Desktop ships a stable plugin/skill registry, R17 can grow a follow-up that registers shards there too. Until then, workspace-file delivery is the contract. Skill content does not change between the two modes — only the discovery path.
 
 ### Prompt config templates
 
@@ -306,17 +356,19 @@ Useful for triage when something feels off.
 
 ## Implementation Order
 
-1. Define template contents — pull AGENTS.md + skills from current engine into `@lahari/setup/src/templates/`. Sync script lives in engine repo. ~2 hours.
-2. Build `@lahari/mcp-server` package — HTTP client to Lahari API, JWT-based auth, refresh-token loop, exposes existing tool surface. ~1 day.
-3. Build `@lahari/setup` `init.js` — happy path: detect, write files, register MCP, OAuth, save credentials. ~1 day.
-4. Add Lahari API `/auth/cli` + `/auth/cli-bridge` endpoints on Railway. ~half day.
-5. Backend `requireAuth` updates to accept the same JWT pattern from MCP-originated requests as it does from web studio. ~few hours (probably no change — already JWT-based).
-6. Error handling for the seven failure modes. ~half day.
-7. `doctor` + `update` commands. ~half day.
-8. Publish `@lahari/setup` and `@lahari/mcp-server` to npm (or GitHub Packages for internal). ~1 hour.
-9. Documentation page at `lahari.media/install` with the one-liner. ~few hours.
+Build the spine first, the bootstrap second. The setup package is useless without the API facade and the remote MCP server.
 
-**Total estimate:** ~4-5 focused days of work.
+1. **Hosted Director API facade** — new `server/routes/director.ts` on Railway, grouped endpoints over the existing `codexStudio.ts` surface, `requireAuth`, audit-logged with `source: 'mcp-remote'`. Add `/api/director/version`. ~1–1.5 days.
+2. **`/auth/cli` + `/auth/cli-bridge` endpoints** on the Lahari API, including state validation and localhost-only redirect allowlist. Update Supabase redirect allowlist. ~half day.
+3. **`@lahari/mcp-server` package** — typed HTTP client over the facade, JWT-based auth, refresh-token loop, structured `auth_expired` error, version check against facade. ~1 day.
+4. **Template contents** — pull AGENTS.md + skills from engine into `@lahari/setup/src/templates/`. One-way sync script lives in engine repo. ~2 hours.
+5. **`@lahari/setup init` happy path** — detect, write files, register MCP at exact pinned version, run OAuth, save credentials with mode 0600. ~1 day.
+6. **Error handling** for the seven failure modes. ~half day.
+7. **`doctor` + `update` + `login`** commands. ~half day.
+8. **Publish** `@lahari/setup` and `@lahari/mcp-server` to npm (or GitHub Packages for internal). Tag exact-version pins. ~1 hour.
+9. **Documentation page** at `lahari.media/install` with the one-liner and a "what just happened" walkthrough. ~few hours.
+
+**Total estimate:** ~5–6 focused days of work (up from earlier ~4–5 once the facade is sized in honestly).
 
 ## Testing
 
