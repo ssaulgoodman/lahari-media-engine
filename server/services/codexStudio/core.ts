@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { selectAll, selectColumns } from '../../database.js';
 import type { getFullProject } from '../../routes/projects.js';
 import { IMAGE_MODELS } from '../../../constants/imageModels.js';
@@ -16,6 +17,67 @@ export const compactText = (value?: string | null, max = 700): string | null => 
   if (normalized.length <= max) return normalized;
   return `${normalized.slice(0, max - 1).trim()}...`;
 };
+
+export const stableJson = (value: unknown): string => {
+  const normalize = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(normalize);
+    if (item && typeof item === 'object') {
+      return Object.keys(item as Record<string, unknown>)
+        .sort()
+        .reduce((acc, key) => {
+          acc[key] = normalize((item as Record<string, unknown>)[key]);
+          return acc;
+        }, {} as Record<string, unknown>);
+    }
+    return item;
+  };
+  return JSON.stringify(normalize(value));
+};
+
+export const hashJson = (value: unknown): string => {
+  return crypto.createHash('sha256').update(stableJson(value)).digest('hex');
+};
+
+export const shotPromptHash = (shot: Pick<ProjectShot, 'visualPrompt' | 'motionPrompt' | 'direction' | 'continuityFrom'>): string => hashJson({
+  visualPrompt: shot.visualPrompt || '',
+  motionPrompt: shot.motionPrompt || '',
+  direction: shot.direction || '',
+  continuityFrom: shot.continuityFrom || 'cut',
+});
+
+export const storyboardPromptHash = (shot: Pick<ProjectShot, 'storyboardPrompt' | 'storyboardCutPlan'>): string => hashJson({
+  storyboardPrompt: shot.storyboardPrompt || '',
+  storyboardCutPlan: shot.storyboardCutPlan || '',
+});
+
+export const videoPromptHash = (shot: Pick<ProjectShot, 'motionPrompt'>): string => hashJson({
+  motionPrompt: shot.motionPrompt || '',
+});
+
+export const conceptHash = (concept: unknown): string => hashJson(concept || null);
+
+export const buildScriptDraft = (project: Project) => ({
+  cast: project.cast.map((member) => ({ id: member.id, name: member.name, description: member.description || '' })),
+  environments: project.environments.map((environment) => ({ id: environment.id, name: environment.name, description: environment.description || '' })),
+  scenes: project.scenes.map((scene) => ({
+    id: scene.id,
+    sectionLabel: scene.sectionLabel || '',
+    startTime: scene.startTime || '',
+    endTime: scene.endTime || '',
+    lyrics: scene.lyrics || '',
+    narrativeDescription: scene.narrativeDescription || '',
+    shots: scene.shots.map((shot) => ({
+      id: shot.id,
+      direction: shot.direction || '',
+      duration: Number(shot.duration || 0),
+      castIds: shot.castIds || [],
+      environmentId: shot.environmentId || null,
+      continuityFrom: shot.continuityFrom || 'cut',
+    })),
+  })),
+});
+
+export const scriptContentHash = (project: Project): string => hashJson(buildScriptDraft(project));
 
 export const namesById = <T extends { id: string; name: string }>(items: T[]) => {
   return new Map(items.map((item) => [item.id, item.name]));

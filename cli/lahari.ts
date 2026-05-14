@@ -55,6 +55,12 @@ Usage:
   npm run lahari -- apply unlock-storyboard <projectId> <shotId>
   npm run lahari -- apply project-preferences <projectId> <preferences.json> [baseHash]
   npm run lahari -- apply project-prompt-override <projectId> <storyboard|video> <body.md> [baseHash]
+  npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
+  npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
+  npm run lahari -- apply storyboard-prompts-bulk <projectId> <shots.json> [force]
+  npm run lahari -- apply concept <projectId> <concept.json> [baseHash]
+  npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [baseHash]
+  npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
   npm run lahari -- rollback project-prompt-override <projectId> <storyboard|video> [baseHash]
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
   npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
@@ -208,7 +214,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override'))
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'shot-prompts' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'concept' || action === 'video-prompt' || action === 'script'))
     || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'project-prompt-override'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
@@ -464,6 +470,68 @@ const main = async () => {
     const baseHash = rest[1];
     const body = fs.readFileSync(bodyPath, 'utf8');
     console.log(JSON.stringify(await studio.applyProjectPromptOverrideConfig(project, kind, body, baseHash), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'shot-prompts' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const shots = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    console.log(JSON.stringify(await studio.applyShotPrompts(project, Array.isArray(shots) ? shots : shots.shots, { force: rest.includes('force') || rest.includes('--force') }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'storyboard-prompt' && projectId && arg4 && rest[0]) {
+    const project = await studio.getFullProject(projectId);
+    const promptPath = rest[0];
+    const maybeCutPlanPath = rest[1];
+    const maybeBaseHash = rest[2] || (maybeCutPlanPath && fs.existsSync(maybeCutPlanPath) ? undefined : maybeCutPlanPath);
+    const cutPlanPath = maybeCutPlanPath && fs.existsSync(maybeCutPlanPath) ? maybeCutPlanPath : undefined;
+    console.log(JSON.stringify(await studio.applyStoryboardPrompt(
+      project,
+      arg4,
+      fs.readFileSync(promptPath, 'utf8'),
+      cutPlanPath ? fs.readFileSync(cutPlanPath, 'utf8') : '',
+      { baseHash: maybeBaseHash, force: rest.includes('force') || rest.includes('--force') },
+    ), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'storyboard-prompts-bulk' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const payload = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    console.log(JSON.stringify(await studio.applyStoryboardPromptsBulk(project, {
+      shots: Array.isArray(payload) ? payload : payload.shots,
+      force: rest.includes('force') || rest.includes('--force') || !!payload.force,
+    }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'concept' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const payload = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    console.log(JSON.stringify(await studio.applyConcept(project, payload.concept || payload, {
+      baseHash: rest[0] || payload.baseHash,
+      force: rest.includes('force') || rest.includes('--force') || !!payload.force,
+    }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'video-prompt' && projectId && arg4 && rest[0]) {
+    const project = await studio.getFullProject(projectId);
+    const promptPath = rest[0];
+    console.log(JSON.stringify(await studio.applyVideoPrompt(project, arg4, fs.readFileSync(promptPath, 'utf8'), {
+      baseHash: rest[1],
+      force: rest.includes('force') || rest.includes('--force'),
+    }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'script' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const payload = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    const force = rest.includes('force') || rest.includes('--force') || !!payload.force;
+    const baseFingerprint = force ? undefined : (rest[0] || payload.baseFingerprint);
+    console.log(JSON.stringify(await studio.applyScript(project, payload.script || payload, { baseFingerprint, force }), null, 2));
     return;
   }
 

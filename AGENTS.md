@@ -139,6 +139,12 @@ npm run lahari -- rollback rewrite-shot-prompts <preview.json>
 npm run lahari -- rollback rewrite-storyboard-prompt <preview.json>
 npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
 npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
+npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
+npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
+npm run lahari -- apply storyboard-prompts-bulk <projectId> <shots.json> [force]
+npm run lahari -- apply concept <projectId> <concept.json> [baseHash]
+npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [baseHash]
+npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
 ```
 
 Generated local artifacts live under `.lahari/` and are intentionally ignored:

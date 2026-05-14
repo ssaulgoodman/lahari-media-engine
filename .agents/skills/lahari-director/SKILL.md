@@ -60,6 +60,22 @@ The default when the artist returns to a song is to **resume** the existing Code
 6. If mutation is needed, explain what will change and ask for approval.
 7. After a tool call, summarize the outcome and update the working notes.
 
+## Writing Content for Apply Tools
+
+For text-native work, Codex writes the content and Lahari apply tools validate/persist it. Do not call backend LLM-wrapper tools when an apply-only tool exists.
+
+Load the right shard before writing:
+
+| Apply tool | Shard |
+|---|---|
+| `apply_concept` | this skill's concept taste checks |
+| `apply_script` | `script-doctor` |
+| `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
+| `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk` | `storyboard-prompt-craft` |
+| `apply_video_prompt` | `storyboard-prompt-craft` |
+
+When a read packet includes `baseHashes`, pass the relevant hash into the apply tool. If an apply tool returns `error: validation_failed`, the tool's `field` and `message` tell you what to fix; revise the content and retry. Do not pass `force: true` to skip validation or drift checks unless you have explicitly told the artist what will be overwritten and received approval.
+
 ## Friction Capture
 
 When you notice friction, capture it immediately. This includes a Lahari tool returning unexpected output, project state not making sense, a deep link/action plan feeling wrong, the web studio disagreeing with tool output, a promised harness action not actually being available, or repeated confusion in your own flow. Call `lahari_capture_issue` with severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.

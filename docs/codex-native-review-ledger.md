@@ -550,16 +550,22 @@ Later import primitive: `import_canvas_notes`
 
 ### R28 — Apply-only text tools replace backend LLM wrappers
 
-Status: **designed direction** · Raised: 2026-05-13
+Status: **implemented first pass, pending review/migration apply** · Raised: 2026-05-13 · Updated: 2026-05-14
 
 R25 shipped two useful but transitional tools: `write_storyboard_prompt` and `bulk_write_storyboard_prompts`. They wrap backend LLM calls, which violates doctrine §4. Keep them for the live test loop, but do not extend that pattern.
 
 R28 replaces backend LLM-wrapper tools with apply-only primitives. Codex writes the text using the director skill and local project context; the tool validates, persists, records a director event, and returns drift/rollback metadata. The web studio can keep its backend generate/refine endpoints for non-Codex users.
 
-Apply-only scope:
+Implemented scope:
+- `apply_shot_prompts`
 - `apply_storyboard_prompt` / `apply_storyboard_prompts_bulk`
-- `apply_video_prompt` / `apply_video_prompts_bulk`
-- later: concept, script, and keyframe shot prompt apply-only variants
+- `apply_script`
+- `apply_concept`
+- `apply_video_prompt`
+
+The tools live under `server/services/codexStudio/applies/` rather than growing the `codexStudio.ts` barrel. They are exposed through MCP + CLI, record per-shot/per-entity director events, append local journal entries, and rely on `baseHash` / `baseFingerprint` drift checks where applicable. `apply_script` is atomic-only through `lahari_apply_script`, so `migrations/2026-05-14_apply_script_rpc.sql` must be applied before using the script tool against real projects.
+
+R25 transitional `write_storyboard_prompt` and `bulk_write_storyboard_prompts` remain callable for compatibility but are now marked deprecated in MCP descriptions and log warning lines when called. Codex director sessions should prefer R28 apply-only tools.
 
 **Why it matters:** This is the seam that makes Lahari Codex-native instead of another app that calls an LLM behind Codex's back. Codex owns taste-heavy language work; Lahari tools own validation and persistence.
 
@@ -680,3 +686,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-14 — Saul drove a real 2-hour test session on fork `13c259ce-57eb-4da3-8b7e-4e78f1940a1d` (Sri Mahaganapathi Prarthasnmarana Stotram). Workflow advanced from audio analysis through concept → script → style → cast/env → storyboard generation for shot 1. Architecture claims validated end-to-end via audit + journal: MCP-first discipline held (16 of 17 tool calls `mcp/*`; only CLI was `audit tail`), R29 agency layer actively used (`apply_project_preferences` called 3x mid-flow), skill-driven taste applied (new `storyboard_prompt_direct_edit` event), production-language operator notes throughout. Surfaced four real friction items + two Codex-added polish notes. **Filed as follow-ups under R8 (F3), R12 (F1+F4), R15 (Hydrated→Updated), R29 (post-apply desk-copy refresh extension), plus new R31 (diagnosis bottleneck + action ranking).** R30 explicitly deferred — touches setup/gitignore/docs/skills/muscle-memory, cosmetic relative to F1-F4, save for separate pass with backwards-compat plan.
 - 2026-05-14 — Codex shipped stabilization pass: F1+F4 (R12), F3 (R8), F2+action ranking (R31), Hydrated→Updated (R15), and immediate local journal entries for storyboard/video/config mutations (R29 polish). Verified with `npm run build`, `npx tsc --noEmit`, and `git diff --check`. Sequence remains: Saul quick continuation test → R28 implementation (apply-only tools under `server/services/codexStudio/applies/`) → Claude reviews.
 - 2026-05-14 — Claude reviewed `b0a2c83`. All six items verified against code: F1 honest scope-setting in skill; F2 `classificationIssue` moved to end of `openIssues` so it's last-warning not bottleneck; F3 imperative capture-issue trigger with broader list; F4 re-attach dedup gated on four conditions with `LAHARI_ATTACH_JOURNAL_DEDUP_MINUTES` env override; action ranking gates video gen on locked storyboards (storyboard mode) or completed frames (keyframe); zero remaining "Hydrated:" strings, "Updated:" everywhere; new `appendSessionJournalEntry` helper provides post-mutation journal append pattern that R28 can reuse as template. R12 F1+F4, R8 F3, R15 Hydrated→Updated, R29 desk-copy extension, R31 — all now `shipped first pass`. Ready for Saul's continuation test, then R28 implementation.
+- 2026-05-14 — Codex implemented R28 apply-only text tools. New modules under `server/services/codexStudio/applies/` cover `apply_shot_prompts`, `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_script`, `apply_concept`, and `apply_video_prompt`; the `codexStudio.ts` root remains a re-export barrel. MCP + CLI surfaces added, R25 backend-LLM storyboard writer tools marked deprecated, read packets now expose base hashes for concept/script/shot/storyboard/video prompt drift checks, and every apply records director events + appends local journal entries. New migration `2026-05-14_apply_script_rpc.sql` adds atomic `lahari_apply_script` RPC. Verified with `npx tsc --noEmit`, `npm run build`, and `git diff --check`. Pending: apply the migration before using `apply_script` against live projects, then Claude review.

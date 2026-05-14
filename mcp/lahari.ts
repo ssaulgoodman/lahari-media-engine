@@ -119,7 +119,7 @@ registerAuditedTool('get_storyboard_status', {
 
 registerAuditedTool('write_storyboard_prompt', {
   title: 'Write storyboard prompt',
-  description: 'Mutating and paid text call. Writes saved storyboard_prompt and storyboard_cut_plan for one shot using the backend storyboard planner.',
+  description: 'Deprecated. Prefer apply_storyboard_prompt: write the prompt directly using the storyboard-prompt-craft skill, then apply. This mutating paid tool wraps a backend LLM call and bypasses the harness-native pattern.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotId: z.string().min(1).describe('Shot ID within the project.'),
@@ -128,6 +128,7 @@ registerAuditedTool('write_storyboard_prompt', {
     artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
   },
 }, async ({ projectId, shotId, artistNote, variant, artistReferenceImagePath }) => {
+  console.error('[deprecated] write_storyboard_prompt — use apply_storyboard_prompt instead.');
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for write_storyboard_prompt.');
@@ -139,7 +140,7 @@ registerAuditedTool('write_storyboard_prompt', {
 
 registerAuditedTool('bulk_write_storyboard_prompts', {
   title: 'Bulk write storyboard prompts',
-  description: 'Mutating and paid text calls. Writes missing/error storyboard prompts by default for selected unlocked shots. Use force only after explicit approval.',
+  description: 'Deprecated. Prefer apply_storyboard_prompts_bulk: write prompts directly using the storyboard-prompt-craft skill, then apply. This mutating paid tool wraps backend LLM calls and bypasses the harness-native pattern.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotIds: z.array(z.string().min(1)).optional().describe('Optional explicit shot subset. Defaults to all eligible shots.'),
@@ -149,6 +150,7 @@ registerAuditedTool('bulk_write_storyboard_prompts', {
     artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
   },
 }, async ({ projectId, shotIds, force, artistNote, variant, artistReferenceImagePath }) => {
+  console.error('[deprecated] bulk_write_storyboard_prompts — use apply_storyboard_prompts_bulk instead.');
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for bulk_write_storyboard_prompts.');
@@ -613,6 +615,161 @@ registerAuditedTool('apply_project_preferences', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyProjectPreferencesConfig(project, preferences, baseHash));
+});
+
+registerAuditedTool('apply_shot_prompts', {
+  title: 'Apply shot prompts',
+  description: 'Mutating. Persists Codex-written visual/motion/direction/continuity updates for one or more shots. No LLM call; validates length and optional baseHash drift.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shots: z.array(z.object({
+      shotId: z.string().min(1),
+      visualPrompt: z.string().optional(),
+      motionPrompt: z.string().optional(),
+      direction: z.string().optional(),
+      continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+      baseHash: z.string().optional(),
+    })).min(1).describe('Array of shot prompt updates. Use get_shot_packet baseHashes.shotPrompts when available.'),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, shots, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_shot_prompts.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyShotPrompts(project, shots, { force }));
+});
+
+registerAuditedTool('apply_storyboard_prompt', {
+  title: 'Apply storyboard prompt',
+  description: 'Mutating. Persists a Codex-written storyboard_prompt and storyboard_cut_plan for one shot. No LLM call; validates drift and marks existing board/video stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    storyboardPrompt: z.string().min(1).describe('Codex-written image-render storyboard prompt.'),
+    storyboardCutPlan: z.string().optional().describe('Codex-written cut plan. Can be empty.'),
+    baseHash: z.string().optional().describe('Hash from get_shot_packet baseHashes.storyboardPrompt.'),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, shotId, storyboardPrompt, storyboardCutPlan, baseHash, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_storyboard_prompt.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyStoryboardPrompt(project, shotId, storyboardPrompt, storyboardCutPlan || '', { baseHash, force }));
+});
+
+registerAuditedTool('apply_storyboard_prompts_bulk', {
+  title: 'Apply storyboard prompts bulk',
+  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. No LLM call; locked shots are skipped and invalid/drifted rows are rejected.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shots: z.array(z.object({
+      shotId: z.string().min(1),
+      storyboardPrompt: z.string().min(1),
+      storyboardCutPlan: z.string().optional(),
+      baseHash: z.string().optional(),
+    })).min(1),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, shots, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_storyboard_prompts_bulk.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyStoryboardPromptsBulk(project, {
+    shots: shots.map((shot: any) => ({ ...shot, storyboardCutPlan: shot.storyboardCutPlan || '' })),
+    force,
+  }));
+});
+
+registerAuditedTool('apply_concept', {
+  title: 'Apply concept',
+  description: 'Mutating. Persists a Codex-written locked concept object. No LLM call; marks existing shot prompts stale when script rows exist.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    concept: z.object({
+      title: z.string().min(1),
+      direction: z.string().min(1),
+      description: z.string().min(1),
+      deity: z.string().optional(),
+      mood: z.string().optional(),
+    }),
+    baseHash: z.string().optional().describe('Hash of current locked concept when known.'),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, concept, baseHash, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_concept.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyConcept(project, concept, { baseHash, force }));
+});
+
+registerAuditedTool('apply_video_prompt', {
+  title: 'Apply video prompt',
+  description: 'Mutating. Persists a Codex-written keyframe-mode motion_prompt for one shot. Refuses storyboard-mode projects; use apply_storyboard_prompt there.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Shot ID within the project.'),
+    motionPrompt: z.string().min(1).describe('Codex-written keyframe-mode motion prompt.'),
+    baseHash: z.string().optional().describe('Hash from get_shot_packet baseHashes.videoPrompt.'),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, shotId, motionPrompt, baseHash, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_video_prompt.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyVideoPrompt(project, shotId, motionPrompt, { baseHash, force }));
+});
+
+registerAuditedTool('apply_script', {
+  title: 'Apply script',
+  description: 'Mutating and high blast radius. Atomically replaces cast, environments, scenes, and shots with Codex-written structured script content. Refuses downstream visual work unless force is explicitly approved.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    script: z.object({
+      cast: z.array(z.object({ id: z.string().optional(), name: z.string().min(1), description: z.string().optional() })),
+      environments: z.array(z.object({ id: z.string().optional(), name: z.string().min(1), description: z.string().optional() })),
+      scenes: z.array(z.object({
+        id: z.string().optional(),
+        sectionLabel: z.string().optional(),
+        startTime: z.string().optional(),
+        endTime: z.string().optional(),
+        lyrics: z.string().optional(),
+        narrativeDescription: z.string().optional(),
+        shots: z.array(z.object({
+          id: z.string().optional(),
+          direction: z.string().min(1),
+          duration: z.number(),
+          castIds: z.array(z.string()).optional(),
+          environmentId: z.string().nullable().optional(),
+          continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+        })).min(1),
+      })).min(1),
+    }),
+    baseFingerprint: z.string().optional().describe('Hash/fingerprint of current script from the latest read when known.'),
+    force: z.boolean().optional().describe('Bypass drift/downstream visual work checks only after explicit approval.'),
+  },
+}, async ({ projectId, script, baseFingerprint, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_script.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyScript(project, script, { baseFingerprint, force }));
 });
 
 registerAuditedTool('apply_project_prompt_override', {

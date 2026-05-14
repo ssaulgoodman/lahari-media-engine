@@ -1,12 +1,17 @@
 import { getProjectConfigState } from '../projectConfig.js';
 import {
   compactText,
+  conceptHash,
   deriveDirectorDiagnosis,
   listProjectRenders,
   namesById,
   recommendedActions,
+  scriptContentHash,
+  shotPromptHash,
+  storyboardPromptHash,
   statusCounts,
   usesStoryboardWorkflow,
+  videoPromptHash,
   webStudioUrl,
   type Project,
 } from './core.js';
@@ -37,6 +42,10 @@ export const buildProjectPacket = async (project: Project) => {
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
       webUrl: webStudioUrl(project.id, { step: 'studio' }),
+    },
+    baseHashes: {
+      concept: conceptHash(project.lockedConcept),
+      script: scriptContentHash(project),
     },
     source: {
       audioPath: project.audioPath,
@@ -202,6 +211,11 @@ export const buildShotPacket = (project: Project, shotId: string) => {
         imageStatus: shot.imageStatus,
         videoStatus: shot.videoStatus,
         lastError: shot.lastError,
+        baseHashes: {
+          shotPrompts: shotPromptHash(shot),
+          storyboardPrompt: storyboardPromptHash(shot),
+          videoPrompt: videoPromptHash(shot),
+        },
         assets: {
           startFrame: shot.imageUrl,
           storyboard: shot.storyboardUrl,
