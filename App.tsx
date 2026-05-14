@@ -65,6 +65,192 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   environments_locked: { label: 'Environments', color: 'text-emerald-400' },
 };
 
+const appOrigin = () => window.location.origin;
+
+const mcpUrl = () => `${appOrigin()}/mcp`;
+
+const ConnectPage: React.FC<{
+  user: { id: string; email?: string | null } | null;
+  signInWithGoogle: (redirectTo?: string) => Promise<void>;
+  signOut: () => Promise<void>;
+}> = ({ user, signInWithGoogle, signOut }) => {
+  const [tokens, setTokens] = useState<any[]>([]);
+  const [created, setCreated] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadTokens = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const body = await api.listMcpTokens();
+      setTokens(body.tokens || []);
+    } catch (err: any) {
+      setError(err.message || 'Could not load MCP tokens');
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadTokens();
+  }, [loadTokens]);
+
+  const createToken = async () => {
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const token = await api.createMcpToken({ label: 'Codex / Claude', expiresInDays: 30 });
+      setCreated(token);
+      await loadTokens();
+    } catch (err: any) {
+      setError(err.message || 'Could not create MCP token');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const revokeToken = async (id: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await api.revokeMcpToken(id);
+      if (created?.id === id) setCreated(null);
+      await loadTokens();
+    } catch (err: any) {
+      setError(err.message || 'Could not revoke MCP token');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage('Copied');
+      window.setTimeout(() => setMessage(null), 1600);
+    } catch {
+      setMessage('Select and copy manually');
+    }
+  };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#141418] flex items-center justify-center px-6">
+        <div className="w-full max-w-md text-center">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-4">Lahari Connect</p>
+          <h1 className="text-2xl font-display text-white mb-3">Connect Lahari to Codex</h1>
+          <p className="text-sm text-zinc-400 mb-8">Sign in to create an account-scoped MCP token. No service keys, no engine repo.</p>
+          <button
+            onClick={() => signInWithGoogle(`${window.location.origin}/connect`)}
+            className="inline-flex items-center gap-3 px-5 py-3 bg-white text-black rounded-md font-medium text-sm hover:bg-zinc-100 transition-colors"
+          >
+            Sign in with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const token = created?.token;
+  const codexEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
+  const codexAdd = `codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN`;
+  const claudeEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
+  const claudeAdd = `claude mcp add lahari --transport http --header 'Authorization: Bearer ${'${LAHARI_MCP_TOKEN}'}' ${mcpUrl()}`;
+
+  return (
+    <div className="min-h-screen bg-[#141418] text-white px-6 py-10">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-start justify-between gap-4 mb-10">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-3">Lahari Connect</p>
+            <h1 className="text-2xl font-display text-white mb-2">Remote MCP access</h1>
+            <p className="text-sm text-zinc-400">Signed in as {user.email || user.id}</p>
+          </div>
+          <button onClick={signOut} className="px-3 py-2 text-xs text-zinc-300 border border-white/10 rounded-md hover:bg-white/5">Sign out</button>
+        </div>
+
+        <div className="border border-white/10 rounded-md bg-zinc-950/40 p-5 mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-display text-white">Create a token</h2>
+              <p className="text-sm text-zinc-400">The raw token is shown once. Store it in your harness env, not in project files.</p>
+            </div>
+            <button
+              onClick={createToken}
+              disabled={loading}
+              className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50"
+            >
+              {loading ? 'Working...' : 'Create 30-day token'}
+            </button>
+          </div>
+
+          {error && <div className="mb-4 text-sm text-red-300 bg-red-950/30 border border-red-500/20 rounded-md px-3 py-2">{error}</div>}
+          {message && <div className="mb-4 text-sm text-emerald-300 bg-emerald-950/30 border border-emerald-500/20 rounded-md px-3 py-2">{message}</div>}
+
+          {token ? (
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <p className="text-xs text-zinc-400">Token</p>
+                  <button onClick={() => copy(token)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
+                </div>
+                <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{token}</pre>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-xs text-zinc-400">Codex</p>
+                    <button onClick={() => copy(`${codexEnv}\n${codexAdd}`)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
+                  </div>
+                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{codexEnv}{'\n'}{codexAdd}</pre>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className="text-xs text-zinc-400">Claude Code</p>
+                    <button onClick={() => copy(`${claudeEnv}\n${claudeAdd}`)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
+                  </div>
+                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeEnv}{'\n'}{claudeAdd}</pre>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">Create a token to reveal install commands.</p>
+          )}
+        </div>
+
+        <div className="border border-white/10 rounded-md bg-zinc-950/30 p-5">
+          <h2 className="text-lg font-display text-white mb-4">Existing tokens</h2>
+          {tokens.length === 0 && !loading ? (
+            <p className="text-sm text-zinc-500">No MCP tokens yet.</p>
+          ) : (
+            <div className="divide-y divide-white/10">
+              {tokens.map(token => (
+                <div key={token.id} className="py-3 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm text-white">{token.label} <span className="text-zinc-500">{token.tokenPrefix}...</span></p>
+                    <p className="text-xs text-zinc-500">
+                      {token.active ? 'Active' : 'Inactive'} · expires {token.expiresAt ? new Date(token.expiresAt).toLocaleDateString() : 'never'}
+                      {token.lastUsedAt ? ` · used ${new Date(token.lastUsedAt).toLocaleDateString()}` : ''}
+                    </p>
+                  </div>
+                  {!token.revokedAt && (
+                    <button onClick={() => revokeToken(token.id)} className="px-3 py-1.5 text-xs text-red-300 border border-red-500/20 rounded-md hover:bg-red-950/30">Revoke</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const { user, loading: authLoading, signInWithGoogle, signOut } = useAuth();
 
@@ -77,6 +263,10 @@ const App: React.FC = () => {
     );
   }
 
+  if (window.location.pathname === '/connect') {
+    return <ConnectPage user={user} signInWithGoogle={signInWithGoogle} signOut={signOut} />;
+  }
+
   if (!user) {
     return (
       <div className="min-h-screen bg-[#141418] flex items-center justify-center">
@@ -84,7 +274,7 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-display text-white mb-2">Lahari Media Engine</h1>
           <p className="text-zinc-400 text-sm mb-8">AI-powered devotional music video production</p>
           <button
-            onClick={signInWithGoogle}
+            onClick={() => signInWithGoogle()}
             className="inline-flex items-center gap-3 px-6 py-3 bg-white text-black rounded-lg font-medium text-sm hover:bg-zinc-100 transition-colors"
           >
             <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>

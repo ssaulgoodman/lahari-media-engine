@@ -22,7 +22,7 @@ const authFetch = async (url: string, init?: RequestInit): Promise<Response> => 
 const handleResponse = async (res: Response) => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    throw new Error(body.error?.message || body.error || `Request failed: ${res.status}`);
   }
   return res.json();
 };
@@ -70,6 +70,30 @@ export const updateProject = async (id: string, updates: Record<string, any>) =>
 export const deleteProject = async (id: string) => {
   const res = await authFetch(`${API}/projects/${id}`, { method: 'DELETE' });
   return handleResponse(res);
+};
+
+// ─── MCP Tokens ─────────────────────────────────────────────────────
+
+export const listMcpTokens = async () => {
+  const res = await authFetch(`${API}/mcp-tokens`);
+  const body = await handleResponse(res);
+  return body.data;
+};
+
+export const createMcpToken = async (opts?: { label?: string; expiresInDays?: number }) => {
+  const res = await authFetch(`${API}/mcp-tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+  });
+  const body = await handleResponse(res);
+  return body.data;
+};
+
+export const revokeMcpToken = async (tokenId: string) => {
+  const res = await authFetch(`${API}/mcp-tokens/${tokenId}`, { method: 'DELETE' });
+  const body = await handleResponse(res);
+  return body.data;
 };
 
 export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {

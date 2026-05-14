@@ -117,7 +117,7 @@ The facade and hosted MCP must keep behavior aligned: same tool names, same vali
 3. Local fallback `@lahari/mcp-server` package (done first pass).
 4. MCP token table + token management routes.
 5. Hosted `/mcp` Streamable HTTP transport using those tokens.
-6. `/connect` page that signs in and shows copy-paste install snippets.
+6. `/connect` page that signs in and shows copy-paste install snippets (done first pass).
 7. Skill/workspace distribution pass.
 8. OAuthProxy / one-click harness auth later if the ecosystem requires it.
 

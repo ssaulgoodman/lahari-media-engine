@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getSB, insertRow, selectColumns, selectOne, updateRows } from '../database.js';
+import { getSB, selectColumns, selectOne, updateRows } from '../database.js';
 
 const TOKEN_PREFIX = 'lahari_mcp_';
 const DEFAULT_EXPIRY_DAYS = 30;
@@ -38,9 +38,15 @@ export const createMcpToken = async (
     token_prefix: token.slice(0, 18),
     expires_at: daysFromNowIso(expiresInDays),
   };
-  await insertRow('mcp_tokens', row);
+  const { data, error } = await getSB()
+    .from('lahari_mcp_tokens')
+    .insert(row)
+    .select('id')
+    .single();
+  if (error) throw new Error(`DB insert mcp_tokens: ${error.message}`);
   return {
     kind: 'lahari.mcp_token.created',
+    id: data.id,
     token,
     tokenPrefix: row.token_prefix,
     label: row.label,
@@ -48,7 +54,7 @@ export const createMcpToken = async (
     install: {
       codex: `codex mcp add lahari --url ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'} --bearer-token-env-var LAHARI_MCP_TOKEN`,
       env: `export LAHARI_MCP_TOKEN=${token}`,
-      claude: `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'}`,
+      claude: `claude mcp add lahari --transport http --header 'Authorization: Bearer \${LAHARI_MCP_TOKEN}' ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'}`,
     },
   };
 };
