@@ -125,6 +125,7 @@ const appendJsonl = (filePath: string, value: Record<string, unknown>) => {
 export const recordMcpAudit = (entry: {
   phase: AuditPhase;
   tool: string;
+  source?: 'mcp' | 'mcp-remote';
   args?: unknown;
   result?: unknown;
   error?: unknown;
@@ -135,7 +136,7 @@ export const recordMcpAudit = (entry: {
   const resultSize = entry.result == null ? 0 : JSON.stringify(entry.result).length;
   const event = {
     ts: new Date().toISOString(),
-    source: 'mcp',
+    source: entry.source || 'mcp',
     phase: entry.phase,
     tool: entry.tool,
     projectId,

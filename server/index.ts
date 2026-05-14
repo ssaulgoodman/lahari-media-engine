@@ -28,6 +28,7 @@ import { adminRouter } from './routes/admin.js';
 import { promptsRouter } from './routes/prompts.js';
 import { renderRouter } from './routes/render.js';
 import { renderCallbackRouter } from './routes/render-callback.js';
+import { directorRouter } from './routes/director.js';
 import { requireAuth } from './middleware/auth.js';
 import { startRenderWatchdog } from './render-watchdog.js';
 import { startRenderReconciler } from './render-reconciler.js';
@@ -52,6 +53,7 @@ app.use('/api/projects', requireAuth, generateRouter);
 app.use('/api/projects', requireAuth, renderRouter);
 app.use('/api/queue', requireAuth, queueRouter);
 app.use('/api/prompts', requireAuth, promptsRouter);
+app.use('/api/director', requireAuth, directorRouter);
 // Admin routes use their own x-admin-secret auth
 app.use('/api/admin', adminRouter);
 // Renderer callback — auth via x-renderer-secret, not a user JWT
