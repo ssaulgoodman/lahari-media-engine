@@ -3,6 +3,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
 import { captureLahariIssue, recordMcpAudit } from '../server/services/lahariAudit.js';
@@ -25,12 +26,45 @@ const server = new McpServer({
   version: '0.1.0',
 });
 
+const toolAnnotations = (name: string): ToolAnnotations => {
+  const readOnlyPrefixes = [
+    'list_',
+    'get_',
+    'plan_',
+    'preview_',
+    'review_',
+    'write_project_notebook',
+    'write_project_artifacts',
+    'write_project_sheets',
+    'hydrate_project_workbench',
+  ];
+  if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session') {
+    return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  }
+  if (name === 'add_director_note' || name === 'lahari_capture_issue') {
+    return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  }
+  if (name === 'apply_script' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+    return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+  }
+  if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
+    return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  }
+  return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+};
+
 const registerAuditedTool = (
   name: string,
   config: Parameters<typeof server.registerTool>[1],
   handler: (args: any) => Promise<any>
 ) => {
-  server.registerTool(name, config, async (args: any) => {
+  server.registerTool(name, {
+    ...config,
+    annotations: {
+      ...toolAnnotations(name),
+      ...config.annotations,
+    },
+  }, async (args: any) => {
     const startedAt = new Date().toISOString();
     const start = Date.now();
     recordMcpAudit({ phase: 'start', tool: name, args, startedAt });

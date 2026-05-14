@@ -178,8 +178,41 @@ const server = new McpServer({
   version: pkg.version,
 });
 
+const toolAnnotations = (name) => {
+  const readOnlyPrefixes = [
+    'list_',
+    'get_',
+    'plan_',
+    'preview_',
+    'review_',
+    'write_project_notebook',
+    'write_project_artifacts',
+    'write_project_sheets',
+    'hydrate_project_workbench',
+  ];
+  if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session') {
+    return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  }
+  if (name === 'add_director_note' || name === 'lahari_capture_issue') {
+    return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  }
+  if (name === 'apply_script' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+    return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+  }
+  if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
+    return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  }
+  return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+};
+
 const registerTool = (name, config, handler) => {
-  server.registerTool(name, config, async (args) => {
+  server.registerTool(name, {
+    ...config,
+    annotations: {
+      ...toolAnnotations(name),
+      ...config.annotations,
+    },
+  }, async (args) => {
     try {
       return textResult(await handler(args || {}));
     } catch (error) {
