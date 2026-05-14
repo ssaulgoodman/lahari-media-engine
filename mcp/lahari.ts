@@ -93,6 +93,18 @@ registerAuditedTool('hydrate_project_workbench', {
   return textResult(await studio.hydrateProjectWorkbench(project, outputDir));
 });
 
+registerAuditedTool('write_project_notebook', {
+  title: 'Write project notebook',
+  description: 'Read-only. Returns deterministic local notebook files for this project. The agent should write each returned file path relative to the current workspace.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+  },
+}, async ({ projectId }) => {
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.buildProjectNotebook(project));
+});
+
 registerAuditedTool('review_storyboard_prompts', {
   title: 'Review storyboard prompts',
   description: 'Read-only. Reviews all storyboard prompts/cut plans for missing, stale, overlong, or blocked states and returns rewrite/generation commands.',

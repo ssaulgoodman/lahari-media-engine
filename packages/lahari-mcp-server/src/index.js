@@ -211,9 +211,15 @@ registerTool('get_project_actions', {
 
 registerTool('hydrate_project_workbench', {
   title: 'Hydrate project workbench',
-  description: 'Remote gap. Local desk-copy writing is handled by the artist setup workspace, not this remote MCP server yet.',
+  description: 'Deprecated remote gap. Use write_project_notebook for remote artist workspaces.',
   inputSchema: { projectId, outputDir: z.string().optional() },
-}, unsupported('hydrate_project_workbench', 'Requires local file artifact writer in @lahari/mcp-server or a future /api/director/workbench endpoint.'));
+}, unsupported('hydrate_project_workbench', 'Use write_project_notebook; it returns deterministic file payloads for the agent to write via harness file tools.'));
+
+registerTool('write_project_notebook', {
+  title: 'Write project notebook',
+  description: 'Read-only. Returns deterministic local notebook files for this project. The agent should write each returned file path relative to the current workspace.',
+  inputSchema: { projectId },
+}, ({ projectId }) => directorGet(`/api/director/projects/${encodeURIComponent(projectId)}/notebook`));
 
 registerTool('review_storyboard_prompts', {
   title: 'Review storyboard prompts',

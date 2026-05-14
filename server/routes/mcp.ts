@@ -11,6 +11,15 @@ import * as studio from '../services/codexStudio.js';
 
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.0';
+const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
+
+Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
+
+Artist flow: list_projects or attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace. Treat mirrors/ files as read-only desk copies. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md.
+
+Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
+
+Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
 
 type HostedAuth = {
   userId: string;
@@ -108,6 +117,8 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   const server = new McpServer({
     name: 'lahari',
     version: HOSTED_MCP_VERSION,
+  }, {
+    instructions: HOSTED_MCP_INSTRUCTIONS,
   });
 
   const registerTool = (
@@ -183,9 +194,15 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('hydrate_project_workbench', {
     title: 'Hydrate project workbench',
-    description: 'Remote gap. Local desk-copy writing belongs to the fallback local package.',
+    description: 'Deprecated remote gap. Use write_project_notebook for remote artist workspaces.',
     inputSchema: { projectId, outputDir: z.string().optional() },
-  }, unsupported('hydrate_project_workbench', 'Hosted MCP cannot write local .lahari desk-copy files.'));
+  }, unsupported('hydrate_project_workbench', 'Use write_project_notebook; it returns deterministic file payloads for the agent to write via harness file tools.'));
+
+  registerTool('write_project_notebook', {
+    title: 'Write project notebook',
+    description: 'Read-only. Returns deterministic local notebook files for this project. The agent should write each returned file path relative to the current workspace.',
+    inputSchema: { projectId },
+  }, async ({ projectId }) => studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId)));
 
   registerTool('review_storyboard_prompts', {
     title: 'Review storyboard prompts',

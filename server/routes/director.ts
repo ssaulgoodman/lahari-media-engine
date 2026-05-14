@@ -172,6 +172,8 @@ router.get('/projects/:projectId/actions', audited('director.project.actions', a
 
 router.get('/projects/:projectId/storyboard-status', audited('director.storyboard.status', async (req) => studio.buildStoryboardStatus(await fullProjectForUser(paramStr(req.params.projectId), req.userId))));
 
+router.get('/projects/:projectId/notebook', audited('director.project.notebook', async (req) => studio.buildProjectNotebook(await fullProjectForUser(paramStr(req.params.projectId), req.userId))));
+
 router.get('/projects/:projectId/shots/:shotId/packet', audited('director.shot.packet', async (req) => studio.buildShotPacket(await fullProjectForUser(paramStr(req.params.projectId), req.userId), paramStr(req.params.shotId))));
 
 router.post('/apply/shot-prompts', audited('director.apply.shot_prompts', async (req) => studio.applyShotPrompts(

@@ -77,11 +77,12 @@ This gives account-specific access without relying on Supabase OAuth support ins
 
 The hosted tool surface mirrors the internal MCP names where possible:
 - Read/session: `list_projects`, `attach_director_session`, `get_director_session`, project/shot packets, storyboard status
+- Workspace notebook: `write_project_notebook` returns deterministic `{ path, content, mode }` file payloads. The agent writes them into the current folder with harness file tools. This is how an empty artist workspace becomes a Lahari project notebook; no npm setup/template download is needed.
 - Apply-only text tools from R28
 - Project config tools from R29
 - Media tools: plan/generate storyboard/video, bulk storyboard generation, refine image, lock/unlock
 - Issue capture
-- Local-file tools return explicit `remote_facade_gap` errors instead of silently disappearing
+- Legacy local-file tools return explicit `remote_facade_gap` errors instead of silently disappearing
 
 ### Local Fallback Package
 
@@ -118,7 +119,7 @@ The facade and hosted MCP must keep behavior aligned: same tool names, same vali
 4. MCP token table + token management routes.
 5. Hosted `/mcp` Streamable HTTP transport using those tokens.
 6. `/connect` page that signs in and shows copy-paste install snippets (done first pass).
-7. Skill/workspace distribution pass.
+7. Skill/resource distribution pass.
 8. OAuthProxy / one-click harness auth later if the ecosystem requires it.
 
 ### Safety Notes

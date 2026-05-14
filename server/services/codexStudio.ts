@@ -70,6 +70,7 @@ import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 import { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
+export { buildProjectNotebook, type NotebookFile } from './codexStudio/notebook.js';
 export {
   applyGenerateStoryboard,
   applyGenerateVideo,
