@@ -180,6 +180,10 @@ const forkProject = async (
     last_concept_prompt: src.last_concept_prompt,
     last_write_shots_prompt: src.last_write_shots_prompt,
     style_generation_prompt: src.style_generation_prompt,
+    text_provider: src.text_provider,
+    song_type: src.song_type,
+    is_narrative: src.is_narrative,
+    is_meditative: src.is_meditative,
     user_id: opts?.newUserId ?? src.user_id,
     parent_project_id: sourceId,
     source_queue_id: opts && 'newSourceQueueId' in opts ? opts.newSourceQueueId : src.source_queue_id,
@@ -293,6 +297,9 @@ const forkProject = async (
           end_user_feedback: shot.end_user_feedback,
           prompts_stale: shot.prompts_stale,
           refined_from_prev_frame: shot.refined_from_prev_frame,
+          excluded_refs: shot.excluded_refs,
+          use_prev_storyboard_ref: shot.use_prev_storyboard_ref,
+          include_prev_cut_plan: shot.include_prev_cut_plan,
         });
       }
     }
