@@ -78,6 +78,15 @@ Not every operation should round-trip through the Lahari backend to call an LLM.
 
 **The web studio retains its own "Generate" buttons** with backend LLM endpoints so non-harness users still get AI authoring. Two paths converge at the same persistence layer.
 
+**Nuance on media generation as harness capabilities evolve.** The "tool call" entries above are not permanent boundaries — they reflect where harness capability is *today*. The honest framing is "does the harness have a capable native generator for this specific case":
+
+- **Text** — always harness-native. Harness has the LLM loaded; no reason to round-trip.
+- **Image** — *mixed today*. Harness-native is fine when the case is simple (single-image input, no multi-reference grounding, no specialized model needed). Tool call when multi-ref grounding (locked style + cast + env) or a specialized model is required. As harnesses grow multi-ref image capability, more cases shift to harness-native. **R34** files the apply-only tools for harness-native image output so the pipeline can absorb it.
+- **Video** — tool call today. No major harness has native video gen capability yet. Watch this space.
+- **Audio** — tool call today. Same as video.
+
+**Both paths must converge at the same apply layer.** Whether bytes came from a harness-native gen or a dedicated tool, persistence + drift + events go through one code path. The artist never knows which engine produced the result; the architecture composes.
+
 ---
 
 ## 5. Permission Model

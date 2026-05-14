@@ -627,6 +627,69 @@ Codex Desktop and Claude Code sidebars hide dot-prefixed directories by default.
 
 ---
 
+### R32 — Per-call model override on generation tools
+
+Status: **proposed** · Raised: 2026-05-14
+
+Today changing the image/storyboard/video model requires `apply_project_preferences` (R29 phase 1) which mutates project state. Codex's workaround for "use a different model just for this one refine" is: switch global → do work → switch back. Three problems:
+1. If the refine errors mid-way, the project is left in the wrong state.
+2. Parallel work inherits the temporary switch.
+3. Three director events for what was conceptually one decision.
+
+**Recommendation:** add an optional `modelOverride` parameter to generation tools (`refine_storyboard_image`, `generate_storyboard`, `bulk_generate_storyboards`, `apply_generate_video`). Uses the override for this call only; project preferences unchanged. Director event records which model was actually used.
+
+Example:
+```js
+refine_storyboard_image({
+  projectId, shotId, feedback,
+  modelOverride: { storyboardProvider: 'gpt-image-2' }  // optional
+})
+```
+
+**Cost:** ~half day. Mechanical addition across ~5 tools. Helper function `resolveModelForCall(project, override)` picks the call-time model with fallback to project preference.
+
+**Why it matters:** "Try a different model for just this one shot" is a common debugging move (see R33 — model bias correction). Forcing a state change for transient overrides is heavy. R32 lets Codex compose model choice per-call without ceremony.
+
+---
+
+### R33 — Model-bias correction system
+
+Status: **proposed** · Raised: 2026-05-14
+
+Different image/video models have known aesthetic biases. GPT-Image-2 leans dark/grainy/high-contrast. Some models lean cool-palette. When the artist switches models mid-project (whether via project preference, R32 per-call override, or fallback when one provider is down), the new model's bias fights the locked style ref.
+
+**Three layers, all composing at prompt-assembly time:**
+
+| Layer | What | Where |
+|---|---|---|
+| Engine baseline (tier 3) | Known model biases as anti-pattern lists. `gpt-image-2 → ['avoid grainy texture', 'avoid heavy darkening', 'avoid high-contrast color grading']` | `server/prompts/model-bias.ts` (new) |
+| Project extension (tier 1) | This song's specific extensions/suppressions of the baseline | R29 phase 2-ish: `lahari/projects/<id>/config/model-corrections.md` |
+| Skill awareness | Teach Codex to diagnose model-bias drift via `render-triage`; apply correction via R32 or project config | `render-triage` shard, light extension |
+
+Prompt assembly: global template (or R29 project override) + model-bias correction (R33 engine baseline, plus project R33 extension if any) → final prompt sent to model.
+
+**Cost:** ~1-2 days. New service file, new prompt-assembly helper, extension hooks in storyboard/video prompt builders.
+
+**Why it matters:** the biggest model-switching headache in the 2026-05-13 test was style drift when GPT-Image-2 took over. R33 encodes the workaround systematically so Codex doesn't have to manually fight model bias every time.
+
+---
+
+### R34 — Apply-only tools for harness-native media output
+
+Status: **proposed** · Raised: 2026-05-14
+
+R28 established the pattern for harness-native text: Codex writes, apply tool persists. The same pattern should exist for media when the harness has capable native generation. Currently the harness can generate images natively (OpenAI's image gen under Codex Desktop's hood) but Lahari has nowhere to put the output — bytes appear in chat, never land as a tracked asset.
+
+**Recommendation:** add `apply_storyboard_board(shotId, imageData, prompt, baseHash?)` that takes bytes from Codex's native generation, uploads to Supabase Storage, creates an asset row, creates a version, marks shot updated, records event. Same R28 pattern extended to images. Future entries (`apply_voiceover_audio`, `apply_render_composition`) follow as harness capabilities grow.
+
+**Today's capability gap:** harness native image gen is single-image-input today; storyboard refinement needs multi-reference grounding (locked style + cast + env). For multi-ref work, dedicated tools (Lahari's `refine_storyboard_image` via Segmind/Google) stay the right choice. R34 is for the *simple* image-gen cases that the harness can already handle, and for *future* multi-ref capability when harnesses grow it.
+
+**When to build:** not high-priority today because harness native image gen fails on multi-ref work (which is most storyboard refinement). File now so the pattern is documented; build when capability lands.
+
+**Why it matters:** doctrine §4 already softened to acknowledge "image gen is mixed." R34 is the apply-side that makes harness-native image gen actually composable. Without it, even when capability arrives, output has no home.
+
+---
+
 ## Risks / Watch List
 
 Things I might be wrong about. Worth revisiting as we learn.
@@ -640,6 +703,23 @@ Things I might be wrong about. Worth revisiting as we learn.
 - **W7.** Project-local prompt catalogs can become a second source of truth if file edits are not imported through typed apply tools. Desk-copy files are useful; production overrides must live in Supabase.
 - **W8.** Codex Desktop / Claude Code MCP hot-reload gap: registered MCP servers don't appear in active chat sessions until app restart. Upstream limitation, not a Lahari bug. R18 enforcement (skill refuses CLI fallback when MCP not visible) handles the user-facing failure mode. File as feature request with OpenAI/Anthropic when stable surface exists.
 - **W9.** R29 phase 2 (concept/script/shot_prompts overrides) overlaps with R28 (Codex-native apply for the same content). If R28 ships first and Codex sessions stop hitting backend LLMs entirely, R29 phase 2's value collapses to "web studio users only." Decide phase 2 scope only after observing post-R28 usage.
+
+---
+
+## Polish Items
+
+Small things noticed but not substantial enough for their own R#. Address opportunistically when adjacent code is being touched.
+
+- **P-poli-01 — Replay idempotency on apply tools.** Apply tools record a second event on retry (same `previewId`). Not blocking today (visible in log, human-interpretable), but mandatory before any auto-retry path. Consider uniqueness on `(event_type, payload->>'previewId')` for apply events.
+- **P-poli-02 — Known-event-types registry.** Codex creates event types on the fly (e.g., `storyboard_prompt_direct_edit`, `project_settings_updated`). Fine architecturally (event_type is open text) but worth maintaining a documented list of known types in `docs/director-events.md` for analytics + journal narration consistency.
+- **P-poli-03 — `compare_versions` MCP tool.** Visual diff between two generation versions (board v1 vs v2, video v1 vs v2). Would compose with the web studio's existing version history. Belongs in the storyboard iteration loop after `get_storyboard_status` + `refine_storyboard_image`. Small build (~half day) — generates a side-by-side contact-sheet HTML.
+- **P-poli-04 — Web studio "Codex override active" badge.** R29 design decided no inline editing in phase 1, just a small badge. Badge not yet built — when storyboard generation uses a project override, the BlueprintContextBar should show "Codex storyboard override active." ~1 hour of frontend work.
+- **P-poli-05 — R6 phase 2 split (preview/apply/rollback families).** Codex's R6 first pass deferred this intentionally because R28 reshapes the apply pattern. Now that R28 has shipped under `applies/`, the preview/apply/rollback chains remaining in `codexStudio.ts` barrel can move into focused `previews/`, `rollbacks/` modules. ~2-3 hours.
+- **P-poli-06 — Structured `deviation` field on model registries.** R21's doctor command warns on routing drift via regex on `note` text ("Segmind credits out", "TEMP routing"). Fragile — different wording silently breaks detection. Add a structured `deviation: { reason: 'segmind-credits-out', expectedProvider: 'segmind' }` field to model configs; doctor reads structured field instead of grepping prose.
+- **P-poli-07 — Audit log rotation strategy.** Daily JSONL rotation today. Long-running projects accumulate many files. Consider per-month rotation or size-based rotation for `_unscoped` (which catches all CLI invocations). Not urgent.
+- **P-poli-08 — Deprecate `critique-shot-image` catalog prompt (R7).** The prompt is still in `server/prompts/catalog.ts` but the `render-triage` skill now covers the judgment. Remove the catalog entry; if any fact-gathering primitive emerges later (prompt-length stats, color histogram, ref similarity), add as a small read-only tool — not a Claude call.
+- **P-poli-09 — Render notification primitive (R11).** Long-running ops (video gen 60-90s, render minutes) have no out-of-chat notification. The artist sits and waits. Options: apply tool returns "expect ~Ns" + Codex auto-polls; or `notify_when_done` MCP primitive that lands desktop push/email. Watch list candidate.
+- **P-poli-10 — RLS policies on R29 tables before R2/R16 land.** `lahari_project_config` and `lahari_project_prompt_overrides` have RLS enabled but no policies — service-role-only access today. Realtime subscriptions (R2) and browser-bridged auth (R16) both need policies. Add `select where auth.uid() IN (select user_id from lahari_projects where id = project_id)` per the pattern in `lahari_director_events`.
 
 ---
 
@@ -688,3 +768,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-14 — Claude reviewed `b0a2c83`. All six items verified against code: F1 honest scope-setting in skill; F2 `classificationIssue` moved to end of `openIssues` so it's last-warning not bottleneck; F3 imperative capture-issue trigger with broader list; F4 re-attach dedup gated on four conditions with `LAHARI_ATTACH_JOURNAL_DEDUP_MINUTES` env override; action ranking gates video gen on locked storyboards (storyboard mode) or completed frames (keyframe); zero remaining "Hydrated:" strings, "Updated:" everywhere; new `appendSessionJournalEntry` helper provides post-mutation journal append pattern that R28 can reuse as template. R12 F1+F4, R8 F3, R15 Hydrated→Updated, R29 desk-copy extension, R31 — all now `shipped first pass`. Ready for Saul's continuation test, then R28 implementation.
 - 2026-05-14 — Codex implemented R28 apply-only text tools. New modules under `server/services/codexStudio/applies/` cover `apply_shot_prompts`, `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_script`, `apply_concept`, and `apply_video_prompt`; the `codexStudio.ts` root remains a re-export barrel. MCP + CLI surfaces added, R25 backend-LLM storyboard writer tools marked deprecated, read packets now expose base hashes for concept/script/shot/storyboard/video prompt drift checks, and every apply records director events + appends local journal entries. New migration `2026-05-14_apply_script_rpc.sql` adds atomic `lahari_apply_script` RPC. Verified with `npx tsc --noEmit`, `npm run build`, and `git diff --check`. Pending: apply the migration before using `apply_script` against live projects, then Claude review.
 - 2026-05-14 — Claude reviewed `14b127d`. All five locked spec decisions verified in code: Q1 array-only on `apply_shot_prompts`; Q2 atomic `lahari_apply_script` RPC with `security definer + search_path + revoke from public + grant to service_role` matching the rollback RPC's defensive shape; Q3 R25 tools keep their backend-LLM code paths plus get both a description warning and runtime `console.error('[deprecated] ...')` on every call; Q4 `validateBaseHash` returns null when baseHash is missing or `force: true` (optional drift check with escape hatch); Q5 per-shot `shot_prompts_applied` events emitted inside the bulk loop. `helpers.ts` factored cleanly (157 lines): `applyError`, `validateBaseHash`, `ensureLength`, `findProjectShot`, `appendApplyJournal`, `hasDownstreamVisualWork`, `scriptDraftHash`, `normalizeScriptForApply`. Structured errors include `field`, `shotId`, hashes, and `next` suggested-action — the retry-on-validation-error loop is real. Bulk applies return both `updates` and `rejected` arrays so Codex can retry partial failures. Skill updated with "Writing Content for Apply Tools" section per spec. Build green. **R28 status: shipped first pass — pending Supabase application of `2026-05-14_apply_script_rpc.sql` before `apply_script` works on live projects.**
+- 2026-05-14 — Claude filed R32 (per-call model override), R33 (model-bias correction system), R34 (apply-only tools for harness-native media output) as new recommendations from the 2026-05-13 test session's friction. Doctrine §4 updated with the nuance that media generation tool-call entries are not permanent boundaries — they reflect today's harness capability; image gen is mixed, video/audio are tool-only today but watch this space. Both paths must converge at the same apply layer regardless of which engine produced the bytes. Polish Items section added to the ledger with 10 items (P-poli-01 through P-poli-10) covering replay idempotency, event types registry, compare_versions tool, web studio override badge, R6 phase 2 split, structured deviation field, audit log rotation, R7 catalog deprecation, R11 notifications, and R29 RLS policies. None block testing; all are "address opportunistically when adjacent code is being touched."
