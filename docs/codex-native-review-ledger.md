@@ -131,6 +131,9 @@ One mega-skill is fine for v1 but the real architecture is taste shards loaded c
 
 **Why it matters:** A mega-skill is read every session whether relevant or not. Fragmented skills are a way to grow taste without growing prompt overhead. The shards also prep R28: `storyboard-prompt-craft` and `script-doctor` are the rubrics that shape Codex-written content quality when apply-only tools replace LLM-wrappers.
 
+**Follow-up from 2026-05-14 test session:**
+- **F3 (in-flight):** `lahari_capture_issue` trigger strength. Real friction surfaced in test (session rename failure) but Codex didn't auto-capture; the issue only surfaced in post-test review. Skill instruction currently reads "consider calling" — too soft. Strengthen to imperative: "WHEN a promised workflow fails or a tool returns unexpected output, immediately call `lahari_capture_issue` before proceeding." Same imperative tone for other capture triggers.
+
 ---
 
 ### R9 — Be ruthless about MCP tool count
@@ -204,6 +207,10 @@ A new Codex session should:
 
 **Still open (small):** automated session-title rename via Codex's harness API if/when one exists. Today it's a nudge to the artist.
 
+**Follow-ups from 2026-05-14 test session:**
+- **F1 (in-flight):** session rename language is too strong — skill says "suggest renaming" which Codex interprets as a promise it then can't deliver (harness has no programmatic rename API; this is W8). Soften to "tell the user the suggested title; they rename manually if they want." Don't promise actions we can't deliver.
+- **F4 (in-flight):** re-attach journal noise. 11 "session attached" entries appeared in a 2-hour test span, most with no new events between them. Fix: when attach happens soon after the prior attach AND `newEvents === 0`, update `state.json` only — skip appending the journal block. Keep journal entries for meaningful re-attaches.
+
 ---
 
 ### R13 — Director sessions vs engine sessions distinction
@@ -231,6 +238,8 @@ Status: **shipped first pass** · Raised: 2026-05-13 · Updated: 2026-05-13
 The skill should teach Codex that when the artist names a song or asks "what's going on with X," the right opening move is attach + hydrate + diagnose + report — not "let me hydrate the project first." The artist should never learn the word "hydrate."
 
 **Shipped so far:** AGENTS/docs/tool descriptions now frame `attach_director_session` as "open/attach" and keep hydrate as an internal primitive.
+
+**Follow-up from 2026-05-14 test session (Codex-added, in-flight):** rename `Hydrated:` → `Updated:` in local markdown (brief.md, script.md, audio-analysis.md, etc.). Same banned-vocab cleanup; the timestamp header in workbench files still leaks "Hydrated" to artist eyes.
 
 ---
 
@@ -572,6 +581,22 @@ Phase 1 objects:
 
 **Why it matters:** Project-specific taste improvements should be project-owned configuration, not tier-3 engine edits. This gives Codex a safe editable surface for model choices and prompt recipes while keeping Supabase canonical.
 
+**Follow-up from 2026-05-14 test session (Codex-added, in-flight):** extend the post-apply desk-copy refresh pattern to other mutating MCP tools where cheap (e.g., after `apply_generate_storyboard`, `refine_storyboard_image`, character/env lock toolchains). Same shape as R29's `writeProjectConfigDeskCopy` call after each apply: mutation succeeds → re-fetch canonical → rewrite the relevant desk-copy + hash. Keeps local state honest without forcing a full re-attach.
+
+---
+
+### R31 — Diagnosis bottleneck priority + action ranking
+
+Status: **in-flight (Codex stabilization pass)** · Raised: 2026-05-14
+
+Two related bugs surfaced in the 2026-05-14 test session driving project `13c259ce-57eb-4da3-8b7e-4e78f1940a1d` (Sri Mahaganapathi Prarthasnmarana Stotram) through 9 phases of work:
+
+**F2 — Stuck-bottleneck diagnosis.** "Song classification is missing" appeared as the `bottleneck` in every attach diagnosis (11 attaches over 2 hours) even after the workflow advanced through audio analysis → concept → script → style → cast/env → storyboard generation. Either: (a) the bottleneck check reads a field that was never populated for this fork, (b) the fork didn't inherit song classification from parent, or (c) audio re-analysis was skipped. **Fix:** make song classification a *warning* not a *bottleneck* once production has moved past audio analysis. The bottleneck should reflect the current production phase's blocker, not a stale audio-stage gap.
+
+**Action ranking.** Storyboard-mode video gen appeared in recommended action lists before storyboard boards were generated/locked. For Seedance-storyboard projects, video can't run until boards are locked, so suggesting it preemptively is wrong. **Fix:** in `buildProjectActionList`, gate video action visibility on `storyboardWorkflow && shot.storyboardLocked` for storyboard-mode projects.
+
+**Why it matters:** the diagnosis is the artist's most-read sentence per session ("here's what to do next"). Persistent stale bottleneck messages dilute trust; out-of-order actions cause wasted time and money.
+
 ---
 
 ### R30 — Rename `.lahari/` → `lahari/` for sidebar visibility
@@ -648,3 +673,5 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-13 — R28 spec open questions locked by Saul + Claude: (1) array-only for `apply_shot_prompts`; (2) atomic-only for `apply_script`; (3) deprecated R25 tools stay as separate code paths through 3-step removal; (4) `baseHash` optional with skill teaching "always pass it"; (5) bulk applies emit per-shot director events, not one bundle. Spec updated with locked decisions; ready for Codex implementation.
 - 2026-05-13 — Codex implemented R29 phase 1. Added `lahari_project_config` + `lahari_project_prompt_overrides` migration with history-preserving partial active index, project config service with drift hashes, `.lahari/projects/<projectId>/config/preferences.json`, `prompts/storyboard.md`, `prompts/video.md`, `hashes.json`, attach/packet summaries, backend preference/override reads in storyboard planner/renderer and storyboard-mode video builder, plus MCP/CLI tools `apply_project_preferences`, `apply_project_prompt_override`, and `revert_project_prompt_override`. Verified with `npm run build`, `npx tsc --noEmit`, and `git diff --check`. Pending: apply migration to Supabase and Claude review.
 - 2026-05-13 — Codex shipped R6 first-pass split. `server/services/codexStudio.ts` reduced from 3,622 lines to 1,729 lines while keeping it as the CLI/MCP public barrel. New focused modules: `codexStudio/core.ts` (shared types/helpers/status), `packets.ts` (project/shot packets), `sheets.ts` (reports/contact sheets), `plans.ts` (action lists/storyboard prompt review), `storyboardOps.ts` (storyboard/video generation and R29 apply/revert ops). Verified with `npm run build`, `npx tsc --noEmit`, and `git diff --check`. Remaining future split: sessions/workbench and preview/apply/rollback families.
+- 2026-05-14 — Saul drove a real 2-hour test session on fork `13c259ce-57eb-4da3-8b7e-4e78f1940a1d` (Sri Mahaganapathi Prarthasnmarana Stotram). Workflow advanced from audio analysis through concept → script → style → cast/env → storyboard generation for shot 1. Architecture claims validated end-to-end via audit + journal: MCP-first discipline held (16 of 17 tool calls `mcp/*`; only CLI was `audit tail`), R29 agency layer actively used (`apply_project_preferences` called 3x mid-flow), skill-driven taste applied (new `storyboard_prompt_direct_edit` event), production-language operator notes throughout. Surfaced four real friction items + two Codex-added polish notes. **Filed as follow-ups under R8 (F3), R12 (F1+F4), R15 (Hydrated→Updated), R29 (post-apply desk-copy refresh extension), plus new R31 (diagnosis bottleneck + action ranking).** R30 explicitly deferred — touches setup/gitignore/docs/skills/muscle-memory, cosmetic relative to F1-F4, save for separate pass with backwards-compat plan.
+- 2026-05-14 — Codex taking stabilization pass: F1+F4 (R12), F3 (R8), F2+action ranking (R31), Hydrated→Updated (R15), post-apply desk-copy refresh (R29). Claude reviews, no parallel implementation. Sequence: stabilization commit → Saul quick continuation test → R28 implementation (apply-only tools under `server/services/codexStudio/applies/`) → Claude reviews.
