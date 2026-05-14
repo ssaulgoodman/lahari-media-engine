@@ -52,20 +52,22 @@ export const buildProjectActionList = (project: Project) => {
 
       if ((!shot.videoUrl || shot.videoStatus === 'stale' || shot.videoStatus === 'error') && !shot.locked) {
         const plan = planGenerateVideo(project, shot.id);
-        actions.push({
-          id: `generate-video:${shot.id}`,
-          label: `Generate video for ${label}`,
-          kind: 'generate_video',
-          shot: { id: shot.id, label, beat },
-          canRun: plan.canRun,
-          paid: plan.paid,
-          estimatedCost: plan.estimatedCost,
-          prerequisites: plan.prerequisites,
-          webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-video' }),
-          cli: `npm run lahari -- apply generate-video ${project.id} ${shot.id}`,
-          mcpTool: 'apply_generate_video',
-          plan,
-        });
+        if (plan.canRun) {
+          actions.push({
+            id: `generate-video:${shot.id}`,
+            label: `Generate video for ${label}`,
+            kind: 'generate_video',
+            shot: { id: shot.id, label, beat },
+            canRun: plan.canRun,
+            paid: plan.paid,
+            estimatedCost: plan.estimatedCost,
+            prerequisites: plan.prerequisites,
+            webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-video' }),
+            cli: `npm run lahari -- apply generate-video ${project.id} ${shot.id}`,
+            mcpTool: 'apply_generate_video',
+            plan,
+          });
+        }
       }
 
       if (shot.videoUrl && !shot.locked) {
@@ -162,4 +164,3 @@ export const buildStoryboardPromptReview = (project: Project) => {
     items,
   };
 };
-

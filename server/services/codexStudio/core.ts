@@ -101,6 +101,20 @@ export const defaultProjectWorkbenchDir = (project: Project): string => {
   return path.join(process.cwd(), '.lahari', 'projects', project.id);
 };
 
+export const journalEntry = (title: string, body: string): string => {
+  return `\n\n## ${new Date().toISOString()} — ${title}\n\n${body.trim()}\n`;
+};
+
+export const appendSessionJournalEntry = (project: { id: string; title: string }, title: string, body: string): string => {
+  const journalPath = sessionJournalPath(project.id);
+  fs.mkdirSync(path.dirname(journalPath), { recursive: true });
+  if (!fs.existsSync(journalPath)) {
+    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+  }
+  fs.appendFileSync(journalPath, journalEntry(title, body));
+  return journalPath;
+};
+
 export const readTextFileIfExists = (filePath: string): string | null => {
   if (!fs.existsSync(filePath)) return null;
   return fs.readFileSync(filePath, 'utf8');
@@ -234,8 +248,13 @@ export const recommendedActions = (project: Project): string[] => {
   if (counts.stalePrompts) actions.push('Review stale prompts before generating new assets.');
   if (counts.errors) actions.push('Inspect failed shots and retry manually with feedback.');
   if (storyboardWorkflow && counts.shots && counts.storyboards < counts.shots) actions.push('Generate missing storyboard boards.');
+  if (storyboardWorkflow && counts.storyboards > counts.lockedStoryboards) actions.push('Review and lock generated storyboard boards before video.');
   if (!storyboardWorkflow && counts.shots && counts.frames < counts.shots) actions.push('Generate missing start frames.');
-  if (counts.shots && counts.videos < counts.shots) actions.push('Generate missing videos after frames are ready.');
+  if (storyboardWorkflow) {
+    if (counts.lockedStoryboards > counts.videos) actions.push('Generate missing videos from locked storyboard boards.');
+  } else if (counts.shots && counts.frames === counts.shots && counts.videos < counts.shots) {
+    actions.push('Generate missing videos after frames are ready.');
+  }
   if (counts.shots && counts.lockedShots < counts.shots) actions.push('Review and lock completed shots.');
 
   return actions.slice(0, 8);
@@ -257,6 +276,7 @@ export const deriveCheckpointState = (project: Project) => {
   const storyboardPromptsComplete = hasScript && project.scenes.every((scene) => scene.shots.every((shot) => !!shot.storyboardPrompt));
   const framesComplete = counts.shots > 0 && counts.frames === counts.shots;
   const storyboardsComplete = counts.shots > 0 && counts.storyboards === counts.shots;
+  const storyboardsLockedComplete = storyboardsComplete && counts.lockedStoryboards === counts.storyboards;
   const videosComplete = counts.shots > 0 && counts.videos === counts.shots;
   const locksComplete = counts.shots > 0 && counts.lockedShots === counts.shots;
 
@@ -276,10 +296,14 @@ export const deriveCheckpointState = (project: Project) => {
     key = 'studio_review';
     label = 'Studio review';
     summary = 'All shot videos exist. Review quality, lock winners, and handle stale/error states.';
-  } else if (storyboardWorkflow && storyboardsComplete) {
+  } else if (storyboardWorkflow && storyboardsLockedComplete) {
     key = 'video_generation';
     label = 'Video generation';
     summary = 'Storyboard boards are complete. Generate or retry videos from locked boards and cut plans.';
+  } else if (storyboardWorkflow && storyboardsComplete) {
+    key = 'storyboard_review';
+    label = 'Storyboard review';
+    summary = 'Storyboard boards exist. Review and lock the reusable boards before video generation.';
   } else if (framesComplete) {
     key = 'video_generation';
     label = 'Video generation';
@@ -314,8 +338,8 @@ export const deriveCheckpointState = (project: Project) => {
     summary = 'Concept options exist. Choose, refine, or regenerate before script planning.';
   }
 
+  const classificationIssue = project.songType ? null : 'Song classification is missing; re-run audio analysis if this project still needs classification-sensitive decisions.';
   const openIssues = [
-    project.songType ? null : 'Song classification is missing; this may be an older project or unanalyzed cache path.',
     counts.stalePrompts ? `${counts.stalePrompts} stale prompt${counts.stalePrompts === 1 ? '' : 's'} need review.` : null,
     counts.errors ? `${counts.errors} error state${counts.errors === 1 ? ' needs' : 's need'} triage.` : null,
     missingRefs.cast.length ? `Missing character/entity references: ${missingRefs.cast.join(', ')}.` : null,
@@ -324,8 +348,10 @@ export const deriveCheckpointState = (project: Project) => {
     storyboardWorkflow && hasScript && !storyboardPromptsComplete ? 'Some shots are missing storyboard prompts/cut plans.' : null,
     !storyboardWorkflow && counts.shots && counts.frames < counts.shots ? `${counts.shots - counts.frames} start frame${counts.shots - counts.frames === 1 ? '' : 's'} missing.` : null,
     storyboardWorkflow && counts.shots && counts.storyboards < counts.shots ? `${counts.shots - counts.storyboards} storyboard board${counts.shots - counts.storyboards === 1 ? '' : 's'} missing.` : null,
+    storyboardWorkflow && counts.storyboards > counts.lockedStoryboards ? `${counts.storyboards - counts.lockedStoryboards} storyboard board${counts.storyboards - counts.lockedStoryboards === 1 ? '' : 's'} need review/lock before video.` : null,
     counts.shots && counts.videos < counts.shots ? `${counts.shots - counts.videos} video${counts.shots - counts.videos === 1 ? '' : 's'} missing.` : null,
     counts.shots && counts.lockedShots < counts.shots ? `${counts.shots - counts.lockedShots} shot${counts.shots - counts.lockedShots === 1 ? '' : 's'} not locked.` : null,
+    classificationIssue,
   ].filter(Boolean) as string[];
 
   return {

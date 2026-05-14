@@ -13,6 +13,7 @@ import {
 import { getStoryboardProvider } from '../../../constants/storyboardProviders.js';
 import { getVideoModel } from '../../../constants/videoModels.js';
 import {
+  appendSessionJournalEntry,
   compactText,
   defaultProjectWorkbenchDir,
   shotLabel,
@@ -258,6 +259,11 @@ export const writeStoryboardPromptForShot = async (project: Project, shotId: str
       cutPlanChars: result.cutPlanText.length,
     },
   });
+  appendSessionJournalEntry(
+    project,
+    opts.artistNote ? 'refined storyboard prompt' : 'wrote storyboard prompt',
+    `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nPrompt chars: ${result.storyboardPrompt.length}\nCut plan chars: ${result.cutPlanText.length}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard-prompt' })}`,
+  );
 
   return {
     kind: 'lahari.apply.write_storyboard_prompt',
@@ -333,6 +339,11 @@ export const bulkWriteStoryboardPrompts = async (project: Project, opts: {
       skipped,
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'bulk wrote storyboard prompts',
+    `Succeeded: ${results.filter((row) => row.ok).length}\nFailed: ${results.filter((row) => !row.ok).length}\nSkipped: ${skipped.length}\nForce: ${!!opts.force}`,
+  );
 
   return {
     kind: 'lahari.apply.bulk_write_storyboard_prompts',
@@ -447,6 +458,11 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
       result: eventResultPointers(result),
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'generated storyboard board',
+    `${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}\nShot ID: ${shotId}\nProvider: ${plan.provider.key}\nEstimated cost: $${plan.estimatedCost.toFixed(3)}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
+  );
 
   return {
     kind: 'lahari.generation_result.storyboard',
@@ -534,6 +550,11 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
       skipped,
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'bulk generated storyboard boards',
+    `Succeeded: ${results.filter((row) => row.ok).length}\nFailed: ${results.filter((row) => !row.ok).length}\nSkipped: ${skipped.length}\nEstimated cost: $${estimatedCost.toFixed(3)}\nForce: ${!!opts.force}`,
+  );
 
   return {
     kind: 'lahari.generation_result.bulk_storyboards',
@@ -591,6 +612,11 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
       result: eventResultPointers(result),
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'refined storyboard image',
+    `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nPrevious version: ${opts.previousVersionId || target.shot.storyboardVersionId || 'active'}\nFeedback: ${compactText(opts.feedback, 500)}\nEstimated cost: $${plan.estimatedCost.toFixed(3)}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
+  );
 
   return {
     kind: 'lahari.generation_result.refine_storyboard_image',
@@ -614,7 +640,7 @@ export const lockStoryboardBoard = async (project: Project, shotId: string, vers
   }
 
   const targetVersionId = versionId || target.shot.storyboardVersionId || null;
-  await lockStoryboardVersion(project.id, shotId, versionId);
+  await lockStoryboardVersion(project.id, shotId, targetVersionId || undefined);
   await recordDirectorEvent({
     projectId: project.id,
     source: 'codex',
@@ -627,6 +653,11 @@ export const lockStoryboardBoard = async (project: Project, shotId: string, vers
       webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'locked storyboard board',
+    `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nVersion ID: ${targetVersionId || 'active'}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
+  );
 
   return {
     kind: 'lahari.apply.lock_storyboard',
@@ -659,6 +690,11 @@ export const unlockStoryboardBoard = async (project: Project, shotId: string) =>
       webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'unlocked storyboard board',
+    `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nPrevious version: ${target.shot.storyboardVersionId || 'none'}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
+  );
 
   return {
     kind: 'lahari.apply.unlock_storyboard',
@@ -695,6 +731,11 @@ export const applyProjectPreferencesConfig = async (
       configPath: configCopy.preferencesPath,
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'applied project preferences',
+    `New hash: ${result.hash}\nLocal preferences: ${configCopy.preferencesPath}\nLocal hashes: ${configCopy.hashesPath}`,
+  );
 
   return {
     kind: 'lahari.apply.project_preferences',
@@ -734,6 +775,11 @@ export const applyProjectPromptOverrideConfig = async (
       configPath: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'applied project prompt override',
+    `Kind: ${kind}\nOverride ID: ${result.overrideId}\nNew hash: ${result.hash}\nLocal prompt: ${kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath}`,
+  );
 
   return {
     kind: 'lahari.apply.project_prompt_override',
@@ -773,6 +819,11 @@ export const revertProjectPromptOverrideConfig = async (
       configPath: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'reverted project prompt override',
+    `Kind: ${kind}\nSource: ${result.source}\nOverride ID: ${result.overrideId || 'none'}\nNew hash: ${result.hash}\nLocal prompt: ${kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath}`,
+  );
 
   return {
     kind: 'lahari.apply.revert_project_prompt_override',
@@ -811,6 +862,11 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
       result: eventResultPointers(result),
     },
   });
+  appendSessionJournalEntry(
+    project,
+    'generated video',
+    `${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}\nShot ID: ${shotId}\nMode: ${plan.mode}\nModel: ${plan.model.key}\nEstimated cost: $${plan.estimatedCost.toFixed(3)}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-video' })}`,
+  );
 
   return {
     kind: 'lahari.generation_result.video',
@@ -829,4 +885,3 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
     note: 'Generated shot video, updated the active video pointer, and attempted last-frame extraction.',
   };
 };
-

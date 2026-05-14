@@ -16,6 +16,7 @@ import {
   deriveCheckpointState,
   deriveDirectorDiagnosis,
   hasUsableShotPrompts,
+  journalEntry,
   listProjects,
   md,
   namesById,
@@ -103,10 +104,6 @@ export {
   webStudioUrl,
   writeArtifact,
 } from './codexStudio/core.js';
-
-const journalEntry = (title: string, body: string): string => {
-  return `\n\n## ${new Date().toISOString()} — ${title}\n\n${body.trim()}\n`;
-};
 
 const readSessionEventCursor = (projectId: string): { seq: number | null; createdAt: string | null } => {
   try {
@@ -208,6 +205,8 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   const dir = sessionDir(project.id);
   fs.mkdirSync(dir, { recursive: true });
 
+  const statePath = sessionStatePath(project.id);
+  const previousState = readJsonFileIfExists(statePath) as { updatedAt?: string } | null;
   const previousEventCursor = readSessionEventCursor(project.id);
   const newEvents = await listDirectorEvents(project.id, {
     afterSeq: previousEventCursor.seq,
@@ -218,7 +217,8 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   const state = sessionState(project, note, eventSyncSummary(newEvents, previousEventCursor), workbench.projectConfig);
 
   const journalPath = sessionJournalPath(project.id);
-  if (!fs.existsSync(journalPath)) {
+  const journalAlreadyExisted = fs.existsSync(journalPath);
+  if (!journalAlreadyExisted) {
     fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
 
@@ -231,8 +231,19 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   const noteBlock = note ? `\n\nOperator note: ${note}` : '';
   const eventBlock = `\n\nChanges since last attach:\n${formatDirectorEvents(newEvents)}`;
 
-  fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}${eventBlock}\n\nBottleneck: ${state.diagnosis.bottleneck}\nNext approved action: ${state.diagnosis.nextApprovedAction}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
-  fs.writeFileSync(sessionStatePath(project.id), `${JSON.stringify(state, null, 2)}\n`);
+  const previousAttachAt = previousState?.updatedAt ? Date.parse(previousState.updatedAt) : NaN;
+  const attachDedupMinutes = Number(process.env.LAHARI_ATTACH_JOURNAL_DEDUP_MINUTES || 10);
+  const recentAttach = Number.isFinite(previousAttachAt)
+    && Date.now() - previousAttachAt <= attachDedupMinutes * 60 * 1000;
+  const skipJournalAppend = journalAlreadyExisted
+    && recentAttach
+    && newEvents.length === 0
+    && !note?.trim();
+
+  if (!skipJournalAppend) {
+    fs.appendFileSync(journalPath, journalEntry('session attached', `Checkpoint: ${state.checkpoint.label}\n\n${state.checkpoint.summary}${noteBlock}${eventBlock}\n\nBottleneck: ${state.diagnosis.bottleneck}\nNext approved action: ${state.diagnosis.nextApprovedAction}\n\nOpen issues:\n${issues}\n\nRecommended next actions:\n${actions}`));
+  }
+  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
 
   return {
     kind: 'lahari.director.session.attached',
@@ -243,6 +254,8 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
     statePath: sessionStatePath(project.id),
     journalPath,
+    journalUpdated: !skipJournalAppend,
+    journalSkippedReason: skipJournalAppend ? `Skipped repetitive attach entry: no new events within ${attachDedupMinutes} minutes.` : null,
     workbenchDir: workbench.baseDir,
     workbenchArtifacts: workbench.artifacts,
     projectConfig: state.projectConfig,
@@ -910,7 +923,7 @@ const buildBriefMarkdown = (project: Project, actionList: ReturnType<typeof buil
 
   return `# ${project.title}
 
-Hydrated: ${new Date().toISOString()}
+Updated: ${new Date().toISOString()}
 Project ID: ${project.id}
 
 ## Current Read
@@ -949,7 +962,7 @@ const buildAudioAnalysisMarkdown = (project: Project): string => {
   return `# Audio Analysis
 
 Project: ${project.title}
-Hydrated: ${new Date().toISOString()}
+Updated: ${new Date().toISOString()}
 
 ## Classification
 
@@ -982,7 +995,7 @@ ${md(option.description || option.conceptDirection || JSON.stringify(option, nul
   return `# Concept Notes
 
 Project: ${project.title}
-Hydrated: ${new Date().toISOString()}
+Updated: ${new Date().toISOString()}
 
 ## Locked Concept
 
@@ -1017,7 +1030,7 @@ ${shots || 'No shots.'}`;
   return `# Script
 
 Project: ${project.title}
-Hydrated: ${new Date().toISOString()}
+Updated: ${new Date().toISOString()}
 
 ## Cast / Entities
 
@@ -1068,7 +1081,7 @@ ${shots}`;
   return `# Storyboard Prompts
 
 Project: ${project.title}
-Hydrated: ${new Date().toISOString()}
+Updated: ${new Date().toISOString()}
 
 ${scenes}
 `;

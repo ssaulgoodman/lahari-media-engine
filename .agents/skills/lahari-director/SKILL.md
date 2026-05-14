@@ -34,7 +34,7 @@ When the artist names a project or song:
 2. Call `attach_director_session` with the project ID. If the artist named a song but you don't have the ID, first call `list_projects` and confirm which one before attaching.
 3. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
 4. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
-5. Suggest renaming the Codex session to the project title or song name so the sidebar reads as a project picker. Skip if the session already has a sensible name.
+5. Tell the artist the suggested session title (`Lahari - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
 
 Your opening message after attaching should:
 
@@ -62,7 +62,7 @@ The default when the artist returns to a song is to **resume** the existing Code
 
 ## Friction Capture
 
-If a Lahari tool returns unexpected output, project state does not make sense, a deep link or action plan feels wrong, or you cannot reconcile the web studio with the packet, call `lahari_capture_issue` instead of guessing. Include severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.
+When you notice friction, capture it immediately. This includes a Lahari tool returning unexpected output, project state not making sense, a deep link/action plan feeling wrong, the web studio disagreeing with tool output, a promised harness action not actually being available, or repeated confusion in your own flow. Call `lahari_capture_issue` with severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.
 
 Tool-call audit logs are written under `.lahari/audit/<projectId>/`. An engine session can inspect them with:
 
