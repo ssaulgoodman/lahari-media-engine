@@ -10,13 +10,21 @@ const DIRECTOR_API_VERSION = '2026-05-14.r17-first-pass';
 
 type DirectorHandler = (req: Request, res: Response) => Promise<unknown>;
 
+const isApplyErrorResult = (data: unknown): data is { error: string; message?: string } => {
+  return !!data
+    && typeof data === 'object'
+    && typeof (data as any).error === 'string'
+    && ((data as any).message === undefined || typeof (data as any).message === 'string');
+};
+
 const ok = (res: Response, data: unknown) => res.json({
   ok: true,
   data,
 });
 
 const fail = (res: Response, error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error || 'Unknown director API error');
+  const applyErrorCode = isApplyErrorResult(error) ? error.error : null;
+  const message = isApplyErrorResult(error) ? error.message || error.error : error instanceof Error ? error.message : String(error || 'Unknown director API error');
   const status = message.includes('not found') ? 404
     : message.includes('Access denied') ? 403
       : message.includes('Invalid or expired') || message.includes('auth') ? 401
@@ -24,8 +32,9 @@ const fail = (res: Response, error: unknown) => {
   return res.status(status).json({
     ok: false,
     error: {
-      code: status === 401 ? 'auth_expired' : 'director_api_error',
+      code: applyErrorCode || (status === 401 ? 'auth_expired' : 'director_api_error'),
       message,
+      details: isApplyErrorResult(error) ? error : undefined,
     },
   });
 };
@@ -48,6 +57,10 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
   recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool, args, startedAt });
   try {
     const data = await handler(req, res);
+    if (isApplyErrorResult(data)) {
+      recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, error: data.message || data.error, durationMs: Date.now() - start, startedAt });
+      return fail(res, data);
+    }
     recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, result: data, durationMs: Date.now() - start, startedAt });
     return ok(res, data);
   } catch (error) {
@@ -58,6 +71,7 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
 
 const assertProjectAccess = async (projectId: string, userId?: string) => {
   if (!projectId) throw new Error('projectId is required');
+  if (!userId) throw new Error('Auth required');
   const row = await selectOne('projects', { id: projectId });
   if (!row) throw new Error(`Project not found: ${projectId}`);
   if (row.user_id !== userId) throw new Error('Access denied');
@@ -217,15 +231,20 @@ router.post('/rollback/project-prompt-override', audited('director.rollback.proj
   req.body.baseHash,
 )));
 
-router.post('/plan/generate-storyboard', audited('director.plan.generate_storyboard', async (req) => studio.planGenerateStoryboard(
+const previewGenerateStoryboard = audited('director.preview.generate_storyboard', async (req) => studio.planGenerateStoryboard(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
-)));
+));
 
-router.post('/plan/generate-video', audited('director.plan.generate_video', async (req) => studio.planGenerateVideo(
+const previewGenerateVideo = audited('director.preview.generate_video', async (req) => studio.planGenerateVideo(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
-)));
+));
+
+router.post('/preview/generate-storyboard', previewGenerateStoryboard);
+router.post('/preview/generate-video', previewGenerateVideo);
+router.post('/plan/generate-storyboard', previewGenerateStoryboard);
+router.post('/plan/generate-video', previewGenerateVideo);
 
 router.post('/generate/storyboard', audited('director.generate.storyboard', async (req) => studio.applyGenerateStoryboard(
   await fullProjectForUser(req.body.projectId, req.userId),
