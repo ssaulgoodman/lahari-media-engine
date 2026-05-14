@@ -1,161 +1,139 @@
-# R17 Distribution Design — `@lahari/setup` npm bootstrap
+# R17 Distribution Design — remote MCP primary, local package fallback
 
-Status: first-pass design
+Status: remote-first implementation started
 Date: 2026-05-14
 Companion to: `docs/codex-native-doctrine.md`, ledger R17, R16, R28, R29
 
 ## Goal
 
-A non-engineer artist runs ONE terminal command, then never touches a terminal again. Everything after is conversational Codex/Claude Code chat. The artist gets a clean workspace with AGENTS.md + skills + MCP wired to hosted Lahari + authenticated as themselves — no service keys on their machine, no engine repo access, no `~/.lahari/` plumbing they need to understand.
+A non-engineer artist connects their Codex/Claude harness to Lahari without seeing engine code, service keys, or local infra. Everything after is conversational Codex/Claude Code chat. The artist gets MCP tools wired to hosted Lahari and authenticated as themselves.
+
+**Primary path as of 2026-05-14:** hosted remote MCP at `/mcp`, authenticated with Lahari-issued personal MCP tokens. This is simpler than the earlier local-subprocess bootstrap: no local Node package required for the happy path, no `~/.lahari/credentials`, no refresh-token loop on the artist machine, and no version drift between a local MCP subprocess and Railway.
+
+**Fallback path:** keep `@lahari/mcp-server` as a documented local bridge for harnesses or environments where remote MCP is flaky. The fallback package is a thin HTTP client over the same Director API facade.
 
 ## Non-Goals
 
 - **Not a marketplace install.** When Codex Desktop gets a plugin marketplace, we'd add a one-click button that invokes the same bootstrap. Not v1.
-- **Not a pure conversational install.** Pattern A ("type 'set up Lahari' in chat") was considered and rejected for v1 robustness reasons (see ledger R17 entry, ledger verification log 2026-05-14). Could be added as a layer over Pattern B later.
-- **Not a separate Lahari editor app.** The artist's editor IS Codex Desktop / Claude Code. The bootstrap just configures it.
+- **Not a pure conversational install.** The artist still needs a concrete harness connection step. The primary version is a copy-paste remote MCP connection string; a local setup helper remains optional.
+- **Not a separate Lahari editor app.** The artist's editor IS Codex Desktop / Claude Code. Lahari only provides the hosted MCP server, visual web studio, and optional workspace templates.
 - **Not an engine code distribution.** The bootstrap doesn't ship engine code, prompt catalog, or migrations. Engine stays internal. Artist gets the *director surface* only.
 
-## The Artist's Experience
+## The Artist's Experience — Primary Remote MCP Path
 
 ```
-$ npx @lahari/setup init
+1. Artist opens https://lahari.media/connect
+2. Artist signs in with the existing Lahari Google OAuth flow.
+3. Lahari issues a personal MCP token (`lahari_mcp_...`) scoped to that user.
+4. The page shows harness-specific install snippets:
 
-Lahari setup
-============
+Codex:
+  export LAHARI_MCP_TOKEN=<token>
+  codex mcp add lahari --url https://lahari.media/mcp --bearer-token-env-var LAHARI_MCP_TOKEN
 
-What workspace folder should hold your Lahari work? [~/lahari-studio]
-> [Enter]
+Claude Code:
+  claude mcp add lahari --transport http \
+    --header "Authorization: Bearer <token>" \
+    https://lahari.media/mcp
 
-✓ Created ~/lahari-studio
-✓ Wrote AGENTS.md, skills, prompt config templates
-✓ Detected Codex Desktop (1.2.3)
-✓ Registered Lahari MCP server with Codex
-✓ Opened browser for sign-in...
-
-(browser opens to https://lahari.media/auth/cli)
-(artist signs in via Google OAuth)
-(browser redirects to http://localhost:53241/callback)
-(callback closes the browser tab automatically)
-
-✓ Signed in as <artist@email.com>
-✓ Saved credentials to ~/.lahari/credentials
-
-Done. Restart Codex Desktop, then open ~/lahari-studio.
-You can ask Codex anything Lahari-related — e.g.:
-  "List my Lahari projects"
-  "Open Sri Mahaganapathi Stotram"
-  "Start a new music video from this song URL"
+5. Artist restarts the harness once.
+6. Artist asks: "List my Lahari projects" or "Open Sri Mahaganapathi Stotram."
 ```
 
-Two terminal interactions: one Enter to confirm path, one wait for browser. Then never again.
+The token is tied to the artist's Lahari account. `/mcp` resolves the bearer token to `user_id` before any tool runs; every project load still checks `lahari_projects.user_id`.
 
 ## Architecture
 
-### Package shape
+### Account-specific Auth
 
-```
-@lahari/setup
-├── bin/
-│   └── lahari-setup.js          # the npx entry point
-├── src/
-│   ├── init.js                  # main flow: detect → write → register → auth
-│   ├── harness.js               # detect Codex vs Claude Code, MCP register
-│   ├── templates/               # AGENTS.md, skills/, prompts/, .lahari structure
-│   │   ├── AGENTS.md
-│   │   ├── skills/
-│   │   │   ├── lahari-director/SKILL.md
-│   │   │   ├── storyboard-prompt-craft/SKILL.md
-│   │   │   ├── script-doctor/SKILL.md
-│   │   │   ├── continuity-auditor/SKILL.md
-│   │   │   ├── style-ref-critic/SKILL.md
-│   │   │   └── render-triage/SKILL.md
-│   │   └── prompts/             # template files for project-config prompts
-│   ├── oauth.js                 # localhost callback + token capture
-│   ├── credentials.js           # ~/.lahari/credentials read/write
-│   ├── update.js                # `lahari-setup update` self-update
-│   └── doctor.js                # `lahari-setup doctor` diagnostics
-├── package.json
-└── README.md
+Do not ask artists to paste Supabase service keys or generic JWTs into harness configs. Lahari issues its own personal MCP token:
+
+```sql
+lahari_mcp_tokens(
+  id uuid primary key,
+  user_id text not null,
+  label text not null,
+  token_hash text not null unique,
+  token_prefix text not null,
+  created_at timestamptz,
+  expires_at timestamptz,
+  last_used_at timestamptz,
+  revoked_at timestamptz
+)
 ```
 
-Templates are kept in sync with the engine repo via a one-way export script (`npm run sync-templates` in the engine repo copies `.agents/skills/*` + AGENTS.md template into the setup package's templates/).
+Token lifecycle:
+- `/api/mcp-tokens` is behind normal Supabase `requireAuth`; the connect page calls it after login.
+- The raw token is shown once. Only `sha256(token)` is stored.
+- `/mcp` accepts `Authorization: Bearer lahari_mcp_...`, hashes it, verifies active/not expired, updates `last_used_at`, and attaches `user_id` to the MCP request.
+- Tool handlers enforce the same project ownership check as the Director API facade.
+- Revocation is just `revoked_at=now()`.
 
-### What the bootstrap actually does
+This gives account-specific access without relying on Supabase OAuth support inside each harness.
 
-`init.js` runs these steps in order. Each step has clear success criteria and a clear failure mode:
+### Hosted MCP Transport
 
-**Step 1 — Detect environment**
-- Find the harness (`codex` CLI in $PATH? `claude` CLI in $PATH? Or both?)
-- Find Node version (require ≥20)
-- Find OS (some path handling differs Mac/Linux/Windows)
-- Find the user's home directory
+`/mcp` speaks Streamable HTTP MCP and is stateless. Each POST creates a short-lived MCP server instance whose tool handlers close over the authenticated `user_id`.
 
-**Step 2 — Pick workspace location**
-- Prompt for workspace path with default `~/lahari-studio`
-- Confirm overwrite if directory exists with non-empty Lahari files
+The hosted tool surface mirrors the internal MCP names where possible:
+- Read/session: `list_projects`, `attach_director_session`, `get_director_session`, project/shot packets, storyboard status
+- Apply-only text tools from R28
+- Project config tools from R29
+- Media tools: plan/generate storyboard/video, bulk storyboard generation, refine image, lock/unlock
+- Issue capture
+- Local-file tools return explicit `remote_facade_gap` errors instead of silently disappearing
 
-**Step 3 — Write workspace files**
-- Create workspace directory
-- Copy template `AGENTS.md` to workspace root
-- Copy `.agents/skills/*` to workspace (Codex picks them up; the directory is gitignored which is fine — these are operating files)
-- Copy `.lahari/projects/templates/config/` skeleton (empty prompts/, hashes.json absent)
-- Copy `.gitignore` template (excludes `.lahari/sessions`, `.lahari/audit`, `.lahari/issues`, credentials)
+### Local Fallback Package
 
-**Step 4 — Register MCP server**
+`@lahari/mcp-server` remains useful as a fallback and for debugging. It runs as a stdio subprocess and calls the hosted Director API facade. It should not be the default artist path anymore.
 
-Per harness:
+Use it when:
+- A harness has remote MCP bugs.
+- An operator needs local artifact-writing affordances.
+- We want to diagnose remote transport separately from the Director API facade.
 
-```
-Codex Desktop:
-  codex mcp add lahari \
-    --env LAHARI_API_URL=https://lahari-media-engine-production.up.railway.app \
-    -- npx -y @lahari/mcp-server
+The fallback package may continue to use a credentials file or token env var, but it is no longer the source of truth for distribution.
 
-Claude Code (note: -e after name due to arg-order bug):
-  claude mcp add --scope user lahari \
-    -- npx -y @lahari/mcp-server \
-    -e LAHARI_API_URL=https://lahari-media-engine-production.up.railway.app
-```
+### Workspace Files and Skills
 
-(The actual arg orderings are encoded per harness based on tested syntax; setup script doesn't trust generic docs because we've already been bitten.)
+Remote MCP does not install skills by itself. For v1:
+- Internal users keep using this repo/worktree with `AGENTS.md` and `.agents/skills/*`.
+- Artist distribution can start with a small "Lahari workspace template" download or future setup helper that writes `AGENTS.md` + skill shards only. It does not need to register a local MCP subprocess.
+- Later plugin packaging can make the skills first-class in the harness UI.
 
-**Step 5 — OAuth localhost callback (R16)**
+### Hosted Director API facade (shared spine)
 
-```
-1. Start small HTTP server on random localhost port (e.g. :53241)
-2. Open browser to https://lahari.media/auth/cli?redirect=http://localhost:53241/callback
-3. Artist signs in via existing Lahari Google OAuth flow
-4. Auth server redirects to localhost callback with token in query params or POST body
-5. Local server captures token, sends artist a "you can close this tab" HTML response
-6. Local server shuts down
-```
+The Director API facade remains useful under `/api/director/*`:
+- The local fallback MCP calls it.
+- The hosted MCP can call the same service-layer functions directly.
+- It provides stable JSON envelopes for web/admin/debug use.
 
-**Step 6 — Save credentials**
+The facade and hosted MCP must keep behavior aligned: same tool names, same validation, same ownership checks, same audit source (`mcp-remote`).
 
-`~/.lahari/credentials` file with mode 0600 (user-readable only):
+### Implementation Order (revised)
 
-```json
-{
-  "version": 1,
-  "api_url": "https://lahari-media-engine-production.up.railway.app",
-  "access_token": "<jwt>",
-  "refresh_token": "<refresh>",
-  "expires_at": "2026-06-14T18:00:00Z",
-  "user": {
-    "id": "<uuid>",
-    "email": "<artist@email.com>"
-  }
-}
-```
+1. Hosted Director API facade under `/api/director/*` (done first pass).
+2. Fix facade error envelopes and preview vocab (done).
+3. Local fallback `@lahari/mcp-server` package (done first pass).
+4. MCP token table + token management routes.
+5. Hosted `/mcp` Streamable HTTP transport using those tokens.
+6. `/connect` page that signs in and shows copy-paste install snippets.
+7. Skill/workspace distribution pass.
+8. OAuthProxy / one-click harness auth later if the ecosystem requires it.
 
-The MCP server reads this file at startup, refreshes the access token when it's near expiry, and uses it for all Lahari API calls.
+### Safety Notes
 
-**Step 7 — Print ready summary + next steps**
+- Store only token hashes, never raw MCP tokens.
+- Token routes are behind normal Supabase auth.
+- `/mcp` does not accept Supabase service keys or anon keys.
+- Every project-scoped tool calls `assertProjectAccess`.
+- Tokens should expire by default and be revocable from the connect/account page.
+- Hosted MCP local-file tools must fail loudly with `remote_facade_gap`; no imaginary desk-copy writes.
+- Paid/mutating tools keep the same plan/apply discipline taught in skills.
 
-Tell the artist:
-- Restart Codex Desktop / Claude Code once
-- Open the workspace folder in the harness
-- Try a starter command ("List my Lahari projects" or "Open <song name>")
+## Local Bootstrap Fallback (historical first design)
+
+The rest of this document records the earlier npm-bootstrap design. Keep it as fallback/reference, not as the primary distribution path. The live direction is remote MCP first; the local subprocess package exists for harness gaps and debugging.
 
 ### The MCP server (`@lahari/mcp-server`)
 

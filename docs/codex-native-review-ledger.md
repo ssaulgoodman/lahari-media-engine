@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-14 — Post-test stabilization pass, R28 shipped, R17 reshaped for npm bootstrap.
+**Last touched:** 2026-05-14 — R17 pivoted to remote MCP primary with account-scoped Lahari MCP tokens.
 
 ---
 
@@ -26,7 +26,7 @@
 
 **Next workstream (the big one):**
 
-**R17 — Distribution package for non-codebase artists.** Design doc ready at `docs/r17-distribution-design.md`. Pattern B chosen: `npx @lahari/setup init` runs the bootstrap; everything after is conversational. OAuth localhost callback (R16) handles auth. Implementation gated on internal testing being clean (it is). This is the next big build — Codex implements from the design doc, Claude reviews.
+**R17 — Distribution for non-codebase artists.** Direction updated: hosted remote MCP is now primary, `@lahari/mcp-server` remains fallback. Artist signs in to Lahari, receives an account-scoped `lahari_mcp_...` token, and configures Codex/Claude against `/mcp`; no engine repo, no service key, no local subprocess on the happy path.
 
 **After R17 ships:** Saul fresh-installs Lahari on a clean non-codebase workspace and tests the artist UX. Friction items from that test then feed the next stabilization → R32/R33 (per-call model override, model-bias correction) → R29 phase 2 → polish items.
 
@@ -303,38 +303,34 @@ Implementation sketch:
 
 ### R17 — Distribution architecture for non-engine operators
 
-Status: **implementation started — hosted facade first pass** · Raised: 2026-05-13 · Updated: 2026-05-14
+Status: **implementation started — remote MCP primary** · Raised: 2026-05-13 · Updated: 2026-05-14
 
 Engine + director live in one repo today because Saul is the sole operator. When an artist joins — someone who shouldn't see or touch engine code — they can't be handed this repo (overwhelming, destructive ops accessible, exposes engine internals).
 
-**Recommended path: `@lahari/setup` npm bootstrap package.** Artist runs ONE terminal command; everything after is conversational.
+**Recommended path: hosted remote MCP.** Artist signs in to Lahari, creates an account-scoped personal MCP token, connects Codex/Claude directly to Lahari's hosted `/mcp` endpoint, and everything after is conversational.
 
 ```bash
-npx @lahari/setup init
+export LAHARI_MCP_TOKEN=lahari_mcp_...
+codex mcp add lahari --url https://lahari.media/mcp --bearer-token-env-var LAHARI_MCP_TOKEN
 ```
 
-The bootstrap script writes `AGENTS.md` + `.lahari/skills/*` + `.lahari/prompts/*` to the workspace, registers the Lahari MCP server (`codex mcp add` or `claude mcp add` with the harness-correct syntax), runs the OAuth localhost-callback flow (R16) to capture a token, saves to `~/.lahari/credentials`. Artist restarts the harness once; everything after is fully natural-language Codex/Claude Code interaction.
+Claude Code uses the same token as an Authorization header. The token maps back to the logged-in Lahari `user_id`; every project-scoped tool still checks `lahari_projects.user_id`. `@lahari/mcp-server` is retained as the local-subprocess fallback for harness bugs and debugging, not as the primary artist path.
 
-**Why Pattern B (npm bootstrap) was chosen over Pattern A (conversational install via WebFetch):**
-1. Deterministic — same script runs same way on every machine
-2. Better error handling — script can detect/report failures clearly
-3. Versioned + testable — one artifact you publish
-4. Idempotent re-runs
-5. Debuggable — terminal output > chat transcript
-6. Less harness coupling — script handles per-harness MCP-add syntax quirks (we already got bitten by Claude Code's variadic-flag bug)
-7. Industry standard — `gh`, `vercel`, `stripe`, `supabase`, `railway`, `fly` all use this pattern
+**Why remote MCP replaced local bootstrap as primary:** current harnesses support Streamable HTTP MCP with bearer-token auth, and the hosted Director facade is already the durable spine. Remote MCP removes artist-side Node/package/version drift. The earlier npm bootstrap remains a valid fallback and template-distribution helper.
 
-Pattern A (paste URL in chat, agent installs) is more elegant but introduces too many failure modes for v1. Pattern B is the chosen path; Pattern A could be added later as an optional ergonomics layer.
+**Design doc:** `docs/r17-distribution-design.md` — updated for remote MCP primary, account-specific token auth, hosted `/mcp`, and local package fallback.
 
-**Design doc:** `docs/r17-distribution-design.md` — full spec covering the bootstrap script, OAuth callback, AGENTS.md/skills templates, MCP registration per harness, credentials file shape, error handling, update mechanism, implementation order.
+**Dependencies:** token management UI/page (`/connect`) still needed for the artist-friendly install surface.
 
-**Dependencies:** R16 (OAuth localhost callback is the auth half).
-
-**First implementation slice:** hosted Director API facade under `/api/director/*`. This exposes the director surface to future npm MCP clients as authenticated HTTP routes instead of local service imports. It is user-scoped through existing JWT `requireAuth`, returns `{ ok, data, error }` envelopes, and writes remote MCP audit rows tagged `source: 'mcp-remote'`.
+**Implementation slices shipped/started:**
+- Hosted Director API facade under `/api/director/*`: exposes the director surface as authenticated HTTP routes instead of local service imports. User-scoped through existing JWT `requireAuth`, `{ ok, data, error }` envelopes, audit source `mcp-remote`.
+- Local fallback package `@lahari/mcp-server`: thin stdio MCP client over `/api/director/*`.
+- Personal MCP token layer: `lahari_mcp_tokens` stores token hashes; `/api/mcp-tokens` mints/lists/revokes tokens for logged-in users.
+- Hosted `/mcp`: stateless Streamable HTTP MCP endpoint authenticated by `Authorization: Bearer lahari_mcp_...`.
 
 First-pass route coverage: version, project list/packet/actions, remote session attach/get, shot packet, storyboard status, R28 apply-only tools, R29 project config apply/revert tools, storyboard/video generation plans, storyboard generation/bulk generation/refine/lock/unlock, video generation, and issue capture.
 
-**Build when:** ready to onboard a second operator OR a real "artist needs this" moment arrives. Implementation gated on a clean handoff from current internal testing. The director-session-on-full-codebase pattern is validated (2026-05-13/14 testing); next step is non-codebase workspace.
+**Still needed:** `/connect` page that signs the artist in, calls `/api/mcp-tokens`, and shows Codex/Claude install snippets; skill/workspace template distribution; deploy + clean non-codebase workspace test.
 
 **Why it matters:** Resolves the "give the artist this repo" question without compromising engine separation. The director surface becomes extractable as a separate distribution without engine dependencies at runtime — closes R10's plugin-distribution gate.
 
@@ -808,3 +804,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-14 — End-of-session sync before compact. Director-session-on-full-codebase pattern declared validated end-to-end (two test sessions, all stabilization friction items shipped). Decision on R17 distribution path: Pattern B (npm bootstrap `@lahari/setup init`) chosen over Pattern A (pure conversational install) for robustness — script execution is deterministic, testable, idempotent, debuggable, and harness-portable in ways agent-interpreted install specs aren't. Claude rewrote R17 ledger entry to reflect Pattern B; updated R34 with the native-imagegen ritual (preserve source, style as grade not content) caught in main-Claude's image-edit diagnosis; added "Current State" snapshot at top of ledger for fast post-compact orient; wrote `docs/r17-distribution-design.md` (~470 lines) covering the bootstrap script, `@lahari/mcp-server` HTTP-client package, OAuth localhost callback (R16 implementation), per-harness MCP registration syntax (Codex + Claude Code, with the known arg-order quirk), templates, error handling for 7 common failure modes, update/doctor commands, implementation order (~4-5 focused days estimated). R17 status moved to `agreed, design ready`. Next workstream: Codex implements R17 from the design doc; Claude reviews; Saul tests on a clean non-codebase workspace. Pending operational: apply `migrations/2026-05-14_apply_script_rpc.sql` to Supabase before R28's `apply_script` works on live projects.
 - 2026-05-14 — Codex started R17 implementation with the hosted Director API facade. Added `server/routes/director.ts` and mounted it at `/api/director` behind existing `requireAuth`. First-pass routes expose version, project list/packet/actions, remote session attach/get, shot packet, storyboard status, R28 apply-only tools, R29 config apply/revert, storyboard/video plans, storyboard generation/bulk/refine/lock/unlock, video generation, and issue capture. Routes enforce project ownership before loading full project state, return `{ ok, data, error }` envelopes, and record audit rows as `source: 'mcp-remote'`. Verified with `npx tsc --noEmit`; full build still pending in this pass.
 - 2026-05-14 — Codex added first-pass `@lahari/mcp-server` package under `packages/lahari-mcp-server`. It is a standalone Node 20 ESM MCP server with no engine imports: reads `~/.lahari/credentials`, refreshes Supabase JWTs when within 5 minutes of expiry, sends `X-Lahari-MCP-Version` on every request, unwraps `{ ok, data, error }` envelopes from `/api/director/*`, and preserves structured `auth_expired` / validation / drift errors for the agent. Tool-name parity with internal `mcp/lahari.ts` is intentional: supported tools call the hosted facade, while legacy local-file/preview tools return a loud `remote_facade_gap` error rather than silently disappearing. Verified with `node --check`, `npm pack --dry-run --cache /private/tmp/lahari-npm-cache`, `npm run build`, and `git diff --check`. The first `npm pack --dry-run` hit Saul's root-owned `~/.npm` cache issue; rerun with temp cache passed.
+- 2026-05-14 — R17 pivoted to hosted remote MCP as the primary artist distribution path, keeping `@lahari/mcp-server` as fallback. Codex added account-specific Lahari MCP tokens (`lahari_mcp_tokens` migration + `server/services/mcpTokens.ts`), authenticated `/api/mcp-tokens` list/create/revoke routes, and a stateless Streamable HTTP `/mcp` endpoint. `/mcp` requires `Authorization: Bearer lahari_mcp_...`, verifies the token hash, resolves to `user_id`, then registers the same director tool surface with per-tool project ownership checks and `mcp-remote` audit rows. `docs/r17-distribution-design.md` and R17 ledger text updated to remote-first. Pending next slice: `/connect` page that signs in and prints Codex/Claude install snippets.

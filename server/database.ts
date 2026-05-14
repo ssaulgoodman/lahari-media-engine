@@ -30,6 +30,7 @@ const T = {
   assets: 'lahari_assets',
   storyboard_versions: 'lahari_storyboard_versions',
   director_events: 'lahari_director_events',
+  mcp_tokens: 'lahari_mcp_tokens',
   project_config: 'lahari_project_config',
   project_prompt_overrides: 'lahari_project_prompt_overrides',
   chat_messages: 'lahari_chat_messages',
