@@ -1,0 +1,19 @@
+{
+  "name": "@lahari/mcp-server",
+  "version": "0.1.0",
+  "description": "Remote Lahari MCP server for artist workspaces.",
+  "type": "module",
+  "bin": {
+    "lahari-mcp-server": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
