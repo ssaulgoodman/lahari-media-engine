@@ -6,7 +6,31 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-13 — Ledger slimmed: vision, principles, and discipline lifted to `docs/codex-native-doctrine.md`.
+**Last touched:** 2026-05-14 — Post-test stabilization pass, R28 shipped, R17 reshaped for npm bootstrap.
+
+---
+
+## Current State (snapshot for fast orient — read this first)
+
+**Where we are (as of 2026-05-14, end of day):**
+
+- Director-session-on-full-codebase: **VALIDATED end-to-end** via two test sessions on fork `13c259ce`. MCP-first discipline holds, agency layer (R29) actively used, skill-driven taste applied, full audit + journal coverage.
+- Text-native flow (R28): **SHIPPED first pass** — six apply-only tools for shot/storyboard/script/concept/video prompts. Codex writes content using skill shards; apply tools validate + persist. No backend LLM round-trip.
+- Project config layer (R29 phase 1): **SHIPPED and live** — preferences + storyboard/video prompt overrides. Both migrations applied to Supabase.
+- Skill fragmentation (R8): **SHIPPED** — five taste shards (storyboard-prompt-craft, script-doctor, continuity-auditor, style-ref-critic, render-triage) loaded on demand by lahari-director orchestrator.
+- Stabilization pass: **SHIPPED** — F1 (session rename language), F2 (song-class bottleneck demoted), F3 (capture-issue trigger), F4 (re-attach dedup), Hydrated→Updated, action ranking.
+
+**Pending operational steps:**
+
+1. **Apply `migrations/2026-05-14_apply_script_rpc.sql`** to Supabase before `apply_script` (R28's atomic script tool) works on real projects. Pure DDL, additive, safe whenever.
+
+**Next workstream (the big one):**
+
+**R17 — Distribution package for non-codebase artists.** Design doc ready at `docs/r17-distribution-design.md`. Pattern B chosen: `npx @lahari/setup init` runs the bootstrap; everything after is conversational. OAuth localhost callback (R16) handles auth. Implementation gated on internal testing being clean (it is). This is the next big build — Codex implements from the design doc, Claude reviews.
+
+**After R17 ships:** Saul fresh-installs Lahari on a clean non-codebase workspace and tests the artist UX. Friction items from that test then feed the next stabilization → R32/R33 (per-call model override, model-bias correction) → R29 phase 2 → polish items.
+
+**Polish items deferred:** see "Polish Items" section near the bottom of this ledger. None block testing or R17 implementation.
 
 ---
 
@@ -279,37 +303,36 @@ Implementation sketch:
 
 ### R17 — Distribution architecture for non-engine operators
 
-Status: **proposed** · Raised: 2026-05-13
+Status: **agreed, design ready** · Raised: 2026-05-13 · Updated: 2026-05-14
 
-Engine + director live in one repo today because Saul is the sole operator. When a second person joins — an artist who shouldn't see or touch engine code — they can't be handed this repo (overwhelming, destructive ops accessible, exposes engine internals).
+Engine + director live in one repo today because Saul is the sole operator. When an artist joins — someone who shouldn't see or touch engine code — they can't be handed this repo (overwhelming, destructive ops accessible, exposes engine internals).
 
-**Recommended path: extract director tools as an npm package.**
+**Recommended path: `@lahari/setup` npm bootstrap package.** Artist runs ONE terminal command; everything after is conversational.
 
-Package contents:
-- `bin/lahari` (CLI)
-- `bin/lahari-mcp` (MCP server)
-- `skills/lahari-director/SKILL.md`
-- `templates/AGENTS.md` (director-mode workspace template)
-- `setup` / `init` commands
-
-Artist onboarding:
 ```bash
-npx @lahari/director init ~/lahari-studio
-cd ~/lahari-studio
-npx @lahari/director setup
-# open Codex Desktop on ~/lahari-studio
+npx @lahari/setup init
 ```
 
-They never see the engine repo. The MCP server depends on the hosted Lahari backend (Railway) via HTTP. Auth via R16 browser-bridged JWT — no service key on artist's machine.
+The bootstrap script writes `AGENTS.md` + `.lahari/skills/*` + `.lahari/prompts/*` to the workspace, registers the Lahari MCP server (`codex mcp add` or `claude mcp add` with the harness-correct syntax), runs the OAuth localhost-callback flow (R16) to capture a token, saves to `~/.lahari/credentials`. Artist restarts the harness once; everything after is fully natural-language Codex/Claude Code interaction.
 
-**Do not build yet.** The CLI/MCP/skill are already self-contained units in `lahari-codex-native/`; extraction is ~1-2 days of plumbing work. Build when at least one of these triggers:
-1. Saul wants to onboard another operator.
-2. AGENTS.md is too noisy for director-only use.
-3. A real "artist needs this" moment arrives.
+**Why Pattern B (npm bootstrap) was chosen over Pattern A (conversational install via WebFetch):**
+1. Deterministic — same script runs same way on every machine
+2. Better error handling — script can detect/report failures clearly
+3. Versioned + testable — one artifact you publish
+4. Idempotent re-runs
+5. Debuggable — terminal output > chat transcript
+6. Less harness coupling — script handles per-harness MCP-add syntax quirks (we already got bitten by Claude Code's variadic-flag bug)
+7. Industry standard — `gh`, `vercel`, `stripe`, `supabase`, `railway`, `fly` all use this pattern
 
-Adds a fourth gate to R10's plugin-distribution checklist: **the director surface is extractable as a separate distribution without engine dependencies at runtime.**
+Pattern A (paste URL in chat, agent installs) is more elegant but introduces too many failure modes for v1. Pattern B is the chosen path; Pattern A could be added later as an optional ergonomics layer.
 
-**Why it matters:** Resolves the "give the artist this repo" question without compromising engine separation. Makes the architecture's "Codex inhabits Lahari" claim true for non-engineers, not just Saul.
+**Design doc:** `docs/r17-distribution-design.md` — full spec covering the bootstrap script, OAuth callback, AGENTS.md/skills templates, MCP registration per harness, credentials file shape, error handling, update mechanism, implementation order.
+
+**Dependencies:** R16 (OAuth localhost callback is the auth half).
+
+**Build when:** ready to onboard a second operator OR a real "artist needs this" moment arrives. Implementation gated on a clean handoff from current internal testing. The director-session-on-full-codebase pattern is validated (2026-05-13/14 testing); next step is non-codebase workspace.
+
+**Why it matters:** Resolves the "give the artist this repo" question without compromising engine separation. The director surface becomes extractable as a separate distribution without engine dependencies at runtime — closes R10's plugin-distribution gate.
 
 ---
 
@@ -688,6 +711,15 @@ R28 established the pattern for harness-native text: Codex writes, apply tool pe
 
 **Why it matters:** doctrine §4 already softened to acknowledge "image gen is mixed." R34 is the apply-side that makes harness-native image gen actually composable. Without it, even when capability arrives, output has no home.
 
+**Skill ritual for native image edits (from 2026-05-13 test diagnosis):** when harness native image gen IS used, the failure mode observed was setup-driven, not capability-driven. Codex passed reference URLs as "inspiration" and the model reinterpreted compositionally instead of doing strict pixel-preserve edit. The skill (when R34 is built) should encode:
+1. Treat native imagegen output as a local draft only — not production-ready until visually inspected
+2. Preserve source image by passing it as the primary edit target, NOT as inspiration
+3. Use style images only as grade/reference, NEVER as content to merge
+4. After approval, call `apply_storyboard_image_asset(projectId, shotId, localImagePath, sourceVersionId, note)`
+5. Never manually upload/register image rows — always through the typed apply tool
+
+This ritual prevents the "inspiration vs preserve" misinterpretation that caused the 2026-05-13 test's image edit to fail.
+
 ---
 
 ## Risks / Watch List
@@ -769,3 +801,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-14 — Codex implemented R28 apply-only text tools. New modules under `server/services/codexStudio/applies/` cover `apply_shot_prompts`, `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_script`, `apply_concept`, and `apply_video_prompt`; the `codexStudio.ts` root remains a re-export barrel. MCP + CLI surfaces added, R25 backend-LLM storyboard writer tools marked deprecated, read packets now expose base hashes for concept/script/shot/storyboard/video prompt drift checks, and every apply records director events + appends local journal entries. New migration `2026-05-14_apply_script_rpc.sql` adds atomic `lahari_apply_script` RPC. Verified with `npx tsc --noEmit`, `npm run build`, and `git diff --check`. Pending: apply the migration before using `apply_script` against live projects, then Claude review.
 - 2026-05-14 — Claude reviewed `14b127d`. All five locked spec decisions verified in code: Q1 array-only on `apply_shot_prompts`; Q2 atomic `lahari_apply_script` RPC with `security definer + search_path + revoke from public + grant to service_role` matching the rollback RPC's defensive shape; Q3 R25 tools keep their backend-LLM code paths plus get both a description warning and runtime `console.error('[deprecated] ...')` on every call; Q4 `validateBaseHash` returns null when baseHash is missing or `force: true` (optional drift check with escape hatch); Q5 per-shot `shot_prompts_applied` events emitted inside the bulk loop. `helpers.ts` factored cleanly (157 lines): `applyError`, `validateBaseHash`, `ensureLength`, `findProjectShot`, `appendApplyJournal`, `hasDownstreamVisualWork`, `scriptDraftHash`, `normalizeScriptForApply`. Structured errors include `field`, `shotId`, hashes, and `next` suggested-action — the retry-on-validation-error loop is real. Bulk applies return both `updates` and `rejected` arrays so Codex can retry partial failures. Skill updated with "Writing Content for Apply Tools" section per spec. Build green. **R28 status: shipped first pass — pending Supabase application of `2026-05-14_apply_script_rpc.sql` before `apply_script` works on live projects.**
 - 2026-05-14 — Claude filed R32 (per-call model override), R33 (model-bias correction system), R34 (apply-only tools for harness-native media output) as new recommendations from the 2026-05-13 test session's friction. Doctrine §4 updated with the nuance that media generation tool-call entries are not permanent boundaries — they reflect today's harness capability; image gen is mixed, video/audio are tool-only today but watch this space. Both paths must converge at the same apply layer regardless of which engine produced the bytes. Polish Items section added to the ledger with 10 items (P-poli-01 through P-poli-10) covering replay idempotency, event types registry, compare_versions tool, web studio override badge, R6 phase 2 split, structured deviation field, audit log rotation, R7 catalog deprecation, R11 notifications, and R29 RLS policies. None block testing; all are "address opportunistically when adjacent code is being touched."
+- 2026-05-14 — End-of-session sync before compact. Director-session-on-full-codebase pattern declared validated end-to-end (two test sessions, all stabilization friction items shipped). Decision on R17 distribution path: Pattern B (npm bootstrap `@lahari/setup init`) chosen over Pattern A (pure conversational install) for robustness — script execution is deterministic, testable, idempotent, debuggable, and harness-portable in ways agent-interpreted install specs aren't. Claude rewrote R17 ledger entry to reflect Pattern B; updated R34 with the native-imagegen ritual (preserve source, style as grade not content) caught in main-Claude's image-edit diagnosis; added "Current State" snapshot at top of ledger for fast post-compact orient; wrote `docs/r17-distribution-design.md` (~470 lines) covering the bootstrap script, `@lahari/mcp-server` HTTP-client package, OAuth localhost callback (R16 implementation), per-harness MCP registration syntax (Codex + Claude Code, with the known arg-order quirk), templates, error handling for 7 common failure modes, update/doctor commands, implementation order (~4-5 focused days estimated). R17 status moved to `agreed, design ready`. Next workstream: Codex implements R17 from the design doc; Claude reviews; Saul tests on a clean non-codebase workspace. Pending operational: apply `migrations/2026-05-14_apply_script_rpc.sql` to Supabase before R28's `apply_script` works on live projects.
