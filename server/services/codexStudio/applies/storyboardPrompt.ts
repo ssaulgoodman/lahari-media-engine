@@ -1,6 +1,7 @@
 import { updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
-import { storyboardPromptHash, webStudioUrl, type Project } from '../core.js';
+import { storyboardPromptHash, webStudioUrl, type Project, type ProjectShot } from '../core.js';
+import { buildNotebookMirrorArtifacts } from '../notebook.js';
 import {
   appendApplyJournal,
   applyError,
@@ -44,6 +45,7 @@ export const applyStoryboardPromptsBulk = async (
   const applied: Array<{ shotId: string; newHash: string }> = [];
   const skipped: Array<{ shotId: string; reason: string }> = [];
   const rejected: ApplyError[] = [];
+  const nextShotsById = new Map<string, ProjectShot>();
 
   for (const row of input.shots) {
     const target = findProjectShot(project, row.shotId);
@@ -81,6 +83,7 @@ export const applyStoryboardPromptsBulk = async (
     });
 
     applied.push({ shotId: row.shotId, newHash });
+    nextShotsById.set(row.shotId, nextShot);
     await recordDirectorEvent({
       projectId: project.id,
       source: 'codex',
@@ -98,12 +101,28 @@ export const applyStoryboardPromptsBulk = async (
     appendApplyJournal(project, 'applied storyboard prompt', `${shotApplyLabel(target)}\nShot ID: ${row.shotId}\nPrompt chars: ${nextShot.storyboardPrompt.length}\nCut plan chars: ${nextShot.storyboardCutPlan.length}\nNew hash: ${newHash}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId: row.shotId, action: 'review-storyboard-prompt' })}`);
   }
 
+  const notebookProject = nextShotsById.size
+    ? {
+      ...project,
+      scenes: project.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => nextShotsById.get(shot.id) || shot),
+      })),
+    }
+    : project;
+
   return {
     kind: input.single ? 'lahari.apply.storyboard_prompt' : 'lahari.apply.storyboard_prompts_bulk',
     projectId: project.id,
     applied,
     skipped,
     rejected,
+    changedArtifacts: applied.length
+      ? buildNotebookMirrorArtifacts(notebookProject, {
+        shotPrompts: true,
+        storyboardShotIds: applied.map((row) => row.shotId),
+      })
+      : [],
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
     note: rejected.length || skipped.length
       ? 'Applied valid storyboard prompt updates. Review skipped/rejected rows before continuing.'

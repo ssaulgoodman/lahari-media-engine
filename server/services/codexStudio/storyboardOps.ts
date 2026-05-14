@@ -21,6 +21,7 @@ import {
   type Project,
   type ProjectShot,
 } from './core.js';
+import { buildNotebookConfigArtifacts, buildNotebookMirrorArtifacts } from './notebook.js';
 
 const findProjectShot = (project: Project, shotId: string): { shot: ProjectShot; sceneIndex: number; shotIndex: number } | null => {
   for (const [sceneIndex, scene] of project.scenes.entries()) {
@@ -41,6 +42,14 @@ const allProjectShots = (project: Project) => {
   }
   return items;
 };
+
+const withShotPatch = (project: Project, shotId: string, patch: Partial<ProjectShot>): Project => ({
+  ...project,
+  scenes: project.scenes.map((scene) => ({
+    ...scene,
+    shots: scene.shots.map((shot) => shot.id === shotId ? { ...shot, ...patch } : shot),
+  })),
+});
 
 const filterShotTargets = (project: Project, shotIds?: string[]) => {
   const requested = new Set((shotIds || []).filter(Boolean));
@@ -264,6 +273,12 @@ export const writeStoryboardPromptForShot = async (project: Project, shotId: str
     opts.artistNote ? 'refined storyboard prompt' : 'wrote storyboard prompt',
     `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nPrompt chars: ${result.storyboardPrompt.length}\nCut plan chars: ${result.cutPlanText.length}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard-prompt' })}`,
   );
+  const notebookProject = withShotPatch(project, shotId, {
+    storyboardPrompt: result.storyboardPrompt,
+    storyboardCutPlan: result.cutPlanText,
+    storyboardPromptStatus: 'success',
+    promptsStale: false,
+  });
 
   return {
     kind: 'lahari.apply.write_storyboard_prompt',
@@ -282,6 +297,10 @@ export const writeStoryboardPromptForShot = async (project: Project, shotId: str
       storyboardPrompt: compactText(result.storyboardPrompt, 900),
       cutPlanText: compactText(result.cutPlanText, 700),
     },
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      shotPrompts: true,
+      storyboardShotIds: [shotId],
+    }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard-prompt' }),
     note: 'Saved storyboard_prompt and storyboard_cut_plan on the shot.',
   };
@@ -313,7 +332,13 @@ export const bulkWriteStoryboardPrompts = async (project: Project, opts: {
   for (const target of selected) {
     try {
       const result = await writeStoryboardPromptForShot(project, target.shot.id, opts);
-      results.push({ shotId: target.shot.id, label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1), ok: true, result: result.result });
+      results.push({
+        shotId: target.shot.id,
+        label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+        ok: true,
+        result: result.result,
+        changedArtifacts: result.changedArtifacts,
+      });
     } catch (error) {
       results.push({
         shotId: target.shot.id,
@@ -360,6 +385,10 @@ export const bulkWriteStoryboardPrompts = async (project: Project, opts: {
     },
     results,
     skipped,
+    changedArtifacts: results
+      .filter((row) => row.ok)
+      .flatMap((row) => row.changedArtifacts || [])
+      .filter((file, index, files) => files.findIndex((candidate) => candidate.path === file.path) === index),
     note: opts.force
       ? 'Force mode rewrote selected unlocked storyboard prompts.'
       : 'Default mode wrote only missing/error storyboard prompts and skipped locked or already-ready shots.',
@@ -463,6 +492,13 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     'generated storyboard board',
     `${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}\nShot ID: ${shotId}\nProvider: ${plan.provider.key}\nEstimated cost: $${plan.estimatedCost.toFixed(3)}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
   );
+  const notebookProject = withShotPatch(project, shotId, {
+    storyboardUrl: result.imageUrl,
+    storyboardVersionId: result.versionId,
+    storyboardStatus: 'success',
+    storyboardLocked: false,
+    videoStatus: 'stale',
+  });
 
   return {
     kind: 'lahari.generation_result.storyboard',
@@ -476,6 +512,10 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
       willChange: plan.willChange,
     },
     result,
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      shotPrompts: true,
+      storyboardShotIds: [shotId],
+    }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Generated storyboard board, updated the active storyboard pointer, unlocked the board for review, and marked video stale.',
   };
@@ -522,6 +562,7 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
         ok: true,
         estimatedCost: result.estimatedCost,
         result: eventResultPointers(result.result),
+        changedArtifacts: result.changedArtifacts,
         webUrl: result.webUrl,
       });
     } catch (error) {
@@ -571,6 +612,10 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
     },
     results,
     skipped,
+    changedArtifacts: results
+      .filter((row) => row.ok)
+      .flatMap((row) => row.changedArtifacts || [])
+      .filter((file, index, files) => files.findIndex((candidate) => candidate.path === file.path) === index),
     note: opts.force
       ? 'Force mode generated storyboard boards for selected unlocked shots with saved prompts.'
       : 'Default mode generated only missing/stale/error unlocked storyboard boards with saved prompts.',
@@ -617,6 +662,13 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
     'refined storyboard image',
     `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nPrevious version: ${opts.previousVersionId || target.shot.storyboardVersionId || 'active'}\nFeedback: ${compactText(opts.feedback, 500)}\nEstimated cost: $${plan.estimatedCost.toFixed(3)}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
   );
+  const notebookProject = withShotPatch(project, shotId, {
+    storyboardUrl: result.imageUrl,
+    storyboardVersionId: result.versionId,
+    storyboardStatus: 'success',
+    storyboardLocked: false,
+    videoStatus: 'stale',
+  });
 
   return {
     kind: 'lahari.generation_result.refine_storyboard_image',
@@ -627,6 +679,10 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
     paid: true,
     estimatedCost: plan.estimatedCost,
     result,
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      shotPrompts: true,
+      storyboardShotIds: [shotId],
+    }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Refined storyboard image in edit-image mode, updated active storyboard pointer, unlocked board for review, and marked video stale.',
   };
@@ -658,6 +714,11 @@ export const lockStoryboardBoard = async (project: Project, shotId: string, vers
     'locked storyboard board',
     `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nVersion ID: ${targetVersionId || 'active'}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
   );
+  const notebookProject = withShotPatch(project, shotId, {
+    storyboardLocked: true,
+    storyboardStatus: 'success',
+    ...(targetVersionId ? { storyboardVersionId: targetVersionId } : {}),
+  });
 
   return {
     kind: 'lahari.apply.lock_storyboard',
@@ -668,6 +729,7 @@ export const lockStoryboardBoard = async (project: Project, shotId: string, vers
       label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
       versionId: targetVersionId,
     },
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, { storyboardShotIds: [shotId] }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Locked the active storyboard board. Video generation can now use this board as a trusted reference.',
   };
@@ -695,6 +757,7 @@ export const unlockStoryboardBoard = async (project: Project, shotId: string) =>
     'unlocked storyboard board',
     `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${shotId}\nPrevious version: ${target.shot.storyboardVersionId || 'none'}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' })}`,
   );
+  const notebookProject = withShotPatch(project, shotId, { storyboardLocked: false });
 
   return {
     kind: 'lahari.apply.unlock_storyboard',
@@ -705,6 +768,7 @@ export const unlockStoryboardBoard = async (project: Project, shotId: string) =>
       label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
       previousVersionId: target.shot.storyboardVersionId || null,
     },
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, { storyboardShotIds: [shotId] }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Unlocked the storyboard board for further review or regeneration.',
   };
@@ -748,6 +812,7 @@ export const applyProjectPreferencesConfig = async (
       preferences: configCopy.preferencesPath,
       hashes: configCopy.hashesPath,
     },
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { preferences: true, hashes: true }),
     note: 'Applied project preferences. Supabase is canonical; local config hashes were refreshed.',
   };
 };
@@ -790,6 +855,7 @@ export const applyProjectPromptOverrideConfig = async (
       prompt: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
       hashes: configCopy.hashesPath,
     },
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true }),
     note: 'Applied project prompt override. There is no preview tool by design: Codex writes the recipe, this tool validates drift and persists it.',
   };
 };
@@ -834,6 +900,7 @@ export const revertProjectPromptOverrideConfig = async (
       prompt: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
       hashes: configCopy.hashesPath,
     },
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true }),
     note: result.active
       ? 'Reverted to the previous project override and refreshed local config hashes.'
       : 'No previous override remained active; reverted to the global default and refreshed local config hashes.',
@@ -867,6 +934,11 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
     'generated video',
     `${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}\nShot ID: ${shotId}\nMode: ${plan.mode}\nModel: ${plan.model.key}\nEstimated cost: $${plan.estimatedCost.toFixed(3)}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-video' })}`,
   );
+  const notebookProject = withShotPatch(project, shotId, {
+    videoUrl: result.videoUrl,
+    videoStatus: 'success',
+    extractedLastFrameUrl: result.extractedLastFrameUrl,
+  });
 
   return {
     kind: 'lahari.generation_result.video',
@@ -881,6 +953,7 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
       willChange: plan.willChange,
     },
     result,
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, { shotPrompts: true }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-video' }),
     note: 'Generated shot video, updated the active video pointer, and attempted last-frame extraction.',
   };

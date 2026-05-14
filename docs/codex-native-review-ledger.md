@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-14 — R17 pivoted to remote MCP primary with account-scoped Lahari MCP tokens.
+**Last touched:** 2026-05-14 — R17 notebook hybrid gained deterministic warm-refresh artifacts.
 
 ---
 
@@ -22,7 +22,7 @@
 
 **Pending operational steps:**
 
-1. **Apply `migrations/2026-05-14_apply_script_rpc.sql`** to Supabase before `apply_script` (R28's atomic script tool) works on real projects. Pure DDL, additive, safe whenever.
+1. Saul reported `2026-05-14_add_mcp_tokens.sql` and `2026-05-14_apply_script_rpc.sql` have been applied. Before first real artist run, verify production is on the branch containing `/mcp`, `/connect`, and the notebook tool.
 
 **Next workstream (the big one):**
 
@@ -320,7 +320,7 @@ Claude Code uses the same token as an Authorization header. The token maps back 
 
 **Design doc:** `docs/r17-distribution-design.md` — updated for remote MCP primary, account-specific token auth, hosted `/mcp`, and local package fallback.
 
-**Dependencies:** token management UI/page (`/connect`) still needed for the artist-friendly install surface.
+**Dependencies:** deploy + clean non-codebase workspace test.
 
 **Implementation slices shipped/started:**
 - Hosted Director API facade under `/api/director/*`: exposes the director surface as authenticated HTTP routes instead of local service imports. User-scoped through existing JWT `requireAuth`, `{ ok, data, error }` envelopes, audit source `mcp-remote`.
@@ -329,10 +329,11 @@ Claude Code uses the same token as an Authorization header. The token maps back 
 - Hosted `/mcp`: stateless Streamable HTTP MCP endpoint authenticated by `Authorization: Bearer lahari_mcp_...`.
 - `/connect`: first-pass authenticated web page that mints tokens and shows Codex/Claude install snippets.
 - `write_project_notebook`: MCP-born workspace scaffolding. The tool returns deterministic file payloads (`AGENTS.md`, mirrors, config, journal) and the agent writes them into any empty folder with harness file tools.
+- `changedArtifacts`: apply/generation/config tools now return affected notebook files so the agent can refresh only the changed mirrors/config instead of re-running the full notebook on every mutation.
 
 First-pass route coverage: version, project list/packet/actions, remote session attach/get, shot packet, storyboard status, R28 apply-only tools, R29 project config apply/revert tools, storyboard/video generation plans, storyboard generation/bulk generation/refine/lock/unlock, video generation, and issue capture.
 
-**Still needed:** skill/resource distribution; deploy + clean non-codebase workspace test.
+**Still needed:** deploy + clean non-codebase workspace test; optional later skill/resource distribution once the basic remote-MCP artist path is proven.
 
 **Why it matters:** Resolves the "give the artist this repo" question without compromising engine separation. The director surface becomes extractable as a separate distribution without engine dependencies at runtime — closes R10's plugin-distribution gate.
 
@@ -809,3 +810,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-14 — R17 pivoted to hosted remote MCP as the primary artist distribution path, keeping `@lahari/mcp-server` as fallback. Codex added account-specific Lahari MCP tokens (`lahari_mcp_tokens` migration + `server/services/mcpTokens.ts`), authenticated `/api/mcp-tokens` list/create/revoke routes, and a stateless Streamable HTTP `/mcp` endpoint. `/mcp` requires `Authorization: Bearer lahari_mcp_...`, verifies the token hash, resolves to `user_id`, then registers the same director tool surface with per-tool project ownership checks and `mcp-remote` audit rows. `docs/r17-distribution-design.md` and R17 ledger text updated to remote-first. Pending next slice: `/connect` page that signs in and prints Codex/Claude install snippets.
 - 2026-05-14 — Codex added the first-pass `/connect` page. It uses existing Supabase Google auth, calls `/api/mcp-tokens` to create a 30-day Lahari MCP token, shows the raw token once, renders Codex + Claude setup snippets, lists existing tokens, and can revoke them. Also fixed the backend-generated Claude snippet to reference `LAHARI_MCP_TOKEN` instead of embedding the raw token directly in the `claude mcp add` command.
 - 2026-05-14 — R17 notebook hybrid landed. Codex added `buildProjectNotebook` and exposed it through hosted MCP as `write_project_notebook`, plus `/api/director/projects/:projectId/notebook` for the fallback package. The hosted MCP initialize instructions now teach the attach → write notebook → read mirrors → apply → refresh ritual. `hydrate_project_workbench` remains deprecated/unsupported on hosted remote; notebook files are born from the tool response and written by the harness into any empty workspace.
+- 2026-05-14 — Codex completed the warm-refresh half of the R17 notebook hybrid. `config/hashes.json` no longer churns on every notebook generation; its generation marker uses project state time instead of wall-clock time. Apply/generation/config responses now include `changedArtifacts` payloads for the notebook files that should be refreshed: R28 apply-only tools, storyboard prompt write/bulk write, storyboard generation/bulk generation/refine/lock/unlock, video generation, and R29 preferences/prompt override apply/revert. Full script apply additionally returns `notebookRefresh.recommended` because script replacement can leave obsolete per-shot mirror files behind. Verified with `npx tsc --noEmit`, `npm run build`, and `git diff --check`.

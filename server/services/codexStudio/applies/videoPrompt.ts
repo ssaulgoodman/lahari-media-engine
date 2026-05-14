@@ -1,6 +1,7 @@
 import { updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import { usesStoryboardWorkflow, videoPromptHash, webStudioUrl, type Project } from '../core.js';
+import { buildNotebookMirrorArtifacts } from '../notebook.js';
 import {
   appendApplyJournal,
   applyError,
@@ -38,6 +39,20 @@ export const applyVideoPrompt = async (
   });
 
   const newHash = videoPromptHash({ motionPrompt: nextMotionPrompt });
+  const notebookProject = {
+    ...project,
+    scenes: project.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => shot.id === shotId
+        ? {
+          ...shot,
+          motionPrompt: nextMotionPrompt,
+          promptsStale: false,
+          ...(target.shot.videoUrl ? { videoStatus: 'stale' } : {}),
+        }
+        : shot),
+    })),
+  };
   await recordDirectorEvent({
     projectId: project.id,
     source: 'codex',
@@ -59,6 +74,7 @@ export const applyVideoPrompt = async (
     shotId,
     newHash,
     markedVideoStale: !!target.shot.videoUrl,
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, { shotPrompts: true }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'generate-video' }),
     note: 'Applied keyframe-mode video prompt. No image, storyboard, video, or lock rows were changed.',
   };

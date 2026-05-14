@@ -1,6 +1,7 @@
 import { updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import { conceptHash, webStudioUrl, type Project } from '../core.js';
+import { buildNotebookMirrorArtifacts } from '../notebook.js';
 import { appendApplyJournal, applyError, ensureLength, validateBaseHash } from './helpers.js';
 
 export type ConceptApplyInput = {
@@ -41,6 +42,17 @@ export const applyConcept = async (project: Project, concept: ConceptApplyInput,
   }
 
   const newHash = conceptHash(nextConcept);
+  const notebookProject = {
+    ...project,
+    lockedConcept: nextConcept,
+    status: hasScript ? project.status : 'concept_locked',
+    scenes: hasScript
+      ? project.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => ({ ...shot, promptsStale: true })),
+      }))
+      : project.scenes,
+  };
   await recordDirectorEvent({
     projectId: project.id,
     source: 'codex',
@@ -62,6 +74,10 @@ export const applyConcept = async (project: Project, concept: ConceptApplyInput,
     concept: nextConcept,
     newHash,
     markedPromptsStale: hasScript,
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      concept: true,
+      shotPrompts: hasScript,
+    }),
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
     note: hasScript
       ? 'Applied concept and marked existing shot prompts stale for review.'

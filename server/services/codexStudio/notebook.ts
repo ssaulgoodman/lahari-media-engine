@@ -11,7 +11,7 @@ import {
   type Project,
 } from './core.js';
 import { buildProjectActionList } from './plans.js';
-import { getProjectConfigState } from '../projectConfig.js';
+import { getProjectConfigState, type ProjectPromptOverrideKind } from '../projectConfig.js';
 
 export type NotebookFile = {
   path: string;
@@ -266,7 +266,7 @@ ${md(shot.storyboardCutPlan)}
 const buildHashes = async (project: Project) => {
   const config = await getProjectConfigState(project);
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: projectUpdatedAt(project),
     script: { hash: scriptContentHash(project) },
     prompts: {
       storyboard: {
@@ -285,6 +285,142 @@ const buildHashes = async (project: Project) => {
       source: config.preferences.source,
     },
   };
+};
+
+export const buildNotebookMirrorArtifacts = (
+  project: Project,
+  opts: {
+    brief?: boolean;
+    audioAnalysis?: boolean;
+    concept?: boolean;
+    script?: boolean;
+    style?: boolean;
+    cast?: boolean;
+    environments?: boolean;
+    shotPrompts?: boolean;
+    storyboardShotIds?: string[];
+  } = {},
+): NotebookFile[] => {
+  const baseDir = normalizedProjectDir(project);
+  const files: NotebookFile[] = [];
+  if (opts.brief) {
+    files.push({
+      path: `${baseDir}/mirrors/brief.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Compact production read and next action.',
+      content: buildBrief(project, buildProjectActionList(project)),
+    });
+  }
+  if (opts.audioAnalysis) {
+    files.push({
+      path: `${baseDir}/mirrors/audio-analysis.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Audio meaning, classification, lyrics, and structure mirror.',
+      content: buildAudioAnalysis(project),
+    });
+  }
+  if (opts.concept) {
+    files.push({
+      path: `${baseDir}/mirrors/concept.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Locked concept mirror.',
+      content: buildConcept(project),
+    });
+  }
+  if (opts.script) {
+    files.push({
+      path: `${baseDir}/mirrors/script.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Script mirror with scenes and shot beats.',
+      content: buildScript(project),
+    });
+  }
+  if (opts.style) {
+    files.push({
+      path: `${baseDir}/mirrors/style.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Style direction and locked style URL mirror.',
+      content: buildStyle(project),
+    });
+  }
+  if (opts.cast) {
+    files.push({
+      path: `${baseDir}/mirrors/cast.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Character/entity mirror.',
+      content: buildCast(project),
+    });
+  }
+  if (opts.environments) {
+    files.push({
+      path: `${baseDir}/mirrors/environments.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Environment/location mirror.',
+      content: buildEnvironments(project),
+    });
+  }
+  if (opts.shotPrompts) {
+    files.push({
+      path: `${baseDir}/mirrors/shot-prompts.md`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Per-shot prompt mirror.',
+      content: buildShotPrompts(project),
+    });
+  }
+  if (opts.storyboardShotIds?.length) {
+    const requested = new Set(opts.storyboardShotIds);
+    for (const [sceneIndex, scene] of project.scenes.entries()) {
+      for (const [shotIndex, shot] of scene.shots.entries()) {
+        if (requested.has(shot.id)) files.push(buildStoryboardFile(project, sceneIndex, shotIndex, shot));
+      }
+    }
+  }
+  return files;
+};
+
+export const buildNotebookConfigArtifacts = async (
+  project: Project,
+  opts: { preferences?: boolean; promptKinds?: ProjectPromptOverrideKind[]; hashes?: boolean } = {},
+): Promise<NotebookFile[]> => {
+  const baseDir = normalizedProjectDir(project);
+  const config = await getProjectConfigState(project);
+  const files: NotebookFile[] = [];
+  if (opts.preferences) {
+    files.push({
+      path: `${baseDir}/config/preferences.json`,
+      mode: 'config',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable project model preferences. Apply with apply_project_preferences.',
+      content: `${JSON.stringify(config.preferences.preferences, null, 2)}\n`,
+    });
+  }
+  for (const kind of opts.promptKinds || []) {
+    files.push({
+      path: `${baseDir}/config/prompts/${kind}.md`,
+      mode: 'config',
+      writePolicy: 'review_before_overwrite',
+      description: `Editable project ${kind} prompt recipe. Apply with apply_project_prompt_override(kind="${kind}").`,
+      content: ensureNewline(config.prompts[kind].body),
+    });
+  }
+  if (opts.hashes) {
+    files.push({
+      path: `${baseDir}/config/hashes.json`,
+      mode: 'config',
+      writePolicy: 'overwrite',
+      description: 'Base hashes for drift-aware apply tools.',
+      content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
+    });
+  }
+  return files;
 };
 
 export const buildProjectNotebook = async (project: Project) => {

@@ -9,7 +9,8 @@ import {
   validateBaseHash,
   type ApplyError,
 } from './helpers.js';
-import { shotPromptHash, webStudioUrl, type Project } from '../core.js';
+import { shotPromptHash, webStudioUrl, type Project, type ProjectShot } from '../core.js';
+import { buildNotebookMirrorArtifacts } from '../notebook.js';
 
 export type ShotPromptApplyInput = {
   shotId: string;
@@ -27,6 +28,7 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
 
   const updates: Array<{ shotId: string; fieldsChanged: string[]; newHash: string }> = [];
   const rejected: ApplyError[] = [];
+  const nextShotsById = new Map<string, ProjectShot>();
 
   for (const input of shots) {
     const target = findProjectShot(project, input.shotId);
@@ -87,6 +89,7 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
     await updateRows('shots', { id: input.shotId }, dbUpdate);
     const newHash = shotPromptHash(nextShot);
     updates.push({ shotId: input.shotId, fieldsChanged, newHash });
+    nextShotsById.set(input.shotId, nextShot);
     await recordDirectorEvent({
       projectId: project.id,
       source: 'codex',
@@ -103,12 +106,25 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
     appendApplyJournal(project, 'applied shot prompts', `${shotApplyLabel(target)}\nShot ID: ${input.shotId}\nFields: ${fieldsChanged.join(', ') || 'metadata only'}\nNew hash: ${newHash}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId: input.shotId })}`);
   }
 
+  const notebookProject = nextShotsById.size
+    ? {
+      ...project,
+      scenes: project.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => nextShotsById.get(shot.id) || shot),
+      })),
+    }
+    : project;
+
   return {
     kind: 'lahari.apply.shot_prompts',
     projectId: project.id,
     shotsUpdated: updates.length,
     updates,
     rejected,
+    changedArtifacts: updates.length
+      ? buildNotebookMirrorArtifacts(notebookProject, { shotPrompts: true })
+      : [],
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
     note: rejected.length
       ? 'Applied valid shot prompt updates and rejected invalid/drifted rows. Fix rejected rows and retry them.'
