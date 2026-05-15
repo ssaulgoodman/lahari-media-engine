@@ -16,6 +16,7 @@ import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
 import { getRuntimePreset } from '../presets.js';
+import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -113,9 +114,10 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
         failedImageMime: refMime,
         referenceImageBase64: userRefBase64,
         referenceImageMime: userRefMime,
+        textProvider: project.text_provider,
       });
       genPrompt = rewritten.visualPrompt;
-      console.log(`[${project.id}] Claude rewrote generation prompt for ${member.name}: ${genPrompt.substring(0, 100)}...`);
+      console.log(`[${project.id}] Rewrote character look prompt for ${member.name}: ${genPrompt.substring(0, 100)}...`);
     } catch (err: any) {
       console.warn(`[${project.id}] Prompt rewrite failed, using feedback as director note: ${err.message}`);
       genPrompt += `\n\nDirector note: ${feedback}`;
@@ -132,6 +134,11 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     console.log(`[${project.id}] Generating looks for ${member.name} via ${getImageGenerationModelName(project.image_model)}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
+    // Pass the registry's runtimeModel so the artist's exact pick runs.
+    // Only relevant for the Gemini path — Segmind/OpenAI services don't
+    // accept a model arg (their service module is the model). When
+    // nano-banana-2 routes through Gemini (Segmind credits out), this
+    // ensures we run Flash, not Pro.
     const imagePaths = await imageService.generateCharacterLooks(
       { name: member.name, description: member.description || '' },
       styleImagePath,
@@ -139,6 +146,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       project.aspect_ratio || '16:9',
       userRefImagePath,
       genPrompt,
+      getImageGenerationModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
 
@@ -164,6 +172,21 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       outputAssetIds: looks.map(l => l.id),
       durationMs,
       costEstimate: 0.04,
+    });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'character_looks_generated',
+      entityType: 'cast_member',
+      entityId: member.id,
+      summary: `Artist generated ${looks.length} looks for character "${member.name}".`,
+      payload: {
+        castMemberId: member.id,
+        assetIds: looks.map((look) => look.id),
+        feedback: feedback || null,
+        userRefAssetId: userRefAssetId || null,
+      },
     });
 
     res.json({ looks, project: await getFullProject(project.id) });
@@ -218,6 +241,16 @@ router.post('/:id/upload-character-reference', upload.single('image'), async (re
       durationMs: 0,
       costEstimate: 0,
     });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'character_reference_uploaded',
+      entityType: 'cast_member',
+      entityId: castMemberId,
+      summary: `Artist uploaded and locked a reference for character "${member.name}".`,
+      payload: { castMemberId, assetId },
+    });
 
     res.json(await getFullProject(projectId));
   } catch (err: any) {
@@ -235,6 +268,16 @@ router.post('/:id/lock-character', async (req, res) => {
 
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: assetId });
   await markDependentShotsStale(projectId, 'cast', castMemberId);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'character_locked',
+    entityType: 'cast_member',
+    entityId: castMemberId,
+    summary: 'Artist locked a character reference; dependent shots were marked stale.',
+    payload: { castMemberId, assetId },
+  });
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
   res.json({ ok: true });
@@ -266,6 +309,16 @@ router.post('/:id/unlock-character-look', async (req, res) => {
   await requireCastMember(projectId, castMemberId);
   await updateRows('cast_members', { id: castMemberId }, { reference_asset_id: null });
   await markDependentShotsStale(projectId, 'cast', castMemberId);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'character_unlocked',
+    entityType: 'cast_member',
+    entityId: castMemberId,
+    summary: 'Artist unlocked a character reference; dependent shots were marked stale.',
+    payload: { castMemberId },
+  });
   res.json({ ok: true });
 });
 
@@ -278,6 +331,15 @@ router.post('/:id/advance-characters', async (req, res) => {
   if (!atLeast(project.status, 'characters_locked')) {
     await updateRows('projects', { id: paramStr(req.params.id) }, { status: 'characters_locked', updated_at: new Date().toISOString() });
   }
+  await recordDirectorEvent({
+    projectId: project.id,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'characters_advanced',
+    entityType: 'project',
+    entityId: project.id,
+    summary: 'Artist advanced past the character phase.',
+  });
   res.json({ ok: true, status: 'characters_locked' });
 });
 
@@ -348,9 +410,10 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
         failedImageMime: refMime,
         referenceImageBase64: userEnvRefBase64,
         referenceImageMime: userEnvRefMime,
+        textProvider: project.text_provider,
       });
       genPrompt = rewritten.visualPrompt;
-      console.log(`[${project.id}] Claude rewrote generation prompt for env ${env.name}: ${genPrompt.substring(0, 100)}...`);
+      console.log(`[${project.id}] Rewrote env look prompt for ${env.name}: ${genPrompt.substring(0, 100)}...`);
     } catch (err: any) {
       console.warn(`[${project.id}] Env prompt rewrite failed, using note as director note: ${err.message}`);
       genPrompt += `\n\nDirector note: ${userNote}`;
@@ -372,6 +435,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       userRefImagePath,
       undefined, // feedback already baked into genPrompt by Claude
       genPrompt,
+      getImageGenerationModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
 
@@ -396,6 +460,20 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       outputAssetIds: looks.map(l => l.id),
       durationMs,
       costEstimate: 0.04,
+    });
+    await recordDirectorEvent({
+      projectId: project.id,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'environment_looks_generated',
+      entityType: 'environment',
+      entityId: env.id,
+      summary: `Artist generated ${looks.length} looks for environment "${env.name}".`,
+      payload: {
+        environmentId: env.id,
+        assetIds: looks.map((look) => look.id),
+        note: userNote || null,
+      },
     });
 
     res.json({ looks, project: await getFullProject(project.id) });
@@ -446,6 +524,16 @@ router.post('/:id/upload-environment-reference', upload.single('image'), async (
       durationMs: 0,
       costEstimate: 0,
     });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'environment_reference_uploaded',
+      entityType: 'environment',
+      entityId: environmentId,
+      summary: `Artist uploaded and locked a reference for environment "${env.name}".`,
+      payload: { environmentId, assetId },
+    });
 
     res.json(await getFullProject(projectId));
   } catch (err: any) {
@@ -463,6 +551,16 @@ router.post('/:id/lock-environment', async (req, res) => {
 
   await updateRows('environments', { id: environmentId }, { reference_asset_id: assetId });
   await markDependentShotsStale(projectId, 'env', environmentId);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'environment_locked',
+    entityType: 'environment',
+    entityId: environmentId,
+    summary: 'Artist locked an environment reference; dependent shots were marked stale.',
+    payload: { environmentId, assetId },
+  });
 
   // Don't auto-advance — user clicks "Proceed" when satisfied
   res.json({ ok: true });
@@ -476,6 +574,16 @@ router.post('/:id/unlock-environment-look', async (req, res) => {
   await requireEnvironment(projectId, environmentId);
   await updateRows('environments', { id: environmentId }, { reference_asset_id: null });
   await markDependentShotsStale(projectId, 'env', environmentId);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'environment_unlocked',
+    entityType: 'environment',
+    entityId: environmentId,
+    summary: 'Artist unlocked an environment reference; dependent shots were marked stale.',
+    payload: { environmentId },
+  });
   res.json({ ok: true });
 });
 
@@ -489,6 +597,15 @@ router.post('/:id/advance-environments', async (req, res) => {
   if (!atLeast(project.status, 'environments_locked')) {
     await updateRows('projects', { id: paramStr(req.params.id) }, { status: 'environments_locked', updated_at: new Date().toISOString() });
   }
+  await recordDirectorEvent({
+    projectId: project.id,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'environments_advanced',
+    entityType: 'project',
+    entityId: project.id,
+    summary: 'Artist advanced past the environment phase.',
+  });
   res.json({ ok: true, status: 'environments_locked' });
 });
 

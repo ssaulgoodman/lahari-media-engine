@@ -11,6 +11,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.npm-cache/
 dist
 dist-ssr
 *.local
@@ -36,7 +37,11 @@ storage/*.db
 # Local dev tooling (Claude Code, skills)
 .claude/
 .agents/
+.lahari/
 skills/
+!server/resources/skills/
+!server/resources/skills/*/
+!server/resources/skills/*/SKILL.md
 skills-lock.json
 .lahari/
 .npm-cache/

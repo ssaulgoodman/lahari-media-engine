@@ -217,6 +217,26 @@ Claude receives explicit structural guidance based on the chosen mode:
 
 **Status:** Fixed. Prompt visible, refine clears stale prompts, legacy URLs handled.
 
+### 4b.5: Curated Style Presets (direct-lock — no AI step)
+
+**Source:** [`server/style-presets.ts`](../server/style-presets.ts) · Route: `server/routes/generate-style.ts` → `GET /:id/style-presets`, `POST /:id/lock-style-preset`
+
+| | |
+|---|---|
+| **Model** | None — zero AI calls. |
+| **Input** | `{ presetKey }` |
+| **Output** | A new project-scoped `lahari_assets` row pointing at the preset's shared curated `previewImagePath`; `style_asset_id` set; `style_description: ''` (empty on purpose). Downstream marked stale. |
+| **Artist control** | Click any of the four preset cards in the Style phase → one-shot lock. No visualize / regenerate step. |
+| **generation_prompt** | None — the curated PNG is the ground truth. |
+
+Four devotional presets are currently registered: Sacred Golden Serenity, Pure Temple Morning, Warm Incense Devotion, and Sacred Teal Riverlight. Their curated anchor PNGs live in Supabase Storage at `styles/presets/<key>.png` and are backed up in [`docs/assets/style-presets/`](assets/style-presets/).
+
+**Important:** the old `POST /:id/visualize-style-preset` endpoint was **removed**. That path was generating a fresh image from the description text and ignoring the curated PNG entirely — it produced drift, not the curated look. The new `lock-style-preset` route points the project's style asset directly at the curated file_path (same shared-asset pattern as forks), runs the standard `/lock-style` downstream-stale logic, and skips any text-to-image work.
+
+`style_description` is intentionally left empty for preset locks (the curated image is ground truth; storing description prose would leak into the concept-regen hint path).
+
+**Status:** DONE — preset locking is one click, no AI cost, no drift.
+
 ### 4c: Refine
 
 **Source:** [`server/services/claude.ts:479`](../server/services/claude.ts#L479) · Route: `server/routes/generate-style.ts` → `POST /:id/refine-style-direction`
@@ -230,18 +250,20 @@ Claude receives explicit structural guidance based on the chosen mode:
 
 **Status:** Good.
 
-### 4d: Lock + Enrich
+### 4d: Lock (no enrich)
 
-**Source:** [`server/services/claude.ts:528`](../server/services/claude.ts#L528) · Route: `server/routes/generate-style.ts` → `POST /:id/lock-style`
+**Source:** Route: `server/routes/generate-style.ts` → `POST /:id/lock-style`
 
 | | |
 |---|---|
-| **Model** | Claude Sonnet vision (claude.ts → `enrichStyleDNA`) |
-| **Input** | Locked style image + current style description |
-| **Output** | Enriched `style_description` — visible/editable style metadata and critique context. The locked style image, not this text, is the downstream visual ground truth. |
-| **Artist control** | Can edit `style_description` after enrichment |
+| **Model** | None — pure DB mutation. |
+| **Input** | `{ assetId }` (from brainstorm slot, upload, or preset) |
+| **Output** | `style_asset_id` set, downstream cast/env/shots marked `prompts_stale`. |
+| **Artist control** | Pick a brainstorm slot, upload, or click a preset card. |
 
-**Status:** Good. Style description is visible and editable, but no longer injected into image-generation prompts when the style image is available.
+The old `enrichStyleDNA` Claude vision call was deleted on 2026-04-24 — it was producing prose that nothing downstream actually consumed (the image-gen prompts stopped reading `style_description` once the locked image became ground truth). `style_description` survives as an editable text field but plays no role in generation; it's there for artist notes only. Preset locks deliberately leave it empty.
+
+**Status:** DONE. Style image is the sole visual ground truth.
 
 ---
 
@@ -331,19 +353,31 @@ The prompt now stays intentionally lean:
 
 | | |
 |---|---|
-| **Model** | OpenAI Responses API with `gpt-5.5` + image tool using `gpt-image-2` |
-| **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs |
-| **Output** | Ordered 3-6 panel storyboard image + text cut plan saved on `lahari_storyboard_versions.metadata.cutPlanText` |
-| **Artist control** | Generate, natural-language refine, lock/unlock, history, editable cut-plan text |
-| **generation_prompt** | Built from the canonical template; cut-plan text is editable after generation and feeds Seedance video prompting |
+| **Planner model** | Routes through `project.text_provider` (refine tier) — Claude Sonnet 4.6 (default), GPT-5.5, or Gemini 3.1 Flash. Was hardcoded to OpenAI Responses + `gpt-5.5` before the text-provider picker shipped (2026-05-12). |
+| **Renderer model** | Project `storyboard_provider`: `nano-banana-2` (Segmind, default), `nano-banana-pro` (Google `gemini-3-pro-image-preview`), or `gpt-image-2` (OpenAI). |
+| **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs. **Per-shot continuity (opt-in):** when `shot.use_prev_storyboard_ref` is true the prev shot's locked storyboard is attached as vision input to the planner AND as `@imageN` to the renderer. Separate `shot.include_prev_cut_plan` checkbox (nullable; smart-default checked when `continuity_from === 'prev_shot'`) prepends prev shot's cut plan as text context to the planner. |
+| **Saved outputs before image** | `shot.storyboard_prompt` (image-render prompt with per-panel actions baked INLINE — the image model knows what to draw per panel from this field alone) + `shot.storyboard_cut_plan` (text motion/cut guide for Seedance) + `storyboard_prompt_status` |
+| **Rendered output** | Ordered storyboard image/version in `lahari_storyboard_versions`, with provider/model metadata |
+| **Artist control** | Write/Rewrite prompt, edit prompt/cut plan directly, refine in Redo or Edit mode, generate/regenerate image, lock/unlock, history. Per-shot `+ Prev storyboard` toggle + "Include previous cut plan as text context" checkbox. |
+| **generation_prompt** | Two fields: `storyboard_prompt` is the image-render prompt; `storyboard_cut_plan` is the text motion/cut guide used later by Seedance |
+
+**Prompt size discipline (trimmed 2026-05-12):** the planner instruction caps `storyboardPrompt` at ~300 words and forbids "storyboard contract" bullet lists, animation rules, and style/quality boilerplate that the artist called "absolute dog shit" before. Source brief went from ~4300 chars to ~750. Critical fix: per-panel actions now live INSIDE `storyboardPrompt` (not just in `cutPlanText`) so the image renderer doesn't have to infer what each panel shows. The downstream Seedance video prompt was trimmed from ~80 lines to ~10 in the same pass — the long "animation contract" was confusing Seedance more than helping.
 
 **Storyboard contract:** one board per Lahari shot, not one scene board. The board may contain internal cuts and camera angles, but it remains one cohesive 4-15s Seedance clip. Panels are ordered left-to-right, then top-to-bottom; visible panel numbers, captions, labels, and other readable text are not allowed because video models can render them into the final clip.
 
-**API endpoints:** `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
+**Two-step flow:**
+1. `POST /write-storyboard-prompt` converts the canonical source brief into a saved image prompt + cut plan. This is text-only and cheap relative to image rendering.
+2. `POST /generate-storyboard` renders exactly the saved prompt with the selected storyboard provider. It does not re-plan.
+
+**Refine modes:**
+- `replan` rewrites `storyboard_prompt` + `storyboard_cut_plan` only. Artist renders again explicitly.
+- `edit_image` uses the current storyboard image plus refs and the artist note to render a new storyboard version. Optional attached reference images are accepted for both refine modes.
+
+**API endpoints:** `write-storyboard-prompt`, `generate-storyboard`, `refine-storyboard`, `lock-storyboard`, `unlock-storyboard`, `storyboard-plan`, `storyboard-history`.
 
 **UI:** In Seedance storyboard mode, `ShotCard` swaps the keyframe `PromptToolkit` for `StoryboardPanel`. The panel has Storyboard and Video sub-tabs: Storyboard handles ordered cut-plan editing, generate/refine/lock, and history; Video previews `@image1 = locked storyboard` plus bound refs and fires Seedance only after the storyboard is locked.
 
-**Status: DONE / ARTIST TESTING** — backend, UI, history, editable cut plan, lock/save race guard, no-empty-plan guard, and Seedance prompt integration are wired.
+**Status: DONE / ARTIST TESTING** — backend, UI, history, editable prompt + cut plan, lock/save race guard, no-empty-plan guard, provider swap, and Seedance prompt integration are wired.
 
 ---
 
@@ -451,6 +485,50 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 
 ---
 
+## Step 13: Final Render
+
+**Source:** [`server/routes/render.ts`](../server/routes/render.ts), [`server/routes/render-callback.ts`](../server/routes/render-callback.ts), [`server/render-watchdog.ts`](../server/render-watchdog.ts), [`remotion-renderer/src/render-job.ts`](../remotion-renderer/src/render-job.ts), [`remotion-renderer/src/render.ts`](../remotion-renderer/src/render.ts) · UI: [`components/StepRender.tsx`](../components/StepRender.tsx)
+
+| | |
+|---|---|
+| **Renderer** | Sibling `remotion-renderer` Modal service running Remotion SSR + Chromium |
+| **Input** | Render-authoritative timeline snapshot: `trackItemIds`, `trackItemsMap`, `transitionsMap`, `fps`, `size`, `durationMs` |
+| **Output** | Final mp4 uploaded to Supabase Storage, registered as `final_render`, and published back to the queue row |
+| **Artist control** | Timeline editor arrangement, trims, transitions, effects, then Render |
+
+Render is async because Railway cannot hold long HTTP requests. `/render` inserts a `lahari_renders` row, returns `202`, and fire-and-forgets to the renderer. The renderer sends progress/heartbeat pings during bundling, frame rendering, upload, and finalization, then uploads the mp4 and calls `/api/renders/callback/:renderId`; the frontend polls `/render-status` every 4s.
+
+**Phase 1 safety rails now in code:**
+- Duplicate active renders for the same project are rejected with `409`.
+- If Modal rejects the initial render request with non-2xx, the render row is immediately marked failed.
+- A watchdog marks stale `rendering` rows older than `MAX_RENDER_MINUTES` (default 65) failed.
+- Renderer refuses to upload empty outputs (`<1024` bytes or zero frames).
+- Callback `404` is non-retriable.
+- Render delete bucket default matches current production renderer bucket: `videos`.
+
+**Phase 2 visibility now in code:**
+- `lahari_renders` carries `progress`, `stage`, `last_heartbeat_at`, `modal_function_call_id`, and `error_code`.
+- `/render-status` exposes those fields to the Render UI progress bar.
+- `/api/admin/active-renders` shows active rows before deploys, including stage/progress/Modal call id.
+
+**Phase 3 resilience now in code:**
+- Renderer callback retry budget is ~5 minutes with jitter.
+- If callback delivery exhausts, the renderer writes a `pending_finalize` terminal fallback row; the backend reconciler runs the normal `finalizePublish` path and marks the render completed.
+- Renderer prechecks that the project still exists and applies a 50 minute default hard cap before Modal's 60 minute timeout.
+
+**Phase 4 efficiency now in code:**
+- Renderer pre-stages every remote video/image/audio URL from `trackItemsMap[*].details.src` into `/tmp/lahari-render-<renderId>-*`, serves those staged files over a loopback HTTP server for Remotion, and cleans the temp files in `finally`.
+- Docker pre-bundles the Remotion composition so cold containers can skip the runtime bundler pass when the baked bundle is present.
+- **FFmpeg fast path** (`RENDER_ENGINE=ffmpeg`, default): the renderer calls `canRenderWithFfmpeg(inputProps)` on each job. Eligible timelines (no transitions, no visual effects, no playback-rate changes, no overlapping clips, only video/image/audio items, all srcs resolvable) take the FFmpeg concat path → `libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -movflags +faststart` + amix for audio. Order-of-magnitude faster than Remotion SSR for plain timelines. Ineligible timelines fall back to Remotion automatically; `track('render_engine_fallback', ...)` fires so we can measure how often the fast path covers real workloads. See `remotion-renderer/src/ffmpeg-render.ts`.
+
+**Render gate is data-derived** (top-nav Render tab) — accessible the moment ANY shot has a `videoUrl`, not based on `project.status` string. Fixes the case where status drifted (forks, legacy projects) but the artist has rendered material to assemble.
+
+**Media Library drawer** (`components/MediaLibraryDrawer.tsx`) — bottom-anchored drawer over the timeline canvas. Two layers: horizontal scene picker (S1 S2 ...) → shots in that scene as a horizontal row, each shot showing its active video (ring outline) + older versions as small chips. Click any version → appended to the timeline at the end as a fresh clip (the canonical shot data isn't modified). Self-hides on projects with no rendered material. Three-tier thumbnail strategy: server-extracted last-frame asset → shot's storyboard or start frame poster (instant paint via `<video poster=...>`) → `#t=0.1` URL-fragment seek with `preload="metadata"`. Phase 2 will add a Pickups tab with upload + custom-ref generation.
+
+**Still planned:** cancel-on-watchdog and timeline-hash dedup (E5). See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
+
+---
+
 ## Auxiliary: Shot Critique
 
 **Source:** [`server/services/gemini.ts:136`](../server/services/gemini.ts#L136)
@@ -460,6 +538,22 @@ Auto-scores generated frames against the prompt + style + character refs. Not cu
 ---
 
 ## Cross-cutting Issues
+
+### Text provider routing (2026-05-12)
+
+One project-level setting (`project.text_provider`) controls every text-generation stage **except the script writer**. Three options:
+
+| Key | Label | Primary model | Refine model |
+|---|---|---|---|
+| `claude-opus` (default) | Claude Opus 4.7 | `claude-opus-4-7` | `claude-sonnet-4-6` |
+| `gpt-5.5` | GPT-5.5 | `gpt-5.5` | `gpt-5.5` |
+| `gemini-3-pro` | Gemini 3 Pro | `gemini-3-pro-preview` | `gemini-3.1-flash-preview` |
+
+**Routed (responds to picker):** concept gen + refine, style brainstorm + refine, meaning summary, image-style analyzer, frame/motion/chained-shot refines, character + environment look refines, storyboard prompt writer.
+
+**Not routed (always Claude Opus):** `planScenes`, `refineScript`, `writeShotPrompts`. The script writer stack uses Anthropic extended thinking + a validation loop with retry semantics that doesn't port cleanly to OpenAI / Gemini. The UI surfaces this as a "Script writer always uses Claude Opus" sub-label under the Text model dropdown.
+
+**Implementation:** `server/services/text-provider.ts` is the unified dispatcher. One `generateText(providerKey, req)` API. Each provider's branch handles native conventions: Anthropic tool_use, OpenAI `response_format: json_schema` (non-strict — schemas have optional fields), Gemini `responseSchema` + `responseMimeType`. Vision inputs accept HTTPS URL (fetched + base64'd for Gemini; native for Anthropic/OpenAI) or inline base64 (artist uploads). Refines use the cheap sibling via `useRefineModel: true` on the request, keeping the cost-tier discipline from the old Sonnet-vs-Opus split.
 
 ### Hardcoded "devotional" framing
 Present in: concept prompt ([claude.ts:66](../server/services/claude.ts#L66)), script prompt ([claude.ts:162](../server/services/claude.ts#L162)), style brainstorm ([claude.ts:397](../server/services/claude.ts#L397)), critique ([gemini.ts:161](../server/services/gemini.ts#L161)).
@@ -482,7 +576,9 @@ When an upstream field changes after downstream work exists, downstream entities
 | `cast_members.description` edited | All shots referencing that cast member |
 | `environments.description` edited | All shots referencing that environment |
 
-Cleared when: generation_prompt is regenerated/refined, or artist edits the generation_prompt directly.
+Cleared when: generation_prompt is regenerated/refined, artist edits the generation_prompt directly, or the storyboard planner rewrites `storyboard_prompt` + `storyboard_cut_plan`.
+
+**Known caveat:** `lahari_shots.prompts_stale` is currently shared by keyframe prompts and storyboard prompts. In storyboard mode, rewriting the storyboard prompt clears the shared flag because the planner has re-read cast/env refs. If the artist later switches back to keyframe mode, the old `visual_prompt` can look fresh even though it was not rewritten. Future schema should split this into `visual_prompt_stale` and `storyboard_prompt_stale`.
 
 **Only fires when going back** — linear flow (concept → script → style → chars → envs → studio) never triggers staleness. This is specifically for the "go back and tweak upstream" workflow.
 
@@ -518,4 +614,4 @@ The pipeline anatomy IS the agent's knowledge base. Every field mapping, every d
 
 ---
 
-*Last updated: 2026-04-23*
+*Last updated: 2026-05-12*

@@ -7,3 +7,7 @@ storage
 .agents
 *.md
 docs
+!server/resources/
+!server/resources/skills/
+!server/resources/skills/*/
+!server/resources/skills/*/SKILL.md

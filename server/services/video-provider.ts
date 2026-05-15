@@ -10,6 +10,7 @@ type VideoProvider = 'segmind' | 'vertex';
 export type VideoGenerationOptions = {
   endImagePath?: string;
   referenceImagePaths?: string[];
+  referenceAudioPaths?: string[];
   resolution?: '720p' | '1080p';
   aspectRatio?: '16:9' | '9:16';
   durationSec?: number;

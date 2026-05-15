@@ -1,4 +1,4 @@
-import CanvasTimeline from '@designcombo/timeline';
+import CanvasTimeline, { generateId } from '@designcombo/timeline';
 import { ITimelineScaleState, ITrack, ITrackItem, ITransition } from '@designcombo/types';
 import StateManager from '@designcombo/state';
 import { PlayerRef } from '@remotion/player';
@@ -70,6 +70,20 @@ interface ITimelineStore {
   ) => void;
   addTransition: (transition: ITransition) => void;
   removeTransition: (transitionId: string) => void;
+  // Deletes the active item(s). Video/image deletes ripple closed so the common
+  // "split, remove middle" edit does what artists expect. Audio deletes are
+  // non-ripple so the song bed does not unexpectedly shift.
+  deleteActiveItems: () => boolean;
+  // Slices the currently-selected item into two at the playhead. v1 contract:
+  //   - exactly one item selected (activeIds.length === 1)
+  //   - item is video / audio / image (no captions/text/effects splits in v1)
+  //   - playhead lands strictly inside the item, at least one frame from
+  //     either edge (else: silent no-op)
+  // Same source media on both halves; trim ranges split at the cut offset.
+  // Transition rewiring is conservative: outgoing transitions move to the
+  // right half, incoming transitions stay on the left (left's id is unchanged).
+  // Returns true when a split actually happened so callers can flash UI.
+  splitActiveAtPlayhead: () => boolean;
 }
 
 const useStore = create<ITimelineStore>((set, get) => ({
@@ -150,6 +164,239 @@ const useStore = create<ITimelineStore>((set, get) => ({
         { kind: 'update', updateHistory: true },
       );
     }
+  },
+
+  deleteActiveItems: () => {
+    const s = get();
+    if (!s.stateManager) return false;
+    const deleteIds = new Set(
+      s.activeIds.filter((id) => Boolean(s.trackItemsMap[id])),
+    );
+    if (deleteIds.size === 0) return false;
+
+    const nextItemsMap: Record<string, ITrackItem> = { ...s.trackItemsMap };
+    for (const id of deleteIds) {
+      delete nextItemsMap[id];
+    }
+
+    let nextItemIds = s.trackItemIds.filter((id) => !deleteIds.has(id));
+
+    const nextTransitionsMap: Record<string, ITransition> = {};
+    for (const [id, tr] of Object.entries(s.transitionsMap)) {
+      if (deleteIds.has(tr.fromId) || deleteIds.has(tr.toId)) continue;
+      if (!nextItemsMap[tr.fromId] || !nextItemsMap[tr.toId]) continue;
+      nextTransitionsMap[id] = tr;
+    }
+    const nextTransitionIds = s.transitionIds.filter((id) => nextTransitionsMap[id]);
+
+    const tracksWithoutDeleted = s.tracks.map((track) => ({
+      ...track,
+      items: (track.items as string[]).filter((id) => !deleteIds.has(id)),
+    }));
+
+    const visualTracks = tracksWithoutDeleted.filter(
+      (track) => track.type === 'video' || track.type === 'image',
+    );
+    const mainVisualTrack = visualTracks[0];
+    let nextTracks = tracksWithoutDeleted;
+
+    if (mainVisualTrack) {
+      const orderIndex = new Map(nextItemIds.map((id, idx) => [id, idx]));
+      const pooledVisualItems = visualTracks
+        .flatMap((track) =>
+          (track.items as string[])
+            .map((id) => nextItemsMap[id] as any)
+            .filter(Boolean),
+        )
+        .sort((a, b) => {
+          const byTime = (a.display?.from ?? 0) - (b.display?.from ?? 0);
+          if (byTime !== 0) return byTime;
+          return (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0);
+        });
+
+      let cursor = 0;
+      const packedVisualIds: string[] = [];
+      for (const item of pooledVisualItems) {
+        const from = item.display?.from ?? 0;
+        const to = item.display?.to ?? from;
+        const width = Math.max(0, to - from);
+        nextItemsMap[item.id] = {
+          ...item,
+          display: { from: cursor, to: cursor + width },
+          trackId: mainVisualTrack.id,
+        };
+        packedVisualIds.push(item.id);
+        cursor += width;
+      }
+
+      nextTracks = tracksWithoutDeleted
+        .filter((track) => {
+          if (track === mainVisualTrack) return pooledVisualItems.length > 0;
+          return track.type !== 'video' && track.type !== 'image';
+        })
+        .map((track) =>
+          track === mainVisualTrack
+            ? { ...track, items: packedVisualIds }
+            : track,
+        );
+
+      const visualIdSet = new Set(packedVisualIds);
+      const nonVisualIds = nextItemIds.filter((id) => !visualIdSet.has(id));
+      nextItemIds = [...packedVisualIds, ...nonVisualIds];
+    }
+
+    let nextDuration = 0;
+    for (const item of Object.values(nextItemsMap) as any[]) {
+      const to = item?.display?.to ?? 0;
+      if (to > nextDuration) nextDuration = to;
+    }
+
+    s.stateManager.updateState(
+      {
+        activeIds: [],
+        duration: nextDuration || 5000,
+        trackItemIds: nextItemIds,
+        trackItemsMap: nextItemsMap,
+        tracks: nextTracks,
+        transitionIds: nextTransitionIds,
+        transitionsMap: nextTransitionsMap,
+      },
+      { kind: 'update', updateHistory: true },
+    );
+
+    return true;
+  },
+
+  splitActiveAtPlayhead: () => {
+    const s = get();
+    if (s.activeIds.length !== 1) return false;
+    const itemId = s.activeIds[0];
+    const item = s.trackItemsMap[itemId] as any;
+    if (!item) return false;
+    if (item.type !== 'video' && item.type !== 'audio' && item.type !== 'image') {
+      return false;
+    }
+
+    // Read playhead from Remotion's player. getCurrentFrame() returns an
+    // integer frame, so converting to ms via `frame * 1000 / fps` lands on
+    // an exact frame boundary — no rounding needed, no sub-frame drift.
+    const frame = s.playerRef?.current?.getCurrentFrame?.();
+    if (frame == null) return false;
+    const T = (frame * 1000) / s.fps;
+
+    const df = item.display?.from ?? 0;
+    const dt = item.display?.to ?? 0;
+    if (dt <= df) return false;
+
+    // Refuse to create zero-or-sub-frame fragments. Without this, an
+    // accidental click at the very edge of a clip would produce a 1-frame
+    // sliver that's painful to grab and unhelpful for the artist.
+    const minGapMs = 1000 / s.fps;
+    if (T <= df + minGapMs || T >= dt - minGapMs) return false;
+
+    // Trim is optional on the schema but always populated for items seeded
+    // by TimelineEditor. Fall back to a full-range trim for safety on
+    // hand-added items that omit it.
+    const trim = item.trim ?? { from: 0, to: dt - df };
+    const cutOffset = T - df;
+    const rightId = generateId();
+
+    const left = {
+      ...item,
+      display: { from: df, to: T },
+      trim: { from: trim.from, to: trim.from + cutOffset },
+    };
+    const right = {
+      ...item,
+      id: rightId,
+      display: { from: T, to: dt },
+      trim: { from: trim.from + cutOffset, to: trim.to },
+      metadata: {
+        ...(item.metadata || {}),
+        // Convention used by the seed path + addVideoClip: resourceId ==
+        // item id. Mirror it on the new half so anything keying off
+        // resourceId stays consistent.
+        resourceId: rightId,
+      },
+    };
+
+    // Insert the right id immediately after the left id in both the global
+    // trackItemIds order and the owning track's items[] array. Anything
+    // listening to a stable id order (e.g. the pack reflow's sort) will
+    // place the halves contiguously.
+    const idx = s.trackItemIds.indexOf(itemId);
+    if (idx === -1) return false;
+    const nextItemIds = [...s.trackItemIds];
+    nextItemIds.splice(idx + 1, 0, rightId);
+
+    const nextTracks = s.tracks.map((t) => {
+      const arr = t.items as string[];
+      if (!arr.includes(itemId)) return t;
+      const updated = [...arr];
+      updated.splice(updated.indexOf(itemId) + 1, 0, rightId);
+      return { ...t, items: updated };
+    });
+
+    // Transitions: outgoing (fromId === itemId) attaches to the new right
+    // half — that's the side that ends at the next clip boundary now.
+    // Incoming (toId === itemId) stays on the left (left's id is
+    // unchanged).
+    //
+    // Validity check: a transition's duration must fit within both endpoint
+    // clips' durations (it's a crossfade region that lives inside both).
+    // After split, the affected half is shorter than the original clip, so
+    // a transition that fit before may no longer fit. Drop those — the
+    // Remotion `TransitionSeries` renderer can produce garbage frames or
+    // throw when asked to play a transition longer than its host clip.
+    // Conservative posture: silent drop. Artist gets clean state + undo;
+    // they can re-add a shorter transition explicitly if they want one.
+    const leftDuration = T - df;
+    const rightDuration = dt - T;
+    const droppedTransitionIds = new Set<string>();
+    const nextTransitionsMap = { ...s.transitionsMap };
+    for (const tid of Object.keys(nextTransitionsMap)) {
+      const tr = nextTransitionsMap[tid];
+      const trDuration = tr.duration ?? 0;
+      if (tr.toId === itemId) {
+        // Incoming: stays on left half. Drop if it no longer fits.
+        if (trDuration > leftDuration) {
+          droppedTransitionIds.add(tid);
+        }
+      } else if (tr.fromId === itemId) {
+        // Outgoing: moves to the right half. Drop if it no longer fits;
+        // otherwise rewire the fromId pointer.
+        if (trDuration > rightDuration) {
+          droppedTransitionIds.add(tid);
+        } else {
+          nextTransitionsMap[tid] = { ...tr, fromId: rightId };
+        }
+      }
+    }
+    for (const tid of droppedTransitionIds) {
+      delete nextTransitionsMap[tid];
+    }
+    const nextTransitionIds = droppedTransitionIds.size
+      ? s.transitionIds.filter((id) => !droppedTransitionIds.has(id))
+      : s.transitionIds;
+
+    const nextItemsMap = {
+      ...s.trackItemsMap,
+      [itemId]: left,
+      [rightId]: right,
+    };
+
+    s.stateManager?.updateState(
+      {
+        trackItemIds: nextItemIds,
+        trackItemsMap: nextItemsMap,
+        tracks: nextTracks,
+        transitionIds: nextTransitionIds,
+        transitionsMap: nextTransitionsMap,
+      },
+      { kind: 'update', updateHistory: true },
+    );
+
+    return true;
   },
 }));
 

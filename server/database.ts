@@ -34,6 +34,11 @@ const T = {
   environments: `${TABLE_PREFIX}_environments`,
   assets: `${TABLE_PREFIX}_assets`,
   storyboard_versions: `${TABLE_PREFIX}_storyboard_versions`,
+  director_events: `${TABLE_PREFIX}_director_events`,
+  agent_operations: `${TABLE_PREFIX}_agent_operations`,
+  mcp_tokens: `${TABLE_PREFIX}_mcp_tokens`,
+  project_config: `${TABLE_PREFIX}_project_config`,
+  project_prompt_overrides: `${TABLE_PREFIX}_project_prompt_overrides`,
   chat_messages: `${TABLE_PREFIX}_chat_messages`,
   ai_calls: `${TABLE_PREFIX}_ai_calls`,
   renders: `${TABLE_PREFIX}_renders`,
@@ -165,6 +170,12 @@ export const rpc = async (fnName: string, params: Record<string, any> = {}): Pro
   const { data, error } = await getSB().rpc(fnName, params);
   if (error) throw new Error(`DB rpc ${fnName}: ${error.message}`);
   return data;
+};
+
+/** Raw RPC call for mutation helpers that should run inside Postgres transactions. */
+export const rpcVoid = async (fnName: string, params: Record<string, any> = {}): Promise<void> => {
+  const { error } = await getSB().rpc(fnName, params);
+  if (error) throw new Error(`DB rpc ${fnName}: ${error.message}`);
 };
 
 // ─── Convenience: select with custom column list ─────────────────────

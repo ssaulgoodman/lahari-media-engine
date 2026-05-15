@@ -1,8 +1,10 @@
-import { unlink } from 'node:fs/promises';
+import { stat, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { stageTimelineAssets } from './asset-staging';
+import { canRenderWithFfmpeg, renderTimelineWithFfmpeg } from './ffmpeg-render';
 import { shutdownPosthog, track, trackError } from './posthog';
 import { renderTimeline } from './render';
-import { uploadRender } from './storage';
+import { projectExists, uploadRender, writeTerminalFallback } from './storage';
 import type { TimelineRenderProps } from './Video';
 
 // Raw, untrusted JSON shape from the caller (HTTP body on CapRover, stdin on
@@ -47,16 +49,47 @@ export const buildInputProps = (body: RenderRequestBody): TimelineRenderProps =>
 // exponential backoff — if main is briefly down (deploy, network blip) we'd
 // otherwise lose the render result forever. After all retries exhaust, we
 // surface the failure in PostHog so it's visible in Error Tracking.
-const CALLBACK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
+const CALLBACK_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000, 45000, 60000, 60000, 60000];
+const renderHardCapMinutes = () => {
+  const parsed = Number(process.env.RENDER_HARD_CAP_MINUTES || 50);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+};
 
-const postCallback = async (renderId: string, payload: Record<string, unknown>) => {
+const renderEngine = () => {
+  const engine = (process.env.RENDER_ENGINE || 'ffmpeg').toLowerCase();
+  return engine === 'remotion' ? 'remotion' : 'ffmpeg';
+};
+
+const withJitter = (ms: number) => {
+  const jitter = Math.round(ms * 0.2 * Math.random());
+  return ms + jitter;
+};
+
+const persistTerminalFallback = async (
+  renderId: string,
+  payload: Record<string, unknown>,
+) => {
+  try {
+    await writeTerminalFallback(renderId, payload);
+    console.error(`[render ${renderId}] wrote terminal fallback to Supabase`);
+  } catch (err: any) {
+    console.error(`[render ${renderId}] terminal fallback failed:`, err?.message || err);
+    trackError(renderId, err, { renderId, stage: 'terminal_fallback' });
+  }
+};
+
+const postCallback = async (renderId: string, payload: Record<string, unknown>): Promise<boolean> => {
   const base = process.env.MAIN_BACKEND_URL;
   const sharedSecret = process.env.RENDERER_SHARED_SECRET;
   if (!base) {
     console.warn(`[render ${renderId}] MAIN_BACKEND_URL not set — skipping callback`);
-    return;
+    await persistTerminalFallback(renderId, payload);
+    return false;
   }
-  if (!sharedSecret) return;
+  if (!sharedSecret) {
+    await persistTerminalFallback(renderId, payload);
+    return false;
+  }
 
   const url = `${base.replace(/\/$/, '')}/api/renders/callback/${renderId}`;
   const attempts = CALLBACK_RETRY_DELAYS_MS.length + 1;
@@ -71,8 +104,9 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
           'x-renderer-secret': sharedSecret,
         },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000),
       });
-      if (res.ok) return;
+      if (res.ok) return true;
 
       // 400/401/403 mean our request is truly wrong — retrying won't help.
       // Everything else (404, 408, 429, 5xx) could be a transient main-backend
@@ -80,7 +114,7 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
       // we retry.
       const body = await res.text().catch(() => '');
       lastError = new Error(`callback ${res.status}: ${body}`);
-      if (res.status === 400 || res.status === 401 || res.status === 403) {
+      if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) {
         console.error(`[render ${renderId}] callback got non-retriable ${res.status}: ${body}`);
         break;
       }
@@ -91,14 +125,98 @@ const postCallback = async (renderId: string, payload: Record<string, unknown>) 
     }
 
     const delay = CALLBACK_RETRY_DELAYS_MS[attempt - 1];
-    if (delay) await new Promise((r) => setTimeout(r, delay));
+    if (delay) await new Promise((r) => setTimeout(r, withJitter(delay)));
   }
 
-  console.error(`[render ${renderId}] callback exhausted ${attempts} attempts — result lost`);
+  console.error(`[render ${renderId}] callback exhausted ${attempts} attempts — writing terminal fallback`);
   trackError(renderId, lastError ?? new Error('callback exhausted retries'), {
     renderId,
     stage: 'callback',
   });
+  await persistTerminalFallback(renderId, payload);
+  return false;
+};
+
+const postProgress = async (
+  renderId: string,
+  payload: { stage: string; progress?: number; renderEngine?: string; ffmpegFallbackReason?: string | null },
+) => {
+  const base = process.env.MAIN_BACKEND_URL;
+  const sharedSecret = process.env.RENDERER_SHARED_SECRET;
+  if (!base || !sharedSecret) return;
+
+  try {
+    await fetch(`${base.replace(/\/$/, '')}/api/renders/progress/${renderId}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-renderer-secret': sharedSecret,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (err: any) {
+    console.warn(`[render ${renderId}] progress callback failed:`, err?.message || err);
+  }
+};
+
+type RenderErrorCode =
+  | 'bundle_failed'
+  | 'chromium_oom'
+  | 'asset_404'
+  | 'project_deleted'
+  | 'supabase_5xx'
+  | 'timeout'
+  | 'empty_output'
+  | 'renderer_failed';
+
+const classifyRenderError = (err: unknown): RenderErrorCode => {
+  const message = err instanceof Error ? err.message : String(err || '');
+  const text = message.toLowerCase();
+
+  if (text.includes('empty render output')) return 'empty_output';
+  if (text.includes('project not found before render')) return 'project_deleted';
+  if (text.includes('out of memory') || /\boom\b/.test(text) || text.includes('memory limit')) {
+    return 'chromium_oom';
+  }
+  if (
+    (text.includes('404') || text.includes('not found')) &&
+    (text.includes('asset') || text.includes('media') || text.includes('video') || text.includes('image') || text.includes('fetch'))
+  ) {
+    return 'asset_404';
+  }
+  if (
+    text.includes('asset fetch failed') &&
+    (text.includes('500') || text.includes('502') || text.includes('503') || text.includes('504'))
+  ) {
+    return 'supabase_5xx';
+  }
+  if (
+    (text.includes('supabase') || text.includes('storage')) &&
+    (text.includes('500') || text.includes('502') || text.includes('503') || text.includes('504') || text.includes('5xx'))
+  ) {
+    return 'supabase_5xx';
+  }
+  if (text.includes('timeout') || text.includes('timed out') || text.includes('deadline')) return 'timeout';
+  if (text.includes('bundle') || text.includes('webpack') || text.includes('esbuild')) return 'bundle_failed';
+
+  return 'renderer_failed';
+};
+
+const withHardCap = async <T,>(promise: Promise<T>): Promise<T> => {
+  const minutes = renderHardCapMinutes();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`render timeout: exceeded ${minutes} min hard cap`));
+    }, minutes * 60 * 1000);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 };
 
 export interface RunRenderJobArgs {
@@ -131,10 +249,98 @@ export const runRenderJob = async ({
   const startedAt = Date.now();
   console.log(`[render] start render=${renderId} project=${projectId}`);
   let outputPath: string | undefined;
+  let cleanupStagedAssets: (() => Promise<void>) | undefined;
+  let lastProgressPostAt = 0;
+  let lastProgress = 0;
+  let lastStage = 'starting';
+  let selectedEngine: 'ffmpeg' | 'remotion' | undefined;
+  let selectedFfmpegFallbackReason: string | null = null;
+  const reportProgress = async (stage: string, progress?: number, force = false) => {
+    const now = Date.now();
+    const clamped = typeof progress === 'number' ? Math.max(0, Math.min(1, progress)) : undefined;
+    if (
+      !force &&
+      clamped !== undefined &&
+      now - lastProgressPostAt < 3000 &&
+      Math.abs(clamped - lastProgress) < 0.03
+    ) {
+      return;
+    }
+    lastProgressPostAt = now;
+    lastStage = stage;
+    if (clamped !== undefined) lastProgress = clamped;
+    await postProgress(renderId, { stage, ...(clamped !== undefined ? { progress: clamped } : {}) });
+  };
+  const heartbeat = setInterval(() => {
+    void postProgress(renderId, {
+      stage: lastStage,
+      progress: lastProgress,
+    });
+  }, 30000);
+  heartbeat.unref?.();
+
   try {
-    const result = await renderTimeline(inputProps);
+    const exists = await projectExists(projectId);
+    if (!exists) {
+      throw new Error(`project not found before render: ${projectId}`);
+    }
+    const stagedAssets = await stageTimelineAssets(inputProps, renderId, reportProgress);
+    cleanupStagedAssets = stagedAssets.cleanup;
+    if (stagedAssets.count > 0) {
+      track('render_assets_staged', projectId, {
+        renderId,
+        count: stagedAssets.count,
+        bytes: stagedAssets.bytes,
+        stagingMs: stagedAssets.stagingMs,
+      });
+    } else {
+      await reportProgress('bundling', 0.04, true);
+    }
+
+    const ffmpegEligibility = canRenderWithFfmpeg(stagedAssets.inputProps);
+    const useFfmpeg = renderEngine() === 'ffmpeg' && ffmpegEligibility.ok;
+    const fallbackReason = !ffmpegEligibility.ok ? ffmpegEligibility.reason : null;
+    if (renderEngine() === 'ffmpeg' && !ffmpegEligibility.ok) {
+      console.log(`[render ${renderId}] falling back to Remotion: ${fallbackReason}`);
+      track('render_engine_fallback', projectId, {
+        renderId,
+        requestedEngine: 'ffmpeg',
+        fallbackEngine: 'remotion',
+        reason: fallbackReason,
+      });
+    }
+
+    const engine = useFfmpeg ? 'ffmpeg' : 'remotion';
+    selectedEngine = engine;
+    selectedFfmpegFallbackReason = fallbackReason;
+    await reportProgress(useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames', 0.08, true);
+    await postProgress(renderId, {
+      stage: useFfmpeg ? 'ffmpeg_rendering' : 'rendering_frames',
+      progress: 0.08,
+      renderEngine: engine,
+      ffmpegFallbackReason: fallbackReason,
+    });
+    const result = await withHardCap(
+      useFfmpeg
+        ? renderTimelineWithFfmpeg(stagedAssets.inputProps, (progress) => {
+            void reportProgress('ffmpeg_rendering', 0.08 + progress * 0.79);
+          })
+        : renderTimeline(stagedAssets.inputProps, (progress) => {
+            void reportProgress('rendering_frames', 0.08 + progress * 0.79);
+          }),
+    );
     outputPath = result.outputPath;
 
+    await reportProgress('validating_output', 0.9, true);
+    const outputStat = await stat(outputPath);
+    if (outputStat.size < 1024) {
+      throw new Error(`empty render output: ${outputStat.size} bytes`);
+    }
+    if (!result.durationInFrames || result.durationInFrames <= 0) {
+      throw new Error(`empty render output: ${result.durationInFrames} frames`);
+    }
+
+    await reportProgress('uploading', 0.94, true);
     const upload = await uploadRender(outputPath, projectId);
     const renderMs = Date.now() - startedAt;
 
@@ -143,6 +349,7 @@ export const runRenderJob = async ({
     );
     track('render_completed', projectId, {
       renderId,
+      engine,
       renderMs,
       sizeBytes: upload.sizeBytes,
       durationInFrames: result.durationInFrames,
@@ -158,17 +365,33 @@ export const runRenderJob = async ({
       width: result.width,
       height: result.height,
       renderMs,
+      renderEngine: engine,
+      ffmpegFallbackReason: fallbackReason,
     };
+    await reportProgress('finalizing', 0.98, true);
     await postCallback(renderId, payload);
     return { ok: true, ...payload };
   } catch (e) {
     const message = (e as Error).message;
+    const errorCode = classifyRenderError(e);
     const renderMs = Date.now() - startedAt;
     console.error(`[render] failed render=${renderId} project=${projectId}`, message);
-    trackError(projectId, e, { renderId, renderMs });
-    await postCallback(renderId, { error: message, renderMs });
+    trackError(projectId, e, { renderId, renderMs, errorCode });
+    await postCallback(renderId, {
+      error: message,
+      errorCode,
+      renderMs,
+      ...(selectedEngine ? { renderEngine: selectedEngine } : {}),
+      ...(selectedFfmpegFallbackReason ? { ffmpegFallbackReason: selectedFfmpegFallbackReason } : {}),
+    });
     return { ok: false, error: message, renderMs };
   } finally {
+    clearInterval(heartbeat);
+    if (cleanupStagedAssets) {
+      await cleanupStagedAssets().catch((err: any) => {
+        console.warn(`[render ${renderId}] staged asset cleanup failed:`, err?.message || err);
+      });
+    }
     if (outputPath) {
       unlink(outputPath).catch(() => {});
     }

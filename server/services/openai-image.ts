@@ -32,7 +32,7 @@ const detectImageExt = (base64: string): string => {
   return 'png';
 };
 
-const sizeForAspectRatio = (aspectRatio = '16:9'): '1536x1024' | '1024x1536' | '1024x1024' => {
+const sizeForAspectRatio = (aspectRatio = '16:9'): string => {
   switch (aspectRatio) {
     case '9:16':
       return '1024x1536';
@@ -93,7 +93,7 @@ const generateFromPrompt = async (
   count = 1
 ): Promise<string[]> => {
   const client = getClient();
-  const size = sizeForAspectRatio(aspectRatio);
+  const size = sizeForAspectRatio(aspectRatio) as any;
   const cappedRefs = refs.slice(0, MAX_OPENAI_INPUT_IMAGES);
 
   if (cappedRefs.length > 0) {
@@ -138,6 +138,7 @@ export const generateOpenAIImageWithResponses = async (
   prompt: string,
   opts?: {
     aspectRatio?: string;
+    size?: string;
     refs?: OpenAIRefImage[];
     previousResponseId?: string;
     action?: 'generate' | 'edit' | 'auto';
@@ -155,7 +156,7 @@ export const generateOpenAIImageWithResponses = async (
   const client = getClient();
   const cappedRefs = (opts?.refs || []).slice(0, MAX_OPENAI_INPUT_IMAGES);
   const fileIds = await Promise.all(cappedRefs.map((ref, idx) => uploadVisionFile(client, ref, idx)));
-  const size = sizeForAspectRatio(opts?.aspectRatio || '16:9');
+  const size = opts?.size || sizeForAspectRatio(opts?.aspectRatio || '16:9');
 
   const content: any[] = [
     { type: 'input_text', text: `${buildReferenceIndex(cappedRefs)}${prompt}` },
@@ -242,15 +243,16 @@ export const generateStyleOptions = async (
         `${styleNotes}, as vintage 16mm film with warm analog grain and nostalgic color grading`,
       ]
     : [
-        `Cinematic production frame for ${subject}, 35mm Kodak film look, natural light`,
-        `${subject} in dramatic chiaroscuro, deep shadows, single light source, oil painting realism`,
-        `${subject} in high-key photography, soft bloom, luminous atmosphere, controlled lens flare`,
-        `${subject} as vintage 16mm film still, warm analog grain, faded colors, nostalgic music-video aesthetic`,
+        // Medium-neutral defaults — see docs/cinematic-leak-audit-2026-05-12.md.
+        `Reference frame for ${subject}, natural light, balanced composition`,
+        `${subject} with dramatic chiaroscuro shadows and a single warm light source, deep grounded mood`,
+        `${subject} with high-key luminous color, soft bloom, clear atmospheric separation`,
+        `${subject} with warm earthy color and tactile material texture`,
       ];
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `Cinematic film still. ${direction}. Focus on lighting, atmosphere, and visual style. High production value, no text, no watermark.`;
+      const prompt = `${direction}. Focus on lighting, atmosphere, and visual treatment. High production value, no text, no watermark.`;
       const [assetPath] = await generateFromPrompt(prompt, '16:9', [], 1);
       return { style: direction, assetPath };
     })
@@ -278,6 +280,10 @@ export const generateCharacterLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted for
+  // signature parity with imagen.ts; OpenAI's image service has a single
+  // model (gpt-image-2) so the registry's runtimeModel is informational here.
+  _model?: string,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
@@ -299,6 +305,8 @@ export const generateEnvironmentLooks = async (
   userRefImagePath?: string,
   userNote?: string,
   generationPrompt?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _model?: string,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
@@ -346,7 +354,9 @@ This shot should begin from that exact continuity state — matching pose, camer
   }
 
   if (opts.userFeedback) prompt += `\n\nDirector note: ${opts.userFeedback}`;
-  prompt += `\n\nSingle cinematic frame. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a film still.`;
+  // Medium-neutral — style image is the ground truth. See
+  // docs/cinematic-leak-audit-2026-05-12.md.
+  prompt += `\n\nSingle frame. No text, no watermark.\nAvoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
 
   const [assetPath] = await generateFromPrompt(prompt, opts.aspectRatio || '16:9', refs, 1);
   return assetPath;

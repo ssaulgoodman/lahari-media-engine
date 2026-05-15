@@ -4,8 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ApiProject } from '../types';
 import * as api from '../services/api';
 import { Markdown } from './Markdown';
-import { IMAGE_MODELS, getImageModel } from '../constants/imageModels';
+import { IMAGE_MODELS } from '../constants/imageModels';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
+import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
+import { TEXT_PROVIDERS } from '../constants/textProviders';
 import { Dropdown } from './Dropdown';
 
 export type Phase = 'concept' | 'script' | 'style' | 'characters' | 'environments';
@@ -82,7 +84,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
   project, isLoading, viewPhase, activePhase, showLaunch, actionError,
   onSetViewPhase, onUpdateProject, onLaunchStudio, onSetProject, onClearActionError, showActionError,
 }) => {
-  const [contextPopover, setContextPopover] = useState<'render' | 'analysis' | null>(null);
+  const [contextPopover, setContextPopover] = useState<'analysis' | null>(null);
   const contextBarRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
@@ -119,11 +121,14 @@ export const BlueprintContextBar: React.FC<Props> = ({
     || project.cast.some(c => c.referenceImageUrl)
     || project.environments.some(e => e.referenceImageUrl);
 
-  const aspectLabel = project.aspectRatio || '16:9';
-  const resLabel = project.videoResolution || '720p';
-  const imageLabel = getImageModel(project.imageModel || IMAGE_MODELS[0].key).label;
-  const modelLabel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key).label;
-  const renderSummary = `${aspectLabel} · ${resLabel} · ${imageLabel} · ${modelLabel}`;
+  const selectedVideoModel = getVideoModel(project.videoModel || VIDEO_MODELS[0].key);
+  const effectiveResolution = selectedVideoModel.resolutions.includes(project.videoResolution)
+    ? project.videoResolution
+    : selectedVideoModel.resolutions[0];
+  const resolutionOptions = selectedVideoModel.resolutions.map(res => ({
+    value: res,
+    label: res === '1080p' ? '1080p (Full HD)' : '720p (HD)',
+  }));
   const songTypeLabel = project.songType && project.songType !== 'unknown'
     ? project.songType.charAt(0).toUpperCase() + project.songType.slice(1)
       + (project.isMeditative ? ' · Meditative' : '')
@@ -200,41 +205,28 @@ export const BlueprintContextBar: React.FC<Props> = ({
               </div>
             )}
 
-            <div className="w-px h-5 bg-white/[0.06] flex-shrink-0" />
-
-            {/* Render chip */}
-            <button
-              onClick={() => setContextPopover(p => p === 'render' ? null : 'render')}
-              className={`flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors ${contextPopover === 'render' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
-              aria-expanded={contextPopover === 'render'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400" aria-hidden="true">
-                <circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/>
-              </svg>
-              <span className="text-[11px] uppercase tracking-wide text-zinc-400">Render</span>
-              <span className="text-xs text-zinc-300 truncate max-w-[260px]">{renderSummary}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-zinc-400 transition-transform ${contextPopover === 'render' ? 'rotate-180' : ''}`} aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-
-            <div className="flex-1" />
-
             {/* Analysis chip */}
             {hasAnalysis && (
-              <button
-                onClick={() => setContextPopover(p => p === 'analysis' ? null : 'analysis')}
-                className={`flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors ${contextPopover === 'analysis' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
-                aria-expanded={contextPopover === 'analysis'}
-              >
-                <span className="flex items-center gap-1.5">
-                  {analysisItems.map(it => (
-                    <span key={it.label} className={`text-[11px] ${it.present ? 'text-zinc-300' : 'text-amber-300/80'}`}>
-                      {it.present ? '✓' : '—'} {it.label}
-                    </span>
-                  ))}
-                </span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-zinc-400 transition-transform ${contextPopover === 'analysis' ? 'rotate-180' : ''}`} aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-              </button>
+              <>
+                <div className="w-px h-5 bg-white/[0.06] flex-shrink-0" />
+                <button
+                  onClick={() => setContextPopover(p => p === 'analysis' ? null : 'analysis')}
+                  className={`flex items-center gap-2 px-2.5 py-1 rounded-md transition-colors ${contextPopover === 'analysis' ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'}`}
+                  aria-expanded={contextPopover === 'analysis'}
+                >
+                  <span className="flex items-center gap-1.5">
+                    {analysisItems.map(it => (
+                      <span key={it.label} className={`text-[11px] ${it.present ? 'text-zinc-300' : 'text-amber-300/80'}`}>
+                        {it.present ? '✓' : '—'} {it.label}
+                      </span>
+                    ))}
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`text-zinc-400 transition-transform ${contextPopover === 'analysis' ? 'rotate-180' : ''}`} aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+              </>
             )}
+
+            <div className="flex-1" />
 
             {/* Launch Studio */}
             {showLaunch && (
@@ -281,83 +273,95 @@ export const BlueprintContextBar: React.FC<Props> = ({
             })}
           </div>
 
+          {/* Render params — always visible, no popover */}
+          <div className="flex items-stretch divide-x divide-white/[0.06] border-t border-white/[0.06]">
+            <div className="flex-1 px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Aspect</div>
+              <Dropdown
+                value={project.aspectRatio || '16:9'}
+                onChange={v => onUpdateProject({ aspectRatio: v })}
+                disabled={hasGeneratedMedia}
+                title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
+                options={[
+                  { value: '16:9', label: '16:9 — landscape' },
+                  { value: '9:16', label: '9:16 — portrait' },
+                  { value: '1:1', label: '1:1 — square' },
+                ]}
+              />
+            </div>
+            <div className="flex-1 px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
+              <Dropdown
+                value={effectiveResolution}
+                onChange={v => onUpdateProject({ videoResolution: v })}
+                options={resolutionOptions}
+              />
+            </div>
+            <div className="flex-1 px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Image model</div>
+              <Dropdown
+                value={project.imageModel || IMAGE_MODELS[0].key}
+                onChange={v => onUpdateProject({ imageModel: v })}
+                options={IMAGE_MODELS.map(m => ({
+                  value: m.key,
+                  label: m.label,
+                }))}
+              />
+            </div>
+            <div className="flex-1 px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Storyboard image</div>
+              <Dropdown
+                value={project.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
+                onChange={v => onUpdateProject({ storyboardProvider: v })}
+                options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
+              />
+            </div>
+            {/* Text model — controls concept, style, refines (frame, motion,
+                chained-shot, char/env look, style refine, concept refine),
+                meaning summary, image-style analyzer, and storyboard prompt
+                writer. Script writer is intentionally NOT routed here — it
+                uses Claude Opus's extended thinking + a validation loop
+                that doesn't port cleanly to other vendors yet. The label
+                makes that gap explicit so the artist isn't surprised. */}
+            <div className="flex-1 px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Text model</div>
+              <Dropdown
+                value={project.textProvider || TEXT_PROVIDERS[0].key}
+                onChange={v => onUpdateProject({ textProvider: v })}
+                options={TEXT_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
+              />
+              <div className="text-[10px] text-zinc-500 leading-tight">Used for concept, style, refines, storyboard. Script writer: Claude + GPT-5.5 only — picking Gemini falls back to Claude for script.</div>
+            </div>
+            <div className="flex-[1.4] px-5 py-3 space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
+              <Dropdown
+                value={project.videoModel || VIDEO_MODELS[0].key}
+                onChange={v => {
+                  const newModel = getVideoModel(v);
+                  const currentModel = getVideoModel(project.videoModel);
+                  const shotCount = project.scenes.reduce((acc, s) => acc + s.shots.length, 0);
+                  const hasVideos = project.scenes.some(s => s.shots.some((sh: any) => sh.videoUrl));
+                  const durationMismatch = shotCount > 0 && !newModel.durations.some(d => currentModel.durations.includes(d));
+
+                  if (hasVideos && durationMismatch) {
+                    const ok = window.confirm(
+                      `Switching from ${currentModel.label} (${currentModel.durations.join('/')}s) to ${newModel.label} (${newModel.durations.join('/')}s).\n\nExisting shot durations will be clamped to the nearest supported value. Already-generated videos won't change, but new generations will use the new durations.\n\nContinue?`
+                    );
+                    if (!ok) return;
+                  }
+
+                  const updates: Record<string, any> = { videoModel: v };
+                  if (!newModel.durations.includes(project.targetDuration)) updates.targetDuration = newModel.durations[0];
+                  if (!newModel.resolutions.includes(project.videoResolution)) updates.videoResolution = newModel.resolutions[0];
+                  onUpdateProject(updates);
+                }}
+                options={VIDEO_MODELS.map(m => ({ value: m.key, label: m.label }))}
+              />
+            </div>
+          </div>
+
           {/* Popover panels */}
           <AnimatePresence initial={false}>
-            {contextPopover === 'render' && (
-              <motion.div
-                key="render-pop"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
-                exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
-                transition={{ duration: 0.18 }}
-                className="border-t border-white/[0.06]"
-              >
-                <div className="flex items-stretch divide-x divide-white/[0.06]">
-                  <div className="flex-1 px-5 py-3 space-y-1">
-                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Aspect</div>
-                    <Dropdown
-                      value={project.aspectRatio || '16:9'}
-                      onChange={v => onUpdateProject({ aspectRatio: v })}
-                      disabled={hasGeneratedMedia}
-                      title={hasGeneratedMedia ? 'Aspect is locked once images are generated — unlock phases and regenerate to change' : undefined}
-                      options={[
-                        { value: '16:9', label: '16:9 — landscape' },
-                        { value: '9:16', label: '9:16 — portrait' },
-                        { value: '1:1', label: '1:1 — square' },
-                      ]}
-                    />
-                  </div>
-                  <div className="flex-1 px-5 py-3 space-y-1">
-                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Resolution</div>
-                    <Dropdown
-                      value={project.videoResolution || '720p'}
-                      onChange={v => onUpdateProject({ videoResolution: v })}
-                      options={[
-                        { value: '720p', label: '720p (HD)' },
-                        { value: '1080p', label: '1080p (Full HD)' },
-                      ]}
-                    />
-                  </div>
-                  <div className="flex-[1.25] px-5 py-3 space-y-1">
-                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Image model</div>
-                    <Dropdown
-                      value={project.imageModel || IMAGE_MODELS[0].key}
-                      onChange={v => onUpdateProject({ imageModel: v })}
-                      options={IMAGE_MODELS.map(m => ({
-                        value: m.key,
-                        label: m.note ? `${m.label} · ${m.note}` : m.label,
-                      }))}
-                    />
-                  </div>
-                  <div className="flex-[1.5] px-5 py-3 space-y-1">
-                    <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
-                    <Dropdown
-                      value={project.videoModel || VIDEO_MODELS[0].key}
-                      onChange={v => {
-                        const newModel = getVideoModel(v);
-                        const currentModel = getVideoModel(project.videoModel);
-                        const shotCount = project.scenes.reduce((acc, s) => acc + s.shots.length, 0);
-                        const hasVideos = project.scenes.some(s => s.shots.some((sh: any) => sh.videoUrl));
-                        const durationMismatch = shotCount > 0 && !newModel.durations.some(d => currentModel.durations.includes(d));
-
-                        if (hasVideos && durationMismatch) {
-                          const ok = window.confirm(
-                            `Switching from ${currentModel.label} (${currentModel.durations.join('/')}s) to ${newModel.label} (${newModel.durations.join('/')}s).\n\nExisting shot durations will be clamped to the nearest supported value. Already-generated videos won't change, but new generations will use the new durations.\n\nContinue?`
-                          );
-                          if (!ok) return;
-                        }
-
-                        const updates: Record<string, any> = { videoModel: v };
-                        if (!newModel.durations.includes(project.targetDuration)) updates.targetDuration = newModel.durations[0];
-                        onUpdateProject(updates);
-                      }}
-                      options={VIDEO_MODELS.map(m => ({ value: m.key, label: `${m.label} · ${m.durations.join('/')}s · $${m.costPerSec.toFixed(2)}/s` }))}
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
             {contextPopover === 'analysis' && (
               <motion.div
                 key="analysis-pop"

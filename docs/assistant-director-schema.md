@@ -160,6 +160,31 @@ Prior assistant-director turns — use as conversation memory.
 
 ---
 
+## 8. `lahari_director_events` — durable artist/operator decision log
+
+This is the bridge between web studio activity and future Codex director sessions. It records intent-bearing actions, not transient progress.
+
+| Column | Type | Purpose |
+|---|---|---|
+| `id` | `uuid` pk | Event id |
+| `seq` | `bigserial` | Strictly monotonic session cursor |
+| `project_id` | `text` | FK → `lahari_projects.id` |
+| `user_id` | `uuid` nullable | Supabase auth user when action came from the web studio |
+| `source` | `text` | `web` / `codex` / `system` |
+| `event_type` | `text` | Compact action name, e.g. `shot_locked`, `storyboard_prompt_preview_applied` |
+| `entity_type` | `text` nullable | `project` / `scene` / `shot` |
+| `entity_id` | `text` nullable | Target row id |
+| `summary` | `text` | Human-readable one-line event summary |
+| `payload` | `jsonb` | Small structured context for Codex and debugging |
+| `created_at` | `timestamptz` | Event time |
+
+Use cases:
+- `attach_director_session` pulls events with `seq > lastSeq` from the local session cursor and appends them to `.lahari/sessions/<projectId>/journal.md`.
+- Web studio actions write lock/unlock/edit/clear/revert/generate events.
+- Codex apply tools write preview-apply and generation events.
+
+---
+
 ## Out of scope (do NOT expose to the agent)
 
 - **`lahari_ai_calls`** — cost/latency telemetry; admin-only.

@@ -38,7 +38,15 @@ Main service: `server/services/storyboard.ts`
 
 Prompt template: `server/services/seedance-storyboard-rd.ts -> buildStoryboardPrompt`
 
-Image call: `server/services/openai-image.ts -> generateOpenAIImageWithResponses`
+Storyboard generation is now two-step:
+
+1. `POST /write-storyboard-prompt` runs a cheap text-only planner and saves `shot.storyboard_prompt` plus `shot.storyboard_cut_plan`.
+2. `POST /generate-storyboard` renders the saved prompt with the selected `project.storyboard_provider`.
+
+Renderers:
+
+- `gpt-image-2` via `server/services/openai-image.ts -> generateOpenAIImageFromPrompt`
+- `nano-banana-2` via `server/services/segmind-image.ts -> generateNanoBanana2`
 
 The storyboard generator builds context from:
 
@@ -61,7 +69,7 @@ The storyboard image contract:
 - stable spatial map and coherent screen direction across cuts
 - all objects and gestures must come from the shot, refs, and devotional context
 
-The Responses API text output is stored as the cut plan:
+The planner output is stored directly on the shot as the editable prompt and cut plan:
 
 ```text
 Storyboard cut plan:
@@ -71,14 +79,25 @@ Panel 2 [...] - camera: ...; action: ...; Seedance cue: ...
 Continuity notes: ...
 ```
 
-This text is not cosmetic. It is saved on the storyboard version and is reused in the Seedance video prompt.
+This text is not cosmetic. It is copied into rendered storyboard version metadata and reused in the Seedance video prompt.
 
 ## Storyboard Persistence
 
-Migration: `migrations/2026-05-06_add_storyboard_versions.sql`
+Migrations:
+
+- `migrations/2026-05-06_add_storyboard_versions.sql`
+- `migrations/2026-05-11_add_storyboard_prompt_pipeline.sql`
+
+Project columns:
+
+- `storyboard_provider` (`gpt-image-2` default, `nano-banana-2` optional)
 
 Shot columns:
 
+- `storyboard_prompt`
+- `storyboard_cut_plan`
+- `storyboard_prompt_status`
+- `storyboard_prompt_user_feedback`
 - `storyboard_asset_id`
 - `storyboard_version_id`
 - `storyboard_status`
@@ -89,11 +108,15 @@ History table:
 
 - `lahari_storyboard_versions`
 - one row per generated/refined storyboard image
-- stores OpenAI response chain IDs, image tool call IDs, prompt, refs, artist note, locked state, and metadata
-- `metadata.cutPlanText` is the canonical editable cut plan used by video generation
+- stores render provider/model metadata, prompt, refs, artist note, locked state, and metadata
+- `metadata.cutPlanText` snapshots the shot-level cut plan at render time
 
 `getFullProject` resolves storyboard URLs into each shot:
 
+- `storyboardPrompt`
+- `storyboardCutPlan`
+- `storyboardPromptStatus`
+- `storyboardPromptUserFeedback`
 - `storyboardUrl`
 - `storyboardAssetId`
 - `storyboardVersionId`
@@ -107,15 +130,17 @@ All routes are under `/api/projects/:id/shots/:shotId`.
 
 | Endpoint | Body | Purpose |
 | --- | --- | --- |
-| `POST /generate-storyboard` | `{ variant?: "adaptive_numbered_storyboard" }` | Generate a new storyboard version from shot, scene, refs, and musical context. |
-| `POST /refine-storyboard` | `{ feedback, previousVersionId?, variant? }` | Natural-language refinement using the prior OpenAI response chain when available. |
+| `POST /write-storyboard-prompt` | `{ feedback?, variant? }` | Write or rewrite the saved storyboard prompt and cut plan without rendering an image. |
+| `POST /generate-storyboard` | `{ variant?: "adaptive_numbered_storyboard" }` | Render a new storyboard version from the saved prompt and selected storyboard provider. |
+| `POST /refine-storyboard` | `{ feedback, previousVersionId?, refineMode?, variant? }` | `replan` rewrites saved text only; `edit_image` renders an edited image version. |
 | `POST /lock-storyboard` | `{ versionId? }` | Lock the selected/current storyboard version for video generation. |
 | `POST /unlock-storyboard` | none | Unlock the storyboard while keeping the active version. |
-| `PATCH /storyboard-plan` | `{ cutPlanText }` | Save edited cut-plan text on the active storyboard version. Video generation uses this text. |
+| `PATCH /storyboard-plan` | `{ cutPlanText, storyboardPrompt? }` | Save edited prompt/cut-plan text on the shot and active storyboard version metadata when present. |
 | `GET /storyboard-history` | none | Return generated versions with image URLs, model IDs, notes, lock state, and cut plan text. |
 
 Client helpers live in `services/api.ts`:
 
+- `writeStoryboardPrompt`
 - `generateStoryboard`
 - `refineStoryboard`
 - `lockStoryboard`

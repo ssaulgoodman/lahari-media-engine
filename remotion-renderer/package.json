@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
+    "prebundle": "node scripts/prebundle.mjs",
     "start": "tsx --env-file-if-exists=.env src/index.ts",
     "studio": "remotion studio src/entry.tsx",
     "sync-timeline": "node scripts/sync-timeline.mjs",

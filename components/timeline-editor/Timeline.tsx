@@ -50,10 +50,31 @@ const Timeline: React.FC = () => {
       onScroll: (v: { scrollLeft: number; scrollTop: number }) => setScrollLeft(v.scrollLeft),
     });
 
+    // Wires up the canvas-library's wheel handler + visible scrollbar. Without
+    // this call the timeline has no horizontal scroll — zoom in past the
+    // viewport and you can't reach the offscreen content.
+    canvas.initScrollbars({
+      scrollbarWidth: 8,
+      scrollbarColor: 'rgba(161,161,170,0.45)',
+      extraMarginX: 200,
+      extraMarginY: 0,
+    });
+
+    // The library notifies scroll changes through TWO separate channels:
+    //   - wheel scroll  → setViewportPos       → fires the `onScroll` option above
+    //   - scrollbar drag → setViewportTransform → fires `onViewportChange`
+    // Without wiring `onViewportChange`, dragging the bottom scrollbar moves
+    // clips on screen but React's `scrollLeft` state stays at 0, so the Ruler,
+    // Playhead, and TransitionOverlay keep painting at scrollLeft=0 while the
+    // canvas underneath is at a different viewport. That's the "clips move
+    // but the time ruler doesn't follow" bug.
+    canvas.onViewportChange?.((left: number) => setScrollLeft(left));
+
     canvasRef.current = canvas;
     setTimeline(canvas);
 
     return () => {
+      canvas.disposeScrollbars?.();
       canvas.purge();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

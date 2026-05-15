@@ -22,7 +22,7 @@ const authFetch = async (url: string, init?: RequestInit): Promise<Response> => 
 const handleResponse = async (res: Response) => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    throw new Error(body.error?.message || body.error || `Request failed: ${res.status}`);
   }
   return res.json();
 };
@@ -88,6 +88,30 @@ export const updateProject = async (id: string, updates: Record<string, any>) =>
 export const deleteProject = async (id: string) => {
   const res = await authFetch(`${API}/projects/${id}`, { method: 'DELETE' });
   return handleResponse(res);
+};
+
+// ─── MCP Tokens ─────────────────────────────────────────────────────
+
+export const listMcpTokens = async () => {
+  const res = await authFetch(`${API}/mcp-tokens`);
+  const body = await handleResponse(res);
+  return body.data;
+};
+
+export const createMcpToken = async (opts?: { label?: string; expiresInDays?: number }) => {
+  const res = await authFetch(`${API}/mcp-tokens`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+  });
+  const body = await handleResponse(res);
+  return body.data;
+};
+
+export const revokeMcpToken = async (tokenId: string) => {
+  const res = await authFetch(`${API}/mcp-tokens/${tokenId}`, { method: 'DELETE' });
+  const body = await handleResponse(res);
+  return body.data;
 };
 
 export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
@@ -190,6 +214,31 @@ export const refineStyleDirection = async (projectId: string, description: strin
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ description, feedback }),
     signal,
+  });
+  return handleResponse(res);
+};
+
+export const getStylePresets = async (projectId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/style-presets`);
+  return handleResponse(res);
+};
+
+/** Lock a curated preset directly as the project style. No visualization step —
+ *  the preset IS the style image. Backend points a new project-scoped asset row
+ *  at the preset's shared file_path (same pattern forks use) and runs the
+ *  standard /lock-style downstream-stale logic. style_description is set to
+ *  empty server-side so prose can't leak into the concept-regen hint path.
+ *  Returns the full updated project. */
+export const lockStylePreset = async (
+  projectId: string,
+  presetKey: string,
+  opts?: { signal?: AbortSignal }
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/lock-style-preset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ presetKey }),
+    signal: opts?.signal,
   });
   return handleResponse(res);
 };
@@ -473,6 +522,21 @@ export type StoryboardVersionEntry = {
   createdAt: string;
 };
 
+export const writeStoryboardPrompt = async (
+  projectId: string,
+  shotId: string,
+  feedback?: string,
+  signal?: AbortSignal
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/write-storyboard-prompt`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ variant: 'adaptive_numbered_storyboard', ...(feedback ? { feedback } : {}) }),
+    signal,
+  });
+  return handleResponse(res);
+};
+
 export const generateStoryboard = async (projectId: string, shotId: string, signal?: AbortSignal) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-storyboard`, {
     method: 'POST',
@@ -483,11 +547,36 @@ export const generateStoryboard = async (projectId: string, shotId: string, sign
   return handleResponse(res);
 };
 
-export const refineStoryboard = async (projectId: string, shotId: string, feedback: string, previousVersionId?: string, signal?: AbortSignal) => {
+export type StoryboardRefineMode = 'replan' | 'edit_image';
+
+export const refineStoryboard = async (
+  projectId: string,
+  shotId: string,
+  feedback: string,
+  previousVersionId?: string,
+  refineMode: StoryboardRefineMode = 'replan',
+  referenceImage?: File,
+  signal?: AbortSignal
+) => {
+  if (referenceImage) {
+    const form = new FormData();
+    form.append('feedback', feedback);
+    form.append('refineMode', refineMode);
+    form.append('variant', 'adaptive_numbered_storyboard');
+    if (previousVersionId) form.append('previousVersionId', previousVersionId);
+    form.append('referenceImage', referenceImage);
+    const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-storyboard`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    return handleResponse(res);
+  }
+
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/refine-storyboard`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ feedback, previousVersionId, variant: 'adaptive_numbered_storyboard' }),
+    body: JSON.stringify({ feedback, previousVersionId, refineMode, variant: 'adaptive_numbered_storyboard' }),
     signal,
   });
   return handleResponse(res);
@@ -507,11 +596,11 @@ export const unlockStoryboard = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
-export const updateStoryboardPlan = async (projectId: string, shotId: string, cutPlanText: string) => {
+export const updateStoryboardPlan = async (projectId: string, shotId: string, cutPlanText: string, storyboardPrompt?: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/storyboard-plan`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cutPlanText }),
+    body: JSON.stringify({ cutPlanText, ...(storyboardPrompt !== undefined ? { storyboardPrompt } : {}) }),
   });
   return handleResponse(res);
 };
@@ -790,6 +879,18 @@ export const updateQueueItem = async (queueId: string, updates: Record<string, a
   return handleResponse(res);
 };
 
+/** Set or clear the current user's mnemonic note for a song on the queue
+ *  dashboard. Pass empty/whitespace to clear. Server enforces a 200-char
+ *  cap and per-user scoping (you can never write someone else's note). */
+export const setSongNote = async (songId: string, note: string): Promise<{ note: string | null }> => {
+  const res = await authFetch(`${API}/queue/notes/${songId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+  });
+  return handleResponse(res);
+};
+
 // ─── Remotion Renderer ──────────────────────────────────────────────
 
 // Render-authoritative subset of the timeline editor's zustand store. Pass
@@ -804,14 +905,21 @@ export interface TimelineRenderState {
   durationMs: number;
 }
 
-export type RenderStatus = 'idle' | 'rendering' | 'completed' | 'failed';
+export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed';
 
 export interface RenderStatusResponse {
   renderId: string | null;
   status: RenderStatus;
   videoUrl: string | null;
   error: string | null;
+  errorCode: string | null;
   renderMs: number | null;
+  progress: number | null;
+  stage: string | null;
+  lastHeartbeatAt: string | null;
+  modalFunctionCallId: string | null;
+  renderEngine: string | null;
+  ffmpegFallbackReason: string | null;
 }
 
 // Kicks off an async render. Backend returns 202 immediately with a renderId;

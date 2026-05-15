@@ -28,7 +28,12 @@ import { adminRouter } from './routes/admin.js';
 import { promptsRouter } from './routes/prompts.js';
 import { renderRouter } from './routes/render.js';
 import { renderCallbackRouter } from './routes/render-callback.js';
+import { directorRouter } from './routes/director.js';
+import { mcpTokensRouter } from './routes/mcp-tokens.js';
+import { mcpRouter } from './routes/mcp.js';
 import { requireAuth } from './middleware/auth.js';
+import { startRenderWatchdog } from './render-watchdog.js';
+import { startRenderReconciler } from './render-reconciler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3001;
@@ -40,6 +45,27 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',')
   : ['http://localhost:3002', 'http://localhost:3000'];
 app.use(cors({ origin: ALLOWED_ORIGINS }));
+app.use('/mcp', express.json({ limit: process.env.MCP_JSON_LIMIT || '2mb' }), mcpRouter);
+app.use('/mcp', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (!err) return next();
+  if (err instanceof SyntaxError || err?.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32700,
+        message: 'Malformed JSON body for Lahari MCP request',
+        data: {
+          code: 'parse_error',
+          hint: 'Send a valid JSON-RPC POST body with Content-Type: application/json. Browser GET /mcp is expected to return a method error.',
+        },
+      },
+      id: null,
+    });
+  }
+  return next(err);
+});
+app.use('/api/director', express.json({ limit: process.env.DIRECTOR_API_JSON_LIMIT || '5mb' }), requireAuth, directorRouter);
+app.use('/api/mcp-tokens', express.json({ limit: process.env.MCP_TOKENS_JSON_LIMIT || '32kb' }), requireAuth, mcpTokensRouter);
 app.use(express.json({ limit: '50mb' }));
 
 // Assets are served from Supabase Storage (public URLs).
@@ -74,3 +100,6 @@ app.listen(PORT, () => {
   console.log(`  API:     http://localhost:${PORT}/api`);
   console.log(`  Storage: http://localhost:${PORT}/storage\n`);
 });
+
+startRenderWatchdog();
+startRenderReconciler();

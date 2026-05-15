@@ -44,6 +44,8 @@ create table if not exists studio_projects (
   video_resolution text default '720p',
   video_model text default 'seedance-2.0-fast',
   image_model text default 'nano-banana-2',
+  storyboard_provider text default 'gpt-image-2',
+  text_provider text default null,
   style_generation_prompt text,
   song_type text,
   is_narrative boolean,
@@ -152,7 +154,15 @@ create table if not exists studio_shots (
   storyboard_version_id text,
   storyboard_status text default 'idle',
   storyboard_locked boolean default false,
-  storyboard_user_feedback text
+  storyboard_user_feedback text,
+  storyboard_prompt text,
+  storyboard_cut_plan text,
+  storyboard_prompt_status text default 'idle',
+  storyboard_prompt_user_feedback text,
+  use_prev_storyboard_ref boolean not null default false,
+  include_prev_cut_plan boolean default null,
+  excluded_refs jsonb not null default '{"storyboard":[],"video":[]}'::jsonb,
+  lipsync_enabled boolean default false
 );
 
 create index if not exists studio_shots_scene_idx
@@ -240,6 +250,98 @@ create index if not exists studio_ai_calls_project_idx
 create index if not exists studio_ai_calls_created_idx
   on studio_ai_calls(created_at desc);
 
+create table if not exists studio_director_events (
+  id uuid primary key default gen_random_uuid(),
+  project_id text not null references studio_projects(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete set null,
+  source text not null check (source in ('web', 'codex', 'system')),
+  event_type text not null,
+  entity_type text,
+  entity_id text,
+  summary text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists studio_director_events_project_created_idx
+  on studio_director_events(project_id, created_at desc);
+
+create index if not exists studio_director_events_project_type_idx
+  on studio_director_events(project_id, event_type, created_at desc);
+
+create table if not exists studio_agent_operations (
+  id uuid primary key default gen_random_uuid(),
+  project_id text not null references studio_projects(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete set null,
+  source text not null check (source in ('mcp-remote', 'director-api', 'web', 'system')),
+  tool text not null,
+  status text not null check (status in ('running', 'success', 'error')),
+  scope_type text not null check (scope_type in ('project', 'scene', 'shot')),
+  scope_id text not null,
+  label text not null,
+  payload jsonb not null default '{}'::jsonb,
+  result jsonb not null default '{}'::jsonb,
+  error text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
+create index if not exists studio_agent_operations_project_started_idx
+  on studio_agent_operations(project_id, started_at desc);
+
+create index if not exists studio_agent_operations_project_status_idx
+  on studio_agent_operations(project_id, status, started_at desc);
+
+create table if not exists studio_mcp_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  label text not null default 'Studio MCP',
+  token_hash text not null unique,
+  token_prefix text not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz,
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+
+create index if not exists studio_mcp_tokens_user_created_idx
+  on studio_mcp_tokens(user_id, created_at desc);
+
+create index if not exists studio_mcp_tokens_active_idx
+  on studio_mcp_tokens(token_hash)
+  where revoked_at is null;
+
+create table if not exists studio_project_config (
+  project_id text primary key references studio_projects(id) on delete cascade,
+  preferences jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users(id) on delete set null
+);
+
+create table if not exists studio_project_prompt_overrides (
+  id uuid primary key default gen_random_uuid(),
+  project_id text not null references studio_projects(id) on delete cascade,
+  kind text not null check (kind in ('concept', 'script', 'shot_prompts', 'storyboard', 'video')),
+  scope_type text not null default 'project' check (scope_type in ('project', 'scene', 'shot')),
+  scope_id text null,
+  body text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users(id) on delete set null
+);
+
+create unique index if not exists studio_project_prompt_overrides_one_active_idx
+  on studio_project_prompt_overrides(project_id, kind, scope_type, coalesce(scope_id, ''))
+  where active;
+
+create index if not exists studio_project_prompt_overrides_lookup_idx
+  on studio_project_prompt_overrides(project_id, kind, scope_type, scope_id, active, updated_at desc);
+
+create index if not exists studio_project_prompt_overrides_history_idx
+  on studio_project_prompt_overrides(project_id, kind, updated_at desc);
+
 create table if not exists studio_renders (
   id text primary key,
   project_id text not null references studio_projects(id) on delete cascade,
@@ -248,12 +350,32 @@ create table if not exists studio_renders (
   storage_path text,
   error text,
   render_ms bigint,
+  progress numeric,
+  stage text,
+  last_heartbeat_at timestamptz,
+  modal_function_call_id text,
+  error_code text,
+  terminal_payload jsonb,
+  terminal_at timestamptz,
+  render_engine text,
+  ffmpeg_fallback_reason text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index if not exists studio_renders_project_idx
   on studio_renders(project_id, created_at desc);
+
+create index if not exists studio_renders_active_idx
+  on studio_renders(status, last_heartbeat_at desc)
+  where status = 'rendering';
+
+create index if not exists studio_renders_pending_finalize_idx
+  on studio_renders(updated_at asc)
+  where status = 'pending_finalize';
+
+create index if not exists studio_renders_render_engine_idx
+  on studio_renders(render_engine, created_at desc);
 
 alter table studio_projects enable row level security;
 alter table studio_assets enable row level security;
@@ -264,4 +386,9 @@ alter table studio_shots enable row level security;
 alter table studio_storyboard_versions enable row level security;
 alter table studio_chat_messages enable row level security;
 alter table studio_ai_calls enable row level security;
+alter table studio_director_events enable row level security;
+alter table studio_agent_operations enable row level security;
+alter table studio_mcp_tokens enable row level security;
+alter table studio_project_config enable row level security;
+alter table studio_project_prompt_overrides enable row level security;
 alter table studio_renders enable row level security;
