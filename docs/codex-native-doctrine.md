@@ -165,38 +165,24 @@ When a gap shows up in Codex/Claude Code: file it upstream, route around with br
 
 ## 9. Session-Type Protocol
 
-Every new Codex session in this workspace is one of two types. Identify which one before doing anything else.
+Sessions are split by **workspace**, not by toggle inside one workspace:
 
-**Director session** — operating Lahari for a specific song or project. Attaches to a Lahari project via MCP. Default when the user names a song, project, video, scene, shot, or creative work.
+- **Engine sessions** — happen in this repo (`lahari-codex-native` or `abstraction` worktree). Improve code, prompts, infra, docs, schema. Full shell + edit + git access. Internal MCP and CLI are available here for engine-side debug, scripting, and disaster recovery, but those are *tools*, not a separate session type.
+- **Director sessions** — happen in an artist workspace (any empty folder with the remote MCP installed). Attach to a Lahari project via `/mcp`, materialize the workspace via `write_project_notebook`, operate through the apply tool surface. The orchestrator skill at `.agents/skills/lahari-director/SKILL.md` (materialized into the artist workspace by the notebook tool) drives the protocol.
 
-**Engine session** — improving Lahari itself (code, prompts, infra, docs). Does not attach. Default when the request is about the codebase, refactoring, or fixing Lahari.
-
-If unclear, ask one sentence to clarify.
-
-### Director Session Opening Move
-
-1. **Verify MCP visibility.** Check that `mcp__lahari__*` tools are available. If not, do not fall back to CLI. Stop and tell user to quit and reopen Codex Desktop.
-2. **Attach.** Call `attach_director_session` with the project ID. If user named a song but you don't have the ID, call `list_projects` first.
-3. **Read `directorEvents.recentEvents`** — decisions the artist made since last session.
-4. **Read `diagnosis`** — `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`.
-5. **Suggest renaming** the Codex session to the project title.
-
-**Opening message:**
-- Acknowledge in production terms: "Working on Krishna Bhajan..." — not "hydrating" or "fetching."
-- Summarize the production read in one sentence.
-- Name the bottleneck.
-- Mention anything material from `recentEvents`.
-- Propose `nextApprovedAction` unless events suggest the artist moved past it.
-
-**Banned vocab in artist-facing text:** "hydrate," "workbench," "packet," "checkpoint." These are plumbing the artist doesn't need to think about. Say what you're going to *do*.
+Earlier doctrine ran both in the same worktree as a transitional pattern from before distribution shipped. That's no longer the recommended path — testing director-session behavior is cleaner from an artist-shaped workspace (any empty folder + remote MCP) than from this engine repo.
 
 ### Engine Session Opening Move
 
-Direct: `pwd`, `git status --short --branch`, then ask user what to build or fix. No project attach. Full shell + edit + git available.
+Direct: `pwd`, `git status --short --branch`, then ask user what to build or fix.
+
+### When an engineer wants to test director-session behavior
+
+Open any empty folder in Codex Desktop (or Claude Code), mint a token at `/connect` against your own account, paste the install snippet, restart the harness. Same path an artist takes. The behavior you observe is what artists actually experience — testing it from inside the engine repo gives a falsely-comfortable shape because internal MCP is in-process.
 
 ### Friction Capture
 
-When something feels wrong mid-session, do not guess. Call `lahari_capture_issue` with severity, summary, and any suspected fix. The tool auto-collects recent audit context. Engine session reads issues at start. Friction → fix → continue.
+When something feels wrong mid-session, do not guess. Call `lahari_capture_issue` with severity, summary, and any suspected fix. The tool auto-collects recent audit context. Engine sessions read captured issues at start.
 
 ---
 

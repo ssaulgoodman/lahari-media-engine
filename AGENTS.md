@@ -8,16 +8,13 @@ Guidance for Codex when working in this repo. Keep this file aligned with `CLAUD
 
 ## Operating Principle
 
-Supabase is canonical project truth. Local `.lahari/` (or `lahari/` in artist workspaces) files are desk copies for reading, drafting, diffing, snapshots, and long-session continuity. Hand-edited markdown is not production state unless an apply tool persists it.
+Supabase is canonical project truth. Local files in artist workspaces (mirrors, journal, config) are desk copies for reading, drafting, diffing — hand edits are not production state unless an apply tool persists them.
 
-The Lahari web app is the visual studio. Codex Desktop / Claude Code is the director/operator surface. Use deep links to the web studio for visual approval moments instead of rebuilding visual review here.
+**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Lahari — remote MCP at `/mcp`, materialized per-project workspaces via `write_project_notebook`. Internal MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) exist here as engine-side debug + scripting tools, not as a director-session surface.
 
-Sessions in this workspace are either:
+If you want to test director-session behavior, open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect`, install the remote MCP. Same shape an artist gets. Don't try to do director work from inside this engine repo — that's a transitional pattern from before distribution shipped and it gives a falsely-comfortable shape.
 
-- **Director sessions** — operating Lahari for one song/project. Attach to a Lahari project on the first tool call. In *this engine repo* the attach uses the internal MCP (in-process call to `codexStudio.ts`); in an *artist workspace* it uses remote MCP at `/mcp` via a `lahari_mcp_...` bearer token.
-- **Engine sessions** — improving Lahari itself (code, prompts, infra, docs, schema). These edit this repo. Not bound to a single project.
-
-For artist-facing director work, say "open" or "attach to" the song/project. `hydrate`, `packet`, `workbench`, `checkpoint` are internal implementation details — banned in artist-facing text.
+The Lahari web app is the visual studio. Use deep links to it for visual approval moments instead of rebuilding visual review.
 
 ## Workspace Layout
 
@@ -73,40 +70,22 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 
 Production app: https://lahari-media-engine-production.up.railway.app
 
-## Director Sessions
+## Engine Session Protocol
 
-**Before any substantive work, read `docs/codex-native-doctrine.md`** — the operating contract (editability tiers, MCP/CLI boundary, harness-native vs tool-call, permission model, source-of-truth rules, distribution arc, discipline list, session-type protocol). Cross-reference `docs/codex-native-review-ledger.md` for current R# status.
+**Before substantive work, read `docs/codex-native-doctrine.md`** for the operating contract (editability tiers, MCP/CLI boundary, harness-native vs tool-call, permission model, source-of-truth rules, distribution arc, discipline list). Cross-reference `docs/codex-native-review-ledger.md` "Current State" snapshot at the top for what's actually shipped and what's pending.
 
-Every new Codex session in this workspace is one of two types. Identify which one before doing anything else:
+Sessions in this repo are engine sessions only — improving Lahari itself (code, prompts, infra, docs, schema, deployment). Director-session work (operating Lahari on a specific song) happens in artist-shaped workspaces against deployed Lahari, not here. See "Operating Principle" above.
 
-- **Director session** — operating Lahari for a specific song or project. Attaches to a Lahari project via MCP. Default when the user names a song, project, video, scene, shot, or creative work.
-- **Engine session** — improving Lahari itself (code, prompts, infra, docs). Does not attach. Default when the request is about the codebase, refactoring, or fixing Lahari.
+### Engine Session Opening Move
 
-If unclear, ask one sentence to clarify.
+1. `pwd` + `git status --short --branch` — confirm which worktree and which branch.
+2. Skim the "Current State" snapshot at the top of `docs/codex-native-review-ledger.md` — know what's shipped, what's pending operationally, what the next workstream is.
+3. Skim recent captured issues if any (`lahari_issues` table or `.lahari/issues/`).
+4. Then ask the user what to build, fix, or review.
 
-### Director Session Opening Move
+### When an engineer wants to experience director-session behavior
 
-When the user names a project or song:
-
-1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `list_projects`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not fall back to local CLI for director work.
-2. Call the `attach_director_session` MCP tool with the project ID. If the user named a song but you don't have the ID, first call `list_projects` and confirm which one before attaching.
-3. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
-4. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
-5. Tell the artist the suggested session title (`Lahari - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
-
-Your opening message after attaching should:
-
-- Acknowledge the bind in production terms: "Opening Krishna Bhajan…" — not "hydrating the project" or "fetching state."
-- Summarize the production read in one sentence.
-- Name the bottleneck.
-- Mention anything material from `recentEvents` if it changes what to do next.
-- Propose the next action, usually `nextApprovedAction` unless events suggest the artist has moved past it.
-
-Words to avoid in artist-facing text: "hydrate," "workbench," "packet," "checkpoint." These are plumbing the artist does not need to think about. Say what you're going to *do*.
-
-### Resume vs New Session
-
-The default when the artist returns to a song is to **resume** the existing Codex session. The journal accumulates, your context is warm, and the sidebar stays clean. Start a fresh session only if the previous one is polluted with unrelated conversation — a fresh session re-attaches to the same Lahari project and inherits the same `.lahari/sessions/<project_id>/` state and journal.
+Open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect` against your own Lahari account, paste the install snippet, restart the harness, ask "open <song name>." Same path an artist takes. That's the surface to test — not the internal MCP from inside this repo (the internal path bypasses real auth, real rate limits, real network conditions, and presents a falsely-comfortable shape).
 
 ### Full Operating Skill
 
@@ -174,13 +153,7 @@ Permission boundary:
 - Apply commands mutate Supabase and must be explicit user-approved commands. They require a valid `SUPABASE_SERVICE_KEY`; Codex tools may fall back to `VITE_SUPABASE_ANON_KEY` for read-only work, but apply tools refuse anon fallback.
 - Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.
 
-Recommended fresh-session start:
-
-1. `git status --short --branch`
-2. Read `docs/codex-native-studio.md`.
-3. `npm run lahari -- project list 10`
-4. When the artist names a song/project, run `npm run lahari -- session attach <projectId> "starting director session"`; this also refreshes the local workbench.
-5. Report the checkpoint, bottleneck, web studio link, and next safe actions before proposing any mutation.
+The CLI is engine-side debugging surface — useful for scripts, audit inspection, disaster recovery, and one-off operations. It is **not** the director-session surface. The director surface for artists lives at deployed Lahari over remote MCP. Don't shoehorn director work through CLI here unless you are explicitly debugging the engine path.
 
 ## Architecture
 
