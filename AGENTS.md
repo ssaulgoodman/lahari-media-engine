@@ -17,22 +17,11 @@ For artist-facing director work, say "open" or "attach to" the song/project. `hy
 
 ## Workspace Layout
 
-`/Users/ssaulgoodman/Code/lahari-media-engine/` is a parent folder, not the git repo root.
-
-Current worktrees:
-
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` - main Lahari app checkout, usually for Claude Code / production work on `main`.
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` - Codex-native assistant-director worktree on `codex-native-studio`.
-
-Do not switch the main checkout to `codex-native-studio` for Codex-native work. Open a Codex session in this `lahari-codex-native` worktree instead. Always confirm with `pwd` and `git status --short --branch` before editing.
-
-## Workspace Layout
-
 This checkout is the **preset abstraction lane**.
 
 - Parent folder: `/Users/ssaulgoodman/Code/lahari-media-engine/` — not a git repo.
 - Main/deploy checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` on `main`.
-- Codex-native checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` on `codex-native-studio`.
+- Codex-native checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` on `codex-native-studio`; its harness has been merged here.
 - Preset abstraction checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `codex/preset-abstraction`.
 
 Do preset/generalization work here. Do not switch the main checkout away from `main` for this lane, and do not use this checkout for urgent production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
@@ -61,6 +50,7 @@ Current strategy:
 - `server/prompts/catalog.ts` is still a legacy prompt-library/reference surface and must be scrubbed before the Prompt Library is treated as public/product truth.
 
 Good starting docs:
+- `docs/abstraction-platform-plan.md` — merged Codex-native platform plan and strategic shape.
 - `docs/preset-abstraction-plan.md` — current preset/workflow/seed plan and v1 finish line.
 - `docs/studio-db-bootstrap.md` — how to create the fresh Supabase project and run the clean `studio_*` schema.
 - `docs/world-class-plan.md` — product north star; explicitly frames Lahari as the first vertical workflow, not the final product boundary.
@@ -208,7 +198,7 @@ Permission boundary:
 - Apply commands mutate Supabase and must be explicit user-approved commands. They require a valid `SUPABASE_SERVICE_KEY`; Codex tools may fall back to `VITE_SUPABASE_ANON_KEY` for read-only work, but apply tools refuse anon fallback.
 - Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.
 
-Recommended fresh-session start:
+Recommended director-session start:
 
 1. `git status --short --branch`
 2. Read `docs/codex-native-studio.md`.
@@ -255,7 +245,7 @@ Generate router modules:
 | `generate-video.ts` | Segmind video gen, revert-video, chained prompt refresh |
 | `scope-helpers.ts` | shared scoping helpers |
 
-## Pipeline
+## Legacy Lahari Pipeline Notes
 
 1. **Queue** (`Dashboard.tsx`) - Supabase `music_video_queue` + `songs`. Start creates a project immediately and background-runs audio download, SRT parse, transcription fallback, structure detection, and meaning summary. Analysis caches onto `songs` so future users skip repeat AI calls. Multiple users can start the same queue item; `source_queue_id` links their own projects.
 

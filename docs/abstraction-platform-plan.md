@@ -1,8 +1,8 @@
 # Abstraction Platform Plan
 
-**Status:** seeded design, ready for implementation on `abstraction` branch
+**Status:** implementation underway on `codex/preset-abstraction`
 **Date:** 2026-05-15
-**Branch:** `abstraction` (use a separate worktree at `~/Code/lahari-media-engine/lahari-abstraction`)
+**Branch:** `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `codex/preset-abstraction`
 **Scope:** turn Lahari's pipeline into a configurable platform that can serve multiple workflows (music video, anime, ads, reels) from one engine, without forking the codebase.
 
 ---
@@ -62,12 +62,13 @@ DB_TABLE_PREFIX=studio   # new platform DB
 
 Single env switch in `server/database.ts` picks the prefix. All `T['projects']`-style table-key map entries become prefix-aware. Same code, two backends.
 
-**Schema diffs from `lahari_*`:**
+**Implemented schema diffs from `lahari_*`:**
 
-- `studio_projects` adds: `seed_kind`, `workflow`, `preset` columns
-- New table `studio_preset_definitions` (or load from code; either works for v1)
-- `studio_intake_adapters` registry (not a table — code registry of intake handlers per `seed_kind`)
-- Multi-tenant from day 1: every table gets `tenant_id` (or use `user_id` as the tenant boundary if single-user-per-tenant for v1)
+- `studio_projects` adds: `seed_kind`, `workflow_key`, `preset_key`, `project_brief`, `source_payload`.
+- Preset/workflow definitions currently load from code in `server/presets.ts`, not a DB table.
+- Intake adapter shape is started in route/service code; the longer-term registry should live under `server/intake/<seedkind>.ts`.
+- Tenant boundary for v1 is `user_id`/Supabase Auth. Do not add a separate `tenant_id` until the customer model is decided.
+- The clean migration also creates the Codex-native harness tables: director events, agent operations, MCP tokens, project config, prompt overrides, render metadata.
 
 Migration strategy: spin up new Supabase, run a migration that mirrors `lahari_*` schema with `studio_*` prefix + the additions above. Don't migrate Lahari data. Lahari can become "tenant: lahari" on the platform later, but that's a year-2 move.
 
@@ -168,35 +169,56 @@ None of these block v1. They're notes for when the abstraction starts to leak.
 ### Setup (~1 day)
 
 1. Create new Supabase project (suggested name: `turiya-studio` or whatever fits the platform brand)
-2. Open the `abstraction` branch as a worktree:
-   ```bash
-   git worktree add ../lahari-abstraction abstraction
-   ```
-   Then open Codex / Claude Code in `~/Code/lahari-media-engine/lahari-abstraction`. This keeps the Lahari worktree free for parallel fixes.
-3. Provision new Railway project with env vars pointing at the new Supabase
-4. Pick the platform domain (e.g. `studio.media`, `lab.media`) and wire DNS to the new Railway
+2. Create a public `studio-assets` bucket
+3. Run `migrations/2026-05-13_create_studio_workspace_schema.sql`
+4. Point this branch/deployment at the new Supabase with `DB_TABLE_PREFIX=studio` and `SUPABASE_BUCKET=studio-assets`
+5. Provision a separate Railway project/deployment when the local smoke test passes
+6. Pick the platform domain (e.g. `studio.media`, `lab.media`) and wire DNS to the new Railway
 
 ### Foundation (~3-4 days)
 
-5. Add `DB_TABLE_PREFIX` env switch in `server/database.ts` — single conditional that picks `lahari_*` or `studio_*`. Probably ~30 lines.
-6. Migration script that creates `studio_*` tables (mirror of `lahari_*` schema initially, plus `seed_kind`, `workflow`, `preset` columns on `studio_projects`)
-7. Run migration against new Supabase
-8. Deploy `abstraction` branch to new Railway. Verify backend boots, `/api/health` returns 200.
-9. **First gate: verify `music_video` workflow runs end-to-end on new infra** — same app, new DB, new domain. Upload audio, generate concept, write script, generate looks, build a couple of shots, render. **If this works cleanly, the abstraction layer holds.**
+Done in code:
+
+- `DB_TABLE_PREFIX` env switch in `server/database.ts`
+- `SUPABASE_BUCKET` / `STORAGE_BUCKET` switch in `server/storage.ts`
+- Clean `studio_*` bootstrap migration
+- `server/presets.ts`
+- Anime script-first backend + Dashboard entry point
+
+Next foundation gate:
+
+- Run migration against the new Supabase project
+- Verify backend boots against `DB_TABLE_PREFIX=studio`
+- Verify `music_video` workflow runs end-to-end on new infra: upload audio, generate concept, write script, generate looks, build a couple of shots, render
+- Verify the MCP/director harness can attach to a `studio_*` project without missing-table errors
 
 ### Preset layer (~2 days)
 
-10. Add `Preset` + `Workflow` types in `server/types.ts`
-11. Create `server/presets.ts` with `music_video_default` (rules extracted from current Lahari hardcoded behavior) and starter `anime_default`
-12. Apply tools + generation paths read `project.preset` and merge rules into prompts
-13. Frontend Blueprint reads `project.workflow` to gate UI
+Done/started:
+
+- `server/presets.ts` defines workflow recipes and presets.
+- Generation paths read preset rules in key prompt builders.
+- Project rows can store `preset_key`, `workflow_key`, `seed_kind`.
+
+Remaining:
+
+- Make MCP/project packets expose preset/workflow/seed explicitly.
+- Make frontend Blueprint read `workflow_key` to hide or adapt irrelevant phases.
+- Scrub `server/prompts/catalog.ts` before treating Prompt Library as product truth.
 
 ### Anime proof (~3-5 days)
 
-14. Build `server/intake/script.ts` — script parser for at least Fountain + freeform markdown formats
-15. Add `anime_scripted` workflow definition (skips audio analysis + script generation, since seed IS the script)
-16. Modify Blueprint frontend to handle `seed_kind === 'script'` flow (no audio player, no analysis spinner; jump straight to concept + style)
-17. End-to-end anime test: paste a script → generate concept → generate looks → build shots → render
+Started:
+
+- `POST /api/projects/script` creates a script-first anime project.
+- `parseAnimeScriptToPlan` parses a script into scenes, shots, cast, and environments.
+- Dashboard has a script-first anime project panel.
+
+Remaining:
+
+- Extract script intake into `server/intake/script.ts` once the route proves stable.
+- Modify Blueprint frontend to handle `seed_kind === 'script'` flow cleanly: no audio player, no analysis spinner, no unnecessary script-generation step.
+- End-to-end anime test: paste a script -> generate concept -> generate looks -> build shots -> render.
 
 ### After both work (~ongoing)
 
