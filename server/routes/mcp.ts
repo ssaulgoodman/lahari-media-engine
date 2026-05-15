@@ -12,6 +12,7 @@ import * as studio from '../services/codexStudio.js';
 
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.0';
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
@@ -514,14 +515,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('apply_project_prompt_override', {
     title: 'Apply project prompt override',
-    description: 'Mutating. Persists a Codex-written project-level storyboard/video recipe.',
-    inputSchema: { projectId, kind: z.enum(['storyboard', 'video']), body: z.string().min(1), baseHash: z.string().optional() },
+    description: 'Mutating. Persists a Codex-written project-level prompt recipe.',
+    inputSchema: { projectId, kind: promptOverrideKindSchema, body: z.string().min(1), baseHash: z.string().optional() },
   }, async ({ projectId, kind, body, baseHash }) => studio.applyProjectPromptOverrideConfig(await fullProjectForUser(projectId, auth.userId), kind, body, baseHash));
 
   registerTool('revert_project_prompt_override', {
     title: 'Revert project prompt override',
     description: 'Mutating. Reverts active project prompt recipe.',
-    inputSchema: { projectId, kind: z.enum(['storyboard', 'video']), baseHash: z.string().optional() },
+    inputSchema: { projectId, kind: promptOverrideKindSchema, baseHash: z.string().optional() },
   }, async ({ projectId, kind, baseHash }) => studio.revertProjectPromptOverrideConfig(await fullProjectForUser(projectId, auth.userId), kind, baseHash));
 
   registerTool('apply_generate_video', {

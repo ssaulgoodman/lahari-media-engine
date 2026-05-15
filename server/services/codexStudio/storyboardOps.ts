@@ -837,13 +837,13 @@ export const applyProjectPromptOverrideConfig = async (
       baseHash: baseHash || null,
       newHash: result.hash,
       overrideId: result.overrideId,
-      configPath: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+      configPath: configCopy.promptPaths[kind],
     },
   });
   appendSessionJournalEntry(
     project,
     'applied project prompt override',
-    `Kind: ${kind}\nOverride ID: ${result.overrideId}\nNew hash: ${result.hash}\nLocal prompt: ${kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath}`,
+    `Kind: ${kind}\nOverride ID: ${result.overrideId}\nNew hash: ${result.hash}\nLocal prompt: ${configCopy.promptPaths[kind]}`,
   );
 
   return {
@@ -852,7 +852,7 @@ export const applyProjectPromptOverrideConfig = async (
     project: { id: project.id, title: project.title },
     promptOverride: result,
     localFiles: {
-      prompt: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+      prompt: configCopy.promptPaths[kind],
       hashes: configCopy.hashesPath,
     },
     changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true }),
@@ -882,13 +882,13 @@ export const revertProjectPromptOverrideConfig = async (
       newHash: result.hash,
       overrideId: result.overrideId,
       source: result.source,
-      configPath: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+      configPath: configCopy.promptPaths[kind],
     },
   });
   appendSessionJournalEntry(
     project,
     'reverted project prompt override',
-    `Kind: ${kind}\nSource: ${result.source}\nOverride ID: ${result.overrideId || 'none'}\nNew hash: ${result.hash}\nLocal prompt: ${kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath}`,
+    `Kind: ${kind}\nSource: ${result.source}\nOverride ID: ${result.overrideId || 'none'}\nNew hash: ${result.hash}\nLocal prompt: ${configCopy.promptPaths[kind]}`,
   );
 
   return {
@@ -897,7 +897,7 @@ export const revertProjectPromptOverrideConfig = async (
     project: { id: project.id, title: project.title },
     promptOverride: result,
     localFiles: {
-      prompt: kind === 'storyboard' ? configCopy.storyboardPromptPath : configCopy.videoPromptPath,
+      prompt: configCopy.promptPaths[kind],
       hashes: configCopy.hashesPath,
     },
     changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true }),

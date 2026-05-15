@@ -25,6 +25,7 @@ const server = new McpServer({
   name: 'lahari-codex-studio',
   version: '0.1.0',
 });
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
 
 const toolAnnotations = (name: string): ToolAnnotations => {
   const readOnlyPrefixes = [
@@ -820,10 +821,10 @@ registerAuditedTool('apply_script', {
 
 registerAuditedTool('apply_project_prompt_override', {
   title: 'Apply project prompt override',
-  description: 'Mutating. Persists a Codex-written project-level storyboard/video recipe after validating the config base hash. No preview tool by design; Codex is the preview.',
+  description: 'Mutating. Persists a Codex-written project-level prompt recipe after validating the config base hash. No preview tool by design; Codex is the preview.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
-    kind: z.enum(['storyboard', 'video']).describe('Which project prompt recipe to apply.'),
+    kind: promptOverrideKindSchema.describe('Which project prompt recipe to apply.'),
     body: z.string().min(1).describe('Codex-written override body. This is a reusable project recipe, not per-shot generated text.'),
     baseHash: z.string().optional().describe('Hash from .lahari/projects/<projectId>/config/hashes.json. Refuses apply if stale.'),
   },
@@ -842,7 +843,7 @@ registerAuditedTool('revert_project_prompt_override', {
   description: 'Mutating. Reverts the active project prompt recipe to the previous inactive row, or to global default if no previous override exists.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
-    kind: z.enum(['storyboard', 'video']).describe('Which project prompt recipe to revert.'),
+    kind: promptOverrideKindSchema.describe('Which project prompt recipe to revert.'),
     baseHash: z.string().optional().describe('Hash from .lahari/projects/<projectId>/config/hashes.json. Refuses apply if stale.'),
   },
 }, async ({ projectId, kind, baseHash }) => {

@@ -30,7 +30,7 @@ If unclear, ask one sentence to clarify.
 
 When the artist names a project or song:
 
-1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `list_projects`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not fall back to local CLI for director work.
+1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `list_projects`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not use shell commands as a substitute for Lahari MCP tools.
 2. Call `attach_director_session` with the project ID. If the artist named a song but you don't have the ID, first call `list_projects` and confirm which one before attaching.
 3. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
 4. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
@@ -44,7 +44,7 @@ Your opening message after attaching should:
 - Mention anything material from `recentEvents` if it changes what to do next.
 - Propose the next action, usually `nextApprovedAction` unless events suggest the artist has moved past it.
 
-Words to avoid in artist-facing text: "hydrate," "workbench," "packet," "checkpoint." These are plumbing the artist does not need to think about. Say what you're going to *do*.
+Avoid plumbing vocabulary in artist-facing text. Say what you're going to *do*.
 
 ### Resume vs New Session
 

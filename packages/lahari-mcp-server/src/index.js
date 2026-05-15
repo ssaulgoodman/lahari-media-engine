@@ -12,6 +12,7 @@ const pkg = require('../package.json');
 
 const DEFAULT_API_URL = 'https://lahari-media-engine-production.up.railway.app';
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
 
 const textResult = (value) => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
@@ -553,14 +554,14 @@ registerTool('apply_script', {
 
 registerTool('apply_project_prompt_override', {
   title: 'Apply project prompt override',
-  description: 'Mutating. Persists a Codex-written project-level storyboard/video recipe.',
-  inputSchema: { projectId, kind: z.enum(['storyboard', 'video']), body: z.string().min(1), baseHash: z.string().optional() },
+  description: 'Mutating. Persists a Codex-written project-level prompt recipe.',
+  inputSchema: { projectId, kind: promptOverrideKindSchema, body: z.string().min(1), baseHash: z.string().optional() },
 }, ({ projectId, kind, body, baseHash }) => directorPost('/api/director/apply/project-prompt-override', { projectId, kind, body, baseHash }));
 
 registerTool('revert_project_prompt_override', {
   title: 'Revert project prompt override',
   description: 'Mutating. Reverts active project prompt recipe.',
-  inputSchema: { projectId, kind: z.enum(['storyboard', 'video']), baseHash: z.string().optional() },
+  inputSchema: { projectId, kind: promptOverrideKindSchema, baseHash: z.string().optional() },
 }, ({ projectId, kind, baseHash }) => directorPost('/api/director/rollback/project-prompt-override', { projectId, kind, baseHash }));
 
 registerTool('apply_generate_video', {

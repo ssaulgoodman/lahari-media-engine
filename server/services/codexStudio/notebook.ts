@@ -14,7 +14,7 @@ import {
   type Project,
 } from './core.js';
 import { buildProjectActionList } from './plans.js';
-import { getProjectConfigState, type ProjectPromptOverrideKind } from '../projectConfig.js';
+import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
 
 export type NotebookFile = {
   path: string;
@@ -43,7 +43,9 @@ const buildWorkspaceInstructions = (project: Project): string => `# Lahari Works
 
 This folder is the local notebook for Lahari project "${project.title}" (${project.id}).
 
-Supabase is canonical. Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
+Supabase is canonical. This is an artist notebook, not the Lahari source checkout. Use Lahari MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Lahari instead of substituting shell commands.
+
+Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
@@ -316,16 +318,14 @@ const buildHashes = async (project: Project) => {
     generatedAt: projectUpdatedAt(project),
     script: { hash: scriptContentHash(project) },
     prompts: {
-      storyboard: {
-        hash: config.prompts.storyboard.hash,
-        source: config.prompts.storyboard.source,
-        overrideId: config.prompts.storyboard.overrideId,
-      },
-      video: {
-        hash: config.prompts.video.hash,
-        source: config.prompts.video.source,
-        overrideId: config.prompts.video.overrideId,
-      },
+      ...Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
+        kind,
+        {
+          hash: config.prompts[kind].hash,
+          source: config.prompts[kind].source,
+          overrideId: config.prompts[kind].overrideId,
+        },
+      ])),
     },
     preferences: {
       hash: config.preferences.hash,
@@ -554,20 +554,13 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Editable project model preferences. Apply with apply_project_preferences.',
       content: `${JSON.stringify(config.preferences.preferences, null, 2)}\n`,
     },
-    {
-      path: `${baseDir}/config/prompts/storyboard.md`,
-      mode: 'config',
-      writePolicy: 'review_before_overwrite',
-      description: 'Editable project storyboard prompt recipe. Apply with apply_project_prompt_override(kind="storyboard").',
-      content: ensureNewline(config.prompts.storyboard.body),
-    },
-    {
-      path: `${baseDir}/config/prompts/video.md`,
-      mode: 'config',
-      writePolicy: 'review_before_overwrite',
-      description: 'Editable project video prompt recipe. Apply with apply_project_prompt_override(kind="video").',
-      content: ensureNewline(config.prompts.video.body),
-    },
+    ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
+      path: `${baseDir}/config/prompts/${kind}.md`,
+      mode: 'config' as const,
+      writePolicy: 'review_before_overwrite' as const,
+      description: `Editable project ${kind} prompt recipe. Apply with apply_project_prompt_override(kind="${kind}").`,
+      content: ensureNewline(config.prompts[kind].body),
+    })),
     {
       path: `${baseDir}/config/hashes.json`,
       mode: 'config',
