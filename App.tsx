@@ -165,16 +165,27 @@ const ConnectPage: React.FC<{
 
   const token = created?.token;
   const tokenPlaceholder = token || '<token>';
+  const mcpEndpoint = mcpUrl();
+  const codexAppFields = `Name: lahari
+Type: Streamable HTTP
+URL: ${mcpEndpoint}
+Bearer token env var: leave blank
+Header key: Authorization
+Header value: Bearer ${tokenPlaceholder}`;
+  const codexAppVerify = `Fully quit and reopen Codex Desktop.
+Start a new chat.
+Ask: Call Lahari list_projects.`;
   const codexEnv = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}`;
-  const codexAdd = `codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN`;
+  const codexAdd = `codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN`;
+  const codexInstall = `${codexEnv}\n${codexAdd}`;
   const codexWindowsInstall = `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${tokenPlaceholder}", "User")
-codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN
+codex mcp remove lahari
+codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN
 codex mcp get lahari --json
 Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
   const claudeEnv = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}`;
-  const claudeAdd = `claude mcp add-json lahari '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
-  const claudeFallback = `claude mcp add lahari --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpUrl()}`;
-  const codexInstall = `${codexEnv}\n${codexAdd}`;
+  const claudeAdd = `claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
+  const claudeFallback = `claude mcp add lahari --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpEndpoint}`;
   const claudeInstall = `${claudeEnv}\n${claudeAdd}`;
 
   const CodeBlock: React.FC<{ label: string; value: string; copyLabel?: string; trailing?: React.ReactNode }> = ({ label, value, copyLabel, trailing }) => (
@@ -251,21 +262,39 @@ Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
 
               <div className="pt-2">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Step 2 — Install in your harness</p>
-                <p className="text-sm text-zinc-400 mb-4">Pick your harness and OS. Restart the harness once after pasting; on Windows, use the PowerShell block.</p>
+                <p className="text-sm text-zinc-400 mb-4">For Codex Desktop, use the app UI and paste the Authorization header directly. Env-var setup is advanced fallback.</p>
 
                 <div className="grid md:grid-cols-2 gap-5">
                   <div className="space-y-5">
-                    <CodeBlock label="Codex Desktop — macOS / Linux" value={codexInstall} copyLabel="Copy Codex" />
                     <CodeBlock
-                      label="Codex Desktop — Windows PowerShell"
-                      value={codexWindowsInstall}
-                      copyLabel="Copy Windows"
+                      label="Codex Desktop app"
+                      value={codexAppFields}
+                      copyLabel="Copy Codex fields"
                       trailing={
                         <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
-                          This stores the token in your Windows user environment, verifies the Codex MCP config, then fully stops Codex so the reopened app can inherit the token.
+                          In Codex MCP settings, select Streamable HTTP. Leave bearer token env var blank, then add the Authorization header above.
                         </p>
                       }
                     />
+                    <CodeBlock label="After saving in Codex" value={codexAppVerify} copyLabel="Copy verify steps" />
+                    <details className="group">
+                      <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors select-none">
+                        Advanced Codex CLI env-var setup
+                      </summary>
+                      <div className="mt-3 space-y-4">
+                        <CodeBlock label="macOS / Linux" value={codexInstall} copyLabel="Copy CLI" />
+                        <CodeBlock
+                          label="Windows PowerShell"
+                          value={codexWindowsInstall}
+                          copyLabel="Copy Windows CLI"
+                          trailing={
+                            <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
+                              This stores the token in your Windows user environment, verifies the Codex MCP config, then fully stops Codex so the reopened app can inherit the token.
+                            </p>
+                          }
+                        />
+                      </div>
+                    </details>
                   </div>
                   <CodeBlock
                     label="Claude Code"

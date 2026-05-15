@@ -472,52 +472,107 @@ const TimelineEditor: React.FC<Props> = ({
       // through to the fresh-clips path below.
       if (projectId) {
         const snap = loadSnapshot(projectId);
-        // Validate snapshot srcs against the current initialClips set. If the
-        // studio regenerated a shot video, the snapshot's src is a dead URL
-        // and the Player would just show a broken clip. `blob:` srcs (manual
-        // uploads from the Upload button) are ephemeral to the page session
-        // but we accept them — they'll fail to load silently which is no
-        // worse than the current non-persistent behavior.
+        // Filter stale srcs out of the snapshot rather than wiping the whole
+        // thing. The legitimate timeline can hold srcs that aren't in the
+        // current shot.videoUrl set — media library appends pull from older
+        // shot versions, and regenerating one shot leaves its old url dead.
+        // Dropping the affected items preserves every cut/trim the artist
+        // made on still-valid clips. `blob:` srcs (manual uploads from the
+        // Upload button) are ephemeral to the page session but we accept
+        // them — they'll fail to load silently which is no worse than the
+        // current non-persistent behavior.
         const freshSrcs = new Set([
           ...(initialClips ?? []).map((c) => c.src),
           ...(initialAudioClips ?? []).map((c) => c.src),
         ]);
-        const hasStaleSrc =
-          !!snap &&
-          Object.values(snap.trackItemsMap).some((it: any) => {
-            const src = it?.details?.src;
-            if (typeof src !== 'string') return false;
-            if (src.startsWith('blob:')) return false;
-            return !freshSrcs.has(src);
-          });
-        if (hasStaleSrc) {
-          clearSnapshot(projectId);
-        } else if (snap && snap.trackItemIds.length > 0) {
+        const isStaleItem = (it: any) => {
+          const src = it?.details?.src;
+          if (typeof src !== 'string') return false;
+          if (src.startsWith('blob:')) return false;
+          return !freshSrcs.has(src);
+        };
+        let restored: {
+          tracks: any[];
+          trackItemIds: string[];
+          trackItemsMap: Record<string, any>;
+          transitionIds: string[];
+          transitionsMap: Record<string, any>;
+          duration: number;
+          savedAt: number;
+        } | null = null;
+        if (snap && snap.trackItemIds.length > 0) {
+          const staleIds = new Set(
+            Object.entries(snap.trackItemsMap)
+              .filter(([, it]) => isStaleItem(it))
+              .map(([id]) => id),
+          );
+          if (staleIds.size === 0) {
+            restored = { ...snap };
+          } else if (staleIds.size < snap.trackItemIds.length) {
+            const trackItemIds = snap.trackItemIds.filter((id) => !staleIds.has(id));
+            const trackItemsMap = Object.fromEntries(
+              Object.entries(snap.trackItemsMap).filter(([id]) => !staleIds.has(id)),
+            );
+            // Drop transitions touching dropped items. Empty tracks stay —
+            // an empty audio track on a video-only project is harmless and
+            // keeps the artist's track layout intact.
+            const transitionIds = snap.transitionIds.filter((tid) => {
+              const t = snap.transitionsMap[tid] as any;
+              return t && !staleIds.has(t.fromId) && !staleIds.has(t.toId);
+            });
+            const transitionsMap = Object.fromEntries(
+              transitionIds.map((tid) => [tid, snap.transitionsMap[tid]]),
+            );
+            const tracks = snap.tracks.map((t: any) => ({
+              ...t,
+              items: (t.items as string[]).filter((id) => !staleIds.has(id)),
+            }));
+            // Trim duration to the latest remaining display.to so the
+            // playhead doesn't sit past the end of content.
+            const duration = trackItemIds.reduce((max, id) => {
+              const to = (trackItemsMap[id] as any)?.display?.to ?? 0;
+              return to > max ? to : max;
+            }, 0);
+            restored = {
+              tracks,
+              trackItemIds,
+              trackItemsMap,
+              transitionIds,
+              transitionsMap,
+              duration,
+              savedAt: snap.savedAt,
+            };
+          } else {
+            // Every item was stale — fall through to fresh seeding.
+            clearSnapshot(projectId);
+          }
+        }
+        if (restored) {
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
           (stateManager as any).updateState(
             {
-              tracks: snap.tracks,
-              trackItemIds: snap.trackItemIds,
-              trackItemsMap: snap.trackItemsMap,
-              transitionIds: snap.transitionIds,
-              transitionsMap: snap.transitionsMap,
-              duration: snap.duration,
+              tracks: restored.tracks,
+              trackItemIds: restored.trackItemIds,
+              trackItemsMap: restored.trackItemsMap,
+              transitionIds: restored.transitionIds,
+              transitionsMap: restored.transitionsMap,
+              duration: restored.duration,
             },
             { kind: 'update', updateHistory: false },
           );
-          setLastSavedAt(snap.savedAt);
+          setLastSavedAt(restored.savedAt);
           seededKeyRef.current = key;
           hasSeededRef.current = true;
           captureBaselineRef.current?.();
-          if (snap.duration > 0) {
+          if (restored.duration > 0) {
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 if (cancelled) return;
                 if (useStore.getState().stateManager !== stateManager) return;
                 const currentZoom = useStore.getState().scale?.zoom ?? 1 / 90;
                 dispatch(TIMELINE_SCALE_CHANGED, {
-                  payload: { scale: getFitZoomLevel(snap.duration, currentZoom) },
+                  payload: { scale: getFitZoomLevel(restored!.duration, currentZoom) },
                 });
               });
             });

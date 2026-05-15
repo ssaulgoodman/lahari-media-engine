@@ -18,6 +18,8 @@ const sanitizeLabel = (label?: string | null) => {
   return trimmed ? trimmed.slice(0, 80) : 'Lahari MCP';
 };
 
+const mcpUrl = () => process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp';
+
 const normalizeExpiryDays = (expiresInDays?: number | null) => {
   const n = Number(expiresInDays || DEFAULT_EXPIRY_DAYS);
   if (!Number.isFinite(n)) return DEFAULT_EXPIRY_DAYS;
@@ -52,14 +54,24 @@ export const createMcpToken = async (
     label: row.label,
     expiresAt: row.expires_at,
     install: {
-      codex: `codex mcp add lahari --url ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'} --bearer-token-env-var LAHARI_MCP_TOKEN`,
+      codexApp: `Name: lahari
+Type: Streamable HTTP
+URL: ${mcpUrl()}
+Bearer token env var: leave blank
+Header key: Authorization
+Header value: Bearer ${token}`,
+      codexAppVerify: `Fully quit and reopen Codex Desktop.
+Start a new chat.
+Ask: Call Lahari list_projects.`,
+      codex: `codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN`,
       env: `export LAHARI_MCP_TOKEN=${token}`,
       codexWindows: `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${token}", "User")
-codex mcp add lahari --url ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'} --bearer-token-env-var LAHARI_MCP_TOKEN
+codex mcp remove lahari
+codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN
 codex mcp get lahari --json
 Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`,
-      claude: `claude mcp add-json lahari '{"type":"http","url":"${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'}","headers":{"Authorization":"Bearer \${LAHARI_MCP_TOKEN}"}}'`,
-      claudeFallback: `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'}`,
+      claude: `claude mcp add-json lahari '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer \${LAHARI_MCP_TOKEN}"}}'`,
+      claudeFallback: `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}`,
     },
   };
 };
