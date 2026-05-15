@@ -4,7 +4,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const BUCKET = 'lahari-assets';
+export const STORAGE_BUCKET = process.env.SUPABASE_BUCKET || process.env.STORAGE_BUCKET || 'lahari-assets';
 
 let _sb: SupabaseClient | null = null;
 const getSB = (): SupabaseClient => {
@@ -41,7 +41,7 @@ export const saveBuffer = async (
   const key = `${category}/${filename}`;
   const contentType = mimeFromExt(`.${ext}`);
   const { error } = await getSB().storage
-    .from(BUCKET)
+    .from(STORAGE_BUCKET)
     .upload(key, buffer, { contentType, upsert: false });
   if (error) throw new Error(`Storage upload failed: ${error.message}`);
   return key;
@@ -64,7 +64,7 @@ export const saveBase64 = async (
  * so the frontend can render images/videos directly.
  */
 export const storageUrl = (key: string): string => {
-  const { data } = getSB().storage.from(BUCKET).getPublicUrl(key);
+  const { data } = getSB().storage.from(STORAGE_BUCKET).getPublicUrl(key);
   return data.publicUrl;
 };
 
@@ -84,7 +84,7 @@ export const readAsBase64 = async (key: string): Promise<string> => {
     return fs.readFileSync(cached).toString('base64');
   }
 
-  const { data, error } = await getSB().storage.from(BUCKET).download(key);
+  const { data, error } = await getSB().storage.from(STORAGE_BUCKET).download(key);
   if (error || !data) throw new Error(`Storage download failed (${key}): ${error?.message || 'no data'}`);
   const buffer = Buffer.from(await data.arrayBuffer());
 
@@ -106,7 +106,7 @@ export const downloadToTmp = async (key: string): Promise<string> => {
   const cached = _cache.get(key);
   if (cached && fs.existsSync(cached)) return cached;
 
-  const { data, error } = await getSB().storage.from(BUCKET).download(key);
+  const { data, error } = await getSB().storage.from(STORAGE_BUCKET).download(key);
   if (error || !data) throw new Error(`Storage download failed (${key}): ${error?.message || 'no data'}`);
   const buffer = Buffer.from(await data.arrayBuffer());
 
@@ -136,7 +136,7 @@ export const uploadFromTmp = async (
  * `lahari-assets` — used when deleting renderer-uploaded mp4s that live
  * in a separate renders bucket (e.g. `videos`).
  */
-export const deleteFile = async (key: string, bucket: string = BUCKET): Promise<void> => {
+export const deleteFile = async (key: string, bucket: string = STORAGE_BUCKET): Promise<void> => {
   await getSB().storage.from(bucket).remove([key]);
   _cache.delete(key);
 };

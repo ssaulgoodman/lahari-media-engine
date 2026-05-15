@@ -15,6 +15,7 @@ import { getImageGenerationModelName, getImageService } from '../services/image-
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
+import { getRuntimePreset } from '../presets.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -79,7 +80,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
       { name: member.name, description: member.description || '' },
-      { styleIdx, userRefIdx }
+      { styleIdx, userRefIdx, preset: getRuntimePreset(req.body?.presetKey) }
     );
     if (member.prompts_stale) {
       await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
@@ -314,7 +315,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
       { name: env.name, description: env.description || '' },
-      { styleIdx, userRefIdx }
+      { styleIdx, userRefIdx, preset: getRuntimePreset(req.body?.presetKey) }
     );
     if (env.prompts_stale) {
       await updateRows('environments', { id: env.id }, { prompts_stale: 0 });

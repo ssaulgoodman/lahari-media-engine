@@ -207,26 +207,26 @@ export const generateImageWithRefs = async (
 };
 
 export const generateStyleOptions = async (
-  deity: string,
+  subject: string,
   styleNotes?: string,
 ): Promise<{ style: string; assetPath: string }[]> => {
   const directions = styleNotes
     ? [
         `${styleNotes}`,
         `${styleNotes}, with dramatic chiaroscuro shadows and sculptural depth`,
-        `${styleNotes}, with high-key devotional glow and warm ceremonial atmosphere`,
+        `${styleNotes}, with clean high-key lighting and luminous color separation`,
         `${styleNotes}, as tactile handmade folk-art cinema with natural material texture`,
       ]
     : [
-        `Hyperrealistic cinematic devotional film still of ${deity}, natural temple light`,
-        `${deity} in dramatic chiaroscuro with deep shadows, single warm lamp source`,
-        `${deity} in ethereal golden devotional light, soft bloom, ceremonial atmosphere`,
-        `${deity} as tactile handmade folk-art cinema, natural pigments, material texture`,
+        `Cinematic production frame for ${subject}, natural motivated light`,
+        `${subject} in dramatic chiaroscuro with deep shadows and a single warm practical source`,
+        `${subject} in high-key luminous light, soft bloom, clean atmosphere`,
+        `${subject} as tactile handmade folk-art cinema, natural pigments, material texture`,
       ];
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `Create one reusable visual style reference frame for an Indian devotional music video. ${direction}. Focus on lighting, palette, material texture, rendering approach, and atmosphere. Do not make a character reference portrait, collage, poster, or text image.`;
+      const prompt = `Create one reusable visual style reference frame for a music video. ${direction}. Focus on lighting, palette, material texture, rendering approach, and atmosphere. Do not make a character reference portrait, collage, poster, or text image.`;
       const assetPath = await generateNanoBanana2(prompt, '16:9', []);
       return { style: direction, assetPath };
     })
@@ -307,7 +307,7 @@ export const generateShotStartFrame = async (opts: {
   if (opts.prevShotEndFramePath) refs.push({ label: 'Continuity reference from previous shot', imagePath: opts.prevShotEndFramePath });
   if (opts.failedImagePath && opts.userFeedback) refs.push({ label: `Rejected previous attempt: ${opts.userFeedback}`, imagePath: opts.failedImagePath });
 
-  let prompt = `Generate one cinematic start frame for this Lahari shot.
+  let prompt = `Generate one cinematic start frame for this shot.
 
 Scene: ${opts.visualPrompt}
 

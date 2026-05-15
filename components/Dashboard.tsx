@@ -21,6 +21,7 @@ interface QueueItem {
 interface Props {
   onStartProduction: (queueId: string) => Promise<void> | void;
   onOpenProject: (projectId: string) => void;
+  onCreateScriptProject?: (opts: { title?: string; scriptText: string; directorBrief?: string; targetDuration?: number }) => Promise<void> | void;
   onViewRenders?: (projectId: string, title: string) => void;
 }
 
@@ -32,7 +33,7 @@ const formatDuration = (secs: number) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, onViewRenders }) => {
+export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, onCreateScriptProject, onViewRenders }) => {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [deities, setDeities] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,12 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
   const [search, setSearch] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}').search || ''; } catch { return ''; }
   });
+  const [scriptTitle, setScriptTitle] = useState('');
+  const [scriptBrief, setScriptBrief] = useState('');
+  const [scriptText, setScriptText] = useState('');
+  const [scriptRuntime, setScriptRuntime] = useState('');
+  const [scriptCreating, setScriptCreating] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
 
   // Persist filters
   useEffect(() => {
@@ -83,6 +90,29 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
       await onStartProduction(item.id);
     } finally {
       setStarting(null);
+    }
+  };
+
+  const handleCreateScript = async () => {
+    const text = scriptText.trim();
+    if (!text || !onCreateScriptProject) return;
+    setScriptCreating(true);
+    setScriptError(null);
+    try {
+      await onCreateScriptProject({
+        title: scriptTitle.trim() || undefined,
+        scriptText: text,
+        directorBrief: scriptBrief.trim() || undefined,
+        targetDuration: scriptRuntime.trim() ? Number(scriptRuntime) : undefined,
+      });
+      setScriptTitle('');
+      setScriptBrief('');
+      setScriptText('');
+      setScriptRuntime('');
+    } catch (err: any) {
+      setScriptError(err.message || 'Failed to create script project');
+    } finally {
+      setScriptCreating(false);
     }
   };
 
@@ -123,6 +153,63 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
             : `${filtered.length} of ${stats.total} songs`}
         </p>
       </div>
+
+      {onCreateScriptProject && (
+        <div className="border border-white/[0.06] rounded-xl overflow-hidden bg-white/[0.015]">
+          <div className="grid grid-cols-[280px_1fr] min-h-[250px]">
+            <div className="border-r border-white/[0.06] p-5 flex flex-col justify-between">
+              <div>
+                <p className="text-[11px] text-zinc-400 uppercase tracking-wide font-medium">Script-first</p>
+                <h3 className="text-lg font-display text-white mt-1">Anime Project</h3>
+                <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
+                  Paste a scene or episode script. The parser will create cast, environments, scenes, and shots for Studio.
+                </p>
+              </div>
+              <button
+                onClick={handleCreateScript}
+                disabled={scriptCreating || !scriptText.trim()}
+                className="w-full px-4 py-2.5 bg-white text-black rounded-md text-sm font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {scriptCreating ? 'Parsing…' : 'Create Anime Project'}
+              </button>
+            </div>
+
+            <div className="p-5 grid grid-cols-[1fr_160px] gap-3">
+              <div className="space-y-3">
+                <input
+                  value={scriptTitle}
+                  onChange={(e) => setScriptTitle(e.target.value)}
+                  placeholder="Project title"
+                  className="w-full surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                />
+                <textarea
+                  value={scriptText}
+                  onChange={(e) => setScriptText(e.target.value)}
+                  placeholder={'INT. CLASSROOM - AFTERNOON\nMina pauses at the doorway. The room goes quiet.\nREN\nYou came back.'}
+                  className="w-full h-36 surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none font-mono leading-relaxed"
+                />
+                {scriptError && <p className="text-xs text-red-400">{scriptError}</p>}
+              </div>
+
+              <div className="space-y-3">
+                <input
+                  value={scriptRuntime}
+                  onChange={(e) => setScriptRuntime(e.target.value.replace(/[^\d]/g, ''))}
+                  placeholder="Seconds"
+                  inputMode="numeric"
+                  className="w-full surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                />
+                <textarea
+                  value={scriptBrief}
+                  onChange={(e) => setScriptBrief(e.target.value)}
+                  placeholder="Director brief"
+                  className="w-full h-[132px] surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-3">

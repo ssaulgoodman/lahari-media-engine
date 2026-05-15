@@ -15,16 +15,30 @@ Do preset/generalization work here. Do not switch the main checkout away from `m
 
 ## Preset Abstraction Context
 
-This lane is for making Lahari less hardcoded to bhakti/devotional videos without breaking Lahari. Treat the current Lahari devotional workflow as the first strong preset sitting on top of a more general music/video production engine.
+This lane is for turning the Lahari-shaped engine into a clean video studio platform for non-Lahari artists. The implementation can keep using the existing pipeline shape and legacy table names while we refactor, but the product direction is no longer devotional/Bhakti/Lahari-specific.
 
 North star:
-- Preserve the existing Lahari behavior as the default devotional preset.
-- Extract domain taste into preset configuration: concept/script prompt rules, cultural constraints, queue/source assumptions, model defaults, style/cast/environment guidance, and output format defaults.
+- Build a clean platform with presets/workflows. First serious presets are `music_video_default` and `anime_default`.
+- Do not assume deity, temple, devotional, Bhakti, or Lahari context in generic runtime prompts.
+- Extract domain taste into preset configuration: concept/script prompt rules, source assumptions, model defaults, style/cast/environment guidance, output format defaults, and workflow capabilities.
 - Keep deterministic pipeline semantics intact: Blueprint -> Looks -> Studio -> Render. Do not replace the pipeline with a generic agent loop.
-- Prove the abstraction with one real second preset, likely `generic_music_video`, before broadening to reels, clips, ads, performance videos, or short-film scenes.
-- Prefer a strangler approach: add a `PipelinePreset` shape and route prompt/model/default choices through it, then migrate hardcoded devotional assumptions gradually.
+- Prove the abstraction with two golden paths: music video from audio, and anime from script.
+- Prefer a strangler approach: route prompts/model/default choices through presets, keep legacy compatibility where needed, and gradually remove hardcoded assumptions.
+
+Current strategy:
+- Preset/workflow source of truth lives in `server/presets.ts`.
+- Treat `Preset` and `SeedKind` separately. A preset is taste/model/defaults; a seed is the starting material (`audio`, `script`, `brief`, `document`, `idea`).
+- Treat queue as one source adapter, not the universal intake model. Non-Lahari users may start from a pasted/uploaded script, audio, brief, document, or idea.
+- Runtime schema can be switched by env: `DB_TABLE_PREFIX=lahari` uses the legacy production-shaped tables, `DB_TABLE_PREFIX=studio` uses clean platform tables.
+- New non-Lahari work should use a fresh Supabase project with the `studio_*` schema. Do not point generic artists at the Lahari/Bhakti production DB.
+- The clean DB bootstrap migration is `migrations/2026-05-13_create_studio_workspace_schema.sql`; operator notes are in `docs/studio-db-bootstrap.md`.
+- Storage bucket is configurable with `SUPABASE_BUCKET` / `STORAGE_BUCKET`; default remains `lahari-assets` for compatibility.
+- Platform-only project columns (`preset_key`, `workflow_key`, `seed_kind`, `project_brief`, `source_payload`) are only written when the platform schema is enabled.
+- `server/prompts/catalog.ts` is still a legacy prompt-library/reference surface and must be scrubbed before the Prompt Library is treated as public/product truth.
 
 Good starting docs:
+- `docs/preset-abstraction-plan.md` — current preset/workflow/seed plan and v1 finish line.
+- `docs/studio-db-bootstrap.md` — how to create the fresh Supabase project and run the clean `studio_*` schema.
 - `docs/world-class-plan.md` — product north star; explicitly frames Lahari as the first vertical workflow, not the final product boundary.
 - `docs/pipeline-anatomy.md` — current pipeline trace and known hardcoded devotional points; search for "preset" and "Devotional cinema".
 - `docs/seedance-storyboard-workflow.md` — current Seedance storyboard baseline that the abstraction must preserve.
@@ -50,6 +64,8 @@ npm start            # Production: Express serves dist/ + /api + /storage from o
 - `SEGMIND_API_KEY` — all video generation (Veo 3.1, Seedance 2.0) routes through Segmind
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — for ALL data: Postgres DB + Storage + song catalog
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — frontend auth (hardcoded in Dockerfile for build-time access, also in `.env` for local dev)
+- `DB_TABLE_PREFIX` — optional. Defaults to `lahari`. Set to `studio` for the fresh platform DB.
+- `SUPABASE_BUCKET` / `STORAGE_BUCKET` — optional. Defaults to `lahari-assets`. Set to something like `studio-assets` for the clean project.
 - `CORS_ORIGINS` — comma-separated in prod
 - **Vertex AI (legacy, kept for extractLastFrame ffmpeg)**: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Video gen now routes through Segmind — Vertex vars only needed if re-enabling direct Veo calls.
 
@@ -72,16 +88,16 @@ Full `getFullProject` still used for: all generate/refine endpoints (AI work), f
 
 ## Architecture
 
-**Lahari Media Engine** — AI-powered music video production tool for devotional songs. Integrates with a shared Supabase song catalog (see `music_video_queue` table).
+**Studio engine** — AI-powered video production tool evolving from the Lahari music-video engine. The current app still contains legacy Lahari names and queue code, but the preset abstraction lane is making the core platform clean enough for non-Lahari artists.
 
 - **Frontend**: React 19 + Vite (port 3002 dev). Tailwind via CDN.
 - **Backend**: Express 5 (port 3003 dev, 3001 in prod Docker). Stateless — no local storage or SQLite.
-- **Storage**: Supabase Storage bucket `lahari-assets`. Upload/download via `server/storage.ts`.
-- **DB**: Supabase Postgres (`lahari_*` prefixed tables) via `server/database.ts` async adapter. Song catalog + music_video_queue in same Supabase project.
+- **Storage**: Supabase Storage bucket via `SUPABASE_BUCKET` / `STORAGE_BUCKET`, default `lahari-assets`. Upload/download via `server/storage.ts`.
+- **DB**: Supabase Postgres via `server/database.ts` async adapter. Table prefix comes from `DB_TABLE_PREFIX` (`lahari_*` legacy, `studio_*` clean platform).
 
 ### Pipeline (4 steps)
 
-1. **Queue** (`Dashboard.tsx`) — Songs from Supabase `music_video_queue` joined with `songs` table. Filter by deity/status, sort by duration. Click **Start** → pulls audio + SRT from Supabase Storage, creates Lahari project.
+1. **Intake** (`Dashboard.tsx`) — Direct project creation is the platform path. Music videos can start from uploaded audio. Anime can start from pasted/uploaded script. The old `music_video_queue` flow remains a legacy source adapter, not the default platform assumption.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Opus by default, optional GPT-5.5 experiment, proposes cast + environments + scenes + shots with validated durations)
@@ -124,7 +140,7 @@ No end-frame prediction. Shot = start frame + motion prompt → video plays natu
 
 **Chained-shot prompt refresh**: when a shot's video lands, if the *next* shot is tagged `prev_shot`, Claude Sonnet is called with the extracted last frame as an image input and rewrites the next shot's `visual_prompt` / `motion_prompt` so the hand-off is grounded in what really happened. Marks `refined_from_prev_frame = 1`. Cleared on manual prompt edit or user-feedback refine.
 
-**Seedance storyboard mode:** Seedance ignores the old continuity chain entirely. Studio does not block on `prev_shot`, `generate-image` skips continuity refs/gates for Seedance, and `generate-video` skips chained prompt refresh when using a locked storyboard. A Lahari shot becomes one 4-15s storyboard-controlled edited clip; internal cuts live in the storyboard/cut plan, not in chained keyframes.
+**Seedance storyboard mode:** Seedance ignores the old continuity chain entirely. Studio does not block on `prev_shot`, `generate-image` skips continuity refs/gates for Seedance, and `generate-video` skips chained prompt refresh when using a locked storyboard. A shot becomes one 4-15s storyboard-controlled edited clip; internal cuts live in the storyboard/cut plan, not in chained keyframes.
 
 **Storyboard contract:** future boards are ordered, not visibly numbered. Panels read left-to-right, then top-to-bottom. Do not print panel numbers, captions, arrows, labels, or readable text into the storyboard image; Seedance can render those marks into final footage. The Seedance video prompt defensively tells the model to treat any legacy numbers/labels/borders as sequencing guides only and not reproduce them.
 
@@ -160,11 +176,14 @@ Full step-by-step trace of every prompt, every dependency, every control point: 
 
 ### Database
 
-Supabase Postgres tables (all prefixed `lahari_`, see `server/database.ts` for the async adapter):
-- `lahari_projects` — core state incl. `user_id` (auth ownership), `video_model`, `aspect_ratio`, `video_resolution`, `parent_project_id` (fork lineage)
-- `lahari_scenes`, `lahari_shots` (with `direction`, `continuity_from`, `continuity_description`, `extracted_last_frame_asset_id`, `end_image_asset_id`, `end_visual_prompt`, `end_user_feedback`, `storyboard_asset_id`, `storyboard_version_id`, `storyboard_locked`, `storyboard_status`, `prompts_stale`)
-- `lahari_storyboard_versions` — storyboard history per shot: OpenAI response id, image call ids, prompt, refs, parent version, locked flag, and `metadata.cutPlanText`
-- `lahari_cast_members` (with `generation_prompt`, `prompts_stale`), `lahari_environments` (with `generation_prompt`, `prompts_stale`), `lahari_assets` (with `shot_id` for video history), `lahari_chat_messages`, `lahari_ai_calls`
+Supabase Postgres tables are prefix-mapped in `server/database.ts`.
+
+- Legacy/prod-compatible mode: `DB_TABLE_PREFIX=lahari` (default) uses `lahari_projects`, `lahari_scenes`, `lahari_shots`, etc.
+- Clean platform mode: `DB_TABLE_PREFIX=studio` uses `studio_projects`, `studio_scenes`, `studio_shots`, etc.
+- The clean bootstrap migration is `migrations/2026-05-13_create_studio_workspace_schema.sql`.
+- The clean schema deliberately does not create `songs`, `files`, or `music_video_queue`; those belong to the old source catalog/queue adapter.
+- `studio_projects` adds `preset_key`, `workflow_key`, `seed_kind`, `project_brief`, and `source_payload`.
+- Do not run the clean studio migration on the Lahari production project unless Saul explicitly decides to colocate both schemas. The intended v1 boundary is a separate Supabase project.
 - All DB access goes through `server/database.ts`. Legacy `db.ts`, `veo.ts`, `fal.ts` have been deleted.
 
 ### Fork system
@@ -185,17 +204,23 @@ Fork deep-copies all DB rows under a new id with `parent_project_id = source`; a
 
 `handleLaunchStudio` in `App.tsx` skips `/write-shot-prompts` entirely if every shot already has `visualPrompt` set — clicking Launch Studio after returning from Blueprint no longer burns a Claude batch call. Deliberate bulk regen lives in the Studio header's "Rewrite all" button.
 
-**Supabase tables (read-only from Lahari):**
+**Legacy source-catalog tables (only in the old Lahari Supabase project):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
 - `files` — SRT files, etc. (Google Drive URLs)
-- `music_video_queue` (Lahari's domain table) — song_id, priority, status, lahari_project_id, video_url
+- `music_video_queue` — song_id, priority, status, lahari_project_id, video_url
+
+These are not part of the clean `studio_*` schema. Code that depends on them should be treated as queue-adapter code.
 
 ### Key API Endpoints
 
 **Queue:**
 - `GET /api/queue` — list with joined song data
-- `POST /api/queue/:queueId/start` — pull audio + SRT, create Lahari project
+- `POST /api/queue/:queueId/start` — pull audio + SRT, create a project from the legacy queue adapter
 - `PATCH /api/queue/:queueId` — update status / video_url
+
+**Direct intake:**
+- `POST /api/projects` — upload audio, analyze lyrics/structure, create a music-video project
+- `POST /api/projects/script` — paste/upload script, parse into scenes/shots/cast/environments, create an anime/script-first project
 
 **Blueprint:**
 - `POST /api/projects/:id/generate-concepts` (userNote optional)

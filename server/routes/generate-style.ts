@@ -13,6 +13,7 @@ import { getImageGenerationModelName, getImageService } from '../services/image-
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireAsset } from './scope-helpers.js';
+import { getRuntimePreset, presetSubject } from '../presets.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -26,6 +27,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     const concept = JSON.parse(project.locked_concept || '{}');
     const { userNotes } = req.body;
+    const preset = getRuntimePreset(req.body?.presetKey);
 
     try {
       console.log(`[${project.id}] Brainstorming style directions...`);
@@ -44,6 +46,7 @@ export const mountStyleRoutes = (router: Router) => {
         project.song_type || undefined,
         project.is_narrative ?? undefined,
         project.is_meditative ?? undefined,
+        preset,
       );
       const durationMs = Date.now() - t0;
 
@@ -85,7 +88,9 @@ export const mountStyleRoutes = (router: Router) => {
 
     // Build prompt fresh per slot — no project-level cache.
     // Each direction gets its own prompt from its own description.
-    const genPrompt = buildStylePrompt(stylePrompt, concept.deity || project.title);
+    const preset = getRuntimePreset(req.body?.presetKey);
+    const subject = presetSubject(concept, project.title, preset);
+    const genPrompt = buildStylePrompt(stylePrompt, subject, preset);
 
     try {
       console.log(`[${project.id}] Visualizing style direction...`);
@@ -93,7 +98,7 @@ export const mountStyleRoutes = (router: Router) => {
       const imageService = getImageService(project.image_model);
       const assetPath = await imageService.generateSingleStyleImage(
         stylePrompt,
-        concept.deity || project.title,
+        subject,
         genPrompt,
       );
       const durationMs = Date.now() - t0;
@@ -139,7 +144,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     try {
       const t0 = Date.now();
-      const refined = await refineStyleDirection(description, feedback, concept);
+      const refined = await refineStyleDirection(description, feedback, concept, getRuntimePreset(req.body?.presetKey));
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: project.id }, { style_generation_prompt: null });

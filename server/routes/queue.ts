@@ -8,7 +8,7 @@ import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
-import { selectOne, insertRow, updateRows, getSB, T } from '../database.js';
+import { selectOne, insertRow, updateRows, getSB, T, supportsPlatformColumns } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject, forkProject } from './projects.js';
 
@@ -138,6 +138,13 @@ router.post('/:queueId/start', async (req, res) => {
       image_model: 'nano-banana-2',
       user_id: req.userId,
       source_queue_id: queueId,
+      ...(supportsPlatformColumns() ? {
+        preset_key: 'music_video_default',
+        workflow_key: 'music_video',
+        seed_kind: 'audio',
+        project_brief: { title: item.song_name || 'Untitled', source: 'legacy_queue' },
+        source_payload: { kind: 'queue', queueId, songId: item.song_id },
+      } : {}),
     });
 
     // Link back to queue (first user sets the pointer; subsequent users don't overwrite)

@@ -7,12 +7,16 @@
  * Gemini still handles: audio analysis (transcribe, structure), image critique (vision), chat
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { getRuntimePreset, PipelinePreset } from '../presets.js';
 
 const getClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 // Model choices
 const SONNET = 'claude-sonnet-4-6';
 const OPUS = 'claude-opus-4-7';
+
+const conceptSubject = (concept: any, fallback = 'Unknown'): string =>
+  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback;
 
 // ─── Meaning Summary (Stage 3) ──────────────────────────────────────
 
@@ -36,7 +40,7 @@ Cover:
 1. What is the song about? (2-3 sentences)
 2. Who is it addressed to?
 3. Emotional arc
-4. Cultural/spiritual context
+4. Cultural, genre, or performance context
 
 Under 150 words. Write in English.`;
 
@@ -66,6 +70,7 @@ export const generateConceptOptions = async (
   songType?: string,
   isNarrative?: boolean,
   isMeditative?: boolean,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ concepts: any[]; prompt: string }> => {
   const client = getClient();
 
@@ -77,6 +82,7 @@ export const generateConceptOptions = async (
   const songTypeSignal = typeLabel || traits.length
     ? `SONG TYPE (from audio analysis): ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
     : '';
+  const conceptDirectionExamples = preset.concept.directionExamples.map((example) => `"${example}"`).join(', ');
 
   const structureSummary = (musicalStructure || []).slice(0, 8).map((s: any) =>
     `${s.label || 'Section'} [${s.startTime}–${s.endTime}]${s.energyLevel ? ` (${s.energyLevel})` : ''}${s.description ? `: ${s.description}` : ''}`
@@ -97,7 +103,7 @@ ${meaning}`;
 
   if (directorBrief) {
     // Path B: Director has a specific vision — generate ONE concept that realizes it
-    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    prompt = `You are ${preset.concept.directorIdentity}.
 
 ${songContext}
 
@@ -105,10 +111,11 @@ DIRECTOR'S BRIEF:
 ${directorBrief}
 ${userNote ? `\nADDITIONAL NOTE: ${userNote}\n` : ''}
 Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their idea into a complete concept — don't override their intent, expand on it. Fill in all structured fields so the production pipeline can work with it.
+${preset.concept.rules}
 
 Use the generate_concepts tool. Return EXACTLY 1 concept in the array.`;
   } else {
-    prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+    prompt = `You are ${preset.concept.directorIdentity}.
 
 ${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
@@ -116,13 +123,13 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
 
 For each direction provide:
 - title: 2-4 word creative title
-- deity: the primary divine figure
+- ${preset.concept.subjectField}: ${preset.concept.subjectDescription}
 - mood: one distinct emotional keyword (different per direction)
 - theme: the core narrative idea (1 sentence)
-- conceptDirection: a short creative label for this direction (e.g. "intimate darshan", "cosmic invocation", "earthen ritual" — NOT generic labels like "traditional" or "modern")
+- conceptDirection: a short creative label for this direction (e.g. ${conceptDirectionExamples} — NOT generic labels like "traditional" or "modern")
 - description: 2-3 sentences expanding the concept — what the viewer sees, the emotional arc, the world of this video
 
-Visual style is decided in a separate phase — do NOT include art style, color palette, or cinematography here. Focus purely on narrative direction and concept.
+${preset.concept.rules}
 
 Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
   }
@@ -143,14 +150,14 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
               properties: {
                 title: { type: 'string', description: 'Song title' },
                 language: { type: 'string', description: 'Detected language' },
-                deity: { type: 'string', description: 'Primary divine figure' },
+                subject: { type: 'string', description: preset.concept.subjectDescription },
                 mood: { type: 'string', description: 'Emotional keyword — unique per concept' },
                 theme: { type: 'string', description: 'Core narrative idea (1 sentence)' },
                 lyricsSummary: { type: 'string', description: 'Brief meaning summary' },
-                conceptDirection: { type: 'string', description: 'Short creative label (e.g. "intimate darshan", "cosmic invocation")' },
+                conceptDirection: { type: 'string', description: `Short creative label (e.g. ${conceptDirectionExamples})` },
                 description: { type: 'string', description: '2-3 sentence expansion of the concept — what the viewer sees, the emotional arc' },
               },
-              required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'description']
+              required: ['title', 'subject', 'mood', 'theme', 'conceptDirection', 'description']
             }
           }
         },
@@ -163,22 +170,30 @@ Use the generate_concepts tool. Return EXACTLY 3 concepts.`;
 
   const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
   if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('No concepts generated');
-  return { concepts: (toolBlock.input as any).concepts || [], prompt };
+  const concepts = ((toolBlock.input as any).concepts || []).map((concept: any) => ({
+    ...concept,
+    // Legacy storage/UI compatibility until the concept schema is renamed.
+    deity: concept.deity || concept.subject || concept.primarySubject || '',
+  }));
+  return { concepts, prompt };
 };
 
 // ─── Refine Locked Concept ─────────────────────────────────────────
 
 export const refineConceptDirection = async (
   currentConcept: any,
-  feedback: string
+  feedback: string,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<any> => {
   const client = getClient();
 
-  const prompt = `You are a visionary film director specializing in Indian mythological and devotional cinema.
+  const subject = conceptSubject(currentConcept);
+
+  const prompt = `You are ${preset.concept.directorIdentity}.
 
 CURRENT LOCKED CONCEPT:
 - Title: ${currentConcept.title || ''}
-- Deity: ${currentConcept.deity || ''}
+- ${preset.concept.subjectField}: ${subject}
 - Mood: ${currentConcept.mood || ''}
 - Theme: ${currentConcept.theme || ''}
 - Direction: ${currentConcept.conceptDirection || ''}
@@ -189,6 +204,7 @@ ${feedback}
 Revise the concept incorporating the feedback. Keep the core identity intact — this is a refinement, not a replacement. Update only the fields that the feedback touches. If the feedback says "darker mood" just update mood, don't rewrite everything.
 
 Visual style is decided in a separate phase — do NOT include art style or color palette.
+${preset.concept.rules}
 
 Use the refine_concept tool.`;
 
@@ -202,7 +218,7 @@ Use the refine_concept tool.`;
         type: 'object' as const,
         properties: {
           title: { type: 'string' },
-          deity: { type: 'string' },
+          subject: { type: 'string', description: preset.concept.subjectDescription },
           mood: { type: 'string' },
           theme: { type: 'string' },
           conceptDirection: { type: 'string' },
@@ -216,7 +232,7 @@ Use the refine_concept tool.`;
             required: ['artStyle', 'colorPalette']
           }
         },
-        required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'visualSuggestions']
+        required: ['title', 'subject', 'mood', 'theme', 'conceptDirection', 'visualSuggestions']
       }
     }],
     tool_choice: { type: 'tool', name: 'refine_concept' },
@@ -225,7 +241,12 @@ Use the refine_concept tool.`;
 
   const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
   if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('Concept refinement failed');
-  return toolBlock.input;
+  const refined = toolBlock.input as any;
+  return {
+    ...refined,
+    // Legacy storage/UI compatibility until the concept schema is renamed.
+    deity: refined.deity || refined.subject || refined.primarySubject || '',
+  };
 };
 
 // ─── Script Planning (Stage 5) ──────────────────────────────────────
@@ -299,6 +320,15 @@ export interface ScriptInput {
   videoMode: string;
 }
 
+export type ScriptFirstPlan = {
+  title?: string;
+  logline?: string;
+  cast: any[];
+  environments: any[];
+  scenes: any[];
+  prompt: string;
+};
+
 // Parse "M:SS" or "MM:SS" to seconds
 const parseTimestamp = (t: string): number => {
   if (!t || !t.includes(':')) return 0;
@@ -306,10 +336,127 @@ const parseTimestamp = (t: string): number => {
   return parts[0] * 60 + (parts[1] || 0);
 };
 
+const formatTimestamp = (seconds: number): string => {
+  const safe = Math.max(0, Math.round(seconds));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+};
+
+const normalizeScriptFirstTiming = (scenes: any[], pacing: number): any[] => {
+  let cursor = 0;
+  return (scenes || []).map((scene, sIdx) => {
+    const shots = (scene.shots || []).map((shot: any) => ({
+      ...shot,
+      duration: Math.max(1, Number(shot.duration || pacing)),
+    }));
+    const sceneDuration = shots.reduce((sum: number, shot: any) => sum + Number(shot.duration || pacing), 0) || pacing;
+    const startTime = scene.startTime || formatTimestamp(cursor);
+    const endTime = scene.endTime || formatTimestamp(cursor + sceneDuration);
+    cursor += Math.max(0, parseTimestamp(endTime) - parseTimestamp(startTime)) || sceneDuration;
+    return {
+      ...scene,
+      sectionLabel: scene.sectionLabel || scene.label || `Scene ${sIdx + 1}`,
+      startTime,
+      endTime,
+      narrativeDescription: scene.narrativeDescription || scene.description || '',
+      shots,
+    };
+  });
+};
+
+export const parseAnimeScriptToPlan = async (input: {
+  scriptText: string;
+  title?: string;
+  directorBrief?: string;
+  targetDuration?: number;
+  preset?: PipelinePreset;
+}): Promise<ScriptFirstPlan> => {
+  const client = getClient();
+  const preset = input.preset || getRuntimePreset('anime_default');
+  const pacing = preset.defaults.pacing || 6;
+  const targetDuration = input.targetDuration && input.targetDuration > 0
+    ? input.targetDuration
+    : undefined;
+
+  const prompt = `You are ${preset.script.plannerIdentity}.
+
+Convert the uploaded anime script into a production-ready scene and shot plan.
+
+SOURCE TITLE:
+${input.title || 'Untitled'}
+
+${input.directorBrief ? `DIRECTOR BRIEF:\n${input.directorBrief}\n` : ''}
+${targetDuration ? `TARGET RUNTIME: about ${targetDuration} seconds.\n` : ''}
+STYLE CONTEXT:
+${preset.style.presetBible || preset.style.rules}
+
+SCRIPT:
+${input.scriptText}
+
+Your job is extraction and production planning, not rewriting the story.
+
+Rules:
+- Preserve the script's story intent, scene order, and character actions.
+- Break the script into production scenes and shots.
+- Use approximate timings. If the script has no timing, assign practical shot durations around ${pacing}s, longer for dialogue/action beats.
+- Extract cast members needed on screen.
+- Extract reusable environments/backgrounds.
+- Shot directions describe WHAT HAPPENS, not camera/lens/style.
+- Do not include art style in cast or environment descriptions.
+- Every shot must have castNames and environmentName.
+
+CAST rules:
+${preset.script.castRules}
+
+ENVIRONMENT rules:
+${preset.script.environmentRules}
+
+SCENE rules:
+${preset.script.sceneRules}
+
+Return the plan using the parse_anime_script tool.`;
+
+  const response = await client.messages.create({
+    model: OPUS,
+    max_tokens: 16384,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high' } as any,
+    tools: [{
+      name: 'parse_anime_script',
+      description: 'Parse a script-first anime project into cast, environments, scenes, and shots.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          title: { type: 'string' },
+          logline: { type: 'string' },
+          cast: SCRIPT_TOOL.input_schema.properties.cast,
+          environments: SCRIPT_TOOL.input_schema.properties.environments,
+          scenes: SCRIPT_TOOL.input_schema.properties.scenes,
+        },
+        required: ['cast', 'environments', 'scenes'],
+      },
+    }],
+    tool_choice: { type: 'tool', name: 'parse_anime_script' },
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const toolBlock = response.content.find((b: any) => b.type === 'tool_use');
+  if (!toolBlock || toolBlock.type !== 'tool_use') throw new Error('Script parser did not return a plan');
+  const parsed = toolBlock.input as any;
+  return {
+    title: parsed.title,
+    logline: parsed.logline,
+    cast: parsed.cast || [],
+    environments: parsed.environments || [],
+    scenes: normalizeScriptFirstTiming(parsed.scenes || [], pacing),
+    prompt,
+  };
+};
+
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string }
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
+  const preset = input.preset || getRuntimePreset();
   const pacing = input.basePacing || 8;
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
@@ -327,16 +474,16 @@ export const planScenes = async (
 
   const modeGuidance = input.videoMode === 'cinematic'
     ? `DIRECTOR STYLE: Cinematic — fewer, more sustained moments. Stronger continuity between shots, deeper immersion. Each scene builds and breathes.`
-    : `DIRECTOR STYLE: Montage — rhythmic, many discrete moments. Broader coverage of the emotional and spiritual world. Each shot is its own beat.`;
+    : `DIRECTOR STYLE: Montage — rhythmic, many discrete moments. Broader coverage of the emotional and visual world. Each shot is its own beat.`;
 
   const pacingGuidance = isSeedanceStoryboard
     ? `═══ SEEDANCE STORYBOARD PACING (CRITICAL — think through this before writing) ═══
 Video model: ${input.videoModel}
-In this mode, a Lahari "shot" is a storyboard clip, not one continuous camera take.
+In this mode, a ${preset.toolName} "shot" is a storyboard clip, not one continuous camera take.
 Each shot may contain internal edits, multiple angles, and beat hits, but it must still serve one clear story/music idea.
 
 Target clip length: 15 seconds whenever the musical phrase can support a mini-scene.
-Allowed practical range: 4-15 seconds. Use shorter clips for short phrases, transitions, refrains, or quick devotional responses.
+Allowed practical range: 4-15 seconds. Use shorter clips for short phrases, transitions, refrains, or quick responses.
 For each scene, shot durations must add up to the scene duration exactly.
 Good examples:
 - 30s scene -> 15 + 15
@@ -365,12 +512,12 @@ Video model minimum clip length: ${minDuration}s. Shots shorter than this get pa
 BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots.
 ═══════════════════════════════════════════════════════════════════`;
 
-  const prompt = `You are a music video director. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
+  const prompt = `You are ${preset.script.plannerIdentity}. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
 
 ${modeGuidance}
 ${songTypeSignal}
 
-CONCEPT: ${input.concept.deity || 'Unknown'} — ${input.concept.theme}
+CONCEPT: ${conceptSubject(input.concept)} — ${input.concept.theme}
 Mood: ${input.concept.mood}
 ${input.concept.conceptDirection || ''}
 
@@ -386,34 +533,25 @@ ${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
 Plan the full music video using the plan_music_video tool.
 
 CAST rules:
-- Include the deity and key figures by their proper names
 - Description = REUSABLE physical identity: face, skin tone, build, costume, ornaments, crown/headpiece, jewelry. 2-3 sentences.
 - Do NOT include actions, props in hands, or scene-specific details — this generates a neutral reference portrait reused across shots
-- Include cultural context: "{name}, the {role} from {tradition}"
 - No art style — just what the character looks like
+${preset.script.castRules}
 
 ENVIRONMENT rules:
-- Only 2-3 key locations that define the visual world
 - Description = physical space: architecture, landscape, scale, lighting, atmosphere. 2 sentences.
-- Include cultural reference: "inspired by {source}"
 - No art style — just the place itself
+${preset.script.environmentRules}
 
 SCENE rules:
 - One scene per musical section — follow the musical structure timestamps exactly
 - narrativeDescription: what happens in this scene, 1-2 sentences
 - Each shot needs a direction: WHAT HAPPENS in this moment (the narrative beat, the action, the emotional shift). NOT camera directions — those come later.
-  Good: "Ganesha receives the offering, his expression softens"
-  Good: "Devotee prostrates before the idol, hands trembling"
-  Good: "Each sacred name reveals a different facet of Ganesha's presence in the temple space"
-  Good: "The devotee's offering becomes the bridge between human longing and divine grace"
-  Bad: "Slow dolly in on Ganesha" (that's camera work, not direction)
-  Bad: "Wide establishing shot of temple" (that's framing, not action)
+${preset.script.shotExamples.good.map((example) => `  Good: "${example}"`).join('\n')}
+${preset.script.shotExamples.bad.map((example) => `  Bad: "${example}" (that's framing/camera work, not direction)`).join('\n')}
 ${isSeedanceStoryboard ? '- In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive clip idea. Include shot.duration for every shot.' : ''}
-${input.isMeditative ? '\n- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs.' : ''}
-- Avoid mechanical alternation between two visual worlds unless the song truly demands it. Let some beats bridge the human and divine, or move from one into the other.
-- Not every sacred name or attribute needs a literal illustration. Some should be felt through atmosphere, ritual action, emotional change, silence, or presence.
-- Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields. Use overt visual effects only when they feel earned by the song.
-- Build progression across the scene: invocation -> deepening presence -> surrender. Each shot should advance the same spiritual movement, not just restate it in a new image.
+${input.isMeditative ? `\n- The audio was classified as meditative. Favor stillness, patience, repetition with variation, and visible emotional/physical micro-changes over forced plot turns.` : ''}
+${preset.script.sceneRules}
 
 IMPORTANT — character and environment assignment:
 - Every shot MUST have an environmentName from the environment list
@@ -522,11 +660,12 @@ IMPORTANT — character and environment assignment:
 export const refineScript = async (
   currentScript: { cast: any[]; environments: any[]; scenes: any[] },
   feedback: string,
-  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number }
+  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; preset?: PipelinePreset }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = getClient();
   const pacing = context.basePacing || 8;
   const minDuration = context.minShotDuration || 4;
+  const preset = context.preset || getRuntimePreset();
 
   const currentJson = JSON.stringify({
     cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
@@ -544,9 +683,9 @@ export const refineScript = async (
     }))
   }, null, 2);
 
-  const prompt = `You are a visionary music video director specializing in Indian mythological and devotional cinema. You are refining an existing script based on the director's feedback.
+  const prompt = `You are ${preset.script.plannerIdentity}. You are refining an existing script based on the director's feedback.
 
-CONCEPT: ${context.concept.deity || 'Unknown'} — ${context.concept.theme}
+CONCEPT: ${conceptSubject(context.concept)} — ${context.concept.theme}
 Mood: ${context.concept.mood}
 ${context.concept.conceptDirection || ''}
 
@@ -583,12 +722,13 @@ REFINEMENT PRINCIPLES:
 
 CAST rules (same as original script):
 - Description = physical appearance for image generation. 2-3 sentences.
-- Include cultural context: "{name}, the {role} from {tradition}"
 - No art style in descriptions
+${preset.script.castRules}
 
 ENVIRONMENT rules:
 - Description = physical space. 2 sentences. Cultural reference.
 - No art style
+${preset.script.environmentRules}
 
 Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
 
@@ -673,10 +813,11 @@ Return the COMPLETE updated script using the plan_music_video tool — all scene
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string },
+  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = getClient();
+  const preset = context.preset || getRuntimePreset();
 
   const shotList = shots.map((s, i) =>
     `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | Lyrics: ${s.sceneLyrics || 'instrumental'}`
@@ -705,23 +846,46 @@ export const writeShotPrompts = async (
   const meditativeGuidance = context.isMeditative ? `
 MEDITATIVE CINEMATOGRAPHY:
 - Favor stillness, patience, and negative space. Let the frame breathe.
-- Resist the urge to fill every shot with spectacle. A still face, a trembling hand, a single flame can carry more weight than divine radiance.
-- Show sacred presence through atmosphere and reaction, not only through literal divine manifestation.
-- When the divine appears, keep it grounded — earned through the devotee's state, not inserted as a visual effect.` : '';
+- Resist filling every shot with spectacle. A still face, a repeated gesture, an empty room, or a small environmental change can carry the beat.
+- Translate inward feeling into visible physical evidence, performance, blocking, or atmosphere.` : '';
 
   const modelGuidance = context.videoModel?.startsWith('seedance') ? `
 SEEDANCE 2.0 PROMPTING MODE:
 - Think like a production storyboard: each motionPrompt should read as a timed action cue for this exact shot duration, not a loose mood sentence.
 - Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
 - Use each shot's listed duration when helpful: "Over 5s..." or "During the final second..." for holds, reveals, and beat hits.
-- Lahari provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
+- ${preset.toolName} provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
 - You may reference the song rhythm visually: "on the vocal phrase", "on the drum accent", "as the line resolves", "with the chant pulse". Keep it visible and editorial.
 - Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
-- If the start frame must stay consistent, say so positively: "maintain the same face, costume, and temple geometry while..."
-- Avoid multi-shot language inside one Lahari shot unless the direction explicitly requires a transition. Lahari stitches separate clips later.` : `
+- If the start frame must stay consistent, say so positively: "maintain the same face, costume, and environment geometry while..."
+- Avoid multi-shot language inside one ${preset.toolName} shot unless the direction explicitly requires a transition. ${preset.toolName} stitches separate clips later.` : `
 VIDEO MODEL PROMPTING MODE:
 - The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
 - Do not request generated audio, dialogue, subtitles, or sound effects.`;
+
+  const renderableExamples = `GOOD visualPrompt:
+"Medium side shot: the singer stands alone on the empty soundstage, one hand gripping the microphone stand as the overhead practical lights flicker on behind them."
+
+GOOD visualPrompt:
+"Wide street-level frame: two dancers face each other across the wet crosswalk while headlights pass behind them and the chorus crowd waits at the curb."
+
+GOOD motionPrompt:
+"Static hold as the singer turns away from the mic; only the background lights pulse to the beat."
+
+GOOD motionPrompt:
+"Tracking move beside the dancers as they break from mirrored steps into separate rhythms on the drum accent."
+
+BAD visualPrompt:
+"The artist feels the memory of lost love returning." — emotional interpretation, not renderable.
+
+BAD visualPrompt:
+"A perfect split-screen composition showing loneliness and hope." — schematic layout jargon unless the shot truly needs it.
+
+BAD motionPrompt:
+"The camera slowly dollies in to heighten the emotional atmosphere." — generic movement and non-visual rationale.
+
+BAD motionPrompt:
+"Abstract energy fills the frame as the universe awakens." — vague VFX not grounded in the shot direction.`;
 
   const prompt = `You are a cinematographer. The director planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
 
@@ -741,29 +905,7 @@ Translate emotion into physical evidence:
 
 EXAMPLES — the boundary between renderable and not:
 
-GOOD visualPrompt:
-"Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
-
-GOOD visualPrompt:
-"Low wide shot from the shrine floor: the devotee lies in full prostration in the foreground, forehead touching stone, while the Ganesha murti rises behind him in stillness. The brass lamp burns between them."
-
-GOOD motionPrompt:
-"Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
-
-GOOD motionPrompt:
-"Slow push-in toward the murti's cheek as a bead of moisture begins to slide down the carved stone."
-
-BAD visualPrompt:
-"The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
-
-BAD visualPrompt:
-"A symmetrical split-focus composition with the devotee on the left third and the murti on the right third." — schematic layout jargon unless the shot truly needs it.
-
-BAD motionPrompt:
-"The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
-
-BAD motionPrompt:
-"Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
+${renderableExamples}
 
 ${songTypeSignal}
 Mood: ${context.concept.mood || 'Cinematic'}
@@ -776,6 +918,7 @@ SHOTS TO WRITE:
 ${shotList}
 ${modelGuidance}
 ${meditativeGuidance}
+${preset.studio.shotPromptRules}
 For EACH shot, write using the write_shot_prompts tool:
 
 - visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
@@ -792,9 +935,7 @@ BEFORE RETURNING, CHECK THE SEQUENCE:
 - No invented geography (corridors, archways, courtyards not in the direction)
 - No repeated camera verb across consecutive shots
 - No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
-- No mystical VFX unless explicitly described in the shot direction
 - At least consider 'prev_shot' for direct intensifications — don't default to all cuts
-- Every shot must advance the devotional arc, not just restate the previous beat
 
 Match the IDs exactly.`;
 
@@ -848,6 +989,7 @@ export const brainstormStyleDirections = async (
   songType?: string,
   isNarrative?: boolean,
   isMeditative?: boolean,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ title: string; description: string }[]> => {
   const client = getClient();
 
@@ -860,12 +1002,13 @@ export const brainstormStyleDirections = async (
     ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
     : '';
 
-  const prompt = `You are a Director of Photography designing the visual language for an Indian devotional music video.
+  const prompt = `You are ${preset.style.dpIdentity}.
 
-The audience is Indian. The imagery must feel culturally authentic, not generic fantasy.
+Audience: ${preset.audience}.
+${preset.style.rules}
 These descriptions will be used as prompts for Gemini image generation.
 
-SONG: ${concept.deity || 'Unknown'} — ${concept.theme || 'Unknown'}
+SONG: ${conceptSubject(concept)} — ${concept.theme || 'Unknown'}
 Mood: ${concept.mood || 'Unknown'}
 Language: ${concept.language || 'Unknown'}
 ${songTypeSignal}
@@ -882,8 +1025,8 @@ ${userNotes ? `USER DIRECTION: All 4 must be variations within this preference:\
 Propose 4 distinct visual style directions using the propose_style_directions tool.
 
 Each direction must produce a visibly different reference image: vary color temperature, medium/rendering approach, lighting behavior, and artistic/cultural reference.
-Do not let all four directions collapse into warm, dark, temple-chiaroscuro variants.
-Photographic, painterly, illustrated, miniature-inspired, or mixed-media directions are all welcome if specific and culturally respectful.
+Do not let all four directions collapse into the same lighting, palette, medium, or setting family.
+Photographic, painterly, illustrated, miniature-inspired, or mixed-media directions are all welcome if specific and respectful to the concept.
 
 For each: a title (2-5 words) and description (2 short punchy sentences, concrete and compact).
 
@@ -935,7 +1078,8 @@ QUALITY GUIDELINES for the image generation downstream:
 export const refineStyleDirection = async (
   currentDescription: string,
   feedback: string,
-  concept: any
+  concept: any,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ title: string; description: string }> => {
   const client = getClient();
 
@@ -945,7 +1089,7 @@ CURRENT DIRECTION:
 ${currentDescription}
 
 CONTEXT:
-- Deity/Subject: ${concept.deity || 'Unknown'}
+- ${preset.concept.subjectField}: ${conceptSubject(concept)}
 - Mood: ${concept.mood || 'Unknown'}
 
 USER FEEDBACK:

@@ -36,7 +36,7 @@ const parseTimestamp = (t?: string): number => {
 const buildConceptSummary = (project: any): { concept: string; mood?: string } => {
   const concept = parseJson<Record<string, any>>(project.locked_concept, {});
   return {
-    concept: concept.conceptDirection || concept.summary || concept.title || `Devotional music video for ${project.title}`,
+    concept: concept.conceptDirection || concept.summary || concept.title || `Music video for ${project.title}`,
     mood: concept.mood || undefined,
   };
 };
@@ -171,7 +171,7 @@ export const generateStoryboardVersion = async (opts: {
   const previousMetadata = parseJson<Record<string, any>>(previousVersion?.metadata, {});
   const previousCutPlan = previousMetadata.cutPlanText ? `\n\nPrevious cut plan to preserve/improve:\n${previousMetadata.cutPlanText}` : '';
   const prompt = opts.artistNote?.trim()
-    ? `Refine the existing Lahari storyboard using this artist note: "${opts.artistNote.trim()}"
+    ? `Refine the existing storyboard using this artist note: "${opts.artistNote.trim()}"
 
 Keep character identity, costume, environment, style, and the same ${ctx.input.clipDuration}s clip intent unless the note explicitly asks otherwise.
 ${previousCutPlan}

@@ -231,21 +231,21 @@ export const generateImageWithRefs = async (
 };
 
 export const generateStyleOptions = async (
-  deity: string,
+  subject: string,
   styleNotes?: string,
 ): Promise<{ style: string; assetPath: string }[]> => {
   const directions = styleNotes
     ? [
         `${styleNotes}`,
         `${styleNotes}, with dramatic chiaroscuro shadows and Renaissance-inspired composition`,
-        `${styleNotes}, reimagined with high-key ethereal golden lighting and divine bloom effects`,
+        `${styleNotes}, reimagined with clean high-key lighting and luminous color separation`,
         `${styleNotes}, as vintage 16mm film with warm analog grain and nostalgic color grading`,
       ]
     : [
-        `Hyperrealistic cinematic portrait of ${deity}, 35mm Kodak film look, natural light`,
-        `${deity} in dramatic Caravaggio-style chiaroscuro, deep shadows, single light source, oil painting realism`,
-        `${deity} in ethereal divine light, high-key photography, golden bloom, heavenly atmosphere, lens flare`,
-        `${deity} as vintage 16mm film still, warm analog grain, faded colors, nostalgic Indian cinema aesthetic`,
+        `Cinematic production frame for ${subject}, 35mm Kodak film look, natural light`,
+        `${subject} in dramatic chiaroscuro, deep shadows, single light source, oil painting realism`,
+        `${subject} in high-key photography, soft bloom, luminous atmosphere, controlled lens flare`,
+        `${subject} as vintage 16mm film still, warm analog grain, faded colors, nostalgic music-video aesthetic`,
       ];
 
   const settled = await Promise.allSettled(

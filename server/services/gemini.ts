@@ -105,15 +105,18 @@ export const detectStructure = async (
 
 1. "sections" — array of musical sections (max 10). Each: label (Intro/Verse/Chorus/Bridge/Interlude/Outro), startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.
 
-2. "songType" — classify what you HEAR. One of: stotra, chant, bhajan, kirtan, song, unknown.
-   - stotra: sacred verse recitation, simple melodic structure (covers shloka, stuti)
-   - chant: repetitive mantra recitation, minimal melody
-   - bhajan: devotional song, lyrical, verse-refrain pattern
-   - kirtan: call-and-response communal singing, builds energy
-   - song: produced devotional song, full arrangement, dynamic sections
+2. "songType" — classify what you HEAR. One of: ballad, rap, pop, rock, electronic, cinematic, ambient, spoken_word, unknown.
+   - ballad: lyrical song with clear verses and emotional progression
+   - rap: rhythmic spoken or rapped vocal performance
+   - pop: produced song with hook/refrain structure
+   - rock: band-driven song with prominent drums/guitars or comparable live energy
+   - electronic: synth/electronic production is the dominant musical identity
+   - cinematic: score-like, orchestral, trailer-like, or soundtrack-driven
+   - ambient: minimal, atmospheric, low-change soundscape
+   - spoken_word: narration, monologue, dialogue, or poetry is dominant
    - unknown: doesn't fit the above
 
-3. "isNarrative" — true if the song tells a story or has a dramatic arc with distinct emotional shifts. false if it's meditative, repetitive, or maintains a steady devotional mood.
+3. "isNarrative" — true if the audio tells a story or has a dramatic arc with distinct emotional shifts. false if it's repetitive or maintains a steady mood.
 
 4. "isMeditative" — true if the song is contemplative, steady, inward-focused. false if it's energetic, dynamic, or dramatic.
 
@@ -139,7 +142,7 @@ Return ONLY the JSON object.` }
               required: ['label', 'startTime', 'endTime']
             }
           },
-          songType: { type: Type.STRING, enum: ['stotra', 'chant', 'bhajan', 'kirtan', 'song', 'unknown'] },
+          songType: { type: Type.STRING, enum: ['ballad', 'rap', 'pop', 'rock', 'electronic', 'cinematic', 'ambient', 'spoken_word', 'unknown'] },
           isNarrative: { type: Type.BOOLEAN },
           isMeditative: { type: Type.BOOLEAN }
         },
@@ -187,7 +190,7 @@ export const critiqueShotImage = async (
     });
   }
 
-  contents.push({ text: `You are a meticulous Art Director reviewing this generated image for a devotional music video.
+  contents.push({ text: `You are a meticulous Art Director reviewing this generated image for an AI video project.
 
 SCORING RUBRIC (0-10):
   9-10: Publication ready. Style is spot-on, characters are recognizable, composition is compelling.
@@ -202,7 +205,7 @@ EVALUATE THESE CRITERIA (weighted):
 
 2. PROMPT FIDELITY (30%): Does the image faithfully depict what was described in the prompt? Check composition, setting, action, and atmosphere.
 
-3. CHARACTER CONSISTENCY (${hasRefs ? '20%' : '0% — no references provided, skip this'}): ${hasRefs ? 'Do the characters match their reference images? Check face structure, skin tone, costume/ornaments, and iconographic attributes (crown, weapons, jewelry). Minor pose differences are fine — identity must be preserved.' : 'N/A'}
+3. CHARACTER CONSISTENCY (${hasRefs ? '20%' : '0% — no references provided, skip this'}): ${hasRefs ? 'Do the characters match their reference images? Check face structure, body proportions, wardrobe, accessories, and distinctive design details. Minor pose differences are fine — identity must be preserved.' : 'N/A'}
 
 4. TECHNICAL QUALITY (${hasRefs ? '10%' : '30%'}): Check for artifacts, anatomical errors (extra fingers, distorted faces), unnatural lighting, or visual noise.
 

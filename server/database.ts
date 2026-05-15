@@ -2,8 +2,9 @@
  * Database adapter — replaces better-sqlite3 with Supabase Postgres via REST.
  *
  * Uses the same @supabase/supabase-js client already configured for the
- * queue/song catalog. All table names are prefixed with `lahari_` to share
- * the Supabase project with echo-live-wallpapers without collision.
+ * queue/song catalog. Table names are mapped through a prefix so the same
+ * code can point at the legacy Lahari workspace (`lahari_*`) or a clean
+ * platform workspace (`studio_*`).
  *
  * Every function is async — callers must await.
  */
@@ -20,18 +21,22 @@ const getSB = (): SupabaseClient => {
   return _sb;
 };
 
+const TABLE_PREFIX = process.env.DB_TABLE_PREFIX || 'lahari';
+export const supportsPlatformColumns = (): boolean =>
+  TABLE_PREFIX === 'studio' || process.env.DB_INCLUDE_PLATFORM_COLUMNS === '1';
+
 // Table name mapping — keeps route code clean while DB uses prefixed names.
 const T = {
-  projects: 'lahari_projects',
-  scenes: 'lahari_scenes',
-  shots: 'lahari_shots',
-  cast_members: 'lahari_cast_members',
-  environments: 'lahari_environments',
-  assets: 'lahari_assets',
-  storyboard_versions: 'lahari_storyboard_versions',
-  chat_messages: 'lahari_chat_messages',
-  ai_calls: 'lahari_ai_calls',
-  renders: 'lahari_renders',
+  projects: `${TABLE_PREFIX}_projects`,
+  scenes: `${TABLE_PREFIX}_scenes`,
+  shots: `${TABLE_PREFIX}_shots`,
+  cast_members: `${TABLE_PREFIX}_cast_members`,
+  environments: `${TABLE_PREFIX}_environments`,
+  assets: `${TABLE_PREFIX}_assets`,
+  storyboard_versions: `${TABLE_PREFIX}_storyboard_versions`,
+  chat_messages: `${TABLE_PREFIX}_chat_messages`,
+  ai_calls: `${TABLE_PREFIX}_ai_calls`,
+  renders: `${TABLE_PREFIX}_renders`,
 } as const;
 
 type TableKey = keyof typeof T;

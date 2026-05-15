@@ -58,6 +58,24 @@ export const createProject = async (
   return handleResponse(res);
 };
 
+export const createScriptProject = async (opts: {
+  title?: string;
+  scriptText: string;
+  directorBrief?: string;
+  targetDuration?: number;
+  presetKey?: string;
+}) => {
+  const res = await authFetch(`${API}/projects/script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      presetKey: 'anime_default',
+      ...opts,
+    }),
+  });
+  return handleResponse(res);
+};
+
 export const updateProject = async (id: string, updates: Record<string, any>) => {
   const res = await authFetch(`${API}/projects/${id}`, {
     method: 'PATCH',

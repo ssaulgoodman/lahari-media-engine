@@ -4,14 +4,15 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
   selectAll, selectOne, insertRow, insertMany,
-  updateRows, deleteRows, countRows, maxVal,
-  selectColumns, getSB, T,
+  updateRows, deleteRows, countRows, maxVal, incrementColumn,
+  selectColumns, getSB, T, supportsPlatformColumns,
 } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
 import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
-import { summarizeMeaning, generateConceptOptions, refineConceptDirection } from '../services/claude.js';
+import { summarizeMeaning, generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
+import { getRuntimePreset } from '../presets.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
@@ -20,6 +21,8 @@ const parseJson = <T,>(value: any, fallback: T): T => {
   if (typeof value === 'object') return value as T;
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
+const platformProjectFields = (fields: Record<string, any>) =>
+  supportsPlatformColumns() ? fields : {};
 
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
@@ -69,6 +72,86 @@ router.param('sceneId', async (req, res, next, sceneId) => {
 
 // Multer config: save audio files to storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+
+const insertProductionPlan = async (
+  projectId: string,
+  data: { cast: any[]; environments: any[]; scenes: any[] },
+) => {
+  await deleteRows('cast_members', { project_id: projectId });
+  await deleteRows('environments', { project_id: projectId });
+
+  const oldScenes = await selectColumns('scenes', 'id', { project_id: projectId });
+  for (const s of oldScenes) await deleteRows('shots', { scene_id: s.id });
+  await deleteRows('scenes', { project_id: projectId });
+
+  const nameToId: Record<string, string> = {};
+  for (let idx = 0; idx < (data.cast || []).length; idx++) {
+    const c = data.cast[idx];
+    const memberId = uuidv4();
+    const name = c.name || `Character ${idx + 1}`;
+    nameToId[name] = memberId;
+    await insertRow('cast_members', {
+      id: memberId,
+      project_id: projectId,
+      name,
+      description: c.description || 'To be defined',
+      sort_order: idx,
+    });
+  }
+
+  const envNameToId: Record<string, string> = {};
+  for (let idx = 0; idx < (data.environments || []).length; idx++) {
+    const e = data.environments[idx];
+    const envId = uuidv4();
+    const name = e.name || `Environment ${idx + 1}`;
+    envNameToId[name] = envId;
+    await insertRow('environments', {
+      id: envId,
+      project_id: projectId,
+      name,
+      description: e.description || '',
+      sort_order: idx,
+    });
+  }
+
+  let totalShots = 0;
+  for (let sIdx = 0; sIdx < (data.scenes || []).length; sIdx++) {
+    const scene = data.scenes[sIdx];
+    const sceneId = scene.id || uuidv4();
+    await insertRow('scenes', {
+      id: sceneId,
+      project_id: projectId,
+      section_label: scene.sectionLabel || `Scene ${sIdx + 1}`,
+      start_time: scene.startTime || '0:00',
+      end_time: scene.endTime || '0:00',
+      lyrics: scene.lyrics || '',
+      narrative_description: scene.narrativeDescription || '',
+      sort_order: sIdx,
+    });
+
+    for (let shIdx = 0; shIdx < (scene.shots || []).length; shIdx++) {
+      const shot = scene.shots[shIdx];
+      const castNames: string[] = shot.castNames || [];
+      const castIds = castNames.map((name: string) => nameToId[name] || name).filter(Boolean);
+      const envId = shot.environmentName ? (envNameToId[shot.environmentName] || null) : null;
+      await insertRow('shots', {
+        id: uuidv4(),
+        scene_id: sceneId,
+        direction: shot.direction || '',
+        visual_prompt: '',
+        motion_prompt: '',
+        duration: Math.max(1, Number(shot.duration || 6)),
+        cast_ids: JSON.stringify(castIds),
+        use_next_as_end_frame: 0,
+        sort_order: shIdx,
+        environment_id: envId,
+      });
+      totalShots++;
+    }
+  }
+
+  return totalShots;
+};
 
 // ─── Fork helper ─────────────────────────────────────────────────────
 // Deep-copies a project's DB rows under a new id. Asset file_paths are
@@ -157,6 +240,13 @@ const forkProject = async (
       return JSON.stringify(se);
     })(),
     video_model: src.video_model,
+    ...platformProjectFields({
+      preset_key: src.preset_key || 'music_video_default',
+      workflow_key: src.workflow_key || 'music_video',
+      seed_kind: src.seed_kind || (src.audio_path ? 'audio' : 'brief'),
+      project_brief: src.project_brief || null,
+      source_payload: src.source_payload || null,
+    }),
     aspect_ratio: src.aspect_ratio,
     video_resolution: src.video_resolution,
     last_script_prompt: src.last_script_prompt,
@@ -577,6 +667,13 @@ router.post('/', upload.single('audio'), async (req, res) => {
     audio_path: audioPath,
     image_model: 'nano-banana-2',
     user_id: req.userId,
+    ...platformProjectFields({
+      preset_key: 'music_video_default',
+      workflow_key: 'music_video',
+      seed_kind: 'audio',
+      project_brief: { title, language, context },
+      source_payload: { kind: 'audio', originalName: file.originalname, storageKey: audioPath },
+    }),
   });
 
   // Run analysis (synchronous for simplicity — client shows spinner)
@@ -671,6 +768,98 @@ router.post('/', upload.single('audio'), async (req, res) => {
   }
 });
 
+// Create script-first anime project + parse it into the shared production plan.
+// This is the backend golden path for workflows that do not start with audio.
+router.post('/script', async (req, res) => {
+  const scriptText = String(req.body?.scriptText || req.body?.script || '').trim();
+  if (!scriptText) return res.status(400).json({ error: 'scriptText required' });
+
+  const preset = getRuntimePreset(req.body?.presetKey || 'anime_default');
+  const projectId = uuidv4();
+  const title = String(req.body?.title || 'Untitled Anime Project').trim() || 'Untitled Anime Project';
+  const directorBrief = typeof req.body?.directorBrief === 'string' ? req.body.directorBrief : undefined;
+  const targetDuration = Number(req.body?.targetDuration || 0) > 0 ? Number(req.body.targetDuration) : undefined;
+
+  await insertRow('projects', {
+    id: projectId,
+    title,
+    status: 'analyzing',
+    lyrics: scriptText,
+    meaning: directorBrief || '',
+    musical_structure: JSON.stringify([]),
+    locked_concept: JSON.stringify({
+      title,
+      subject: title,
+      deity: title,
+      mood: 'story-driven',
+      theme: directorBrief || 'Script-first anime production',
+      conceptDirection: preset.label,
+      description: directorBrief || 'Parsed from an uploaded anime script.',
+    }),
+    style_description: preset.style.presetBible || preset.style.rules,
+    video_mode: preset.defaults.videoMode,
+    image_model: preset.defaults.imageModel,
+    video_model: preset.defaults.videoModel,
+    aspect_ratio: preset.defaults.aspectRatio,
+    target_duration: preset.defaults.pacing,
+    user_id: req.userId,
+    ...platformProjectFields({
+      preset_key: preset.key,
+      workflow_key: preset.workflowKey,
+      seed_kind: 'script',
+      project_brief: { title, directorBrief, targetDuration },
+      source_payload: { kind: 'script', title, scriptText },
+    }),
+  });
+
+  try {
+    console.log(`[${projectId}] Parsing script-first project via ${preset.key}...`);
+    const t0 = Date.now();
+    const data = await parseAnimeScriptToPlan({
+      scriptText,
+      title,
+      directorBrief,
+      targetDuration,
+      preset,
+    });
+    const totalShots = await insertProductionPlan(projectId, data);
+    const durationMs = Date.now() - t0;
+
+    await updateRows('projects', { id: projectId }, {
+      title: data.title || title,
+      status: 'scripted',
+      last_script_prompt: data.prompt,
+      meaning: data.logline || directorBrief || '',
+      updated_at: new Date().toISOString(),
+    });
+
+    await logCall({
+      projectId,
+      stage: 'parse-script-intake',
+      model: 'claude-opus-4-7',
+      prompt: data.prompt,
+      responseSummary: `Parsed ${data.cast.length} cast members, ${data.environments.length} environments, ${data.scenes.length} scenes, ${totalShots} shots.`,
+      durationMs,
+      costEstimate: 0.02,
+    });
+
+    await incrementColumn('projects', { id: projectId }, 'cost_estimate', 0.02);
+    res.json(await getFullProject(projectId));
+  } catch (err: any) {
+    console.error(`[${projectId}] Script intake failed:`, err);
+    await updateRows('projects', { id: projectId }, { status: 'error', updated_at: new Date().toISOString() });
+    await logCall({
+      projectId,
+      stage: 'parse-script-intake',
+      model: 'claude-opus-4-7',
+      prompt: `Parse script-first project "${title}"`,
+      durationMs: 0,
+      error: err.message,
+    });
+    res.status((err as any).statusCode || 500).json({ error: err.message });
+  }
+});
+
 // Generate concept options (separate from analysis)
 router.post('/:id/generate-concepts', async (req, res) => {
   const project: any = await selectOne('projects', { id: paramStr(req.params.id) });
@@ -693,7 +882,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined);
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined, getRuntimePreset(req.body?.presetKey));
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -808,7 +997,7 @@ router.post('/:id/refine-concept', async (req, res) => {
 
   try {
     const projectId = paramStr(req.params.id);
-    const refined = await refineConceptDirection(current, feedback);
+    const refined = await refineConceptDirection(current, feedback, getRuntimePreset(req.body?.presetKey));
     await updateRows('projects', { id: projectId }, {
       locked_concept: JSON.stringify(refined),
       updated_at: new Date().toISOString(),

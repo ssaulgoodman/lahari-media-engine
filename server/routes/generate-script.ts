@@ -12,6 +12,7 @@ import { getModelMinDuration } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, parseTimestamp } from './scope-helpers.js';
+import { getRuntimePreset } from '../presets.js';
 
 export const mountScriptRoutes = (router: Router) => {
 
@@ -27,6 +28,7 @@ router.post('/:id/generate-script', async (req, res) => {
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file' });
 
   const { userNote } = req.body || {};
+  const preset = getRuntimePreset(req.body?.presetKey);
   const requestedProvider = String(req.body?.scriptProvider || process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
   const useOpenAIScriptWriter = requestedProvider === 'openai' || requestedProvider === 'gpt-5.5';
   const concept = JSON.parse(project.locked_concept || '{}');
@@ -51,6 +53,7 @@ router.post('/:id/generate-script', async (req, res) => {
       songType: project.song_type || undefined,
       isNarrative: project.is_narrative ?? undefined,
       isMeditative: project.is_meditative ?? undefined,
+      preset,
     };
     const data = useOpenAIScriptWriter
       ? await planScenesOpenAI(scriptInput)
@@ -250,6 +253,7 @@ router.post('/:id/refine-script', async (req, res) => {
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 8,
       minShotDuration: getModelMinDuration(project.video_model),
+      preset: getRuntimePreset(req.body?.presetKey),
     });
     const durationMs = Date.now() - t0;
 
@@ -379,6 +383,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.style_asset_id) return res.status(400).json({ error: 'Style not locked yet' });
   const userNote: string | undefined = req.body?.userNote;
+  const preset = getRuntimePreset(req.body?.presetKey);
 
   const concept = JSON.parse(project.locked_concept || '{}');
   const cast = await selectAll('cast_members', { project_id: project.id }, { orderBy: 'sort_order', ascending: true });
@@ -421,6 +426,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         isNarrative: project.is_narrative ?? undefined,
         isMeditative: project.is_meditative ?? undefined,
         videoModel: project.video_model || undefined,
+        preset,
       }, previousBatchTail);
       const prompts = result.shots;
       batchPrompts.push(

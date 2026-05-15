@@ -8,6 +8,7 @@
  */
 import { GoogleGenAI } from '@google/genai';
 import { saveBase64, readAsBase64 } from '../storage.js';
+import { getRuntimePreset, PipelinePreset } from '../presets.js';
 
 const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -103,7 +104,7 @@ export const imagePartFromPath = async (storagePath: string): Promise<ContentPar
  * Stays on Imagen 4 — style exploration doesn't need reference images.
  */
 export const generateStyleOptions = async (
-  deity: string,
+  subject: string,
   styleNotes?: string,
   projectId?: string
 ): Promise<{ style: string; assetPath: string }[]> => {
@@ -113,14 +114,14 @@ export const generateStyleOptions = async (
     ? [
         `${styleNotes}`,
         `${styleNotes}, with dramatic chiaroscuro shadows and Renaissance-inspired composition`,
-        `${styleNotes}, reimagined with high-key ethereal golden lighting and divine bloom effects`,
+        `${styleNotes}, reimagined with clean high-key lighting and luminous color separation`,
         `${styleNotes}, as vintage 16mm film with warm analog grain and nostalgic color grading`,
       ]
     : [
-        `Hyperrealistic cinematic portrait of ${deity}, 35mm Kodak film look, natural light`,
-        `${deity} in dramatic Caravaggio-style chiaroscuro, deep shadows, single light source, oil painting realism`,
-        `${deity} in ethereal divine light, high-key photography, golden bloom, heavenly atmosphere, lens flare`,
-        `${deity} as vintage 16mm film still, warm analog grain, faded colors, nostalgic Indian cinema aesthetic`,
+        `Cinematic production frame for ${subject}, 35mm Kodak film look, natural light`,
+        `${subject} in dramatic chiaroscuro, deep shadows, single light source, oil painting realism`,
+        `${subject} in high-key photography, soft bloom, luminous atmosphere, controlled lens flare`,
+        `${subject} as vintage 16mm film still, warm analog grain, faded colors, nostalgic music-video aesthetic`,
       ];
 
   const results: { style: string; assetPath: string }[] = [];
@@ -166,16 +167,16 @@ export const generateStyleOptions = async (
  * Build the default style visualization prompt from description + subject.
  * Produces a reusable style reference frame — not a scene, character portrait, or poster.
  */
-export const buildStylePrompt = (styleDescription: string, subject: string): string => {
-  return `Create one reusable visual style reference frame for an Indian devotional music video about ${subject}. ${styleDescription}
+export const buildStylePrompt = (styleDescription: string, subject: string, preset: PipelinePreset = getRuntimePreset()): string => {
+  return `Create one reusable visual style reference frame for ${preset.style.subjectPrompt(subject)}. ${styleDescription}
 
-The image should demonstrate the style system clearly: lighting behavior, color palette, texture or medium, rendering approach, and atmosphere. Use a devotional visual motif or environment detail, but keep the focus on style rather than story.
+The image should demonstrate the style system clearly: lighting behavior, color palette, texture or medium, rendering approach, and atmosphere. Use a motif, prop, environment detail, or production-design element that belongs to the concept, but keep the focus on style rather than story.
 
 It may be photographic, painterly, illustrated, miniature-inspired, or mixed-media if the style direction calls for it. High production value, no text, no watermark.
 
 Do not make a character portrait, storyboard frame, poster, collage, or narrative scene. Keep the composition clean enough that the visual treatment is easy to read and reuse downstream.
 
-Avoid: generic AI fantasy, muddy over-detailing, random divine VFX, incoherent cultural references.`;
+${preset.looks.qualityRules}`;
 };
 
 export const generateSingleStyleImage = async (
@@ -204,8 +205,9 @@ export const generateSingleStyleImage = async (
  */
 export const buildCharacterPrompt = (
   character: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset }
 ): string => {
+  const preset = opts?.preset || getRuntimePreset();
   let prompt = opts?.styleIdx
     ? `Generate ONE cinematic character reference portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
     : `Generate ONE cinematic character reference portrait.`;
@@ -217,12 +219,12 @@ export const buildCharacterPrompt = (
 - Mid-shot portrait: upper body and face clearly visible
 - NEUTRAL POSE: hands relaxed at sides or in a natural resting position
 - Do NOT show the character holding anything, performing any action, or interacting with objects
-- Do NOT include props, weapons, lamps, offerings, or ritual items in hand
+- Do NOT include props or scene-specific objects in hand
 - Focus on: face, skin, expression, costume, ornaments, jewelry, crown/headpiece, hair
 - Plain or softly blurred background — the character should be isolated for reuse
 - Eye-level framing, natural cinematic lighting`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
+${preset.looks.qualityRules}`;
   return prompt;
 };
 
@@ -303,8 +305,9 @@ export const generateCharacterLooks = async (
  */
 export const buildEnvironmentPrompt = (
   environment: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset }
 ): string => {
+  const preset = opts?.preset || getRuntimePreset();
   let prompt = opts?.styleIdx
     ? `Generate ONE cinematic environment shot. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach. No characters or figures.`
     : `Generate ONE cinematic environment shot. No characters or figures.`;
@@ -314,7 +317,7 @@ export const buildEnvironmentPrompt = (
   }
   prompt += `\n\nWide establishing shot, full environment visible, empty scene.`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy. Should feel like a real film still.`;
+${preset.looks.qualityRules}`;
   return prompt;
 };
 

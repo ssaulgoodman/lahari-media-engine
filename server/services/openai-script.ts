@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { getRuntimePreset, PipelinePreset } from '../presets.js';
 
 type PlanScenesInput = {
   concept: any;
@@ -13,6 +14,7 @@ type PlanScenesInput = {
   isNarrative?: boolean;
   isMeditative?: boolean;
   videoModel?: string;
+  preset?: PipelinePreset;
 };
 
 type ScriptPlan = { cast: any[]; environments: any[]; scenes: any[] };
@@ -24,6 +26,9 @@ const getClient = () => {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 };
+
+const conceptSubject = (concept: any, fallback = 'Unknown'): string =>
+  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback;
 
 const parseTimestamp = (t: string): number => {
   if (!t || !t.includes(':')) return 0;
@@ -172,6 +177,7 @@ const buildPrompt = (
   input: PlanScenesInput,
   errors?: string[],
 ): string => {
+  const preset = input.preset || getRuntimePreset();
   const pacing = input.basePacing || 8;
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
@@ -187,10 +193,10 @@ const buildPrompt = (
 
   const pacingGuidance = isSeedanceStoryboard
     ? `SEEDANCE STORYBOARD PACING:
-- A Lahari shot is one storyboard-controlled clip, not one continuous camera take.
+- A ${preset.toolName} shot is one storyboard-controlled clip, not one continuous camera take.
 - Each shot may contain internal cuts and angles, but it must be one clear story/music idea.
 - Prefer 15s when the phrase supports a real mini-scene.
-- Allowed range: 4-${seedanceMaxDuration}s. Use 4-8s only for short transitions or quick devotional responses.
+- Allowed range: 4-${seedanceMaxDuration}s. Use 4-8s only for short transitions, refrains, or quick responses.
 - Shot durations inside each scene must add exactly to the scene duration.
 - direction should be a practical edited beat sequence that a storyboard can show.`
     : `STANDARD PACING:
@@ -203,19 +209,20 @@ const buildPrompt = (
     ? `\nVALIDATION FAILED. Return a corrected full JSON plan. Fix exactly these issues:\n${errors.map((err) => `- ${err}`).join('\n')}\n`
     : '';
 
-  return `You are the practical script planner for Lahari, an AI music-video tool for devotional songs.
+  return `You are the practical script planner for ${preset.toolName}, an AI music-video production tool.
 
 Your job is production structure: cast, reusable locations, scenes, and what physically happens in each shot.
 Write for assets that artists can actually generate and storyboard. Be concrete, calm, and shootable.
 
-Do not write pompous poetry. Do not use vague phrases like "divine grace flows", "cosmic energy blooms", or "the universe awakens" unless you translate them into visible human action, ritual action, or a simple physical image.
+Do not write pompous poetry. Do not use vague phrases like "memory floods the space", "cosmic energy blooms", or "the universe awakens" unless you translate them into visible human action, environmental change, performance, or a simple physical image.
 Do not include camera directions, lens choices, color palette, art style, rendering language, or overbuilt fantasy architecture in the script. Storyboard and cinematography steps happen later.
 Avoid impossible crowds, dozens of extras, elaborate VFX, and prop chaos unless the song explicitly demands it.
+${preset.script.sceneRules}
 
 DIRECTOR STYLE: ${input.videoMode === 'cinematic' ? 'Cinematic - fewer stronger moments with continuity.' : 'Montage - rhythmic coverage, each shot is a clear beat.'}
 ${songTypeSignal}
 
-CONCEPT: ${input.concept.deity || 'Unknown'} - ${input.concept.theme || ''}
+CONCEPT: ${conceptSubject(input.concept)} - ${input.concept.theme || ''}
 Mood: ${input.concept.mood || ''}
 ${input.concept.conceptDirection || ''}
 
@@ -235,12 +242,12 @@ Return only JSON matching the schema.
 
 CAST:
 - Include only characters actually needed.
-- Include the deity and key human figures by proper names.
 - Descriptions are neutral reusable reference identities: physical appearance, cultural identity, costume, ornaments. No action, no props in hands, no art style.
+${preset.script.castRules}
 
 ENVIRONMENTS:
-- Use 2-3 reusable locations unless the song truly needs more.
 - Descriptions are physical spaces only: landscape/architecture/scale/atmosphere. No art style.
+${preset.script.environmentRules}
 
 SCENES:
 - Follow musical structure timestamps exactly.
@@ -273,7 +280,7 @@ export const planScenesOpenAI = async (
       text: {
         format: {
           type: 'json_schema',
-          name: 'lahari_music_video_script',
+          name: 'studio_music_video_script',
           strict: true,
           schema: SCRIPT_SCHEMA,
         },

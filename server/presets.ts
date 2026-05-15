@@ -1,0 +1,266 @@
+export type SeedKind = 'audio' | 'script' | 'brief' | 'document' | 'idea';
+
+export type WorkflowStageState =
+  | 'required'
+  | 'optional'
+  | 'generated'
+  | 'user_supplied'
+  | 'preset_supplied'
+  | 'skipped';
+
+export type WorkflowRecipeKey = 'music_video' | 'anime_scripted';
+
+export type WorkflowRecipe = {
+  key: WorkflowRecipeKey;
+  label: string;
+  primarySeed: SeedKind;
+  acceptedSeeds: SeedKind[];
+  summary: string;
+  stages: {
+    audioAnalysis: WorkflowStageState;
+    concept: WorkflowStageState;
+    script: WorkflowStageState;
+    style: WorkflowStageState;
+    cast: WorkflowStageState;
+    environments: WorkflowStageState;
+    studio: WorkflowStageState;
+    render: WorkflowStageState;
+  };
+  projectBriefRules: string;
+  shotPlanRules: string;
+};
+
+export type PipelinePresetKey = 'music_video_default' | 'anime_default';
+
+export type PipelinePreset = {
+  key: PipelinePresetKey;
+  workflowKey: WorkflowRecipeKey;
+  label: string;
+  toolName: string;
+  audience: string;
+  source: {
+    kind: SeedKind;
+    rules: string;
+  };
+  concept: {
+    directorIdentity: string;
+    subjectField: string;
+    subjectDescription: string;
+    directionExamples: string[];
+    rules: string;
+  };
+  script: {
+    plannerIdentity: string;
+    castRules: string;
+    environmentRules: string;
+    sceneRules: string;
+    shotExamples: {
+      good: string[];
+      bad: string[];
+    };
+  };
+  style: {
+    dpIdentity: string;
+    rules: string;
+    subjectPrompt: (subject: string) => string;
+    presetBible?: string;
+  };
+  looks: {
+    characterRules: string;
+    environmentRules: string;
+    qualityRules: string;
+  };
+  studio: {
+    shotPromptRules: string;
+    storyboardRules: string;
+    videoPromptRules: string;
+  };
+  defaults: {
+    imageModel: string;
+    videoModel: string;
+    aspectRatio: string;
+    videoMode: string;
+    pacing: number;
+  };
+};
+
+export const WORKFLOW_RECIPES: Record<WorkflowRecipeKey, WorkflowRecipe> = {
+  music_video: {
+    key: 'music_video',
+    label: 'Music Video',
+    primarySeed: 'audio',
+    acceptedSeeds: ['audio', 'brief', 'document', 'idea'],
+    summary: 'Audio-first video production: analyze song, shape a concept, plan scenes and shots, generate refs, then produce clips and render.',
+    stages: {
+      audioAnalysis: 'required',
+      concept: 'generated',
+      script: 'generated',
+      style: 'generated',
+      cast: 'generated',
+      environments: 'generated',
+      studio: 'required',
+      render: 'required',
+    },
+    projectBriefRules: 'Normalize uploaded audio, lyrics/SRT, artist notes, and optional documents into a music-video brief: title, language, meaning, musical sections, target audience, subject, emotion, constraints, and references.',
+    shotPlanRules: 'Shot plans follow musical structure and timing. The track supplies duration and rhythm; each scene maps to a musical section.',
+  },
+  anime_scripted: {
+    key: 'anime_scripted',
+    label: 'Anime Scripted',
+    primarySeed: 'script',
+    acceptedSeeds: ['script', 'brief', 'document', 'idea'],
+    summary: 'Script-first anime production: parse script into scenes, shots, cast, and environments; use a preset style bible; then produce boards/clips.',
+    stages: {
+      audioAnalysis: 'skipped',
+      concept: 'optional',
+      script: 'user_supplied',
+      style: 'preset_supplied',
+      cast: 'generated',
+      environments: 'generated',
+      studio: 'required',
+      render: 'required',
+    },
+    projectBriefRules: 'Normalize the uploaded script or episode brief into logline, runtime target, scene list, character list, locations, dialogue/audio needs, continuity constraints, and production notes. Do not require lyrics or song structure.',
+    shotPlanRules: 'Shot plans follow scene beats and dialogue/action timing rather than musical sections. Preserve the uploaded script unless the director asks for story changes.',
+  },
+};
+
+export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
+  music_video_default: {
+    key: 'music_video_default',
+    workflowKey: 'music_video',
+    label: 'Music Video',
+    toolName: 'Studio',
+    audience: 'music-video artists, directors, and producers',
+    source: {
+      kind: 'audio',
+      rules: 'Use uploaded audio, lyrics, musical structure, and director brief as the source of truth.',
+    },
+    concept: {
+      directorIdentity: 'a visionary music video director across genres',
+      subjectField: 'primary subject',
+      subjectDescription: 'Primary artist, character, emotional subject, world, object, or visual premise',
+      directionExamples: ['warehouse performance', 'neon night drive', 'memory montage', 'surreal dance film'],
+      rules: `Visual style is decided in a separate phase. Do not include art style, color palette, or cinematography here. Focus on the music-video idea, emotional progression, visual world, and what the viewer follows.`,
+    },
+    script: {
+      plannerIdentity: 'a practical music video director',
+      castRules: 'Include only performers, characters, dancers, crowds, objects, or recurring figures actually needed. Descriptions are reusable physical identities, wardrobe, styling, silhouette, and role in the video.',
+      environmentRules: 'Use 2-4 reusable locations that define the visual world. Descriptions are physical spaces only: landscape, architecture, set design, scale, lighting, atmosphere. No art style.',
+      sceneRules: 'Let the track energy, lyrics, and structure decide whether this is performance, narrative, abstract, dance, documentary, editorial, or hybrid. Build progression across each scene: establish the idea, develop it with musical changes, land a memorable image or action.',
+      shotExamples: {
+        good: [
+          'The singer crosses the empty soundstage as the neon signs flicker on',
+          'Two dancers mirror each other across the train platform, then break into separate rhythms',
+          'The band hits the chorus under hard white strobes as the crowd surges closer',
+        ],
+        bad: [
+          'Slow dolly in on the singer',
+          'Wide establishing shot of warehouse',
+        ],
+      },
+    },
+    style: {
+      dpIdentity: 'a Director of Photography designing the visual language for a music video',
+      rules: 'The imagery should feel like an intentional music-video treatment, not generic stock fantasy. Vary medium, lighting, texture, era, camera grammar, and production design.',
+      subjectPrompt: (subject) => `a music video about ${subject}`,
+    },
+    looks: {
+      characterRules: 'Reusable character or performer reference: face, wardrobe, styling, silhouette, and identity should be clear. Avoid props or scene-specific action in hands unless essential to the identity.',
+      environmentRules: 'Reusable environment or set reference: full space visible, no one-off action, no unrelated crowd unless the location depends on it.',
+      qualityRules: 'Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy, incoherent references. Should feel like a real production frame.',
+    },
+    studio: {
+      shotPromptRules: 'Every shot must advance the musical or visual idea, not just restate the previous beat. Translate emotion into visible action, blocking, performance, environment change, or editorial rhythm.',
+      storyboardRules: 'Use only objects, gestures, characters, performance choices, and set pieces that belong to the shot and references.',
+      videoPromptRules: 'Do not invent a different object, set piece, performance action, or character blocking than the storyboard.',
+    },
+    defaults: {
+      imageModel: 'nano-banana-2',
+      videoModel: 'seedance-2.0-fast',
+      aspectRatio: '16:9',
+      videoMode: 'montage',
+      pacing: 8,
+    },
+  },
+  anime_default: {
+    key: 'anime_default',
+    workflowKey: 'anime_scripted',
+    label: 'Anime Scripted',
+    toolName: 'Anime Studio',
+    audience: 'anime creators, showrunners, and episode directors',
+    source: {
+      kind: 'script',
+      rules: 'Use the uploaded script, treatment, or episode brief as the source of truth. Do not require lyrics, audio analysis, or a music queue. Preserve story intent unless the director explicitly asks for adaptation.',
+    },
+    concept: {
+      directorIdentity: 'an anime series director translating scripts into production-ready animated scenes',
+      subjectField: 'central story premise',
+      subjectDescription: 'The episode premise, protagonist conflict, emotional turn, or scene subject',
+      directionExamples: ['quiet school rooftop confession', 'rain-soaked mecha launch', 'slice-of-life train ride', 'supernatural alley encounter'],
+      rules: `If concepting is used, treat it as a production brief for the uploaded script, not a replacement story. Focus on episode intent, character stakes, scene progression, and what must be preserved.`,
+    },
+    script: {
+      plannerIdentity: 'an anime episode director planning production scenes from a script',
+      castRules: 'Extract named characters and recurring extras that appear on screen. Descriptions should support consistent anime character sheets: age range, silhouette, hair, outfit, expression baseline, role, and distinguishing marks. No scene action in the neutral reference description.',
+      environmentRules: 'Extract reusable backgrounds and locations. Descriptions should support anime background boards: geography, layout, time of day, mood, key props, and continuity details. No camera style.',
+      sceneRules: 'Follow the uploaded script beats. Preserve dialogue/action order unless asked to adapt. Use shots to clarify acting beats, reactions, reveals, action choreography, and continuity. Avoid inventing new plot turns, characters, or locations.',
+      shotExamples: {
+        good: [
+          'Mina stops at the classroom doorway as the hallway noise drops behind her',
+          'The mech cockpit lights wake one by one while Haru grips the cracked control yoke',
+          'A close reaction beat catches Ren looking away before answering the confession',
+        ],
+        bad: [
+          'Wide establishing shot of classroom',
+          'Slow dolly in on protagonist',
+        ],
+      },
+    },
+    style: {
+      dpIdentity: 'an anime art director defining production-ready visual language',
+      rules: 'Use anime production language: character-model consistency, clean silhouettes, readable acting, controlled background detail, strong key poses, and coherent lighting. Avoid live-action photoreal defaults unless the director asks for hybrid realism.',
+      subjectPrompt: (subject) => `an anime scene production bible for ${subject}`,
+      presetBible: 'Default anime look: clean 2D animation key art, expressive but consistent faces, readable silhouettes, detailed painted backgrounds, restrained camera motion, strong acting poses, no live-action photorealism.',
+    },
+    looks: {
+      characterRules: 'Reusable anime character sheet/reference: clear face, hairstyle, outfit, silhouette, expression baseline, proportions, and distinguishing details. Neutral pose, no scene-specific props unless essential.',
+      environmentRules: 'Reusable anime background board: full location visible, layout readable, lighting and atmosphere clear, no characters unless scale requires a tiny neutral figure.',
+      qualityRules: 'Avoid: photoreal live-action look, 3D plastic finish, inconsistent facial structure, overrendered noise, unreadable costume detail, text, watermark, collage, or multiple panels.',
+    },
+    studio: {
+      shotPromptRules: 'Every shot must clarify acting, story information, choreography, or emotional change. Translate inner emotion into facial acting, posture, timing, blocking, and environmental response.',
+      storyboardRules: 'Storyboard panels should read like anime layout/key pose boards: clear acting beats, screen direction, continuity, and background geography. Avoid captions, speech bubbles, text, panel numbers, and manga-page effects unless requested.',
+      videoPromptRules: 'Animate as a coherent anime shot or edited mini-sequence. Preserve character designs, background layout, screen direction, and action timing from the storyboard. Do not add live-action camera artifacts or unrelated VFX.',
+    },
+    defaults: {
+      imageModel: 'nano-banana-2',
+      videoModel: 'seedance-2.0-fast',
+      aspectRatio: '16:9',
+      videoMode: 'cinematic',
+      pacing: 6,
+    },
+  },
+};
+
+export const DEFAULT_WORKFLOW_RECIPE_KEY: WorkflowRecipeKey = 'music_video';
+export const DEFAULT_PRESET_KEY: PipelinePresetKey = 'music_video_default';
+
+export const getWorkflowRecipe = (key?: string | null): WorkflowRecipe => {
+  if (key && key in WORKFLOW_RECIPES) return WORKFLOW_RECIPES[key as WorkflowRecipeKey];
+  return WORKFLOW_RECIPES[DEFAULT_WORKFLOW_RECIPE_KEY];
+};
+
+export const getPipelinePreset = (key?: string | null): PipelinePreset => {
+  if (key && key in PIPELINE_PRESETS) return PIPELINE_PRESETS[key as PipelinePresetKey];
+  return PIPELINE_PRESETS[DEFAULT_PRESET_KEY];
+};
+
+export const getRuntimePreset = (override?: string | null): PipelinePreset =>
+  getPipelinePreset(override || process.env.PIPELINE_PRESET_KEY || DEFAULT_PRESET_KEY);
+
+export const getPresetWorkflow = (preset: PipelinePreset): WorkflowRecipe =>
+  getWorkflowRecipe(preset.workflowKey);
+
+export const presetSubject = (concept: any, fallback: string, preset: PipelinePreset): string =>
+  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback || preset.label;

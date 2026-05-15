@@ -250,6 +250,20 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
     }
   };
 
+  const handleCreateScriptProject = async (opts: { title?: string; scriptText: string; directorBrief?: string; targetDuration?: number }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const p = await api.createScriptProject(opts);
+      setProject(p);
+      setCurrentStep(AppStep.BLUEPRINT);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create script project.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ─── Generate Concepts (separate from analysis) ────────────────
 
   // One active AbortController per op key. Clicking "Stop" on any pending
@@ -1528,6 +1542,7 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
                   <Dashboard
                     onStartProduction={handleStartProduction}
                     onOpenProject={handleOpenProject}
+                    onCreateScriptProject={handleCreateScriptProject}
                     onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
                   />
                 </motion.div>
