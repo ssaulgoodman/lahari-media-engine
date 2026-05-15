@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   compactText,
   md,
@@ -36,6 +37,7 @@ const LAHARI_SKILL_NAMES = [
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 const buildWorkspaceInstructions = (project: Project): string => `# Lahari Workspace
 
@@ -58,7 +60,15 @@ Default ritual:
 `;
 
 const readSkillBody = (skillName: string): string => {
-  const skillPath = path.join(process.cwd(), '.agents', 'skills', skillName, 'SKILL.md');
+  const skillPathCandidates = [
+    path.join(process.cwd(), 'server', 'resources', 'skills', skillName, 'SKILL.md'),
+    path.join(moduleDir, '..', '..', 'resources', 'skills', skillName, 'SKILL.md'),
+    path.join(process.cwd(), '.agents', 'skills', skillName, 'SKILL.md'),
+  ];
+  const skillPath = skillPathCandidates.find((candidate) => fs.existsSync(candidate));
+  if (!skillPath) {
+    throw new Error(`Lahari notebook skill resource missing: ${skillName}`);
+  }
   return fs.readFileSync(skillPath, 'utf8');
 };
 

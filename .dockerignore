@@ -4,9 +4,10 @@ storage
 .env
 .git
 .claude
+.agents
 *.md
 docs
-!.agents/
-!.agents/skills/
-!.agents/skills/*/
-!.agents/skills/*/SKILL.md
+!server/resources/
+!server/resources/skills/
+!server/resources/skills/*/
+!server/resources/skills/*/SKILL.md
