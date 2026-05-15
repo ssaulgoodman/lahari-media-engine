@@ -8,6 +8,7 @@ import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { verifyMcpBearerToken } from '../services/mcpTokens.js';
+import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
@@ -38,10 +39,38 @@ const bearerToken = (header?: string | null) => {
   return match?.[1]?.trim() || null;
 };
 
-const projectId = z.string().min(1).describe('Lahari project ID.');
-const shotId = z.string().min(1).describe('Shot ID within the project.');
+const idString = z.string().min(1).max(160);
+const projectId = idString.describe('Lahari project ID.');
+const shotId = idString.describe('Shot ID within the project.');
+const shortText = z.string().max(2000);
+const mediumText = z.string().max(8000);
+const promptText = z.string().min(1).max(30000);
+const optionalPromptText = z.string().max(30000).optional();
+const maxArray = <T extends z.ZodTypeAny>(schema: T, max: number) => z.array(schema).max(max);
+
+const MCP_LIMITS = {
+  requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
+  mutatingPerHour: envInt('LAHARI_MCP_MUTATIONS_PER_HOUR', 180),
+  paidPerDay: envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 30),
+  issuesPerHour: envInt('LAHARI_MCP_ISSUES_PER_HOUR', 20),
+};
+
+const PAID_TOOLS = new Set([
+  'apply_generate_storyboard',
+  'generate_storyboard',
+  'bulk_generate_storyboards',
+  'refine_storyboard_image',
+  'apply_generate_video',
+]);
 
 const structuredToolError = (error: unknown) => {
+  if (error instanceof RateLimitError) {
+    return {
+      code: 'rate_limited',
+      message: error.message,
+      retryAfterSeconds: error.retryAfterSeconds,
+    };
+  }
   if (error instanceof Error) {
     try {
       const parsed = JSON.parse(error.message);
@@ -166,6 +195,28 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       const start = Date.now();
       recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool: name, args, startedAt });
       try {
+        if (PAID_TOOLS.has(name)) {
+          assertRateLimit({
+            key: `mcp:paid:${auth.tokenId}`,
+            limit: MCP_LIMITS.paidPerDay,
+            windowMs: 24 * 60 * 60 * 1000,
+            label: 'Paid Lahari MCP tool',
+          });
+        } else if (name === 'lahari_capture_issue') {
+          assertRateLimit({
+            key: `mcp:issue:${auth.tokenId}`,
+            limit: MCP_LIMITS.issuesPerHour,
+            windowMs: 60 * 60 * 1000,
+            label: 'Lahari issue capture',
+          });
+        } else if (!toolAnnotations(name).readOnlyHint) {
+          assertRateLimit({
+            key: `mcp:mutating:${auth.tokenId}`,
+            limit: MCP_LIMITS.mutatingPerHour,
+            windowMs: 60 * 60 * 1000,
+            label: 'Mutating Lahari MCP tool',
+          });
+        }
         const result = await handler(args || {});
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, result, durationMs: Date.now() - start, startedAt });
         return textResult(result);
@@ -230,7 +281,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('hydrate_project_workbench', {
     title: 'Hydrate project workbench',
     description: 'Deprecated remote gap. Use write_project_notebook for remote artist workspaces.',
-    inputSchema: { projectId, outputDir: z.string().optional() },
+    inputSchema: { projectId, outputDir: idString.optional() },
   }, unsupported('hydrate_project_workbench', 'Use write_project_notebook; it returns deterministic file payloads for the agent to write via harness file tools.'));
 
   registerTool('write_project_notebook', {
@@ -262,8 +313,8 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     description: 'Remote gap. Hosted MCP cannot write local reports/contact sheets.',
     inputSchema: {
       projectId,
-      reportPath: z.string().optional(),
-      contactSheetPath: z.string().optional(),
+      reportPath: idString.optional(),
+      contactSheetPath: idString.optional(),
       includeReport: z.boolean().default(true),
       includeContactSheet: z.boolean().default(true),
     },
@@ -275,14 +326,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: {
       projectId,
       sheetTypes: z.array(z.enum(['overview', 'style', 'references', 'storyboard', 'renders'])).optional(),
-      outputDir: z.string().optional(),
+      outputDir: idString.optional(),
     },
   }, unsupported('write_project_sheets', 'Requires local artifact rendering in the fallback package.'));
 
   registerTool('attach_director_session', {
     title: 'Attach director session',
     description: 'Opens a Lahari project for director work and returns packet/actions/events.',
-    inputSchema: { projectId, note: z.string().optional(), sinceSeq: z.number().optional() },
+    inputSchema: { projectId, note: shortText.optional(), sinceSeq: z.number().optional() },
   }, ({ projectId, note, sinceSeq }) => remoteSessionState(projectId, auth.userId, { note, sinceSeq }));
 
   registerTool('get_director_session', {
@@ -294,7 +345,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('add_director_note', {
     title: 'Add director journal note',
     description: 'Remote gap. Hosted note event endpoint is not exposed yet.',
-    inputSchema: { projectId, note: z.string().min(1) },
+    inputSchema: { projectId, note: mediumText.min(1) },
   }, unsupported('add_director_note', 'Requires hosted director-note event endpoint.'));
 
   for (const [name, title] of [
@@ -312,10 +363,10 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     ['rollback_script_preview', 'Rollback script preview'],
   ] as const) {
     const schema = name === 'preview_rewrite_storyboard_prompt'
-      ? { projectId, shotId, note: z.string().optional() }
+      ? { projectId, shotId, note: shortText.optional() }
       : name.startsWith('preview_rewrite_')
-        ? { projectId, note: z.string().optional() }
-        : { previewJsonPath: z.string().min(1) };
+        ? { projectId, note: shortText.optional() }
+        : { previewJsonPath: idString };
     registerTool(name, {
       title,
       description: 'Remote gap. Legacy local-preview-file workflow is not exposed in hosted MCP.',
@@ -343,12 +394,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('apply_generate_storyboard', {
     title: 'Generate storyboard board',
     description: 'Mutating and paid. Generates a new storyboard board for one shot.',
-    inputSchema: { projectId, shotId, artistNote: z.string().optional() },
+    inputSchema: { projectId, shotId, artistNote: shortText.optional() },
   }, generateStoryboard);
   registerTool('generate_storyboard', {
     title: 'Generate storyboard board',
     description: 'Alias for apply_generate_storyboard.',
-    inputSchema: { projectId, shotId, artistNote: z.string().optional() },
+    inputSchema: { projectId, shotId, artistNote: shortText.optional() },
   }, generateStoryboard);
 
   registerTool('bulk_generate_storyboards', {
@@ -356,9 +407,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     description: 'Mutating and paid. Generates boards for selected unlocked shots.',
     inputSchema: {
       projectId,
-      shotIds: z.array(z.string().min(1)).optional(),
+      shotIds: maxArray(idString, 100).optional(),
       force: z.boolean().optional(),
-      artistNote: z.string().optional(),
+      artistNote: shortText.optional(),
     },
   }, async ({ projectId, shotIds, force, artistNote }) => studio.bulkGenerateStoryboards(await fullProjectForUser(projectId, auth.userId), {
     shotIds,
@@ -372,9 +423,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: {
       projectId,
       shotId,
-      feedback: z.string().min(1),
-      previousVersionId: z.string().optional(),
-      artistReferenceImagePath: z.string().optional(),
+      feedback: mediumText.min(1),
+      previousVersionId: idString.optional(),
+      artistReferenceImagePath: idString.optional(),
     },
   }, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath }) => studio.refineStoryboardImage(
     await fullProjectForUser(projectId, auth.userId),
@@ -385,7 +436,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('lock_storyboard', {
     title: 'Lock storyboard board',
     description: 'Mutating. Locks active storyboard board or specific version.',
-    inputSchema: { projectId, shotId, versionId: z.string().optional() },
+    inputSchema: { projectId, shotId, versionId: idString.optional() },
   }, async ({ projectId, shotId, versionId }) => studio.lockStoryboardBoard(await fullProjectForUser(projectId, auth.userId), shotId, versionId));
 
   registerTool('unlock_storyboard', {
@@ -400,10 +451,10 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: {
       projectId,
       preferences: z.object({
-        textProvider: z.string().optional(),
-        imageModel: z.string().optional(),
-        storyboardProvider: z.string().optional(),
-        videoModel: z.string().optional(),
+        textProvider: idString.optional(),
+        imageModel: idString.optional(),
+        storyboardProvider: idString.optional(),
+        videoModel: idString.optional(),
       }),
       baseHash: z.string().optional(),
     },
@@ -414,14 +465,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     description: 'Mutating. Persists Codex-written visual/motion/direction/continuity updates.',
     inputSchema: {
       projectId,
-      shots: z.array(z.object({
-        shotId: z.string().min(1),
-        visualPrompt: z.string().optional(),
-        motionPrompt: z.string().optional(),
-        direction: z.string().optional(),
+      shots: maxArray(z.object({
+        shotId: idString,
+        visualPrompt: optionalPromptText,
+        motionPrompt: optionalPromptText,
+        direction: mediumText.optional(),
         continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
-        baseHash: z.string().optional(),
-      })).min(1),
+        baseHash: idString.optional(),
+      }), 100).min(1),
       force: z.boolean().optional(),
     },
   }, async ({ projectId, shots, force }) => studio.applyShotPrompts(await fullProjectForUser(projectId, auth.userId), shots, { force }));
@@ -432,9 +483,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: {
       projectId,
       shotId,
-      storyboardPrompt: z.string().min(1),
-      storyboardCutPlan: z.string().optional(),
-      baseHash: z.string().optional(),
+      storyboardPrompt: promptText,
+      storyboardCutPlan: optionalPromptText,
+      baseHash: idString.optional(),
       force: z.boolean().optional(),
     },
   }, async ({ projectId, shotId, storyboardPrompt, storyboardCutPlan, baseHash, force }) => studio.applyStoryboardPrompt(
@@ -450,12 +501,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots.',
     inputSchema: {
       projectId,
-      shots: z.array(z.object({
-        shotId: z.string().min(1),
-        storyboardPrompt: z.string().min(1),
-        storyboardCutPlan: z.string().optional(),
-        baseHash: z.string().optional(),
-      })).min(1),
+      shots: maxArray(z.object({
+        shotId: idString,
+        storyboardPrompt: promptText,
+        storyboardCutPlan: optionalPromptText,
+        baseHash: idString.optional(),
+      }), 100).min(1),
       force: z.boolean().optional(),
     },
   }, async ({ projectId, shots, force }) => studio.applyStoryboardPromptsBulk(await fullProjectForUser(projectId, auth.userId), { shots, force }));
@@ -466,11 +517,11 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: {
       projectId,
       concept: z.object({
-        title: z.string().min(1),
-        direction: z.string().min(1),
-        description: z.string().min(1),
-        deity: z.string().optional(),
-        mood: z.string().optional(),
+        title: mediumText.min(1),
+        direction: promptText,
+        description: promptText,
+        deity: mediumText.optional(),
+        mood: mediumText.optional(),
       }),
       baseHash: z.string().optional(),
       force: z.boolean().optional(),
@@ -480,7 +531,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('apply_video_prompt', {
     title: 'Apply video prompt',
     description: 'Mutating. Persists a Codex-written keyframe-mode motion prompt.',
-    inputSchema: { projectId, shotId, motionPrompt: z.string().min(1), baseHash: z.string().optional(), force: z.boolean().optional() },
+    inputSchema: { projectId, shotId, motionPrompt: promptText, baseHash: idString.optional(), force: z.boolean().optional() },
   }, async ({ projectId, shotId, motionPrompt, baseHash, force }) => studio.applyVideoPrompt(await fullProjectForUser(projectId, auth.userId), shotId, motionPrompt, { baseHash, force }));
 
   registerTool('apply_script', {
@@ -489,26 +540,26 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: {
       projectId,
       script: z.object({
-        cast: z.array(z.object({ id: z.string().optional(), name: z.string().min(1), description: z.string().optional() })),
-        environments: z.array(z.object({ id: z.string().optional(), name: z.string().min(1), description: z.string().optional() })),
-        scenes: z.array(z.object({
-          id: z.string().optional(),
-          sectionLabel: z.string().optional(),
-          startTime: z.string().optional(),
-          endTime: z.string().optional(),
-          lyrics: z.string().optional(),
-          narrativeDescription: z.string().optional(),
-          shots: z.array(z.object({
-            id: z.string().optional(),
-            direction: z.string().min(1),
-            duration: z.number(),
-            castIds: z.array(z.string()).optional(),
-            environmentId: z.string().nullable().optional(),
+        cast: maxArray(z.object({ id: idString.optional(), name: mediumText.min(1), description: promptText.optional() }), 60),
+        environments: maxArray(z.object({ id: idString.optional(), name: mediumText.min(1), description: promptText.optional() }), 60),
+        scenes: maxArray(z.object({
+          id: idString.optional(),
+          sectionLabel: mediumText.optional(),
+          startTime: idString.optional(),
+          endTime: idString.optional(),
+          lyrics: promptText.optional(),
+          narrativeDescription: promptText.optional(),
+          shots: maxArray(z.object({
+            id: idString.optional(),
+            direction: promptText,
+            duration: z.number().positive().max(120),
+            castIds: maxArray(idString, 20).optional(),
+            environmentId: idString.nullable().optional(),
             continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
-          })).min(1),
-        })).min(1),
+          }), 80).min(1),
+        }), 80).min(1),
       }),
-      baseFingerprint: z.string().optional(),
+      baseFingerprint: idString.optional(),
       force: z.boolean().optional(),
     },
   }, async ({ projectId, script, baseFingerprint, force }) => studio.applyScript(await fullProjectForUser(projectId, auth.userId), script, { baseFingerprint, force }));
@@ -516,33 +567,33 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('apply_project_prompt_override', {
     title: 'Apply project prompt override',
     description: 'Mutating. Persists a Codex-written project-level prompt recipe.',
-    inputSchema: { projectId, kind: promptOverrideKindSchema, body: z.string().min(1), baseHash: z.string().optional() },
+    inputSchema: { projectId, kind: promptOverrideKindSchema, body: promptText, baseHash: idString.optional() },
   }, async ({ projectId, kind, body, baseHash }) => studio.applyProjectPromptOverrideConfig(await fullProjectForUser(projectId, auth.userId), kind, body, baseHash));
 
   registerTool('revert_project_prompt_override', {
     title: 'Revert project prompt override',
     description: 'Mutating. Reverts active project prompt recipe.',
-    inputSchema: { projectId, kind: promptOverrideKindSchema, baseHash: z.string().optional() },
+    inputSchema: { projectId, kind: promptOverrideKindSchema, baseHash: idString.optional() },
   }, async ({ projectId, kind, baseHash }) => studio.revertProjectPromptOverrideConfig(await fullProjectForUser(projectId, auth.userId), kind, baseHash));
 
   registerTool('apply_generate_video', {
     title: 'Generate shot video',
     description: 'Mutating and paid. Generates a new video for one shot.',
-    inputSchema: { projectId, shotId, promptOverride: z.string().optional() },
+    inputSchema: { projectId, shotId, promptOverride: optionalPromptText },
   }, async ({ projectId, shotId, promptOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride));
 
   registerTool('lahari_capture_issue', {
     title: 'Capture Lahari director issue',
     description: 'Captures an issue for later engine debugging.',
     inputSchema: {
-      projectId: z.string().optional(),
+      projectId,
       severity: z.enum(['low', 'mid', 'high']),
-      summary: z.string().min(1),
-      suggestedFix: z.string().optional(),
+      summary: shortText.min(1),
+      suggestedFix: mediumText.optional(),
       recentToolCalls: z.unknown().optional(),
     },
   }, async ({ projectId, severity, summary, suggestedFix, recentToolCalls }) => {
-    if (projectId) await assertProjectAccess(projectId, auth.userId);
+    await assertProjectAccess(projectId, auth.userId);
     return captureLahariIssue({ projectId, severity, summary, suggestedFix, recentToolCalls });
   });
 
@@ -553,12 +604,21 @@ router.post('/', async (req, res) => {
   let auth: HostedAuth;
   try {
     auth = await verifyMcpBearerToken(bearerToken(req.headers.authorization));
+    assertRateLimit({
+      key: `mcp:request:${auth.tokenId}`,
+      limit: MCP_LIMITS.requestPerMinute,
+      windowMs: 60 * 1000,
+      label: 'Lahari MCP request',
+    });
   } catch (error) {
-    return res.status(401).json({
+    const structured = structuredToolError(error);
+    const status = error instanceof RateLimitError ? 429 : 401;
+    return res.status(status).json({
       jsonrpc: '2.0',
       error: {
-        code: -32001,
-        message: error instanceof Error ? error.message : 'Unauthorized Lahari MCP request',
+        code: error instanceof RateLimitError ? -32029 : -32001,
+        message: structured.message || 'Unauthorized Lahari MCP request',
+        data: structured,
       },
       id: (req.body as any)?.id ?? null,
     });

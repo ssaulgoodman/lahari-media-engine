@@ -45,6 +45,9 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',')
   : ['http://localhost:3002', 'http://localhost:3000'];
 app.use(cors({ origin: ALLOWED_ORIGINS }));
+app.use('/mcp', express.json({ limit: process.env.MCP_JSON_LIMIT || '2mb' }), mcpRouter);
+app.use('/api/director', express.json({ limit: process.env.DIRECTOR_API_JSON_LIMIT || '5mb' }), requireAuth, directorRouter);
+app.use('/api/mcp-tokens', express.json({ limit: process.env.MCP_TOKENS_JSON_LIMIT || '32kb' }), requireAuth, mcpTokensRouter);
 app.use(express.json({ limit: '50mb' }));
 
 // Assets are served from Supabase Storage (public URLs).
@@ -55,9 +58,6 @@ app.use('/api/projects', requireAuth, generateRouter);
 app.use('/api/projects', requireAuth, renderRouter);
 app.use('/api/queue', requireAuth, queueRouter);
 app.use('/api/prompts', requireAuth, promptsRouter);
-app.use('/api/director', requireAuth, directorRouter);
-app.use('/api/mcp-tokens', requireAuth, mcpTokensRouter);
-app.use('/mcp', mcpRouter);
 // Admin routes use their own x-admin-secret auth
 app.use('/api/admin', adminRouter);
 // Renderer callback — auth via x-renderer-secret, not a user JWT

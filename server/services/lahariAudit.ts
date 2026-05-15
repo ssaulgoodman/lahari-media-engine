@@ -7,6 +7,27 @@ type IssueSeverity = 'low' | 'mid' | 'high';
 const MAX_STRING = 500;
 const MAX_ARRAY = 25;
 const MAX_KEYS = 40;
+const SENSITIVE_CONTENT_KEYS = [
+  'body',
+  'script',
+  'concept',
+  'prompt',
+  'storyboardprompt',
+  'storyboardcutplan',
+  'motionprompt',
+  'visualprompt',
+  'direction',
+  'feedback',
+  'artistnote',
+  'promptoverride',
+  'recenttoolcalls',
+  'lyrics',
+  'narrativedescription',
+  'description',
+  'suggestedfix',
+  'summary',
+  'note',
+];
 
 const dayStamp = (date = new Date()) => date.toISOString().slice(0, 10);
 
@@ -34,6 +55,24 @@ const redactKey = (key: string) => {
     || normalized.includes('password');
 };
 
+const redactContentKey = (key: string) => {
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return SENSITIVE_CONTENT_KEYS.some((candidate) => normalized.includes(candidate));
+};
+
+const summarizeSensitiveValue = (value: unknown) => {
+  if (typeof value === 'string') {
+    return `[redacted content ${value.length} chars]`;
+  }
+  if (Array.isArray(value)) {
+    return `[redacted content array ${value.length} items]`;
+  }
+  if (value && typeof value === 'object') {
+    return `[redacted content object ${Object.keys(value as Record<string, unknown>).length} keys]`;
+  }
+  return '[redacted content]';
+};
+
 export const redactAuditValue = (value: unknown, depth = 0): unknown => {
   if (value == null) return value;
   if (typeof value === 'string') {
@@ -50,7 +89,11 @@ export const redactAuditValue = (value: unknown, depth = 0): unknown => {
     const entries = Object.entries(value as Record<string, unknown>).slice(0, MAX_KEYS);
     const out: Record<string, unknown> = {};
     for (const [key, inner] of entries) {
-      out[key] = redactKey(key) ? '[redacted]' : redactAuditValue(inner, depth + 1);
+      out[key] = redactKey(key)
+        ? '[redacted]'
+        : redactContentKey(key)
+          ? summarizeSensitiveValue(inner)
+          : redactAuditValue(inner, depth + 1);
     }
     const extra = Object.keys(value as Record<string, unknown>).length - entries.length;
     if (extra > 0) out.__truncatedKeys = extra;

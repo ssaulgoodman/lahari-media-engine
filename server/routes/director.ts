@@ -3,10 +3,22 @@ import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
+import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
 const DIRECTOR_API_VERSION = '2026-05-14.r17-first-pass';
+const DIRECTOR_LIMITS = {
+  mutatingPerHour: envInt('LAHARI_DIRECTOR_API_MUTATIONS_PER_HOUR', 180),
+  paidPerDay: envInt('LAHARI_DIRECTOR_API_PAID_CALLS_PER_DAY', 30),
+  issuesPerHour: envInt('LAHARI_DIRECTOR_API_ISSUES_PER_HOUR', 20),
+};
+const PAID_TOOLS = new Set([
+  'director.generate.storyboard',
+  'director.generate.storyboards_bulk',
+  'director.generate.video',
+  'director.refine.storyboard_image',
+]);
 
 type DirectorHandler = (req: Request, res: Response) => Promise<unknown>;
 
@@ -25,15 +37,17 @@ const ok = (res: Response, data: unknown) => res.json({
 const fail = (res: Response, error: unknown) => {
   const applyErrorCode = isApplyErrorResult(error) ? error.error : null;
   const message = isApplyErrorResult(error) ? error.message || error.error : error instanceof Error ? error.message : String(error || 'Unknown director API error');
-  const status = message.includes('not found') ? 404
+  const status = error instanceof RateLimitError ? 429
+    : message.includes('not found') ? 404
     : message.includes('Access denied') ? 403
       : message.includes('Invalid or expired') || message.includes('auth') ? 401
         : 400;
   return res.status(status).json({
     ok: false,
     error: {
-      code: applyErrorCode || (status === 401 ? 'auth_expired' : 'director_api_error'),
+      code: applyErrorCode || (status === 401 ? 'auth_expired' : status === 429 ? 'rate_limited' : 'director_api_error'),
       message,
+      retryAfterSeconds: error instanceof RateLimitError ? error.retryAfterSeconds : undefined,
       details: isApplyErrorResult(error) ? error : undefined,
     },
   });
@@ -56,6 +70,28 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
   };
   recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool, args, startedAt });
   try {
+    if (PAID_TOOLS.has(tool)) {
+      assertRateLimit({
+        key: `director-api:paid:${req.userId || req.ip}`,
+        limit: DIRECTOR_LIMITS.paidPerDay,
+        windowMs: 24 * 60 * 60 * 1000,
+        label: 'Paid Lahari Director API call',
+      });
+    } else if (tool === 'director.issues.capture') {
+      assertRateLimit({
+        key: `director-api:issue:${req.userId || req.ip}`,
+        limit: DIRECTOR_LIMITS.issuesPerHour,
+        windowMs: 60 * 60 * 1000,
+        label: 'Lahari issue capture',
+      });
+    } else if (!tool.includes('.version') && !tool.includes('.list') && !tool.includes('.packet') && !tool.includes('.status') && !tool.includes('.actions') && !tool.includes('.notebook') && !tool.includes('.session') && !tool.includes('.preview')) {
+      assertRateLimit({
+        key: `director-api:mutating:${req.userId || req.ip}`,
+        limit: DIRECTOR_LIMITS.mutatingPerHour,
+        windowMs: 60 * 60 * 1000,
+        label: 'Mutating Lahari Director API call',
+      });
+    }
     const data = await handler(req, res);
     if (isApplyErrorResult(data)) {
       recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, error: data.message || data.error, durationMs: Date.now() - start, startedAt });
@@ -291,7 +327,11 @@ router.post('/storyboard/unlock', audited('director.storyboard.unlock', async (r
 )));
 
 router.post('/issues/capture', audited('director.issues.capture', async (req) => {
-  if (req.body.projectId) await assertProjectAccess(req.body.projectId, req.userId);
+  if (!req.body.projectId) throw new Error('projectId is required');
+  if (!req.body.summary || typeof req.body.summary !== 'string') throw new Error('summary is required');
+  if (req.body.summary.length > 2000) throw new Error('summary is too long');
+  if (typeof req.body.suggestedFix === 'string' && req.body.suggestedFix.length > 8000) throw new Error('suggestedFix is too long');
+  await assertProjectAccess(req.body.projectId, req.userId);
   return captureLahariIssue({
     projectId: req.body.projectId,
     severity: req.body.severity || 'mid',
