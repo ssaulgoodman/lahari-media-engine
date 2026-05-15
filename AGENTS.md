@@ -91,9 +91,7 @@ Open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect
 
 The full director rubric (taste checks for concept/script/style/shots/assets, permission rules, output style examples) lives at `.agents/skills/lahari-director/SKILL.md`. Read it when giving creative feedback or proposing changes — it captures the production language and refusal patterns to follow.
 
-## Codex-Native Studio Mode
-
-This branch is also a Codex-native production workspace. The Lahari web app stays the visual studio; Codex Desktop is the operator/director surface. Start with `docs/codex-native-studio.md` for the vision and current tool list.
+## Internal Debug Surfaces
 
 The shared service for Codex tools is `server/services/codexStudio.ts`. The CLI and MCP are adapters around that service:
 
@@ -135,14 +133,14 @@ npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [ba
 npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
 ```
 
-Generated local artifacts live under `.lahari/` and are intentionally ignored:
+Generated local artifacts from internal debug commands live under `.lahari/` and are intentionally ignored:
 
 - `.lahari/codex/` - director reports and contact sheets
 - `.lahari/projects/<projectId>/` - local Codex workbench mirror (`brief.md`, `audio-analysis.md`, `script.md`, `storyboard-prompts.md`, snapshots)
 - `.lahari/sessions/<projectId>/` - `state.json` and `journal.md`
 - `.lahari/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
 
-Durable artist/operator decisions are written to Supabase `lahari_director_events`. `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`.
+Durable artist/operator decisions are written to Supabase `lahari_director_events`. Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
 
 **Realtime transport is shipped (R36):** `lahari_agent_operations` table tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across 13 project-relevant tables for cascade refresh.
 
@@ -153,7 +151,7 @@ Permission boundary:
 - Apply commands mutate Supabase and must be explicit user-approved commands. They require a valid `SUPABASE_SERVICE_KEY`; Codex tools may fall back to `VITE_SUPABASE_ANON_KEY` for read-only work, but apply tools refuse anon fallback.
 - Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.
 
-The CLI is engine-side debugging surface — useful for scripts, audit inspection, disaster recovery, and one-off operations. It is **not** the director-session surface. The director surface for artists lives at deployed Lahari over remote MCP. Don't shoehorn director work through CLI here unless you are explicitly debugging the engine path.
+The CLI and in-process MCP are engine-side debugging surfaces — useful for scripts, audit inspection, disaster recovery, and one-off operations. They are **not** the director-session surface. The director surface for artists lives at deployed Lahari over remote MCP. Don't shoehorn director work through CLI here unless you are explicitly debugging the engine path.
 
 ## Architecture
 

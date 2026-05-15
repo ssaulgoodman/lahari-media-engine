@@ -20,7 +20,7 @@ The central organizing principle. Every piece of state in this system lives in e
 
 | Tier | Examples | Who edits | How |
 |---|---|---|---|
-| **1. Project config** (per-project, agent-owned) | Project-specific prompts, model preferences, taste notes, glossary, decision log | Project owner's director agent | Direct file edits in `.lahari/projects/<id>/config/` → typed apply tool persists to Supabase |
+| **1. Project config** (per-project, agent-owned) | Project-specific prompts, model preferences, taste notes, glossary, decision log | Project owner's director agent | Direct file edits in `lahari/projects/<id>/config/` inside the artist notebook → typed apply tool persists to Supabase |
 | **2. Project state** (per-project, canonical in Supabase) | Concept, script, style, cast, env, scenes, shots, locks, prompts, assets | Project owner's director agent | Always via typed `apply_*` tools with preview/drift/rollback |
 | **3. Engine truth** (global, immutable from director's view) | Global prompt catalog, provider routing, engine code, migrations | Engine sessions only | Direct file edits → commit |
 
@@ -28,7 +28,7 @@ The central organizing principle. Every piece of state in this system lives in e
 
 When an agent recognizes "I need to switch providers because credits ran out" or "this song needs a different prompt recipe," the answer is **always** a tier-1 edit, never a tier-3 code change. Tier-3 fixes happen in engine sessions, not director sessions.
 
-This tier model is what makes the future npm-package distribution safe: the artist's `@lahari/director` workspace contains zero engine code, so tier-3 is physically inaccessible. Tier-1 power scales fully; tier-3 stays with engineers.
+This tier model is what makes the remote-MCP distribution safe: the artist notebook contains zero engine code, so tier-3 is physically inaccessible. Tier-1 power scales fully; tier-3 stays with engineers.
 
 ---
 
@@ -117,9 +117,9 @@ Three tiers within tier-2 (project state) operations:
 **Supabase Postgres is canonical for everything in tier 2 (project state) and tier 1 (project config after persistence).**
 
 - Web studio state = cache of Postgres
-- `.lahari/` files = desk copies, read freely, edit freely, sync via apply tools
+- `lahari/` notebook files = desk copies, read freely, edit config files freely, sync via apply tools
 - Codex's in-context understanding = derived from packets which derive from Postgres
-- Local journal (`.lahari/sessions/<id>/journal.md`) = working memory only, not authoritative
+- Local journal (`lahari/projects/<id>/journal.md`) = working memory only, not authoritative
 
 **Never dual-write.** If a piece of state lives in tier 1 or tier 2, it lives in Supabase. Local files mirror it. Don't write to both as parallel sources.
 
@@ -129,11 +129,11 @@ Three tiers within tier-2 (project state) operations:
 
 ## 7. Distribution Arc
 
-**Engine sessions (this repo):** single bimodal `AGENTS.md`, director + engine sessions in the same worktree. Works because the operator (Saul) does both, and engineering work happens here. Director sessions in this repo use the *internal* MCP (in-process call to `codexStudio.ts`) for debug/dev access; the artist-facing path is remote MCP via deployed Lahari.
+**Engine sessions (this repo):** this repo is for code, prompts, infra, docs, schema, and deployment. Internal MCP and CLI are available for engine-side debug, smoke tests, and recovery, but they are not the artist/director surface. When an engineer wants to test director behavior, use an artist-shaped empty folder with remote MCP installed.
 
 **Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent attaches via `attach_director_session`, calls `write_project_notebook(projectId)`, and the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + config + journal all written by the tool, not by an `npx setup` step.
 
-Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution, `@lahari/mcp-server` remains a published local fallback for harnesses where remote MCP misbehaves. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
+Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
 
 **Plugin distribution gates** (all true as of 2026-05-15):
 1. ✅ Second-user setup is two terminal commands (`export TOKEN=...` + `codex mcp add ...` / `claude mcp add-json ...`) plus a one-time harness restart. `/connect` page issues the snippets.

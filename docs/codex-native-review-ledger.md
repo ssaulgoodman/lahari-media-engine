@@ -18,7 +18,7 @@ R17 + R28 + R29 are all shipped to production and validated by the first artist.
 
 **Shipped and live in production:**
 
-- **R17** — Remote MCP at `/mcp` with bearer-token auth, `/connect` page for token minting + install snippets, `lahari_mcp_tokens` table with sha256-hashed storage, `@lahari/mcp-server` published as the local fallback for harness gaps. **Validated by first artist install.**
+- **R17** — Remote MCP at `/mcp` with bearer-token auth, `/connect` page for token minting + install snippets, `lahari_mcp_tokens` table with sha256-hashed storage, and a local `@lahari/mcp-server` fallback package implemented in-repo (publish pending if needed). **Validated by first artist install.**
 - **R28** — Six apply-only text tools: concept, script, shot_prompts, storyboard_prompt + bulk, video_prompt. Codex writes content via skill shards, apply tools validate + persist with drift checking. Migration applied.
 - **R29** — Project config + prompt overrides through phase 2. All 5 prompt kinds (concept, script, shot_prompts, storyboard, video) overridable per project. Migration applied.
 - **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: mirrors/, config/, journal.md. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
