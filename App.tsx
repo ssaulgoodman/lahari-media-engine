@@ -2226,22 +2226,16 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
           <div className="flex items-center gap-1 flex-shrink-0">
             {project && realtimeBadge && (
               <div
-                className={`hidden lg:flex items-center gap-2 max-w-[260px] px-2.5 py-1 rounded-md border text-[11px] ${
-                  realtimeBadge.tone === 'working'
-                    ? 'border-amber-400/20 bg-amber-400/[0.06] text-amber-100'
-                    : realtimeBadge.tone === 'error'
-                      ? 'border-red-400/20 bg-red-400/[0.06] text-red-100'
-                      : 'border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-100'
-                }`}
+                className="hidden lg:flex items-center gap-2 max-w-[260px] px-2.5 py-1 rounded-md surface-inset text-[11px] text-zinc-300"
                 title={activeAgentOperationList.length > 1
-                  ? `${activeAgentOperationList.length} Lahari operations are running`
+                  ? activeAgentOperationList.map(op => op.label).join(' · ')
                   : realtimeBadge.message}
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    realtimeBadge.tone === 'working' ? 'bg-amber-300 animate-pulse'
-                      : realtimeBadge.tone === 'error' ? 'bg-red-300'
-                        : 'bg-emerald-300'
+                    realtimeBadge.tone === 'working' ? 'bg-amber-400 animate-pulse'
+                      : realtimeBadge.tone === 'error' ? 'bg-red-400'
+                        : 'bg-emerald-400'
                   }`}
                 />
                 <span className="truncate">
