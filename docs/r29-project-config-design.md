@@ -1,20 +1,20 @@
 # R29 Project Config Design
 
-Status: first-pass design
+Status: phase 2 implemented
 Date: 2026-05-13
 
 ## Goal
 
-Give each Lahari project an editable config surface that Codex can own without mutating engine truth. Phase 1 covers only:
+Give each Lahari project an editable config surface that Codex can own without mutating engine truth. The implemented prompt-override surface covers:
 
 - project preferences: selected text/image/storyboard/video models and small workflow defaults
-- project prompt overrides: storyboard prompt recipe and video prompt recipe
+- project prompt overrides: concept, script, shot-prompts, storyboard, and video prompt recipes
 
 This is tier 1 from `docs/codex-native-doctrine.md`: Codex may edit local desk-copy files freely, but production behavior changes only after typed apply tools validate and persist them to Supabase.
 
 ## Non-Goals
 
-R29 phase 1 does not implement a general memory system, taste bible, glossary, decision log, prompt marketplace, or per-shot prompt editing surface.
+R29 does not implement a general memory system, taste bible, glossary, decision log, prompt marketplace, or per-shot prompt editing surface.
 
 Per-shot storyboard prompts, video prompts, script rows, concepts, scenes, and assets remain tier 2 project state. They must still move through apply tools with validation and director events.
 
@@ -29,6 +29,9 @@ New artifacts should live under the unified project folder:
   preferences.json
   prompts/
     storyboard.md
+    concept.md
+    script.md
+    shot_prompts.md
     video.md
   hashes.json
 ```
@@ -85,7 +88,7 @@ updated_by uuid null
 ```sql
 id uuid primary key default gen_random_uuid(),
 project_id text not null references lahari_projects(id) on delete cascade,
-kind text not null check (kind in ('storyboard', 'video')),
+kind text not null check (kind in ('concept', 'script', 'shot_prompts', 'storyboard', 'video')),
 scope_type text not null default 'project' check (scope_type in ('project', 'scene', 'shot')),
 scope_id text null,
 body text not null,
@@ -115,11 +118,14 @@ Prompt and preference resolution should be explicit and boring.
 | Config | Precedence |
 |---|---|
 | model preference | project config preference -> `lahari_projects` field -> engine default |
+| concept prompt recipe | project override -> global builder/catalog |
+| script prompt recipe | project override -> global builder/catalog |
+| shot-prompts recipe | project override -> global builder/catalog |
 | storyboard prompt recipe | shot override -> scene override -> project override -> global builder/catalog |
 | video prompt recipe | shot override -> scene override -> project override -> global video prompt builder |
 | workflow defaults | project config preference -> current UI/backend default |
 
-Phase 1 implements only project-level prompt override lookup. The helper should still accept scope arguments so later phases do not change call sites.
+The implementation currently exposes project-level prompt override lookup. The helper accepts scope arguments so later scene/shot inheritance does not change call sites.
 
 ## Apply Tools
 
@@ -172,7 +178,7 @@ Input:
 
 Validation:
 
-- `kind` is `storyboard` or `video`
+- `kind` is `concept`, `script`, `shot_prompts`, `storyboard`, or `video`
 - phase 1 only accepts `scopeType = project`
 - body is non-empty and below a generous cap, for example 12k chars
 - no engine-only placeholders unless explicitly allowed

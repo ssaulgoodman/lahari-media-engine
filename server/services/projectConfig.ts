@@ -10,7 +10,8 @@ import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
 
-export type ProjectPromptOverrideKind = 'storyboard' | 'video';
+export const PROJECT_PROMPT_OVERRIDE_KINDS = ['concept', 'script', 'shot_prompts', 'storyboard', 'video'] as const;
+export type ProjectPromptOverrideKind = typeof PROJECT_PROMPT_OVERRIDE_KINDS[number];
 export type ProjectPromptScopeType = 'project' | 'scene' | 'shot';
 
 export interface ProjectPromptScope {
@@ -82,6 +83,33 @@ const isMissingConfigTableError = (error: unknown): boolean => {
 };
 
 const promptSeedBody = (kind: ProjectPromptOverrideKind): string => {
+  if (kind === 'concept') {
+    return [
+      '# Project Concept Prompt Override',
+      '',
+      'No project concept override is active.',
+      '',
+      'When Codex applies one here, it should describe the reusable recipe for how concept directions should be written for this project.',
+    ].join('\n');
+  }
+  if (kind === 'script') {
+    return [
+      '# Project Script Prompt Override',
+      '',
+      'No project script override is active.',
+      '',
+      'When Codex applies one here, it should describe the reusable recipe for how scenes, cast, environments, and shot beats should be planned for this project.',
+    ].join('\n');
+  }
+  if (kind === 'shot_prompts') {
+    return [
+      '# Project Shot Prompts Override',
+      '',
+      'No project shot-prompts override is active.',
+      '',
+      'When Codex applies one here, it should describe the reusable recipe for how visual and motion prompts should be written for this project.',
+    ].join('\n');
+  }
   if (kind === 'storyboard') {
     return [
       '# Project Storyboard Prompt Override',
@@ -264,10 +292,10 @@ export const getProjectPromptOverride = async (
 
 export const getProjectConfigState = async (project: Project): Promise<ProjectConfigState> => ({
   preferences: await getProjectPreferencesState(project),
-  prompts: {
-    storyboard: await getPromptOverrideState(project.id, 'storyboard'),
-    video: await getPromptOverrideState(project.id, 'video'),
-  },
+  prompts: Object.fromEntries(await Promise.all(PROJECT_PROMPT_OVERRIDE_KINDS.map(async (kind) => [
+    kind,
+    await getPromptOverrideState(project.id, kind),
+  ]))) as Record<ProjectPromptOverrideKind, PromptOverrideState>,
 });
 
 const ensureConfigDir = (projectDir: string): string => {
@@ -282,46 +310,44 @@ export const writeProjectConfigDeskCopy = async (
 ): Promise<{
   configDir: string;
   preferencesPath: string;
-  storyboardPromptPath: string;
-  videoPromptPath: string;
+  promptPaths: Record<ProjectPromptOverrideKind, string>;
   hashesPath: string;
   state: ProjectConfigState;
 }> => {
   const state = await getProjectConfigState(project);
   const configDir = ensureConfigDir(projectDir);
   const preferencesPath = path.join(configDir, 'preferences.json');
-  const storyboardPromptPath = path.join(configDir, 'prompts', 'storyboard.md');
-  const videoPromptPath = path.join(configDir, 'prompts', 'video.md');
+  const promptPaths = Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
+    kind,
+    path.join(configDir, 'prompts', `${kind}.md`),
+  ])) as Record<ProjectPromptOverrideKind, string>;
   const hashesPath = path.join(configDir, 'hashes.json');
 
   fs.writeFileSync(preferencesPath, `${JSON.stringify(state.preferences.preferences, null, 2)}\n`);
-  fs.writeFileSync(storyboardPromptPath, state.prompts.storyboard.body.endsWith('\n') ? state.prompts.storyboard.body : `${state.prompts.storyboard.body}\n`);
-  fs.writeFileSync(videoPromptPath, state.prompts.video.body.endsWith('\n') ? state.prompts.video.body : `${state.prompts.video.body}\n`);
+  for (const kind of PROJECT_PROMPT_OVERRIDE_KINDS) {
+    const body = state.prompts[kind].body;
+    fs.writeFileSync(promptPaths[kind], body.endsWith('\n') ? body : `${body}\n`);
+  }
   fs.writeFileSync(hashesPath, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     preferences: {
       hash: state.preferences.hash,
       source: state.preferences.source,
     },
-    prompts: {
-      storyboard: {
-        hash: state.prompts.storyboard.hash,
-        source: state.prompts.storyboard.source,
-        overrideId: state.prompts.storyboard.overrideId,
+    prompts: Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
+      kind,
+      {
+        hash: state.prompts[kind].hash,
+        source: state.prompts[kind].source,
+        overrideId: state.prompts[kind].overrideId,
       },
-      video: {
-        hash: state.prompts.video.hash,
-        source: state.prompts.video.source,
-        overrideId: state.prompts.video.overrideId,
-      },
-    },
+    ])),
   }, null, 2)}\n`);
 
   return {
     configDir,
     preferencesPath,
-    storyboardPromptPath,
-    videoPromptPath,
+    promptPaths,
     hashesPath,
     state,
   };

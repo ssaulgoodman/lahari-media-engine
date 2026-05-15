@@ -6,23 +6,23 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-14 — R17 notebook hybrid gained deterministic warm-refresh artifacts.
+**Last touched:** 2026-05-15 — R29 phase 2 expanded project prompt override kinds.
 
 ---
 
 ## Current State (snapshot for fast orient — read this first)
 
-**Where we are (as of 2026-05-14, end of day):**
+**Where we are (as of 2026-05-15):**
 
 - Director-session-on-full-codebase: **VALIDATED end-to-end** via two test sessions on fork `13c259ce`. MCP-first discipline holds, agency layer (R29) actively used, skill-driven taste applied, full audit + journal coverage.
 - Text-native flow (R28): **SHIPPED first pass** — six apply-only tools for shot/storyboard/script/concept/video prompts. Codex writes content using skill shards; apply tools validate + persist. No backend LLM round-trip.
-- Project config layer (R29 phase 1): **SHIPPED and live** — preferences + storyboard/video prompt overrides. Both migrations applied to Supabase.
+- Project config layer (R29): **SHIPPED through phase 2** — preferences + concept/script/shot_prompts/storyboard/video prompt overrides. Phase-2 migration still needs to be applied to Supabase.
 - Skill fragmentation (R8): **SHIPPED** — five taste shards (storyboard-prompt-craft, script-doctor, continuity-auditor, style-ref-critic, render-triage) loaded on demand by lahari-director orchestrator.
 - Stabilization pass: **SHIPPED** — F1 (session rename language), F2 (song-class bottleneck demoted), F3 (capture-issue trigger), F4 (re-attach dedup), Hydrated→Updated, action ranking.
 
 **Pending operational steps:**
 
-1. Saul reported `2026-05-14_add_mcp_tokens.sql` and `2026-05-14_apply_script_rpc.sql` have been applied. Before first real artist run, verify production is on the branch containing `/mcp`, `/connect`, and the notebook tool.
+1. Apply `migrations/2026-05-15_expand_project_prompt_override_kinds.sql` before using R29 phase-2 prompt override kinds in production.
 
 **Next workstream (the big one):**
 
@@ -601,14 +601,17 @@ R25 transitional `write_storyboard_prompt` and `bulk_write_storyboard_prompts` r
 
 ### R29 — Project config and prompt override design
 
-Status: **phase 1 implemented, pending review/migration apply** · Raised: 2026-05-13
+Status: **phase 2 implemented, migration pending apply** · Raised: 2026-05-13
 
-R29 is the editable project-config umbrella for R22. Phase 1 is deliberately narrow: per-project preferences and storyboard/video prompt overrides. Later phases can add glossary, taste notes, decisions, and richer inheritance once the core path proves itself.
+R29 is the editable project-config umbrella for R22. It now covers per-project preferences and project-level prompt recipes for concept, script, shot-prompts, storyboard, and video. Later phases can add glossary, taste notes, decisions, and richer scene/shot inheritance once the core path proves itself.
 
 Design doc: [`docs/r29-project-config-design.md`](r29-project-config-design.md)
 
 Phase 1 objects:
 - `.lahari/projects/<projectId>/config/preferences.json`
+- `.lahari/projects/<projectId>/config/prompts/concept.md`
+- `.lahari/projects/<projectId>/config/prompts/script.md`
+- `.lahari/projects/<projectId>/config/prompts/shot_prompts.md`
 - `.lahari/projects/<projectId>/config/prompts/storyboard.md`
 - `.lahari/projects/<projectId>/config/prompts/video.md`
 - Supabase canonical tables for persisted project config and prompt overrides (`project_id` / `scope_id` are `text`, matching existing Lahari IDs)
@@ -620,6 +623,8 @@ Phase 1 objects:
 **Why it matters:** Project-specific taste improvements should be project-owned configuration, not tier-3 engine edits. This gives Codex a safe editable surface for model choices and prompt recipes while keeping Supabase canonical.
 
 **2026-05-14 stabilization:** storyboard/video/config mutating MCP tools now append concise local journal entries immediately after mutation, so engine sessions can see what just happened without waiting for a future attach. Full canonical desk-copy re-fetch for character/env lock toolchains remains a later polish pass.
+
+**2026-05-15 phase 2:** prompt override kinds expanded to `concept`, `script`, and `shot_prompts` alongside `storyboard` and `video`. Notebook config now emits all five prompt recipe files and MCP/fallback schemas accept all five kinds. Migration `2026-05-15_expand_project_prompt_override_kinds.sql` must be applied to widen the Supabase check constraint.
 
 ---
 
@@ -739,7 +744,7 @@ Things I might be wrong about. Worth revisiting as we learn.
 - **W6.** CLI audit fallback could make MCP discipline feel optional. Keep the product rule MCP-first in director mode; CLI audit is a safety net, not the primary operating path.
 - **W7.** Project-local prompt catalogs can become a second source of truth if file edits are not imported through typed apply tools. Desk-copy files are useful; production overrides must live in Supabase.
 - **W8.** Codex Desktop / Claude Code MCP hot-reload gap: registered MCP servers don't appear in active chat sessions until app restart. Upstream limitation, not a Lahari bug. R18 enforcement (skill refuses CLI fallback when MCP not visible) handles the user-facing failure mode. File as feature request with OpenAI/Anthropic when stable surface exists.
-- **W9.** R29 phase 2 (concept/script/shot_prompts overrides) overlaps with R28 (Codex-native apply for the same content). If R28 ships first and Codex sessions stop hitting backend LLMs entirely, R29 phase 2's value collapses to "web studio users only." Decide phase 2 scope only after observing post-R28 usage.
+- **W9.** R29 phase 2 is now implemented as a project recipe/config surface. Watch actual usage before wiring every backend LLM path to consume the new concept/script/shot_prompts recipes; Codex-native director sessions already use the files directly when authoring apply-only content.
 
 ---
 
