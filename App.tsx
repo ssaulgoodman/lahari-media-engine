@@ -69,6 +69,24 @@ const appOrigin = () => window.location.origin;
 
 const mcpUrl = () => `${appOrigin()}/mcp`;
 
+type Harness = 'codex' | 'claude';
+type CodexPlatform = 'mac' | 'win' | 'linux' | 'cli';
+
+const detectPlatform = (): CodexPlatform => {
+  if (typeof navigator === 'undefined') return 'mac';
+  const ua = navigator.userAgent;
+  if (/Win/i.test(ua)) return 'win';
+  if (/Linux/i.test(ua) && !/Android/i.test(ua)) return 'linux';
+  return 'mac';
+};
+
+const platformLabel = (p: CodexPlatform): string => {
+  if (p === 'mac') return 'macOS';
+  if (p === 'win') return 'Windows';
+  if (p === 'linux') return 'Linux';
+  return 'CLI';
+};
+
 const ConnectPage: React.FC<{
   user: { id: string; email?: string | null } | null;
   signInWithGoogle: (redirectTo?: string) => Promise<void>;
@@ -79,6 +97,15 @@ const ConnectPage: React.FC<{
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tokenConfirmed, setTokenConfirmed] = useState(false);
+  const [tokenRevealed, setTokenRevealed] = useState(true);
+  const [activeHarness, setActiveHarness] = useState<Harness>('codex');
+  const [codexPlatform, setCodexPlatform] = useState<CodexPlatform>('mac');
+  const [showFallback, setShowFallback] = useState(false);
+
+  useEffect(() => {
+    setCodexPlatform(detectPlatform());
+  }, []);
 
   const loadTokens = useCallback(async () => {
     if (!user) return;
@@ -102,6 +129,8 @@ const ConnectPage: React.FC<{
     setLoading(true);
     setError(null);
     setMessage(null);
+    setTokenConfirmed(false);
+    setTokenRevealed(true);
     try {
       const token = await api.createMcpToken({ label: 'Codex / Claude', expiresInDays: 30 });
       setCreated(token);
@@ -139,11 +168,16 @@ const ConnectPage: React.FC<{
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#141418] flex items-center justify-center px-6">
-        <div className="w-full max-w-md text-center">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-5">Lahari Connect</p>
-          <h1 className="text-2xl font-display text-white mb-3 tracking-tight">Connect Lahari to your agent</h1>
-          <p className="text-sm text-zinc-400 mb-10 leading-relaxed">
+      <div className="min-h-screen bg-[#141418] flex items-center justify-center px-6 relative overflow-hidden">
+        {/* Subtle ambient glow */}
+        <div aria-hidden className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-white/[0.015] blur-3xl" />
+        </div>
+
+        <div className="w-full max-w-md text-center relative">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-6">Lahari Connect</p>
+          <h1 className="text-3xl font-display text-white mb-4 tracking-tight">Connect Lahari to your agent</h1>
+          <p className="text-sm text-zinc-400 mb-10 leading-relaxed max-w-sm mx-auto">
             Sign in to mint an account-scoped MCP token for Codex Desktop or Claude Code. No service keys. No engine repo.
           </p>
           <button
@@ -166,70 +200,169 @@ const ConnectPage: React.FC<{
   const token = created?.token;
   const tokenPlaceholder = token || '<token>';
   const mcpEndpoint = mcpUrl();
+  const tokenMaskedSuffix = token ? token.slice(-6) : '';
+
+  // Codex install variants
   const codexAppFields = `Name: lahari
 Type: Streamable HTTP
 URL: ${mcpEndpoint}
 Bearer token env var: leave blank
 Header key: Authorization
 Header value: Bearer ${tokenPlaceholder}`;
-  const codexAppVerify = `Fully quit and reopen Codex Desktop.
-Start a new chat.
-Ask: Call Lahari list_projects.`;
-  const codexEnv = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}`;
-  const codexAdd = `codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN`;
-  const codexInstall = `${codexEnv}\n${codexAdd}`;
+  const codexCliInstall = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}
+codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN`;
   const codexWindowsInstall = `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${tokenPlaceholder}", "User")
 codex mcp remove lahari
 codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN
 codex mcp get lahari --json
 Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
-  const claudeEnv = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}`;
-  const claudeAdd = `claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
-  const claudeFallback = `claude mcp add lahari --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpEndpoint}`;
-  const claudeInstall = `${claudeEnv}\n${claudeAdd}`;
 
-  const CodeBlock: React.FC<{ label: string; value: string; copyLabel?: string; trailing?: React.ReactNode }> = ({ label, value, copyLabel, trailing }) => (
-    <div>
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">{label}</p>
-        <button
-          onClick={() => copy(value)}
-          className="text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
-        >
-          {copyLabel || 'Copy'}
-        </button>
+  // Claude install
+  const claudeInstall = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}
+claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
+  const claudeFallback = `claude mcp add lahari --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpEndpoint}`;
+
+  const CodeBlock: React.FC<{ value: string; copyLabel?: string; small?: boolean }> = ({ value, copyLabel, small }) => (
+    <div className="relative group">
+      <pre className={`surface-inset rounded-md ${small ? 'p-3' : 'p-4'} overflow-x-auto text-xs font-mono text-zinc-200 leading-relaxed whitespace-pre pr-20`}>{value}</pre>
+      <button
+        onClick={() => copy(value)}
+        className="absolute top-2.5 right-2.5 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] rounded transition-colors backdrop-blur"
+      >
+        {copyLabel || 'Copy'}
+      </button>
+    </div>
+  );
+
+  const Step: React.FC<{ n: number; title: string; children: React.ReactNode }> = ({ n, title, children }) => (
+    <div className="flex gap-4">
+      <div className="flex-shrink-0 w-7 h-7 rounded-full surface-inset flex items-center justify-center text-xs text-zinc-300 font-mono">{n}</div>
+      <div className="flex-1 min-w-0 pt-0.5 space-y-3">
+        <p className="text-sm text-white font-medium leading-snug">{title}</p>
+        {children}
       </div>
-      <pre className="surface-inset rounded-md p-3 overflow-x-auto text-xs font-mono text-zinc-200 leading-relaxed whitespace-pre">{value}</pre>
-      {trailing}
+    </div>
+  );
+
+  // Codex tab content per platform
+  const codexContent = (() => {
+    if (codexPlatform === 'mac' || codexPlatform === 'linux') {
+      return (
+        <div className="space-y-5">
+          <Step n={1} title="Open Codex Desktop → Settings → MCP Servers → Add server">
+            <CodeBlock value={codexAppFields} copyLabel="Copy fields" />
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Select <span className="text-zinc-300">Streamable HTTP</span>. Leave bearer-token env var blank — the Authorization header carries it directly.
+            </p>
+          </Step>
+          <Step n={2} title="Save and fully restart Codex Desktop">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Quit completely (not just close the window). Reopen and start a new chat.
+            </p>
+          </Step>
+        </div>
+      );
+    }
+    if (codexPlatform === 'win') {
+      return (
+        <div className="space-y-5">
+          <Step n={1} title="Open PowerShell and run">
+            <CodeBlock value={codexWindowsInstall} copyLabel="Copy script" />
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Stores the token in your Windows user environment, registers the MCP server, then stops Codex so the reopened app inherits the token.
+            </p>
+          </Step>
+          <Step n={2} title="Reopen Codex Desktop">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Start a new chat. The Lahari tools should appear when triggered.
+            </p>
+          </Step>
+        </div>
+      );
+    }
+    // CLI advanced
+    return (
+      <div className="space-y-5">
+        <Step n={1} title="In your terminal, run">
+          <CodeBlock value={codexCliInstall} copyLabel="Copy CLI" />
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            Sets the env var for this shell session and registers the MCP server with Codex CLI.
+          </p>
+        </Step>
+        <Step n={2} title="Restart Codex Desktop">
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            CLI registration takes effect on next launch. Quit fully, then reopen.
+          </p>
+        </Step>
+      </div>
+    );
+  })();
+
+  const claudeContent = (
+    <div className="space-y-5">
+      <Step n={1} title="In your terminal, run">
+        <CodeBlock value={claudeInstall} copyLabel="Copy commands" />
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
+          Single quotes keep <span className="font-mono text-zinc-300">${'{'}LAHARI_MCP_TOKEN{'}'}</span> unexpanded so Claude writes the env reference into <span className="font-mono text-zinc-300">.mcp.json</span>.
+        </p>
+      </Step>
+      <Step n={2} title="Restart Claude Code in your project folder">
+        <p className="text-[11px] text-zinc-400 leading-relaxed">
+          Open any empty folder you want to use as your Lahari workspace.
+        </p>
+        <button
+          onClick={() => setShowFallback(s => !s)}
+          className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors select-none inline-flex items-center gap-1"
+        >
+          <span className={`inline-block transition-transform ${showFallback ? 'rotate-90' : ''}`}>›</span>
+          {showFallback ? 'Hide' : 'Show'} fallback for older Claude Code
+        </button>
+        {showFallback && <CodeBlock value={claudeFallback} copyLabel="Copy fallback" small />}
+      </Step>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#141418] text-white px-6 py-10">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-screen bg-[#141418] text-white px-6 py-12 relative overflow-hidden">
+      {/* Subtle ambient glow */}
+      <div aria-hidden className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] rounded-full bg-white/[0.012] blur-3xl" />
+      </div>
+
+      <div className="max-w-3xl mx-auto relative">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-10">
+        <div className="flex items-start justify-between gap-4 mb-12">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-3">Lahari Connect</p>
-            <h1 className="text-2xl font-display text-white mb-2 tracking-tight">Remote MCP access</h1>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-3">Lahari Connect</p>
+            <h1 className="text-3xl font-display text-white mb-2 tracking-tight">Connect your agent</h1>
             <p className="text-sm text-zinc-300">{user.email || user.id}</p>
-            <p className="text-xs text-zinc-400 mt-1">Tokens minted here only access projects owned by this account.</p>
           </div>
           <button
             onClick={signOut}
-            className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors flex-shrink-0"
+            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors flex-shrink-0"
           >
             Switch account
           </button>
         </div>
 
-        {/* Create token */}
-        <div className="surface rounded-xl p-6 mb-6">
-          <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+        {error && (
+          <div className="mb-6 text-sm text-amber-200/90 surface-inset rounded-md px-3 py-2 border-l-2 border-amber-400/60">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="mb-6 text-xs text-zinc-300 surface-inset rounded-md px-3 py-2 border-l-2 border-white/20">
+            {message}
+          </div>
+        )}
+
+        {/* Step 1 — Mint a token */}
+        <div className="surface rounded-xl p-7 mb-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Step 1</p>
-              <h2 className="text-lg font-display text-white tracking-tight">Mint a token</h2>
-              <p className="text-sm text-zinc-400 mt-1">Shown once. Treat it like a password — anyone with this token can act as you in Lahari.</p>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 1</p>
+              <h2 className="text-xl font-display text-white tracking-tight">Mint your access token</h2>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Shown once. Treat it like a password — anyone with it can act as you in Lahari.</p>
             </div>
             <button
               onClick={createToken}
@@ -241,93 +374,189 @@ Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
                   <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
                   Working
                 </span>
-              ) : 'Create 30-day token'}
+              ) : token ? 'Mint another' : 'Mint 30-day token'}
             </button>
           </div>
 
-          {error && (
-            <div className="mb-4 text-sm text-amber-200/90 surface-inset rounded-md px-3 py-2 border-l-2 border-amber-400/60">
-              {error}
-            </div>
-          )}
-          {message && (
-            <div className="mb-4 text-xs text-zinc-300 surface-inset rounded-md px-3 py-2">
-              {message}
-            </div>
-          )}
-
-          {token ? (
-            <div className="space-y-5">
-              <CodeBlock label="Token" value={token} />
-
-              <div className="pt-2">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Step 2 — Install in your harness</p>
-                <p className="text-sm text-zinc-400 mb-4">For Codex Desktop, use the app UI and paste the Authorization header directly. Env-var setup is advanced fallback.</p>
-
-                <div className="grid md:grid-cols-2 gap-5">
-                  <div className="space-y-5">
-                    <CodeBlock
-                      label="Codex Desktop app"
-                      value={codexAppFields}
-                      copyLabel="Copy Codex fields"
-                      trailing={
-                        <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
-                          In Codex MCP settings, select Streamable HTTP. Leave bearer token env var blank, then add the Authorization header above.
-                        </p>
-                      }
-                    />
-                    <CodeBlock label="After saving in Codex" value={codexAppVerify} copyLabel="Copy verify steps" />
-                    <details className="group">
-                      <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors select-none">
-                        Advanced Codex CLI env-var setup
-                      </summary>
-                      <div className="mt-3 space-y-4">
-                        <CodeBlock label="macOS / Linux" value={codexInstall} copyLabel="Copy CLI" />
-                        <CodeBlock
-                          label="Windows PowerShell"
-                          value={codexWindowsInstall}
-                          copyLabel="Copy Windows CLI"
-                          trailing={
-                            <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
-                              This stores the token in your Windows user environment, verifies the Codex MCP config, then fully stops Codex so the reopened app can inherit the token.
-                            </p>
-                          }
-                        />
-                      </div>
-                    </details>
+          {token && (
+            <div className="mt-6 space-y-3">
+              {tokenRevealed ? (
+                <>
+                  <div className="relative group">
+                    <pre className="surface-inset rounded-md p-4 overflow-x-auto text-xs font-mono text-zinc-200 leading-relaxed whitespace-pre pr-24">{token}</pre>
+                    <button
+                      onClick={() => copy(token)}
+                      className="absolute top-2.5 right-2.5 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] rounded transition-colors"
+                    >
+                      Copy
+                    </button>
                   </div>
-                  <CodeBlock
-                    label="Claude Code"
-                    value={claudeInstall}
-                    copyLabel="Copy Claude"
-                    trailing={
-                      <>
-                        <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
-                          Single quotes keep <span className="font-mono text-zinc-300">${'{'}LAHARI_MCP_TOKEN{'}'}</span> unexpanded so Claude writes the env reference into <span className="font-mono text-zinc-300">.mcp.json</span>.
-                        </p>
-                        <details className="mt-3 group">
-                          <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors select-none">
-                            Fallback for older Claude Code
-                          </summary>
-                          <pre className="mt-2 surface-inset rounded-md p-3 overflow-x-auto text-xs font-mono text-zinc-200 leading-relaxed whitespace-pre">{claudeFallback}</pre>
-                        </details>
-                      </>
-                    }
-                  />
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <p className="text-[11px] text-zinc-400">
+                      Expires {created.expiresAt ? new Date(created.expiresAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'in 30 days'}
+                    </p>
+                    {!tokenConfirmed ? (
+                      <button
+                        onClick={() => { setTokenConfirmed(true); setTokenRevealed(false); }}
+                        className="px-3 py-1.5 text-xs text-emerald-300 hover:text-emerald-200 bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12] rounded-md transition-colors inline-flex items-center gap-2"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        I've copied it safely
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setTokenRevealed(false)}
+                        className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+                      >
+                        Hide token
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="surface-inset rounded-md p-4 flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <p className="text-xs font-mono text-zinc-300">{tokenMaskedSuffix ? `lahari_mcp_••••••${tokenMaskedSuffix}` : 'lahari_mcp_••••••'}</p>
+                    <p className="text-[11px] text-zinc-400 mt-1">Stored in your hands. Keep going.</p>
+                  </div>
+                  <button
+                    onClick={() => setTokenRevealed(true)}
+                    className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+                  >
+                    Reveal again
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
-          ) : (
-            <p className="text-sm text-zinc-400">Mint a token to reveal install commands.</p>
           )}
         </div>
 
+        {/* Step 2 — Install (only after confirmation, but we show always when token exists; confirmation just collapses token) */}
+        {token && (
+          <div className="surface rounded-xl p-7 mb-5">
+            <div className="mb-6">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 2</p>
+              <h2 className="text-xl font-display text-white tracking-tight">Install in your harness</h2>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Pick the harness you use. Restart it once after install.</p>
+            </div>
+
+            {/* Harness tabs */}
+            <div className="flex gap-6 border-b border-white/[0.06] mb-6">
+              {(['codex', 'claude'] as Harness[]).map(h => (
+                <button
+                  key={h}
+                  onClick={() => setActiveHarness(h)}
+                  className="relative pb-3 text-sm transition-colors"
+                >
+                  <span className={activeHarness === h ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'}>
+                    {h === 'codex' ? 'Codex Desktop' : 'Claude Code'}
+                  </span>
+                  {activeHarness === h && (
+                    <span className="absolute bottom-0 left-0 right-0 h-px bg-white/70" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            {activeHarness === 'codex' ? (
+              <>
+                {/* Platform sub-toggle */}
+                <div className="flex items-center gap-1.5 mb-6 flex-wrap">
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mr-1.5">Platform</span>
+                  {(['mac', 'win', 'linux', 'cli'] as CodexPlatform[]).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setCodexPlatform(p)}
+                      className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${
+                        codexPlatform === p
+                          ? 'bg-white text-black'
+                          : 'surface-inset text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      {platformLabel(p)}
+                    </button>
+                  ))}
+                  <span className="text-[10px] text-zinc-400 ml-2">Detected: {platformLabel(detectPlatform())}</span>
+                </div>
+
+                {codexContent}
+              </>
+            ) : (
+              claudeContent
+            )}
+          </div>
+        )}
+
+        {/* Step 3 — Verify */}
+        {token && (
+          <div className="rounded-xl p-7 mb-5 relative overflow-hidden" style={{
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04), rgba(255, 255, 255, 0.02))',
+            boxShadow: 'inset 0 0 0 1px rgba(16, 185, 129, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.02)'
+          }}>
+            <div className="flex gap-4">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80 mb-1.5">Step 3 — Verify</p>
+                <h2 className="text-lg font-display text-white tracking-tight mb-3">You're connected when this works</h2>
+                <p className="text-sm text-zinc-300 leading-relaxed mb-3">In your harness chat, ask:</p>
+                <div className="surface-inset rounded-md px-4 py-3 mb-3">
+                  <p className="text-sm text-white font-mono">List my Lahari projects</p>
+                </div>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  If you see your projects, you're connected. Then try: <span className="text-zinc-300">"Open &lt;song name&gt;"</span> — your agent will materialize a Lahari workspace in the current folder.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Troubleshooting */}
+        {token && (
+          <details className="surface rounded-xl p-6 mb-5 group">
+            <summary className="cursor-pointer flex items-center justify-between gap-3 select-none">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-1">Troubleshooting</p>
+                <h3 className="text-base font-display text-white tracking-tight">Something not working?</h3>
+              </div>
+              <span className="text-zinc-400 transition-transform group-open:rotate-180">▾</span>
+            </summary>
+            <div className="mt-5 space-y-5 text-sm">
+              <div>
+                <p className="text-zinc-200 font-medium mb-1.5">MCP tools don't appear after restart</p>
+                <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
+                  <li>Fully <span className="text-zinc-300">quit</span> the harness — closing the window isn't enough.</li>
+                  <li>Open a new chat (existing chats may not pick up newly-registered MCP servers).</li>
+                  <li>Ask the agent: <span className="text-zinc-300">"What MCP servers do you have access to?"</span></li>
+                  <li>If the server is listed but tools fail, your token may be expired. Mint a new one.</li>
+                </ul>
+              </div>
+              <div>
+                <p className="text-zinc-200 font-medium mb-1.5">Authorization errors</p>
+                <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
+                  <li>Confirm you copied the token completely. The full token is ~50 characters starting with <span className="font-mono text-zinc-300">lahari_mcp_</span>.</li>
+                  <li>Check the token is still active in the list below.</li>
+                  <li>For Claude Code, make sure the env var is set <span className="text-zinc-300">before</span> launching <span className="font-mono text-zinc-300">claude</span>.</li>
+                </ul>
+              </div>
+              <div>
+                <p className="text-zinc-200 font-medium mb-1.5">Different harness or still stuck?</p>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Once connected, the easiest path is to ask your agent to call <span className="font-mono text-zinc-300">lahari_capture_issue</span> with what you tried. Lahari engineering reads these.
+                </p>
+              </div>
+            </div>
+          </details>
+        )}
+
         {/* Existing tokens */}
-        <div className="surface rounded-xl p-6">
-          <div className="flex items-baseline justify-between gap-3 mb-4">
+        <div className="surface rounded-xl p-7">
+          <div className="flex items-baseline justify-between gap-3 mb-5">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Active tokens</p>
-              <h2 className="text-lg font-display text-white tracking-tight">Your tokens</h2>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-1.5">Tokens</p>
+              <h2 className="text-base font-display text-white tracking-tight">Your active tokens</h2>
             </div>
             {tokens.length > 0 && (
               <p className="text-xs text-zinc-400">{tokens.filter(t => t.active).length} active · {tokens.length} total</p>
@@ -371,11 +600,6 @@ Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
             </div>
           )}
         </div>
-
-        {/* Footer hint */}
-        <p className="text-[11px] text-zinc-400 mt-6 text-center leading-relaxed">
-          After install, ask your agent: <span className="text-zinc-300">"List my Lahari projects"</span> or <span className="text-zinc-300">"Open &lt;song name&gt;"</span>.
-        </p>
       </div>
     </div>
   );
