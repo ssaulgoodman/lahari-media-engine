@@ -164,11 +164,16 @@ const ConnectPage: React.FC<{
   }
 
   const token = created?.token;
-  const codexEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
+  const tokenPlaceholder = token || '<token>';
+  const codexEnv = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}`;
   const codexAdd = `codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN`;
-  const claudeEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
+  const codexWindowsInstall = `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${tokenPlaceholder}", "User")
+codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN
+codex mcp get lahari --json
+Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
+  const claudeEnv = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}`;
   const claudeAdd = `claude mcp add-json lahari '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
-  const claudeFallback = token ? `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}` : `claude mcp add lahari --transport http --header "Authorization: Bearer <token>" ${mcpUrl()}`;
+  const claudeFallback = `claude mcp add lahari --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpUrl()}`;
   const codexInstall = `${codexEnv}\n${codexAdd}`;
   const claudeInstall = `${claudeEnv}\n${claudeAdd}`;
 
@@ -246,10 +251,22 @@ const ConnectPage: React.FC<{
 
               <div className="pt-2">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Step 2 — Install in your harness</p>
-                <p className="text-sm text-zinc-400 mb-4">Pick whichever you use. Restart the harness once after pasting.</p>
+                <p className="text-sm text-zinc-400 mb-4">Pick your harness and OS. Restart the harness once after pasting; on Windows, use the PowerShell block.</p>
 
                 <div className="grid md:grid-cols-2 gap-5">
-                  <CodeBlock label="Codex Desktop" value={codexInstall} copyLabel="Copy Codex" />
+                  <div className="space-y-5">
+                    <CodeBlock label="Codex Desktop — macOS / Linux" value={codexInstall} copyLabel="Copy Codex" />
+                    <CodeBlock
+                      label="Codex Desktop — Windows PowerShell"
+                      value={codexWindowsInstall}
+                      copyLabel="Copy Windows"
+                      trailing={
+                        <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
+                          This stores the token in your Windows user environment, verifies the Codex MCP config, then fully stops Codex so the reopened app can inherit the token.
+                        </p>
+                      }
+                    />
+                  </div>
                   <CodeBlock
                     label="Claude Code"
                     value={claudeInstall}

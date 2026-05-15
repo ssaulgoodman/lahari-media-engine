@@ -54,6 +54,10 @@ export const createMcpToken = async (
     install: {
       codex: `codex mcp add lahari --url ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'} --bearer-token-env-var LAHARI_MCP_TOKEN`,
       env: `export LAHARI_MCP_TOKEN=${token}`,
+      codexWindows: `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${token}", "User")
+codex mcp add lahari --url ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'} --bearer-token-env-var LAHARI_MCP_TOKEN
+codex mcp get lahari --json
+Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`,
       claude: `claude mcp add-json lahari '{"type":"http","url":"${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'}","headers":{"Authorization":"Bearer \${LAHARI_MCP_TOKEN}"}}'`,
       claudeFallback: `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp'}`,
     },
