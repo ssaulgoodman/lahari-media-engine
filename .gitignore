@@ -39,6 +39,9 @@ storage/*.db
 .agents/
 .lahari/
 skills/
+!server/resources/skills/
+!server/resources/skills/*/
+!server/resources/skills/*/SKILL.md
 skills-lock.json
 .lahari/
 .npm-cache/
