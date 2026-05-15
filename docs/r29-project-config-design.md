@@ -244,16 +244,21 @@ This is clearer than overloading `apply_project_prompt_override` with an empty b
     ],
     "localPaths": {
       "preferences": ".lahari/projects/<id>/config/preferences.json",
-      "storyboardPrompt": ".lahari/projects/<id>/config/prompts/storyboard.md",
-      "videoPrompt": ".lahari/projects/<id>/config/prompts/video.md"
+      "prompts": {
+        "concept": ".lahari/projects/<id>/config/prompts/concept.md",
+        "script": ".lahari/projects/<id>/config/prompts/script.md",
+        "shot_prompts": ".lahari/projects/<id>/config/prompts/shot_prompts.md",
+        "storyboard": ".lahari/projects/<id>/config/prompts/storyboard.md",
+        "video": ".lahari/projects/<id>/config/prompts/video.md"
+      }
     }
   }
 }
 ```
 
-`hydrateProjectWorkbench` should write the config files and `hashes.json`.
+`write_project_notebook` and local engine helpers should write the config files and `hashes.json`.
 
-After any successful config apply or revert, the response must include the new canonical hash for the touched file. Codex should update `.lahari/projects/<projectId>/config/hashes.json` immediately, or re-run attach/hydrate before further config edits. The next `attach_director_session` also rewrites config files and hashes from Supabase.
+After any successful config apply or revert, the response must include the new canonical hash for the touched file. Codex should update `.lahari/projects/<projectId>/config/hashes.json` immediately, or re-attach / re-run `write_project_notebook` before further config edits. The next `attach_director_session` also rewrites config files and hashes from Supabase.
 
 ## Backend Integration
 
@@ -312,7 +317,7 @@ Apply tools compare the submitted `baseHash` to the current canonical hash. On m
   "error": "config_drift",
   "message": "Project storyboard prompt override changed since local desk copy was written.",
   "currentHash": "sha256",
-  "next": "Reattach or hydrate the project, merge edits, then apply again."
+  "next": "Re-attach or refresh the project notebook, merge edits, then apply again."
 }
 ```
 
@@ -336,11 +341,11 @@ The distinction:
 
 Both are needed. R29 makes the project smarter; R28 applies concrete generated content.
 
-## Phase 1 Implementation Order
+## Implementation Order
 
 1. Add migrations for `lahari_project_config` and `lahari_project_prompt_overrides`.
 2. Add read helpers and hash helpers.
-3. Extend `hydrateProjectWorkbench` and `attachDirectorSession` to write/include config.
+3. Extend notebook/session attach surfaces to write/include config.
 4. Wire storyboard planner/video prompt builder to read overrides, with null-safe behavior verified before any writes exist.
 5. Add `apply_project_preferences`.
 6. Add `apply_project_prompt_override`.
@@ -350,6 +355,6 @@ Both are needed. R29 makes the project smarter; R28 applies concrete generated c
 
 ## Decisions
 
-- Model preferences in project config override `lahari_projects` columns for phase 1. The web studio keeps reading/writing the old columns. Later, after the config layer proves itself, the old columns can be deprecated.
+- Model preferences in project config override `lahari_projects` columns for this implementation. The web studio keeps reading/writing the old columns. Later, after the config layer proves itself, the old columns can be deprecated.
 - Prompt overrides keep inactive history rows from day one. Apply inserts a new active row instead of updating in place.
-- The web studio gets no inline config editor in phase 1. It may show a compact badge such as "Codex overrides active: storyboard" so the artist knows generation is using project-local recipes.
+- The web studio gets no inline config editor in this implementation. It may show compact badges such as "Codex storyboard override active" so the artist knows generation is using project-local recipes.

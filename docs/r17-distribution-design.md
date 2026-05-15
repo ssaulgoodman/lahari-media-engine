@@ -289,7 +289,7 @@ When Codex Desktop ships a stable plugin/skill registry, R17 can grow a follow-u
 
 ### Prompt config templates
 
-Empty starter files at `.lahari/projects/templates/config/prompts/storyboard.md` and `video.md` with a comment header explaining what they do and pointing at the skill for filling them in.
+The notebook tool writes editable project prompt recipe files under `config/prompts/` for `concept`, `script`, `shot_prompts`, `storyboard`, and `video`, plus `config/hashes.json` for drift-aware apply tools. These files are local editing surfaces only; production behavior changes after `apply_project_prompt_override` persists the chosen body to Supabase.
 
 ### .gitignore template
 
@@ -377,7 +377,7 @@ Friction items from this test become the next ledger entries. Same loop as the 2
 - Doctrine §7 (Distribution Arc): the "v1 plugin distribution gates" — all must be true before R17 ships. With R28 + R29 + stabilization shipped, gates 1-3 are achievable. Gate 4 (extractable as separate distribution without engine deps at runtime) is what this design accomplishes.
 - R16 (browser-bridged operator auth): the OAuth localhost callback flow in step 5 IS R16. Building this implements R16.
 - R28 (apply-only text tools): the MCP server in `@lahari/mcp-server` exposes the R28 tools. Same tool surface, different packaging.
-- R29 phase 1 (project config): bootstrap writes the config skeleton; apply tools work as today.
+- R29 project config: notebook writes the config skeleton; apply tools work as today.
 - R34 (apply-image tools): future addition; same MCP server gains new tools.
 - Polish items P-poli-04 (web studio override badge), P-poli-09 (notifications): independent of R17.
 

@@ -161,6 +161,8 @@ const ConnectPage: React.FC<{
   const claudeEnv = token ? `export LAHARI_MCP_TOKEN=${token}` : 'export LAHARI_MCP_TOKEN=<token>';
   const claudeAdd = `claude mcp add-json lahari '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
   const claudeFallback = token ? `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}` : `claude mcp add lahari --transport http --header "Authorization: Bearer <token>" ${mcpUrl()}`;
+  const codexInstall = `${codexEnv}\n${codexAdd}`;
+  const claudeInstall = `${claudeEnv}\n${claudeAdd}`;
 
   return (
     <div className="min-h-screen bg-[#141418] text-white px-6 py-10">
@@ -170,8 +172,9 @@ const ConnectPage: React.FC<{
             <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-3">Lahari Connect</p>
             <h1 className="text-2xl font-display text-white mb-2">Remote MCP access</h1>
             <p className="text-sm text-zinc-400">Signed in as {user.email || user.id}</p>
+            <p className="text-xs text-zinc-500 mt-1">Tokens created here can only access projects owned by this Lahari account.</p>
           </div>
-          <button onClick={signOut} className="px-3 py-2 text-xs text-zinc-300 border border-white/10 rounded-md hover:bg-white/5">Sign out</button>
+          <button onClick={signOut} className="px-3 py-2 text-xs text-zinc-300 border border-white/10 rounded-md hover:bg-white/5">Use a different account</button>
         </div>
 
         <div className="border border-white/10 rounded-md bg-zinc-950/40 p-5 mb-6">
@@ -206,16 +209,16 @@ const ConnectPage: React.FC<{
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <p className="text-xs text-zinc-400">Codex</p>
-                    <button onClick={() => copy(`${codexEnv}\n${codexAdd}`)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
+                    <button onClick={() => copy(codexInstall)} className="text-xs text-zinc-300 hover:text-white">Copy Codex</button>
                   </div>
-                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{codexEnv}{'\n'}{codexAdd}</pre>
+                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{codexInstall}</pre>
                 </div>
                 <div>
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <p className="text-xs text-zinc-400">Claude Code</p>
-                    <button onClick={() => copy(`${claudeEnv}\n${claudeAdd}`)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
+                    <button onClick={() => copy(claudeInstall)} className="text-xs text-zinc-300 hover:text-white">Copy Claude</button>
                   </div>
-                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeEnv}{'\n'}{claudeAdd}</pre>
+                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeInstall}</pre>
                   <p className="mt-2 text-[11px] text-zinc-500">Paste exactly as shown; the outer single quotes keep the token variable from expanding before Claude writes the config.</p>
                   <details className="mt-3">
                     <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200">Fallback for older Claude Code versions</summary>
