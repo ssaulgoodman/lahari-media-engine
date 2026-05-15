@@ -14,6 +14,7 @@ import { getVideoModel } from './constants/videoModels';
 import { useAuth } from './contexts/AuthContext';
 import * as api from './services/api';
 import { notifyBulkComplete } from './lib/notify';
+import { supabase } from './lib/supabase';
 
 const PIPELINE_STEPS = [
   { id: AppStep.UPLOAD, label: 'Queue' },
@@ -38,6 +39,25 @@ type ProjectSummary = {
   lastActivityAt?: string;
   parentProjectId?: string;
   renderCount?: number;
+};
+
+type AgentOperationRow = {
+  id: string;
+  project_id: string;
+  source: string;
+  tool: string;
+  status: 'running' | 'success' | 'error';
+  scope_type: 'project' | 'scene' | 'shot';
+  scope_id: string;
+  label: string;
+  started_at: string;
+  finished_at?: string | null;
+  error?: string | null;
+};
+
+type RealtimeNotice = {
+  tone: 'working' | 'updated' | 'error';
+  message: string;
 };
 
 // Humanize a timestamp: "3m ago", "2h ago", "yesterday", "Mar 4".
@@ -664,6 +684,10 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   const [loading, setLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agentOperations, setAgentOperations] = useState<Record<string, AgentOperationRow>>({});
+  const [realtimeNotice, setRealtimeNotice] = useState<RealtimeNotice | null>(null);
+  const realtimeRefreshTimer = useRef<number | null>(null);
+  const realtimeNoticeTimer = useRef<number | null>(null);
 
   // Character look candidates per cast member
   const [lookCandidates, setLookCandidates] = useState<Record<string, { id: string; url: string }[]>>({});
@@ -719,6 +743,88 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  const clearRealtimeNoticeLater = useCallback(() => {
+    if (realtimeNoticeTimer.current) window.clearTimeout(realtimeNoticeTimer.current);
+    realtimeNoticeTimer.current = window.setTimeout(() => setRealtimeNotice(null), 3600);
+  }, []);
+
+  const scheduleRealtimeProjectRefresh = useCallback((message = 'Studio updated') => {
+    const projectId = activeProjectId.current;
+    if (!projectId) return;
+    setRealtimeNotice({ tone: 'updated', message });
+    if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
+    realtimeRefreshTimer.current = window.setTimeout(async () => {
+      try {
+        const latest = await api.getProject(projectId);
+        setProject(current => current?.id === projectId ? latest : current);
+        setRealtimeNotice({ tone: 'updated', message });
+      } catch (err: any) {
+        setRealtimeNotice({ tone: 'error', message: err?.message || 'Realtime refresh failed' });
+      } finally {
+        clearRealtimeNoticeLater();
+      }
+    }, 800);
+  }, [clearRealtimeNoticeLater, setProject]);
+
+  useEffect(() => {
+    const projectId = project?.id;
+    setAgentOperations({});
+    setRealtimeNotice(null);
+    if (!projectId) return;
+
+    const handleAgentOperation = (payload: any) => {
+      const row = (payload.new || payload.old) as AgentOperationRow | undefined;
+      if (!row || row.project_id !== projectId) return;
+      if (row.status === 'running') {
+        setAgentOperations(current => ({ ...current, [row.id]: row }));
+        setRealtimeNotice({ tone: 'working', message: row.label || 'Codex is working' });
+        return;
+      }
+      setAgentOperations(current => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
+      scheduleRealtimeProjectRefresh(row.status === 'error'
+        ? `${row.label || 'Codex work'} failed`
+        : `${row.label || 'Codex work'} finished`);
+    };
+
+    const handleProjectChange = (payload: any) => {
+      const row = (payload.new || payload.old) as any;
+      if (row?.project_id && row.project_id !== projectId) return;
+      if (row?.id && row.id !== projectId && payload.table === 'lahari_projects') return;
+      if (payload.table === 'lahari_director_events' && row?.source === 'codex') {
+        scheduleRealtimeProjectRefresh(row.summary || 'Codex updated the project');
+        return;
+      }
+      scheduleRealtimeProjectRefresh('Studio updated');
+    };
+
+    const channel = supabase
+      .channel(`lahari-project-${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_agent_operations', filter: `project_id=eq.${projectId}` }, handleAgentOperation)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_projects', filter: `id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_scenes', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_shots', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_cast_members', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_environments', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_assets', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_storyboard_versions', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_renders', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_config', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_prompt_overrides', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lahari_director_events', filter: `project_id=eq.${projectId}` }, handleProjectChange);
+
+    channel.subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
+      if (realtimeNoticeTimer.current) window.clearTimeout(realtimeNoticeTimer.current);
+    };
+  }, [project?.id, scheduleRealtimeProjectRefresh]);
 
   // Persist project + step to localStorage so refresh stays on the same page
   const persistState = useCallback((projectId: string | null, step: AppStep) => {
@@ -2049,6 +2155,11 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
   // ─── Navigation ─────────────────────────────────────────────────
 
   const isStudio = currentStep === AppStep.STUDIO;
+  const activeAgentOperationList = Object.values(agentOperations)
+    .sort((a, b) => Date.parse(a.started_at || '') - Date.parse(b.started_at || ''));
+  const realtimeBadge = activeAgentOperationList[0]
+    ? { tone: 'working' as const, message: activeAgentOperationList[0].label || 'Codex is working' }
+    : realtimeNotice;
 
   return (
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
@@ -2113,6 +2224,32 @@ const AppMain: React.FC<{ user: { id: string; email?: string; user_metadata?: an
 
           {/* Right */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            {project && realtimeBadge && (
+              <div
+                className={`hidden lg:flex items-center gap-2 max-w-[260px] px-2.5 py-1 rounded-md border text-[11px] ${
+                  realtimeBadge.tone === 'working'
+                    ? 'border-amber-400/20 bg-amber-400/[0.06] text-amber-100'
+                    : realtimeBadge.tone === 'error'
+                      ? 'border-red-400/20 bg-red-400/[0.06] text-red-100'
+                      : 'border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-100'
+                }`}
+                title={activeAgentOperationList.length > 1
+                  ? `${activeAgentOperationList.length} Lahari operations are running`
+                  : realtimeBadge.message}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    realtimeBadge.tone === 'working' ? 'bg-amber-300 animate-pulse'
+                      : realtimeBadge.tone === 'error' ? 'bg-red-300'
+                        : 'bg-emerald-300'
+                  }`}
+                />
+                <span className="truncate">
+                  {realtimeBadge.message}
+                  {activeAgentOperationList.length > 1 ? ` +${activeAgentOperationList.length - 1}` : ''}
+                </span>
+              </div>
+            )}
             {/* Prompts library — always available, cross-project reference. */}
             <button
               onClick={() => setPromptsOpen(true)}

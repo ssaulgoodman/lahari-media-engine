@@ -4,6 +4,7 @@ import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
+import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
@@ -62,6 +63,7 @@ const paramStr = (value: string | string[] | undefined): string => Array.isArray
 const audited = (tool: string, handler: DirectorHandler) => async (req: Request, res: Response) => {
   const startedAt = new Date().toISOString();
   const start = Date.now();
+  let operationId: string | null = null;
   const args = {
     projectId: projectIdFromRequest(req),
     params: req.params,
@@ -92,14 +94,34 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
         label: 'Mutating Lahari Director API call',
       });
     }
+    const isReadOnly = tool.includes('.version')
+      || tool.includes('.list')
+      || tool.includes('.packet')
+      || tool.includes('.status')
+      || tool.includes('.actions')
+      || tool.includes('.notebook')
+      || tool.includes('.session')
+      || tool.includes('.preview');
+    if (!isReadOnly) {
+      operationId = await startAgentOperation({
+        projectId: projectIdFromRequest(req),
+        userId: req.userId,
+        source: 'director-api',
+        tool,
+        args: req.body,
+      });
+    }
     const data = await handler(req, res);
     if (isApplyErrorResult(data)) {
+      await finishAgentOperation(operationId, 'error', { error: data });
       recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, error: data.message || data.error, durationMs: Date.now() - start, startedAt });
       return fail(res, data);
     }
+    await finishAgentOperation(operationId, 'success', { result: data });
     recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, result: data, durationMs: Date.now() - start, startedAt });
     return ok(res, data);
   } catch (error) {
+    await finishAgentOperation(operationId, 'error', { error });
     recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, error, durationMs: Date.now() - start, startedAt });
     return fail(res, error);
   }

@@ -9,6 +9,7 @@ import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
+import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
@@ -193,7 +194,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     }, async (args: any) => {
       const startedAt = new Date().toISOString();
       const start = Date.now();
+      const annotations = toolAnnotations(name);
       recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool: name, args, startedAt });
+      let operationId: string | null = null;
       try {
         if (PAID_TOOLS.has(name)) {
           assertRateLimit({
@@ -209,7 +212,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
             windowMs: 60 * 60 * 1000,
             label: 'Lahari issue capture',
           });
-        } else if (!toolAnnotations(name).readOnlyHint) {
+        } else if (!annotations.readOnlyHint) {
           assertRateLimit({
             key: `mcp:mutating:${auth.tokenId}`,
             limit: MCP_LIMITS.mutatingPerHour,
@@ -217,10 +220,21 @@ const createHostedMcpServer = (auth: HostedAuth) => {
             label: 'Mutating Lahari MCP tool',
           });
         }
+        if (!annotations.readOnlyHint) {
+          operationId = await startAgentOperation({
+            projectId: args?.projectId,
+            userId: auth.userId,
+            source: 'mcp-remote',
+            tool: name,
+            args,
+          });
+        }
         const result = await handler(args || {});
+        await finishAgentOperation(operationId, 'success', { result });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, result, durationMs: Date.now() - start, startedAt });
         return textResult(result);
       } catch (error) {
+        await finishAgentOperation(operationId, 'error', { error });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, error, durationMs: Date.now() - start, startedAt });
         throw new Error(JSON.stringify(structuredToolError(error), null, 2));
       }
