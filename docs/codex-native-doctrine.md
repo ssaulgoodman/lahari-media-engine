@@ -129,24 +129,19 @@ Three tiers within tier-2 (project state) operations:
 
 ## 7. Distribution Arc
 
-**Today (solo operator):** single repo, bimodal `AGENTS.md`, both director and engine sessions in the same worktree. Works because the operator does both.
+**Engine sessions (this repo):** single bimodal `AGENTS.md`, director + engine sessions in the same worktree. Works because the operator (Saul) does both, and engineering work happens here. Director sessions in this repo use the *internal* MCP (in-process call to `codexStudio.ts`) for debug/dev access; the artist-facing path is remote MCP via deployed Lahari.
 
-**Soon (second operator):** extract director tools as `@lahari/director` npm package. Engine repo stays internal. Artist runs:
+**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent attaches via `attach_director_session`, calls `write_project_notebook(projectId)`, and the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + config + journal all written by the tool, not by an `npx setup` step.
 
-```bash
-npx @lahari/director init ~/lahari-studio
-cd ~/lahari-studio
-npx @lahari/director setup
-# open Codex Desktop on ~/lahari-studio
-```
+Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution, `@lahari/mcp-server` remains a published local fallback for harnesses where remote MCP misbehaves. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
 
-Package contains CLI, MCP server, skill, AGENTS.md template, setup commands. No engine code. Auth via browser-bridged JWT (no service key on artist's machine).
+**Plugin distribution gates** (all true as of 2026-05-15):
+1. ✅ Second-user setup is two terminal commands (`export TOKEN=...` + `codex mcp add ...` / `claude mcp add-json ...`) plus a one-time harness restart. `/connect` page issues the snippets.
+2. ✅ MCP surface stable; `X-Lahari-MCP-Version` header + `minimumMcpServerVersion` give us a compatibility lever for future evolution.
+3. ✅ First non-Saul operator has run the install + workspace materialization end-to-end (2026-05-15 first artist test).
+4. ✅ Artist's MCP path has zero engine dependencies at runtime — `/mcp` is HTTP-only, talks to Supabase via the artist's JWT, no in-process service-layer call required.
 
-**Plugin distribution gates** (all must be true before packaging):
-1. Second-user setup is one command.
-2. MCP surface stable, no breaking changes weekly.
-3. At least one non-Saul operator has run Blueprint → Studio → Render end-to-end.
-4. The director surface is extractable as a separate distribution without engine dependencies at runtime.
+**Future fork — the abstraction platform (`Mirage`):** R38 / `docs/abstraction-platform-plan.md`. Same engine code, separate Supabase + Railway, `studio_*` schema, SeedKind/Workflow/Preset decomposition for music video / anime / ads / reels. Single-brand multi-tenant SaaS. Develops on the `abstraction` branch in a separate worktree. Engine fixes flow forward (`codex-native-studio → abstraction`); Mirage-specific work stays on its branch.
 
 ---
 

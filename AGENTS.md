@@ -1,30 +1,39 @@
 # AGENTS.md
 
-Guidance for Codex when working in this repo. Keep this file aligned with `CLAUDE.md`, `docs/pipeline-anatomy.md`, and `server/prompts/catalog.ts` when pipeline behavior changes.
+Guidance for Codex when working in this repo. Keep this file aligned with `CLAUDE.md`, `docs/pipeline-anatomy.md`, `server/prompts/catalog.ts`, and the doctrine when pipeline behavior changes.
+
+**Architectural context (read first):**
+- `docs/codex-native-doctrine.md` — durable operating contract. Three editability tiers, MCP/CLI boundary, session-type protocol, distribution arc.
+- `docs/codex-native-review-ledger.md` — current R# status, "Current State" snapshot at top, pending workstreams.
 
 ## Operating Principle
 
-Supabase is canonical project truth. `.lahari/` files are local Codex desk copies for reading, diffing, drafting, snapshots, and long-session continuity. Do not treat hand-edited `.lahari/` markdown as production state unless a typed apply tool explicitly imports it.
+Supabase is canonical project truth. Local `.lahari/` (or `lahari/` in artist workspaces) files are desk copies for reading, drafting, diffing, snapshots, and long-session continuity. Hand-edited markdown is not production state unless an apply tool persists it.
 
-The Lahari web app is the visual studio. Codex Desktop is the director/operator surface. Use web studio deep links for visual approval moments instead of rebuilding visual review inside Codex.
+The Lahari web app is the visual studio. Codex Desktop / Claude Code is the director/operator surface. Use deep links to the web studio for visual approval moments instead of rebuilding visual review here.
 
 Sessions in this workspace are either:
 
-- **Director sessions** - operating Lahari for one song/project. These attach to a Lahari project on the first tool call, maintain durable memory under `.lahari/sessions/<projectId>/`, and mirror context under `.lahari/projects/<projectId>/`.
-- **Engine sessions** - improving Lahari itself. These edit repo code/docs and are not bound to one Lahari project unless the user explicitly switches into director work.
+- **Director sessions** — operating Lahari for one song/project. Attach to a Lahari project on the first tool call. In *this engine repo* the attach uses the internal MCP (in-process call to `codexStudio.ts`); in an *artist workspace* it uses remote MCP at `/mcp` via a `lahari_mcp_...` bearer token.
+- **Engine sessions** — improving Lahari itself (code, prompts, infra, docs, schema). These edit this repo. Not bound to a single project.
 
-For artist-facing director work, say "open" or "attach to" the song/project. `hydrate` is an internal implementation detail; do not make the artist learn that word.
+For artist-facing director work, say "open" or "attach to" the song/project. `hydrate`, `packet`, `workbench`, `checkpoint` are internal implementation details — banned in artist-facing text.
 
 ## Workspace Layout
 
-`/Users/ssaulgoodman/Code/lahari-media-engine/` is a parent folder, not the git repo root.
+`/Users/ssaulgoodman/Code/lahari-media-engine/` is a parent folder, not the git repo root. Multiple worktrees share one git history:
 
-Current worktrees:
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` — main checkout, usually for Claude Code / production work on `main`. Railway deploys from `main`.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` — Codex-native engine work on `codex-native-studio`. This is where most engineering happens.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-abstraction` — Mirage platform abstraction on the `abstraction` branch. New Supabase + Railway. See `docs/abstraction-platform-plan.md`. Engine fixes flow forward to this branch via merge; Mirage-specific work stays there.
 
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` - main Lahari app checkout, usually for Claude Code / production work on `main`.
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` - Codex-native assistant-director worktree on `codex-native-studio`.
+Always confirm `pwd` and `git status --short --branch` before editing. Don't switch a worktree's branch to another worktree's branch.
 
-Do not switch the main checkout to `codex-native-studio` for Codex-native work. Open a Codex session in this `lahari-codex-native` worktree instead. Always confirm with `pwd` and `git status --short --branch` before editing.
+## Where artists live
+
+Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine.
+
+Director-session work in *this engine repo* is a developer-only path — used for debugging, testing internal MCP changes, or operating against the canonical engine without going through Railway. Identical tool surface to remote, identical apply discipline.
 
 ## Build & Run
 
@@ -154,7 +163,9 @@ Generated local artifacts live under `.lahari/` and are intentionally ignored:
 - `.lahari/sessions/<projectId>/` - `state.json` and `journal.md`
 - `.lahari/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
 
-Durable artist/operator decisions are written to Supabase `lahari_director_events`. `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`. Realtime transport is separate: persisted row changes should use Supabase `postgres_changes`, ephemeral operation progress should use broadcast channels, and optional "Codex attached" affordances should use presence.
+Durable artist/operator decisions are written to Supabase `lahari_director_events`. `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`.
+
+**Realtime transport is shipped (R36):** `lahari_agent_operations` table tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across 13 project-relevant tables for cascade refresh.
 
 Permission boundary:
 
