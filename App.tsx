@@ -141,13 +141,21 @@ const ConnectPage: React.FC<{
     return (
       <div className="min-h-screen bg-[#141418] flex items-center justify-center px-6">
         <div className="w-full max-w-md text-center">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-4">Lahari Connect</p>
-          <h1 className="text-2xl font-display text-white mb-3">Connect Lahari to Codex</h1>
-          <p className="text-sm text-zinc-400 mb-8">Sign in to create an account-scoped MCP token. No service keys, no engine repo.</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-5">Lahari Connect</p>
+          <h1 className="text-2xl font-display text-white mb-3 tracking-tight">Connect Lahari to your agent</h1>
+          <p className="text-sm text-zinc-400 mb-10 leading-relaxed">
+            Sign in to mint an account-scoped MCP token for Codex Desktop or Claude Code. No service keys. No engine repo.
+          </p>
           <button
             onClick={() => signInWithGoogle(`${window.location.origin}/connect`)}
-            className="inline-flex items-center gap-3 px-5 py-3 bg-white text-black rounded-md font-medium text-sm hover:bg-zinc-100 transition-colors"
+            className="inline-flex items-center gap-3 px-6 py-3 bg-white text-black rounded-lg font-medium text-sm hover:bg-zinc-100 transition-colors"
           >
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
             Sign in with Google
           </button>
         </div>
@@ -164,97 +172,164 @@ const ConnectPage: React.FC<{
   const codexInstall = `${codexEnv}\n${codexAdd}`;
   const claudeInstall = `${claudeEnv}\n${claudeAdd}`;
 
+  const CodeBlock: React.FC<{ label: string; value: string; copyLabel?: string; trailing?: React.ReactNode }> = ({ label, value, copyLabel, trailing }) => (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400">{label}</p>
+        <button
+          onClick={() => copy(value)}
+          className="text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded hover:bg-white/[0.06] transition-colors"
+        >
+          {copyLabel || 'Copy'}
+        </button>
+      </div>
+      <pre className="surface-inset rounded-md p-3 overflow-x-auto text-xs font-mono text-zinc-200 leading-relaxed whitespace-pre">{value}</pre>
+      {trailing}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[#141418] text-white px-6 py-10">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-3xl mx-auto">
+        {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-10">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-500 mb-3">Lahari Connect</p>
-            <h1 className="text-2xl font-display text-white mb-2">Remote MCP access</h1>
-            <p className="text-sm text-zinc-400">Signed in as {user.email || user.id}</p>
-            <p className="text-xs text-zinc-500 mt-1">Tokens created here can only access projects owned by this Lahari account.</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-3">Lahari Connect</p>
+            <h1 className="text-2xl font-display text-white mb-2 tracking-tight">Remote MCP access</h1>
+            <p className="text-sm text-zinc-300">{user.email || user.id}</p>
+            <p className="text-xs text-zinc-400 mt-1">Tokens minted here only access projects owned by this account.</p>
           </div>
-          <button onClick={signOut} className="px-3 py-2 text-xs text-zinc-300 border border-white/10 rounded-md hover:bg-white/5">Use a different account</button>
+          <button
+            onClick={signOut}
+            className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors flex-shrink-0"
+          >
+            Switch account
+          </button>
         </div>
 
-        <div className="border border-white/10 rounded-md bg-zinc-950/40 p-5 mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        {/* Create token */}
+        <div className="surface rounded-xl p-6 mb-6">
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
-              <h2 className="text-lg font-display text-white">Create a token</h2>
-              <p className="text-sm text-zinc-400">The raw token is shown once. Store it in your harness env, not in project files.</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Step 1</p>
+              <h2 className="text-lg font-display text-white tracking-tight">Mint a token</h2>
+              <p className="text-sm text-zinc-400 mt-1">Shown once. Treat it like a password — anyone with this token can act as you in Lahari.</p>
             </div>
             <button
               onClick={createToken}
               disabled={loading}
-              className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50"
+              className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 transition-colors flex-shrink-0"
             >
-              {loading ? 'Working...' : 'Create 30-day token'}
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                  Working
+                </span>
+              ) : 'Create 30-day token'}
             </button>
           </div>
 
-          {error && <div className="mb-4 text-sm text-red-300 bg-red-950/30 border border-red-500/20 rounded-md px-3 py-2">{error}</div>}
-          {message && <div className="mb-4 text-sm text-emerald-300 bg-emerald-950/30 border border-emerald-500/20 rounded-md px-3 py-2">{message}</div>}
+          {error && (
+            <div className="mb-4 text-sm text-amber-200/90 surface-inset rounded-md px-3 py-2 border-l-2 border-amber-400/60">
+              {error}
+            </div>
+          )}
+          {message && (
+            <div className="mb-4 text-xs text-zinc-300 surface-inset rounded-md px-3 py-2">
+              {message}
+            </div>
+          )}
 
           {token ? (
             <div className="space-y-5">
-              <div>
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <p className="text-xs text-zinc-400">Token</p>
-                  <button onClick={() => copy(token)} className="text-xs text-zinc-300 hover:text-white">Copy</button>
-                </div>
-                <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{token}</pre>
-              </div>
+              <CodeBlock label="Token" value={token} />
 
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-xs text-zinc-400">Codex</p>
-                    <button onClick={() => copy(codexInstall)} className="text-xs text-zinc-300 hover:text-white">Copy Codex</button>
-                  </div>
-                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{codexInstall}</pre>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <p className="text-xs text-zinc-400">Claude Code</p>
-                    <button onClick={() => copy(claudeInstall)} className="text-xs text-zinc-300 hover:text-white">Copy Claude</button>
-                  </div>
-                  <pre className="text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeInstall}</pre>
-                  <p className="mt-2 text-[11px] text-zinc-500">Paste exactly as shown; the outer single quotes keep the token variable from expanding before Claude writes the config.</p>
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200">Fallback for older Claude Code versions</summary>
-                    <pre className="mt-2 text-xs bg-black/50 border border-white/10 rounded-md p-3 overflow-x-auto text-zinc-200">{claudeFallback}</pre>
-                  </details>
+              <div className="pt-2">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Step 2 — Install in your harness</p>
+                <p className="text-sm text-zinc-400 mb-4">Pick whichever you use. Restart the harness once after pasting.</p>
+
+                <div className="grid md:grid-cols-2 gap-5">
+                  <CodeBlock label="Codex Desktop" value={codexInstall} copyLabel="Copy Codex" />
+                  <CodeBlock
+                    label="Claude Code"
+                    value={claudeInstall}
+                    copyLabel="Copy Claude"
+                    trailing={
+                      <>
+                        <p className="mt-2 text-[11px] text-zinc-400 leading-relaxed">
+                          Single quotes keep <span className="font-mono text-zinc-300">${'{'}LAHARI_MCP_TOKEN{'}'}</span> unexpanded so Claude writes the env reference into <span className="font-mono text-zinc-300">.mcp.json</span>.
+                        </p>
+                        <details className="mt-3 group">
+                          <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors select-none">
+                            Fallback for older Claude Code
+                          </summary>
+                          <pre className="mt-2 surface-inset rounded-md p-3 overflow-x-auto text-xs font-mono text-zinc-200 leading-relaxed whitespace-pre">{claudeFallback}</pre>
+                        </details>
+                      </>
+                    }
+                  />
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">Create a token to reveal install commands.</p>
+            <p className="text-sm text-zinc-400">Mint a token to reveal install commands.</p>
           )}
         </div>
 
-        <div className="border border-white/10 rounded-md bg-zinc-950/30 p-5">
-          <h2 className="text-lg font-display text-white mb-4">Existing tokens</h2>
+        {/* Existing tokens */}
+        <div className="surface rounded-xl p-6">
+          <div className="flex items-baseline justify-between gap-3 mb-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mb-2">Active tokens</p>
+              <h2 className="text-lg font-display text-white tracking-tight">Your tokens</h2>
+            </div>
+            {tokens.length > 0 && (
+              <p className="text-xs text-zinc-400">{tokens.filter(t => t.active).length} active · {tokens.length} total</p>
+            )}
+          </div>
+
           {tokens.length === 0 && !loading ? (
-            <p className="text-sm text-zinc-500">No MCP tokens yet.</p>
+            <p className="text-sm text-zinc-400">No tokens minted yet.</p>
           ) : (
-            <div className="divide-y divide-white/10">
-              {tokens.map(token => (
-                <div key={token.id} className="py-3 flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-white">{token.label} <span className="text-zinc-500">{token.tokenPrefix}...</span></p>
-                    <p className="text-xs text-zinc-500">
-                      {token.active ? 'Active' : 'Inactive'} · expires {token.expiresAt ? new Date(token.expiresAt).toLocaleDateString() : 'never'}
-                      {token.lastUsedAt ? ` · used ${new Date(token.lastUsedAt).toLocaleDateString()}` : ''}
+            <div className="divide-y divide-white/[0.06]">
+              {tokens.map(t => (
+                <div key={t.id} className="py-3.5 flex items-center justify-between gap-4 group">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2.5 mb-1">
+                      <p className="text-sm text-white truncate">{t.label}</p>
+                      <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        t.active
+                          ? 'text-emerald-300/90 bg-emerald-500/10'
+                          : 'text-zinc-400 bg-white/[0.04]'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${t.active ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
+                        {t.active ? 'Active' : t.revokedAt ? 'Revoked' : 'Expired'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-400 font-mono truncate">{t.tokenPrefix}…</p>
+                    <p className="text-[11px] text-zinc-400 mt-1">
+                      {t.expiresAt ? `Expires ${new Date(t.expiresAt).toLocaleDateString()}` : 'No expiry'}
+                      {t.lastUsedAt ? ` · used ${new Date(t.lastUsedAt).toLocaleDateString()}` : ' · never used'}
                     </p>
                   </div>
-                  {!token.revokedAt && (
-                    <button onClick={() => revokeToken(token.id)} className="px-3 py-1.5 text-xs text-red-300 border border-red-500/20 rounded-md hover:bg-red-950/30">Revoke</button>
+                  {!t.revokedAt && (
+                    <button
+                      onClick={() => revokeToken(t.id)}
+                      className="px-3 py-1.5 text-xs text-zinc-400 hover:text-amber-200 surface-inset rounded-md hover:bg-amber-500/[0.06] transition-colors flex-shrink-0 opacity-60 group-hover:opacity-100"
+                    >
+                      Revoke
+                    </button>
                   )}
                 </div>
               ))}
             </div>
           )}
         </div>
+
+        {/* Footer hint */}
+        <p className="text-[11px] text-zinc-400 mt-6 text-center leading-relaxed">
+          After install, ask your agent: <span className="text-zinc-300">"List my Lahari projects"</span> or <span className="text-zinc-300">"Open &lt;song name&gt;"</span>.
+        </p>
       </div>
     </div>
   );
