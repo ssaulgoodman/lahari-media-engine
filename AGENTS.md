@@ -33,6 +33,7 @@ Artists do not use this repo. They mint a token at `https://lahari-media-engine-
 Current notebook contract:
 - `mirrors/` are overwritten from Supabase and should not be hand-edited.
 - `drafts/script.md` is the editable script working copy. Agents should make surgical file edits there, then call `apply_script_markdown`; the tool parses the draft, checks `scriptFingerprint` drift, validates references/durations, and applies through the atomic script RPC.
+- `drafts/storyboards/<scene>.md` files are editable storyboard prompt + Seedance cut-plan working copies. Agents should write storyboard text scene-by-scene, then call `apply_storyboard_scene_markdown`; use single-shot JSON apply only for surgical fixes or automation payloads.
 - `config/prompts/*.md` and `config/preferences.json` are project-level runtime overrides. Edit locally, then persist with `apply_project_prompt_override` or `apply_project_preferences`.
 - `journal.md` is local operator memory. Append concise decisions; do not treat it as canonical project state.
 
@@ -134,6 +135,7 @@ npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
 npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
 npm run lahari -- apply storyboard-prompts-bulk <projectId> <shots.json> [force]
+npm run lahari -- apply storyboard-scene-markdown <projectId> <scene.md> [force]
 npm run lahari -- apply concept <projectId> <concept.json> [baseHash]
 npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [baseHash]
 npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]

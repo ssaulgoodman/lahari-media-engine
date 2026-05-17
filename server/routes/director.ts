@@ -272,6 +272,12 @@ router.post('/apply/storyboard-prompts-bulk', audited('director.apply.storyboard
   { shots: req.body.shots, force: !!req.body.force },
 )));
 
+router.post('/apply/storyboard-scene-markdown', audited('director.apply.storyboard_scene_markdown', async (req) => studio.applyStoryboardSceneMarkdown(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.markdown,
+  { force: !!req.body.force },
+)));
+
 router.post('/apply/script', audited('director.apply.script', async (req) => studio.applyScript(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.script,

@@ -13,13 +13,13 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.2';
+const HOSTED_MCP_VERSION = '0.1.3';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
 
@@ -47,6 +47,7 @@ const shortText = z.string().max(2000);
 const mediumText = z.string().max(8000);
 const promptText = z.string().min(1).max(30000);
 const scriptMarkdownText = z.string().min(1).max(120000);
+const storyboardSceneMarkdownText = z.string().min(1).max(80000);
 const optionalPromptText = z.string().max(30000).optional();
 const maxArray = <T extends z.ZodTypeAny>(schema: T, max: number) => z.array(schema).max(max);
 
@@ -541,7 +542,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('apply_storyboard_prompts_bulk', {
     title: 'Apply storyboard prompts bulk',
-    description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots.',
+    description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. Prefer apply_storyboard_scene_markdown for artist-facing scene-by-scene writing.',
     inputSchema: {
       projectId,
       shots: maxArray(z.object({
@@ -553,6 +554,16 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, shots, force }) => studio.applyStoryboardPromptsBulk(await fullProjectForUser(projectId, auth.userId), { shots, force }));
+
+  registerTool('apply_storyboard_scene_markdown', {
+    title: 'Apply storyboard scene markdown',
+    description: 'Mutating. Parses an edited drafts/storyboards/<scene>.md file, validates per-shot hashes, and persists storyboard prompts plus Seedance cut plans scene-by-scene.',
+    inputSchema: {
+      projectId,
+      markdown: storyboardSceneMarkdownText,
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, markdown, force }) => studio.applyStoryboardSceneMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { force }));
 
   registerTool('apply_concept', {
     title: 'Apply concept',

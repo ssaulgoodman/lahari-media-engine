@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-17 — Notebook guidance synced after editable script drafts shipped.
+**Last touched:** 2026-05-17 — Scene-level storyboard prompt drafts added.
 
 ---
 
@@ -21,7 +21,7 @@ R17 + R28 + R29 are all shipped to production and validated by the first artist.
 - **R17** — Remote MCP at `/mcp` with bearer-token auth, `/connect` page for token minting + install snippets, `lahari_mcp_tokens` table with sha256-hashed storage, and a local `@lahari/mcp-server` fallback package implemented in-repo (publish pending if needed). **Validated by first artist install.**
 - **R28** — Six apply-only text tools: concept, script, shot_prompts, storyboard_prompt + bulk, video_prompt. Codex writes content via skill shards, apply tools validate + persist with drift checking. Migration applied.
 - **R29** — Project config + prompt overrides through phase 2. All 5 prompt kinds (concept, script, shot_prompts, storyboard, video) overridable per project. Migration applied.
-- **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: `mirrors/` read-only snapshots, `drafts/` editable working copies, `config/` project overrides, `journal.md` local memory. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
+- **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: `mirrors/` read-only snapshots, `drafts/` editable working copies, `config/` project overrides, `journal.md` local memory. `drafts/script.md` applies through `apply_script_markdown`; `drafts/storyboards/<scene>.md` applies through `apply_storyboard_scene_markdown`. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
 - **R36** — Realtime agent operation presence. `lahari_agent_operations` table, per-tool start/finish tracking, Supabase realtime subscription in web studio, "Codex is working" pill in header. Migration applied.
 - **Security hardening** — In-memory rate limiting (per user, per tool category), body size limits, Zod max sizes on payloads, audit redaction of prompt/script/concept content, `lahari_capture_issue` requires project ownership.
 - **Skills** — Six shards (lahari-director orchestrator + storyboard-prompt-craft / script-doctor / continuity-auditor / style-ref-critic / render-triage) bundled at `server/resources/skills/`, ship in deploy artifact, materialized into artist workspace by `write_project_notebook`.
@@ -508,7 +508,7 @@ The first MCP-path director test exposed the missing primitives around storyboar
 - `lock_storyboard` / `unlock_storyboard` — let Codex lock good boards after visual review and reopen them when needed.
 - `get_storyboard_status` — compact per-shot readiness/progress view: prompt status, board status, lock state, stale flags, video readiness.
 
-**Shipped:** `get_storyboard_status`, `write_storyboard_prompt`, `bulk_write_storyboard_prompts`, `generate_storyboard` alias, `bulk_generate_storyboards`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard` are exposed through MCP. CLI supports the same core apply commands for engine smoke/debugging. Bulk tools accept optional `shotIds`, skip locked shots, default to missing/error/stale work, and require explicit `force` for rewrites/regeneration.
+**Shipped:** `get_storyboard_status`, `write_storyboard_prompt`, `generate_storyboard` alias, `bulk_generate_storyboards`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard` are exposed through MCP. CLI supports the same core apply commands for engine smoke/debugging. The old `bulk_write_storyboard_prompts` backend-LLM wrapper is no longer a supported MCP director-session path; Studio keeps its civilian bulk button, while agents author scene drafts and apply them through `apply_storyboard_scene_markdown`.
 
 **Why it matters:** Storyboard prompting and board generation are the highest-tax v1 director workflows. Codex needs primitives that match the artist's natural loop: write prompt, generate board, inspect, refine image, lock, move to next shot or bulk-fill missing work.
 
@@ -599,14 +599,14 @@ R28 replaces backend LLM-wrapper tools with apply-only primitives. Codex writes 
 
 Implemented scope:
 - `apply_shot_prompts`
-- `apply_storyboard_prompt` / `apply_storyboard_prompts_bulk`
+- `apply_storyboard_prompt` / `apply_storyboard_prompts_bulk` / `apply_storyboard_scene_markdown`
 - `apply_script`
 - `apply_concept`
 - `apply_video_prompt`
 
 The tools live under `server/services/codexStudio/applies/` rather than growing the `codexStudio.ts` barrel. They are exposed through MCP + CLI, record per-shot/per-entity director events, append local journal entries, and rely on `baseHash` / `baseFingerprint` drift checks where applicable. `apply_script` is atomic-only through `lahari_apply_script`, so `migrations/2026-05-14_apply_script_rpc.sql` must be applied before using the script tool against real projects.
 
-R25 transitional `write_storyboard_prompt` and `bulk_write_storyboard_prompts` remain callable for compatibility but are now marked deprecated in MCP descriptions and log warning lines when called. Codex director sessions should prefer R28 apply-only tools.
+R25 transitional `write_storyboard_prompt` remains callable for one-shot compatibility but is deprecated. `bulk_write_storyboard_prompts` is disabled for MCP director sessions because parallel backend planner calls lose scene continuity. Codex director sessions should prefer scene-level markdown drafts and R28 apply-only tools.
 
 **Why it matters:** This is the seam that makes Lahari Codex-native instead of another app that calls an LLM behind Codex's back. Codex owns taste-heavy language work; Lahari tools own validation and persistence.
 
@@ -768,6 +768,8 @@ Status: **shipped + validated** · Raised: 2026-05-14 · Updated: 2026-05-15
 Solved the chicken-and-egg problem from R17: artist connects MCP, opens an empty folder, asks "open <song>" — and the workspace has to materialize itself. `write_project_notebook(projectId)` returns deterministic file payloads (`{ path, content, mode, writePolicy }`) that the agent writes via harness file tools. Layout: `lahari/projects/<id>/mirrors/` (read-only state mirrors), `drafts/` (editable working copies), `config/` (Tier-1 editable overrides + preferences + drift hashes), `journal.md` (local working memory), `AGENTS.md` (workspace instructions). Apply tools return `changedArtifacts` on every mutation so the agent refreshes only the affected mirrors; script apply additionally returns `notebookRefresh.recommended` because shot-topology replacement may leave stale per-shot files.
 
 Editable script draft extension: `drafts/script.md` is now the preferred script-refine surface. Agents edit it surgically with file tools, then call `apply_script_markdown`. The tool parses the strict markdown, validates `scriptFingerprint` drift, reference integrity, and shot/scene duration constraints, then persists through the same atomic script apply path as JSON `apply_script`.
+
+Scene-level storyboard draft extension: `drafts/storyboards/<scene>.md` is now the preferred storyboard prompt + Seedance cut-plan authoring surface. Agents write adjacent shots together, then call `apply_storyboard_scene_markdown`; the tool parses strict markdown, validates per-shot base hashes, skips locked shots, persists valid rows through the same apply path as JSON `apply_storyboard_prompt`, and refreshes affected mirrors/drafts. Studio's civilian bulk prompt writer remains available in the web app, but MCP director sessions should not use backend bulk prompt writers.
 
 Generated rather than distributed: AGENTS.md and skill shards are emitted by the tool, not bundled in an `npx setup` step. Engine updates ship via Railway deploy, instant for all artists.
 

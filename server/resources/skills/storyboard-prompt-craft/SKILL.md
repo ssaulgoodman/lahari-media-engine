@@ -19,6 +19,10 @@ You are writing a prompt that an image model will turn into a multi-panel storyb
 
 **Cut plan is separate from storyboard prompt.** The storyboard prompt is for the image model; the cut plan is text guidance for the video model when it animates from the board. Cut plan can be empty (Seedance will rely on board order alone). When you write cut plan, write per-panel beats: "Panel 1 — slow lean forward, breath visible. Panel 2 — sudden recognition, head lifts. Panel 3 — exhale, smile breaking through."
 
+**Write scene-by-scene by default.** The best storyboard prompts come from seeing the neighboring shots together. For normal production work, edit `drafts/storyboards/<scene>.md` and write every shot in that scene as one continuous visual phrase before calling `apply_storyboard_scene_markdown`. This lets you carry motifs, avoid repeated compositions, and make the cut plans feel like one sequence. Use one-shot apply only for surgical edits after a specific board or cut plan needs correction.
+
+**Do not use backend bulk prompt writers in director sessions.** Parallel planner calls write isolated shots and lose scene continuity. The web studio may keep that button for quick civilian fill, but Codex director work should author the scene draft itself and apply the markdown.
+
 ## What Makes a Good Storyboard Prompt
 
 **Concrete actions, not interior feelings.** "She lowers her body to the stone" is shootable. "Her surrender pours out of her" is interior — the model can't render it.

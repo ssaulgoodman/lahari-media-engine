@@ -62,7 +62,7 @@ import {
   writeStoryboardPromptForShot,
 } from './codexStudio/storyboardOps.js';
 export { applyShotPrompts } from './codexStudio/applies/shotPrompts.js';
-export { applyStoryboardPrompt, applyStoryboardPromptsBulk } from './codexStudio/applies/storyboardPrompt.js';
+export { applyStoryboardPrompt, applyStoryboardPromptsBulk, applyStoryboardSceneMarkdown } from './codexStudio/applies/storyboardPrompt.js';
 export { applyConcept } from './codexStudio/applies/concept.js';
 export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
 export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';

@@ -73,8 +73,10 @@ Load the right shard before writing:
 | `apply_concept` | this skill's concept taste checks |
 | `apply_script`, `apply_script_markdown` | `script-doctor` |
 | `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
-| `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk` | `storyboard-prompt-craft` |
+| `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_storyboard_scene_markdown` | `storyboard-prompt-craft` |
 | `apply_video_prompt` | `storyboard-prompt-craft` |
+
+For storyboard-mode projects, prefer scene drafts: edit `lahari/projects/<projectId>/drafts/storyboards/<scene>.md` so you can write adjacent shots as one continuous visual sequence, then persist with `apply_storyboard_scene_markdown`. Use `apply_storyboard_prompt` for one-shot surgical fixes and `apply_storyboard_prompts_bulk` only for automation/import payloads, not as the normal artist-facing writing ritual.
 
 When a read result includes `baseHashes`, pass the relevant hash into the apply tool. If an apply tool returns `error: validation_failed`, the tool's `field` and `message` tell you what to fix; revise the content and retry. Do not pass `force: true` to skip validation or drift checks unless you have explicitly told the artist what will be overwritten and received approval.
 

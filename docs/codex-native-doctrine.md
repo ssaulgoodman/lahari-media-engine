@@ -136,6 +136,7 @@ Three tiers within tier-2 (project state) operations:
 Notebook roles:
 - `mirrors/` are read-only Supabase snapshots. Refresh them from notebook output or `changedArtifacts`.
 - `drafts/` are editable working copies. In phase 1, `drafts/script.md` is the script surgery surface; apply with `apply_script_markdown`, which parses strict markdown, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
+- `drafts/storyboards/<scene>.md` files are scene-level storyboard prompt + Seedance cut-plan surfaces. Apply with `apply_storyboard_scene_markdown`; write adjacent shots together so continuity, motifs, and pacing are authored as one scene rather than as isolated prompt calls.
 - `config/` is the project override layer. Edit prompt/preference files locally, then persist with config apply tools.
 - `journal.md` is local working memory, not canonical project state.
 
