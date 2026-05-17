@@ -13,13 +13,13 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.0';
+const HOSTED_MCP_VERSION = '0.1.1';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: list_projects or attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
 
@@ -156,6 +156,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   const toolAnnotations = (name: string): ToolAnnotations => {
     const readOnlyPrefixes = [
       'list_',
+      'search_',
       'get_',
       'plan_',
       'preview_',
@@ -165,7 +166,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'write_project_sheets',
       'hydrate_project_workbench',
     ];
-    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session') {
+    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project') {
       return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     }
     if (name === 'add_director_note' || name === 'lahari_capture_issue') {
@@ -279,6 +280,33 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       })),
     };
   });
+
+  registerTool('list_queue', {
+    title: 'List Lahari music queue',
+    description: 'Read-only. Lists music-video queue items for the authenticated artist, including duration, queue status, linked/current project, and next action.',
+    inputSchema: {
+      status: z.string().optional().describe('Optional queue status filter, or "all".'),
+      query: z.string().min(1).max(120).optional().describe('Optional title/deity/language/note search.'),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+  }, async ({ status, query, limit }) => studio.listQueueForDirector(auth.userId, { status, query, limit }));
+
+  registerTool('search_catalog', {
+    title: 'Search Lahari catalog',
+    description: 'Read-only. Searches the artist-owned project list plus the music queue by title/transliteration/deity and returns normalized matches.',
+    inputSchema: {
+      query: z.string().min(1).max(120),
+      limit: z.number().int().min(1).max(50).optional(),
+    },
+  }, async ({ query, limit }) => studio.searchCatalogForDirector(auth.userId, query, { limit }));
+
+  registerTool('resolve_project', {
+    title: 'Resolve Lahari project or queue item',
+    description: 'Read-only. Friendly opener for artist phrases like "open Gakaarayaachyam"; resolves project IDs, project titles, and queue/song matches into the next legal action.',
+    inputSchema: {
+      query: z.string().min(1).max(120).describe('Project ID, project title, song title, transliteration, deity, or queue label.'),
+    },
+  }, async ({ query }) => studio.resolveProjectForDirector(auth.userId, query));
 
   registerTool('get_project_packet', {
     title: 'Get project packet',

@@ -72,6 +72,11 @@ import { buildProjectActionList, buildStoryboardPromptReview } from './codexStud
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectNotebook, type NotebookFile } from './codexStudio/notebook.js';
 export {
+  listQueueForDirector,
+  resolveProjectForDirector,
+  searchCatalogForDirector,
+} from './codexStudio/discovery.js';
+export {
   applyGenerateStoryboard,
   applyGenerateVideo,
   applyProjectPreferencesConfig,
