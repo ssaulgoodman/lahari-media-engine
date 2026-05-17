@@ -13,15 +13,15 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.3';
-const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
+const HOSTED_MCP_VERSION = '0.1.4';
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
 Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
-Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
+Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
 Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
 
@@ -50,6 +50,11 @@ const scriptMarkdownText = z.string().min(1).max(120000);
 const storyboardSceneMarkdownText = z.string().min(1).max(80000);
 const optionalPromptText = z.string().max(30000).optional();
 const maxArray = <T extends z.ZodTypeAny>(schema: T, max: number) => z.array(schema).max(max);
+const modelOverrideSchema = z.object({
+  storyboardProvider: idString.optional(),
+  videoModel: idString.optional(),
+}).optional();
+const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 
 const MCP_LIMITS = {
   requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
@@ -421,29 +426,30 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('plan_generate_storyboard', {
     title: 'Plan storyboard generation',
     description: 'Read-only. Reports prerequisites and cost before generating a storyboard board.',
-    inputSchema: { projectId, shotId },
-  }, async ({ projectId, shotId }) => studio.planGenerateStoryboard(await fullProjectForUser(projectId, auth.userId), shotId));
+    inputSchema: { projectId, shotId, modelOverride: modelOverrideSchema },
+  }, async ({ projectId, shotId, modelOverride }) => studio.planGenerateStoryboard(await fullProjectForUser(projectId, auth.userId), shotId, modelOverride || {}));
 
   registerTool('plan_generate_video', {
     title: 'Plan video generation',
     description: 'Read-only. Reports prerequisites and cost before generating a shot video.',
-    inputSchema: { projectId, shotId },
-  }, async ({ projectId, shotId }) => studio.planGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId));
+    inputSchema: { projectId, shotId, modelOverride: modelOverrideSchema },
+  }, async ({ projectId, shotId, modelOverride }) => studio.planGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, modelOverride || {}));
 
-  const generateStoryboard = async ({ projectId, shotId, artistNote }: any) => studio.applyGenerateStoryboard(
+  const generateStoryboard = async ({ projectId, shotId, artistNote, modelOverride }: any) => studio.applyGenerateStoryboard(
     await fullProjectForUser(projectId, auth.userId),
     shotId,
     artistNote,
+    modelOverride || {},
   );
   registerTool('apply_generate_storyboard', {
     title: 'Generate storyboard board',
     description: 'Mutating and paid. Generates a new storyboard board for one shot.',
-    inputSchema: { projectId, shotId, artistNote: shortText.optional() },
+    inputSchema: { projectId, shotId, artistNote: shortText.optional(), modelOverride: modelOverrideSchema },
   }, generateStoryboard);
   registerTool('generate_storyboard', {
     title: 'Generate storyboard board',
     description: 'Alias for apply_generate_storyboard.',
-    inputSchema: { projectId, shotId, artistNote: shortText.optional() },
+    inputSchema: { projectId, shotId, artistNote: shortText.optional(), modelOverride: modelOverrideSchema },
   }, generateStoryboard);
 
   registerTool('bulk_generate_storyboards', {
@@ -454,11 +460,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       shotIds: maxArray(idString, 100).optional(),
       force: z.boolean().optional(),
       artistNote: shortText.optional(),
+      modelOverride: modelOverrideSchema,
     },
-  }, async ({ projectId, shotIds, force, artistNote }) => studio.bulkGenerateStoryboards(await fullProjectForUser(projectId, auth.userId), {
+  }, async ({ projectId, shotIds, force, artistNote, modelOverride }) => studio.bulkGenerateStoryboards(await fullProjectForUser(projectId, auth.userId), {
     shotIds,
     force,
     artistNote,
+    modelOverride: modelOverride || {},
   }));
 
   registerTool('refine_storyboard_image', {
@@ -470,11 +478,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       feedback: mediumText.min(1),
       previousVersionId: idString.optional(),
       artistReferenceImagePath: idString.optional(),
+      modelOverride: modelOverrideSchema,
     },
-  }, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath }) => studio.refineStoryboardImage(
+  }, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath, modelOverride }) => studio.refineStoryboardImage(
     await fullProjectForUser(projectId, auth.userId),
     shotId,
-    { feedback, previousVersionId, artistReferenceImagePath },
+    { feedback, previousVersionId, artistReferenceImagePath, modelOverride: modelOverride || {} },
   ));
 
   registerTool('lock_storyboard', {
@@ -496,7 +505,6 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       projectId,
       preferences: z.object({
         textProvider: idString.optional(),
-        imageModel: idString.optional(),
         storyboardProvider: idString.optional(),
         videoModel: idString.optional(),
       }),
@@ -520,6 +528,19 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, shots, force }) => studio.applyShotPrompts(await fullProjectForUser(projectId, auth.userId), shots, { force }));
+
+  registerTool('apply_shot_workflow_modes', {
+    title: 'Apply shot workflow modes',
+    description: 'Mutating. Persists per-shot workflow mode overrides: auto, storyboard, or keyframe.',
+    inputSchema: {
+      projectId,
+      shots: maxArray(z.object({
+        shotId,
+        workflowMode: workflowModeSchema,
+        note: mediumText.optional(),
+      }), 100).min(1),
+    },
+  }, async ({ projectId, shots }) => studio.applyShotWorkflowModes(await fullProjectForUser(projectId, auth.userId), shots));
 
   registerTool('apply_storyboard_prompt', {
     title: 'Apply storyboard prompt',
@@ -581,6 +602,21 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, concept, baseHash, force }) => studio.applyConcept(await fullProjectForUser(projectId, auth.userId), concept, { baseHash, force }));
+
+  registerTool('apply_style_direction', {
+    title: 'Apply style direction',
+    description: 'Mutating. Persists Codex-written project style direction text without generating or locking a style image.',
+    inputSchema: {
+      projectId,
+      style: z.object({
+        styleDescription: promptText,
+        styleGenerationPrompt: optionalPromptText,
+        colorPalette: mediumText.optional(),
+      }),
+      baseHash: z.string().optional(),
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, style, baseHash, force }) => studio.applyStyleDirection(await fullProjectForUser(projectId, auth.userId), style, { baseHash, force }));
 
   registerTool('apply_video_prompt', {
     title: 'Apply video prompt',
@@ -644,8 +680,8 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('apply_generate_video', {
     title: 'Generate shot video',
     description: 'Mutating and paid. Generates a new video for one shot.',
-    inputSchema: { projectId, shotId, promptOverride: optionalPromptText },
-  }, async ({ projectId, shotId, promptOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride));
+    inputSchema: { projectId, shotId, promptOverride: optionalPromptText, modelOverride: modelOverrideSchema },
+  }, async ({ projectId, shotId, promptOverride, modelOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride, modelOverride || {}));
 
   registerTool('lahari_capture_issue', {
     title: 'Capture Lahari director issue',

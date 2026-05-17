@@ -25,7 +25,11 @@ const server = new McpServer({
   name: 'lahari-codex-studio',
   version: '0.1.0',
 });
-const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
+const modelOverrideSchema = z.object({
+  storyboardProvider: z.string().optional(),
+  videoModel: z.string().optional(),
+}).optional();
 
 const toolAnnotations = (name: string): ToolAnnotations => {
   const readOnlyPrefixes = [
@@ -363,11 +367,12 @@ registerAuditedTool('plan_generate_storyboard', {
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotId: z.string().min(1).describe('Shot ID within the project.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotId }) => {
+}, async ({ projectId, shotId, modelOverride }) => {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(studio.planGenerateStoryboard(project, shotId));
+  return textResult(studio.planGenerateStoryboard(project, shotId, modelOverride || {}));
 });
 
 registerAuditedTool('plan_generate_video', {
@@ -376,11 +381,12 @@ registerAuditedTool('plan_generate_video', {
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotId: z.string().min(1).describe('Shot ID within the project.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotId }) => {
+}, async ({ projectId, shotId, modelOverride }) => {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(studio.planGenerateVideo(project, shotId));
+  return textResult(studio.planGenerateVideo(project, shotId, modelOverride || {}));
 });
 
 registerAuditedTool('plan_apply_shot_prompt_preview', {
@@ -531,15 +537,16 @@ registerAuditedTool('apply_generate_storyboard', {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotId: z.string().min(1).describe('Shot ID within the project.'),
     artistNote: z.string().optional().describe('Optional refinement/render note to pass to storyboard generation.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotId, artistNote }) => {
+}, async ({ projectId, shotId, artistNote, modelOverride }) => {
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_generate_storyboard.');
 
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
+  return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote, modelOverride || {}));
 });
 
 registerAuditedTool('generate_storyboard', {
@@ -549,15 +556,16 @@ registerAuditedTool('generate_storyboard', {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotId: z.string().min(1).describe('Shot ID within the project.'),
     artistNote: z.string().optional().describe('Optional refinement/render note to pass to storyboard generation.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotId, artistNote }) => {
+}, async ({ projectId, shotId, artistNote, modelOverride }) => {
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for generate_storyboard.');
 
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote));
+  return textResult(await studio.applyGenerateStoryboard(project, shotId, artistNote, modelOverride || {}));
 });
 
 registerAuditedTool('bulk_generate_storyboards', {
@@ -568,15 +576,16 @@ registerAuditedTool('bulk_generate_storyboards', {
     shotIds: z.array(z.string().min(1)).optional().describe('Optional explicit shot subset. Defaults to all eligible shots.'),
     force: z.boolean().optional().describe('Regenerate selected unlocked shots even when a board already exists. Requires explicit approval.'),
     artistNote: z.string().optional().describe('Optional render note to pass to each storyboard generation.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotIds, force, artistNote }) => {
+}, async ({ projectId, shotIds, force, artistNote, modelOverride }) => {
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for bulk_generate_storyboards.');
 
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(await studio.bulkGenerateStoryboards(project, { shotIds, force, artistNote }));
+  return textResult(await studio.bulkGenerateStoryboards(project, { shotIds, force, artistNote, modelOverride: modelOverride || {} }));
 });
 
 registerAuditedTool('refine_storyboard_image', {
@@ -588,15 +597,16 @@ registerAuditedTool('refine_storyboard_image', {
     feedback: z.string().min(1).describe('Concrete visual edit feedback from the artist/director.'),
     previousVersionId: z.string().optional().describe('Optional storyboard version to edit. Defaults to active version.'),
     artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath }) => {
+}, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath, modelOverride }) => {
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for refine_storyboard_image.');
 
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(await studio.refineStoryboardImage(project, shotId, { feedback, previousVersionId, artistReferenceImagePath }));
+  return textResult(await studio.refineStoryboardImage(project, shotId, { feedback, previousVersionId, artistReferenceImagePath, modelOverride: modelOverride || {} }));
 });
 
 registerAuditedTool('lock_storyboard', {
@@ -641,7 +651,6 @@ registerAuditedTool('apply_project_preferences', {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     preferences: z.object({
       textProvider: z.string().optional(),
-      imageModel: z.string().optional(),
       storyboardProvider: z.string().optional(),
       videoModel: z.string().optional(),
     }).describe('Project preference object. Unknown or invalid provider keys are rejected/fallback-warned by the engine.'),
@@ -680,6 +689,27 @@ registerAuditedTool('apply_shot_prompts', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyShotPrompts(project, shots, { force }));
+});
+
+registerAuditedTool('apply_shot_workflow_modes', {
+  title: 'Apply shot workflow modes',
+  description: 'Mutating. Persists per-shot workflow mode overrides: auto, storyboard, or keyframe.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shots: z.array(z.object({
+      shotId: z.string().min(1),
+      workflowMode: z.enum(['auto', 'storyboard', 'keyframe']),
+      note: z.string().optional(),
+    })).min(1),
+  },
+}, async ({ projectId, shots }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_shot_workflow_modes.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyShotWorkflowModes(project, shots));
 });
 
 registerAuditedTool('apply_storyboard_prompt', {
@@ -770,6 +800,29 @@ registerAuditedTool('apply_concept', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyConcept(project, concept, { baseHash, force }));
+});
+
+registerAuditedTool('apply_style_direction', {
+  title: 'Apply style direction',
+  description: 'Mutating. Persists a Codex-written project style direction without generating or locking a style image.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    style: z.object({
+      styleDescription: z.string().min(1),
+      styleGenerationPrompt: z.string().optional(),
+      colorPalette: z.string().optional(),
+    }),
+    baseHash: z.string().optional().describe('Hash of current style direction when known.'),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, style, baseHash, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_style_direction.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyStyleDirection(project, style, { baseHash, force }));
 });
 
 registerAuditedTool('apply_video_prompt', {
@@ -892,15 +945,16 @@ registerAuditedTool('apply_generate_video', {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotId: z.string().min(1).describe('Shot ID within the project.'),
     promptOverride: z.string().optional().describe('Optional prompt override for keyframe-mode video generation.'),
+    modelOverride: modelOverrideSchema.describe('Optional per-call model override. Does not change project defaults.'),
   },
-}, async ({ projectId, shotId, promptOverride }) => {
+}, async ({ projectId, shotId, promptOverride, modelOverride }) => {
   const env = await prepareCodexWriteEnv();
   if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
   if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_generate_video.');
 
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
-  return textResult(await studio.applyGenerateVideo(project, shotId, promptOverride));
+  return textResult(await studio.applyGenerateVideo(project, shotId, promptOverride, modelOverride || {}));
 });
 
 registerAuditedTool('lahari_capture_issue', {

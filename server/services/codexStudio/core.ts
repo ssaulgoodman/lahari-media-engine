@@ -56,6 +56,12 @@ export const videoPromptHash = (shot: Pick<ProjectShot, 'motionPrompt'>): string
 
 export const conceptHash = (concept: unknown): string => hashJson(concept || null);
 
+export const styleDirectionHash = (project: Pick<Project, 'styleDescription' | 'styleGenerationPrompt' | 'colorPalette'>): string => hashJson({
+  styleDescription: project.styleDescription || '',
+  styleGenerationPrompt: project.styleGenerationPrompt || '',
+  colorPalette: project.colorPalette || '',
+});
+
 export const buildScriptDraft = (project: Project) => ({
   cast: project.cast.map((member) => ({ id: member.id, name: member.name, description: member.description || '' })),
   environments: project.environments.map((environment) => ({ id: environment.id, name: environment.name, description: environment.description || '' })),
@@ -281,6 +287,9 @@ export const missingReferenceNames = (project: Project) => {
 };
 
 export const usesStoryboardWorkflow = (project: Project): boolean => {
+  if (project.scenes.some((scene) => scene.shots.some((shot) => shot.workflowMode === 'storyboard'))) {
+    return true;
+  }
   return project.videoModel?.startsWith('seedance')
     || project.scenes.some((scene) => scene.shots.some((shot) => (
       !!shot.storyboardPrompt
@@ -289,6 +298,16 @@ export const usesStoryboardWorkflow = (project: Project): boolean => {
       || shot.storyboardPromptStatus === 'loading'
       || shot.storyboardStatus === 'loading'
     )));
+};
+
+export const shotWorkflowMode = (project: Project, shot: ProjectShot): 'storyboard' | 'keyframe' => {
+  if (shot.workflowMode === 'storyboard') return 'storyboard';
+  if (shot.workflowMode === 'keyframe') return 'keyframe';
+  if (project.videoModel?.startsWith('seedance')) return 'storyboard';
+  if (shot.storyboardPrompt || shot.storyboardUrl || shot.storyboardLocked || shot.storyboardPromptStatus === 'loading' || shot.storyboardStatus === 'loading') {
+    return 'storyboard';
+  }
+  return 'keyframe';
 };
 
 export const recommendedActions = (project: Project): string[] => {

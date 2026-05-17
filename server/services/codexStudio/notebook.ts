@@ -5,6 +5,7 @@ import {
   compactText,
   md,
   scriptContentHash,
+  styleDirectionHash,
   shotPromptHash,
   shotLabel,
   storyboardPromptHash,
@@ -35,7 +36,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-17.storyboard-scene-drafts-v1';
+const NOTEBOOK_VERSION = '2026-05-17.agency-pass-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -252,6 +253,7 @@ const buildShotPrompts = (project: Project): string => {
   const body = project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => `## ${shotLabel(sceneIndex, shotIndex)}: ${compactText(shot.direction, 120) || 'Shot'}
 
 - Shot ID: ${shot.id}
+- Workflow mode: ${shot.workflowMode || 'auto'}
 - Shot prompt base hash: ${shotPromptHash(shot)}
 - Storyboard base hash: ${storyboardPromptHash(shot)}
 - Duration: ${shot.duration}s
@@ -335,6 +337,7 @@ const buildHashes = async (project: Project) => {
   return {
     generatedAt: projectUpdatedAt(project),
     script: { hash: scriptContentHash(project) },
+    style: { hash: styleDirectionHash(project) },
     prompts: {
       ...Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
         kind,

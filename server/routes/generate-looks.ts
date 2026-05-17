@@ -16,6 +16,7 @@ import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { getProjectPromptOverride } from '../services/projectConfig.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -86,6 +87,11 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
     }
   }
+  const characterLooksRecipe = await getProjectPromptOverride(project.id, 'character_looks');
+  const withCharacterLooksRecipe = (prompt: string) => {
+    if (!characterLooksRecipe || prompt.includes('Project character-look recipe:')) return prompt;
+    return `${prompt}\n\nProject character-look recipe:\n${characterLooksRecipe}`;
+  };
 
   // If feedback provided and we have a generation prompt, ask Claude to rewrite
   // the prompt (not just append). This is the "refine" path.
@@ -107,7 +113,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       const userRefMime = userRefImagePath ? mimeFromExt(userRefImagePath) : undefined;
 
       const rewritten = await refineFramePrompt({
-        currentPrompt: genPrompt,
+        currentPrompt: withCharacterLooksRecipe(genPrompt),
         feedback: `[CHARACTER LOOK for ${member.name}] ${feedback}`,
         failedImageBase64: refBase64,
         failedImageMime: refMime,
@@ -126,7 +132,8 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   // Save the (possibly rewritten) prompt
   await updateRows('cast_members', { id: castMemberId }, { generation_prompt: genPrompt, prompts_stale: false });
 
-  const xrayPrompt = `Generate 3 looks for "${member.name}" | Prompt: ${genPrompt.substring(0, 150)}...`;
+  const renderPrompt = withCharacterLooksRecipe(genPrompt);
+  const xrayPrompt = `Generate 3 looks for "${member.name}" | Prompt: ${renderPrompt.substring(0, 150)}...`;
 
   try {
     const imageService = getImageService(project.image_model);
@@ -144,7 +151,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       undefined, // feedback already baked into genPrompt by Claude
       project.aspect_ratio || '16:9',
       userRefImagePath,
-      genPrompt,
+      renderPrompt,
       getImageGenerationModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
@@ -382,6 +389,11 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       await updateRows('environments', { id: env.id }, { prompts_stale: 0 });
     }
   }
+  const environmentLooksRecipe = await getProjectPromptOverride(project.id, 'environment_looks');
+  const withEnvironmentLooksRecipe = (prompt: string) => {
+    if (!environmentLooksRecipe || prompt.includes('Project environment-look recipe:')) return prompt;
+    return `${prompt}\n\nProject environment-look recipe:\n${environmentLooksRecipe}`;
+  };
 
   const userNote = typeof note === 'string' && note.trim() ? note.trim() : undefined;
 
@@ -403,7 +415,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       const userEnvRefMime = userRefImagePath ? mimeFromExt(userRefImagePath) : undefined;
 
       const rewritten = await refineFramePrompt({
-        currentPrompt: genPrompt,
+        currentPrompt: withEnvironmentLooksRecipe(genPrompt),
         feedback: `[ENVIRONMENT LOOK for ${env.name}] ${userNote}`,
         failedImageBase64: refBase64,
         failedImageMime: refMime,
@@ -424,6 +436,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
 
   try {
     const imageService = getImageService(project.image_model);
+    const renderPrompt = withEnvironmentLooksRecipe(genPrompt);
     console.log(`[${project.id}] Generating environment looks for ${env.name} via ${getImageGenerationModelName(project.image_model)}${userRefImagePath ? ' (with user ref)' : ''}...`);
     const t0 = Date.now();
 
@@ -433,7 +446,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       project.aspect_ratio || '16:9',
       userRefImagePath,
       undefined, // feedback already baked into genPrompt by Claude
-      genPrompt,
+      renderPrompt,
       getImageGenerationModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
