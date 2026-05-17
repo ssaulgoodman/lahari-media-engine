@@ -15,11 +15,12 @@ import {
 } from './core.js';
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
+import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
 
 export type NotebookFile = {
   path: string;
   content: string;
-  mode: 'mirror' | 'config' | 'journal' | 'instructions' | 'skill';
+  mode: 'mirror' | 'draft' | 'config' | 'journal' | 'instructions' | 'skill';
   writePolicy: 'overwrite' | 'create_if_missing' | 'review_before_overwrite';
   description: string;
 };
@@ -33,7 +34,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-17.discovery-v1';
+const NOTEBOOK_VERSION = '2026-05-17.editable-script-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -51,6 +52,8 @@ Supabase is canonical. This is an artist notebook, not the Lahari source checkou
 If the MCP server returns a newer notebookVersion than the one shown here or in lahari/projects/${project.id}/notebook.json, refresh by calling write_project_notebook and writing the returned files before continuing.
 
 Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
+
+Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
@@ -364,6 +367,7 @@ export const buildNotebookMirrorArtifacts = (
     audioAnalysis?: boolean;
     concept?: boolean;
     script?: boolean;
+    scriptDraft?: boolean;
     style?: boolean;
     cast?: boolean;
     environments?: boolean;
@@ -407,6 +411,15 @@ export const buildNotebookMirrorArtifacts = (
       writePolicy: 'overwrite',
       description: 'Script mirror with scenes and shot beats.',
       content: buildScript(project),
+    });
+  }
+  if (opts.scriptDraft) {
+    files.push({
+      path: `${baseDir}/drafts/script.md`,
+      mode: 'draft',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
+      content: buildScriptMarkdownDraft(project),
     });
   }
   if (opts.style) {
@@ -542,6 +555,13 @@ export const buildProjectNotebook = async (project: Project) => {
       content: buildScript(project),
     },
     {
+      path: `${baseDir}/drafts/script.md`,
+      mode: 'draft',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
+      content: buildScriptMarkdownDraft(project),
+    },
+    {
       path: `${baseDir}/mirrors/style.md`,
       mode: 'mirror',
       writePolicy: 'overwrite',
@@ -626,6 +646,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting config/prompts or preferences, check whether the file has unsaved local edits; config files are editable project overrides. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };
