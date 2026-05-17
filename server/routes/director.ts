@@ -86,7 +86,7 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
         windowMs: 60 * 60 * 1000,
         label: 'Lahari issue capture',
       });
-    } else if (!tool.includes('.version') && !tool.includes('.list') && !tool.includes('.packet') && !tool.includes('.status') && !tool.includes('.actions') && !tool.includes('.notebook') && !tool.includes('.session') && !tool.includes('.preview')) {
+    } else if (!tool.includes('.version') && !tool.includes('.list') && !tool.includes('.search') && !tool.includes('.resolve') && !tool.includes('.packet') && !tool.includes('.status') && !tool.includes('.actions') && !tool.includes('.notebook') && !tool.includes('.session') && !tool.includes('.preview')) {
       assertRateLimit({
         key: `director-api:mutating:${req.userId || req.ip}`,
         limit: DIRECTOR_LIMITS.mutatingPerHour,
@@ -96,6 +96,8 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
     }
     const isReadOnly = tool.includes('.version')
       || tool.includes('.list')
+      || tool.includes('.search')
+      || tool.includes('.resolve')
       || tool.includes('.packet')
       || tool.includes('.status')
       || tool.includes('.actions')
@@ -215,6 +217,23 @@ router.get('/projects', audited('director.projects.list', async (req) => {
   };
 }));
 
+router.get('/queue', audited('director.queue.list', async (req) => studio.listQueueForDirector(req.userId || '', {
+  status: typeof req.query.status === 'string' ? req.query.status : undefined,
+  query: typeof req.query.query === 'string' ? req.query.query : undefined,
+  limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
+})));
+
+router.get('/catalog/search', audited('director.catalog.search', async (req) => studio.searchCatalogForDirector(
+  req.userId || '',
+  String(req.query.query || ''),
+  { limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined },
+)));
+
+router.get('/resolve', audited('director.project.resolve', async (req) => studio.resolveProjectForDirector(
+  req.userId || '',
+  String(req.query.query || ''),
+)));
+
 router.post('/session/attach', audited('director.session.attach', async (req) => remoteSessionState(req.body.projectId, req.userId, {
   sinceSeq: typeof req.body.sinceSeq === 'number' ? req.body.sinceSeq : null,
   note: req.body.note || null,
@@ -256,6 +275,12 @@ router.post('/apply/storyboard-prompts-bulk', audited('director.apply.storyboard
 router.post('/apply/script', audited('director.apply.script', async (req) => studio.applyScript(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.script,
+  { baseFingerprint: req.body.baseFingerprint, force: !!req.body.force },
+)));
+
+router.post('/apply/script-markdown', audited('director.apply.script_markdown', async (req) => studio.applyScriptMarkdown(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.markdown,
   { baseFingerprint: req.body.baseFingerprint, force: !!req.body.force },
 )));
 

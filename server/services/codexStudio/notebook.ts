@@ -15,11 +15,12 @@ import {
 } from './core.js';
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
+import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
 
 export type NotebookFile = {
   path: string;
   content: string;
-  mode: 'mirror' | 'config' | 'journal' | 'instructions' | 'skill';
+  mode: 'mirror' | 'draft' | 'config' | 'journal' | 'instructions' | 'skill';
   writePolicy: 'overwrite' | 'create_if_missing' | 'review_before_overwrite';
   description: string;
 };
@@ -33,6 +34,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
+const NOTEBOOK_VERSION = '2026-05-17.editable-script-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -43,9 +45,15 @@ const buildWorkspaceInstructions = (project: Project): string => `# Lahari Works
 
 This folder is the local notebook for Lahari project "${project.title}" (${project.id}).
 
+Notebook version: ${NOTEBOOK_VERSION}
+
 Supabase is canonical. This is an artist notebook, not the Lahari source checkout. Use Lahari MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Lahari instead of substituting shell commands.
 
+If the MCP server returns a newer notebookVersion than the one shown here or in lahari/projects/${project.id}/notebook.json, refresh by calling write_project_notebook and writing the returned files before continuing.
+
 Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
+
+Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
@@ -54,11 +62,12 @@ Project-local Lahari skills live under .agents/skills/ for Codex and .claude/ski
 Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
 
 Default ritual:
-1. attach_director_session
-2. write_project_notebook
-3. read relevant mirrors before proposing changes
-4. apply approved changes through typed MCP tools
-5. refresh affected notebook files
+1. resolve_project when the artist names a song or project; use list_queue/search_catalog when browsing availability
+2. attach_director_session once you have a projectId
+3. write_project_notebook
+4. read relevant mirrors before proposing changes
+5. apply approved changes through typed MCP tools
+6. refresh affected notebook files
 `;
 
 const readSkillBody = (skillName: string): string => {
@@ -334,6 +343,23 @@ const buildHashes = async (project: Project) => {
   };
 };
 
+const buildNotebookMeta = (project: Project, actions: ReturnType<typeof buildProjectActionList>) => ({
+  notebookVersion: NOTEBOOK_VERSION,
+  generatedAt: new Date().toISOString(),
+  project: {
+    id: project.id,
+    title: project.title,
+    status: project.status,
+    updatedAt: projectUpdatedAt(project),
+    webUrl: webStudioUrl(project.id, { step: 'studio' }),
+  },
+  discovery: {
+    openerTool: 'resolve_project',
+    browseTools: ['list_queue', 'search_catalog'],
+  },
+  diagnosis: actions.diagnosis,
+});
+
 export const buildNotebookMirrorArtifacts = (
   project: Project,
   opts: {
@@ -341,6 +367,7 @@ export const buildNotebookMirrorArtifacts = (
     audioAnalysis?: boolean;
     concept?: boolean;
     script?: boolean;
+    scriptDraft?: boolean;
     style?: boolean;
     cast?: boolean;
     environments?: boolean;
@@ -384,6 +411,15 @@ export const buildNotebookMirrorArtifacts = (
       writePolicy: 'overwrite',
       description: 'Script mirror with scenes and shot beats.',
       content: buildScript(project),
+    });
+  }
+  if (opts.scriptDraft) {
+    files.push({
+      path: `${baseDir}/drafts/script.md`,
+      mode: 'draft',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
+      content: buildScriptMarkdownDraft(project),
     });
   }
   if (opts.style) {
@@ -519,6 +555,13 @@ export const buildProjectNotebook = async (project: Project) => {
       content: buildScript(project),
     },
     {
+      path: `${baseDir}/drafts/script.md`,
+      mode: 'draft',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
+      content: buildScriptMarkdownDraft(project),
+    },
+    {
       path: `${baseDir}/mirrors/style.md`,
       mode: 'mirror',
       writePolicy: 'overwrite',
@@ -569,6 +612,13 @@ export const buildProjectNotebook = async (project: Project) => {
       content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
     },
     {
+      path: `${baseDir}/notebook.json`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Machine-readable notebook metadata, including notebookVersion for stale-workspace checks.',
+      content: `${JSON.stringify(buildNotebookMeta(project, actions), null, 2)}\n`,
+    },
+    {
       path: `${baseDir}/journal.md`,
       mode: 'journal',
       writePolicy: 'create_if_missing',
@@ -587,6 +637,7 @@ Opened project and wrote the initial local notebook.
 
   return {
     kind: 'lahari.project.notebook',
+    notebookVersion: NOTEBOOK_VERSION,
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -595,6 +646,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting config/prompts or preferences, check whether the file has unsaved local edits; config files are editable project overrides. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

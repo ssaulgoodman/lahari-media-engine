@@ -65,12 +65,17 @@ export { applyShotPrompts } from './codexStudio/applies/shotPrompts.js';
 export { applyStoryboardPrompt, applyStoryboardPromptsBulk } from './codexStudio/applies/storyboardPrompt.js';
 export { applyConcept } from './codexStudio/applies/concept.js';
 export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
-export { applyScript } from './codexStudio/applies/script.js';
+export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 import { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectNotebook, type NotebookFile } from './codexStudio/notebook.js';
+export {
+  listQueueForDirector,
+  resolveProjectForDirector,
+  searchCatalogForDirector,
+} from './codexStudio/discovery.js';
 export {
   applyGenerateStoryboard,
   applyGenerateVideo,

@@ -6,31 +6,44 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-15 — R29 phase 2 expanded project prompt override kinds.
+**Last touched:** 2026-05-15 — Cleanup pass: R17/R28/R29 marked shipped + validated; R35–R38 filed; abstraction platform branched.
 
 ---
 
 ## Current State (snapshot for fast orient — read this first)
 
-**Where we are (as of 2026-05-15):**
+**Architecture status (as of 2026-05-15):**
 
-- Director-session-on-full-codebase: **VALIDATED end-to-end** via two test sessions on fork `13c259ce`. MCP-first discipline holds, agency layer (R29) actively used, skill-driven taste applied, full audit + journal coverage.
-- Text-native flow (R28): **SHIPPED first pass** — six apply-only tools for shot/storyboard/script/concept/video prompts. Codex writes content using skill shards; apply tools validate + persist. No backend LLM round-trip.
-- Project config layer (R29): **SHIPPED through phase 2** — preferences + concept/script/shot_prompts/storyboard/video prompt overrides. Phase-2 migration still needs to be applied to Supabase.
-- Skill fragmentation (R8): **SHIPPED** — five taste shards (storyboard-prompt-craft, script-doctor, continuity-auditor, style-ref-critic, render-triage) loaded on demand by lahari-director orchestrator.
-- Stabilization pass: **SHIPPED** — F1 (session rename language), F2 (song-class bottleneck demoted), F3 (capture-issue trigger), F4 (re-attach dedup), Hydrated→Updated, action ranking.
+R17 + R28 + R29 are all shipped to production and validated by the first artist. The artist-facing distribution is **real** — remote MCP is live, artists mint tokens at `/connect`, install snippets work on Codex Desktop and Claude Code, `write_project_notebook` materializes per-project workspaces, realtime presence shows agent activity in the web studio. This is the moment R17 was building toward, and it's here.
 
-**Pending operational steps:**
+**Shipped and live in production:**
 
-1. Apply `migrations/2026-05-15_expand_project_prompt_override_kinds.sql` before using R29 phase-2 prompt override kinds in production.
+- **R17** — Remote MCP at `/mcp` with bearer-token auth, `/connect` page for token minting + install snippets, `lahari_mcp_tokens` table with sha256-hashed storage, and a local `@lahari/mcp-server` fallback package implemented in-repo (publish pending if needed). **Validated by first artist install.**
+- **R28** — Six apply-only text tools: concept, script, shot_prompts, storyboard_prompt + bulk, video_prompt. Codex writes content via skill shards, apply tools validate + persist with drift checking. Migration applied.
+- **R29** — Project config + prompt overrides through phase 2. All 5 prompt kinds (concept, script, shot_prompts, storyboard, video) overridable per project. Migration applied.
+- **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: mirrors/, config/, journal.md. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
+- **R36** — Realtime agent operation presence. `lahari_agent_operations` table, per-tool start/finish tracking, Supabase realtime subscription in web studio, "Codex is working" pill in header. Migration applied.
+- **Security hardening** — In-memory rate limiting (per user, per tool category), body size limits, Zod max sizes on payloads, audit redaction of prompt/script/concept content, `lahari_capture_issue` requires project ownership.
+- **Skills** — Six shards (lahari-director orchestrator + storyboard-prompt-craft / script-doctor / continuity-auditor / style-ref-critic / render-triage) bundled at `server/resources/skills/`, ship in deploy artifact, materialized into artist workspace by `write_project_notebook`.
+- **Stabilization F1–F4** — Session rename language softened; song-classification bottleneck demoted; friction-capture trigger imperative; re-attach journal dedup.
 
-**Next workstream (the big one):**
+**Pending operational:**
 
-**R17 — Distribution for non-codebase artists.** Direction updated: hosted remote MCP is now primary, `@lahari/mcp-server` remains fallback. Artist signs in to Lahari, receives an account-scoped `lahari_mcp_...` token, and configures Codex/Claude against `/mcp`; no engine repo, no service key, no local subprocess on the happy path.
+None. All migrations applied. All deploys live.
 
-**After R17 ships:** Saul fresh-installs Lahari on a clean non-codebase workspace and tests the artist UX. Friction items from that test then feed the next stabilization → R32/R33 (per-call model override, model-bias correction) → R29 phase 2 → polish items.
+**Next workstreams:**
 
-**Polish items deferred:** see "Polish Items" section near the bottom of this ledger. None block testing or R17 implementation.
+1. **Abstraction platform** (new branch + worktree `lahari-abstraction`). SeedKind / Workflow / Preset decomposition. New Supabase + Railway for `studio_*` schema. Music video + anime as v1 proof. See `docs/abstraction-platform-plan.md`. Brand: **Mirage**, multi-tenant SaaS, single brand for now.
+2. **R37** — Per-shot/scene presence indicators on ShotCard (backend supports it; UI hasn't surfaced it yet). Half day. Codex.
+3. **R32 / R33 / R34** — Per-call model override, model-bias correction, apply-only harness-native media. Filed but not built. Post-abstraction or post-first-artist-feedback.
+4. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
+
+**Engineering watch items (not yet ledger entries):**
+
+- `structuredToolError` message-substring matching in director.ts / mcp.ts / mcp-tokens.ts (brittle, works today)
+- RLS policies on `lahari_mcp_tokens` (currently service-role-only, fine)
+- Rate limiting is in-memory (single-instance only; replace with Cloudflare/Redis when scaling)
+- DRY duplication between `/api/director/*` and `/mcp` tool registries (~400 lines mirrored)
 
 ---
 
@@ -303,7 +316,7 @@ Implementation sketch:
 
 ### R17 — Distribution architecture for non-engine operators
 
-Status: **implementation started — remote MCP primary** · Raised: 2026-05-13 · Updated: 2026-05-14
+Status: **shipped + validated** · Raised: 2026-05-13 · Updated: 2026-05-15
 
 Engine + director live in one repo today because Saul is the sole operator. When an artist joins — someone who shouldn't see or touch engine code — they can't be handed this repo (overwhelming, destructive ops accessible, exposes engine internals).
 
@@ -578,7 +591,7 @@ Later import primitive: `import_canvas_notes`
 
 ### R28 — Apply-only text tools replace backend LLM wrappers
 
-Status: **implemented first pass, pending review/migration apply** · Raised: 2026-05-13 · Updated: 2026-05-14
+Status: **shipped + validated, migration applied** · Raised: 2026-05-13 · Updated: 2026-05-15
 
 R25 shipped two useful but transitional tools: `write_storyboard_prompt` and `bulk_write_storyboard_prompts`. They wrap backend LLM calls, which violates doctrine §4. Keep them for the live test loop, but do not extend that pattern.
 
@@ -601,7 +614,7 @@ R25 transitional `write_storyboard_prompt` and `bulk_write_storyboard_prompts` r
 
 ### R29 — Project config and prompt override design
 
-Status: **phase 2 implemented, migration pending apply** · Raised: 2026-05-13
+Status: **phase 2 shipped, migration applied** · Raised: 2026-05-13 · Updated: 2026-05-15
 
 R29 is the editable project-config umbrella for R22. It now covers per-project preferences and project-level prompt recipes for concept, script, shot-prompts, storyboard, and video. Later phases can add glossary, taste notes, decisions, and richer scene/shot inheritance once the core path proves itself.
 
@@ -748,6 +761,52 @@ Things I might be wrong about. Worth revisiting as we learn.
 
 ---
 
+### R35 — `write_project_notebook` tool and notebook refresh artifacts
+
+Status: **shipped + validated** · Raised: 2026-05-14 · Updated: 2026-05-15
+
+Solved the chicken-and-egg problem from R17: artist connects MCP, opens an empty folder, asks "open <song>" — and the workspace has to materialize itself. `write_project_notebook(projectId)` returns deterministic file payloads (`{ path, content, mode, writePolicy }`) that the agent writes via harness file tools. Layout: `lahari/projects/<id>/mirrors/` (read-only state mirrors), `config/` (Tier-1 editable overrides + preferences + drift hashes), `journal.md` (local working memory), `AGENTS.md` (workspace instructions). Apply tools return `changedArtifacts` on every mutation so the agent refreshes only the affected mirrors; script apply additionally returns `notebookRefresh.recommended` because shot-topology replacement may leave stale per-shot files.
+
+Generated rather than distributed: AGENTS.md and skill shards are emitted by the tool, not bundled in an `npx setup` step. Engine updates ship via Railway deploy, instant for all artists.
+
+Skills shipped at `server/resources/skills/` (deploy-safe bundle), with `.agents/skills/` as local-dev fallback. Materialized into `<workspace>/.agents/skills/` per project.
+
+**Verified.** First artist successfully ran attach → notebook → mirrors readable → apply → mirror refresh end-to-end.
+
+### R36 — Realtime agent operation presence
+
+Status: **shipped + validated** · Raised: 2026-05-15 · Updated: 2026-05-15
+
+Realizes doctrine §6's promise: "operation progress should use broadcast channels." New `lahari_agent_operations` table tracks every non-readonly tool call with `status: running | success | error`, `scope_type: project | scene | shot`, `scope_id`, label, compact result payload. Wired into both `/api/director/*` and `/mcp` `audited` wrappers. RLS-policy-enforced (only project owner reads their ops via `auth.uid()`).
+
+Web studio subscribes via Supabase realtime channel filtered per project; renders a quiet `surface-inset` pill in the header with a pulsing colored dot (amber=working, red=error, emerald=success). 800ms debounce coalesces cascade refreshes.
+
+Migration `2026-05-15_add_agent_operations_realtime.sql` adds the table + RLS + publication entries for 13 tables. Service has graceful `isMissingTableError` fallback if migration not applied yet.
+
+**Open follow-up: R37 (below).**
+
+### R37 — Per-scope operation presence in ShotCard / scene tiles
+
+Status: **proposed** · Raised: 2026-05-15
+
+R36 backend tracks `scope_type: 'shot' | 'scene'` + `scope_id`. The header pill is the only UI surface today. ShotCard should read `agentOperations` and render a subtle pulsing amber accent when its `shotId` matches an active operation's `scope_id`. Same for scene tiles. ~half day frontend.
+
+Also worth doing alongside: tablet/mobile degradation of the header pill (currently `hidden lg:flex`, disappears entirely below 1024px; could degrade to just the pulsing dot without label at smaller breakpoints).
+
+### R38 — Abstraction platform (Mirage)
+
+Status: **branched, design seeded** · Raised: 2026-05-15
+
+The third major workstream. Lahari's pipeline (Intake → Blueprint → Looks → Studio → Render) is the right spine for most single-seed video production. Today it's hardcoded for devotional music video from audio. The abstraction makes the spine reusable across workflows: music video, anime, ads, reels.
+
+Three-axis decomposition: `SeedKind` (audio/script/brief/document/idea), `Workflow` (music_video/anime_scripted/...), `Preset` (taste rules + defaults). DB switch via `DB_TABLE_PREFIX=lahari|studio`. New Supabase + Railway for `studio_*` schema. Lahari prod untouched.
+
+Brand: **Mirage**, single brand multi-tenant SaaS, beta testers building anime/reels/ads with presets. White-label deferred until first big client.
+
+Full design at `docs/abstraction-platform-plan.md`. Work proceeds on the `abstraction` branch in a separate worktree (`~/Code/lahari-media-engine/lahari-abstraction`). Engine fixes flow `codex-native-studio → abstraction` via merge, not the other direction.
+
+---
+
 ## Polish Items
 
 Small things noticed but not substantial enough for their own R#. Address opportunistically when adjacent code is being touched.
@@ -820,3 +879,9 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-14 — Codex completed the warm-refresh half of the R17 notebook hybrid. `config/hashes.json` no longer churns on every notebook generation; its generation marker uses project state time instead of wall-clock time. Apply/generation/config responses now include `changedArtifacts` payloads for the notebook files that should be refreshed: R28 apply-only tools, storyboard prompt write/bulk write, storyboard generation/bulk generation/refine/lock/unlock, video generation, and R29 preferences/prompt override apply/revert. Full script apply additionally returns `notebookRefresh.recommended` because script replacement can leave obsolete per-shot mirror files behind. Verified with `npx tsc --noEmit`, `npm run build`, and `git diff --check`.
 - 2026-05-14 — Codex added project-local native skill payloads to `write_project_notebook`. The notebook now includes `CLAUDE.md`, `.agents/skills/{lahari-director,storyboard-prompt-craft,script-doctor,continuity-auditor,style-ref-critic,render-triage}/SKILL.md`, and matching `.claude/skills/*/SKILL.md` files, all sourced from the tracked Lahari skill shards. MCP initialize instructions and R17 docs now tell agents to write the skills and restart/open a fresh harness session so native skill discovery can pick them up. Verified with `npx tsc --noEmit`; build pending in this pass.
 - 2026-05-14 — Codex added MCP tool annotations across hosted `/mcp`, internal `mcp/lahari.ts`, and fallback `packages/lahari-mcp-server`. Tool registration now supplies `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` from a shared name-based classification: read/plan/notebook tools are read-only+idempotent; apply/generate/refine/lock/unlock/capture tools are mutating; `apply_script`, rollback, and revert are marked destructive. Director HTTP facade is intentionally unchanged because annotations are an MCP `tools/list` concern. Verified with `npx tsc --noEmit`; build pending in this pass.
+- 2026-05-15 — R29 phase 2 shipped: `concept`, `script`, `shot_prompts` added to the project prompt override allowlist alongside `storyboard` and `video`. DB check constraint updated via `2026-05-15_expand_project_prompt_override_kinds.sql`. All four MCP surfaces (hosted `/mcp`, director facade, internal CLI/MCP, fallback npm package) wired. Migration applied to Supabase.
+- 2026-05-15 — Security hardening pass (`535f4c1`): in-memory rate limiting on `/mcp`, `/api/director/*`, `/api/mcp-tokens`; body size limits at the Express layer (2MB/5MB/32KB); Zod max sizes on hosted MCP tool payloads; audit redaction for sensitive keys (token/secret/auth/password) and content keys (body/script/concept/prompt) with summary metadata; `lahari_capture_issue` requires projectId + ownership check. Three watch items remain: scoped per-project MCP tokens, RLS policies on `lahari_mcp_tokens`, edge/DB-backed rate limit for production scale.
+- 2026-05-15 — Realtime agent operation presence shipped (R36, commit `f31689e`): `lahari_agent_operations` table with RLS, Supabase realtime publication adds for 13 tables, `start/finishAgentOperation` wired into both `/api/director/*` and `/mcp` `audited` wrappers, frontend channel subscription with debounced refresh. Migration `2026-05-15_add_agent_operations_realtime.sql` applied. Aesthetic follow-up: header pill quieted to `surface-inset` + colored pulsing dot (commit `71ea3a7`) to match the app's single-signal pill pattern.
+- 2026-05-15 — `/connect` redesign (commit `d5c6f3d`) plus follow-ups: three numbered steps, tabbed harness switching (Codex Desktop / Claude Code), platform sub-toggle (macOS/Windows/Linux/CLI) auto-detected from User-Agent, verify-success emerald callout, troubleshooting drawer with concrete failure-mode fixes, "I've copied it safely" confirmation chip that masks the token after copy. Cherry-picked to main, deployed.
+- 2026-05-15 — Abstraction platform branched (R38). Plan seeded at `docs/abstraction-platform-plan.md`. Decision: brand is **Mirage**, multi-tenant SaaS single brand for now, separate Supabase + Railway for `studio_*` schema, music video + anime as v1 proof. Work proceeds on `abstraction` branch in a separate worktree; engine fixes flow `codex-native-studio → abstraction` via merge.
+- 2026-05-15 — Ledger cleanup. R17/R28/R29 statuses updated to shipped + validated. R35 (write_project_notebook), R36 (realtime presence), R37 (per-scope ShotCard indicator, proposed), R38 (abstraction platform) filed. Current State snapshot rewritten — distribution is real, no operational items pending, next workstream is the abstraction platform on its own branch. `docs/templates/AGENTS.md` archived (obsoleted by write_project_notebook generating per-project AGENTS.md).

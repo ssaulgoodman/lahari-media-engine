@@ -45,7 +45,7 @@ const toolAnnotations = (name: string): ToolAnnotations => {
   if (name === 'add_director_note' || name === 'lahari_capture_issue') {
     return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   }
-  if (name === 'apply_script' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+  if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
     return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
   }
   if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
@@ -817,6 +817,24 @@ registerAuditedTool('apply_script', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyScript(project, script, { baseFingerprint, force }));
+});
+
+registerAuditedTool('apply_script_markdown', {
+  title: 'Apply script markdown',
+  description: 'Mutating and high blast radius. Parses an edited drafts/script.md Lahari script draft, validates fingerprint/durations, and atomically replaces cast, environments, scenes, and shots.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    markdown: z.string().min(1).describe('Full contents of lahari/projects/<projectId>/drafts/script.md after surgical edits.'),
+    baseFingerprint: z.string().optional().describe('Optional fingerprint from the draft frontmatter; usually omitted because the markdown contains scriptFingerprint.'),
+    force: z.boolean().optional().describe('Only after explicit approval; bypasses drift/downstream checks.'),
+  },
+}, async ({ projectId, markdown, baseFingerprint, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_script_markdown.');
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyScriptMarkdown(project, markdown, { baseFingerprint, force }));
 });
 
 registerAuditedTool('apply_project_prompt_override', {

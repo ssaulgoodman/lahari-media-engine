@@ -20,7 +20,7 @@ The central organizing principle. Every piece of state in this system lives in e
 
 | Tier | Examples | Who edits | How |
 |---|---|---|---|
-| **1. Project config** (per-project, agent-owned) | Project-specific prompts, model preferences, taste notes, glossary, decision log | Project owner's director agent | Direct file edits in `.lahari/projects/<id>/config/` → typed apply tool persists to Supabase |
+| **1. Project config** (per-project, agent-owned) | Project-specific prompts, model preferences, taste notes, glossary, decision log | Project owner's director agent | Direct file edits in `lahari/projects/<id>/config/` inside the artist notebook → typed apply tool persists to Supabase |
 | **2. Project state** (per-project, canonical in Supabase) | Concept, script, style, cast, env, scenes, shots, locks, prompts, assets | Project owner's director agent | Always via typed `apply_*` tools with preview/drift/rollback |
 | **3. Engine truth** (global, immutable from director's view) | Global prompt catalog, provider routing, engine code, migrations | Engine sessions only | Direct file edits → commit |
 
@@ -28,7 +28,7 @@ The central organizing principle. Every piece of state in this system lives in e
 
 When an agent recognizes "I need to switch providers because credits ran out" or "this song needs a different prompt recipe," the answer is **always** a tier-1 edit, never a tier-3 code change. Tier-3 fixes happen in engine sessions, not director sessions.
 
-This tier model is what makes the future npm-package distribution safe: the artist's `@lahari/director` workspace contains zero engine code, so tier-3 is physically inaccessible. Tier-1 power scales fully; tier-3 stays with engineers.
+This tier model is what makes the remote-MCP distribution safe: the artist notebook contains zero engine code, so tier-3 is physically inaccessible. Tier-1 power scales fully; tier-3 stays with engineers.
 
 ---
 
@@ -117,9 +117,9 @@ Three tiers within tier-2 (project state) operations:
 **Supabase Postgres is canonical for everything in tier 2 (project state) and tier 1 (project config after persistence).**
 
 - Web studio state = cache of Postgres
-- `.lahari/` files = desk copies, read freely, edit freely, sync via apply tools
+- `lahari/` notebook files = desk copies, read freely, edit config files freely, sync via apply tools
 - Codex's in-context understanding = derived from packets which derive from Postgres
-- Local journal (`.lahari/sessions/<id>/journal.md`) = working memory only, not authoritative
+- Local journal (`lahari/projects/<id>/journal.md`) = working memory only, not authoritative
 
 **Never dual-write.** If a piece of state lives in tier 1 or tier 2, it lives in Supabase. Local files mirror it. Don't write to both as parallel sources.
 
@@ -129,24 +129,19 @@ Three tiers within tier-2 (project state) operations:
 
 ## 7. Distribution Arc
 
-**Today (solo operator):** single repo, bimodal `AGENTS.md`, both director and engine sessions in the same worktree. Works because the operator does both.
+**Engine sessions (this repo):** this repo is for code, prompts, infra, docs, schema, and deployment. Internal MCP and CLI are available for engine-side debug, smoke tests, and recovery, but they are not the artist/director surface. When an engineer wants to test director behavior, use an artist-shaped empty folder with remote MCP installed.
 
-**Soon (second operator):** extract director tools as `@lahari/director` npm package. Engine repo stays internal. Artist runs:
+**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, calls `write_project_notebook(projectId)`, and the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + config + journal all written by the tool, not by an `npx setup` step.
 
-```bash
-npx @lahari/director init ~/lahari-studio
-cd ~/lahari-studio
-npx @lahari/director setup
-# open Codex Desktop on ~/lahari-studio
-```
+Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
 
-Package contains CLI, MCP server, skill, AGENTS.md template, setup commands. No engine code. Auth via browser-bridged JWT (no service key on artist's machine).
+**Plugin distribution gates** (all true as of 2026-05-15):
+1. ✅ Second-user setup is two terminal commands (`export TOKEN=...` + `codex mcp add ...` / `claude mcp add-json ...`) plus a one-time harness restart. `/connect` page issues the snippets.
+2. ✅ MCP surface stable; `X-Lahari-MCP-Version` header + `minimumMcpServerVersion` give us a compatibility lever for future evolution.
+3. ✅ First non-Saul operator has run the install + workspace materialization end-to-end (2026-05-15 first artist test).
+4. ✅ Artist's MCP path has zero engine dependencies at runtime — `/mcp` is HTTP-only, talks to Supabase via the artist's JWT, no in-process service-layer call required.
 
-**Plugin distribution gates** (all must be true before packaging):
-1. Second-user setup is one command.
-2. MCP surface stable, no breaking changes weekly.
-3. At least one non-Saul operator has run Blueprint → Studio → Render end-to-end.
-4. The director surface is extractable as a separate distribution without engine dependencies at runtime.
+**Future fork — the abstraction platform (`Mirage`):** R38 / `docs/abstraction-platform-plan.md`. Same engine code, separate Supabase + Railway, `studio_*` schema, SeedKind/Workflow/Preset decomposition for music video / anime / ads / reels. Single-brand multi-tenant SaaS. Develops on the `abstraction` branch in a separate worktree. Engine fixes flow forward (`codex-native-studio → abstraction`); Mirage-specific work stays on its branch.
 
 ---
 
@@ -170,38 +165,24 @@ When a gap shows up in Codex/Claude Code: file it upstream, route around with br
 
 ## 9. Session-Type Protocol
 
-Every new Codex session in this workspace is one of two types. Identify which one before doing anything else.
+Sessions are split by **workspace**, not by toggle inside one workspace:
 
-**Director session** — operating Lahari for a specific song or project. Attaches to a Lahari project via MCP. Default when the user names a song, project, video, scene, shot, or creative work.
+- **Engine sessions** — happen in this repo (`lahari-codex-native` or `abstraction` worktree). Improve code, prompts, infra, docs, schema. Full shell + edit + git access. Internal MCP and CLI are available here for engine-side debug, scripting, and disaster recovery, but those are *tools*, not a separate session type.
+- **Director sessions** — happen in an artist workspace (any empty folder with the remote MCP installed). Attach to a Lahari project via `/mcp`, materialize the workspace via `write_project_notebook`, operate through the apply tool surface. The orchestrator skill at `.agents/skills/lahari-director/SKILL.md` (materialized into the artist workspace by the notebook tool) drives the protocol.
 
-**Engine session** — improving Lahari itself (code, prompts, infra, docs). Does not attach. Default when the request is about the codebase, refactoring, or fixing Lahari.
-
-If unclear, ask one sentence to clarify.
-
-### Director Session Opening Move
-
-1. **Verify MCP visibility.** Check that `mcp__lahari__*` tools are available. If not, do not fall back to CLI. Stop and tell user to quit and reopen Codex Desktop.
-2. **Attach.** Call `attach_director_session` with the project ID. If user named a song but you don't have the ID, call `list_projects` first.
-3. **Read `directorEvents.recentEvents`** — decisions the artist made since last session.
-4. **Read `diagnosis`** — `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`.
-5. **Suggest renaming** the Codex session to the project title.
-
-**Opening message:**
-- Acknowledge in production terms: "Working on Krishna Bhajan..." — not "hydrating" or "fetching."
-- Summarize the production read in one sentence.
-- Name the bottleneck.
-- Mention anything material from `recentEvents`.
-- Propose `nextApprovedAction` unless events suggest the artist moved past it.
-
-**Banned vocab in artist-facing text:** "hydrate," "workbench," "packet," "checkpoint." These are plumbing the artist doesn't need to think about. Say what you're going to *do*.
+Earlier doctrine ran both in the same worktree as a transitional pattern from before distribution shipped. That's no longer the recommended path — testing director-session behavior is cleaner from an artist-shaped workspace (any empty folder + remote MCP) than from this engine repo.
 
 ### Engine Session Opening Move
 
-Direct: `pwd`, `git status --short --branch`, then ask user what to build or fix. No project attach. Full shell + edit + git available.
+Direct: `pwd`, `git status --short --branch`, then ask user what to build or fix.
+
+### When an engineer wants to test director-session behavior
+
+Open any empty folder in Codex Desktop (or Claude Code), mint a token at `/connect` against your own account, paste the install snippet, restart the harness. Same path an artist takes. The behavior you observe is what artists actually experience — testing it from inside the engine repo gives a falsely-comfortable shape because internal MCP is in-process.
 
 ### Friction Capture
 
-When something feels wrong mid-session, do not guess. Call `lahari_capture_issue` with severity, summary, and any suspected fix. The tool auto-collects recent audit context. Engine session reads issues at start. Friction → fix → continue.
+When something feels wrong mid-session, do not guess. Call `lahari_capture_issue` with severity, summary, and any suspected fix. The tool auto-collects recent audit context. Engine sessions read captured issues at start.
 
 ---
 
