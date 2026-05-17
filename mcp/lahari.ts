@@ -187,7 +187,7 @@ registerAuditedTool('write_storyboard_prompt', {
 
 registerAuditedTool('bulk_write_storyboard_prompts', {
   title: 'Bulk write storyboard prompts',
-  description: 'Deprecated. Prefer apply_storyboard_prompts_bulk: write prompts directly using the storyboard-prompt-craft skill, then apply. This mutating paid tool wraps backend LLM calls and bypasses the harness-native pattern.',
+  description: 'Deprecated and disabled for MCP director sessions. Studio may keep its civilian bulk writer, but agents should write scene drafts and apply with apply_storyboard_scene_markdown.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shotIds: z.array(z.string().min(1)).optional().describe('Optional explicit shot subset. Defaults to all eligible shots.'),
@@ -196,15 +196,8 @@ registerAuditedTool('bulk_write_storyboard_prompts', {
     variant: z.enum(['adaptive_numbered_storyboard', 'four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts']).optional().describe('Storyboard prompt variant. Defaults to adaptive_numbered_storyboard.'),
     artistReferenceImagePath: z.string().optional().describe('Optional storage/file path for an extra visual reference.'),
   },
-}, async ({ projectId, shotIds, force, artistNote, variant, artistReferenceImagePath }) => {
-  console.error('[deprecated] bulk_write_storyboard_prompts — use apply_storyboard_prompts_bulk instead.');
-  const env = await prepareCodexWriteEnv();
-  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
-  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for bulk_write_storyboard_prompts.');
-
-  const studio = await loadStudio();
-  const project = await studio.getFullProject(projectId);
-  return textResult(await studio.bulkWriteStoryboardPrompts(project, { shotIds, force, artistNote, variant, artistReferenceImagePath }));
+}, async () => {
+  throw new Error('bulk_write_storyboard_prompts is deprecated for MCP. Edit drafts/storyboards/<scene>.md and call apply_storyboard_scene_markdown.');
 });
 
 registerAuditedTool('get_shot_packet', {
@@ -712,7 +705,7 @@ registerAuditedTool('apply_storyboard_prompt', {
 
 registerAuditedTool('apply_storyboard_prompts_bulk', {
   title: 'Apply storyboard prompts bulk',
-  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. No LLM call; locked shots are skipped and invalid/drifted rows are rejected.',
+  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. Prefer apply_storyboard_scene_markdown for artist-facing scene-by-scene writing.',
   inputSchema: {
     projectId: z.string().min(1).describe('Lahari project ID.'),
     shots: z.array(z.object({
@@ -734,6 +727,24 @@ registerAuditedTool('apply_storyboard_prompts_bulk', {
     shots: shots.map((shot: any) => ({ ...shot, storyboardCutPlan: shot.storyboardCutPlan || '' })),
     force,
   }));
+});
+
+registerAuditedTool('apply_storyboard_scene_markdown', {
+  title: 'Apply storyboard scene markdown',
+  description: 'Mutating. Parses an edited drafts/storyboards/<scene>.md file, validates per-shot hashes, and persists storyboard prompts plus Seedance cut plans scene-by-scene.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    markdown: z.string().min(1).describe('Full contents of lahari/projects/<projectId>/drafts/storyboards/<scene>.md after scene-level edits.'),
+    force: z.boolean().optional().describe('Bypass baseHash drift checks only after explicit approval.'),
+  },
+}, async ({ projectId, markdown, force }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for apply_storyboard_scene_markdown.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.applyStoryboardSceneMarkdown(project, markdown, { force }));
 });
 
 registerAuditedTool('apply_concept', {

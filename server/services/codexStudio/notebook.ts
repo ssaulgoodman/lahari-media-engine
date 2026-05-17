@@ -16,6 +16,7 @@ import {
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
+import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
 
 export type NotebookFile = {
   path: string;
@@ -34,7 +35,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-17.editable-script-v1';
+const NOTEBOOK_VERSION = '2026-05-17.storyboard-scene-drafts-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -53,7 +54,7 @@ If the MCP server returns a newer notebookVersion than the one shown here or in 
 
 Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
 
-Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
@@ -321,6 +322,14 @@ ${md(shot.storyboardCutPlan)}
 `,
 });
 
+const buildStoryboardSceneDraftFile = (project: Project, sceneIndex: number, scene: Project['scenes'][number]): NotebookFile => ({
+  path: storyboardSceneDraftPath(project, sceneIndex, scene),
+  mode: 'draft',
+  writePolicy: 'review_before_overwrite',
+  description: `Editable storyboard prompt/cut-plan draft for ${scene.sectionLabel || `Scene ${sceneIndex + 1}`}. Apply with apply_storyboard_scene_markdown.`,
+  content: buildStoryboardSceneMarkdownDraft(project, sceneIndex, scene),
+});
+
 const buildHashes = async (project: Project) => {
   const config = await getProjectConfigState(project);
   return {
@@ -368,6 +377,7 @@ export const buildNotebookMirrorArtifacts = (
     concept?: boolean;
     script?: boolean;
     scriptDraft?: boolean;
+    storyboardSceneIds?: string[];
     style?: boolean;
     cast?: boolean;
     environments?: boolean;
@@ -466,6 +476,12 @@ export const buildNotebookMirrorArtifacts = (
       }
     }
   }
+  if (opts.storyboardSceneIds?.length) {
+    const requested = new Set(opts.storyboardSceneIds);
+    for (const [sceneIndex, scene] of project.scenes.entries()) {
+      if (requested.has(scene.id)) files.push(buildStoryboardSceneDraftFile(project, sceneIndex, scene));
+    }
+  }
   return files;
 };
 
@@ -561,6 +577,7 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
       content: buildScriptMarkdownDraft(project),
     },
+    ...project.scenes.map((scene, sceneIndex) => buildStoryboardSceneDraftFile(project, sceneIndex, scene)),
     {
       path: `${baseDir}/mirrors/style.md`,
       mode: 'mirror',
@@ -646,6 +663,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. Apply scene storyboard drafts with apply_storyboard_scene_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

@@ -319,7 +319,7 @@ registerTool('write_storyboard_prompt', {
 
 registerTool('bulk_write_storyboard_prompts', {
   title: 'Bulk write storyboard prompts',
-  description: 'Deprecated remote gap. Prefer apply_storyboard_prompts_bulk with Codex-written content.',
+  description: 'Deprecated remote gap. Prefer apply_storyboard_scene_markdown with Codex-written scene drafts.',
   inputSchema: {
     projectId,
     shotIds: z.array(z.string().min(1)).optional(),
@@ -328,7 +328,7 @@ registerTool('bulk_write_storyboard_prompts', {
     variant: enumStoryboardVariant.optional(),
     artistReferenceImagePath: z.string().optional(),
   },
-}, unsupported('bulk_write_storyboard_prompts', 'Deprecated backend-LLM wrapper intentionally not exposed in remote MCP. Use apply_storyboard_prompts_bulk.'));
+}, unsupported('bulk_write_storyboard_prompts', 'Deprecated backend-LLM wrapper intentionally not exposed in remote MCP. Edit drafts/storyboards/<scene>.md and use apply_storyboard_scene_markdown.'));
 
 registerTool('get_shot_packet', {
   title: 'Get shot packet',
@@ -524,7 +524,7 @@ registerTool('apply_storyboard_prompt', {
 
 registerTool('apply_storyboard_prompts_bulk', {
   title: 'Apply storyboard prompts bulk',
-  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots.',
+  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. Prefer apply_storyboard_scene_markdown for artist-facing scene-by-scene writing.',
   inputSchema: {
     projectId,
     shots: z.array(z.object({
@@ -536,6 +536,16 @@ registerTool('apply_storyboard_prompts_bulk', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, shots, force }) => directorPost('/api/director/apply/storyboard-prompts-bulk', { projectId, shots, force }));
+
+registerTool('apply_storyboard_scene_markdown', {
+  title: 'Apply storyboard scene markdown',
+  description: 'Mutating. Parses an edited drafts/storyboards/<scene>.md file, validates per-shot hashes, and persists storyboard prompts plus Seedance cut plans scene-by-scene.',
+  inputSchema: {
+    projectId,
+    markdown: z.string().min(1).describe('Full contents of lahari/projects/<projectId>/drafts/storyboards/<scene>.md after scene-level edits.'),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, markdown, force }) => directorPost('/api/director/apply/storyboard-scene-markdown', { projectId, markdown, force }));
 
 registerTool('apply_concept', {
   title: 'Apply concept',

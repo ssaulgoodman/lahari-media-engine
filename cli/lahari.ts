@@ -60,6 +60,7 @@ Usage:
   npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
   npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
   npm run lahari -- apply storyboard-prompts-bulk <projectId> <shots.json> [force]
+  npm run lahari -- apply storyboard-scene-markdown <projectId> <scene.md> [force]
   npm run lahari -- apply concept <projectId> <concept.json> [baseHash]
   npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [baseHash]
   npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
@@ -217,7 +218,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'shot-prompts' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'concept' || action === 'video-prompt' || action === 'script' || action === 'script-markdown'))
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'shot-prompts' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'storyboard-scene-markdown' || action === 'concept' || action === 'video-prompt' || action === 'script' || action === 'script-markdown'))
     || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'project-prompt-override'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
@@ -505,6 +506,15 @@ const main = async () => {
     console.log(JSON.stringify(await studio.applyStoryboardPromptsBulk(project, {
       shots: Array.isArray(payload) ? payload : payload.shots,
       force: rest.includes('force') || rest.includes('--force') || !!payload.force,
+    }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'storyboard-scene-markdown' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const markdown = fs.readFileSync(arg4, 'utf8');
+    console.log(JSON.stringify(await studio.applyStoryboardSceneMarkdown(project, markdown, {
+      force: rest.includes('force') || rest.includes('--force'),
     }), null, 2));
     return;
   }

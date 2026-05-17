@@ -2,6 +2,7 @@ import { updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import { storyboardPromptHash, webStudioUrl, type Project, type ProjectShot } from '../core.js';
 import { buildNotebookMirrorArtifacts } from '../notebook.js';
+import { parseStoryboardSceneMarkdownDraft } from '../storyboardMarkdown.js';
 import {
   appendApplyJournal,
   applyError,
@@ -121,11 +122,69 @@ export const applyStoryboardPromptsBulk = async (
       ? buildNotebookMirrorArtifacts(notebookProject, {
         shotPrompts: true,
         storyboardShotIds: applied.map((row) => row.shotId),
+        storyboardSceneIds: [...new Set(applied.flatMap((row) => (
+          project.scenes
+            .filter((scene) => scene.shots.some((shot) => shot.id === row.shotId))
+            .map((scene) => scene.id)
+        )))],
       })
       : [],
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
     note: rejected.length || skipped.length
       ? 'Applied valid storyboard prompt updates. Review skipped/rejected rows before continuing.'
       : 'Applied storyboard prompt updates. Existing boards/videos were marked stale where present.',
+  };
+};
+
+export const applyStoryboardSceneMarkdown = async (
+  project: Project,
+  markdown: string,
+  opts: { force?: boolean } = {},
+) => {
+  const parsed = parseStoryboardSceneMarkdownDraft(markdown);
+  if ('error' in parsed) return parsed;
+  if (parsed.projectId && parsed.projectId !== project.id) {
+    return applyError('validation_failed', `Storyboard scene draft belongs to project ${parsed.projectId}, not ${project.id}.`, { field: 'projectId' });
+  }
+  const scene = project.scenes.find((candidate) => candidate.id === parsed.sceneId);
+  if (!scene) {
+    return applyError('validation_failed', `Storyboard scene draft references unknown scene: ${parsed.sceneId || '(missing)'}.`, { field: 'sceneId' });
+  }
+  const sceneShotIds = new Set(scene.shots.map((shot) => shot.id));
+  const outsideScene = parsed.shots.find((shot) => !sceneShotIds.has(shot.shotId));
+  if (outsideScene) {
+    return applyError('validation_failed', `Shot ${outsideScene.shotId} is not part of scene ${scene.id}.`, { shotId: outsideScene.shotId, field: 'shotId' });
+  }
+
+  const result = await applyStoryboardPromptsBulk(project, {
+    shots: parsed.shots,
+    force: opts.force,
+  });
+  if ('error' in result) return result;
+  const appliedShotIds = new Set((result.applied || []).map((shot) => shot.shotId));
+  const nextShotsById = new Map(parsed.shots.filter((shot) => appliedShotIds.has(shot.shotId)).map((shot) => [shot.shotId, shot]));
+  const notebookProject = {
+    ...project,
+    scenes: project.scenes.map((projectScene) => ({
+      ...projectScene,
+      shots: projectScene.shots.map((shot) => {
+        const next = nextShotsById.get(shot.id);
+        return next
+          ? { ...shot, storyboardPrompt: next.storyboardPrompt.trim(), storyboardCutPlan: next.storyboardCutPlan?.trim() || '' }
+          : shot;
+      }),
+    })),
+  };
+  return {
+    ...result,
+    kind: 'lahari.apply.storyboard_scene_markdown',
+    scene: {
+      id: scene.id,
+      label: scene.sectionLabel || `Scene ${project.scenes.findIndex((candidate) => candidate.id === scene.id) + 1}`,
+    },
+    changedArtifacts: result.changedArtifacts?.length
+      ? result.changedArtifacts
+      : buildNotebookMirrorArtifacts(notebookProject, { storyboardSceneIds: [scene.id] }),
+    note: 'Applied storyboard scene markdown. Review rejected rows before continuing; valid rows were persisted and existing boards/videos marked stale where present.',
   };
 };
