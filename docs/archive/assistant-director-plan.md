@@ -1,3 +1,4 @@
+> **Archived.** Historical design. Superseded by docs/codex-native-doctrine.md (operating contract) and docs/codex-native-review-ledger.md (current state + R# status). Preserved for reference. 
 # Assistant Director Plan
 
 ## Goal

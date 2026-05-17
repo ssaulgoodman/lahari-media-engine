@@ -1,3 +1,4 @@
+> **Archived.** Aspirational vision doc. Never shipped in this shape. Preserved for reference. 
 # World-Class Product Plan
 
 ## Goal

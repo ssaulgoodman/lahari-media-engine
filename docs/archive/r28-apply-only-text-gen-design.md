@@ -1,3 +1,4 @@
+> **Archived.** Historical design doc. Implementation shipped + validated — see ledger R28. Preserved for reference; do not treat as current spec. 
 # R28 Apply-Only Text Generation Design
 
 Status: first-pass design

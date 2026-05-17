@@ -1,3 +1,4 @@
+> **Archived.** Historical audit that informed R29 implementation — see ledger R29. Preserved for reference. 
 # R29 Prompt Override Audit
 
 Status: input for R29 phase 2+ scope

@@ -1,3 +1,4 @@
+> **Archived.** Historical early schema sketch. Superseded by what shipped (see ledger R28, R29, R36). Preserved for reference. 
 # Assistant Director — Database Schema Reference
 
 Tables the assistant director agent needs read access to for full project-overview context. Source of truth: `docs/database.sql` (live schema dump). Everything else (ai_calls telemetry, renders job tracking, queue/songs catalog, external batch_jobs / clips / videos / shots / files tables) is out of scope.

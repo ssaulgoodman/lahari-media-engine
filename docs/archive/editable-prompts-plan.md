@@ -1,3 +1,4 @@
+> **Archived.** Architecturally superseded. Proposed editing global engine prompt templates from the web studio UI — a Tier-3 edit incompatible with the doctrine. R29 shipped the better answer: per-project Tier-1 overrides edited by the agent and persisted via apply tools. Preserved for reference; do not treat as current direction. 
 # Editable Prompts System — Plan
 
 ## Goal

@@ -1,3 +1,4 @@
+> **Archived.** Historical design doc. Phase 1 + phase 2 shipped — see ledger R29. Preserved for reference; do not treat as current spec. 
 # R29 Project Config Design
 
 Status: phase 2 implemented

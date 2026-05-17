@@ -1,3 +1,4 @@
+> **Archived.** Historical polish backlog. Items shipped opportunistically as adjacent code was touched. Preserved for reference. 
 # UI Polish Plan — Skill-Based Audit
 
 Audit of all screens against `make-interfaces-feel-better` + `web-design-guidelines` skills.

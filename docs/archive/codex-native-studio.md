@@ -1,3 +1,4 @@
+> **Archived.** Historical vision doc. Sections superseded by docs/codex-native-doctrine.md (permission model, journals, skills, design principle) and docs/abstraction-platform-plan.md (presets, setup vision). Preserved for reference. 
 # Codex-Native Studio
 
 This project should become a Codex-native creative production workspace, not only a web app with an embedded assistant.
