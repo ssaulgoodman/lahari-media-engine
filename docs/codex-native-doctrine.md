@@ -117,11 +117,11 @@ Three tiers within tier-2 (project state) operations:
 **Supabase Postgres is canonical for everything in tier 2 (project state) and tier 1 (project config after persistence).**
 
 - Web studio state = cache of Postgres
-- `lahari/` notebook files = desk copies, read freely, edit config files freely, sync via apply tools
+- `lahari/` notebook files = desk copies and drafts. Read mirrors freely, edit drafts/config files surgically, sync via apply tools
 - Codex's in-context understanding = derived from packets which derive from Postgres
 - Local journal (`lahari/projects/<id>/journal.md`) = working memory only, not authoritative
 
-**Never dual-write.** If a piece of state lives in tier 1 or tier 2, it lives in Supabase. Local files mirror it. Don't write to both as parallel sources.
+**Never dual-write.** If a piece of state lives in tier 1 or tier 2, Supabase remains canonical. Local files are working surfaces: `mirrors/` reflect Supabase, `drafts/` hold surgical edits awaiting apply, and `config/` holds project override bodies awaiting apply. Don't treat local files and Supabase as parallel truths.
 
 **Exception:** the session journal lives only on disk. That's intentional — it's Codex's working memory, not engine state. The `lahari_director_events` table captures the structured events that the journal narrates.
 
@@ -131,7 +131,13 @@ Three tiers within tier-2 (project state) operations:
 
 **Engine sessions (this repo):** this repo is for code, prompts, infra, docs, schema, and deployment. Internal MCP and CLI are available for engine-side debug, smoke tests, and recovery, but they are not the artist/director surface. When an engineer wants to test director behavior, use an artist-shaped empty folder with remote MCP installed.
 
-**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, calls `write_project_notebook(projectId)`, and the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + config + journal all written by the tool, not by an `npx setup` step.
+**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, calls `write_project_notebook(projectId)`, and the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + drafts + config + journal all written by the tool, not by an `npx setup` step.
+
+Notebook roles:
+- `mirrors/` are read-only Supabase snapshots. Refresh them from notebook output or `changedArtifacts`.
+- `drafts/` are editable working copies. In phase 1, `drafts/script.md` is the script surgery surface; apply with `apply_script_markdown`, which parses strict markdown, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
+- `config/` is the project override layer. Edit prompt/preference files locally, then persist with config apply tools.
+- `journal.md` is local working memory, not canonical project state.
 
 Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
 
