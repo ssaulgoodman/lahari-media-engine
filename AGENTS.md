@@ -34,7 +34,8 @@ Current notebook contract:
 - `mirrors/` are overwritten from Supabase and should not be hand-edited.
 - `drafts/script.md` is the editable script working copy. Agents should make surgical file edits there, then call `apply_script_markdown`; the tool parses the draft, checks `scriptFingerprint` drift, validates references/durations, and applies through the atomic script RPC.
 - `drafts/storyboards/<scene>.md` files are editable storyboard prompt + Seedance cut-plan working copies. Agents should write storyboard text scene-by-scene, then call `apply_storyboard_scene_markdown`; use single-shot JSON apply only for surgical fixes or automation payloads.
-- `config/prompts/*.md` and `config/preferences.json` are project-level runtime overrides. Edit locally, then persist with `apply_project_prompt_override` or `apply_project_preferences`.
+- `config/prompts/*.md` and `config/preferences.json` are project-level runtime overrides. Prompt kinds are `concept`, `script`, `shot_prompts`, `storyboard`, `video`, `character_looks`, and `environment_looks`. Edit locally, then persist with `apply_project_prompt_override` or `apply_project_preferences`.
+- `apply_style_direction` lets director agents write style text natively and persist it before visualization. `apply_shot_workflow_modes` lets agents set per-shot `auto | storyboard | keyframe` mode without changing whole-project defaults.
 - `journal.md` is local operator memory. Append concise decisions; do not treat it as canonical project state.
 
 Director-session work in *this engine repo* is a developer-only path — used for debugging, testing internal MCP changes, or operating against the canonical engine without going through Railway. Identical tool surface to remote, identical apply discipline.

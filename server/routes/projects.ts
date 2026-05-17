@@ -504,6 +504,7 @@ const getFullProject = async (projectId: string) => {
       narrativeDescription: s.narrative_description || '',
       shots: (s.shots || []).map((shot: any) => ({
         id: shot.id,
+        workflowMode: shot.workflow_mode || 'auto',
         direction: shot.direction || '',
         visualPrompt: shot.visual_prompt || '',
         motionPrompt: shot.motion_prompt || 'Cinematic camera movement',

@@ -62,8 +62,10 @@ import {
   writeStoryboardPromptForShot,
 } from './codexStudio/storyboardOps.js';
 export { applyShotPrompts } from './codexStudio/applies/shotPrompts.js';
+export { applyShotWorkflowModes } from './codexStudio/applies/shotWorkflow.js';
 export { applyStoryboardPrompt, applyStoryboardPromptsBulk, applyStoryboardSceneMarkdown } from './codexStudio/applies/storyboardPrompt.js';
 export { applyConcept } from './codexStudio/applies/concept.js';
+export { applyStyleDirection } from './codexStudio/applies/style.js';
 export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
 export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
@@ -114,6 +116,7 @@ export {
   statusCounts,
   webStudioUrl,
   writeArtifact,
+  styleDirectionHash,
 } from './codexStudio/core.js';
 
 const readSessionEventCursor = (projectId: string): { seq: number | null; createdAt: string | null } => {

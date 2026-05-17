@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-17 — Scene-level storyboard prompt drafts added.
+**Last touched:** 2026-05-17 — Agency pass shipped: per-call model overrides, native concept/style, per-shot workflow, look recipes.
 
 ---
 
@@ -35,10 +35,12 @@ None. All migrations applied. All deploys live.
 
 1. **Abstraction platform** (new branch + worktree `lahari-abstraction`). SeedKind / Workflow / Preset decomposition. New Supabase + Railway for `studio_*` schema. Music video + anime as v1 proof. See `docs/abstraction-platform-plan.md`. Brand: **Mirage**, multi-tenant SaaS, single brand for now.
 2. **R37** — Per-shot/scene presence indicators on ShotCard (backend supports it; UI hasn't surfaced it yet). Half day. Codex.
-3. **R39** — Codex-native concept/style ideation. Keep Studio's backend generator for civilians, but director agents should write and apply concepts/style directions natively, then call visualize only when pixels are needed.
-4. **R40** — Character/environment look-generation recipe overrides. Future R29-style expansion so directors can steer how looks are authored, not only the resulting descriptions/prompts.
-5. **R32 / R33 / R34** — Per-call model override, model-bias correction, apply-only harness-native media. Filed but not built. Post-abstraction or post-first-artist-feedback.
-6. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
+3. **R32** — Per-call model override shipped for storyboard/video plan + generation tools. Project defaults stay stable; one-off experiments travel in the call payload.
+4. **R39** — Codex-native concept/style ideation shipped for director sessions: `apply_concept` plus new `apply_style_direction`; Studio's backend idea generators remain for civilian UI.
+5. **R40** — Character/environment look-generation recipe overrides shipped as project prompt kinds (`character_looks`, `environment_looks`) and consumed by Studio look generation at runtime.
+6. **R41** — Per-shot workflow mode shipped (`auto | storyboard | keyframe`) so Codex can force exceptions without changing whole-project defaults.
+7. **R33 / R34** — Model-bias correction and apply-only harness-native media remain filed for later. Post-abstraction or post-next-artist-feedback.
+8. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
 
 **Engineering watch items (not yet ledger entries):**
 
@@ -677,14 +679,14 @@ Codex Desktop and Claude Code sidebars hide dot-prefixed directories by default.
 
 ### R32 — Per-call model override on generation tools
 
-Status: **proposed** · Raised: 2026-05-14
+Status: **shipped first pass** · Raised: 2026-05-14 · Updated: 2026-05-17
 
 Today changing the image/storyboard/video model requires `apply_project_preferences` (R29 phase 1) which mutates project state. Codex's workaround for "use a different model just for this one refine" is: switch global → do work → switch back. Three problems:
 1. If the refine errors mid-way, the project is left in the wrong state.
 2. Parallel work inherits the temporary switch.
 3. Three director events for what was conceptually one decision.
 
-**Recommendation:** add an optional `modelOverride` parameter to generation tools (`refine_storyboard_image`, `generate_storyboard`, `bulk_generate_storyboards`, `apply_generate_video`). Uses the override for this call only; project preferences unchanged. Director event records which model was actually used.
+**Shipped first pass:** added an optional `modelOverride` parameter to storyboard/video planning and generation tools (`plan_generate_storyboard`, `plan_generate_video`, `generate_storyboard`, `bulk_generate_storyboards`, `refine_storyboard_image`, `apply_generate_video`). Uses the override for this call only; project preferences unchanged. Director event records the override when used.
 
 Example:
 ```js
@@ -694,7 +696,7 @@ refine_storyboard_image({
 })
 ```
 
-**Cost:** ~half day. Mechanical addition across ~5 tools. Helper function `resolveModelForCall(project, override)` picks the call-time model with fallback to project preference.
+Supported today: `storyboardProvider` and `videoModel`. Project-level model preferences remain the right path for durable preference changes; `modelOverride` is for one-off experiments and recovery.
 
 **Why it matters:** "Try a different model for just this one shot" is a common debugging move (see R33 — model bias correction). Forcing a state change for transient overrides is heavy. R32 lets Codex compose model choice per-call without ceremony.
 
@@ -815,39 +817,51 @@ Full design at `docs/abstraction-platform-plan.md`. Work proceeds on the `abstra
 
 ### R39 — Codex-native concept + style ideation
 
-Status: **proposed** · Raised: 2026-05-17
+Status: **shipped first pass** · Raised: 2026-05-17 · Updated: 2026-05-17
 
 The current Studio path still routes concept/style ideation through backend LLM endpoints: generate multiple ideas, optionally refine, then visualize a selected style. That remains useful for civilian UI users, but it is the wrong default for director-agent sessions. Concept and style direction writing are text work; Codex already has the model, the conversation, the song/script context, the culture/taste rubric, and the ability to edit outputs surgically.
 
-**Recommendation:** move director-session concept/style ideation to the Codex-native apply-only lane. Codex writes one or more concept directions or style directions itself, using the relevant skill rubric, then persists them through typed apply tools. Visualization remains a tool call because it creates pixels. Preset lock remains a tool call because it selects a curated asset.
+**Shipped first pass:** director-session concept/style ideation moved to the Codex-native apply-only lane. Codex writes one or more concept directions or style directions itself, using the relevant skill rubric, then persists them through typed apply tools. Concept uses existing `apply_concept`; style now uses `apply_style_direction`, drift-checked by the style base hash in the notebook. Visualization remains a tool call because it creates pixels. Preset lock remains a tool call because it selects a curated asset.
 
 **Target flow:**
 1. Codex reads audio analysis, lyrics, script, notes, and taste context.
 2. Codex writes one or two concept/style directions directly in the workspace or response.
-3. Codex applies the chosen text through `apply_concept` or a future style-direction apply tool.
+3. Codex applies the chosen text through `apply_concept` or `apply_style_direction`.
 4. Only after text approval does Codex call the style visualizer or lock a preset/asset.
 
 **Why it matters:** removes the "generate 3 ideas + refine + visualize" double-hop from director sessions, keeps taste reasoning in the harness where the artist is talking, avoids unnecessary paid/backend LLM calls, and lets Codex directly edit the actual output instead of asking another model to rewrite it.
 
-**Concept note:** concept should follow the same pattern as style. The apply-only concept tool already exists; the remaining work is mostly instruction/product flow, plus any missing style-direction apply surface needed to persist Codex-written style text before visualization.
+Studio's backend concept/style generators remain available for civilian UI users. MCP director sessions should prefer the native apply lane.
 
 ---
 
 ### R40 — Character/environment look-generation recipe overrides
 
-Status: **proposed** · Raised: 2026-05-17
+Status: **shipped first pass** · Raised: 2026-05-17 · Updated: 2026-05-17
 
 R29 phase 2 made `concept`, `script`, `shot_prompts`, `storyboard`, and `video` overridable project prompt recipes. The looks pipeline is still missing the same agency surface. Directors can edit character/environment descriptions and generation prompts as project state, but they cannot yet override the recipe that decides *how* Lahari turns those entities plus the locked style ref into look-generation prompts/images.
 
-**Recommendation:** add R29-style project prompt override kinds for the looks stage:
+**Shipped first pass:** added R29-style project prompt override kinds for the looks stage:
 - `character_looks`
 - `environment_looks`
 
-These should control the text recipe used when generating/refining cast and environment look prompts, while the actual image rendering remains a tool call. Codex can then adapt look-generation taste per project — cultural specificity, costume/material discipline, face/body consistency rules, architecture vocabulary, "avoid generic devotional gloss," etc. — without editing tier-3 engine prompts.
+These control the runtime text recipe used when generating/refining cast and environment looks, while the actual image rendering remains a tool call. The recipe is applied at generation time and does not permanently bake itself into each cast/env saved prompt, so reverting the project override cleanly returns to the engine default. Codex can adapt look-generation taste per project — cultural specificity, costume/material discipline, face/body consistency rules, architecture vocabulary, "avoid generic devotional gloss," etc. — without editing tier-3 engine prompts.
 
 **Why it matters:** character and environment looks set the visual DNA for every downstream frame, board, and video. If the director cannot tune the look-generation recipe, the system keeps pulling them back into generic defaults. This is the same freedom R29 gave storyboard/video prompts, applied earlier in the pipeline where taste compounds.
 
-**When to build:** future, after the current script/storyboard file-native authoring loop proves stable. The clean implementation is likely small (allowlist + config files + prompt assembly reads), but it touches the image/look generation path, so it should land as a deliberate looks-pipeline pass rather than as incidental config churn.
+Requires migration `2026-05-17_agency_pass_models_workflow_looks.sql`.
+
+---
+
+### R41 — Per-shot workflow mode
+
+Status: **shipped first pass** · Raised: 2026-05-17
+
+Project-wide storyboard/keyframe defaults were too rigid. A project can mostly be storyboard-mode but have one keyframe-heavy hero shot, or mostly keyframe-mode but use a storyboard board for a hard continuity bridge.
+
+**Shipped first pass:** shots now carry `workflow_mode: auto | storyboard | keyframe`. `auto` preserves existing project/model behavior. `storyboard` forces storyboard-board-first flow and refuses video generation if no locked board exists. `keyframe` forces the first-frame path even on Seedance projects. Codex sets modes through `apply_shot_workflow_modes`; packets, notebooks, storyboard drafts, and plan responses surface the mode.
+
+This is agent-first for now. Studio UI can stay simple; the web app will naturally reflect the chosen path when generation tools run.
 
 ---
 
@@ -929,3 +943,4 @@ Dated entries as recommendations move through status. Append-only.
 - 2026-05-15 — `/connect` redesign (commit `d5c6f3d`) plus follow-ups: three numbered steps, tabbed harness switching (Codex Desktop / Claude Code), platform sub-toggle (macOS/Windows/Linux/CLI) auto-detected from User-Agent, verify-success emerald callout, troubleshooting drawer with concrete failure-mode fixes, "I've copied it safely" confirmation chip that masks the token after copy. Cherry-picked to main, deployed.
 - 2026-05-15 — Abstraction platform branched (R38). Plan seeded at `docs/abstraction-platform-plan.md`. Decision: brand is **Mirage**, multi-tenant SaaS single brand for now, separate Supabase + Railway for `studio_*` schema, music video + anime as v1 proof. Work proceeds on `abstraction` branch in a separate worktree; engine fixes flow `codex-native-studio → abstraction` via merge.
 - 2026-05-15 — Ledger cleanup. R17/R28/R29 statuses updated to shipped + validated. R35 (write_project_notebook), R36 (realtime presence), R37 (per-scope ShotCard indicator, proposed), R38 (abstraction platform) filed. Current State snapshot rewritten — distribution is real, no operational items pending, next workstream is the abstraction platform on its own branch. `docs/templates/AGENTS.md` archived (obsoleted by write_project_notebook generating per-project AGENTS.md).
+- 2026-05-17 — Agency/free-the-director pass shipped first pass. R32 per-call model overrides added to storyboard/video plan + generation tools; R39 Codex-native style direction apply added (`apply_style_direction`) alongside existing `apply_concept`; R40 character/environment look recipe overrides added as project prompt kinds and consumed by look generation at runtime; R41 per-shot workflow mode (`auto | storyboard | keyframe`) added with apply tool and plan/generation gating. Notebook version bumped to `2026-05-17.agency-pass-v1`; docs, MCP instructions, and skills updated. Requires applying `migrations/2026-05-17_agency_pass_models_workflow_looks.sql` before using new override kinds/workflow modes in production.

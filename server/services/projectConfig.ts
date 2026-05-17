@@ -10,7 +10,7 @@ import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
 type Project = Awaited<ReturnType<typeof getFullProject>>;
 
-export const PROJECT_PROMPT_OVERRIDE_KINDS = ['concept', 'script', 'shot_prompts', 'storyboard', 'video'] as const;
+export const PROJECT_PROMPT_OVERRIDE_KINDS = ['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks'] as const;
 export type ProjectPromptOverrideKind = typeof PROJECT_PROMPT_OVERRIDE_KINDS[number];
 export type ProjectPromptScopeType = 'project' | 'scene' | 'shot';
 
@@ -117,6 +117,24 @@ const promptSeedBody = (kind: ProjectPromptOverrideKind): string => {
       'No project storyboard override is active.',
       '',
       'When Codex applies one here, it should describe the reusable recipe for how storyboard prompts should be written for this project. Per-shot prompt text still belongs on the shot itself.',
+    ].join('\n');
+  }
+  if (kind === 'character_looks') {
+    return [
+      '# Project Character Looks Override',
+      '',
+      'No project character-looks override is active.',
+      '',
+      'When Codex applies one here, it should describe the reusable recipe for how character/entity look prompts should be written for this project. Per-character descriptions and prompts still belong on the cast entries.',
+    ].join('\n');
+  }
+  if (kind === 'environment_looks') {
+    return [
+      '# Project Environment Looks Override',
+      '',
+      'No project environment-looks override is active.',
+      '',
+      'When Codex applies one here, it should describe the reusable recipe for how environment/location look prompts should be written for this project. Per-environment descriptions and prompts still belong on the environment entries.',
     ].join('\n');
   }
   return [

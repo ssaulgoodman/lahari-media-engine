@@ -34,7 +34,7 @@ What it is NOT:
 
 **Presets (curated, ground-truth):** Lahari ships style presets that are already known to work for bhakti/devotional projects. When the song fits one of these registers (warm temple, cool sacred river, golden serenity, etc.), lock the preset directly. No brainstorm needed. Saul's existing workflow has shifted in this direction — most projects should pick a preset.
 
-**Brainstorm directions:** Use when no preset matches the song's register. Brainstorming should produce 3-4 genuinely different directions (different medium, different palette, different reference tradition), not 4 variations of the same direction.
+**Brainstorm directions:** Use when no preset matches the song's register. In director sessions, Codex should write these directions itself, not call a backend LLM brainstorm by default. Produce one or two strong options when the artist wants speed, or 3-4 genuinely different directions when exploration is the point (different medium, different palette, different reference tradition), not variations of the same direction. Persist approved text with `apply_style_direction`; visualization is the separate paid image step.
 
 **Visualizing a direction:** The visualize step produces a reusable style frame. It is NOT a scene from the video. Anti-pattern: the visualization shows the song's main character in a key moment — that's a poster, not a style. Re-prompt to remove subject specificity.
 
@@ -79,8 +79,7 @@ Fix paths:
 
 ## What This Skill Doesn't Cover
 
-- Writing the style brainstorm or visualization prompts themselves — those are text-writing operations that move to R28 apply-only when ready.
-- Image-gen tool calls for style visualization — that's a tier-2 tool call.
+- Image-gen tool calls for style visualization — that's a tier-2 paid tool call after the text direction is approved.
 - Critiquing generated character/environment look references (which are style-consuming, not style-defining) — that's its own kind of triage, partially covered by `render-triage`.
 
 ## Cross-References
