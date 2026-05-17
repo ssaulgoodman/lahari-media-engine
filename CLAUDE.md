@@ -43,6 +43,8 @@ Auth and ownership: Supabase Auth via `requireAuth`. Project route params verify
 
 Simple mutations usually return `{ ok: true }` and frontend applies optimistic updates. AI/generate/refine/fork/analyze/fetch-style actions still return full project snapshots. Do not casually convert one shape to the other without checking frontend expectations.
 
+Artist director work happens through deployed remote MCP, not inside this engine repo. `write_project_notebook` materializes an artist workspace with `mirrors/`, `drafts/`, `config/`, `journal.md`, AGENTS/CLAUDE files, and skills. `mirrors/` are read-only Supabase snapshots. `drafts/script.md` is editable; apply it with `apply_script_markdown`, which parses the strict markdown format, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
+
 Prompt source-of-truth discipline:
 - Runtime prompt changes must be reflected in `server/prompts/catalog.ts`.
 - Pipeline behavior changes must update `docs/pipeline-anatomy.md`.
