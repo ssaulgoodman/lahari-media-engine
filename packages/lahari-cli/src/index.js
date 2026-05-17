@@ -9,6 +9,7 @@ const pkg = require('../package.json');
 
 const DEFAULT_API_URL = 'https://lahari-media-engine-production.up.railway.app';
 const STATE_FILE = '.sync-state.json';
+const LOCK_DIR = '.sync-state.lock';
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const normalizeSlash = (value) => value.split(path.sep).join('/');
@@ -83,6 +84,28 @@ const writeText = (filePath, content) => {
   fs.writeFileSync(filePath, content);
 };
 
+const acquireLock = (lockPath) => {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  try {
+    fs.mkdirSync(lockPath);
+    writeText(path.join(lockPath, 'owner.json'), `${JSON.stringify({
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`);
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      fail('sync_already_running', 'Another Lahari notebook sync appears to be running for this project. Wait for it to finish, then retry.', { lockPath }, 4);
+    }
+    throw error;
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    fs.rmSync(lockPath, { recursive: true, force: true });
+  };
+};
+
 const token = () => process.env.LAHARI_CLI_TOKEN || process.env.LAHARI_TOKEN || process.env.LAHARI_MCP_TOKEN || '';
 const apiUrl = (opts) => (opts.apiUrl || process.env.LAHARI_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
 
@@ -112,6 +135,8 @@ const sync = async (opts) => {
   if (!opts.projectId) fail('missing_project_id', 'Usage: lahari sync <projectId>');
   const workspace = path.resolve(opts.cwd);
   const statePath = safeJoin(workspace, `lahari/projects/${opts.projectId}/${STATE_FILE}`);
+  const releaseLock = acquireLock(safeJoin(workspace, `lahari/projects/${opts.projectId}/${LOCK_DIR}`));
+  try {
   const previousState = readJson(statePath, { files: {} });
   const previousFiles = previousState.files || {};
   const knownHashes = {};
@@ -220,6 +245,9 @@ const sync = async (opts) => {
     details: { written, skipped, removed },
   });
   process.exit(conflicts.length ? 3 : 0);
+  } finally {
+    releaseLock();
+  }
 };
 
 const opts = parseArgs(process.argv.slice(2));
