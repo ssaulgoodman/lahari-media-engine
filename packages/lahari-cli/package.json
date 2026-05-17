@@ -1,0 +1,15 @@
+{
+  "name": "@lahari/cli",
+  "version": "0.1.0",
+  "description": "Lahari artist workspace sync CLI.",
+  "type": "module",
+  "bin": {
+    "lahari": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

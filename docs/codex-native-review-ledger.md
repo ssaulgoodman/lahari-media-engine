@@ -14,14 +14,14 @@
 
 **Architecture status (as of 2026-05-15):**
 
-R17 + R28 + R29 are all shipped to production and validated by the first artist. The artist-facing distribution is **real** — remote MCP is live, artists mint tokens at `/connect`, install snippets work on Codex Desktop and Claude Code, `write_project_notebook` materializes per-project workspaces, realtime presence shows agent activity in the web studio. This is the moment R17 was building toward, and it's here.
+R17 + R28 + R29 are all shipped to production and validated by the first artist. The artist-facing distribution is **real** — remote MCP is live, artists mint tokens at `/connect`, install snippets work on Codex Desktop and Claude Code, `npx @lahari/cli sync` is the preferred large-notebook materialization path, `write_project_notebook` remains the pure-MCP fallback, and realtime presence shows agent activity in the web studio. This is the moment R17 was building toward, and it's here.
 
 **Shipped and live in production:**
 
 - **R17** — Remote MCP at `/mcp` with bearer-token auth, `/connect` page for token minting + install snippets, `lahari_mcp_tokens` table with sha256-hashed storage, and a local `@lahari/mcp-server` fallback package implemented in-repo (publish pending if needed). **Validated by first artist install.**
 - **R28** — Six apply-only text tools: concept, script, shot_prompts, storyboard_prompt + bulk, video_prompt. Codex writes content via skill shards, apply tools validate + persist with drift checking. Migration applied.
 - **R29** — Project config + prompt overrides through phase 2. All 5 prompt kinds (concept, script, shot_prompts, storyboard, video) overridable per project. Migration applied.
-- **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: `mirrors/` read-only snapshots, `drafts/` editable working copies, `config/` project overrides, `journal.md` local memory. `drafts/script.md` applies through `apply_script_markdown`; `drafts/storyboards/<scene>.md` applies through `apply_storyboard_scene_markdown`. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
+- **R35/R42** — Notebook layout + sync. Preferred: MCP `mint_cli_token` then `npx @lahari/cli sync <projectId>` writes notebooks directly with idempotent hash/conflict handling. Fallback: `write_project_notebook` returns file payloads. Layout: `mirrors/` read-only snapshots, `drafts/` editable working copies, `config/` project overrides, `journal.md` local memory. `drafts/script.md` applies through `apply_script_markdown`; `drafts/storyboards/<scene>.md` applies through `apply_storyboard_scene_markdown`. Skills served from `server/resources/skills/`.
 - **R36** — Realtime agent operation presence. `lahari_agent_operations` table, per-tool start/finish tracking, Supabase realtime subscription in web studio, "Codex is working" pill in header. Migration applied.
 - **Security hardening** — In-memory rate limiting (per user, per tool category), body size limits, Zod max sizes on payloads, audit redaction of prompt/script/concept content, `lahari_capture_issue` requires project ownership.
 - **Skills** — Six shards (lahari-director orchestrator + storyboard-prompt-craft / script-doctor / continuity-auditor / style-ref-critic / render-triage) bundled at `server/resources/skills/`, ship in deploy artifact, materialized into artist workspace by `write_project_notebook`.
@@ -39,8 +39,9 @@ None. All migrations applied. All deploys live.
 4. **R39** — Codex-native concept/style ideation shipped for director sessions: `apply_concept` plus new `apply_style_direction`; Studio's backend idea generators remain for civilian UI.
 5. **R40** — Character/environment look-generation recipe overrides shipped as project prompt kinds (`character_looks`, `environment_looks`) and consumed by Studio look generation at runtime.
 6. **R41** — Per-shot workflow mode shipped (`auto | storyboard | keyframe`) so Codex can force exceptions without changing whole-project defaults.
-7. **R33 / R34** — Model-bias correction and apply-only harness-native media remain filed for later. Post-abstraction or post-next-artist-feedback.
-8. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
+7. **R42** — Agent-run notebook sync CLI shipped first pass. Publish `@lahari/cli` and apply token-scope migration before relying on it live.
+8. **R33 / R34** — Model-bias correction and apply-only harness-native media remain filed for later. Post-abstraction or post-next-artist-feedback.
+9. **Polish items P-poli-01..11** — Address opportunistically when adjacent code is being touched.
 
 **Engineering watch items (not yet ledger entries):**
 
@@ -866,6 +867,26 @@ Project-wide storyboard/keyframe defaults were too rigid. A project can mostly b
 This is agent-first for now. Studio UI can stay simple; the web app will naturally reflect the chosen path when generation tools run.
 
 **Follow-ups:** `apply_shot_workflow_modes` currently has no baseHash/drift check because it mutates one low-risk field per shot. Add one before Studio exposes a workflow-mode toggle. Studio also needs a small workflow badge/filtering pass before civilian bulk actions understand forced keyframe/storyboard modes.
+
+---
+
+### R42 — Agent-run notebook sync CLI
+
+Status: **shipped first pass** · Raised: 2026-05-17
+
+The first remote notebook path sent every file body through one giant MCP text response. It worked, but longer projects make that brittle and expensive in chat context. Notebook materialization is bulk file IO, so the artist agent should use a local sync command while project mutations remain MCP/apply-tool mediated.
+
+**Shipped first pass:** hosted MCP exposes `mint_cli_token(projectId, ttlMinutes)` which creates a short-lived project-scoped token. New package `@lahari/cli` exposes `lahari sync <projectId>`, calls `/api/notebook-sync/projects/:id/notebook`, writes files directly to the current workspace, and maintains `lahari/projects/<id>/.sync-state.json` for idempotent hashes and conflict detection.
+
+Sync rules:
+- `overwrite` files are refreshed from Supabase state.
+- `create_if_missing` files like `journal.md` are never clobbered.
+- `review_before_overwrite` files under `drafts/` and `config/` are protected with a last-known-server hash. If local and server both changed, CLI skips and reports a conflict unless `--force` is used.
+- Removed server files are deleted only when the local file still matches the last-known hash.
+
+`write_project_notebook` remains as the pure-MCP fallback for environments without shell/npx. Apply-tool `changedArtifacts` still handles small refreshes; use CLI sync when `notebookRefresh.recommended` or when the notebook is stale/damaged.
+
+Requires migration `2026-05-17_add_cli_notebook_sync_tokens.sql` and publishing `packages/lahari-cli`.
 
 ---
 

@@ -28,7 +28,7 @@ Always confirm `pwd` and `git status --short --branch` before editing. Don't swi
 
 ## Where artists live
 
-Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, drafts, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine.
+Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP, calls `mint_cli_token`, and runs `npx @lahari/cli sync <projectId>` to materialize the workspace (mirrors, drafts, config, journal, AGENTS.md, skills) inside that folder. `write_project_notebook` remains the pure-MCP fallback when shell/npx is unavailable. No engine code on the artist's machine.
 
 Current notebook contract:
 - `mirrors/` are overwritten from Supabase and should not be hand-edited.
@@ -151,7 +151,7 @@ Generated local artifacts from internal debug commands live under `.lahari/` and
 
 Durable artist/operator decisions are written to Supabase `lahari_director_events`. Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
 
-Remote artist notebooks use `lahari/projects/<projectId>/` instead of `.lahari/`. That folder is created by `write_project_notebook`, not by this repo's internal CLI.
+Remote artist notebooks use `lahari/projects/<projectId>/` instead of `.lahari/`. That folder is created by `npx @lahari/cli sync` using a short-lived project-scoped token, or by `write_project_notebook` fallback, not by this repo's internal CLI.
 
 **Realtime transport is shipped (R36):** `lahari_agent_operations` table tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across 13 project-relevant tables for cascade refresh.
 
