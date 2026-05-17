@@ -62,7 +62,7 @@ Not every operation should round-trip through the Lahari backend to call an LLM.
 | Storyboard prompt + cut plan writing | Harness-native | Text, conversational |
 | Storyboard prompt refines | Harness-native | Read existing + rewrite per instruction |
 | Video prompt writing/refines | Harness-native | Text, derived from cut plan |
-| Style direction brainstorm | Harness-native (rare; styles → presets) | Text |
+| Style direction brainstorm | Harness-native | Text generation, no double-hop needed |
 | Style preset lock | Tool call | Image upload |
 | Style visualization | Tool call | Image generation API |
 | Character/environment looks | Tool call | Image generation API |
@@ -77,6 +77,8 @@ Not every operation should round-trip through the Lahari backend to call an LLM.
 **The seam: apply-only tools.** Take pre-written structured content, validate against constraints (schema, scene durations, prompt length caps, etc.), persist via the same path as existing apply tools, record a director event. No LLM call inside the tool. Codex writes the content; the apply tool is the constraint enforcer. If the content violates a constraint, apply rejects with structured error and Codex retries.
 
 **The web studio retains its own "Generate" buttons** with backend LLM endpoints so non-harness users still get AI authoring. Two paths converge at the same persistence layer.
+
+**Future simplification:** concept and style ideation should follow the same Codex-native apply-only pattern as script/storyboard text. Codex should read the song, script, culture, audience, and project taste; write one or more concept/style directions directly; persist them through typed apply tools; then call visualization only when pixels are needed. The backend "generate 3 ideas + refine idea + visualize" loop is useful for the civilian Studio button path, but it should not be the director-agent default. This removes a needless LLM round-trip, makes edits surgical, and keeps taste reasoning in the harness where the artist is already talking.
 
 **Nuance on media generation as harness capabilities evolve.** The "tool call" entries above are not permanent boundaries — they reflect where harness capability is *today*. The honest framing is "does the harness have a capable native generator for this specific case":
 

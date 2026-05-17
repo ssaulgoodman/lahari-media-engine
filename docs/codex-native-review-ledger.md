@@ -35,8 +35,9 @@ None. All migrations applied. All deploys live.
 
 1. **Abstraction platform** (new branch + worktree `lahari-abstraction`). SeedKind / Workflow / Preset decomposition. New Supabase + Railway for `studio_*` schema. Music video + anime as v1 proof. See `docs/abstraction-platform-plan.md`. Brand: **Mirage**, multi-tenant SaaS, single brand for now.
 2. **R37** — Per-shot/scene presence indicators on ShotCard (backend supports it; UI hasn't surfaced it yet). Half day. Codex.
-3. **R32 / R33 / R34** — Per-call model override, model-bias correction, apply-only harness-native media. Filed but not built. Post-abstraction or post-first-artist-feedback.
-4. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
+3. **R39** — Codex-native concept/style ideation. Keep Studio's backend generator for civilians, but director agents should write and apply concepts/style directions natively, then call visualize only when pixels are needed.
+4. **R32 / R33 / R34** — Per-call model override, model-bias correction, apply-only harness-native media. Filed but not built. Post-abstraction or post-first-artist-feedback.
+5. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
 
 **Engineering watch items (not yet ledger entries):**
 
@@ -808,6 +809,26 @@ Three-axis decomposition: `SeedKind` (audio/script/brief/document/idea), `Workfl
 Brand: **Mirage**, single brand multi-tenant SaaS, beta testers building anime/reels/ads with presets. White-label deferred until first big client.
 
 Full design at `docs/abstraction-platform-plan.md`. Work proceeds on the `abstraction` branch in a separate worktree (`~/Code/lahari-media-engine/lahari-abstraction`). Engine fixes flow `codex-native-studio → abstraction` via merge, not the other direction.
+
+---
+
+### R39 — Codex-native concept + style ideation
+
+Status: **proposed** · Raised: 2026-05-17
+
+The current Studio path still routes concept/style ideation through backend LLM endpoints: generate multiple ideas, optionally refine, then visualize a selected style. That remains useful for civilian UI users, but it is the wrong default for director-agent sessions. Concept and style direction writing are text work; Codex already has the model, the conversation, the song/script context, the culture/taste rubric, and the ability to edit outputs surgically.
+
+**Recommendation:** move director-session concept/style ideation to the Codex-native apply-only lane. Codex writes one or more concept directions or style directions itself, using the relevant skill rubric, then persists them through typed apply tools. Visualization remains a tool call because it creates pixels. Preset lock remains a tool call because it selects a curated asset.
+
+**Target flow:**
+1. Codex reads audio analysis, lyrics, script, notes, and taste context.
+2. Codex writes one or two concept/style directions directly in the workspace or response.
+3. Codex applies the chosen text through `apply_concept` or a future style-direction apply tool.
+4. Only after text approval does Codex call the style visualizer or lock a preset/asset.
+
+**Why it matters:** removes the "generate 3 ideas + refine + visualize" double-hop from director sessions, keeps taste reasoning in the harness where the artist is talking, avoids unnecessary paid/backend LLM calls, and lets Codex directly edit the actual output instead of asking another model to rewrite it.
+
+**Concept note:** concept should follow the same pattern as style. The apply-only concept tool already exists; the remaining work is mostly instruction/product flow, plus any missing style-direction apply surface needed to persist Codex-written style text before visualization.
 
 ---
 
