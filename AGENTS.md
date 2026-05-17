@@ -8,7 +8,7 @@ Guidance for Codex when working in this repo. Keep this file aligned with `CLAUD
 
 ## Operating Principle
 
-Supabase is canonical project truth. Local files in artist workspaces (mirrors, journal, config) are desk copies for reading, drafting, diffing — hand edits are not production state unless an apply tool persists them.
+Supabase is canonical project truth. Local files in artist workspaces are desk copies and drafts for reading, editing, diffing, and handoff. `mirrors/` are read-only DB snapshots. `drafts/` are editable working copies that become production only when an apply tool persists them. `config/` is the editable project override layer.
 
 **This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Lahari — remote MCP at `/mcp`, materialized per-project workspaces via `write_project_notebook`. Internal MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) exist here as engine-side debug + scripting tools, not as a director-session surface.
 
@@ -27,7 +27,13 @@ This checkout is the **preset abstraction lane**.
 
 Do preset/generalization work here. Do not switch the main checkout away from `main` for this lane, and do not use this checkout for urgent production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
-Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine.
+Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, drafts, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine.
+
+Current notebook contract:
+- `mirrors/` are overwritten from Supabase and should not be hand-edited.
+- `drafts/script.md` is the editable script working copy. Agents should make surgical file edits there, then call `apply_script_markdown`; the tool parses the draft, checks `scriptFingerprint` drift, validates references/durations, and applies through the atomic script RPC.
+- `config/prompts/*.md` and `config/preferences.json` are project-level runtime overrides. Edit locally, then persist with `apply_project_prompt_override` or `apply_project_preferences`.
+- `journal.md` is local operator memory. Append concise decisions; do not treat it as canonical project state.
 
 Director-session work in this engine repo is a developer-only path — used for debugging, testing internal MCP changes, or operating against the canonical engine without going through Railway. Identical tool surface to remote, identical apply discipline.
 
@@ -175,6 +181,8 @@ Generated local artifacts from internal debug commands live under `.lahari/` and
 - `.lahari/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
 
 Durable artist/operator decisions are written to Supabase `lahari_director_events`. Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
+
+Remote artist notebooks use `lahari/projects/<projectId>/` instead of `.lahari/`. That folder is created by `write_project_notebook`, not by this repo's internal CLI.
 
 **Realtime transport is shipped (R36):** `lahari_agent_operations` table tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across 13 project-relevant tables for cascade refresh.
 
