@@ -4,10 +4,13 @@ import { getSB, selectColumns, selectOne, updateRows } from '../database.js';
 const TOKEN_PREFIX = 'lahari_mcp_';
 const DEFAULT_EXPIRY_DAYS = 30;
 const MAX_EXPIRY_DAYS = 90;
+const DEFAULT_CLI_TTL_MINUTES = 60;
+const MAX_CLI_TTL_MINUTES = 180;
 
 const nowIso = () => new Date().toISOString();
 
 const daysFromNowIso = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+const minutesFromNowIso = (minutes: number) => new Date(Date.now() + minutes * 60 * 1000).toISOString();
 
 export const hashMcpToken = (token: string) => {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -26,6 +29,12 @@ const normalizeExpiryDays = (expiresInDays?: number | null) => {
   return Math.max(1, Math.min(Math.round(n), MAX_EXPIRY_DAYS));
 };
 
+const normalizeTtlMinutes = (ttlMinutes?: number | null) => {
+  const n = Number(ttlMinutes || DEFAULT_CLI_TTL_MINUTES);
+  if (!Number.isFinite(n)) return DEFAULT_CLI_TTL_MINUTES;
+  return Math.max(5, Math.min(Math.round(n), MAX_CLI_TTL_MINUTES));
+};
+
 export const createMcpToken = async (
   userId: string,
   opts: { label?: string | null; expiresInDays?: number | null } = {},
@@ -39,6 +48,7 @@ export const createMcpToken = async (
     token_hash: hashMcpToken(token),
     token_prefix: token.slice(0, 18),
     expires_at: daysFromNowIso(expiresInDays),
+    token_kind: 'mcp',
   };
   const { data, error } = await getSB()
     .from('lahari_mcp_tokens')
@@ -76,11 +86,60 @@ Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`,
   };
 };
 
+export const createCliToken = async (
+  userId: string,
+  opts: { projectId: string; ttlMinutes?: number | null; label?: string | null } = { projectId: '' },
+) => {
+  if (!userId) throw new Error('Auth required');
+  if (!opts.projectId) throw new Error('projectId is required');
+  const project = await selectOne('projects', { id: opts.projectId });
+  if (!project) throw new Error(`Project not found: ${opts.projectId}`);
+  if (project.user_id !== userId) throw new Error('Access denied');
+
+  const token = `${TOKEN_PREFIX}${crypto.randomBytes(32).toString('base64url')}`;
+  const ttlMinutes = normalizeTtlMinutes(opts.ttlMinutes);
+  const row = {
+    user_id: userId,
+    label: sanitizeLabel(opts.label || `CLI sync: ${project.title || opts.projectId}`),
+    token_hash: hashMcpToken(token),
+    token_prefix: token.slice(0, 18),
+    expires_at: minutesFromNowIso(ttlMinutes),
+    token_kind: 'cli',
+    scope_project_id: opts.projectId,
+  };
+  const { data, error } = await getSB()
+    .from('lahari_mcp_tokens')
+    .insert(row)
+    .select('id')
+    .single();
+  if (error) throw new Error(`DB insert cli token: ${error.message}`);
+  const apiUrl = (process.env.LAHARI_API_URL || 'https://lahari-media-engine-production.up.railway.app').replace(/\/+$/, '');
+  const cliPackage = '@lahari/cli@0.1.0';
+  const posixCommand = `LAHARI_CLI_TOKEN=${token} LAHARI_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
+  const powershellCommand = `$env:LAHARI_CLI_TOKEN='${token}'; $env:LAHARI_API_URL='${apiUrl}'; npx -y ${cliPackage} sync ${opts.projectId}`;
+  return {
+    kind: 'lahari.cli_token.created',
+    id: data.id,
+    token,
+    tokenPrefix: row.token_prefix,
+    tokenKind: row.token_kind,
+    scopeProjectId: row.scope_project_id,
+    expiresAt: row.expires_at,
+    ttlMinutes,
+    command: posixCommand,
+    commands: {
+      posix: posixCommand,
+      powershell: powershellCommand,
+    },
+    note: 'Short-lived project-scoped token. Do not store it; use it for one notebook sync command.',
+  };
+};
+
 export const listMcpTokens = async (userId: string) => {
   if (!userId) throw new Error('Auth required');
   const rows = await selectColumns(
     'mcp_tokens',
-    'id,label,token_prefix,created_at,expires_at,last_used_at,revoked_at',
+    'id,label,token_prefix,token_kind,scope_project_id,created_at,expires_at,last_used_at,revoked_at',
     { user_id: userId },
     { orderBy: 'created_at', ascending: false, limit: 50 },
   );
@@ -90,6 +149,8 @@ export const listMcpTokens = async (userId: string) => {
       id: row.id,
       label: row.label,
       tokenPrefix: row.token_prefix,
+      tokenKind: row.token_kind || 'mcp',
+      scopeProjectId: row.scope_project_id || null,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       lastUsedAt: row.last_used_at,
@@ -118,7 +179,7 @@ export const verifyMcpBearerToken = async (token: string | null | undefined) => 
   const hash = hashMcpToken(token);
   const { data, error } = await getSB()
     .from('lahari_mcp_tokens')
-    .select('id,user_id,label,expires_at,revoked_at')
+    .select('id,user_id,label,token_kind,scope_project_id,expires_at,revoked_at')
     .eq('token_hash', hash)
     .limit(1)
     .maybeSingle();
@@ -131,5 +192,7 @@ export const verifyMcpBearerToken = async (token: string | null | undefined) => 
     tokenId: data.id as string,
     userId: data.user_id as string,
     label: data.label as string,
+    tokenKind: (data.token_kind || 'mcp') as string,
+    scopeProjectId: (data.scope_project_id || null) as string | null,
   };
 };

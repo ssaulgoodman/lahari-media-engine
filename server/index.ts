@@ -31,6 +31,7 @@ import { renderCallbackRouter } from './routes/render-callback.js';
 import { directorRouter } from './routes/director.js';
 import { mcpTokensRouter } from './routes/mcp-tokens.js';
 import { mcpRouter } from './routes/mcp.js';
+import { notebookSyncRouter } from './routes/notebook-sync.js';
 import { requireAuth } from './middleware/auth.js';
 import { startRenderWatchdog } from './render-watchdog.js';
 import { startRenderReconciler } from './render-reconciler.js';
@@ -65,6 +66,7 @@ app.use('/mcp', (err: any, req: express.Request, res: express.Response, next: ex
   return next(err);
 });
 app.use('/api/director', express.json({ limit: process.env.DIRECTOR_API_JSON_LIMIT || '5mb' }), requireAuth, directorRouter);
+app.use('/api/notebook-sync', express.json({ limit: process.env.NOTEBOOK_SYNC_JSON_LIMIT || '1mb' }), notebookSyncRouter);
 app.use('/api/mcp-tokens', express.json({ limit: process.env.MCP_TOKENS_JSON_LIMIT || '32kb' }), requireAuth, mcpTokensRouter);
 app.use(express.json({ limit: '50mb' }));
 
