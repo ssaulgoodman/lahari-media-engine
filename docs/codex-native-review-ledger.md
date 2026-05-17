@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-15 — Cleanup pass: R17/R28/R29 marked shipped + validated; R35–R38 filed; abstraction platform branched.
+**Last touched:** 2026-05-17 — Notebook guidance synced after editable script drafts shipped.
 
 ---
 
@@ -21,7 +21,7 @@ R17 + R28 + R29 are all shipped to production and validated by the first artist.
 - **R17** — Remote MCP at `/mcp` with bearer-token auth, `/connect` page for token minting + install snippets, `lahari_mcp_tokens` table with sha256-hashed storage, and a local `@lahari/mcp-server` fallback package implemented in-repo (publish pending if needed). **Validated by first artist install.**
 - **R28** — Six apply-only text tools: concept, script, shot_prompts, storyboard_prompt + bulk, video_prompt. Codex writes content via skill shards, apply tools validate + persist with drift checking. Migration applied.
 - **R29** — Project config + prompt overrides through phase 2. All 5 prompt kinds (concept, script, shot_prompts, storyboard, video) overridable per project. Migration applied.
-- **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: mirrors/, config/, journal.md. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
+- **R35** — `write_project_notebook` tool + `changedArtifacts` on apply responses. Notebook layout: `mirrors/` read-only snapshots, `drafts/` editable working copies, `config/` project overrides, `journal.md` local memory. AGENTS.md generated per-project. Skills served from `server/resources/skills/` (deploy-safe bundle).
 - **R36** — Realtime agent operation presence. `lahari_agent_operations` table, per-tool start/finish tracking, Supabase realtime subscription in web studio, "Codex is working" pill in header. Migration applied.
 - **Security hardening** — In-memory rate limiting (per user, per tool category), body size limits, Zod max sizes on payloads, audit redaction of prompt/script/concept content, `lahari_capture_issue` requires project ownership.
 - **Skills** — Six shards (lahari-director orchestrator + storyboard-prompt-craft / script-doctor / continuity-auditor / style-ref-critic / render-triage) bundled at `server/resources/skills/`, ship in deploy artifact, materialized into artist workspace by `write_project_notebook`.
@@ -765,7 +765,9 @@ Things I might be wrong about. Worth revisiting as we learn.
 
 Status: **shipped + validated** · Raised: 2026-05-14 · Updated: 2026-05-15
 
-Solved the chicken-and-egg problem from R17: artist connects MCP, opens an empty folder, asks "open <song>" — and the workspace has to materialize itself. `write_project_notebook(projectId)` returns deterministic file payloads (`{ path, content, mode, writePolicy }`) that the agent writes via harness file tools. Layout: `lahari/projects/<id>/mirrors/` (read-only state mirrors), `config/` (Tier-1 editable overrides + preferences + drift hashes), `journal.md` (local working memory), `AGENTS.md` (workspace instructions). Apply tools return `changedArtifacts` on every mutation so the agent refreshes only the affected mirrors; script apply additionally returns `notebookRefresh.recommended` because shot-topology replacement may leave stale per-shot files.
+Solved the chicken-and-egg problem from R17: artist connects MCP, opens an empty folder, asks "open <song>" — and the workspace has to materialize itself. `write_project_notebook(projectId)` returns deterministic file payloads (`{ path, content, mode, writePolicy }`) that the agent writes via harness file tools. Layout: `lahari/projects/<id>/mirrors/` (read-only state mirrors), `drafts/` (editable working copies), `config/` (Tier-1 editable overrides + preferences + drift hashes), `journal.md` (local working memory), `AGENTS.md` (workspace instructions). Apply tools return `changedArtifacts` on every mutation so the agent refreshes only the affected mirrors; script apply additionally returns `notebookRefresh.recommended` because shot-topology replacement may leave stale per-shot files.
+
+Editable script draft extension: `drafts/script.md` is now the preferred script-refine surface. Agents edit it surgically with file tools, then call `apply_script_markdown`. The tool parses the strict markdown, validates `scriptFingerprint` drift, reference integrity, and shot/scene duration constraints, then persists through the same atomic script apply path as JSON `apply_script`.
 
 Generated rather than distributed: AGENTS.md and skill shards are emitted by the tool, not bundled in an `npx setup` step. Engine updates ship via Railway deploy, instant for all artists.
 
