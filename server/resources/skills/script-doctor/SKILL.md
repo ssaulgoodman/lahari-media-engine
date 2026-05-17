@@ -11,13 +11,27 @@ A Lahari script is a music video plan: scenes derived from the song's musical se
 
 **Scene structure follows musical structure.** If the song has verse / chorus / verse / bridge / chorus structure, scenes should map to those sections, not to a separate narrative the script invented. A 4-minute bhajan with 6 musical sections becomes ~6 scenes; never 12.
 
-**Shot count per scene is bounded by duration.** Each shot has a duration (typically 5-10s for Seedance, 4-8s for Veo). A 22-second scene with 8s shots needs ceil(22/8) = 3 shots (8 + 8 + 6). Not 2 (8 + 14, too long). Not 4 (over-cut, won't read).
+**Shot count per scene is bounded by duration.** In Seedance/storyboard mode, anchor pacing around 15-second clips unless the artist explicitly asks for faster cutting. Split anything longer than 15s into adjacent shots; for shorter scenes, use the closest natural duration under 15s. A 42-second scene usually becomes 3 shots (14 + 14 + 14), not 2 shots (21 + 21, too long) and not 6 shots (over-cut, won't read). A 22-second scene usually becomes 2 shots (11 + 11) or 3 only if the music clearly has three beats. Standard/keyframe mode may use shorter 4-8s clips when the selected video model or render plan requires it.
 
 **Cast and environment assignments must reach every named entity.** If the script names "Shantamma" in the description, at least one shot must explicitly cast her. If the script names "the temple courtyard," at least one shot must place its action there. Dangling names create downstream confusion — the look-generation phase won't know what to render references for.
 
 **Beats are visible and shootable.** Each shot's beat is the *one thing that changes* in that shot, expressed as something a camera could record. "Surrender" is not a beat. "She lowers her body to the stone, palms flat on the floor" is.
 
 **Direction (the shot's creative intent) is preserved across edits.** When refining, keep `direction` even when rewriting `visual_prompt`. The direction is the artist's read on what this shot means; the visual prompt is one way to express it.
+
+## Duration And Surgical Edit Contract
+
+When the artist asks to fix durations, pacing, or overly long scenes, treat it as pacing surgery, not a script rewrite. Preserve cast, environments, scene labels, timestamps, lyrics, narrative descriptions, shot IDs, cast assignments, environment assignments, and shot meanings unless the artist explicitly asks to change story content.
+
+Default Seedance/storyboard pacing:
+
+- Aim for clips close to 15s when the phrase can hold one cohesive idea.
+- Use 8-12s for meditative holds, devotional gestures, and quiet transitions that cannot carry 15s.
+- Use 4-8s only for quick connective beats, responses, or scene endings.
+- Never leave a shot above 15s. Split it into two or more adjacent shots with the same cast/environment unless the artist asks for a new subject or location.
+- Scene shot durations must add up exactly to the scene duration.
+
+If a duration fix requires changing shot count, say that plainly before applying: "I am splitting S2.3 into two adjacent shots; cast and environment stay the same." If your draft also changes cast, environments, scene meanings, or named characters, stop and call it a full-script rewrite instead of pretending it is a duration edit.
 
 ## Song-Type Calibration
 
