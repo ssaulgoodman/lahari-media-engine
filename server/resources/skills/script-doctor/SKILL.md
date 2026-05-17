@@ -23,6 +23,8 @@ A Lahari script is a music video plan: scenes derived from the song's musical se
 
 When the artist asks to fix durations, pacing, or overly long scenes, treat it as pacing surgery, not a script rewrite. Preserve cast, environments, scene labels, timestamps, lyrics, narrative descriptions, shot IDs, cast assignments, environment assignments, and shot meanings unless the artist explicitly asks to change story content.
 
+Preferred workflow: edit `lahari/projects/<projectId>/drafts/script.md` with the harness file editor, then apply with `apply_script_markdown`. Read `mirrors/script.md` as the canonical DB snapshot, but do not edit mirrors. The draft frontmatter carries `scriptFingerprint`; if apply returns `drift_detected`, refresh the notebook and reconcile before retrying.
+
 Default Seedance/storyboard pacing:
 
 - Aim for clips close to 15s when the phrase can hold one cohesive idea.

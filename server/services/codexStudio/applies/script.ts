@@ -1,16 +1,19 @@
 import { rpcVoid } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
-import { scriptContentHash, webStudioUrl, type Project } from '../core.js';
+import { scriptContentHash, usesStoryboardWorkflow, webStudioUrl, type Project } from '../core.js';
 import { buildNotebookMirrorArtifacts } from '../notebook.js';
+import { parseScriptMarkdownDraft } from '../scriptMarkdown.js';
 import {
   appendApplyJournal,
   applyError,
   hasDownstreamVisualWork,
+  isApplyError,
   normalizeScriptForApply,
   scriptCounts,
   scriptDraftHash,
   validateBaseHash,
 } from './helpers.js';
+import { parseTimestamp } from '../../script-validation.js';
 
 const projectWithScript = (project: Project, normalized: ReturnType<typeof normalizeScriptForApply>): Project => ({
   ...project,
@@ -110,6 +113,7 @@ export const applyScript = async (
     forced: !!opts.force,
     changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
       script: true,
+      scriptDraft: true,
       cast: true,
       environments: true,
       shotPrompts: true,
@@ -123,4 +127,86 @@ export const applyScript = async (
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
     note: 'Applied full script atomically via Postgres RPC. Cast, environments, scenes, and shots were replaced.',
   };
+};
+
+const validateScriptDurationsForProject = (project: Project, script: ReturnType<typeof normalizeScriptForApply>) => {
+  for (const scene of script.scenes) {
+    const sceneDuration = parseTimestamp(scene.endTime) - parseTimestamp(scene.startTime);
+    if (sceneDuration <= 0) continue;
+    const total = scene.shots.reduce((sum: number, shot: any) => sum + Number(shot.duration || 0), 0);
+    if (Math.abs(total - sceneDuration) > 0.01) {
+      return applyError('validation_failed', `Scene "${scene.sectionLabel}" durations add to ${total}s but scene duration is ${sceneDuration}s.`, {
+        field: 'duration',
+        next: 'Edit drafts/script.md so shot durations in this scene add exactly to the scene timestamp range.',
+      });
+    }
+    if (usesStoryboardWorkflow(project) || project.videoModel?.startsWith('seedance')) {
+      for (const shot of scene.shots) {
+        if (shot.duration > 15) {
+          return applyError('validation_failed', `Shot ${shot.id} is ${shot.duration}s. Seedance/storyboard script drafts must split shots above 15s.`, {
+            field: 'duration',
+            shotId: shot.id,
+            next: 'Split this beat into adjacent shots under 15s, usually preserving the same cast and environment.',
+          });
+        }
+      }
+    }
+  }
+  return null;
+};
+
+const validateScriptReferences = (script: any) => {
+  const castIds = new Set((script.cast || []).map((member: any) => member.id));
+  const environmentIds = new Set((script.environments || []).map((environment: any) => environment.id));
+  for (const scene of script.scenes || []) {
+    for (const shot of scene.shots || []) {
+      for (const castId of shot.castIds || []) {
+        if (!castIds.has(castId)) {
+          return applyError('validation_failed', `Shot ${shot.id} references unknown cast ID ${castId}.`, {
+            field: 'castIds',
+            shotId: shot.id,
+            next: 'Keep cast IDs exactly as written in drafts/script.md, or add the cast entry before referencing it.',
+          });
+        }
+      }
+      if (shot.environmentId && !environmentIds.has(shot.environmentId)) {
+        return applyError('validation_failed', `Shot ${shot.id} references unknown environment ID ${shot.environmentId}.`, {
+          field: 'environmentId',
+          shotId: shot.id,
+          next: 'Keep environment IDs exactly as written in drafts/script.md, or add the environment entry before referencing it.',
+        });
+      }
+    }
+  }
+  return null;
+};
+
+export const applyScriptMarkdown = async (
+  project: Project,
+  markdown: string,
+  opts: { baseFingerprint?: string; force?: boolean } = {},
+) => {
+  const parsed = parseScriptMarkdownDraft(markdown);
+  if (isApplyError(parsed)) return parsed;
+  if (parsed.projectId && parsed.projectId !== project.id) {
+    return applyError('validation_failed', `Script draft projectId ${parsed.projectId} does not match target project ${project.id}.`, {
+      field: 'projectId',
+      next: 'Apply this draft to the matching project, or refresh the notebook for the current project.',
+    });
+  }
+  if (parsed.baseFingerprint && opts.baseFingerprint && parsed.baseFingerprint !== opts.baseFingerprint && !opts.force) {
+    return applyError('drift_detected', 'Script draft fingerprint and submitted baseFingerprint disagree.', {
+      field: 'scriptFingerprint',
+      currentHash: scriptContentHash(project),
+      submittedBaseHash: opts.baseFingerprint,
+      next: 'Use the scriptFingerprint from drafts/script.md, or refresh the notebook and reconcile the draft.',
+    });
+  }
+  const baseFingerprint = opts.baseFingerprint || parsed.baseFingerprint || undefined;
+  const referenceError = validateScriptReferences(parsed.script);
+  if (referenceError) return referenceError;
+  const normalized = normalizeScriptForApply(parsed.script);
+  const durationError = validateScriptDurationsForProject(project, normalized);
+  if (durationError) return durationError;
+  return applyScript(project, parsed.script, { ...opts, baseFingerprint });
 };

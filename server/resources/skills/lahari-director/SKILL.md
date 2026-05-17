@@ -71,7 +71,7 @@ Load the right shard before writing:
 | Apply tool | Shard |
 |---|---|
 | `apply_concept` | this skill's concept taste checks |
-| `apply_script` | `script-doctor` |
+| `apply_script`, `apply_script_markdown` | `script-doctor` |
 | `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
 | `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk` | `storyboard-prompt-craft` |
 | `apply_video_prompt` | `storyboard-prompt-craft` |

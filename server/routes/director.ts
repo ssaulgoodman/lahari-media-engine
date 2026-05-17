@@ -278,6 +278,12 @@ router.post('/apply/script', audited('director.apply.script', async (req) => stu
   { baseFingerprint: req.body.baseFingerprint, force: !!req.body.force },
 )));
 
+router.post('/apply/script-markdown', audited('director.apply.script_markdown', async (req) => studio.applyScriptMarkdown(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.markdown,
+  { baseFingerprint: req.body.baseFingerprint, force: !!req.body.force },
+)));
+
 router.post('/apply/concept', audited('director.apply.concept', async (req) => studio.applyConcept(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.concept,

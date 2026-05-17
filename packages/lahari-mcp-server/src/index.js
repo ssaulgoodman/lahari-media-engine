@@ -198,7 +198,7 @@ const toolAnnotations = (name) => {
   if (name === 'add_director_note' || name === 'lahari_capture_issue') {
     return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   }
-  if (name === 'apply_script' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+  if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
     return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
   }
   if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
@@ -589,6 +589,17 @@ registerTool('apply_script', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, script, baseFingerprint, force }) => directorPost('/api/director/apply/script', { projectId, script, baseFingerprint, force }));
+
+registerTool('apply_script_markdown', {
+  title: 'Apply script markdown',
+  description: 'Mutating and high blast radius. Parses an edited drafts/script.md Lahari script draft, validates fingerprint/durations, and atomically replaces cast, environments, scenes, and shots.',
+  inputSchema: {
+    projectId,
+    markdown: z.string().min(1).describe('Full contents of lahari/projects/<projectId>/drafts/script.md after surgical edits.'),
+    baseFingerprint: z.string().optional(),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, markdown, baseFingerprint, force }) => directorPost('/api/director/apply/script-markdown', { projectId, markdown, baseFingerprint, force }));
 
 registerTool('apply_project_prompt_override', {
   title: 'Apply project prompt override',

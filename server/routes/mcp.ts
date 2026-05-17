@@ -13,13 +13,13 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.1';
+const HOSTED_MCP_VERSION = '0.1.2';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
 
@@ -46,6 +46,7 @@ const shotId = idString.describe('Shot ID within the project.');
 const shortText = z.string().max(2000);
 const mediumText = z.string().max(8000);
 const promptText = z.string().min(1).max(30000);
+const scriptMarkdownText = z.string().min(1).max(120000);
 const optionalPromptText = z.string().max(30000).optional();
 const maxArray = <T extends z.ZodTypeAny>(schema: T, max: number) => z.array(schema).max(max);
 
@@ -172,7 +173,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (name === 'add_director_note' || name === 'lahari_capture_issue') {
       return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
     }
-    if (name === 'apply_script' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+    if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
       return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
     }
     if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
@@ -605,6 +606,17 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, script, baseFingerprint, force }) => studio.applyScript(await fullProjectForUser(projectId, auth.userId), script, { baseFingerprint, force }));
+
+  registerTool('apply_script_markdown', {
+    title: 'Apply script markdown',
+    description: 'Mutating and high blast radius. Parses an edited drafts/script.md Lahari script draft, validates fingerprint/durations, and atomically replaces cast, environments, scenes, and shots.',
+    inputSchema: {
+      projectId,
+      markdown: scriptMarkdownText,
+      baseFingerprint: idString.optional(),
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, markdown, baseFingerprint, force }) => studio.applyScriptMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { baseFingerprint, force }));
 
   registerTool('apply_project_prompt_override', {
     title: 'Apply project prompt override',
