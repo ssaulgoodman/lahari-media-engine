@@ -4,65 +4,25 @@ import { AppStep, ApiProject, VideoShot, GenerationStatus } from '../types';
 import { AnalysisEditor } from './AnalysisEditor';
 import { Storyboard } from './Storyboard';
 import { StepRender } from './StepRender';
-import { ChatAssistant } from './ChatAssistant';
 import { XRayPanel } from './XRayPanel';
 import { Dashboard } from './Dashboard';
 import { PromptsLibrary } from './PromptsLibrary';
 import { RendersModal } from './RendersModal';
-import { getVideoModel } from '../constants/videoModels';
+import { AppHeader } from './AppHeader';
+import { DestructiveActionDialog } from './DestructiveActionDialog';
+import { ProjectSidebar } from './ProjectSidebar';
 import * as api from '../services/api';
 import { notifyBulkComplete } from '../lib/notify';
 import { usePersistedProject } from '../hooks/usePersistedProject';
 import { useRealtimePresence } from '../hooks/useRealtimePresence';
-
-const PIPELINE_STEPS = [
-  { id: AppStep.UPLOAD, label: 'Queue' },
-  { id: AppStep.BLUEPRINT, label: 'Blueprint' },
-  { id: AppStep.STUDIO, label: 'Studio' },
-  { id: AppStep.RENDER, label: 'Render' },
-];
+import type { DestructiveAction } from './DestructiveActionDialog';
+import type { ProjectSummary } from './ProjectSidebar';
 
 const pageTransition = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: -8 },
   transition: { duration: 0.25, ease: 'easeOut' as const },
-};
-
-type ProjectSummary = {
-  id: string;
-  title: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  lastActivityAt?: string;
-  parentProjectId?: string;
-  renderCount?: number;
-};
-
-// Humanize a timestamp: "3m ago", "2h ago", "yesterday", "Mar 4".
-const relativeTime = (iso?: string): string => {
-  if (!iso) return '';
-  const then = new Date(iso.includes('T') || iso.includes('Z') ? iso : iso.replace(' ', 'T') + 'Z');
-  const mins = Math.round((Date.now() - then.getTime()) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.round(hrs / 24);
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days}d ago`;
-  return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
-
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  uploaded: { label: 'Uploaded', color: 'text-zinc-400' },
-  analyzed: { label: 'Analyzed', color: 'text-zinc-400' },
-  concept_locked: { label: 'Concept', color: 'text-blue-400' },
-  scripted: { label: 'Scripted', color: 'text-indigo-400' },
-  style_locked: { label: 'Styled', color: 'text-purple-400' },
-  characters_locked: { label: 'Characters', color: 'text-pink-400' },
-  environments_locked: { label: 'Environments', color: 'text-emerald-400' },
 };
 
 export const AppShell: React.FC<{ user: { id: string; email?: string; user_metadata?: any }; signOut: () => Promise<void> }> = ({ user, signOut }) => {
@@ -85,7 +45,6 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     });
   }, []);
   const [loading, setLoading] = useState(false);
-  const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Character look candidates per cast member
@@ -260,17 +219,6 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   // ─── Destructive action dialog state ────────────────────────────
   // The 3-option dialog (Fork primary / Overwrite / Cancel) is opened via
   // setDestructive({...}). We store what to do on each choice.
-  type DestructiveAction = {
-    title: string;
-    description: string;
-    // Fork-capable flows: 3 buttons (Fork & change · Overwrite · Cancel)
-    // Simple confirms: 2 buttons (confirmLabel · Cancel)
-    mode?: 'fork' | 'simple';
-    confirmLabel?: string;      // used in 'simple' mode
-    overwriteLabel?: string;    // used in 'fork' mode
-    run: (opts: { fork: boolean }) => Promise<any> | any;
-    onDone?: (result: any) => void;  // handles result when the action is not a project mutation
-  };
   const [destructive, setDestructive] = useState<DestructiveAction | null>(null);
 
   const runDestructive = async (fork: boolean) => {
@@ -1303,28 +1251,6 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     api.updateShot(project.id, shotId, updates).catch(console.error);
   };
 
-  // ─── Chat ───────────────────────────────────────────────────────
-
-  const handleChatMessage = async (text: string) => {
-    if (!project) return;
-    setProject(prev => prev ? {
-      ...prev,
-      chatHistory: [...prev.chatHistory, { role: 'user' as const, text }]
-    } : prev);
-    setChatLoading(true);
-    try {
-      const result = await api.sendChatMessage(project.id, text);
-      setProject(result.project);
-    } catch {
-      setProject(prev => prev ? {
-        ...prev,
-        chatHistory: [...prev.chatHistory, { role: 'model' as const, text: 'Error connecting to AI.' }]
-      } : prev);
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
   // ─── Queue: Start Production ──────────────────────────────────────
 
   const handleStartProduction = async (queueId: string) => {
@@ -1413,7 +1339,6 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   // ─── Navigation ─────────────────────────────────────────────────
 
-  const isStudio = currentStep === AppStep.STUDIO;
   const activeAgentOperationList = Object.values(agentOperations)
     .sort((a, b) => Date.parse(a.started_at || '') - Date.parse(b.started_at || ''));
   const realtimeBadge = activeAgentOperationList[0]
@@ -1423,159 +1348,18 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   return (
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[999] focus:top-2 focus:left-2 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:rounded-md focus:text-sm">Skip to content</a>
-      {/* Header — premium minimalist nav */}
-      <header className="h-14 bg-[#141418]/90 backdrop-blur-xl border-b border-white/[0.06] flex-shrink-0 z-50">
-        <div className="h-full px-6 flex items-center gap-8">
-          {/* Brand + Project breadcrumb */}
-          <button
-            onClick={openSidebar}
-            className="flex items-center gap-2.5 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md flex-shrink-0"
-          >
-            <span className="text-sm font-display font-semibold text-white tracking-tight">Lahari</span>
-            {project && (
-              <>
-                <span className="text-zinc-400/60 text-sm">/</span>
-                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors truncate max-w-[200px]">{project.title}</span>
-              </>
-            )}
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-400/60 group-hover:text-zinc-300 transition-colors flex-shrink-0"><path d="M6 9l6 6 6-6"/></svg>
-          </button>
-
-          {/* Pipeline nav — minimal underline indicator, matches blueprint phase tabs */}
-          <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
-            {PIPELINE_STEPS.map((step) => {
-              const isActive = currentStep === step.id;
-              // Render is gated on a data-derived signal (any shot has a video)
-              // instead of project.status because `in_production` is never set
-              // server-side and status can otherwise drift on forks / legacy
-              // projects, locking artists out of Render even though they have
-              // material to assemble. Studio keeps the status check because it
-              // gates access to AI-gen surfaces, not to artist-owned assembly.
-              const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
-              const isAccessible =
-                step.id === AppStep.UPLOAD ||
-                (project && step.id === AppStep.BLUEPRINT) ||
-                (project && step.id === AppStep.STUDIO && project.scenes.length > 0 && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status)) ||
-                (project && step.id === AppStep.RENDER && hasRenderableContent);
-
-              return (
-                <button
-                  key={step.id}
-                  disabled={!isAccessible}
-                  onClick={() => setCurrentStep(step.id)}
-                  className={`relative px-3.5 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
-                    isActive
-                      ? 'text-white'
-                      : isAccessible
-                        ? 'text-zinc-400 hover:text-white'
-                        : 'text-zinc-400/40 cursor-not-allowed'
-                  }`}
-                >
-                  {step.label}
-                  {isActive && <span aria-hidden="true" className="absolute left-3.5 right-3.5 -bottom-[12px] h-px bg-white/70" />}
-                </button>
-              );
-            })}
-
-            {/* Scene picker lives in the Studio sticky bar — one source of
-                truth instead of duplicated in the main nav. */}
-          </nav>
-
-          {/* Right */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {project && realtimeBadge && (
-              <div
-                className="hidden lg:flex items-center gap-2 max-w-[260px] px-2.5 py-1 rounded-md surface-inset text-[11px] text-zinc-300"
-                title={activeAgentOperationList.length > 1
-                  ? activeAgentOperationList.map(op => op.label).join(' · ')
-                  : realtimeBadge.message}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                    realtimeBadge.tone === 'working' ? 'bg-amber-400 animate-pulse'
-                      : realtimeBadge.tone === 'error' ? 'bg-red-400'
-                        : 'bg-emerald-400'
-                  }`}
-                />
-                <span className="truncate">
-                  {realtimeBadge.message}
-                  {activeAgentOperationList.length > 1 ? ` +${activeAgentOperationList.length - 1}` : ''}
-                </span>
-              </div>
-            )}
-            {/* Prompts library — always available, cross-project reference. */}
-            <button
-              onClick={() => setPromptsOpen(true)}
-              className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
-              title="Prompts — the templates that drive every AI call"
-            >
-              Prompts
-            </button>
-            <div className="w-px h-4 bg-white/[0.06]" />
-            <button
-              onClick={signOut}
-              className="flex items-center gap-2 px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none group"
-              title={`Signed in as ${user.email || 'user'} — click to sign out`}
-            >
-              {user.user_metadata?.avatar_url ? (
-                <img src={user.user_metadata.avatar_url} alt="" className="w-5 h-5 rounded-full" />
-              ) : (
-                <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[10px] text-zinc-300 font-medium">
-                  {(user.email || '?')[0].toUpperCase()}
-                </div>
-              )}
-              <span className="text-[11px] text-zinc-400 group-hover:text-white transition-colors hidden lg:inline">{user.email?.split('@')[0]}</span>
-            </button>
-            {project && <div className="w-px h-4 bg-white/[0.06]" />}
-            {project && (
-              <>
-                <span
-                  className="text-[11px] font-mono text-zinc-400 tabular-nums px-2"
-                  title="Actual spend so far (logged per AI call)"
-                >${project.costEstimate.toFixed(2)}</span>
-                {(() => {
-                  // Projected cost to finish the remaining pipeline at current
-                  // state: frames not yet generated + videos not yet generated
-                  // (using the selected video model's per-sec price) + a small
-                  // Claude overhead for chain prompt refreshes. Shown alongside
-                  // actual spend so artists can decide before mass-firing.
-                  const model = getVideoModel(project.videoModel);
-                  let framesRemaining = 0;
-                  let videoCostRemaining = 0;
-                  let chainRefreshesRemaining = 0;
-                  for (const scene of project.scenes || []) {
-                    for (const shot of scene.shots) {
-                      if (!shot.imageUrl) framesRemaining += 1;
-                      if (!shot.videoUrl) videoCostRemaining += (shot.duration || model.durations[0]) * model.costPerSec;
-                      // Chain refresh fires when a chained shot's predecessor video lands
-                      if (shot.continuityFrom === 'prev_shot' && !shot.refinedFromPrevFrame) chainRefreshesRemaining += 1;
-                    }
-                  }
-                  const frameCost = framesRemaining * 0.04; // Gemini 3 Pro Image per 3-call batch
-                  const chainCost = chainRefreshesRemaining * 0.01;
-                  const projected = frameCost + videoCostRemaining + chainCost;
-                  if (projected < 0.01) return null;
-                  return (
-                    <span
-                      className="text-[11px] font-mono text-zinc-400 tabular-nums px-2"
-                      title={`Projected remaining at current model (${model.label}): ${framesRemaining} frame${framesRemaining === 1 ? '' : 's'} × $0.04 + videos (${videoCostRemaining.toFixed(2)}) + chain refreshes (${chainCost.toFixed(2)}).`}
-                    >
-                      + <span className="text-zinc-300">~${projected.toFixed(2)}</span>
-                    </span>
-                  );
-                })()}
-                <div className="w-px h-4 bg-white/[0.06]" />
-                <button
-                  onClick={() => setXrayOpen(true)}
-                  className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
-                >
-                  X-Ray
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        activeAgentOperationList={activeAgentOperationList}
+        currentStep={currentStep}
+        project={project}
+        realtimeBadge={realtimeBadge}
+        signOut={signOut}
+        user={user}
+        onOpenPrompts={() => setPromptsOpen(true)}
+        onOpenSidebar={openSidebar}
+        onOpenXray={() => setXrayOpen(true)}
+        onStepChange={setCurrentStep}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <main id="main-content" className="flex-1 overflow-y-auto relative">
@@ -1730,262 +1514,40 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
           </div>
         </main>
 
-        {/* Co-Director sidebar — commented out, not wired yet
-        {isStudio && (
-          <aside className="w-80 lg:w-96 flex-shrink-0 z-20 shadow-2xl bg-obsidian-950/80 backdrop-blur-xl shadow-[inset_1px_0_0_0_rgba(255,255,255,0.04)]">
-            <ChatAssistant
-              messages={project?.chatHistory || []}
-              onSendMessage={handleChatMessage}
-              isLoading={chatLoading}
-            />
-          </aside>
-        )}
-        */}
       </div>
 
-      {/* Destructive action dialog — Fork is primary, Overwrite is secondary */}
-      <AnimatePresence>
-        {destructive && (
-          <>
-            <motion.div
-              key="destructive-backdrop"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.12 }}
-              className="fixed inset-0 bg-black/70 z-[200] backdrop-blur-sm"
-              onClick={() => setDestructive(null)}
-            />
-            <motion.div
-              key="destructive-dialog"
-              initial={{ opacity: 0, scale: 0.97, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 8 }}
-              transition={{ duration: 0.15 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(92vw,480px)] surface-raised rounded-xl z-[201] p-6 space-y-5"
-            >
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium text-white">{destructive.title}</h3>
-                <p className="text-sm text-zinc-400 leading-relaxed">{destructive.description}</p>
-              </div>
-              {destructive.mode !== 'simple' && (
-                <div className="surface-inset rounded-md p-3 text-xs text-zinc-400 leading-relaxed">
-                  <strong className="text-zinc-300">Fork</strong> creates a copy with a new name and performs the change on it. Original stays frozen as a snapshot you can open from the sidebar.
-                </div>
-              )}
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setDestructive(null)}
-                  className="text-xs text-zinc-400 hover:text-zinc-300 px-3 py-2 rounded-md transition-colors"
-                >Cancel</button>
-                {destructive.mode === 'simple' ? (
-                  <button
-                    onClick={() => runDestructive(false)}
-                    className="text-xs font-semibold bg-red-500/90 text-white hover:bg-red-500 px-4 py-2 rounded-md transition-colors"
-                  >{destructive.confirmLabel || 'Confirm'}</button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => runDestructive(false)}
-                      className="text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] px-3 py-2 rounded-md transition-colors"
-                    >{destructive.overwriteLabel || 'Overwrite'}</button>
-                    <button
-                      onClick={() => runDestructive(true)}
-                      className="text-xs font-semibold bg-white text-black hover:bg-zinc-200 px-4 py-2 rounded-md transition-colors"
-                    >Fork & change</button>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <DestructiveActionDialog
+        action={destructive}
+        onCancel={() => setDestructive(null)}
+        onRun={runDestructive}
+      />
 
-      {/* Project Sidebar */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <>
-            <motion.div
-              key="sidebar-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="fixed inset-0 bg-black/60 z-[100]"
-              onClick={() => setSidebarOpen(false)}
-            />
-            <motion.aside
-              key="sidebar-panel"
-              initial={{ x: -320, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -320, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-              className="fixed top-0 left-0 bottom-0 w-80 bg-obsidian-900 border-r border-white/[0.06] z-[101] flex flex-col"
-            >
-              <div className="h-14 px-5 flex items-center justify-between border-b border-white/[0.06] flex-shrink-0">
-                <span className="text-sm font-medium text-white">Projects</span>
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="text-zinc-400 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-2">
-                {projectListLoading ? (
-                  <div className="space-y-2 p-2">
-                    {[1, 2, 3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}
-                  </div>
-                ) : projectList.length === 0 ? (
-                  <p className="text-sm text-zinc-400 text-center py-8">No projects yet</p>
-                ) : (() => {
-                  // Build lineage tree: orig -> children -> grandchildren, flattened
-                  // with depth so we can indent. Families sort by latest activity
-                  // anywhere in the lineage, so the thing you just touched floats up.
-                  const childrenOf = new Map<string, ProjectSummary[]>();
-                  projectList.forEach(p => {
-                    if (p.parentProjectId) {
-                      const arr = childrenOf.get(p.parentProjectId) || [];
-                      arr.push(p);
-                      childrenOf.set(p.parentProjectId, arr);
-                    }
-                  });
-                  const byId = new Map(projectList.map(p => [p.id, p]));
-                  const roots = projectList.filter(p => !p.parentProjectId || !byId.has(p.parentProjectId));
-                  const flat: { project: ProjectSummary; depth: number }[] = [];
-                  const activityMs = (p: ProjectSummary) => new Date(p.lastActivityAt || p.updatedAt || p.createdAt).getTime();
-                  const subtreeActivityMs = (p: ProjectSummary): number => Math.max(
-                    activityMs(p),
-                    ...(childrenOf.get(p.id) || []).map(subtreeActivityMs)
-                  );
-                  const sortByActivity = (a: ProjectSummary, b: ProjectSummary) => subtreeActivityMs(b) - subtreeActivityMs(a);
-                  const walk = (p: ProjectSummary, depth: number) => {
-                    flat.push({ project: p, depth });
-                    const kids = (childrenOf.get(p.id) || []).sort(sortByActivity);
-                    kids.forEach(k => walk(k, depth + 1));
-                  };
-                  roots.sort(sortByActivity).forEach(r => walk(r, 0));
-
-                  return (
-                    <div className="space-y-px">
-                      {flat.map(({ project: p, depth }) => {
-                        const isActive = project?.id === p.id;
-                        const isFork = !!p.parentProjectId && byId.has(p.parentProjectId);
-                        const lastActivityAt = p.lastActivityAt || p.updatedAt || p.createdAt;
-                        const lastActivityDate = new Date(lastActivityAt.includes('T') || lastActivityAt.includes('Z') ? lastActivityAt : lastActivityAt.replace(' ', 'T') + 'Z');
-                        return (
-                          <div
-                            key={p.id}
-                            className={`group relative rounded-md transition-colors ${
-                              isActive
-                                ? 'bg-white/[0.08]'
-                                : 'hover:bg-white/[0.03]'
-                            }`}
-                            style={{ paddingLeft: depth * 14 }}
-                          >
-                            {/* Fork guide line */}
-                            {depth > 0 && (
-                              <span
-                                aria-hidden="true"
-                                className="absolute left-3 top-0 bottom-0 w-px bg-white/[0.08]"
-                                style={{ left: (depth - 1) * 14 + 14 }}
-                              />
-                            )}
-                            {renamingId === p.id ? (
-                              <div className="w-full px-3 py-2 flex items-center gap-2">
-                                {isFork && (
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 flex-shrink-0" aria-hidden="true">
-                                    <circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9v1a4 4 0 0 1-4 4H8"/><path d="M6 8v7"/>
-                                  </svg>
-                                )}
-                                <input
-                                  autoFocus
-                                  value={renameDraft}
-                                  onChange={e => setRenameDraft(e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
-                                    if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
-                                  }}
-                                  onBlur={saveRename}
-                                  className="flex-1 bg-white/[0.04] text-sm text-white border border-white/[0.12] rounded px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-white/30"
-                                />
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => loadProject(p.id)}
-                                className="w-full text-left px-3 py-2.5 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {isFork && (
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400 flex-shrink-0" aria-hidden="true">
-                                      <circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9v1a4 4 0 0 1-4 4H8"/><path d="M6 8v7"/>
-                                    </svg>
-                                  )}
-                                  <span className={`text-sm truncate ${isActive ? 'text-white font-medium' : 'text-zinc-300 group-hover:text-white'}`}>
-                                    {p.title}
-                                  </span>
-                                  <span className="text-[11px] text-zinc-400 flex-shrink-0 ml-auto group-hover:invisible" title={`Last activity ${lastActivityDate.toLocaleString()}`}>
-                                    {relativeTime(lastActivityAt)}
-                                  </span>
-                                </div>
-                              </button>
-                            )}
-                            {/* Delete button — hover reveal, does not shift layout */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDestructive({
-                                  title: `Delete "${p.title}"?`,
-                                  description: 'Removes the project from the list. Generated files stay on disk and can be re-linked later if needed.',
-                                  mode: 'simple',
-                                  confirmLabel: 'Delete',
-                                  run: async () => {
-                                    await api.deleteProject(p.id);
-                                    setProjectList(list => list.filter(x => x.id !== p.id));
-                                    if (project?.id === p.id) setProject(null);
-                                  },
-                                });
-                              }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-red-300 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Delete project"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
-                              </svg>
-                            </button>
-                            {/* Rename — pencil sits just left of delete. */}
-                            {renamingId !== p.id && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); startRename(p.id, p.title); }}
-                                className="absolute right-9 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Rename project"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-                                </svg>
-                              </button>
-                            )}
-                            {/* Renders — film icon, opens popup viewer. Only
-                                shown when this project has at least one render. */}
-                            {renamingId !== p.id && (p.renderCount ?? 0) > 0 && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setRendersFor({ id: p.id, title: p.title }); }}
-                                className="absolute right-16 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="View renders"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      <ProjectSidebar
+        activeProjectId={project?.id}
+        isOpen={sidebarOpen}
+        projectList={projectList}
+        projectListLoading={projectListLoading}
+        renameDraft={renameDraft}
+        renamingId={renamingId}
+        onCancelRename={cancelRename}
+        onClose={() => setSidebarOpen(false)}
+        onLoadProject={loadProject}
+        onRenameDraftChange={setRenameDraft}
+        onRequestDelete={(p) => setDestructive({
+          title: `Delete "${p.title}"?`,
+          description: 'Removes the project from the list. Generated files stay on disk and can be re-linked later if needed.',
+          mode: 'simple',
+          confirmLabel: 'Delete',
+          run: async () => {
+            await api.deleteProject(p.id);
+            setProjectList(list => list.filter(x => x.id !== p.id));
+            if (project?.id === p.id) setProject(null);
+          },
+        })}
+        onSaveRename={saveRename}
+        onStartRename={startRename}
+        onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
+      />
 
       {/* Renders viewer popup — accessible from Dashboard rows and sidebar entries */}
       {rendersFor && (
