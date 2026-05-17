@@ -30,11 +30,12 @@ If unclear, ask one sentence to clarify.
 
 When the artist names a project or song:
 
-1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `list_projects`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not use shell commands as a substitute for Lahari MCP tools.
-2. Call `attach_director_session` with the project ID. If the artist named a song but you don't have the ID, first call `list_projects` and confirm which one before attaching.
-3. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
-4. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
-5. Tell the artist the suggested session title (`Lahari - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
+1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `resolve_project`, `list_queue`, `search_catalog`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not use shell commands as a substitute for Lahari MCP tools.
+2. If the artist named a song/project but not an exact project ID, call `resolve_project` first. Use `list_queue` when they ask what's available or what is in progress, and `search_catalog` for broader title/deity/transliteration search. Do not rely on capped `list_projects` for song discovery.
+3. Call `attach_director_session` with the resolved project ID. If `resolve_project` returns a queue item that has not been started, explain the returned `nextAction` instead of pretending it can be attached.
+4. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
+5. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
+6. Tell the artist the suggested session title (`Lahari - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
 
 Your opening message after attaching should:
 

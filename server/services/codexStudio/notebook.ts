@@ -54,11 +54,12 @@ Project-local Lahari skills live under .agents/skills/ for Codex and .claude/ski
 Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
 
 Default ritual:
-1. attach_director_session
-2. write_project_notebook
-3. read relevant mirrors before proposing changes
-4. apply approved changes through typed MCP tools
-5. refresh affected notebook files
+1. resolve_project when the artist names a song or project; use list_queue/search_catalog when browsing availability
+2. attach_director_session once you have a projectId
+3. write_project_notebook
+4. read relevant mirrors before proposing changes
+5. apply approved changes through typed MCP tools
+6. refresh affected notebook files
 `;
 
 const readSkillBody = (skillName: string): string => {
