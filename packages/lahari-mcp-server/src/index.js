@@ -182,6 +182,7 @@ const server = new McpServer({
 const toolAnnotations = (name) => {
   const readOnlyPrefixes = [
     'list_',
+    'search_',
     'get_',
     'plan_',
     'preview_',
@@ -191,7 +192,7 @@ const toolAnnotations = (name) => {
     'write_project_sheets',
     'hydrate_project_workbench',
   ];
-  if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session') {
+  if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project') {
     return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   }
   if (name === 'add_director_note' || name === 'lahari_capture_issue') {
@@ -230,6 +231,43 @@ registerTool('list_projects', {
   description: 'Read-only. Lists recent Lahari projects for the authenticated artist.',
   inputSchema: { limit: z.number().int().min(1).max(100).optional() },
 }, ({ limit }) => directorGet(`/api/director/projects${limit ? `?limit=${encodeURIComponent(limit)}` : ''}`));
+
+registerTool('list_queue', {
+  title: 'List Lahari music queue',
+  description: 'Read-only. Lists music-video queue items for the authenticated artist, including duration, queue status, linked/current project, and next action.',
+  inputSchema: {
+    status: z.string().optional().describe('Optional queue status filter, or "all".'),
+    query: z.string().min(1).max(120).optional().describe('Optional title/deity/language/note search.'),
+    limit: z.number().int().min(1).max(100).optional(),
+  },
+}, ({ status, query, limit }) => {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (query) params.set('query', query);
+  if (limit) params.set('limit', String(limit));
+  return directorGet(`/api/director/queue${params.toString() ? `?${params.toString()}` : ''}`);
+});
+
+registerTool('search_catalog', {
+  title: 'Search Lahari catalog',
+  description: 'Read-only. Searches the artist-owned project list plus the music queue by title/transliteration/deity and returns normalized matches.',
+  inputSchema: {
+    query: z.string().min(1).max(120),
+    limit: z.number().int().min(1).max(50).optional(),
+  },
+}, ({ query, limit }) => {
+  const params = new URLSearchParams({ query });
+  if (limit) params.set('limit', String(limit));
+  return directorGet(`/api/director/catalog/search?${params.toString()}`);
+});
+
+registerTool('resolve_project', {
+  title: 'Resolve Lahari project or queue item',
+  description: 'Read-only. Friendly opener for artist phrases like "open Gakaarayaachyam"; resolves project IDs, project titles, and queue/song matches into the next legal action.',
+  inputSchema: {
+    query: z.string().min(1).max(120).describe('Project ID, project title, song title, transliteration, deity, or queue label.'),
+  },
+}, ({ query }) => directorGet(`/api/director/resolve?query=${encodeURIComponent(query)}`));
 
 registerTool('get_project_packet', {
   title: 'Get project packet',
