@@ -117,7 +117,10 @@ export interface VideoScene {
 export interface ConceptOption {
   title: string;
   language: string;
-  deity: string;
+  subject?: string;
+  primarySubject?: string;
+  /** @deprecated Legacy devotional projects used this as the primary subject. */
+  deity?: string;
   mood: string;
   theme: string;
   lyricsSummary?: string;

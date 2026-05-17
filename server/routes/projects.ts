@@ -875,7 +875,6 @@ router.post('/script', async (req, res) => {
     locked_concept: JSON.stringify({
       title,
       subject: title,
-      deity: title,
       mood: 'story-driven',
       theme: directorBrief || 'Script-first anime production',
       conceptDirection: preset.label,
