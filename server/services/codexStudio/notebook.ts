@@ -33,6 +33,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
+const NOTEBOOK_VERSION = '2026-05-17.discovery-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -43,7 +44,11 @@ const buildWorkspaceInstructions = (project: Project): string => `# Lahari Works
 
 This folder is the local notebook for Lahari project "${project.title}" (${project.id}).
 
+Notebook version: ${NOTEBOOK_VERSION}
+
 Supabase is canonical. This is an artist notebook, not the Lahari source checkout. Use Lahari MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Lahari instead of substituting shell commands.
+
+If the MCP server returns a newer notebookVersion than the one shown here or in lahari/projects/${project.id}/notebook.json, refresh by calling write_project_notebook and writing the returned files before continuing.
 
 Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
 
@@ -335,6 +340,23 @@ const buildHashes = async (project: Project) => {
   };
 };
 
+const buildNotebookMeta = (project: Project, actions: ReturnType<typeof buildProjectActionList>) => ({
+  notebookVersion: NOTEBOOK_VERSION,
+  generatedAt: new Date().toISOString(),
+  project: {
+    id: project.id,
+    title: project.title,
+    status: project.status,
+    updatedAt: projectUpdatedAt(project),
+    webUrl: webStudioUrl(project.id, { step: 'studio' }),
+  },
+  discovery: {
+    openerTool: 'resolve_project',
+    browseTools: ['list_queue', 'search_catalog'],
+  },
+  diagnosis: actions.diagnosis,
+});
+
 export const buildNotebookMirrorArtifacts = (
   project: Project,
   opts: {
@@ -570,6 +592,13 @@ export const buildProjectNotebook = async (project: Project) => {
       content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
     },
     {
+      path: `${baseDir}/notebook.json`,
+      mode: 'mirror',
+      writePolicy: 'overwrite',
+      description: 'Machine-readable notebook metadata, including notebookVersion for stale-workspace checks.',
+      content: `${JSON.stringify(buildNotebookMeta(project, actions), null, 2)}\n`,
+    },
+    {
       path: `${baseDir}/journal.md`,
       mode: 'journal',
       writePolicy: 'create_if_missing',
@@ -588,6 +617,7 @@ Opened project and wrote the initial local notebook.
 
   return {
     kind: 'lahari.project.notebook',
+    notebookVersion: NOTEBOOK_VERSION,
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
