@@ -698,6 +698,8 @@ refine_storyboard_image({
 
 Supported today: `storyboardProvider` and `videoModel`. Project-level model preferences remain the right path for durable preference changes; `modelOverride` is for one-off experiments and recovery.
 
+**R32-extension:** per-call overrides do **not** yet cover keyframe image generation, style visualization, or character/environment look generation. Those would need `modelOverride.imageModel` wired through the frame/image, style-viz, and looks routes. Keep this as a later focused pass if real sessions need transient image-model experiments outside storyboard boards.
+
 **Why it matters:** "Try a different model for just this one shot" is a common debugging move (see R33 — model bias correction). Forcing a state change for transient overrides is heavy. R32 lets Codex compose model choice per-call without ceremony.
 
 ---
@@ -863,6 +865,8 @@ Project-wide storyboard/keyframe defaults were too rigid. A project can mostly b
 
 This is agent-first for now. Studio UI can stay simple; the web app will naturally reflect the chosen path when generation tools run.
 
+**Follow-ups:** `apply_shot_workflow_modes` currently has no baseHash/drift check because it mutates one low-risk field per shot. Add one before Studio exposes a workflow-mode toggle. Studio also needs a small workflow badge/filtering pass before civilian bulk actions understand forced keyframe/storyboard modes.
+
 ---
 
 ## Polish Items
@@ -879,6 +883,7 @@ Small things noticed but not substantial enough for their own R#. Address opport
 - **P-poli-08 — Deprecate `critique-shot-image` catalog prompt (R7).** The prompt is still in `server/prompts/catalog.ts` but the `render-triage` skill now covers the judgment. Remove the catalog entry; if any fact-gathering primitive emerges later (prompt-length stats, color histogram, ref similarity), add as a small read-only tool — not a Claude call.
 - **P-poli-09 — Render notification primitive (R11).** Long-running ops (video gen 60-90s, render minutes) have no out-of-chat notification. The artist sits and waits. Options: apply tool returns "expect ~Ns" + Codex auto-polls; or `notify_when_done` MCP primitive that lands desktop push/email. Watch list candidate.
 - **P-poli-10 — RLS policies on R29 tables before R2/R16 land.** `lahari_project_config` and `lahari_project_prompt_overrides` have RLS enabled but no policies — service-role-only access today. Realtime subscriptions (R2) and browser-bridged auth (R16) both need policies. Add `select where auth.uid() IN (select user_id from lahari_projects where id = project_id)` per the pattern in `lahari_director_events`.
+- **P-poli-11 — Studio workflow-mode UX.** R41 is agent-first. Web Studio should eventually show `auto/storyboard/keyframe` on ShotCard and make civilian bulk storyboard/keyframe actions filter or warn by workflow mode.
 
 ---
 
