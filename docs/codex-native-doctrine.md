@@ -80,6 +80,8 @@ Not every operation should round-trip through the Lahari backend to call an LLM.
 
 **Future simplification:** concept and style ideation should follow the same Codex-native apply-only pattern as script/storyboard text. Codex should read the song, script, culture, audience, and project taste; write one or more concept/style directions directly; persist them through typed apply tools; then call visualization only when pixels are needed. The backend "generate 3 ideas + refine idea + visualize" loop is useful for the civilian Studio button path, but it should not be the director-agent default. This removes a needless LLM round-trip, makes edits surgical, and keeps taste reasoning in the harness where the artist is already talking.
 
+**Future prompt-override expansion:** character and environment look generation should get the same project-level recipe override surface as storyboard/video. Directors should be able to tune how cast and environment looks are authored for a project (`character_looks`, `environment_looks`) while keeping actual image rendering as a tool call.
+
 **Nuance on media generation as harness capabilities evolve.** The "tool call" entries above are not permanent boundaries — they reflect where harness capability is *today*. The honest framing is "does the harness have a capable native generator for this specific case":
 
 - **Text** — always harness-native. Harness has the LLM loaded; no reason to round-trip.

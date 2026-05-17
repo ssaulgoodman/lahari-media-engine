@@ -36,8 +36,9 @@ None. All migrations applied. All deploys live.
 1. **Abstraction platform** (new branch + worktree `lahari-abstraction`). SeedKind / Workflow / Preset decomposition. New Supabase + Railway for `studio_*` schema. Music video + anime as v1 proof. See `docs/abstraction-platform-plan.md`. Brand: **Mirage**, multi-tenant SaaS, single brand for now.
 2. **R37** — Per-shot/scene presence indicators on ShotCard (backend supports it; UI hasn't surfaced it yet). Half day. Codex.
 3. **R39** — Codex-native concept/style ideation. Keep Studio's backend generator for civilians, but director agents should write and apply concepts/style directions natively, then call visualize only when pixels are needed.
-4. **R32 / R33 / R34** — Per-call model override, model-bias correction, apply-only harness-native media. Filed but not built. Post-abstraction or post-first-artist-feedback.
-5. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
+4. **R40** — Character/environment look-generation recipe overrides. Future R29-style expansion so directors can steer how looks are authored, not only the resulting descriptions/prompts.
+5. **R32 / R33 / R34** — Per-call model override, model-bias correction, apply-only harness-native media. Filed but not built. Post-abstraction or post-first-artist-feedback.
+6. **Polish items P-poli-01..10** — Address opportunistically when adjacent code is being touched.
 
 **Engineering watch items (not yet ledger entries):**
 
@@ -829,6 +830,24 @@ The current Studio path still routes concept/style ideation through backend LLM 
 **Why it matters:** removes the "generate 3 ideas + refine + visualize" double-hop from director sessions, keeps taste reasoning in the harness where the artist is talking, avoids unnecessary paid/backend LLM calls, and lets Codex directly edit the actual output instead of asking another model to rewrite it.
 
 **Concept note:** concept should follow the same pattern as style. The apply-only concept tool already exists; the remaining work is mostly instruction/product flow, plus any missing style-direction apply surface needed to persist Codex-written style text before visualization.
+
+---
+
+### R40 — Character/environment look-generation recipe overrides
+
+Status: **proposed** · Raised: 2026-05-17
+
+R29 phase 2 made `concept`, `script`, `shot_prompts`, `storyboard`, and `video` overridable project prompt recipes. The looks pipeline is still missing the same agency surface. Directors can edit character/environment descriptions and generation prompts as project state, but they cannot yet override the recipe that decides *how* Lahari turns those entities plus the locked style ref into look-generation prompts/images.
+
+**Recommendation:** add R29-style project prompt override kinds for the looks stage:
+- `character_looks`
+- `environment_looks`
+
+These should control the text recipe used when generating/refining cast and environment look prompts, while the actual image rendering remains a tool call. Codex can then adapt look-generation taste per project — cultural specificity, costume/material discipline, face/body consistency rules, architecture vocabulary, "avoid generic devotional gloss," etc. — without editing tier-3 engine prompts.
+
+**Why it matters:** character and environment looks set the visual DNA for every downstream frame, board, and video. If the director cannot tune the look-generation recipe, the system keeps pulling them back into generic defaults. This is the same freedom R29 gave storyboard/video prompts, applied earlier in the pipeline where taste compounds.
+
+**When to build:** future, after the current script/storyboard file-native authoring loop proves stable. The clean implementation is likely small (allowlist + config files + prompt assembly reads), but it touches the image/look generation path, so it should land as a deliberate looks-pipeline pass rather than as incidental config churn.
 
 ---
 
