@@ -1,3 +1,4 @@
+> **Archived.** Historical design doc. Implementation shipped — see ledger R17. Remote-MCP-primary path won; the npm-bootstrap section is no longer the plan. Preserved for reference; do not treat as current spec. 
 # R17 Distribution Design — remote MCP primary, local package fallback
 
 Status: remote-first implementation started
