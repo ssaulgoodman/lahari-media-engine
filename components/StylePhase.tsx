@@ -431,7 +431,7 @@ export const StylePhase: React.FC<Props> = ({
 
   return (
     <motion.div key="style" {...phaseTransition} className="space-y-6">
-      {isLockedPhase('style', project.status) ? (
+      {isLockedPhase(project, 'style', project.status) ? (
         <div className="space-y-5">
           {!showExploredStyles ? (
             /* ── Locked style overview ── */

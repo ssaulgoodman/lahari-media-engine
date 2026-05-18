@@ -97,7 +97,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
 
   return (
     <motion.div key="environments" {...phaseTransition} className="space-y-6">
-      {onUnlockEnvironments && isLockedPhase('environments', project.status) && (
+      {onUnlockEnvironments && isLockedPhase(project, 'environments', project.status) && (
         <div className="flex justify-end">
           <UnlockPill onClick={onUnlockEnvironments} disabled={isLoading} label="Unlock environments" />
         </div>

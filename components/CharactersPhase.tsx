@@ -76,7 +76,7 @@ export const CharactersPhase: React.FC<Props> = ({
 
   return (
     <motion.div key="characters" {...phaseTransition} className="space-y-6">
-      {onUnlockCharacters && isLockedPhase('characters', project.status) && (
+      {onUnlockCharacters && isLockedPhase(project, 'characters', project.status) && (
         <div className="flex justify-end">
           <UnlockPill onClick={onUnlockCharacters} disabled={isLoading} label="Unlock characters" />
         </div>

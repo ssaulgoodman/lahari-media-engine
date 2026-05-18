@@ -8,15 +8,26 @@ import { IMAGE_MODELS } from '../constants/imageModels';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels';
 import { STORYBOARD_PROVIDERS } from '../constants/storyboardProviders';
 import { TEXT_PROVIDERS } from '../constants/textProviders';
+import {
+  type Phase,
+  getBlueprintPhases,
+  getNavigablePhaseKeys,
+  isPhaseComingSoon,
+} from '../constants/blueprintPhases';
 import { Dropdown } from './Dropdown';
 
-export type Phase = 'concept' | 'script' | 'style' | 'characters' | 'environments';
+export type { Phase };
 
-export const PHASE_ORDER: Phase[] = ['concept', 'script', 'style', 'characters', 'environments'];
-
-export const phaseIndex = (p: Phase) => PHASE_ORDER.indexOf(p);
+/** Index within navigable phases for THIS project's workflow. Pass the project
+ *  so workflows with different phase sets (e.g. anime's Audio tab) compute
+ *  ordering against the right list. */
+export const phaseIndex = (project: { workflowKey?: ApiProject['workflowKey'] }, phase: Phase): number =>
+  getNavigablePhaseKeys(project).indexOf(phase);
 
 export const getActivePhase = (project: ApiProject): Phase => {
+  const navigable = getNavigablePhaseKeys(project);
+  const lastPhase = navigable[navigable.length - 1] || 'concept';
+
   let statusPhase: Phase;
   switch (project.status) {
     case 'uploaded':
@@ -34,7 +45,7 @@ export const getActivePhase = (project: ApiProject): Phase => {
     case 'environments_locked':
     case 'in_production':
     case 'rendered':
-      statusPhase = 'environments'; break;
+      statusPhase = lastPhase; break;
     default:
       statusPhase = 'concept';
   }
@@ -44,24 +55,35 @@ export const getActivePhase = (project: ApiProject): Phase => {
   if ((project.scenes?.length ?? 0) > 0) dataPhase = 'style';
   if (project.styleAssetUrl) dataPhase = 'characters';
   if (project.cast?.some(c => !!c.referenceImageUrl)) dataPhase = 'environments';
-  if (project.environments?.some(e => !!e.referenceImageUrl)) dataPhase = 'environments';
+  if (project.environments?.some(e => !!e.referenceImageUrl)) dataPhase = lastPhase;
 
-  return phaseIndex(dataPhase) > phaseIndex(statusPhase) ? dataPhase : statusPhase;
+  // If the workflow doesn't navigate to a given phase (e.g. Audio is
+  // coming-soon for v1 anime), clamp to the last navigable phase.
+  const clamp = (p: Phase): Phase => (navigable.includes(p) ? p : lastPhase);
+  statusPhase = clamp(statusPhase);
+  dataPhase = clamp(dataPhase);
+
+  return phaseIndex(project, dataPhase) > phaseIndex(project, statusPhase) ? dataPhase : statusPhase;
 };
 
-export const getStatusLockedPhase = (status: string): Phase => {
+export const getStatusLockedPhase = (project: { workflowKey?: ApiProject['workflowKey'] }, status: string): Phase => {
+  const navigable = getNavigablePhaseKeys(project);
+  const lastPhase = navigable[navigable.length - 1] || 'concept';
   switch (status) {
     case 'uploaded': case 'analyzing': case 'analyzed': case 'error': return 'concept';
     case 'concept_locked': return 'script';
     case 'scripted': return 'style';
     case 'style_locked': return 'characters';
-    default: return 'environments';
+    default: return lastPhase;
   }
 };
 
-export const isLockedPhase = (phase: Phase, status: string): boolean => {
-  const statusLocked = getStatusLockedPhase(status);
-  if (phase !== 'environments') return phaseIndex(phase) < phaseIndex(statusLocked);
+export const isLockedPhase = (project: { workflowKey?: ApiProject['workflowKey'] }, phase: Phase, status: string): boolean => {
+  if (isPhaseComingSoon(project, phase)) return false;
+  const statusLocked = getStatusLockedPhase(project, status);
+  const navigable = getNavigablePhaseKeys(project);
+  const lastPhase = navigable[navigable.length - 1] || 'concept';
+  if (phase !== lastPhase) return phaseIndex(project, phase) < phaseIndex(project, statusLocked);
   return ['environments_locked', 'in_production', 'rendered', 'completed'].includes(status);
 };
 
@@ -116,7 +138,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
     }
   };
 
-  const canAccess = (phase: Phase) => phaseIndex(phase) <= phaseIndex(activePhase);
+  const canAccess = (phase: Phase) =>
+    !isPhaseComingSoon(project, phase) && phaseIndex(project, phase) <= phaseIndex(project, activePhase);
+  const visiblePhases = getBlueprintPhases(project).filter((p) => p.visible);
   const hasGeneratedMedia = !!project.styleAssetUrl
     || project.cast.some(c => c.referenceImageUrl)
     || project.environments.some(e => e.referenceImageUrl);
@@ -240,8 +264,10 @@ export const BlueprintContextBar: React.FC<Props> = ({
 
           {/* Row 2: Phase tabs */}
           <div className="flex items-center justify-center gap-0 px-4 py-2.5 border-t border-white/[0.04]">
-            {PHASE_ORDER.map((phase, idx) => {
-              const locked = isLockedPhase(phase, project.status);
+            {visiblePhases.map((phaseDef, idx) => {
+              const phase = phaseDef.key;
+              const comingSoon = !!phaseDef.comingSoon;
+              const locked = isLockedPhase(project, phase, project.status);
               const active = viewPhase === phase;
               const accessible = canAccess(phase);
               return (
@@ -249,25 +275,33 @@ export const BlueprintContextBar: React.FC<Props> = ({
                   <button
                     disabled={!accessible}
                     onClick={() => accessible && onSetViewPhase(phase)}
+                    title={comingSoon ? 'Coming soon' : undefined}
                     className={`relative px-3 py-1 text-xs font-medium transition-colors ${
                       active
                         ? 'text-white'
-                        : locked
-                          ? 'text-zinc-300 hover:text-white'
-                          : accessible
-                            ? 'text-zinc-400 hover:text-zinc-300'
-                            : 'text-zinc-400/40 cursor-not-allowed'
+                        : comingSoon
+                          ? 'text-zinc-500 cursor-not-allowed'
+                          : locked
+                            ? 'text-zinc-300 hover:text-white'
+                            : accessible
+                              ? 'text-zinc-400 hover:text-zinc-300'
+                              : 'text-zinc-400/40 cursor-not-allowed'
                     }`}
                   >
-                    {locked && (
+                    {locked && !comingSoon && (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5 mr-1 inline" aria-hidden="true">
                         <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
                       </svg>
                     )}
-                    {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                    {phaseDef.label}
+                    {comingSoon && (
+                      <span className="ml-1.5 text-[9px] uppercase tracking-wider text-zinc-500/80 bg-white/[0.04] rounded px-1 py-0.5 align-middle">
+                        soon
+                      </span>
+                    )}
                     {active && <span aria-hidden="true" className="absolute left-3 right-3 -bottom-0.5 h-px bg-white/60" />}
                   </button>
-                  {idx < PHASE_ORDER.length - 1 && <div className={`w-6 h-px ${locked ? 'bg-white/20' : 'bg-white/[0.06]'}`} />}
+                  {idx < visiblePhases.length - 1 && <div className={`w-6 h-px ${locked && !comingSoon ? 'bg-white/20' : 'bg-white/[0.06]'}`} />}
                 </React.Fragment>
               );
             })}

@@ -169,7 +169,7 @@ export const ScriptPhase: React.FC<Props> = ({
           <div className="p-5 flex justify-between items-center border-b border-white/[0.06]">
             <h3 className="text-sm font-medium text-white">Script Breakdown</h3>
             <div className="flex items-center gap-3">
-              {onUnlockScript && isLockedPhase('script', project.status) && (
+              {onUnlockScript && isLockedPhase(project, 'script', project.status) && (
                 <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
               )}
               <button

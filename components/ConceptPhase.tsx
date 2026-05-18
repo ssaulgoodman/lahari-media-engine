@@ -42,7 +42,7 @@ export const ConceptPhase: React.FC<Props> = ({
           </div>
         </div>
       )}
-      {isLockedPhase('concept', project.status) ? (
+      {isLockedPhase(project, 'concept', project.status) ? (
         <div className="rounded-xl p-6 border border-white/[0.06]">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2">
@@ -320,7 +320,7 @@ export const ConceptPhase: React.FC<Props> = ({
           )}
 
           <div className="relative grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {isLoading && !isLockedPhase('concept', project.status) && (
+            {isLoading && !isLockedPhase(project, 'concept', project.status) && (
               <div className="absolute inset-0 bg-black/60 rounded-xl z-10 flex flex-col items-center justify-center gap-3">
                 <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
                 <p className="text-zinc-300 text-sm">Locking concept...</p>

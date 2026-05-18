@@ -78,7 +78,7 @@ export const AnalysisEditor: React.FC<Props> = ({
   useEffect(() => {
     const prev = prevActivePhase.current;
     prevActivePhase.current = activePhase;
-    if (phaseIndex(activePhase) < phaseIndex(prev)) {
+    if (phaseIndex(project, activePhase) < phaseIndex(project, prev)) {
       setViewPhase(activePhase);
     }
   }, [activePhase]);
