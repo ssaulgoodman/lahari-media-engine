@@ -13,18 +13,6 @@ type KeyStatus = {
   isSet: boolean;
 };
 
-type RequiredKeyInfo = {
-  provider: string;
-  label: string;
-  workflows: string[];
-};
-
-const REQUIRED_KEYS: RequiredKeyInfo[] = [
-  { provider: 'segmind', label: 'Segmind', workflows: ['music_video', 'anime_scripted'] },
-  { provider: 'gemini', label: 'Google AI Studio', workflows: ['music_video'] },
-  { provider: 'elevenlabs', label: 'ElevenLabs', workflows: ['anime_scripted'] },
-];
-
 const detectPlatform = (): CodexPlatform => {
   if (typeof navigator === 'undefined') return 'mac';
   const ua = navigator.userAgent;
@@ -40,45 +28,80 @@ const platformLabel = (p: CodexPlatform): string => {
   return 'CLI';
 };
 
+type WorkflowLane = {
+  key: string;
+  label: string;
+  providers: { provider: string; label: string }[];
+};
+
+const WORKFLOW_LANES: WorkflowLane[] = [
+  {
+    key: 'music_video',
+    label: 'Music Video',
+    providers: [
+      { provider: 'segmind', label: 'Segmind' },
+      { provider: 'gemini', label: 'Google AI Studio' },
+    ],
+  },
+  {
+    key: 'anime_scripted',
+    label: 'Anime',
+    providers: [
+      { provider: 'segmind', label: 'Segmind' },
+      { provider: 'elevenlabs', label: 'ElevenLabs' },
+    ],
+  },
+];
+
+const isLaneReady = (lane: WorkflowLane, keys: KeyStatus[]) =>
+  lane.providers.every((p) => keys.find((k) => k.provider === p.provider)?.isSet);
+
 const KeyChecklist: React.FC<{
   keys: KeyStatus[];
+  anyLaneReady: boolean;
   onGoToKeys: () => void;
-}> = ({ keys, onGoToKeys }) => {
-  const getStatus = (provider: string) => keys.find((k) => k.provider === provider)?.isSet ?? false;
-
-  const missingAny = REQUIRED_KEYS.some((rk) => !getStatus(rk.provider));
-
+}> = ({ keys, anyLaneReady, onGoToKeys }) => {
   return (
     <div className="surface rounded-xl p-7 mb-5">
       <div className="mb-5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Before you connect</p>
         <h2 className="text-xl font-display text-white tracking-tight">API keys required</h2>
         <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">
-          Mirage uses your own API keys for every paid provider. Set the keys for your workflow before minting a token.
+          Mirage uses your own API keys. Complete at least one workflow lane to unlock token minting.
         </p>
       </div>
 
-      <div className="space-y-2.5 mb-5">
-        {REQUIRED_KEYS.map((rk) => {
-          const isSet = getStatus(rk.provider);
+      <div className="space-y-4 mb-5">
+        {WORKFLOW_LANES.map((lane) => {
+          const ready = isLaneReady(lane, keys);
           return (
-            <div key={rk.provider} className="flex items-center gap-3 py-2 px-3 surface-inset rounded-md">
-              <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${isSet ? 'bg-emerald-500/15' : 'bg-white/[0.04]'}`}>
-                {isSet ? (
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300"><polyline points="20 6 9 17 4 12"/></svg>
-                ) : (
-                  <span className="w-2 h-2 rounded-full bg-zinc-500" />
-                )}
-              </span>
-              <div className="flex-1 min-w-0">
-                <span className={`text-sm ${isSet ? 'text-zinc-300' : 'text-white font-medium'}`}>{rk.label}</span>
-                <span className="text-[10px] text-zinc-500 ml-2">
-                  {rk.workflows.map((w) => w.replace('_', ' ')).join(', ')}
+            <div key={lane.key} className="surface-inset rounded-lg p-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${
+                  ready ? 'text-emerald-300/90 bg-emerald-500/10' : 'text-zinc-400 bg-white/[0.03]'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${ready ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
+                  {ready ? 'Ready' : 'Incomplete'}
                 </span>
+                <span className="text-sm text-white font-medium">{lane.label}</span>
               </div>
-              <span className={`text-[10px] uppercase tracking-wider ${isSet ? 'text-emerald-300/70' : 'text-amber-300/70'}`}>
-                {isSet ? 'set' : 'missing'}
-              </span>
+              <div className="space-y-1.5">
+                {lane.providers.map((p) => {
+                  const isSet = keys.find((k) => k.provider === p.provider)?.isSet ?? false;
+                  return (
+                    <div key={p.provider} className="flex items-center gap-2.5 pl-1">
+                      <span className={`flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center ${isSet ? 'bg-emerald-500/15' : 'bg-white/[0.04]'}`}>
+                        {isSet ? (
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300"><polyline points="20 6 9 17 4 12"/></svg>
+                        ) : (
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                        )}
+                      </span>
+                      <span className={`text-xs ${isSet ? 'text-zinc-400' : 'text-zinc-200'}`}>{p.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })}
@@ -91,12 +114,12 @@ const KeyChecklist: React.FC<{
         <button
           onClick={onGoToKeys}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex-shrink-0 ${
-            missingAny
+            !anyLaneReady
               ? 'bg-white text-black hover:bg-zinc-100'
               : 'surface-inset text-zinc-300 hover:text-white hover:bg-white/[0.06]'
           }`}
         >
-          {missingAny ? 'Set up keys' : 'Manage keys'}
+          {!anyLaneReady ? 'Set up keys' : 'Manage keys'}
         </button>
       </div>
     </div>
@@ -157,15 +180,7 @@ export const ConnectPage: React.FC<{
     loadApiKeys();
   }, [loadTokens, loadApiKeys]);
 
-  const hasRequiredKeys = (): boolean => {
-    const getStatus = (provider: string) => apiKeys.find((k) => k.provider === provider)?.isSet ?? false;
-    // At minimum need segmind (all workflows). The other required keys depend on workflow,
-    // but since we don't know the user's workflow at /connect time, we check if they have
-    // at least one complete workflow set.
-    const musicVideoReady = getStatus('segmind') && getStatus('gemini');
-    const animeReady = getStatus('segmind') && getStatus('elevenlabs');
-    return musicVideoReady || animeReady;
-  };
+  const anyLaneReady = WORKFLOW_LANES.some((lane) => isLaneReady(lane, apiKeys));
 
   const createToken = async () => {
     setLoading(true);
@@ -246,8 +261,7 @@ export const ConnectPage: React.FC<{
   const tokenPlaceholder = token || '<token>';
   const mcpEndpoint = mcpUrl();
   const tokenMaskedSuffix = token ? token.slice(-6) : '';
-  const keysReady = hasRequiredKeys();
-  const canMintToken = keysReady || tokens.length > 0;
+  const canMintToken = anyLaneReady;
 
   const codexAppFields = `Name: mirage
 Type: Streamable HTTP
@@ -408,7 +422,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
 
         {/* BYOK gate — show key checklist before token minting */}
         {!keysLoading && (
-          <KeyChecklist keys={apiKeys} onGoToKeys={goToKeys} />
+          <KeyChecklist keys={apiKeys} anyLaneReady={anyLaneReady} onGoToKeys={goToKeys} />
         )}
 
         {/* Step 1 — Mint a token */}
@@ -418,8 +432,8 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 1</p>
               <h2 className="text-xl font-display text-white tracking-tight">Mint your access token</h2>
               <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Shown once. Treat it like a password — anyone with it can act as you in Mirage.</p>
-              {!keysReady && tokens.length === 0 && (
-                <p className="text-xs text-amber-300/70 mt-2">Set your required API keys above to unlock token minting.</p>
+              {!canMintToken && (
+                <p className="text-xs text-amber-300/70 mt-2">Complete at least one workflow lane above to unlock token minting.</p>
               )}
             </div>
             <button
@@ -474,7 +488,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               ) : (
                 <div className="surface-inset rounded-md p-4 flex items-center justify-between gap-3 flex-wrap">
                   <div>
-                    <p className="text-xs font-mono text-zinc-300">{tokenMaskedSuffix ? `mirage_mcp_••••••${tokenMaskedSuffix}` : 'mirage_mcp_••••••'}</p>
+                    <p className="text-xs font-mono text-zinc-300">{token ? `${token.slice(0, 11)}••••••${tokenMaskedSuffix}` : '••••••••••••'}</p>
                     <p className="text-[11px] text-zinc-400 mt-1">Stored in your hands. Keep going.</p>
                   </div>
                   <button
@@ -592,7 +606,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               <div>
                 <p className="text-zinc-200 font-medium mb-1.5">Authorization errors</p>
                 <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
-                  <li>Confirm you copied the token completely. The full token is ~50 characters starting with <span className="font-mono text-zinc-300">mirage_mcp_</span>.</li>
+                  <li>Confirm you copied the token completely. The full token is ~50 characters.</li>
                   <li>Check the token is still active in the list below.</li>
                   <li>For Claude Code, make sure the env var is set <span className="text-zinc-300">before</span> launching <span className="font-mono text-zinc-300">claude</span>.</li>
                 </ul>
