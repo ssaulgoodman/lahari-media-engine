@@ -518,6 +518,7 @@ Append a one-line note when finishing a task. Keep it dated.
 2026-05-18 Codex: T7 complete locally and pushed to `origin/mirage`; old remote branch was absent. Started T1 package fork: copied Lahari MCP/CLI into `packages/mirage-mcp-server` and `packages/mirage-cli`, renamed package names/env vars/default URL/headers for Mirage. Syntax checks passed for both package entrypoints.
 2026-05-18 Codex: T2 backend skeleton started while Claude owns frontend files. Added `studio_tenant_api_keys` migration/bootstrap table, app-level AES-GCM helper, BYOK resolver, and authenticated `/api/account/api-keys` GET/PUT/DELETE routes. Verification passed on combined tree: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
 2026-05-18 Codex: T2.5 first pass started. Added request-scoped user context, routed text/Gemini/OpenAI/Segmind provider clients through the BYOK resolver for authenticated web/MCP calls, and renamed newly minted MCP/CLI tokens/snippets to Mirage while accepting legacy `lahari_mcp_` tokens. Verification passed on combined tree: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
+2026-05-18 Codex: T2.5 review follow-up. Removed user-provider env fallback from `requireProviderApiKey`; provider calls now require request user context and BYOK. Added explicit system-provider helper for future background jobs. Verified `@mirage/cli` is not published yet, so CLI sync snippets keep a configurable `MIRAGE_CLI_PACKAGE` with Lahari CLI fallback until publish.
 ```
 
 (Append below.)

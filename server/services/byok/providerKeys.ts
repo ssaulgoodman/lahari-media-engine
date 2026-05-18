@@ -11,12 +11,15 @@ const ENV_BY_PROVIDER: Record<ByokProvider, string> = {
 
 export const requireProviderApiKey = async (provider: ByokProvider): Promise<string> => {
   const userId = getCurrentUserId();
-  if (userId) return requireTenantApiKey(userId, provider);
+  if (!userId) {
+    throw new Error(`Missing request user context for ${provider} API key resolution`);
+  }
+  return requireTenantApiKey(userId, provider);
+};
 
-  // Internal engine jobs and one-off developer scripts may run outside an
-  // authenticated request. Mirage user-facing routes always carry userId.
+export const requireSystemProviderApiKey = (provider: ByokProvider): string => {
   const envName = ENV_BY_PROVIDER[provider];
   const envValue = process.env[envName];
   if (envValue) return envValue;
-  return requireTenantApiKey(null, provider);
+  throw new Error(`${envName} required for system ${provider} provider call`);
 };
