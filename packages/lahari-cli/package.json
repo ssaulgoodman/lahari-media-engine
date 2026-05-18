@@ -4,7 +4,7 @@
   "description": "Lahari artist workspace sync CLI.",
   "type": "module",
   "bin": {
-    "lahari": "./src/index.js"
+    "lahari": "src/index.js"
   },
   "files": [
     "src"
