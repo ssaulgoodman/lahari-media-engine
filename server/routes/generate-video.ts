@@ -8,6 +8,7 @@ import { generateShotVideo } from '../services/videoGeneration.js';
 import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 
 /**
  * Mount video generation routes onto the given router.
@@ -81,7 +82,7 @@ export const mountVideoRoutes = (router: Router) => {
       });
       res.json(await getFullProject(projectId));
     } catch (err: any) {
-      res.status(err.statusCode || 500).json({ error: err.message });
+      sendStructuredError(res, err);
     }
   });
 

@@ -16,6 +16,7 @@ import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
 import { getProjectRuntimePreset } from '../presets.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { getProjectPromptOverride } from '../services/projectConfig.js';
 
@@ -210,7 +211,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -264,7 +265,7 @@ router.post('/:id/upload-character-reference', upload.single('image'), async (re
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] upload-character-reference failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -504,7 +505,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       durationMs: 0,
       error: err.message,
     });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -555,7 +556,7 @@ router.post('/:id/upload-environment-reference', upload.single('image'), async (
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] upload-environment-reference failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 

@@ -16,6 +16,7 @@ import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -109,7 +110,7 @@ router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'),
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[shot ${shot.id}] Prompt refinement failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -306,7 +307,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       error: err.message,
     });
     await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -339,7 +340,7 @@ router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
     res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard prompt write failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -369,7 +370,7 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
     res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard generation failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -450,7 +451,7 @@ router.post('/:id/shots/:shotId/refine-storyboard', upload.single('referenceImag
     res.json({ ok: true, ...result, project: await getFullProject(projectId) });
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard refinement failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -741,7 +742,7 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     await updateRows('shots', { id: shotId }, { end_image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
-    res.status(500).json({ error: `End frame generation failed: ${err.message}` });
+    sendStructuredError(res, err, 'end_frame_generation_failed');
   }
 });
 
@@ -807,7 +808,7 @@ router.post('/:id/shots/:shotId/refine-end-frame-prompt', upload.single('referen
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[shot ${shot.id}] End frame prompt refinement failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -886,7 +887,7 @@ router.post('/:id/shots/:shotId/refine-video-prompt', upload.single('referenceIm
 
     res.json({ ok: true, motionPrompt: result.motionPrompt });
   } catch (err: any) {
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 

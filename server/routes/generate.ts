@@ -14,6 +14,7 @@ import { mountShotRoutes } from './generate-shots.js';
 import { mountVideoRoutes } from './generate-video.js';
 import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 
 const router = Router();
 
@@ -111,7 +112,7 @@ router.post('/:id/generate-styles', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 

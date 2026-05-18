@@ -13,6 +13,7 @@ import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.j
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
 import { runWithRequestContext } from '../requestContext.js';
+import { structuredError } from '../services/structuredErrors.js';
 
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.6';
@@ -83,6 +84,10 @@ const structuredToolError = (error: unknown) => {
       message: error.message,
       retryAfterSeconds: error.retryAfterSeconds,
     };
+  }
+  const structured = structuredError(error, 'mirage_mcp_error');
+  if (structured.code !== 'mirage_mcp_error' || structured.provider || structured.setupUrl || structured.retryAfterSeconds) {
+    return structured;
   }
   if (error instanceof Error) {
     try {

@@ -13,6 +13,7 @@ import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { getProjectRuntimePreset, resolveProjectIntake } from '../presets.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
 // (pre-queue.ts-default-fill) get the current default instead of a stale
@@ -1013,7 +1014,7 @@ router.post('/intake', upload.single('seedFile'), async (req, res) => {
       error: `Project intake for workflow "${workflow.key}" with seed "${seedKind}" is not implemented yet.`,
     });
   } catch (err: any) {
-    res.status(err.statusCode || 500).json({ error: err.message || 'Project intake failed' });
+    sendStructuredError(res, err, 'project_intake_failed');
   }
 });
 
@@ -1023,7 +1024,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Audio file required' });
     res.json(await createAudioProjectFromSeed({ file: req.file, body: req.body, userId: req.userId }));
   } catch (err: any) {
-    res.status(err.statusCode || 500).json({ error: err.message || 'Analysis failed' });
+    sendStructuredError(res, err, 'analysis_failed');
   }
 });
 
@@ -1033,7 +1034,7 @@ router.post('/script', async (req, res) => {
   try {
     res.json(await createScriptProjectFromSeed({ body: req.body, userId: req.userId }));
   } catch (err: any) {
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -1104,7 +1105,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status(500).json({ error: err.message || 'Concept generation failed' });
+    sendStructuredError(res, err, 'concept_generation_failed');
   }
 });
 
@@ -1232,7 +1233,7 @@ router.post('/:id/refine-concept', async (req, res) => {
     });
     res.json(await getFullProject(projectId));
   } catch (err: any) {
-    res.status(500).json({ error: `Concept refinement failed: ${err.message}` });
+    sendStructuredError(res, err, 'concept_refinement_failed');
   }
 });
 
@@ -1368,7 +1369,7 @@ router.post('/:id/fork', async (req, res) => {
     res.json(await getFullProject(newId));
   } catch (err: any) {
     console.error('[fork] failed:', err);
-    res.status(500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -1494,7 +1495,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
     res.json(await getFullProject(projectId));
   } catch (err: any) {
     console.error(`[${projectId}] re-analysis failed:`, err);
-    res.status(500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 

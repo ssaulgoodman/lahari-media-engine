@@ -6,6 +6,7 @@ import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
+import { statusForStructuredError, structuredError } from '../services/structuredErrors.js';
 
 const router = Router();
 const DIRECTOR_API_VERSION = '2026-05-14.r17-first-pass';
@@ -37,6 +38,10 @@ const ok = (res: Response, data: unknown) => res.json({
 
 const fail = (res: Response, error: unknown) => {
   const applyErrorCode = isApplyErrorResult(error) ? error.error : null;
+  const structured = structuredError(error, 'director_api_error');
+  if (!applyErrorCode && (structured.code === 'missing_key' || structured.provider || structured.setupUrl)) {
+    return res.status(statusForStructuredError(error, structured)).json({ ok: false, error: structured });
+  }
   const message = isApplyErrorResult(error) ? error.message || error.error : error instanceof Error ? error.message : String(error || 'Unknown director API error');
   const status = error instanceof RateLimitError ? 429
     : message.includes('not found') ? 404

@@ -16,6 +16,7 @@ import { paramStr, requireAsset } from './scope-helpers.js';
 import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -171,7 +172,7 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs: 0,
         error: err.message,
       });
-      res.status((err as any).statusCode || 500).json({ error: err.message });
+      sendStructuredError(res, err);
     }
   });
 
@@ -239,7 +240,7 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs: 0,
         error: err.message,
       });
-      res.status((err as any).statusCode || 500).json({ error: err.message });
+      sendStructuredError(res, err);
     }
   });
 
@@ -291,7 +292,7 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs: 0,
         error: err.message,
       });
-      res.status((err as any).statusCode || 500).json({ error: err.message });
+      sendStructuredError(res, err);
     }
   });
 
@@ -383,7 +384,7 @@ export const mountStyleRoutes = (router: Router) => {
       res.json(await getFullProject(projectId));
     } catch (err: any) {
       console.error(`[${projectId}] upload-and-lock-style failed:`, err);
-      res.status((err as any).statusCode || 500).json({ error: err.message });
+      sendStructuredError(res, err);
     }
   });
 
@@ -434,7 +435,7 @@ export const mountStyleRoutes = (router: Router) => {
         durationMs: 0,
         error: err.message,
       });
-      res.status((err as any).statusCode || 500).json({ error: err.message });
+      sendStructuredError(res, err);
     }
   });
 

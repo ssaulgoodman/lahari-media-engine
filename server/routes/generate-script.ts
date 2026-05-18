@@ -14,6 +14,7 @@ import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, parseTimestamp } from './scope-helpers.js';
 import { getProjectRuntimePreset } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { sendStructuredError } from '../services/structuredErrors.js';
 
 export const mountScriptRoutes = (router: Router) => {
 
@@ -232,7 +233,7 @@ router.post('/:id/generate-script', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -440,7 +441,7 @@ router.post('/:id/refine-script', async (req, res) => {
     res.json(await getFullProject(paramStr(req.params.id)));
   } catch (err: any) {
     console.error(`[${project.id}] Script refine failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
@@ -578,7 +579,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
     res.json(await getFullProject(project.id));
   } catch (err: any) {
     console.error(`[${project.id}] Write shot prompts failed:`, err);
-    res.status((err as any).statusCode || 500).json({ error: err.message });
+    sendStructuredError(res, err);
   }
 });
 
