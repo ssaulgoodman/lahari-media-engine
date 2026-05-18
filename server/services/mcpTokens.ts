@@ -116,7 +116,7 @@ export const createCliToken = async (
   const apiUrl = (process.env.LAHARI_API_URL || 'https://lahari-media-engine-production.up.railway.app').replace(/\/+$/, '');
   const cliPackage = '@ssaulgoodman420/lahari-cli@0.1.0';
   const posixCommand = `LAHARI_CLI_TOKEN=${token} LAHARI_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
-  const powershellCommand = `$env:LAHARI_CLI_TOKEN='${token}'; $env:LAHARI_API_URL='${apiUrl}'; npx -y ${cliPackage} sync ${opts.projectId}`;
+  const powershellCommand = `$env:LAHARI_CLI_TOKEN='${token}'; $env:LAHARI_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
   return {
     kind: 'lahari.cli_token.created',
     id: data.id,
