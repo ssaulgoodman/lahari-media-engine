@@ -3,6 +3,7 @@ import path from 'path';
 import OpenAI from 'openai';
 import type { ImagesResponse } from 'openai/resources/images';
 import { downloadToTmp, mimeFromExt, saveBase64 } from '../storage.js';
+import { getRuntimePreset, type PipelinePreset } from '../presets.js';
 import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from './imagen.js';
 import { getImageModel } from '../../constants/imageModels.js';
 
@@ -234,6 +235,9 @@ export const generateImageWithRefs = async (
 export const generateStyleOptions = async (
   subject: string,
   styleNotes?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- signature parity with imagen.ts
+  _projectId?: string,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ style: string; assetPath: string }[]> => {
   const directions = styleNotes
     ? [
@@ -252,7 +256,7 @@ export const generateStyleOptions = async (
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `${direction}. Focus on lighting, atmosphere, and visual treatment. High production value, no text, no watermark.`;
+      const prompt = `Create one reusable visual style reference frame for ${preset.style.subjectPrompt(subject)}. ${direction}. Focus on lighting, atmosphere, medium, and visual treatment. ${preset.looks.qualityRules} No text, no watermark.`;
       const [assetPath] = await generateFromPrompt(prompt, '16:9', [], 1);
       return { style: direction, assetPath };
     })
@@ -267,8 +271,9 @@ export const generateSingleStyleImage = async (
   styleDescription: string,
   subject: string,
   generationPrompt?: string,
+  preset?: PipelinePreset,
 ): Promise<string> => {
-  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject);
+  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject, preset);
   const [assetPath] = await generateFromPrompt(prompt, '16:9', [], 1);
   return assetPath;
 };
@@ -284,11 +289,12 @@ export const generateCharacterLooks = async (
   // signature parity with imagen.ts; OpenAI's image service has a single
   // model (gpt-image-2) so the registry's runtimeModel is informational here.
   _model?: string,
+  preset?: PipelinePreset,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-  let prompt = generationPrompt || buildCharacterPrompt(character, { styleIdx, userRefIdx });
+  let prompt = generationPrompt || buildCharacterPrompt(character, { styleIdx, userRefIdx, preset });
   if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
 
   const refs: RefImage[] = [];
@@ -307,11 +313,12 @@ export const generateEnvironmentLooks = async (
   generationPrompt?: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _model?: string,
+  preset?: PipelinePreset,
 ): Promise<string[]> => {
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
 
-  let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx });
+  let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx, preset });
   if (userNote) prompt += `\n\nDirector note: ${userNote}`;
 
   const refs: RefImage[] = [];

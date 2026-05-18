@@ -12,7 +12,7 @@ import { mountLooksRoutes } from './generate-looks.js';
 import { mountScriptRoutes } from './generate-script.js';
 import { mountShotRoutes } from './generate-shots.js';
 import { mountVideoRoutes } from './generate-video.js';
-import { getRuntimePreset, presetSubject } from '../presets.js';
+import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const router = Router();
@@ -52,7 +52,7 @@ router.post('/:id/generate-styles', async (req, res) => {
 
   const concept = JSON.parse(project.locked_concept || '{}');
   const { notes } = req.body;
-  const preset = getRuntimePreset(req.body?.presetKey);
+  const preset = getProjectRuntimePreset(project, req.body?.presetKey);
   const subject = presetSubject(concept, project.title, preset);
 
   const prompt = `Generate 4 style options for "${subject}" — ${notes || project.style_description || preset.style.rules}`;
@@ -63,7 +63,9 @@ router.post('/:id/generate-styles', async (req, res) => {
     const imageService = getImageService(project.image_model);
     const styles = await imageService.generateStyleOptions(
       subject,
-      notes || project.style_description
+      notes || project.style_description,
+      undefined,
+      preset,
     );
     const durationMs = Date.now() - t0;
 

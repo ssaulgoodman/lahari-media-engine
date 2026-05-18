@@ -39,6 +39,24 @@ script/episode brief -> parse scenes/shots -> preset style bible -> cast/env ref
 
 The Studio and Render steps should not care whether a shot came from a song, an anime script, or a future ad brief. They need scenes, shots, cast, environments, style/render profile, and assets.
 
+## V1 Invocation UX
+
+The opening studio UX should be workflow-first, seed-second, preset-defaulted:
+
+```txt
+Start Project
+-> choose workflow card: Music Video or Anime
+-> provide the required starting material for that workflow
+-> backend creates the project with seed_kind, workflow_key, and preset_key
+-> Codex attaches to the existing project and reads those fields from the packet/notebook
+```
+
+Music Video v1 uses an audio upload as the seed. The create request stamps `seed_kind=audio`, `workflow_key=music_video`, and `preset_key=music_video_default`, then runs the existing audio analysis path.
+
+Anime v1 uses pasted or uploaded script text as the seed. The create request stamps `seed_kind=script`, `workflow_key=anime_scripted`, and `preset_key=anime_default`, then parses the script into the shared scene/shot/cast/environment contract.
+
+The user should not need database access or local file setup. The hosted studio owns auth, uploads, storage, and project creation. Codex is the director/operator after the project exists.
+
 ## V1 Workflow Recipes
 
 ### `music_video`

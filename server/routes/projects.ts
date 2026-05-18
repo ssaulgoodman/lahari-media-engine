@@ -12,7 +12,7 @@ import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js'
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
-import { getRuntimePreset } from '../presets.js';
+import { getProjectRuntimePreset, resolveProjectIntake } from '../presets.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
 // (pre-queue.ts-default-fill) get the current default instead of a stale
@@ -529,6 +529,11 @@ const getFullProject = async (projectId: string) => {
     id: project.id,
     title: project.title,
     status: project.status,
+    presetKey: project.preset_key || 'music_video_default',
+    workflowKey: project.workflow_key || 'music_video',
+    seedKind: project.seed_kind || (project.audio_path ? 'audio' : 'brief'),
+    projectBrief: project.project_brief || null,
+    sourcePayload: project.source_payload || null,
     audioPath: project.audio_path ? storageUrl(project.audio_path) : null,
     lyrics: project.lyrics,
     meaning: project.meaning,
@@ -731,44 +736,67 @@ router.get('/:id', async (req, res) => {
   res.json(project);
 });
 
-// Create project + upload audio + run analysis
-router.post('/', upload.single('audio'), async (req, res) => {
-  const file = req.file;
-  if (!file) return res.status(400).json({ error: 'Audio file required' });
+const bodyString = (body: any, key: string): string | undefined => {
+  const value = body?.[key];
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : undefined;
+  return typeof value === 'string' ? value : undefined;
+};
+const bodyNumber = (body: any, key: string): number | undefined => {
+  const value = Array.isArray(body?.[key]) ? body[key][0] : body?.[key];
+  const parsed = typeof value === 'number' ? value : Number(value || 0);
+  return parsed > 0 ? parsed : undefined;
+};
+
+const createAudioProjectFromSeed = async (opts: {
+  file: Express.Multer.File;
+  body: any;
+  userId: string;
+}) => {
+  const { workflow, seedKind, preset } = resolveProjectIntake({
+    workflowKey: bodyString(opts.body, 'workflowKey') || 'music_video',
+    seedKind: bodyString(opts.body, 'seedKind') || 'audio',
+    presetKey: bodyString(opts.body, 'presetKey'),
+  });
+  if (seedKind !== 'audio') {
+    const err = new Error(`Audio project intake requires seed_kind=audio, received "${seedKind}".`);
+    (err as any).statusCode = 400;
+    throw err;
+  }
 
   const projectId = uuidv4();
+  const file = opts.file;
   const ext = path.extname(file.originalname).slice(1) || 'mp3';
   const audioPath = await saveBuffer(file.buffer, 'audio', ext);
-  const title = req.body.title || file.originalname.replace(/\.[^/.]+$/, '');
-  const language = req.body.language || undefined;
-  const context = req.body.context || undefined;
+  const title = bodyString(opts.body, 'title') || file.originalname.replace(/\.[^/.]+$/, '');
+  const language = bodyString(opts.body, 'language');
+  const context = bodyString(opts.body, 'context') || bodyString(opts.body, 'directorBrief');
 
-  // Create project in DB
   await insertRow('projects', {
     id: projectId,
     title,
     status: 'analyzing',
     audio_path: audioPath,
-    image_model: 'nano-banana-2',
+    image_model: preset.defaults.imageModel,
     storyboard_provider: 'gpt-image-2',
-    user_id: req.userId,
+    video_model: preset.defaults.videoModel,
+    aspect_ratio: preset.defaults.aspectRatio,
+    video_mode: preset.defaults.videoMode,
+    user_id: opts.userId,
     ...platformProjectFields({
-      preset_key: 'music_video_default',
-      workflow_key: 'music_video',
-      seed_kind: 'audio',
+      preset_key: preset.key,
+      workflow_key: workflow.key,
+      seed_kind: seedKind,
       project_brief: { title, language, context },
-      source_payload: { kind: 'audio', originalName: file.originalname, storageKey: audioPath },
+      source_payload: { kind: seedKind, originalName: file.originalname, storageKey: audioPath },
     }),
   });
 
-  // Run analysis (synchronous for simplicity — client shows spinner)
   try {
     const audioBase64 = await readAsBase64(audioPath);
     const audioMime = mimeFromExt(audioPath);
     const audioRef = [{ type: 'audio' as const, label: 'Uploaded audio', url: storageUrl(audioPath) }];
 
-    // Phase 1a: parallel lyrics + structure (audio analysis via Gemini)
-    console.log(`[${projectId}] Analyzing: lyrics + structure...`);
+    console.log(`[${projectId}] Analyzing ${workflow.key} audio seed via ${preset.key}: lyrics + structure...`);
     const t0Phase1 = Date.now();
     const [lyricsResult, structureResult] = await Promise.allSettled([
       transcribeLyrics(audioBase64, audioMime, language),
@@ -790,7 +818,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
       projectId,
       stage: 'transcribe-lyrics',
       model: 'gemini-3-pro-preview',
-      prompt: `Transcribe the lyrics of this audio.\nLanguage: ${language || 'Detect automatically'}.\nFormat: [timestamp] lyrics — original language only, no translations.`,
+      prompt: `Transcribe the lyrics of this audio.\nLanguage: ${language || 'Detect automatically'}.\nFormat: [timestamp] lyrics - original language only, no translations.`,
       referenceInputs: audioRef,
       responseSummary: lyricsResult.status === 'fulfilled' ? lyrics : 'FAILED',
       durationMs: phase1Duration,
@@ -805,14 +833,13 @@ router.post('/', upload.single('audio'), async (req, res) => {
       prompt: 'Identify musical sections: label, startTime, endTime, energy level, description. Max 10 sections.',
       referenceInputs: audioRef,
       responseSummary: structureResult.status === 'fulfilled'
-        ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}] ${s.energyLevel || ''} ${s.description || ''}`).join('\n')
+        ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}-${s.endTime}] ${s.energyLevel || ''} ${s.description || ''}`).join('\n')
         : 'FAILED',
       durationMs: phase1Duration,
       costEstimate: 0.01,
       error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
     });
 
-    // Phase 1b: meaning summary (Claude Sonnet, text-only — needs lyrics)
     let meaning = '';
     if (lyrics) {
       console.log(`[${projectId}] Summarizing meaning (Claude Sonnet)...`);
@@ -833,7 +860,6 @@ router.post('/', upload.single('audio'), async (req, res) => {
       });
     }
 
-    // Save to DB — analysis only (concepts generated separately)
     await updateRows('projects', { id: projectId }, {
       status: 'analyzed',
       lyrics,
@@ -845,25 +871,42 @@ router.post('/', upload.single('audio'), async (req, res) => {
       updated_at: new Date().toISOString(),
     });
 
-    res.json(await getFullProject(projectId));
+    return await getFullProject(projectId);
   } catch (err: any) {
     console.error(`[${projectId}] Analysis failed:`, err);
     await updateRows('projects', { id: projectId }, { status: 'error', updated_at: new Date().toISOString() });
-    res.status(500).json({ error: err.message || 'Analysis failed' });
+    throw err;
   }
-});
+};
 
-// Create script-first anime project + parse it into the shared production plan.
-// This is the backend golden path for workflows that do not start with audio.
-router.post('/script', async (req, res) => {
-  const scriptText = String(req.body?.scriptText || req.body?.script || '').trim();
-  if (!scriptText) return res.status(400).json({ error: 'scriptText required' });
+const createScriptProjectFromSeed = async (opts: {
+  body: any;
+  userId: string;
+  file?: Express.Multer.File;
+}) => {
+  const uploadedText = opts.file ? opts.file.buffer.toString('utf8') : '';
+  const scriptText = String(bodyString(opts.body, 'scriptText') || bodyString(opts.body, 'script') || uploadedText).trim();
+  if (!scriptText) {
+    const err = new Error('scriptText required');
+    (err as any).statusCode = 400;
+    throw err;
+  }
 
-  const preset = getRuntimePreset(req.body?.presetKey || 'anime_default');
+  const { workflow, seedKind, preset } = resolveProjectIntake({
+    workflowKey: bodyString(opts.body, 'workflowKey') || 'anime_scripted',
+    seedKind: bodyString(opts.body, 'seedKind') || 'script',
+    presetKey: bodyString(opts.body, 'presetKey') || 'anime_default',
+  });
+  if (seedKind !== 'script') {
+    const err = new Error(`Script project intake requires seed_kind=script, received "${seedKind}".`);
+    (err as any).statusCode = 400;
+    throw err;
+  }
+
   const projectId = uuidv4();
-  const title = String(req.body?.title || 'Untitled Anime Project').trim() || 'Untitled Anime Project';
-  const directorBrief = typeof req.body?.directorBrief === 'string' ? req.body.directorBrief : undefined;
-  const targetDuration = Number(req.body?.targetDuration || 0) > 0 ? Number(req.body.targetDuration) : undefined;
+  const title = String(bodyString(opts.body, 'title') || `Untitled ${workflow.label} Project`).trim() || `Untitled ${workflow.label} Project`;
+  const directorBrief = bodyString(opts.body, 'directorBrief');
+  const targetDuration = bodyNumber(opts.body, 'targetDuration');
 
   await insertRow('projects', {
     id: projectId,
@@ -876,28 +919,28 @@ router.post('/script', async (req, res) => {
       title,
       subject: title,
       mood: 'story-driven',
-      theme: directorBrief || 'Script-first anime production',
+      theme: directorBrief || `Script-first ${workflow.label} production`,
       conceptDirection: preset.label,
-      description: directorBrief || 'Parsed from an uploaded anime script.',
+      description: directorBrief || 'Parsed from an uploaded script.',
     }),
     style_description: preset.style.presetBible || preset.style.rules,
     video_mode: preset.defaults.videoMode,
     image_model: preset.defaults.imageModel,
     video_model: preset.defaults.videoModel,
     aspect_ratio: preset.defaults.aspectRatio,
-    target_duration: preset.defaults.pacing,
-    user_id: req.userId,
+    target_duration: targetDuration || preset.defaults.pacing,
+    user_id: opts.userId,
     ...platformProjectFields({
       preset_key: preset.key,
-      workflow_key: preset.workflowKey,
-      seed_kind: 'script',
+      workflow_key: workflow.key,
+      seed_kind: seedKind,
       project_brief: { title, directorBrief, targetDuration },
-      source_payload: { kind: 'script', title, scriptText },
+      source_payload: { kind: seedKind, title, scriptText, originalName: opts.file?.originalname },
     }),
   });
 
   try {
-    console.log(`[${projectId}] Parsing script-first project via ${preset.key}...`);
+    console.log(`[${projectId}] Parsing ${workflow.key} script seed via ${preset.key}...`);
     const t0 = Date.now();
     const data = await parseAnimeScriptToPlan({
       scriptText,
@@ -928,7 +971,7 @@ router.post('/script', async (req, res) => {
     });
 
     await incrementColumn('projects', { id: projectId }, 'cost_estimate', 0.02);
-    res.json(await getFullProject(projectId));
+    return await getFullProject(projectId);
   } catch (err: any) {
     console.error(`[${projectId}] Script intake failed:`, err);
     await updateRows('projects', { id: projectId }, { status: 'error', updated_at: new Date().toISOString() });
@@ -940,6 +983,55 @@ router.post('/script', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
+    throw err;
+  }
+};
+
+// Workflow-first intake for the new platform opening screen.
+router.post('/intake', upload.single('seedFile'), async (req, res) => {
+  try {
+    const guessedSeed = bodyString(req.body, 'seedKind')
+      || (req.file ? 'audio' : undefined)
+      || (bodyString(req.body, 'scriptText') || bodyString(req.body, 'script') ? 'script' : undefined);
+    const { workflow, seedKind } = resolveProjectIntake({
+      workflowKey: bodyString(req.body, 'workflowKey'),
+      seedKind: guessedSeed,
+      presetKey: bodyString(req.body, 'presetKey'),
+    });
+
+    if (workflow.key === 'music_video' && seedKind === 'audio') {
+      if (!req.file) return res.status(400).json({ error: 'Audio seed file required' });
+      return res.json(await createAudioProjectFromSeed({ file: req.file, body: req.body, userId: req.userId }));
+    }
+
+    if (workflow.key === 'anime_scripted' && seedKind === 'script') {
+      return res.json(await createScriptProjectFromSeed({ body: req.body, userId: req.userId, file: req.file }));
+    }
+
+    return res.status(400).json({
+      error: `Project intake for workflow "${workflow.key}" with seed "${seedKind}" is not implemented yet.`,
+    });
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({ error: err.message || 'Project intake failed' });
+  }
+});
+
+// Create project + upload audio + run analysis
+router.post('/', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Audio file required' });
+    res.json(await createAudioProjectFromSeed({ file: req.file, body: req.body, userId: req.userId }));
+  } catch (err: any) {
+    res.status(err.statusCode || 500).json({ error: err.message || 'Analysis failed' });
+  }
+});
+
+// Create script-first anime project + parse it into the shared production plan.
+// This is the backend golden path for workflows that do not start with audio.
+router.post('/script', async (req, res) => {
+  try {
+    res.json(await createScriptProjectFromSeed({ body: req.body, userId: req.userId }));
+  } catch (err: any) {
     res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
@@ -966,7 +1058,7 @@ router.post('/:id/generate-concepts', async (req, res) => {
     console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined, project.text_provider, getRuntimePreset(req.body?.presetKey));
+    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey));
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -1117,7 +1209,7 @@ router.post('/:id/refine-concept', async (req, res) => {
 
   try {
     const projectId = paramStr(req.params.id);
-    const refined = await refineConceptDirection(current, feedback, project.text_provider, getRuntimePreset(req.body?.presetKey));
+    const refined = await refineConceptDirection(current, feedback, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey));
     await updateRows('projects', { id: projectId }, {
       locked_concept: JSON.stringify(refined),
       updated_at: new Date().toISOString(),

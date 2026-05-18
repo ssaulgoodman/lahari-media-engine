@@ -183,7 +183,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       ? await getProjectPromptOverride(project.id, 'video')
       : null;
     const storyboardPrompt = projectVideoOverride
-      ? `${projectVideoOverride.trim()}\n\nBase Lahari storyboard video prompt:\n${storyboardPromptBase}`
+      ? `${projectVideoOverride.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
       : storyboardPromptBase;
     const veoPrompt = useStoryboardMode
       ? storyboardPrompt

@@ -12,7 +12,7 @@ import { getModelMinDuration } from '../services/segmind.js';
 import { getFullProject, forkProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, parseTimestamp } from './scope-helpers.js';
-import { getRuntimePreset } from '../presets.js';
+import { getProjectRuntimePreset } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 
 export const mountScriptRoutes = (router: Router) => {
@@ -29,7 +29,7 @@ router.post('/:id/generate-script', async (req, res) => {
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file' });
 
   const { userNote } = req.body || {};
-  const preset = getRuntimePreset(req.body?.presetKey);
+  const preset = getProjectRuntimePreset(project, req.body?.presetKey);
   // Provider resolution priority:
   //   1. Body override (legacy escape hatch — `scriptProvider: "openai"`)
   //   2. Project's text_provider (set by the Blueprint dropdown)
@@ -301,7 +301,7 @@ router.post('/:id/refine-script', async (req, res) => {
       musicalStructure: project.musical_structure || '',
       basePacing: project.target_duration || 15,
       minShotDuration: getModelMinDuration(project.video_model),
-      preset: getRuntimePreset(req.body?.presetKey),
+      preset: getProjectRuntimePreset(project, req.body?.presetKey),
       videoModel: project.video_model || undefined,
     };
     const data = useOpenAIScriptWriter
@@ -455,7 +455,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
   if (!project.style_asset_id) return res.status(400).json({ error: 'Style not locked yet' });
   const userNote: string | undefined = req.body?.userNote;
-  const preset = getRuntimePreset(req.body?.presetKey);
+  const preset = getProjectRuntimePreset(project, req.body?.presetKey);
 
   // Provider resolution matches generate-script / refine-script.
   const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();

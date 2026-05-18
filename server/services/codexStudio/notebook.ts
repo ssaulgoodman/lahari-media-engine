@@ -16,6 +16,7 @@ import {
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
+import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
 
 export type NotebookFile = {
   path: string;
@@ -41,11 +42,22 @@ const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
-const buildWorkspaceInstructions = (project: Project): string => `# Lahari Workspace
+const buildWorkspaceInstructions = (project: Project): string => {
+  const preset = getPipelinePreset(project.presetKey);
+  const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
+  const seedKind = project.seedKind || workflow.primarySeed;
+  return `# Lahari Workspace
 
 This folder is the local notebook for Lahari project "${project.title}" (${project.id}).
 
 Notebook version: ${NOTEBOOK_VERSION}
+
+Project mode:
+- Seed kind: ${seedKind}
+- Workflow: ${workflow.key} — ${workflow.summary}
+- Preset: ${preset.key} — ${preset.label}
+
+These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which pipeline stages are required, optional, supplied, or skipped. Preset says taste/model/default prompt rules. Do not assume songs, lyrics, deity, temple, devotional context, or audio analysis unless this project's seed/workflow/preset says so.
 
 Supabase is canonical. This is an artist notebook, not the Lahari source checkout. Use Lahari MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Lahari instead of substituting shell commands.
 
@@ -62,13 +74,14 @@ Project-local Lahari skills live under .agents/skills/ for Codex and .claude/ski
 Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
 
 Default ritual:
-1. resolve_project when the artist names a song or project; use list_queue/search_catalog when browsing availability
+1. resolve_project when the artist names a project; use list_queue/search_catalog only for catalog/queue-backed music-video work
 2. attach_director_session once you have a projectId
 3. write_project_notebook
-4. read relevant mirrors before proposing changes
+4. read relevant mirrors and project mode before proposing changes
 5. apply approved changes through typed MCP tools
 6. refresh affected notebook files
 `;
+};
 
 const readSkillBody = (skillName: string): string => {
   const skillPathCandidates = [
@@ -106,6 +119,9 @@ const buildSkillFiles = (): NotebookFile[] => LAHARI_SKILL_NAMES.flatMap((skillN
 const buildBrief = (project: Project, actions: ReturnType<typeof buildProjectActionList>): string => {
   const counts = statusCounts(project);
   const diagnosis = actions.diagnosis;
+  const preset = getPipelinePreset(project.presetKey);
+  const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
+  const seedKind = project.seedKind || workflow.primarySeed;
   return `# ${project.title}
 
 Updated: ${projectUpdatedAt(project)}
@@ -117,9 +133,19 @@ Web: ${webStudioUrl(project.id, { step: 'studio' })}
 ${diagnosis.productionRead}
 
 - Status: ${project.status}
-- Workflow: ${usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe'}
+- Seed kind: ${seedKind}
+- Workflow: ${workflow.key} (${workflow.label}) — ${workflow.summary}
+- Preset: ${preset.key} (${preset.label})
+- Studio mode: ${usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe'}
 - Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
 - Counts: ${counts.scenes} scenes, ${counts.shots} shots, ${counts.storyboardPrompts}/${counts.shots} storyboard prompts, ${counts.storyboards}/${counts.shots} boards, ${counts.videos}/${counts.shots} videos
+
+## Source Contract
+
+- Accepted seeds: ${workflow.acceptedSeeds.join(', ')}
+- Source rules: ${preset.source.rules}
+- Project brief: ${compactText(typeof project.projectBrief === 'string' ? project.projectBrief : JSON.stringify(project.projectBrief || null), 700)}
+- Source payload: ${compactText(typeof project.sourcePayload === 'string' ? project.sourcePayload : JSON.stringify(project.sourcePayload || null), 700)}
 
 ## Bottleneck
 
@@ -144,10 +170,10 @@ Project: ${project.title}
 
 ## Locked Concept
 
-${locked ? `### ${locked.title || locked.deity || 'Untitled'}
+${locked ? `### ${locked.title || locked.subject || locked.primarySubject || locked.deity || 'Untitled'}
 
 - Direction: ${locked.direction || locked.conceptDirection || 'None'}
-- Deity: ${locked.deity || 'None'}
+- Subject: ${locked.subject || locked.primarySubject || locked.deity || 'None'}
 - Mood: ${locked.mood || 'None'}
 
 ${md(locked.description || locked.conceptDirection || JSON.stringify(locked, null, 2))}` : 'No locked concept.'}

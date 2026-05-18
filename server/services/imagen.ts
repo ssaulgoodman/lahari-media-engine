@@ -118,7 +118,8 @@ export const imagePartFromPath = async (storagePath: string): Promise<ContentPar
 export const generateStyleOptions = async (
   subject: string,
   styleNotes?: string,
-  projectId?: string
+  projectId?: string,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ style: string; assetPath: string }[]> => {
   const ai = getAI();
 
@@ -144,7 +145,7 @@ export const generateStyleOptions = async (
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `${direction}. Focus on lighting, atmosphere, and visual treatment. High production value, no text, no watermark.`;
+      const prompt = `Create one reusable visual style reference frame for ${preset.style.subjectPrompt(subject)}. ${direction}. Focus on lighting, atmosphere, medium, and visual treatment. ${preset.looks.qualityRules} No text, no watermark.`;
       const response = await ai.models.generateImages({
         model: 'imagen-4.0-generate-001',
         prompt,
@@ -200,8 +201,9 @@ export const generateSingleStyleImage = async (
   subject: string,
   /** If set, this is the exact prompt to send (artist-edited). */
   generationPrompt?: string,
+  preset?: PipelinePreset,
 ): Promise<string> => {
-  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject);
+  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject, preset);
   const parts: ContentPart[] = [{ text: prompt }];
   return generateImageWithRefs(parts);
 };
@@ -241,12 +243,11 @@ export const buildCharacterPrompt = (
 - NEUTRAL POSE: hands relaxed at sides or in a natural resting position
 - Do NOT show the character holding anything, performing any action, or interacting with objects
 - Do NOT include props or scene-specific objects in hand
-- Focus on: face, skin, expression, costume, ornaments, jewelry, crown/headpiece, hair
+- Focus on: face, expression baseline, costume/wardrobe, hairstyle, silhouette, proportions, and distinguishing details
 - Plain or softly blurred background — the character should be isolated for reuse
 - Eye-level framing; lighting follows the style image`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-${preset.looks.qualityRules}
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
+${preset.looks.qualityRules}`;
   return prompt;
 };
 
@@ -260,6 +261,7 @@ export const generateCharacterLooks = async (
   generationPrompt?: string,
   /** Model name from the registry spec. Defaults to Nano Banana Pro. */
   model: string = 'gemini-3-pro-image-preview',
+  preset?: PipelinePreset,
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -286,7 +288,7 @@ export const generateCharacterLooks = async (
     prompt = generationPrompt;
     if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   } else {
-    prompt = buildCharacterPrompt(character, { styleIdx, userRefIdx });
+    prompt = buildCharacterPrompt(character, { styleIdx, userRefIdx, preset });
     if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   }
 
@@ -341,10 +343,9 @@ export const buildEnvironmentPrompt = (
   if (opts?.userRefIdx) {
     prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood. The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW it's rendered.`;
   }
-  prompt += `\n\nWide establishing shot, full environment visible, empty scene.`;
+  prompt += `\n\nFull reusable environment reference: the whole space is visible and readable, empty scene unless scale absolutely requires tiny neutral figures.`;
   prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-${preset.looks.qualityRules}
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`;
+${preset.looks.qualityRules}`;
   return prompt;
 };
 
@@ -358,6 +359,7 @@ export const generateEnvironmentLooks = async (
   generationPrompt?: string,
   /** Model name from the registry spec. Defaults to Nano Banana Pro. */
   model: string = 'gemini-3-pro-image-preview',
+  preset?: PipelinePreset,
 ): Promise<string[]> => {
   const ai = getAI();
   const N = 3;
@@ -382,7 +384,7 @@ export const generateEnvironmentLooks = async (
     prompt = generationPrompt;
     if (userNote) prompt += `\n\nDirector note: ${userNote}`;
   } else {
-    prompt = buildEnvironmentPrompt(environment, { styleIdx, userRefIdx });
+    prompt = buildEnvironmentPrompt(environment, { styleIdx, userRefIdx, preset });
     if (userNote) prompt += `\n\nDirector note: ${userNote}`;
   }
 
@@ -488,7 +490,7 @@ export const generateShotStartFrame = async (opts: {
   // ── Scene + instructions ──
   let prompt = `Scene: ${opts.visualPrompt}
 
-Preserve character identity from character references (face, costume, ornaments must match). Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Match the visual style EXACTLY from the style reference image — same lighting, color palette, texture, and rendering approach. The style image is the ground truth.`;
+Preserve character identity from character references (face, costume/wardrobe, silhouette, and distinguishing details must match). Match environment from environment reference. ${opts.prevShotEndFramePath ? 'Continue visual flow from previous shot. ' : ''}Match the visual style EXACTLY from the style reference image — same lighting, color palette, texture, and rendering approach. The style image is the ground truth.`;
 
   if (opts.continuityDescription) {
     prompt += `\n\nPrevious shot ended with: ${opts.continuityDescription}

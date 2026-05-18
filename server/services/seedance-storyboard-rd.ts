@@ -47,15 +47,19 @@ export const chooseSeedanceStoryboardDuration = (seconds: number, preferredMax =
 const castLine = (input: StoryboardRdInput) =>
   input.castNames.length ? input.castNames.join(', ') : 'No recurring character in frame';
 
+const presetFor = (input: StoryboardRdInput) => input.preset || getRuntimePreset();
+const isMusicVideoWorkflow = (input: StoryboardRdInput) => presetFor(input).workflowKey === 'music_video';
+const projectLabel = (input: StoryboardRdInput) => isMusicVideoWorkflow(input) ? 'Song' : 'Project';
+const sourceExcerptLabel = (input: StoryboardRdInput) => isMusicVideoWorkflow(input) ? 'Lyrics/phrase' : 'Script/source excerpt';
+
 // Scene-scoped context — for the script writer that plans clips across a
 // whole scene. Includes scene narrative, scene timestamps, and lyrics
 // because the planner needs them to decide clip boundaries and beats.
-const sceneContext = (input: StoryboardRdInput) => `Song: ${input.title}
-Video intent: ${input.concept}
-Mood: ${input.mood || 'devotional'}
-${input.songType && input.songType !== 'song' ? `Song type: ${input.songType}\n` : ''}Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
+const sceneContext = (input: StoryboardRdInput) => `${projectLabel(input)}: ${input.title}
+Production intent: ${input.concept}
+${input.mood ? `Mood: ${input.mood}\n` : ''}${isMusicVideoWorkflow(input) && input.songType && input.songType !== 'song' ? `Song type: ${input.songType}\n` : ''}Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
 Scene overview: ${input.sceneNarrative}
-${input.musicalCue ? `Musical structure cue: ${input.musicalCue}\n` : ''}${input.sceneLyrics ? `Lyrics/phrase: ${input.sceneLyrics}\n` : ''}Cast available in scene: ${castLine(input)}
+${input.musicalCue ? `${isMusicVideoWorkflow(input) ? 'Musical structure cue' : 'Timing cue'}: ${input.musicalCue}\n` : ''}${input.sceneLyrics ? `${sourceExcerptLabel(input)}: ${input.sceneLyrics}\n` : ''}Cast available in scene: ${castLine(input)}
 Environment: ${input.environmentName || 'unspecified'}`;
 
 // Clip-scoped context — for the storyboard generator and the video model,
@@ -67,11 +71,11 @@ Environment: ${input.environmentName || 'unspecified'}`;
 // out when missing instead of leaking defaults.
 const clipContext = (input: StoryboardRdInput) => {
   const lines: string[] = [
-    `Song: ${input.title}`,
-    `Concept: ${input.concept}`,
+    `${projectLabel(input)}: ${input.title}`,
+    `Production intent: ${input.concept}`,
   ];
   if (input.mood) lines.push(`Mood: ${input.mood}`);
-  if (input.musicalCue) lines.push(`Musical pacing cue: ${input.musicalCue}`);
+  if (input.musicalCue) lines.push(`${isMusicVideoWorkflow(input) ? 'Musical pacing cue' : 'Timing cue'}: ${input.musicalCue}`);
   lines.push(`Shot description: ${input.clipDirection}`);
   lines.push(`Clip duration: ${input.clipDuration}s`);
   lines.push(`Cast in clip: ${castLine(input)}`);
@@ -83,18 +87,26 @@ export const buildSeedanceScriptWriterPrompt = (
   input: StoryboardRdInput,
   variant: ScriptPromptVariant
 ): string => {
-  const preset = input.preset || getRuntimePreset();
+  const preset = presetFor(input);
   const combineGuidance = variant === 'clip_blocks_combine_short'
-    ? `If a musical section is shorter than 15 seconds but clearly belongs to the next section, combine them into one storyboard clip. Do not combine sections that have different emotional or musical jobs.`
-    : `Do not force artificial 15 second scenes. Short phrases may become 4, 5, 6, 8, 10, or 12 second clips when that better matches the music.`;
+    ? isMusicVideoWorkflow(input)
+      ? `If a musical section is shorter than 15 seconds but clearly belongs to the next section, combine them into one storyboard clip. Do not combine sections that have different emotional or musical jobs.`
+      : `If a script beat is shorter than 15 seconds but clearly belongs to the next action or reaction, combine them into one storyboard clip. Do not combine beats that change location, objective, or continuity state.`
+    : isMusicVideoWorkflow(input)
+      ? `Do not force artificial 15 second scenes. Short phrases may become 4, 5, 6, 8, 10, or 12 second clips when that better matches the music.`
+      : `Do not force artificial 15 second clips. Short acting beats, reactions, transitions, and action fragments may become 4, 5, 6, 8, 10, or 12 second clips when that better matches the script.`;
 
   const freedomGuidance = variant === 'clip_blocks_freeform'
     ? `You have freedom to vary clip lengths for taste. Use 15 seconds for cinematic mini-scenes, 10-12 seconds for compact phrases, and 4-8 seconds for transitions, refrains, or quick responses.`
     : `Prefer 15 second storyboard clips when the musical section can support a mini-scene.`;
 
-  return `You are planning a ${preset.toolName} music video for Seedance 2.0 storyboard mode.
+  const beatCueRule = isMusicVideoWorkflow(input)
+    ? `beatCue: what lyric, musical phrase, drum accent, or vocal pulse the edit should hit`
+    : `beatCue: what script beat, action beat, reaction, dialogue moment, or continuity handoff the clip should hit`;
 
-In this mode, a ${preset.toolName} "shot" is not a single continuous camera take. It is a storyboard clip: one 4-15 second edited mini-sequence that may contain internal cuts, multiple angles, and beat hits.
+  return `You are planning ${preset.toolName} clips for Seedance 2.0 storyboard mode.
+
+In this mode, a ${preset.toolName} "shot" is not always a single continuous camera take. It is a storyboard clip: one 4-15 second edited mini-sequence that may contain internal cuts, multiple angles, and beat hits.
 
 ${freedomGuidance}
 ${combineGuidance}
@@ -104,7 +116,7 @@ Use only Seedance-supported durations: ${SEEDANCE_STORYBOARD_DURATIONS.join(', '
 For each scene, output storyboard clips. Each clip needs:
 - duration
 - clipDirection: what happens across the mini-sequence
-- beatCue: what lyric, musical phrase, drum accent, or chant pulse the edit should hit
+- ${beatCueRule}
 - internalCuts: 3-6 concise cut beats with timestamps
 - castNames
 - environmentName
@@ -130,7 +142,7 @@ export const SEEDANCE_SCRIPT_TOOL = {
           properties: {
             duration: { type: 'number', description: 'One of 4, 5, 6, 8, 10, 12, 15 seconds' },
             clipDirection: { type: 'string', description: 'What happens across the storyboard clip' },
-            beatCue: { type: 'string', description: 'Lyric, musical phrase, drum accent, or chant pulse this clip should hit' },
+            beatCue: { type: 'string', description: 'Source beat this clip should hit: lyric/rhythm for music videos, or script/action/dialogue beat for scripted work' },
             internalCuts: {
               type: 'array',
               items: {

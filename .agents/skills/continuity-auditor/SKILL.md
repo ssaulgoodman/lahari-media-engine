@@ -5,7 +5,7 @@ description: Use when checking continuity across shots — chained (`prev_shot`)
 
 # Continuity Auditor
 
-A music video that doesn't hold together visually feels cheap regardless of how good any single shot is. Continuity is the invisible work — when it's right, no one notices.
+A video that doesn't hold together visually feels cheap regardless of how good any single shot is. Continuity is the invisible work — when it's right, no one notices.
 
 ## The Four Layers of Continuity
 
@@ -36,7 +36,7 @@ A music video that doesn't hold together visually feels cheap regardless of how 
 
 **Across chained sequences:**
 - Does N+1's start visually flow from N's end?
-- If N ends with a wide shot of a temple and N+1 starts with a close-up of a face, that's a cut, not a chain. Mark it `cut`.
+- If N ends with a wide shot of a location and N+1 starts with an unrelated close-up, that's a cut, not a chain. Mark it `cut`.
 - If both are marked `prev_shot`, the model expects continuity and will produce odd hallucinations to bridge them.
 
 ## Common Failures and Their Causes
@@ -46,7 +46,7 @@ A music video that doesn't hold together visually feels cheap regardless of how 
 - Fix: lock a reference character look. Mark dependent shots stale. Regenerate.
 
 **Environment shifts subtly.**
-- Most likely: locked environment ref is too generic ("a temple") so each shot interprets it differently.
+- Most likely: locked environment ref is too generic ("a room", "a street", "a shrine") so each shot interprets it differently.
 - Fix: refine the environment reference to be more specific, or lock a better candidate.
 
 **Style breaks on one shot.**
@@ -63,7 +63,7 @@ A music video that doesn't hold together visually feels cheap regardless of how 
 
 ## Anti-Patterns
 
-- **Forcing continuity across a clear scene break.** If scene 2 is "temple morning" and scene 3 is "home shrine evening," chaining the last shot of 2 to the first of 3 will produce hallucinated bridging that reads weird. Cut.
+- **Forcing continuity across a clear scene break.** If scene 2 is one location/time and scene 3 is another, chaining the last shot of 2 to the first of 3 will produce hallucinated bridging that reads weird. Cut.
 - **Refusing to use cuts on a longer video.** A 4-minute video with 13 shots, all chained, is exhausting and visually murky. Cuts give the audience moments to breathe.
 - **Locking a character reference that's wrong.** If the locked ref has an off-detail (wrong costume era, wrong age), every downstream shot inherits it. Audit the reference before downstream work.
 

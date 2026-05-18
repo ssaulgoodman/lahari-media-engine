@@ -47,6 +47,14 @@ const formatConceptForScriptPrompt = (concept: any): string => {
   return lines.filter(line => !line.endsWith(': ')).join('\n');
 };
 
+const workflowSourceLabels = (preset: PipelinePreset) => {
+  const isMusicVideo = preset.workflowKey === 'music_video';
+  return {
+    sourceBlock: isMusicVideo ? 'LYRICS / AUDIO SOURCE' : 'SCRIPT / SOURCE MATERIAL',
+    structureBlock: isMusicVideo ? 'MUSICAL STRUCTURE' : 'SCENE / TIMING STRUCTURE',
+  };
+};
+
 // parseTimestamp is now in ./script-validation.ts (shared with claude/gemini)
 
 const SCRIPT_SCHEMA = {
@@ -142,6 +150,7 @@ const buildPrompt = (
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
+  const labels = workflowSourceLabels(preset);
   const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
   const traits = [
     input.isNarrative ? 'narrative' : null,
@@ -169,7 +178,7 @@ const buildPrompt = (
     ? `\nVALIDATION FAILED. Return a corrected full JSON plan. Fix exactly these issues:\n${errors.map((err) => `- ${err}`).join('\n')}\n`
     : '';
 
-  return `You are the practical script planner for ${preset.toolName}, an AI music-video production tool.
+  return `You are the practical script planner for ${preset.toolName}, an AI video production tool.
 
 Your job is production structure: cast, reusable locations, scenes, and what physically happens in each shot.
 Write for assets that artists can actually generate and storyboard. Be concrete, calm, and shootable.
@@ -185,13 +194,13 @@ ${songTypeSignal}
 CONCEPT:
 ${formatConceptForScriptPrompt(input.concept)}
 
-LYRICS:
+${labels.sourceBlock}:
 ${input.lyrics}
 
 MEANING:
 ${input.meaning}
 
-MUSICAL STRUCTURE:
+${labels.structureBlock}:
 ${input.musicalStructure}
 
 ${pacingGuidance}
@@ -201,7 +210,7 @@ Return only JSON matching the schema.
 
 CAST:
 - Include only characters actually needed.
-- Descriptions are neutral reusable reference identities: physical appearance, cultural identity, costume, ornaments. No action, no props in hands, no art style.
+- Descriptions are neutral reusable reference identities: physical appearance, role, silhouette, wardrobe/costume, and distinguishing details. No action, no props in hands, no art style.
 ${preset.script.castRules}
 
 ENVIRONMENTS:
@@ -209,7 +218,7 @@ ENVIRONMENTS:
 ${preset.script.environmentRules}
 
 SCENES:
-- Follow musical structure timestamps exactly.
+- Follow provided structure timestamps exactly.
 - narrativeDescription is plain and concrete, 1-2 sentences.
 - Every shot must have environmentName from your environment list.
 - Every visible character must be in castNames.
@@ -319,9 +328,12 @@ type RefineScriptInput = {
   basePacing: number;
   minShotDuration?: number;
   videoModel?: string;
+  preset?: PipelinePreset;
 };
 
 const buildRefinePrompt = (input: RefineScriptInput): string => {
+  const preset = input.preset || getRuntimePreset();
+  const labels = workflowSourceLabels(preset);
   const pacing = input.basePacing || 15;
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
@@ -346,23 +358,23 @@ const buildRefinePrompt = (input: RefineScriptInput): string => {
 
   const pacingGuidance = isSeedanceStoryboard
     ? `SEEDANCE STORYBOARD PACING:
-A Lahari shot is one storyboard-controlled clip, not one continuous take.
+A ${preset.toolName} shot is one storyboard-controlled clip, not one continuous take.
 Allowed range: 4-${seedanceMaxDuration}s per shot. Durations must add exactly to the scene duration.
 If you edit a scene, include duration for every shot. Preserve existing durations in untouched scenes.`
     : `SHOT BUDGET: Every shot = ${pacing}s. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets remainder. HARD CONSTRAINT.
 Video model minimum clip length: ${minDuration}s — shorter shots are generated at model floor and trimmed in render.`;
 
-  return `You are the practical script editor for Lahari. Refine an existing devotional music video script based on director feedback. Visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
+  return `You are the practical script editor for ${preset.toolName}. Refine an existing video script based on director feedback. Visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
 
 CONCEPT:
 ${formatConceptForScriptPrompt(input.concept)}
 
-LYRICS:
+${labels.sourceBlock}:
 ${input.lyrics}
 
 MEANING: ${input.meaning}
 
-MUSICAL STRUCTURE: ${input.musicalStructure}
+${labels.structureBlock}: ${input.musicalStructure}
 
 ${pacingGuidance}
 
@@ -486,6 +498,7 @@ type WriteShotPromptsInput = {
   isNarrative?: boolean;
   isMeditative?: boolean;
   videoModel?: string;
+  preset?: PipelinePreset;
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[];
 };
 
@@ -512,8 +525,10 @@ const WRITE_SHOT_PROMPTS_SCHEMA = {
 };
 
 const buildWriteShotPromptsText = (input: WriteShotPromptsInput): string => {
+  const preset = input.preset || getRuntimePreset();
+  const isMusicVideo = preset.workflowKey === 'music_video';
   const shotList = input.shots.map((s, i) =>
-    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | Lyrics: ${s.sceneLyrics || 'instrumental'}`
+    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | ${isMusicVideo ? 'Lyric/audio cue' : 'Source beat'}: ${s.sceneLyrics || (isMusicVideo ? 'instrumental' : 'not specified')}`
   ).join('\n');
 
   const castList = input.cast.map(c => `${c.name}: ${c.description}`).join('\n');
@@ -530,22 +545,26 @@ const buildWriteShotPromptsText = (input: WriteShotPromptsInput): string => {
     : '';
 
   const meditativeGuidance = input.isMeditative ? `
-MEDITATIVE GUIDANCE:
+PATIENT / CONTEMPLATIVE PACING:
 - Favor stillness, patience, and negative space.
-- A still face, a trembling hand, a single flame can carry weight.
-- Show sacred presence through atmosphere and reaction, not VFX.` : '';
+- A still face, a tightening hand, or a small environmental change can carry weight.
+- Show emotional presence through atmosphere and reaction, not VFX.` : '';
+
+  const timingReference = isMusicVideo
+    ? 'song rhythm visually ("on the vocal phrase", "as the line resolves")'
+    : 'source timing visually ("on the dialogue beat", "as the action lands")';
 
   const modelGuidance = input.videoModel?.startsWith('seedance') ? `
 SEEDANCE 2.0 PROMPTING:
 - motionPrompt = timed action cue for this exact shot duration.
 - Name subject + visible change + camera move in clean order.
 - Use duration when helpful ("over 5s...", "during the final second...").
-- Lahari mixes the song in render. Do NOT request generated audio.
-- Reference song rhythm visually only ("on the vocal phrase", "as the line resolves").
+- The app mixes final audio in render. Do NOT request generated audio.
+- Reference ${timingReference} only.
 - Simple, physically plausible camera.
 - If start frame must stay consistent: "maintain the same face, costume, geometry while...".` : `
 VIDEO MODEL PROMPTING:
-- Model gets a start frame; song is added in render. motionPrompt describes visible action + camera only.
+- Model gets a start frame; final audio is added in render. motionPrompt describes visible action + camera only.
 - Do NOT request generated audio, dialogue, subtitles, or SFX.`;
 
   return `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
@@ -554,15 +573,17 @@ WRITE PROMPTS THAT ARE RENDERABLE.
 
 The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words.
 
-Every sentence must describe something visible or animateable. No metaphor, no inner emotion. Avoid "seems to", "as if", or invisible causes (grace, presence, devotion). Describe the visible effect directly.
+Every sentence must describe something visible or animateable. No metaphor, no inner emotion. Avoid "seems to", "as if", or invisible causes. Describe the visible effect directly.
 
 But do not become schematic. Avoid "left half", "right half", "split-focus", "perfect symmetry" unless the shot truly depends on that arrangement.
 
-Translate emotion into physical evidence: a still face, a hand tightening, a flame settling, moisture on stone, a body lowering into prostration, distance between two figures.
+Translate emotion into physical evidence: a still face, a hand tightening, a light settling, dust or rain moving through space, a body freezing before it answers, distance between two figures.
 
 ${songTypeSignal}
-Mood: ${input.concept?.mood || 'devotional'}
+Mood: ${input.concept?.mood || 'unspecified'}
 Video model: ${input.videoModel || 'default'}
+Preset rules:
+${preset.studio.shotPromptRules}
 
 CHARACTERS:
 ${castList}
@@ -593,14 +614,14 @@ export const writeShotPromptsOpenAI = async (
     text: {
       format: {
         type: 'json_schema',
-        name: 'lahari_shot_prompts',
+        name: 'studio_shot_prompts',
         strict: true,
         schema: WRITE_SHOT_PROMPTS_SCHEMA,
       },
     },
     max_output_tokens: 12000,
     input: [
-      { role: 'system', content: 'You return strict JSON for a music video shot writer.' },
+      { role: 'system', content: `You return strict JSON for a ${input.preset?.toolName || 'video'} shot writer.` },
       { role: 'user', content: prompt },
     ],
   });

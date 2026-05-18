@@ -13,7 +13,7 @@ import { getImageGenerationModelName, getImageService } from '../services/image-
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireAsset } from './scope-helpers.js';
-import { getRuntimePreset, presetSubject } from '../presets.js';
+import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 
@@ -115,7 +115,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     const concept = JSON.parse(project.locked_concept || '{}');
     const { userNotes } = req.body;
-    const preset = getRuntimePreset(req.body?.presetKey);
+    const preset = getProjectRuntimePreset(project, req.body?.presetKey);
 
     try {
       console.log(`[${project.id}] Brainstorming style directions...`);
@@ -187,7 +187,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     // Build prompt fresh per slot — no project-level cache.
     // Each direction gets its own prompt from its own description.
-    const preset = getRuntimePreset(req.body?.presetKey);
+    const preset = getProjectRuntimePreset(project, req.body?.presetKey);
     const subject = presetSubject(concept, project.title, preset);
     const genPrompt = buildStylePrompt(stylePrompt, subject, preset);
 
@@ -199,6 +199,7 @@ export const mountStyleRoutes = (router: Router) => {
         stylePrompt,
         subject,
         genPrompt,
+        preset,
       );
       const durationMs = Date.now() - t0;
 
@@ -253,7 +254,7 @@ export const mountStyleRoutes = (router: Router) => {
 
     try {
       const t0 = Date.now();
-      const refined = await refineStyleDirection(description, feedback, concept, project.text_provider, getRuntimePreset(req.body?.presetKey));
+      const refined = await refineStyleDirection(description, feedback, concept, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey));
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: project.id }, { style_generation_prompt: null });

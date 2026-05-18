@@ -1,4 +1,5 @@
 import { saveBase64, saveBuffer, storageUrl } from '../storage.js';
+import { getRuntimePreset, type PipelinePreset } from '../presets.js';
 import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from './imagen.js';
 
 type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
@@ -209,6 +210,9 @@ export const generateImageWithRefs = async (
 export const generateStyleOptions = async (
   subject: string,
   styleNotes?: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- signature parity with imagen.ts
+  _projectId?: string,
+  preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ style: string; assetPath: string }[]> => {
   const directions = styleNotes
     ? [
@@ -227,7 +231,7 @@ export const generateStyleOptions = async (
 
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
-      const prompt = `Create one reusable visual style reference frame for a music video. ${direction}. Focus on lighting, palette, material texture, rendering approach, and atmosphere. Do not make a character reference portrait, collage, poster, or text image.`;
+      const prompt = `Create one reusable visual style reference frame for ${preset.style.subjectPrompt(subject)}. ${direction}. Focus on lighting, palette, material texture, rendering approach, and atmosphere. Do not make a character reference portrait, collage, poster, or text image. ${preset.looks.qualityRules}`;
       const assetPath = await generateNanoBanana2(prompt, '16:9', []);
       return { style: direction, assetPath };
     })
@@ -242,8 +246,9 @@ export const generateSingleStyleImage = async (
   styleDescription: string,
   subject: string,
   generationPrompt?: string,
+  preset?: PipelinePreset,
 ): Promise<string> => {
-  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject);
+  const prompt = generationPrompt || buildStylePrompt(styleDescription, subject, preset);
   return generateNanoBanana2(prompt, '16:9', []);
 };
 
@@ -258,6 +263,7 @@ export const generateCharacterLooks = async (
   // for signature parity with imagen.ts; Segmind's nano-banana-2 is the
   // single model, the registry's runtimeModel is informational here.
   _model?: string,
+  preset?: PipelinePreset,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
   if (styleImagePath) refs.push({ label: 'Style reference only', imagePath: styleImagePath });
@@ -265,7 +271,7 @@ export const generateCharacterLooks = async (
 
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
-  let prompt = generationPrompt || buildCharacterPrompt(character, { styleIdx, userRefIdx });
+  let prompt = generationPrompt || buildCharacterPrompt(character, { styleIdx, userRefIdx, preset });
   if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   prompt += `\n\nImportant: create a NEW isolated character portrait. Do not use the style reference as a background or layout.`;
 
@@ -281,6 +287,7 @@ export const generateEnvironmentLooks = async (
   generationPrompt?: string,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _model?: string,
+  preset?: PipelinePreset,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
   if (styleImagePath) refs.push({ label: 'Style reference only', imagePath: styleImagePath });
@@ -288,7 +295,7 @@ export const generateEnvironmentLooks = async (
 
   const styleIdx = styleImagePath ? 1 : undefined;
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
-  let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx });
+  let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx, preset });
   if (userNote) prompt += `\n\nDirector note: ${userNote}`;
 
   return generateMany(prompt, aspectRatio, refs, 3);

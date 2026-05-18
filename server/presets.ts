@@ -259,8 +259,57 @@ export const getPipelinePreset = (key?: string | null): PipelinePreset => {
 export const getRuntimePreset = (override?: string | null): PipelinePreset =>
   getPipelinePreset(override || process.env.PIPELINE_PRESET_KEY || DEFAULT_PRESET_KEY);
 
+export const getProjectRuntimePreset = (
+  project?: { preset_key?: string | null } | null,
+  override?: string | null,
+): PipelinePreset =>
+  getRuntimePreset(override || project?.preset_key || null);
+
 export const getPresetWorkflow = (preset: PipelinePreset): WorkflowRecipe =>
   getWorkflowRecipe(preset.workflowKey);
+
+export const getDefaultPresetForWorkflow = (workflowKey?: string | null): PipelinePreset => {
+  const workflow = getWorkflowRecipe(workflowKey);
+  const match = Object.values(PIPELINE_PRESETS).find((preset) => preset.workflowKey === workflow.key);
+  return match || getPipelinePreset();
+};
+
+export const resolveProjectIntake = (opts: {
+  workflowKey?: string | null;
+  seedKind?: string | null;
+  presetKey?: string | null;
+}): { workflow: WorkflowRecipe; seedKind: SeedKind; preset: PipelinePreset } => {
+  if (opts.workflowKey && !(opts.workflowKey in WORKFLOW_RECIPES)) {
+    const err = new Error(`Unknown workflow "${opts.workflowKey}".`);
+    (err as any).statusCode = 400;
+    throw err;
+  }
+  if (opts.presetKey && !(opts.presetKey in PIPELINE_PRESETS)) {
+    const err = new Error(`Unknown preset "${opts.presetKey}".`);
+    (err as any).statusCode = 400;
+    throw err;
+  }
+
+  const preset = opts.presetKey
+    ? getPipelinePreset(opts.presetKey)
+    : getDefaultPresetForWorkflow(opts.workflowKey);
+  const workflow = getWorkflowRecipe(opts.workflowKey || preset.workflowKey);
+
+  if (preset.workflowKey !== workflow.key) {
+    const err = new Error(`Preset "${preset.key}" is for workflow "${preset.workflowKey}", not "${workflow.key}".`);
+    (err as any).statusCode = 400;
+    throw err;
+  }
+
+  const seedKind = (opts.seedKind || workflow.primarySeed) as SeedKind;
+  if (!workflow.acceptedSeeds.includes(seedKind)) {
+    const err = new Error(`Seed "${seedKind}" is not accepted by workflow "${workflow.key}".`);
+    (err as any).statusCode = 400;
+    throw err;
+  }
+
+  return { workflow, seedKind, preset };
+};
 
 export const presetSubject = (concept: any, fallback: string, preset: PipelinePreset): string =>
   concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback || preset.label;

@@ -15,7 +15,7 @@ import { getImageGenerationModelName, getImageService } from '../services/image-
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr, requireCastMember, requireEnvironment, requireAsset, atLeast } from './scope-helpers.js';
-import { getRuntimePreset } from '../presets.js';
+import { getProjectRuntimePreset } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -53,6 +53,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const member = await requireCastMember(project.id, castMemberId);
+  const preset = getProjectRuntimePreset(project, req.body?.presetKey);
 
   // Resolve style image path for visual ref
   let styleImagePath: string | undefined;
@@ -81,7 +82,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
       { name: member.name, description: member.description || '' },
-      { styleIdx, userRefIdx, preset: getRuntimePreset(req.body?.presetKey) }
+      { styleIdx, userRefIdx, preset }
     );
     if (member.prompts_stale) {
       await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
@@ -147,6 +148,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       userRefImagePath,
       genPrompt,
       getImageGenerationModelName(project.image_model),
+      preset,
     );
     const durationMs = Date.now() - t0;
 
@@ -353,6 +355,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const env = await requireEnvironment(project.id, environmentId);
+  const preset = getProjectRuntimePreset(project, req.body?.presetKey);
 
   let styleImagePath: string | undefined;
   if (project.style_asset_id) {
@@ -377,7 +380,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
       { name: env.name, description: env.description || '' },
-      { styleIdx, userRefIdx, preset: getRuntimePreset(req.body?.presetKey) }
+      { styleIdx, userRefIdx, preset }
     );
     if (env.prompts_stale) {
       await updateRows('environments', { id: env.id }, { prompts_stale: 0 });
@@ -436,6 +439,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       undefined, // feedback already baked into genPrompt by Claude
       genPrompt,
       getImageGenerationModelName(project.image_model),
+      preset,
     );
     const durationMs = Date.now() - t0;
 

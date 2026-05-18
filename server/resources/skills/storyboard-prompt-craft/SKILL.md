@@ -9,7 +9,7 @@ You are writing a prompt that an image model will turn into a multi-panel storyb
 
 ## Core Rules
 
-**The prompt describes images, not films.** Panels are static. Action happens *between* panels, captured at decisive moments. If you write "the camera slowly pans across the temple," you've written film grammar that image models will misinterpret or ignore.
+**The prompt describes images, not films.** Panels are static. Action happens *between* panels, captured at decisive moments. If you write "the camera slowly pans across the room," you've written film grammar that image models will misinterpret or ignore.
 
 **Per-panel actions live inside the prompt, not as a separate bullet list.** Image models follow narrative prompts better than parsed lists. "Panel 1 — Shantamma kneels at the threshold, palms pressed together. Panel 2 — close on her face, eyes closed, tears tracing the lines below her cheekbones. Panel 3 — the lamp she lit flickers as she rises, still holding the flame's warmth in her cupped palms." Inline beats Saul's existing instinct.
 
@@ -39,14 +39,14 @@ These will make storyboard quality fall off a cliff. Avoid in every prompt.
 - ❌ "dolly in," "rack focus," "match cut," "60mm lens," "shallow depth of field"
 - ✅ "close on her face, hands soft-focused in foreground"
 
-**Generic temple fantasy.**
-- ❌ "a glowing sanctum filled with golden light"
-- ❌ "a sacred space with floating petals"
-- ✅ "the threshold of a stone shrine, oil lamps in clay holders, the air thick with sandalwood smoke"
+**Generic fantasy/VFX.**
+- ❌ "a glowing chamber filled with golden light"
+- ❌ "a mysterious space with floating particles"
+- ✅ "the threshold of the workshop, scattered tools near the door, dust hanging in the side light"
 
 **VFX vocabulary on a non-VFX project.**
 - ❌ "she dissolves into golden particles"
-- ❌ "rays of divine light burst from her chest"
+- ❌ "rays of supernatural light burst from her chest"
 - ✅ "she stands very still, the lamps doubled in her wet eyes"
 
 **Inventing characters or props the project doesn't have.**
@@ -54,8 +54,8 @@ These will make storyboard quality fall off a cliff. Avoid in every prompt.
 - ❌ "an ornate carved door swings open" (when the environment hasn't established that door)
 - ✅ stick to the cast and environments the script defined
 
-**Every panel a single deity portrait.**
-- ❌ four panels of Ganesha at different angles
+**Every panel a single portrait.**
+- ❌ four panels of the same character at different angles
 - ✅ three panels building action, one panel that resolves it (or vice versa)
 
 **Symmetry shortcuts.** Four perfectly framed centered compositions look like a teaching poster, not a board. Vary composition deliberately.
@@ -72,7 +72,7 @@ When in doubt, ask: "Surgical edit to panel N, or full rewrite of the shot?"
 
 - If the asked-for prompt requires inventing characters the project doesn't have, say so and propose adding to cast first.
 - If the asked-for beat requires more panels than the storyboard format supports (3 or 4), say so and suggest splitting the shot.
-- If the artist's instruction would produce a generic temple-fantasy result on a project that's been carefully grounded, push back gently before writing.
+- If the artist's instruction would produce a generic fantasy/VFX result on a project that's been carefully grounded, push back gently before writing.
 
 ## What This Skill Doesn't Cover
 

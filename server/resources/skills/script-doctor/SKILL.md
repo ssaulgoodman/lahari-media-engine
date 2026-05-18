@@ -1,93 +1,88 @@
 ---
 name: script-doctor
-description: Use when writing, refining, or critiquing a project's script — scene structure, shot beats, cast and environment assignments, pacing. Triggered by "write the script," "refine scene 3," "this script feels plot-heavy," "shot count is wrong," or when calling apply tools that take Codex-written script content. Grounded in the song's musical structure and the project's song type.
+description: Use when writing, refining, or critiquing a project's script — scene structure, shot beats, cast and environment assignments, pacing. Triggered by "write the script," "refine scene 3," "this script feels plot-heavy," "shot count is wrong," or when calling apply tools that take Codex-written script content. Grounded in the project's seed_kind, workflow_key, and preset_key.
 ---
 
 # Script Doctor
 
-A Lahari script is a music video plan: scenes derived from the song's musical sections, shots within each scene, beats per shot. It must hold together as a single arc and survive translation into images and video without losing the song's emotional intent.
+A studio script is a production plan: reusable cast, reusable environments, scenes, and shots. It must hold together as a single arc and survive translation into images, storyboards, video clips, and the final render.
+
+Before writing or critiquing, read the project mode from the packet or notebook:
+
+- `seed_kind` — what the artist started with (`audio`, `script`, `brief`, `document`, `idea`)
+- `workflow_key` — what process the project follows (`music_video`, `anime_scripted`, later ads/reels)
+- `preset_key` — taste/model/default prompt rules (`music_video_default`, `anime_default`, later more)
+
+Do not assume lyrics, audio analysis, deity, temple, devotional context, or a queue unless the project mode says so.
+
+## Source Contract
+
+**Music video workflow.** Scenes usually follow musical structure. Use lyrics, audio sections, rhythm, and meaning to decide scene boundaries and beat timing. If the song is meditative, let shots breathe. If it is narrative or performance-heavy, allow stronger progression and movement.
+
+**Anime/scripted workflow.** Scenes follow the uploaded script, treatment, or episode brief. Preserve dialogue/action order unless the director asks for adaptation. Shots should clarify acting beats, reactions, reveals, action choreography, screen direction, and continuity.
+
+**Brief/document/idea seeds.** First normalize the source into a production brief: premise, runtime target, scene list if available, cast, environments, constraints, and unanswered questions. Do not invent a full story change when the source only needs structuring.
 
 ## What a Script Has to Get Right
 
-**Scene structure follows musical structure.** If the song has verse / chorus / verse / bridge / chorus structure, scenes should map to those sections, not to a separate narrative the script invented. A 4-minute bhajan with 6 musical sections becomes ~6 scenes; never 12.
+**Scene structure follows the source.** Audio projects map to musical sections. Scripted projects map to script scenes and action/dialogue beats. Brief-led projects need explicit assumptions called out before applying.
 
-**Shot count per scene is bounded by duration.** In Seedance/storyboard mode, anchor pacing around 15-second clips unless the artist explicitly asks for faster cutting. Split anything longer than 15s into adjacent shots; for shorter scenes, use the closest natural duration under 15s. A 42-second scene usually becomes 3 shots (14 + 14 + 14), not 2 shots (21 + 21, too long) and not 6 shots (over-cut, won't read). A 22-second scene usually becomes 2 shots (11 + 11) or 3 only if the music clearly has three beats. Standard/keyframe mode may use shorter 4-8s clips when the selected video model or render plan requires it.
+**Shot count per scene is bounded by duration.** In Seedance/storyboard mode, anchor around cohesive clips up to 15 seconds. Split anything longer than 15s into adjacent shots. Shorter scenes can use 4, 5, 6, 8, 10, or 12 seconds when that better fits the source beat. Standard/keyframe mode may use shorter clips when the selected video model or render plan requires it.
 
-**Cast and environment assignments must reach every named entity.** If the script names "Shantamma" in the description, at least one shot must explicitly cast her. If the script names "the temple courtyard," at least one shot must place its action there. Dangling names create downstream confusion — the look-generation phase won't know what to render references for.
+**Cast and environment assignments must reach every named entity.** If the source names a person, creature, object, or location that appears on screen, it needs a cast/environment entry or a deliberate reason to stay implicit. Dangling names create downstream confusion because look generation and references will not know what to render.
 
-**Beats are visible and shootable.** Each shot's beat is the *one thing that changes* in that shot, expressed as something a camera could record. "Surrender" is not a beat. "She lowers her body to the stone, palms flat on the floor" is.
+**Beats are visible and shootable.** Each shot's beat is the one thing that changes, expressed as something a camera or animation layout could show. "She realizes the truth" is not enough. "She stops mid-step, lowers the note, and looks back at the empty doorway" is renderable.
 
-**Direction (the shot's creative intent) is preserved across edits.** When refining, keep `direction` even when rewriting `visual_prompt`. The direction is the artist's read on what this shot means; the visual prompt is one way to express it.
+**Direction is protected.** When refining, preserve `direction` unless the artist explicitly changes the shot's meaning. Edit visual/motion/storyboard prompts freely; touch direction only when story intent changes.
 
 ## Duration And Surgical Edit Contract
 
-When the artist asks to fix durations, pacing, or overly long scenes, treat it as pacing surgery, not a script rewrite. Preserve cast, environments, scene labels, timestamps, lyrics, narrative descriptions, shot IDs, cast assignments, environment assignments, and shot meanings unless the artist explicitly asks to change story content.
+When the artist asks to fix durations, pacing, or overly long scenes, treat it as pacing surgery, not a script rewrite. Preserve cast, environments, scene labels, timestamps, source excerpts, narrative descriptions, shot IDs, cast assignments, environment assignments, and shot meanings unless the artist explicitly asks to change story content.
 
 Preferred workflow: edit `lahari/projects/<projectId>/drafts/script.md` with the harness file editor, then apply with `apply_script_markdown`. Read `mirrors/script.md` as the canonical DB snapshot, but do not edit mirrors. The draft frontmatter carries `scriptFingerprint`; if apply returns `drift_detected`, refresh the notebook and reconcile before retrying.
 
 Default Seedance/storyboard pacing:
 
-- Aim for clips close to 15s when the phrase can hold one cohesive idea.
-- Use 8-12s for meditative holds, devotional gestures, and quiet transitions that cannot carry 15s.
-- Use 4-8s only for quick connective beats, responses, or scene endings.
+- Aim for clips close to 15s when the source beat can hold one cohesive mini-sequence.
+- Use 8-12s for quiet holds, acting beats, transitions, and moments that need breathing room.
+- Use 4-8s for quick connective beats, reactions, action fragments, or scene endings.
 - Never leave a shot above 15s. Split it into two or more adjacent shots with the same cast/environment unless the artist asks for a new subject or location.
 - Scene shot durations must add up exactly to the scene duration.
 
-If a duration fix requires changing shot count, say that plainly before applying: "I am splitting S2.3 into two adjacent shots; cast and environment stay the same." If your draft also changes cast, environments, scene meanings, or named characters, stop and call it a full-script rewrite instead of pretending it is a duration edit.
+If a duration fix requires changing shot count, say that plainly before applying: "I am splitting S2.3 into two adjacent shots; cast and environment stay the same." If your draft also changes cast, environments, scene meanings, or named characters, stop and call it a full-script rewrite instead of pretending it is duration-only.
 
-## Song-Type Calibration
+## Workflow Calibration
 
-The script must respect what kind of song this is. Lahari classifies as `stotra`, `chant`, `bhajan`, `kirtan`, `song`, or `unknown`, with axes `isNarrative` and `isMeditative`.
+For `music_video`, ask: does this beat follow the track, lyric, performance, rhythm, or emotional arc? Avoid unrelated plot that fights the song.
 
-**Meditative material wants stillness.** A stotra or meditative bhajan should NOT have:
-- 2-3 second shots (over-cut, breaks the meditation)
-- Multiple plot beats per scene (the song isn't telling a story; it's holding a feeling)
-- Action sequences (a deity stepping forward, a devotee running — wrong register)
+For `anime_scripted`, ask: does this beat preserve the script's intent, character continuity, screen direction, and acting clarity? Avoid adding new plot turns, characters, or locations just because the scene feels sparse.
 
-It should have:
-- Longer shots (8-10s), letting moments breathe
-- Recurring motifs (the same lamp, the same threshold, returning across scenes)
-- Restraint — fewer cast, fewer environments, more time with each
-
-**Narrative material can carry more.** A bhajan with story (`isNarrative: true`) can have:
-- Scene-to-scene arc with rising and falling action
-- Multiple cast members and environments
-- Beats that build on each other
-
-But narrative still doesn't mean Hollywood — devotional narrative is closer to oral tradition than to film. "She walks for many days; she arrives at the temple; she gives her last coin to the priest; she is recognized" is a complete narrative in four beats.
-
-**Unknown / generic `song`** — default to restrained until evidence accumulates. Better to have a quiet script that the artist asks to lift than a busy one that has to be cut down.
+For future ad/reel workflows, ask: does this beat serve the offer, product promise, audience, and delivery format? Avoid cinematic filler that does not move the message.
 
 ## Anti-Patterns
 
-- **Plot-heavy script on meditative material.** The single most common failure. Every scene introduces a new event when the song wanted to dwell.
-- **Every shot a single deity portrait.** The deity is the *subject* of the devotion; the *visible* world is the devotee, the offering, the threshold, the lamp. Compose around the devotee's gesture, not the deity's face.
-- **Cast described as roles, not individuals.** "An old woman" → useless for look-gen. "Shantamma, elderly Tamil grandmother, frail, warm eyes, hair tied back, faded green sari" → enough to generate a consistent reference.
-- **Repeated devotional wallpaper.** Lamp shot, deity shot, devotee bowing, repeat. The script should have *progression* even when meditative — what we see in scene 5 should differ from scene 1 in some meaningful way (light shifting, devotee deeper into ritual, environment changing).
-- **Generic temple fantasy.** "A sacred chamber filled with golden light" is the same failure mode as in storyboards. Be specific: which temple, which time of day, what's actually visible.
+- **Plot-heavy script on source material that wants stillness.** Every scene introduces a new event when the source wanted to dwell.
+- **Shot list as camera jargon.** "Wide shot," "slow dolly," or "close-up" is not a beat by itself. Pair it with visible action or story information.
+- **Cast described as roles, not individuals.** "A student" is weak. "Mina, sixteen, short black bob, oversized navy school blazer, guarded expression" can become a consistent reference.
+- **Repeated wallpaper.** The same pose/location/action repeated with minor phrasing changes. The script should progress: emotion shifts, information changes, blocking changes, or the environment responds.
+- **Generic fantasy/VFX as default.** Glowing particles, cosmic energy, abstract symbols, and magic fog flatten projects unless the source specifically calls for them.
 
 ## Refining vs Rewriting
 
-**Surgical refines preserve cast/scene references.** When the artist says "scene 4 needs more grief, less ceremony," edit scene 4's narrative and the affected shots' beats. Don't renumber, don't recast, don't change scene boundaries unless asked.
+**Surgical refines preserve references.** When the artist says "scene 4 needs more grief," edit scene 4's narrative and affected shots. Don't renumber, recast, or change scene boundaries unless asked.
 
-**Rewrites can wipe downstream.** When the artist says "scrap this and start over from a different angle," it's a rewrite — Lahari may fork the project so the previous script survives. Confirm before running anything that takes a `force` flag.
+**Rewrites can wipe downstream.** When the artist says "scrap this and start over," it may invalidate style, cast, environments, shot prompts, boards, and videos. Confirm before running anything with `force`.
 
-**Direction is the most-protected field.** It's the artist's intent. Edit `visual_prompt` and `motion_prompt` freely; touch `direction` only when the artist explicitly changes the shot's meaning.
+**The source wins.** Uploaded scripts, audio structure, briefs, and director notes outrank generic storytelling instincts.
 
 ## When to Push Back
 
-- **"Add more shots."** First ask why. If it's "fill the scene," that's a sign the scene duration is wrong — fix the duration, not the shot count. If it's "the pacing feels slow," ask whether the song actually wants faster pacing or whether the artist is reacting to a render that's too still.
-- **"Make it more emotional."** Generic note. Ask: emotional how? Grief? Tenderness? Awe? Resignation? Each translates to different shot composition and different shot durations.
-- **"Add a deity descending."** This is the temple-fantasy reflex. Push back: what does the descent show that stillness wouldn't? Sometimes the answer is real; usually it's not.
-
-## What This Skill Doesn't Cover
-
-- Generating concept directions (that's an earlier phase, before script).
-- Writing storyboard prompts from the script's shot beats — see `storyboard-prompt-craft`.
-- Diagnosing a rendered video that doesn't match the script's intent — see `render-triage`.
+- **"Add more shots."** First ask why. If it means "fill the scene," fix pacing or source structure instead of adding noise.
+- **"Make it more emotional."** Ask which emotion. Grief, awe, tenderness, dread, relief, embarrassment, and resolve translate to different blocking and timing.
+- **"Make it more epic."** Ask what should become bigger: scale, stakes, motion, crowd, location, sound moment, or character choice. Generic spectacle is usually a downgrade.
 
 ## Cross-References
 
 - Doctrine §4: script writing is harness-native; the apply tool validates content shape but Codex writes it.
 - `storyboard-prompt-craft`: how a shot beat becomes a renderable storyboard prompt.
-- `continuity-auditor`: when chained shots constrain how scene-N+1 opens.
+- `continuity-auditor`: when chained shots constrain how the next shot opens.

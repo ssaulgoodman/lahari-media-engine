@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getSB, selectColumns, selectOne, updateRows } from '../database.js';
+import { getSB, selectColumns, selectOne, updateRows, T } from '../database.js';
 
 const TOKEN_PREFIX = 'lahari_mcp_';
 const DEFAULT_EXPIRY_DAYS = 30;
@@ -18,7 +18,12 @@ const sanitizeLabel = (label?: string | null) => {
   return trimmed ? trimmed.slice(0, 80) : 'Lahari MCP';
 };
 
-const mcpUrl = () => process.env.LAHARI_MCP_URL || 'https://lahari-media-engine-production.up.railway.app/mcp';
+const mcpUrl = () => (
+  process.env.LAHARI_MCP_URL
+  || process.env.APP_URL && `${process.env.APP_URL.replace(/\/+$/, '')}/mcp`
+  || process.env.PUBLIC_APP_URL && `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/mcp`
+  || 'https://lahari-media-engine-production.up.railway.app/mcp'
+);
 
 const normalizeExpiryDays = (expiresInDays?: number | null) => {
   const n = Number(expiresInDays || DEFAULT_EXPIRY_DAYS);
@@ -41,7 +46,7 @@ export const createMcpToken = async (
     expires_at: daysFromNowIso(expiresInDays),
   };
   const { data, error } = await getSB()
-    .from('lahari_mcp_tokens')
+    .from(T.mcp_tokens)
     .insert(row)
     .select('id')
     .single();
@@ -117,7 +122,7 @@ export const verifyMcpBearerToken = async (token: string | null | undefined) => 
   if (!token.startsWith(TOKEN_PREFIX)) throw new Error('Invalid Lahari MCP bearer token');
   const hash = hashMcpToken(token);
   const { data, error } = await getSB()
-    .from('lahari_mcp_tokens')
+    .from(T.mcp_tokens)
     .select('id,user_id,label,expires_at,revoked_at')
     .eq('token_hash', hash)
     .limit(1)

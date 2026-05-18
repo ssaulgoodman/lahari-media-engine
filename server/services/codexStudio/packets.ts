@@ -1,4 +1,5 @@
 import { getProjectConfigState } from '../projectConfig.js';
+import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
 import {
   compactText,
   conceptHash,
@@ -22,6 +23,8 @@ export const buildProjectPacket = async (project: Project) => {
   const counts = statusCounts(project);
   const renders = await listProjectRenders(project.id);
   const projectConfig = await getProjectConfigState(project);
+  const preset = getPipelinePreset(project.presetKey);
+  const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
 
   return {
     kind: 'lahari.project.packet',
@@ -30,7 +33,11 @@ export const buildProjectPacket = async (project: Project) => {
       id: project.id,
       title: project.title,
       status: project.status,
-      preset: 'bhakti-music-video',
+      presetKey: preset.key,
+      presetLabel: preset.label,
+      workflowKey: workflow.key,
+      workflowLabel: workflow.label,
+      seedKind: project.seedKind || workflow.primarySeed,
       videoMode: project.videoMode,
       imageModel: project.imageModel,
       storyboardProvider: project.storyboardProvider,
@@ -48,6 +55,11 @@ export const buildProjectPacket = async (project: Project) => {
       script: scriptContentHash(project),
     },
     source: {
+      acceptedSeeds: workflow.acceptedSeeds,
+      workflowSummary: workflow.summary,
+      sourceRules: preset.source.rules,
+      projectBrief: project.projectBrief,
+      sourcePayload: project.sourcePayload,
       audioPath: project.audioPath,
       songType: project.songType,
       isNarrative: project.isNarrative,
@@ -155,6 +167,8 @@ export const buildProjectPacket = async (project: Project) => {
 export const buildShotPacket = (project: Project, shotId: string) => {
   const castNames = namesById(project.cast);
   const environmentNames = namesById(project.environments);
+  const preset = getPipelinePreset(project.presetKey);
+  const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
 
   for (const [sceneIndex, scene] of project.scenes.entries()) {
     const shotIndex = scene.shots.findIndex((shot) => shot.id === shotId);
@@ -171,7 +185,11 @@ export const buildShotPacket = (project: Project, shotId: string) => {
         id: project.id,
         title: project.title,
         status: project.status,
-        preset: 'bhakti-music-video',
+        presetKey: preset.key,
+        presetLabel: preset.label,
+        workflowKey: workflow.key,
+        workflowLabel: workflow.label,
+        seedKind: project.seedKind || workflow.primarySeed,
         imageModel: project.imageModel,
         storyboardProvider: project.storyboardProvider,
         videoModel: project.videoModel,

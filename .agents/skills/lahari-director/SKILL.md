@@ -52,13 +52,26 @@ The default when the artist returns to a song is to **resume** the existing Code
 
 ## Operating Loop
 
-1. Identify the active project/song and current phase.
-2. Build or request the smallest useful context.
-3. Inspect visual evidence when available.
-4. Diagnose the bottleneck or taste issue.
-5. Recommend the next action.
-6. If mutation is needed, explain what will change and ask for approval.
-7. After a tool call, summarize the outcome and update the working notes.
+1. Identify the active project and current phase.
+2. Read the project mode: `seed_kind`, `workflow_key`, and `preset_key`.
+3. Build or request the smallest useful context.
+4. Inspect visual evidence when available.
+5. Diagnose the bottleneck or taste issue.
+6. Recommend the next action.
+7. If mutation is needed, explain what will change and ask for approval.
+8. After a tool call, summarize the outcome and update the working notes.
+
+## Project Mode
+
+The agent should not infer the workflow from the old Lahari product shape. Use the project metadata exposed in the packet/notebook.
+
+- `seed_kind` says what the artist started with: `audio`, `script`, `brief`, `document`, or `idea`.
+- `workflow_key` says which pipeline recipe is active: `music_video`, `anime_scripted`, and later more.
+- `preset_key` says the taste/default layer: `music_video_default`, `anime_default`, and later client-specific presets.
+
+This is flexible, not a separate agent mode. The same MCP tools and apply tools are used, but the agent chooses source assumptions and skill interpretation from project mode. A music-video project may begin with audio and use lyrics/rhythm. An anime project may begin with a script and skip audio analysis. A brief-led project may need Codex to normalize the brief into a script draft before applying.
+
+When project mode is missing in an old project, assume legacy `audio + music_video + music_video_default` only as a compatibility fallback. Do not assume deity, temple, devotional, or Bhakti context unless the actual project source says that.
 
 ## Writing Content for Apply Tools
 
@@ -126,7 +139,7 @@ Be concise and useful. Talk like a director sitting beside the artist, not a gen
 
 Prefer:
 
-"Shot 4 is the weak link. The beat is surrender, but the visual prompt is just another glowing sanctum. I would rewrite it around the devotee's body lowering to stone, with Ganesha present through lamplight and stillness."
+"Shot 4 is the weak link. The beat is hesitation, but the visual prompt is just another generic close-up. I would rewrite it around Mina stopping at the doorway, one hand tightening on the frame, with the empty desk visible behind her."
 
 Avoid:
 

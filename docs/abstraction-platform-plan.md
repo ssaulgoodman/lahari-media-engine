@@ -184,6 +184,7 @@ Done in code:
 - Clean `studio_*` bootstrap migration
 - `server/presets.ts`
 - Anime script-first backend + Dashboard entry point
+- `POST /api/projects/intake` accepts explicit `workflowKey`, `seedKind`, and optional `presetKey` for the new opening studio UX. It supports `music_video + audio` and `anime_scripted + script`; legacy `/api/projects` and `/api/projects/script` remain compatibility wrappers.
 
 Next foundation gate:
 
@@ -211,6 +212,7 @@ Remaining:
 Started:
 
 - `POST /api/projects/script` creates a script-first anime project.
+- `POST /api/projects/intake` is now the preferred workflow-first create route for frontend mode cards.
 - `parseAnimeScriptToPlan` parses a script into scenes, shots, cast, and environments.
 - Dashboard has a script-first anime project panel.
 

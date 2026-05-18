@@ -1,20 +1,20 @@
 ---
 name: style-ref-critic
-description: Use when selecting, locking, or critiquing the style reference for a project — preset picks, style brainstorming critique, deciding whether a generated style is reusable downstream, refining style direction. Triggered by "which style preset fits this song," "is this style ref reusable," "the style is drifting," or before locking a style asset.
+description: Use when selecting, locking, or critiquing the style reference for a project — preset picks, style brainstorming critique, deciding whether a generated style is reusable downstream, refining style direction. Triggered by "which style preset fits this project," "is this style ref reusable," "the style is drifting," or before locking a style asset.
 ---
 
 # Style Ref Critic
 
 The locked style image is the visual contract for the entire video. Every downstream generation — character looks, environment looks, storyboards, frames, videos — consumes it as a reference. If the style is wrong, everything downstream inherits the wrongness.
 
-## What "Style" Means in Lahari
+## What "Style" Means
 
 A style is a **reusable visual system**, not a specific image. Properties of a good style:
 - Coherent medium (painterly miniature, photographic, illustrated, woodcut, etc.)
 - Coherent palette (warm earth + lamplight, or cool stone + moonlight, etc.)
 - Coherent lighting register (golden hour, indoor-lamp, midday, etc.)
 - Coherent texture (high-detail, flat, grainy, etc.)
-- Coherent reference tradition (Indian miniature, Renaissance fresco, contemporary photography, etc.)
+- Coherent reference tradition (anime key art, contemporary photography, woodcut, painted background art, etc.)
 
 What it is NOT:
 - A specific poster or portrait
@@ -32,27 +32,27 @@ What it is NOT:
 
 ## Preset vs Brainstorm
 
-**Presets (curated, ground-truth):** Lahari ships style presets that are already known to work for bhakti/devotional projects. When the song fits one of these registers (warm temple, cool sacred river, golden serenity, etc.), lock the preset directly. No brainstorm needed. Saul's existing workflow has shifted in this direction — most projects should pick a preset.
+**Pipeline presets:** `preset_key` defines the default visual/taste contract. If the preset already supplies a style bible, use it as the source of truth unless the artist asks for a custom direction.
 
-**Brainstorm directions:** Use when no preset matches the song's register. Brainstorming should produce 3-4 genuinely different directions (different medium, different palette, different reference tradition), not 4 variations of the same direction.
+**Brainstorm directions:** Use when the preset needs project-specific taste or the artist asks for exploration. Brainstorming should produce 3-4 genuinely different directions (different medium, different palette, different reference tradition), not 4 variations of the same direction.
 
 **Visualizing a direction:** The visualize step produces a reusable style frame. It is NOT a scene from the video. Anti-pattern: the visualization shows the song's main character in a key moment — that's a poster, not a style. Re-prompt to remove subject specificity.
 
 ## Anti-Patterns in Style Selection
 
 - **Locking a beautiful one-off image as "style."** It's too specific. Every downstream shot will try to mimic the composition.
-- **Locking a portrait of the main deity as "style."** Same problem — every shot becomes a portrait.
-- **Generic temple fantasy as default.** "Glowing sanctum, divine light, golden particles" — produces the same look across every project, removes the song's specific identity.
-- **Cool palette on warm material.** A teal-and-blue style ref on a love-toned bhajan creates emotional discord the artist will feel without being able to name.
-- **High-stylization on documentary material.** If the song is about a real saint's life and tradition, miniature stylization may feel false; restrained photography may serve better.
+- **Locking a character portrait as "style."** Same problem — every shot becomes a portrait.
+- **Generic fantasy/VFX as default.** "Glowing chamber, mystical light, golden particles" produces the same look across every project and removes the source's specific identity.
+- **Palette fighting the source.** A cold palette on tender material or a sugary palette on dread material creates emotional discord the artist will feel without being able to name.
+- **High-stylization on grounded material.** If the project is documentary-like or realist, heavy stylization may feel false; restrained photography or controlled illustration may serve better.
 
-## Cultural Authenticity (Bhakti-Specific)
+## Preset Authenticity
 
-Devotional/bhakti style critique has extra layers:
+Every preset has its own authenticity test:
 
-- **Avoid generic "Indian temple aesthetic."** Most stock-trained outputs lean toward generic gold-and-saffron temple imagery. Push toward specific traditions: South Indian Chola bronzes, North Indian Pahari miniatures, Bengal Patachitra, Tamil Nadu Tanjore painting, etc., when the song's tradition supports it.
-- **Avoid Hollywood-VFX divinity.** Floating petals, rays of light bursting from deities, glowing auras — these are visual templates from Western fantasy/superhero film. A devotional video should use cultural visual languages, not VFX shorthand.
-- **Respect the song's tradition.** A Carnatic kriti and a North Indian bhajan come from different visual traditions. The style ref should signal which one.
+- `music_video_default`: does the style serve the track, artist, genre, and intended audience without becoming generic stock music-video gloss?
+- `anime_default`: does the style support character-model consistency, readable acting, clear silhouettes, and background continuity instead of live-action photoreal defaults?
+- Future client presets: does the style express that client's brand/world, not the model's generic taste?
 
 ## When to Refine a Locked Style
 
@@ -74,8 +74,8 @@ Fix paths:
 ## When to Tell the Artist No
 
 - **"This portrait is the style."** No — it's a portrait. Push toward a reusable system.
-- **"Make it more golden / more divine / more glowy."** These are anti-patterns trending toward temple fantasy. Ask what the song is actually about and what visual register matches.
-- **"Use a Renaissance look for this bhakti song."** Sometimes the right answer; usually a sign the artist hasn't thought through cultural authenticity. Ask first.
+- **"Make it more glowy / epic / premium."** These are vague notes trending toward generic VFX or stock polish. Ask what the source actually needs and what visual register matches.
+- **"Use this unrelated famous style."** Sometimes the right answer; often a sign the artist has not thought through source authenticity. Ask first.
 
 ## What This Skill Doesn't Cover
 

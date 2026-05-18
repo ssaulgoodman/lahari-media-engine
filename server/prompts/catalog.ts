@@ -1,6 +1,13 @@
 /**
  * Prompt catalog — the read-only reference for every AI prompt in the pipeline.
  *
+ * PRESET ABSTRACTION WARNING (2026-05-17): this catalog is currently a
+ * legacy/internal reference surface. Runtime prompt builders have begun moving
+ * to core + workflow + preset composition (`server/presets.ts`), and this file
+ * still contains older Lahari/devotional examples in several templates. Do not
+ * treat it as public Prompt Library copy until the catalog is regenerated from
+ * or hand-synced with the runtime builders.
+ *
  * NOTE FOR FUTURE CHANGES: this file is hand-synced with the actual prompt
  * strings in services/claude.ts, services/imagen.ts, services/gemini.ts,
  * services/openai-script.ts, services/storyboard.ts,

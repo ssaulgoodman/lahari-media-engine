@@ -132,14 +132,14 @@ ${preset.concept.rules}
 
 ${songContext}
 ${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
-Generate EXACTLY 3 creative directions for a music video. Each should offer a genuinely different visual approach, but all must respect the song's nature — read the SONG TYPE and MEANING carefully.
+Generate EXACTLY 3 creative directions for ${preset.toolName}. Each should offer a genuinely different visual approach, but all must respect the source material — read the source signals and meaning carefully.
 
 For each direction provide:
 - title: 2-4 word creative title
-- deity: the primary divine figure
+- subject: ${preset.concept.subjectDescription}
 - mood: one distinct emotional keyword (different per direction)
 - theme: the core narrative idea (1 sentence)
-- conceptDirection: a short creative label for this direction (e.g. "intimate darshan", "cosmic invocation", "earthen ritual" — NOT generic labels like "traditional" or "modern")
+- conceptDirection: a short creative label for this direction (examples: ${preset.concept.directionExamples.join(', ')} — NOT generic labels like "traditional" or "modern")
 - description: 2-3 sentences expanding the concept — what the viewer sees, the emotional arc, the world of this video
 
 Visual style is decided in a separate phase — do NOT include art style, color palette, or cinematography here. Focus purely on narrative direction and concept.
@@ -156,7 +156,7 @@ Return EXACTLY 3 concepts in the concepts array.`;
     maxTokens: 4096,
     jsonSchema: {
       name: 'generate_concepts',
-      description: 'Generate creative concept directions for a music video',
+      description: `Generate creative concept directions for ${preset.toolName}`,
       schema: {
         type: 'object',
         properties: {
@@ -167,14 +167,16 @@ Return EXACTLY 3 concepts in the concepts array.`;
               properties: {
                 title: { type: 'string', description: 'Song title' },
                 language: { type: 'string', description: 'Detected language' },
-                deity: { type: 'string', description: 'Primary divine figure' },
+                subject: { type: 'string', description: preset.concept.subjectDescription },
+                primarySubject: { type: 'string', description: 'Legacy-compatible alias for subject' },
+                deity: { type: 'string', description: 'Legacy-compatible alias only when the subject truly is a deity' },
                 mood: { type: 'string', description: 'Emotional keyword — unique per concept' },
                 theme: { type: 'string', description: 'Core narrative idea (1 sentence)' },
                 lyricsSummary: { type: 'string', description: 'Brief meaning summary' },
                 conceptDirection: { type: 'string', description: 'Short creative label' },
                 description: { type: 'string', description: '2-3 sentence expansion of the concept' },
               },
-              required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'description'],
+              required: ['title', 'subject', 'mood', 'theme', 'conceptDirection', 'description'],
             },
           },
         },
@@ -200,7 +202,7 @@ ${preset.concept.rules}
 
 CURRENT LOCKED CONCEPT:
 - Title: ${currentConcept.title || ''}
-- Deity: ${currentConcept.deity || ''}
+- Subject: ${conceptSubject(currentConcept)}
 - Mood: ${currentConcept.mood || ''}
 - Theme: ${currentConcept.theme || ''}
 - Direction: ${currentConcept.conceptDirection || ''}
@@ -224,6 +226,8 @@ Visual style is decided in a separate phase — do NOT include art style or colo
         type: 'object',
         properties: {
           title: { type: 'string' },
+          subject: { type: 'string' },
+          primarySubject: { type: 'string' },
           deity: { type: 'string' },
           mood: { type: 'string' },
           theme: { type: 'string' },
@@ -238,7 +242,7 @@ Visual style is decided in a separate phase — do NOT include art style or colo
             required: ['artStyle', 'colorPalette'],
           },
         },
-        required: ['title', 'deity', 'mood', 'theme', 'conceptDirection', 'visualSuggestions'],
+        required: ['title', 'subject', 'mood', 'theme', 'conceptDirection'],
       },
     },
   });
@@ -326,6 +330,26 @@ const formatConceptForScriptPrompt = (concept: any): string => {
     `Mood: ${concept?.mood || ''}`,
   ];
   return lines.filter(line => !line.endsWith(': ')).join('\n');
+};
+
+const formatShotExamples = (preset: PipelinePreset): string => {
+  const good = preset.script.shotExamples.good.map((example) => `  Good: "${example}"`).join('\n');
+  const bad = preset.script.shotExamples.bad.map((example) => `  Bad: "${example}"`).join('\n');
+  return [good, bad].filter(Boolean).join('\n');
+};
+
+const workflowSourceLabels = (preset: PipelinePreset) => {
+  const isMusicVideo = preset.workflowKey === 'music_video';
+  return {
+    sourceBlock: isMusicVideo
+      ? 'LYRICS / AUDIO SOURCE'
+      : 'SCRIPT / SOURCE MATERIAL',
+    structureBlock: isMusicVideo
+      ? 'MUSICAL STRUCTURE'
+      : 'SCENE / TIMING STRUCTURE',
+    timingNoun: isMusicVideo ? 'music' : 'source',
+    sectionNoun: isMusicVideo ? 'musical section' : 'script section',
+  };
 };
 
 // parseTimestamp moved to ./script-validation.ts (shared with openai/gemini
@@ -459,6 +483,8 @@ export const planScenes = async (
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
+  const labels = workflowSourceLabels(preset);
+  const shotExamples = formatShotExamples(preset);
 
   // Song type signal
   const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
@@ -480,8 +506,8 @@ Video model: ${input.videoModel}
 In this mode, a ${preset.toolName} "shot" is a storyboard clip, not one continuous camera take.
 Each shot may contain internal edits, multiple angles, and beat hits, but it must still serve one clear story/music idea.
 
-Target clip length: 15 seconds whenever the musical phrase can support a mini-scene.
-Allowed practical range: 4-15 seconds. Use shorter clips for short phrases, transitions, refrains, or quick devotional responses.
+Target clip length: 15 seconds whenever the ${labels.timingNoun} beat can support a mini-scene.
+Allowed practical range: 4-15 seconds. Use shorter clips for short phrases, transitions, refrains, reactions, action fragments, or quick beat responses.
 For each scene, shot durations must add up to the scene duration exactly.
 Good examples:
 - 30s scene -> 15 + 15
@@ -490,10 +516,7 @@ Good examples:
 - 12s scene -> 12
 
 Write each shot.direction as an edited mini-sequence, not a single camera setup.
-Good: "Villagers assemble around the grounded idol, then hands lift it onto the marigold palanquin"
-Good: "The procession enters the lane, lamps ignite on doorsteps, and the idol passes through the crowd"
-Bad: "Wide establishing shot of the field"
-Bad: "Slow dolly toward the idol"
+${shotExamples}
 
 Do not create zero-second cuts or filler shots. Every shot must have duration > 0.
 Do not include art style, color palette, rendering language, or architecture not present in the scene/environment.
@@ -510,7 +533,7 @@ Video model minimum clip length: ${minDuration}s. Shots shorter than this get pa
 BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots.
 ═══════════════════════════════════════════════════════════════════`;
 
-  const prompt = `You are a music video director. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
+  const prompt = `You are ${preset.script.plannerIdentity}. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
 
 ${modeGuidance}
 ${songTypeSignal}
@@ -518,46 +541,38 @@ ${songTypeSignal}
 CONCEPT:
 ${formatConceptForScriptPrompt(input.concept)}
 
-LYRICS:
+${labels.sourceBlock}:
 ${input.lyrics}
 
 MEANING: ${input.meaning}
 
-MUSICAL STRUCTURE: ${input.musicalStructure}
+${labels.structureBlock}: ${input.musicalStructure}
 
 ${pacingGuidance}
 ${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
-Plan the full music video using the plan_music_video tool.
+Plan the full ${preset.toolName} production using the plan_music_video tool.
 
 CAST rules:
-- Include the deity and key figures by their proper names
-- Description = REUSABLE physical identity: face, skin tone, build, costume, ornaments, crown/headpiece, jewelry. 2-3 sentences.
+- ${preset.script.castRules}
+- Description = REUSABLE physical identity for image generation. 2-3 sentences.
 - Do NOT include actions, props in hands, or scene-specific details — this generates a neutral reference portrait reused across shots
-- Include cultural context: "{name}, the {role} from {tradition}"
 - No art style — just what the character looks like
 
 ENVIRONMENT rules:
-- Only 2-3 key locations that define the visual world
+- ${preset.script.environmentRules}
 - Description = physical space: architecture, landscape, scale, lighting, atmosphere. 2 sentences.
-- Include cultural reference: "inspired by {source}"
 - No art style — just the place itself
 
 SCENE rules:
-- One scene per musical section — follow the musical structure timestamps exactly
+- ${preset.script.sceneRules}
+- One scene per ${labels.sectionNoun} — follow the provided timestamps exactly
 - narrativeDescription: what happens in this scene, 1-2 sentences
 - Each shot needs a direction: WHAT HAPPENS in this moment (the narrative beat, the action, the emotional shift). NOT camera directions — those come later.
-  Good: "Ganesha receives the offering, his expression softens"
-  Good: "Devotee prostrates before the idol, hands trembling"
-  Good: "Each sacred name reveals a different facet of Ganesha's presence in the temple space"
-  Good: "The devotee's offering becomes the bridge between human longing and divine grace"
-  Bad: "Slow dolly in on Ganesha" (that's camera work, not direction)
-  Bad: "Wide establishing shot of temple" (that's framing, not action)
+${shotExamples}
 ${isSeedanceStoryboard ? '- In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive clip idea. Include shot.duration for every shot.' : ''}
-${input.isMeditative ? '\n- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs.' : ''}
-- Avoid mechanical alternation between two visual worlds unless the song truly demands it. Let some beats bridge the human and divine, or move from one into the other.
-- Not every sacred name or attribute needs a literal illustration. Some should be felt through atmosphere, ritual action, emotional change, silence, or presence.
-- Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields. Use overt visual effects only when they feel earned by the song.
-- Build progression across the scene: invocation -> deepening presence -> surrender. Each shot should advance the same spiritual movement, not just restate it in a new image.
+- Avoid mechanical alternation between two visual worlds unless the source truly demands it. Let beats bridge, transform, reveal, or escalate.
+- Avoid generic spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields, or unrelated VFX. Use overt visual effects only when earned by the source.
+- Build progression across the scene. Each shot should advance the same emotional, narrative, or performance movement, not just restate it in a new image.
 
 IMPORTANT — character and environment assignment:
 - Every shot MUST have an environmentName from the environment list
@@ -650,6 +665,7 @@ export const refineScript = async (
   const minDuration = context.minShotDuration || 4;
   const isSeedanceStoryboard = context.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
+  const labels = workflowSourceLabels(preset);
 
   const currentJson = JSON.stringify({
     cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
@@ -686,12 +702,12 @@ Video model minimum clip length: ${minDuration}s. Shots shorter than this will b
 CONCEPT:
 ${formatConceptForScriptPrompt(context.concept)}
 
-LYRICS:
+${labels.sourceBlock}:
 ${context.lyrics}
 
 MEANING: ${context.meaning}
 
-MUSICAL STRUCTURE: ${context.musicalStructure}
+${labels.structureBlock}: ${context.musicalStructure}
 
 ${pacingGuidance}
 
@@ -713,17 +729,18 @@ REFINEMENT PRINCIPLES:
 1. PRESERVE what works. If the director says "fix scene 4", scenes 1-3 and 5+ must come back IDENTICAL — same narratives, same shots, same cast assignments, same environments.
 2. SCOPE your changes to what the feedback asks for. "More intimate in scene 4" means rethink scene 4's shots — don't touch the cast list or environments unless the feedback requires it.
 3. RESPECT the existing cast and environments. These may already have locked reference images. Do NOT rename characters or environments — their names are IDs in the system. You may add new ones if the feedback requires new characters or locations.
-4. MAINTAIN musical structure. Section labels and timestamps are fixed — they come from the audio analysis. Do not change them.
+4. MAINTAIN source structure. Section labels and timestamps are fixed — they come from the project source analysis. Do not change them.
 5. Every shot MUST have castNames (characters visible) and environmentName (location). This is critical — the video model uses these to send reference images for consistency.
 ${isSeedanceStoryboard ? '6. In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive storyboard clip. Include shot.duration for every shot.' : ''}
 
 CAST rules (same as original script):
+- ${preset.script.castRules}
 - Description = physical appearance for image generation. 2-3 sentences.
-- Include cultural context: "{name}, the {role} from {tradition}"
 - No art style in descriptions
 
 ENVIRONMENT rules:
-- Description = physical space. 2 sentences. Cultural reference.
+- ${preset.script.environmentRules}
+- Description = physical space. 2 sentences.
 - No art style
 
 Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
@@ -800,9 +817,11 @@ export const writeShotPrompts = async (
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = getClient();
   const preset = context.preset || getRuntimePreset();
+  const labels = workflowSourceLabels(preset);
+  const isMusicVideo = preset.workflowKey === 'music_video';
 
   const shotList = shots.map((s, i) =>
-    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | Lyrics: ${s.sceneLyrics || 'instrumental'}`
+    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | ${isMusicVideo ? 'Lyric/audio cue' : 'Source beat'}: ${s.sceneLyrics || (isMusicVideo ? 'instrumental' : 'not specified')}`
   ).join('\n');
 
   const castList = context.cast.map(c => `${c.name}: ${c.description}`).join('\n');
@@ -826,11 +845,15 @@ export const writeShotPrompts = async (
     : '';
 
   const meditativeGuidance = context.isMeditative ? `
-MEDITATIVE CINEMATOGRAPHY:
+PATIENT / CONTEMPLATIVE PACING:
 - Favor stillness, patience, and negative space. Let the frame breathe.
-- Resist the urge to fill every shot with spectacle. A still face, a trembling hand, a single flame can carry more weight than divine radiance.
-- Show sacred presence through atmosphere and reaction, not only through literal divine manifestation.
-- When the divine appears, keep it grounded — earned through the devotee's state, not inserted as a visual effect.` : '';
+- Resist the urge to fill every shot with spectacle. A still face, a tightening hand, or a small environmental change can carry more weight than overt VFX.
+- Show emotional presence through atmosphere and reaction, not abstract explanation.
+- When a supernatural or heightened element appears, keep it grounded in the shot's visible state.` : '';
+
+  const timingReference = isMusicVideo
+    ? 'song rhythm visually: "on the vocal phrase", "on the drum accent", "as the line resolves", "with the rhythm pulse"'
+    : 'source timing visually: "on the dialogue beat", "as the action lands", "during the reaction beat", "as the scene turns"';
 
   const modelGuidance = context.videoModel?.startsWith('seedance') ? `
 SEEDANCE 2.0 PROMPTING MODE:
@@ -838,9 +861,9 @@ SEEDANCE 2.0 PROMPTING MODE:
 - Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
 - Use each shot's listed duration when helpful: "Over 5s..." or "During the final second..." for holds, reveals, and beat hits.
 - ${preset.toolName} provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
-- You may reference the song rhythm visually: "on the vocal phrase", "on the drum accent", "as the line resolves", "with the chant pulse". Keep it visible and editorial.
+- You may reference the ${timingReference}. Keep it visible and editorial.
 - Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
-- If the start frame must stay consistent, say so positively: "maintain the same face, costume, and temple geometry while..."
+- If the start frame must stay consistent, say so positively: "maintain the same face, costume, and environment geometry while..."
 - Avoid multi-shot language inside one ${preset.toolName} shot unless the direction explicitly requires a transition. ${preset.toolName} stitches separate clips later.` : `
 VIDEO MODEL PROMPTING MODE:
 - The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
@@ -859,40 +882,42 @@ But do not become schematic. Avoid layout jargon like "left half", "right half",
 Translate emotion into physical evidence:
 - a still face
 - a hand tightening
-- a flame settling
-- moisture on stone
-- a body lowering into prostration
+- a light settling
+- dust or rain moving through space
+- a body freezing before it answers
 - distance between two figures
 
 EXAMPLES — the boundary between renderable and not:
 
 GOOD visualPrompt:
-"Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
+"Medium side shot: Mina stops at the classroom doorway, one hand still on the frame, while the hallway behind her falls out of focus. Her shoulders are tense and her eyes stay fixed on the empty desk."
 
 GOOD visualPrompt:
-"Low wide shot from the shrine floor: the devotee lies in full prostration in the foreground, forehead touching stone, while the Ganesha murti rises behind him in stillness. The brass lamp burns between them."
+"Low wide shot from the workshop floor: the half-built machine fills the background while Ren kneels in the foreground, tools scattered around his knees, staring at the cracked control panel."
 
 GOOD motionPrompt:
-"Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
+"Static hold as Mina tightens her grip on the doorframe; the hallway lights flicker once behind her."
 
 GOOD motionPrompt:
-"Slow push-in toward the murti's cheek as a bead of moisture begins to slide down the carved stone."
+"Slow push-in toward Ren's face as he exhales and reaches for the broken switch."
 
 BAD visualPrompt:
-"The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
+"Mina understands the weight of her destiny." — emotional interpretation, not renderable.
 
 BAD visualPrompt:
-"A symmetrical split-focus composition with the devotee on the left third and the murti on the right third." — schematic layout jargon unless the shot truly needs it.
+"A symmetrical split-focus composition with one character on the left third and the object on the right third." — schematic layout jargon unless the shot truly needs it.
 
 BAD motionPrompt:
-"The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
+"The camera slowly dollies in to heighten the emotional atmosphere." — generic movement and non-visual rationale.
 
 BAD motionPrompt:
-"Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
+"Glowing energy fills the room as cosmic particles swirl around everyone." — generic VFX not grounded in the shot direction.
 
 ${songTypeSignal}
-Mood: ${context.concept.mood || 'devotional'}
+Mood: ${context.concept.mood || 'unspecified'}
 Video model: ${context.videoModel || 'default'}
+Preset rules:
+${preset.studio.shotPromptRules}
 
 CHARACTERS:
 ${castList}
@@ -917,9 +942,9 @@ BEFORE RETURNING, CHECK THE SEQUENCE:
 - No invented geography (corridors, archways, courtyards not in the direction)
 - No repeated camera verb across consecutive shots
 - No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
-- No mystical VFX unless explicitly described in the shot direction
+- No generic VFX unless explicitly described in the shot direction
 - At least consider 'prev_shot' for direct intensifications — don't default to all cuts
-- Every shot must advance the devotional arc, not just restate the previous beat
+- Every shot must advance the ${labels.timingNoun} arc, story beat, performance beat, or visual idea, not just restate the previous beat
 
 Match the IDs exactly.`;
 
@@ -1008,7 +1033,7 @@ ${userNotes ? `USER DIRECTION: All 4 must be variations within this preference:\
 Propose 4 distinct visual style directions using the propose_style_directions tool.
 
 Each direction must produce a visibly different reference image: vary color temperature, medium/rendering approach, lighting behavior, and artistic/cultural reference.
-Do not let all four directions collapse into warm, dark, temple-chiaroscuro variants.
+Do not let all four directions collapse into the same warm, dark, dramatic-lighting variant.
 Photographic, painterly, illustrated, miniature-inspired, or mixed-media directions are all welcome if specific and culturally respectful.
 
 For each: a title (2-5 words) and description (2 short punchy sentences, concrete and compact).

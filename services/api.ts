@@ -49,12 +49,43 @@ export const createProject = async (
   metadata?: { title?: string; context?: string; language?: string }
 ) => {
   const form = new FormData();
-  form.append('audio', audioFile);
+  form.append('seedFile', audioFile);
+  form.append('workflowKey', 'music_video');
+  form.append('seedKind', 'audio');
+  form.append('presetKey', 'music_video_default');
   if (metadata?.title) form.append('title', metadata.title);
   if (metadata?.context) form.append('context', metadata.context);
   if (metadata?.language) form.append('language', metadata.language);
 
-  const res = await authFetch(`${API}/projects`, { method: 'POST', body: form });
+  const res = await authFetch(`${API}/projects/intake`, { method: 'POST', body: form });
+  return handleResponse(res);
+};
+
+export const createProjectFromIntake = async (opts: {
+  workflowKey: 'music_video' | 'anime_scripted';
+  seedKind: 'audio' | 'script' | 'brief' | 'document' | 'idea';
+  presetKey?: 'music_video_default' | 'anime_default';
+  seedFile?: File;
+  title?: string;
+  context?: string;
+  language?: string;
+  scriptText?: string;
+  directorBrief?: string;
+  targetDuration?: number;
+}) => {
+  const form = new FormData();
+  form.append('workflowKey', opts.workflowKey);
+  form.append('seedKind', opts.seedKind);
+  if (opts.presetKey) form.append('presetKey', opts.presetKey);
+  if (opts.seedFile) form.append('seedFile', opts.seedFile);
+  if (opts.title) form.append('title', opts.title);
+  if (opts.context) form.append('context', opts.context);
+  if (opts.language) form.append('language', opts.language);
+  if (opts.scriptText) form.append('scriptText', opts.scriptText);
+  if (opts.directorBrief) form.append('directorBrief', opts.directorBrief);
+  if (opts.targetDuration) form.append('targetDuration', String(opts.targetDuration));
+
+  const res = await authFetch(`${API}/projects/intake`, { method: 'POST', body: form });
   return handleResponse(res);
 };
 
@@ -65,10 +96,12 @@ export const createScriptProject = async (opts: {
   targetDuration?: number;
   presetKey?: string;
 }) => {
-  const res = await authFetch(`${API}/projects/script`, {
+  const res = await authFetch(`${API}/projects/intake`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      workflowKey: 'anime_scripted',
+      seedKind: 'script',
       presetKey: 'anime_default',
       ...opts,
     }),

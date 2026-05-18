@@ -11,6 +11,7 @@ import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } fro
 import { buildContextChain, logCall } from '../xray.js';
 import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
 import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
+import { getProjectRuntimePreset } from '../presets.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -83,7 +84,7 @@ const parseTimestamp = (t?: string): number => {
 const buildConceptSummary = (project: any): { concept: string; mood?: string } => {
   const concept = parseJson<Record<string, any>>(project.locked_concept, {});
   return {
-    concept: concept.conceptDirection || concept.summary || concept.title || `Music video for ${project.title}`,
+    concept: concept.conceptDirection || concept.summary || concept.title || `Production project for ${project.title}`,
     mood: concept.mood || undefined,
   };
 };
@@ -241,6 +242,7 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
   }
 
   const concept = buildConceptSummary(project);
+  const preset = getProjectRuntimePreset(project);
   const input: StoryboardRdInput = {
     title: project.title,
     concept: concept.concept,
@@ -256,6 +258,7 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
     clipDuration: Math.max(4, Math.min(15, Number(shot.duration || 15))),
     castNames: activeCast.map((member: any) => member.name),
     environmentName: environment?.name || undefined,
+    preset,
   };
 
   return { project, scene, shot, input, refs, refMeta };
@@ -384,7 +387,7 @@ export const planStoryboardPrompt = async (opts: {
     : '';
 
   const prompt = opts.artistNote?.trim()
-    ? `You are an art director refining one storyboard for a devotional music video. The locked style reference image is the visual ground truth — read it to understand the medium and match it. Rewrite the saved storyboard render prompt and cut plan using the artist note.
+    ? `You are an art director refining one storyboard for ${ctx.input.preset?.toolName || 'this video project'}. The locked style reference image is the visual ground truth — read it to understand the medium and match it. Rewrite the saved storyboard render prompt and cut plan using the artist note.
 
 Artist note:
 ${opts.artistNote.trim()}
@@ -405,13 +408,13 @@ Return only JSON with keys:
   "storyboardPrompt": "the actual prompt sent to the image model — must include the panel layout, subject/setting context, per-panel action descriptions (Panel 1: ..., Panel 2: ..., one line each describing what visibly happens), AND an explicit inter-panel consistency demand naming what each locked ref controls (style → medium/lighting/palette; characters → identity/costume; environment → physical space). Plus the no-text-in-panels rule. Under ~330 words. No 'contract' bullet lists, no animation rules, no quality boilerplate, no 'cinematic film still' language — image models read short clear prompts better, and cinema language fights non-realistic locked styles.",
   "cutPlanText": "the same per-panel beats reformatted for the video model. Format: 'Panel N — <action>'. One short line per panel. No timestamps, no camera-jargon fields."
 }`
-    : `You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is the visual ground truth — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
+    : `You are an art director planning one storyboard board for ${ctx.input.preset?.toolName || 'this video project'}. The locked style reference image is the visual ground truth — read it to understand the medium (photographic, painterly, illustrated, miniature, mixed-media, anime, or another project style) and match it. Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
 
 1. storyboardPrompt — the actual prompt the storyboard image model will read. It MUST include:
    - The panel layout (grid spec, 16:9 panels, borders, background)
    - One-line subject/shot context (what the moment is)
    - **Per-panel action descriptions**, one short sentence per panel, in order. Without these the image model invents incoherent panels — this is the most important part. Format: "Panel 1: <framing> — <action>". Use plain visual language, not camera jargon.
-   - **Inter-panel consistency demand (REQUIRED — this is the line that prevents panels from drifting into different scenes):** explicitly instruct the image model to keep visual style, lighting/palette, character identity (face, costume, jewelry), and environment geometry CONSISTENT across every panel. State which locked reference controls which aspect: style reference → medium/lighting/palette; character references → identity/costume; environment reference → physical space.
+   - **Inter-panel consistency demand (REQUIRED — this is the line that prevents panels from drifting into different scenes):** explicitly instruct the image model to keep visual style, lighting/palette, character identity (face, costume, silhouette), and environment geometry CONSISTENT across every panel. State which locked reference controls which aspect: style reference → medium/lighting/palette; character references → identity/costume; environment reference → physical space.
    - No-text-in-panels rule (no captions, numbers, labels, arrows)
 
    Keep the whole thing under ~330 words. Do NOT include "contract" bullet lists, animation rules, emotional-arc instructions, or quality boilerplate ("masterpiece", "ultra-HD", "cinematic film still", etc.) — image models follow short clear prompts dramatically better than long ones, and "cinematic"-style language fights non-realistic locked styles.
