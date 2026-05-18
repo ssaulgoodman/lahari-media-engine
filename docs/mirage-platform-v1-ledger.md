@@ -2,7 +2,7 @@
 
 **Status:** 🔒 LOCKED 2026-05-18 — execution begins next session
 **Date:** 2026-05-18
-**Branch:** `codex/preset-abstraction` (will be renamed to `mirage` in T7.4)
+**Branch:** `mirage`
 **Owners:** Claude + Codex working in parallel tracks
 **Supersedes:** `docs/v1-platform-finish-line-plan.md`, sections of `docs/abstraction-platform-plan.md`, sections of `docs/preset-abstraction-plan.md`
 
@@ -83,7 +83,6 @@ Mirage and Lahari are two products that share git history up to 2026-05-18 and d
                        │  One git repo                              │
                        │  ├── main branch  →  Lahari production     │
                        │  └── mirage branch →  Mirage production    │
-                       │      (renamed from codex/preset-abstraction)│
                        └────────────────────────────────────────────┘
 
   Engine bugfixes:
@@ -156,7 +155,7 @@ Mirage and Lahari are two products that share git history up to 2026-05-18 and d
 
 **Branch lifecycle:**
 - `main` is Lahari's permanent home. Maintenance mode acceptable. Saul-paid env keys, curated artist roster, music_video only
-- `mirage` (renamed from `codex/preset-abstraction`) is Mirage's permanent home. Active development. Open-signup tenants, BYOK enforced, music_video + anime + future workflows
+- `mirage` is Mirage's permanent home. Active development. Open-signup tenants, BYOK enforced, music_video + anime + future workflows
 - Engine bugfixes get cherry-picked between branches when they apply to both (`server/services/claude.ts`, render pipeline, supabase plumbing, etc.). Product-shape changes never cross-port (Lahari keeps its queue; Mirage keeps its intake)
 - v2 escape hatch when cherry-pick cost gets painful: extract shared engine into a package (`@mirage-core/engine`), restructure into a proper monorepo, both products import. Not v1 scope
 
@@ -317,11 +316,11 @@ After T7 completes, no more merges flow between `main` and `mirage`. Engine fixe
 
 | ID | Task | Files / Targets | Acceptance |
 |---|---|---|---|
-| T7.1 | Merge `main` into `codex/preset-abstraction` | `git merge main` (or `git merge codex-native-studio` if more current). Resolve conflicts favoring preset-abstraction where there's intent divergence (e.g. don't bring back the deleted Dashboard.tsx) | Merge commit lands; `packages/lahari-cli` present; preset-abstraction-specific work preserved |
+| T7.1 | Merge `main` into the Mirage lane | `git merge main` (or `git merge codex-native-studio` if more current). Resolve conflicts favoring Mirage where there's intent divergence (e.g. don't bring back the deleted Dashboard.tsx) | Merge commit lands; `packages/lahari-cli` present; Mirage-specific work preserved |
 | T7.2 | Verify `packages/lahari-cli` and `packages/lahari-mcp-server` content | Confirm both packages match latest main; `npx tsc --noEmit` and `npm run build` pass | All pass |
 | T7.3 | Verify backend `notebook-sync` route + `mint_cli_token` MCP tool present | These are what the CLI hits | Routes exist in `server/routes/notebook-sync.ts` and MCP tool registered |
-| T7.4 | Rename branch `codex/preset-abstraction` → `mirage` | `git branch -m codex/preset-abstraction mirage` locally. Push `mirage`, delete remote `codex/preset-abstraction`. Update any Railway watch branch, GitHub default for this lane, doc references | `git branch --show-current` returns `mirage`; remote tracking updated; no broken doc links |
-| T7.5 | Update `AGENTS.md` and `CLAUDE.md` branch references | Replace `codex/preset-abstraction` references with `mirage` throughout | grep finds zero remaining `codex/preset-abstraction` mentions in docs |
+| T7.4 | Rename branch to `mirage` | `git branch -m mirage` locally if needed. Push `mirage`, delete the old remote branch if it exists. Update any Railway watch branch, GitHub default for this lane, doc references | `git branch --show-current` returns `mirage`; remote tracking updated; no broken doc links |
+| T7.5 | Update `AGENTS.md` and `CLAUDE.md` branch references | Replace old preset-branch references with `mirage` throughout | grep finds zero remaining old branch mentions in docs |
 | T7.6 | Smoke test after merge + rename | `npm run dev` boots; can create a project end-to-end against current dev Supabase | Clean session works |
 
 **Acceptance for T7 as a whole:** Branch is `mirage`, latest engine work from main is present, T1 can start forking @mirage packages from a known-good base. This is the last merge between the two branches.
@@ -515,7 +514,7 @@ Append a one-line note when finishing a task. Keep it dated.
 2026-05-18 Claude: D20 added — Mirage uses Segmind for all image+video gen; no Vertex/GCP fallback in Mirage runtime. T1.9 added covering the routing change (Segmind serves Nano Banana Pro + 2; preset default switches to nano-banana-pro; Vertex fallback stripped from studio prefix). Lahari `main` keeps existing GCP fallback path unchanged
 2026-05-18 Claude: D6 tightened — explicit that both Codex Desktop AND Claude Code are supported harnesses; both bring their own LLM subscription; Anthropic/OpenAI are pure web-studio-without-harness concerns. T2.8 Account Keys UI splits into Required vs Optional sections with explanatory copy
 2026-05-18 🔒 LOCKED. Sandbox session ends. Next session opens in `lahari-preset-abstraction` worktree directly (not in the Claude Code sandbox) and starts execution from Day 1 of §6 sequencing
-2026-05-18 Codex: T7 started. Dirty Mirage prep committed as cd3064a; merged latest `main` into `codex/preset-abstraction`, preserving Mirage StartProject/mode-aware docs and taking main notebook-sync/CLI release plumbing. Verification passed: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
+2026-05-18 Codex: T7 started. Dirty Mirage prep committed as cd3064a; merged latest `main` into the Mirage lane, preserving Mirage StartProject/mode-aware docs and taking main notebook-sync/CLI release plumbing. Verification passed: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
 ```
 
 (Append below.)

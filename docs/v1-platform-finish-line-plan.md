@@ -2,9 +2,9 @@
 
 Status: draft for audit
 Date: 2026-05-17
-Branch: `codex/preset-abstraction`
+Branch: `mirage`
 
-This doc is the current plan to get from the preset-abstraction lane to a usable v1 studio for outside artists. It assumes the product is no longer Lahari/Bhakti-specific. Lahari's old pipeline shape remains useful, but the platform must support clean workflows starting with music video and anime.
+This doc is the earlier plan to get from the Mirage lane to a usable v1 studio for outside artists. It is superseded by `docs/mirage-platform-v1-ledger.md`, but remains useful context for why the current plan exists.
 
 The goal is not to finish every possible workflow. The goal is to ship a clean hosted studio where:
 
@@ -588,4 +588,3 @@ V1 is done when:
 - Codex can attach to the clean DB project and understand mode + audio state.
 - At least one anime shot can be generated with a clear dialogue strategy.
 - Render path still works for music video and does not regress existing Studio/Render behavior.
-

@@ -68,7 +68,7 @@ Other high-value routers: `projects.ts`, `queue.ts`, `render.ts`, `render-callba
 
 ## Pipeline Shape
 
-Queue: `Dashboard.tsx` starts from `music_video_queue` + `songs`. Starting a row creates a project immediately, then background-runs audio download, SRT parse, transcription fallback, structure detection, and meaning summary. Analysis caches back onto `songs`. Multiple users can start the same queue item; `source_queue_id` links their own projects.
+Start: `StartProject.tsx` is Mirage's primary intake surface. Music videos start from uploaded audio; anime starts from pasted/uploaded script. The legacy queue adapter still exists behind `music_video_queue` + `songs`, but it is not the main Mirage frontend entry.
 
 Blueprint: `AnalysisEditor.tsx` orchestrates Concept, Script, Style, Characters, Environments. Style presets in `server/style-presets.ts` lock curated Supabase images directly; preset image is ground truth and `style_description` is intentionally empty. Characters/environments use editable generation prompts and the locked style image as the visual anchor.
 

@@ -18,14 +18,14 @@ The Lahari web app is the visual studio. Use deep links to it for visual approva
 
 ## Workspace Layout
 
-This checkout is the **preset abstraction lane**.
+This checkout is the **Mirage platform lane**.
 
 - Parent folder: `/Users/ssaulgoodman/Code/lahari-media-engine/` — not a git repo.
 - Main/deploy checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` on `main`.
 - Codex-native checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` on `codex-native-studio`; its harness has been merged here.
-- Preset abstraction checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `codex/preset-abstraction`.
+- Mirage checkout: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `mirage`.
 
-Do preset/generalization work here. Do not switch the main checkout away from `main` for this lane, and do not use this checkout for urgent production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
+Do Mirage platform work here. Do not switch the main checkout away from `main` for Lahari work, and do not use this checkout for urgent Lahari production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
 Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, drafts, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine.
 
@@ -197,7 +197,7 @@ The CLI and in-process MCP are engine-side debugging surfaces — useful for scr
 
 ## Architecture
 
-**Studio engine** — AI-powered video production tool evolving from the Lahari music-video engine. The current app still contains legacy Lahari names and queue code, but the preset abstraction lane is making the core platform clean enough for non-Lahari artists.
+**Studio engine** — AI-powered video production tool evolving from the Lahari music-video engine. The current app still contains legacy Lahari names and queue code, but the Mirage lane is making the core platform clean enough for non-Lahari artists.
 
 - Frontend: React 19 + Vite, Tailwind via CDN.
 - Backend: Express 5, stateless, Supabase-backed.
@@ -206,7 +206,7 @@ The CLI and in-process MCP are engine-side debugging surfaces — useful for scr
 
 Auth: Supabase Auth with Google OAuth. Backend uses `requireAuth`. Project ownership is enforced at route params. Child URL/body IDs are scoped through route params and `scope-helpers.ts`. No null-owner bypass.
 
-1. **Intake** (`Dashboard.tsx`) — Direct project creation is the platform path. Music videos can start from uploaded audio. Anime can start from pasted/uploaded script. The old `music_video_queue` flow remains a legacy source adapter, not the default platform assumption.
+1. **Intake** (`StartProject.tsx`) — Direct project creation is the platform path. Music videos start from uploaded audio. Anime starts from pasted/uploaded script. The old `music_video_queue` flow remains a legacy backend/source adapter, not the default platform UI.
 2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
    - Concept (Claude Opus, 3 options, regen with note)
    - Script (Claude Opus by default, optional GPT-5.5 experiment, proposes cast + environments + scenes + shots with validated durations)
@@ -236,7 +236,7 @@ Generate router modules:
 
 ## Legacy Lahari Pipeline Notes
 
-1. **Queue** (`Dashboard.tsx`) - Supabase `music_video_queue` + `songs`. Start creates a project immediately and background-runs audio download, SRT parse, transcription fallback, structure detection, and meaning summary. Analysis caches onto `songs` so future users skip repeat AI calls. Multiple users can start the same queue item; `source_queue_id` links their own projects.
+1. **Legacy queue adapter** - Supabase `music_video_queue` + `songs`. Queue start creates a project immediately and background-runs audio download, SRT parse, transcription fallback, structure detection, and meaning summary. Analysis caches onto `songs` so future users skip repeat AI calls. Multiple users can start the same queue item; `source_queue_id` links their own projects. Mirage's main frontend entry is `StartProject.tsx`, not the queue table.
 
 2. **Blueprint** (`AnalysisEditor.tsx`) - Concept, Script, Style, Characters, Environments.
    - Concept/style/refines use the project `text_provider` via `server/services/text-provider.ts`.

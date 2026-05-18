@@ -1,8 +1,8 @@
 # Abstraction Platform Plan
 
-**Status:** implementation underway on `codex/preset-abstraction`
+**Status:** superseded by `docs/mirage-platform-v1-ledger.md`
 **Date:** 2026-05-15
-**Branch:** `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `codex/preset-abstraction`
+**Branch:** `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` on `mirage`
 **Scope:** turn Lahari's pipeline into a configurable platform that can serve multiple workflows (music video, anime, ads, reels) from one engine, without forking the codebase.
 
 ---
@@ -183,7 +183,7 @@ Done in code:
 - `SUPABASE_BUCKET` / `STORAGE_BUCKET` switch in `server/storage.ts`
 - Clean `studio_*` bootstrap migration
 - `server/presets.ts`
-- Anime script-first backend + Dashboard entry point
+- Anime script-first backend + StartProject entry point
 - `POST /api/projects/intake` accepts explicit `workflowKey`, `seedKind`, and optional `presetKey` for the new opening studio UX. It supports `music_video + audio` and `anime_scripted + script`; legacy `/api/projects` and `/api/projects/script` remain compatibility wrappers.
 
 Next foundation gate:
@@ -214,7 +214,7 @@ Started:
 - `POST /api/projects/script` creates a script-first anime project.
 - `POST /api/projects/intake` is now the preferred workflow-first create route for frontend mode cards.
 - `parseAnimeScriptToPlan` parses a script into scenes, shots, cast, and environments.
-- Dashboard has a script-first anime project panel.
+- StartProject has a script-first anime project panel.
 
 Remaining:
 
