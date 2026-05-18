@@ -15,8 +15,9 @@ import {
   assignDeterministicDurations,
   parseTimestamp as parseScriptTimestamp,
 } from './script-validation.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
-const getClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+const getClient = async () => new Anthropic({ apiKey: await requireProviderApiKey('anthropic') });
 
 // Model choices — used by the consumers that stay on Claude direct (script
 // writer's planScenes / refineScript / writeShotPrompts). Everything else
@@ -392,7 +393,7 @@ export const parseAnimeScriptToPlan = async (input: {
   targetDuration?: number;
   preset?: PipelinePreset;
 }): Promise<ScriptFirstPlan> => {
-  const client = getClient();
+  const client = await getClient();
   const preset = input.preset || getRuntimePreset('anime_default');
   const pacing = preset.defaults.pacing || 6;
   const targetDuration = input.targetDuration && input.targetDuration > 0
@@ -477,7 +478,7 @@ Return the plan using the parse_anime_script tool.`;
 export const planScenes = async (
   input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
-  const client = getClient();
+  const client = await getClient();
   const preset = input.preset || getRuntimePreset();
   const pacing = input.basePacing || 15;
   const minDuration = input.minShotDuration || 4;
@@ -659,7 +660,7 @@ export const refineScript = async (
   feedback: string,
   context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string; preset?: PipelinePreset }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
-  const client = getClient();
+  const client = await getClient();
   const preset = context.preset || getRuntimePreset();
   const pacing = context.basePacing || 15;
   const minDuration = context.minShotDuration || 4;
@@ -815,7 +816,7 @@ export const writeShotPrompts = async (
   context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
-  const client = getClient();
+  const client = await getClient();
   const preset = context.preset || getRuntimePreset();
   const labels = workflowSourceLabels(preset);
   const isMusicVideo = preset.workflowKey === 'music_video';

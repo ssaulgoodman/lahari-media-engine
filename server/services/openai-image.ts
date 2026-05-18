@@ -6,6 +6,7 @@ import { downloadToTmp, mimeFromExt, saveBase64 } from '../storage.js';
 import { getRuntimePreset, type PipelinePreset } from '../presets.js';
 import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from './imagen.js';
 import { getImageModel } from '../../constants/imageModels.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
 type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 
@@ -22,10 +23,7 @@ const OPENAI_RESPONSES_IMAGE_MODEL = process.env.OPENAI_RESPONSES_IMAGE_MODEL ||
 const MAX_OPENAI_INPUT_IMAGES = 10;
 const SUPPORTS_INPUT_FIDELITY = new Set(['gpt-image-1', 'gpt-image-1.5', 'chatgpt-image-latest']);
 
-const getClient = () => {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-};
+const getClient = async () => new OpenAI({ apiKey: await requireProviderApiKey('openai') });
 
 const detectImageExt = (base64: string): string => {
   if (base64.startsWith('/9j/') || base64.startsWith('/9j+')) return 'jpg';
@@ -93,7 +91,7 @@ const generateFromPrompt = async (
   refs: RefImage[] = [],
   count = 1
 ): Promise<string[]> => {
-  const client = getClient();
+  const client = await getClient();
   const size = sizeForAspectRatio(aspectRatio) as any;
   const cappedRefs = refs.slice(0, MAX_OPENAI_INPUT_IMAGES);
 
@@ -154,7 +152,7 @@ export const generateOpenAIImageWithResponses = async (
   reasoningModel: string;
   imageModel: string;
 }> => {
-  const client = getClient();
+  const client = await getClient();
   const cappedRefs = (opts?.refs || []).slice(0, MAX_OPENAI_INPUT_IMAGES);
   const fileIds = await Promise.all(cappedRefs.map((ref, idx) => uploadVisionFile(client, ref, idx)));
   const size = opts?.size || sizeForAspectRatio(opts?.aspectRatio || '16:9');

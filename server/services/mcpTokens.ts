@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { getSB, selectColumns, selectOne, updateRows, T } from '../database.js';
 
-const TOKEN_PREFIX = 'lahari_mcp_';
+const TOKEN_PREFIX = 'mirage_mcp_';
+const LEGACY_TOKEN_PREFIX = 'lahari_mcp_';
 const DEFAULT_EXPIRY_DAYS = 30;
 const MAX_EXPIRY_DAYS = 90;
 const DEFAULT_CLI_TTL_MINUTES = 60;
@@ -18,14 +19,15 @@ export const hashMcpToken = (token: string) => {
 
 const sanitizeLabel = (label?: string | null) => {
   const trimmed = (label || '').trim();
-  return trimmed ? trimmed.slice(0, 80) : 'Lahari MCP';
+  return trimmed ? trimmed.slice(0, 80) : 'Mirage MCP';
 };
 
 const mcpUrl = () => (
-  process.env.LAHARI_MCP_URL
+  process.env.MIRAGE_MCP_URL
+  || process.env.LAHARI_MCP_URL
   || process.env.APP_URL && `${process.env.APP_URL.replace(/\/+$/, '')}/mcp`
   || process.env.PUBLIC_APP_URL && `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/mcp`
-  || 'https://lahari-media-engine-production.up.railway.app/mcp'
+  || 'https://mirage-platform-production.up.railway.app/mcp'
 );
 
 const normalizeExpiryDays = (expiresInDays?: number | null) => {
@@ -62,14 +64,14 @@ export const createMcpToken = async (
     .single();
   if (error) throw new Error(`DB insert mcp_tokens: ${error.message}`);
   return {
-    kind: 'lahari.mcp_token.created',
+    kind: 'mirage.mcp_token.created',
     id: data.id,
     token,
     tokenPrefix: row.token_prefix,
     label: row.label,
     expiresAt: row.expires_at,
     install: {
-      codexApp: `Name: lahari
+      codexApp: `Name: mirage
 Type: Streamable HTTP
 URL: ${mcpUrl()}
 Bearer token env var: leave blank
@@ -77,16 +79,16 @@ Header key: Authorization
 Header value: Bearer ${token}`,
       codexAppVerify: `Fully quit and reopen Codex Desktop.
 Start a new chat.
-Ask: Call Lahari list_projects.`,
-      codex: `codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN`,
-      env: `export LAHARI_MCP_TOKEN=${token}`,
-      codexWindows: `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${token}", "User")
-codex mcp remove lahari
-codex mcp add lahari --url ${mcpUrl()} --bearer-token-env-var LAHARI_MCP_TOKEN
-codex mcp get lahari --json
+Ask: Call Mirage list_projects.`,
+      codex: `codex mcp add mirage --url ${mcpUrl()} --bearer-token-env-var MIRAGE_MCP_TOKEN`,
+      env: `export MIRAGE_MCP_TOKEN=${token}`,
+      codexWindows: `[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${token}", "User")
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpUrl()} --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp get mirage --json
 Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`,
-      claude: `claude mcp add-json lahari '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer \${LAHARI_MCP_TOKEN}"}}'`,
-      claudeFallback: `claude mcp add lahari --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}`,
+      claude: `claude mcp add-json mirage '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer \${MIRAGE_MCP_TOKEN}"}}'`,
+      claudeFallback: `claude mcp add mirage --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}`,
     },
   };
 };
@@ -113,17 +115,17 @@ export const createCliToken = async (
     scope_project_id: opts.projectId,
   };
   const { data, error } = await getSB()
-    .from('lahari_mcp_tokens')
+    .from(T.mcp_tokens)
     .insert(row)
     .select('id')
     .single();
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
-  const apiUrl = (process.env.LAHARI_API_URL || 'https://lahari-media-engine-production.up.railway.app').replace(/\/+$/, '');
-  const cliPackage = '@ssaulgoodman420/lahari-cli@0.1.0';
-  const posixCommand = `LAHARI_CLI_TOKEN=${token} LAHARI_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
-  const powershellCommand = `$env:LAHARI_CLI_TOKEN='${token}'; $env:LAHARI_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
+  const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production.up.railway.app').replace(/\/+$/, '');
+  const cliPackage = '@mirage/cli@0.1.0';
+  const posixCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
+  const powershellCommand = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
   return {
-    kind: 'lahari.cli_token.created',
+    kind: 'mirage.cli_token.created',
     id: data.id,
     token,
     tokenPrefix: row.token_prefix,
@@ -149,7 +151,7 @@ export const listMcpTokens = async (userId: string) => {
     { orderBy: 'created_at', ascending: false, limit: 50 },
   );
   return {
-    kind: 'lahari.mcp_tokens.list',
+    kind: 'mirage.mcp_tokens.list',
     tokens: rows.map((row: any) => ({
       id: row.id,
       label: row.label,
@@ -173,14 +175,14 @@ export const revokeMcpToken = async (userId: string, tokenId: string) => {
   if (row.user_id !== userId) throw new Error('Access denied');
   await updateRows('mcp_tokens', { id: tokenId }, { revoked_at: nowIso() });
   return {
-    kind: 'lahari.mcp_token.revoked',
+    kind: 'mirage.mcp_token.revoked',
     id: tokenId,
   };
 };
 
 export const verifyMcpBearerToken = async (token: string | null | undefined) => {
-  if (!token) throw new Error('Missing Lahari MCP bearer token');
-  if (!token.startsWith(TOKEN_PREFIX)) throw new Error('Invalid Lahari MCP bearer token');
+  if (!token) throw new Error('Missing Mirage MCP bearer token');
+  if (!token.startsWith(TOKEN_PREFIX) && !token.startsWith(LEGACY_TOKEN_PREFIX)) throw new Error('Invalid Mirage MCP bearer token');
   const hash = hashMcpToken(token);
   const { data, error } = await getSB()
     .from(T.mcp_tokens)
@@ -189,9 +191,9 @@ export const verifyMcpBearerToken = async (token: string | null | undefined) => 
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(`MCP token lookup failed: ${error.message}`);
-  if (!data) throw new Error('Invalid Lahari MCP bearer token');
-  if (data.revoked_at) throw new Error('Revoked Lahari MCP bearer token');
-  if (data.expires_at && Date.parse(data.expires_at) <= Date.now()) throw new Error('Expired Lahari MCP bearer token');
+  if (!data) throw new Error('Invalid Mirage MCP bearer token');
+  if (data.revoked_at) throw new Error('Revoked Mirage MCP bearer token');
+  if (data.expires_at && Date.parse(data.expires_at) <= Date.now()) throw new Error('Expired Mirage MCP bearer token');
   await updateRows('mcp_tokens', { id: data.id }, { last_used_at: nowIso() });
   return {
     tokenId: data.id as string,

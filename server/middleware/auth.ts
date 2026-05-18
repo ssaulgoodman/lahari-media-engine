@@ -6,6 +6,7 @@
  */
 import { Request, Response, NextFunction } from 'express';
 import { getSB } from '../database.js';
+import { runWithRequestContext } from '../requestContext.js';
 
 // Extend Express Request to carry userId
 declare global {
@@ -29,7 +30,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
     req.userId = user.id;
-    next();
+    runWithRequestContext({ userId: user.id }, next);
   } catch (err: any) {
     return res.status(401).json({ error: 'Auth verification failed' });
   }

@@ -35,6 +35,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import { getTextProvider, type TextProviderKey, type TextProviderSpec } from '../../constants/textProviders.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
 export interface TextRequest {
   /** Plain instruction + content text. Most callers stuff everything here. */
@@ -93,8 +94,7 @@ export const generateText = async (
 // ─── Anthropic ─────────────────────────────────────────────────────────────
 
 const runAnthropic = async (model: string, req: TextRequest): Promise<TextResponse> => {
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY required');
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const client = new Anthropic({ apiKey: await requireProviderApiKey('anthropic') });
 
   const content: Anthropic.MessageParam['content'] = [];
   for (const img of req.inputImages ?? []) {
@@ -166,8 +166,7 @@ const runAnthropic = async (model: string, req: TextRequest): Promise<TextRespon
 // ─── OpenAI ────────────────────────────────────────────────────────────────
 
 const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse> => {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const client = new OpenAI({ apiKey: await requireProviderApiKey('openai') });
 
   const content: any[] = [];
   if (req.systemPrompt) {
@@ -260,8 +259,7 @@ const fetchImageAsInline = async (url: string, fallbackMime?: string): Promise<{
 };
 
 const runGoogle = async (model: string, req: TextRequest): Promise<TextResponse> => {
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY required');
-  const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const client = new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
 
   const parts: any[] = [];
   if (req.systemPrompt) parts.push({ text: req.systemPrompt });

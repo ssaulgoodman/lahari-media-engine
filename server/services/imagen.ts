@@ -9,8 +9,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { saveBase64, readAsBase64 } from '../storage.js';
 import { getRuntimePreset, PipelinePreset } from '../presets.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const getAI = async () => new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
 
 /** Detect actual image format from base64 data */
 const detectImageExt = (base64: string): string => {
@@ -40,7 +41,7 @@ export const generateImageWithRefs = async (
   /** Override model from the registry spec. When set, only this model runs. */
   model?: string,
 ): Promise<string> => {
-  const ai = getAI();
+  const ai = await getAI();
   let lastError: Error | null = null;
   const models = model ? [model] : DEFAULT_IMAGE_MODELS;
 
@@ -121,7 +122,7 @@ export const generateStyleOptions = async (
   projectId?: string,
   preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ style: string; assetPath: string }[]> => {
-  const ai = getAI();
+  const ai = await getAI();
 
   const directions = styleNotes
     ? [
@@ -263,7 +264,7 @@ export const generateCharacterLooks = async (
   model: string = 'gemini-3-pro-image-preview',
   preset?: PipelinePreset,
 ): Promise<string[]> => {
-  const ai = getAI();
+  const ai = await getAI();
   const N = 3;
 
   const parts: ContentPart[] = [];
@@ -361,7 +362,7 @@ export const generateEnvironmentLooks = async (
   model: string = 'gemini-3-pro-image-preview',
   preset?: PipelinePreset,
 ): Promise<string[]> => {
-  const ai = getAI();
+  const ai = await getAI();
   const N = 3;
 
   const parts: ContentPart[] = [];
@@ -608,7 +609,7 @@ export const generateShotFramePair = async (opts: {
   prevShotEndFramePath?: string;
   userFeedback?: string;
 }): Promise<{ startFramePath: string; endFramePath: string }> => {
-  const ai = getAI();
+  const ai = await getAI();
   const parts: ContentPart[] = [];
 
   // ── Build reference index (same as start frame) ──

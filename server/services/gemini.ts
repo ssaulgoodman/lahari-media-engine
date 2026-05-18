@@ -4,8 +4,9 @@
  * Concept generation, script planning, style brainstorm/refine/enrich, shot prompts → moved to claude.ts
  */
 import { GoogleGenAI, Type } from '@google/genai';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const getAI = async () => new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
 
 // ─── JSON Repair ────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ export const transcribeLyrics = async (
   mimeType: string,
   language?: string
 ): Promise<string> => {
-  const ai = getAI();
+  const ai = await getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: { parts: [
@@ -96,7 +97,7 @@ export const detectStructure = async (
   audioBase64: string,
   mimeType: string
 ): Promise<{ sections: any[]; songType: string; isNarrative: boolean; isMeditative: boolean }> => {
-  const ai = getAI();
+  const ai = await getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: { parts: [
@@ -171,7 +172,7 @@ export const critiqueShotImage = async (
   compiledPrompt: string,
   styleDNA: string
 ): Promise<{ score: number; reasoning: string; isConsistent: boolean; suggestions: string }> => {
-  const ai = getAI();
+  const ai = await getAI();
 
   const hasRefs = referenceImages.length > 0;
 
@@ -240,7 +241,7 @@ Return your assessment as JSON. The "suggestions" field should contain SPECIFIC,
  * position, lighting, action mid-beat). Kept short and factual.
  */
 export const describeFrame = async (imageBase64: string, mimeType = 'image/png'): Promise<string> => {
-  const ai = getAI();
+  const ai = await getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: {
@@ -262,7 +263,7 @@ export const chatWithDirector = async (
   userMessage: string,
   history: { role: string; text: string }[]
 ): Promise<string> => {
-  const ai = getAI();
+  const ai = await getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: [

@@ -6,6 +6,7 @@ import {
   assignDeterministicDurations,
   parseTimestamp,
 } from './script-validation.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
 type PlanScenesInput = {
   concept: any;
@@ -28,10 +29,7 @@ type ScriptPlan = { cast: any[]; environments: any[]; scenes: any[] };
 const OPENAI_SCRIPT_MODEL = process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.5';
 const OPENAI_SCRIPT_REASONING_EFFORT = process.env.OPENAI_SCRIPT_REASONING_EFFORT || 'medium';
 
-const getClient = () => {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-};
+const getClient = async () => new OpenAI({ apiKey: await requireProviderApiKey('openai') });
 
 const conceptSubject = (concept: any, fallback = 'Unknown'): string =>
   concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback;
@@ -228,7 +226,7 @@ SCENES:
 export const planScenesOpenAI = async (
   input: PlanScenesInput
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string; model: string }> => {
-  const client = getClient();
+  const client = await getClient();
   const pacing = input.basePacing || 15;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance') || false;
   const seedanceMaxDuration = 15;
@@ -405,7 +403,7 @@ Return the COMPLETE updated script (strict JSON) — every scene, not just the c
 export const refineScriptOpenAI = async (
   input: RefineScriptInput
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string; model: string }> => {
-  const client = getClient();
+  const client = await getClient();
   const pacing = input.basePacing || 15;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance') || false;
   const seedanceMaxDuration = 15;
@@ -605,7 +603,7 @@ Match the IDs exactly. Return one entry per shot.`;
 export const writeShotPromptsOpenAI = async (
   input: WriteShotPromptsInput
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string; model: string }> => {
-  const client = getClient();
+  const client = await getClient();
   const prompt = buildWriteShotPromptsText(input);
 
   const response = await (client.responses.create as any)({

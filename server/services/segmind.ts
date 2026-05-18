@@ -5,15 +5,10 @@
  * Models: Veo 3.1 Fast, Veo 3.1, Seedance 2.0 Fast, Seedance 2.0
  */
 import { saveBuffer, storageUrl } from '../storage.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
 type SegmindResolution = '480p' | '720p' | '1080p';
-
-const getApiKey = () => {
-  const key = process.env.SEGMIND_API_KEY;
-  if (!key) throw new Error('SEGMIND_API_KEY not set in .env');
-  return key;
-};
 
 // ─── Model registry ──────────────────────────────────────────────
 
@@ -158,7 +153,7 @@ export const generateSegmindVideo = async (
   const res = await fetch(model.endpoint, {
     method: 'POST',
     headers: {
-      'x-api-key': getApiKey(),
+      'x-api-key': await requireProviderApiKey('segmind'),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),

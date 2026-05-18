@@ -1,6 +1,7 @@
 import { saveBase64, saveBuffer, storageUrl } from '../storage.js';
 import { getRuntimePreset, type PipelinePreset } from '../presets.js';
 import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from './imagen.js';
+import { requireProviderApiKey } from './byok/providerKeys.js';
 
 type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 
@@ -13,12 +14,6 @@ type RefImage = {
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
 const NANO_BANANA_2_ENDPOINT = `${SEGMIND_BASE}/nano-banana-2`;
 const MAX_REFS = 14;
-
-const getApiKey = () => {
-  const key = process.env.SEGMIND_API_KEY;
-  if (!key) throw new Error('SEGMIND_API_KEY not set in .env');
-  return key;
-};
 
 const normalizeAspectRatio = (aspectRatio = '16:9'): string => {
   const supported = new Set(['auto', '1:1', '2:3', '3:2', '4:3', '3:4', '4:5', '5:4', '16:9', '9:16', '21:9']);
@@ -125,7 +120,7 @@ export const generateNanoBanana2 = async (
   const res = await fetch(NANO_BANANA_2_ENDPOINT, {
     method: 'POST',
     headers: {
-      'x-api-key': getApiKey(),
+      'x-api-key': await requireProviderApiKey('segmind'),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({

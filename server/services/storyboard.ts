@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-import OpenAI from 'openai';
 import { incrementColumn, insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { storageUrl } from '../storage.js';
 import { generateOpenAIImageFromPrompt, OpenAIRefImage } from './openai-image.js';
@@ -138,11 +137,6 @@ const estimateStoryboardCost = (imageCount: number): number => {
 const estimateStoryboardPlanCost = (): number => {
   const configured = Number(process.env.OPENAI_STORYBOARD_PLAN_COST_ESTIMATE || 0);
   return configured > 0 ? configured : 0.02;
-};
-
-const getOpenAIClient = () => {
-  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY required');
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 };
 
 const extractJsonObject = (text: string): any => {

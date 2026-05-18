@@ -12,6 +12,7 @@ import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
+import { runWithRequestContext } from '../requestContext.js';
 
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.6';
@@ -798,14 +799,16 @@ router.post('/', async (req, res) => {
     });
   }
 
-  const server = createHostedMcpServer(auth);
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  res.on('close', () => {
-    transport.close();
-    server.close();
+  await runWithRequestContext({ userId: auth.userId }, async () => {
+    const server = createHostedMcpServer(auth);
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => {
+      transport.close();
+      server.close();
+    });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
   });
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
 });
 
 router.get('/', (_req, res) => {
