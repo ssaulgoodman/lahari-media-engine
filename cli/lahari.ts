@@ -10,7 +10,7 @@ import { TEXT_PROVIDERS, getTextProvider } from '../constants/textProviders.js';
 import { VIDEO_MODELS, getVideoModel } from '../constants/videoModels.js';
 import { getImageGenerationModelName, getStyleOptionsModelName } from '../server/services/image-provider.js';
 
-const PROJECT_PROMPT_OVERRIDE_KINDS = ['concept', 'script', 'shot_prompts', 'storyboard', 'video'] as const;
+const PROJECT_PROMPT_OVERRIDE_KINDS = ['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks'] as const;
 
 const usage = () => {
   console.log(`Lahari CLI
@@ -56,15 +56,18 @@ Usage:
   npm run lahari -- apply lock-storyboard <projectId> <shotId> [versionId]
   npm run lahari -- apply unlock-storyboard <projectId> <shotId>
   npm run lahari -- apply project-preferences <projectId> <preferences.json> [baseHash]
-  npm run lahari -- apply project-prompt-override <projectId> <concept|script|shot_prompts|storyboard|video> <body.md> [baseHash]
+  npm run lahari -- apply project-prompt-override <projectId> <concept|script|shot_prompts|storyboard|video|character_looks|environment_looks> <body.md> [baseHash]
+  npm run lahari -- apply shot-workflow-modes <projectId> <shots.json>
   npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
   npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
   npm run lahari -- apply storyboard-prompts-bulk <projectId> <shots.json> [force]
+  npm run lahari -- apply storyboard-scene-markdown <projectId> <scene.md> [force]
   npm run lahari -- apply concept <projectId> <concept.json> [baseHash]
+  npm run lahari -- apply style-direction <projectId> <style.json> [baseHash]
   npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [baseHash]
   npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
   npm run lahari -- apply script-markdown <projectId> <draft.md> [baseFingerprint|force]
-  npm run lahari -- rollback project-prompt-override <projectId> <concept|script|shot_prompts|storyboard|video> [baseHash]
+  npm run lahari -- rollback project-prompt-override <projectId> <concept|script|shot_prompts|storyboard|video|character_looks|environment_looks> [baseHash]
   npm run lahari -- apply generate-storyboard <projectId> <shotId> [artist note...]
   npm run lahari -- apply generate-video <projectId> <shotId> [prompt override...]
 
@@ -217,7 +220,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'shot-prompts' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'concept' || action === 'video-prompt' || action === 'script' || action === 'script-markdown'))
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'shot-prompts' || action === 'shot-workflow-modes' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'storyboard-scene-markdown' || action === 'concept' || action === 'style-direction' || action === 'video-prompt' || action === 'script' || action === 'script-markdown'))
     || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'project-prompt-override'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
@@ -483,6 +486,13 @@ const main = async () => {
     return;
   }
 
+  if (domain === 'apply' && action === 'shot-workflow-modes' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const payload = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    console.log(JSON.stringify(await studio.applyShotWorkflowModes(project, Array.isArray(payload) ? payload : payload.shots), null, 2));
+    return;
+  }
+
   if (domain === 'apply' && action === 'storyboard-prompt' && projectId && arg4 && rest[0]) {
     const project = await studio.getFullProject(projectId);
     const promptPath = rest[0];
@@ -509,10 +519,29 @@ const main = async () => {
     return;
   }
 
+  if (domain === 'apply' && action === 'storyboard-scene-markdown' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const markdown = fs.readFileSync(arg4, 'utf8');
+    console.log(JSON.stringify(await studio.applyStoryboardSceneMarkdown(project, markdown, {
+      force: rest.includes('force') || rest.includes('--force'),
+    }), null, 2));
+    return;
+  }
+
   if (domain === 'apply' && action === 'concept' && projectId && arg4) {
     const project = await studio.getFullProject(projectId);
     const payload = JSON.parse(fs.readFileSync(arg4, 'utf8'));
     console.log(JSON.stringify(await studio.applyConcept(project, payload.concept || payload, {
+      baseHash: rest[0] || payload.baseHash,
+      force: rest.includes('force') || rest.includes('--force') || !!payload.force,
+    }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'style-direction' && projectId && arg4) {
+    const project = await studio.getFullProject(projectId);
+    const payload = JSON.parse(fs.readFileSync(arg4, 'utf8'));
+    console.log(JSON.stringify(await studio.applyStyleDirection(project, payload.style || payload, {
       baseHash: rest[0] || payload.baseHash,
       force: rest.includes('force') || rest.includes('--force') || !!payload.force,
     }), null, 2));

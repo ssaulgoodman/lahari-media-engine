@@ -16,6 +16,7 @@ import {
   appendSessionJournalEntry,
   compactText,
   defaultProjectWorkbenchDir,
+  shotWorkflowMode,
   shotLabel,
   webStudioUrl,
   type Project,
@@ -64,12 +65,18 @@ const filterShotTargets = (project: Project, shotIds?: string[]) => {
 
 const storyboardPromptCostEstimate = () => roundCost(Number(process.env.STORYBOARD_PROMPT_WRITE_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_PLAN_COST_ESTIMATE || 0.02));
 
-export const planGenerateStoryboard = (project: Project, shotId: string) => {
+type ModelOverride = {
+  storyboardProvider?: string;
+  videoModel?: string;
+};
+
+export const planGenerateStoryboard = (project: Project, shotId: string, modelOverride: ModelOverride = {}) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
-  const provider = getStoryboardProvider(project.storyboardProvider);
+  const provider = getStoryboardProvider(modelOverride.storyboardProvider || project.storyboardProvider);
   const shot = target.shot;
   const prerequisites = [
+    shotWorkflowMode(project, shot) === 'storyboard' ? null : 'Shot workflow is keyframe; set workflow_mode=storyboard before generating a storyboard board.',
     shot.storyboardPrompt ? null : 'Saved storyboard_prompt is required.',
     shot.locked ? 'Shot is locked; unlock before generating a new storyboard board.' : null,
     shot.storyboardLocked ? 'Storyboard board is locked; unlock before generating a replacement board.' : null,
@@ -94,7 +101,7 @@ export const planGenerateStoryboard = (project: Project, shotId: string) => {
     project: {
       id: project.id,
       title: project.title,
-      storyboardProvider: project.storyboardProvider,
+      storyboardProvider: modelOverride.storyboardProvider || project.storyboardProvider,
       aspectRatio: project.aspectRatio,
     },
     shot: {
@@ -395,12 +402,14 @@ export const bulkWriteStoryboardPrompts = async (project: Project, opts: {
   };
 };
 
-export const planGenerateVideo = (project: Project, shotId: string) => {
+export const planGenerateVideo = (project: Project, shotId: string, modelOverride: ModelOverride = {}) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
   const shot = target.shot;
-  const model = getVideoModel(project.videoModel);
-  const storyboardMode = model.key.startsWith('seedance') && !!shot.storyboardLocked && !!shot.storyboardUrl;
+  const videoModel = modelOverride.videoModel || project.videoModel;
+  const model = getVideoModel(videoModel);
+  const workflowMode = shotWorkflowMode({ ...project, videoModel } as Project, shot);
+  const storyboardMode = workflowMode === 'storyboard' && model.key.startsWith('seedance') && !!shot.storyboardLocked && !!shot.storyboardUrl;
   const prerequisites = [
     storyboardMode || shot.imageUrl ? null : model.key.startsWith('seedance')
       ? 'Locked storyboard board or start frame is required.'
@@ -426,7 +435,7 @@ export const planGenerateVideo = (project: Project, shotId: string) => {
     project: {
       id: project.id,
       title: project.title,
-      videoModel: project.videoModel,
+      videoModel,
       aspectRatio: project.aspectRatio,
       videoResolution: project.videoResolution,
     },
@@ -462,8 +471,8 @@ export const planGenerateVideo = (project: Project, shotId: string) => {
   };
 };
 
-export const applyGenerateStoryboard = async (project: Project, shotId: string, artistNote?: string) => {
-  const plan = planGenerateStoryboard(project, shotId);
+export const applyGenerateStoryboard = async (project: Project, shotId: string, artistNote?: string, modelOverride: ModelOverride = {}) => {
+  const plan = planGenerateStoryboard(project, shotId, modelOverride);
   if (!plan.canRun) {
     throw new Error(`Cannot generate storyboard: ${plan.prerequisites.join(' ')}`);
   }
@@ -472,6 +481,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     projectId: project.id,
     shotId,
     artistNote,
+    modelOverride: { storyboardProvider: modelOverride.storyboardProvider },
   });
   await recordDirectorEvent({
     projectId: project.id,
@@ -483,6 +493,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     payload: {
       artistNote: artistNote || null,
       provider: plan.provider,
+      modelOverride: modelOverride.storyboardProvider ? { storyboardProvider: modelOverride.storyboardProvider } : null,
       estimatedCost: plan.estimatedCost,
       result: eventResultPointers(result),
     },
@@ -525,11 +536,12 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
   shotIds?: string[];
   force?: boolean;
   artistNote?: string;
+  modelOverride?: ModelOverride;
 } = {}) => {
   const targets = filterShotTargets(project, opts.shotIds);
   const candidates = targets.map((target) => {
     const shot = target.shot;
-    const plan = shot.storyboardPrompt ? planGenerateStoryboard(project, shot.id) : null;
+    const plan = shot.storyboardPrompt ? planGenerateStoryboard(project, shot.id, opts.modelOverride || {}) : null;
     const shouldRun = !!plan
       && plan.canRun
       && !shot.storyboardLocked
@@ -555,7 +567,7 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
 
   for (const target of selected) {
     try {
-      const result = await applyGenerateStoryboard(project, target.shot.id, opts.artistNote);
+      const result = await applyGenerateStoryboard(project, target.shot.id, opts.artistNote, opts.modelOverride || {});
       results.push({
         shotId: target.shot.id,
         label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
@@ -586,6 +598,7 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
       requestedShotIds: opts.shotIds || null,
       force: !!opts.force,
       artistNote: opts.artistNote || null,
+      modelOverride: opts.modelOverride || null,
       estimatedCost,
       results: results.map((row) => ({ shotId: row.shotId, label: row.label, ok: row.ok, error: row.error || null, result: row.result || null })),
       skipped,
@@ -626,6 +639,7 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
   feedback: string;
   previousVersionId?: string;
   artistReferenceImagePath?: string;
+  modelOverride?: ModelOverride;
 }) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);
@@ -633,7 +647,7 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
   if (!target.shot.storyboardUrl && !opts.previousVersionId) {
     throw new Error('Cannot refine storyboard image: generate a storyboard board first.');
   }
-  const plan = planGenerateStoryboard(project, shotId);
+  const plan = planGenerateStoryboard(project, shotId, opts.modelOverride || {});
   const result = await generateStoryboardVersion({
     projectId: project.id,
     shotId,
@@ -641,6 +655,7 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
     previousVersionId: opts.previousVersionId,
     refineMode: 'edit_image',
     artistReferenceImagePath: opts.artistReferenceImagePath,
+    modelOverride: { storyboardProvider: opts.modelOverride?.storyboardProvider },
   });
   await recordDirectorEvent({
     projectId: project.id,
@@ -653,6 +668,7 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
       feedback: opts.feedback,
       previousVersionId: opts.previousVersionId || target.shot.storyboardVersionId || null,
       provider: plan.provider,
+      modelOverride: opts.modelOverride?.storyboardProvider ? { storyboardProvider: opts.modelOverride.storyboardProvider } : null,
       estimatedCost: plan.estimatedCost,
       result: eventResultPointers(result),
     },
@@ -907,13 +923,13 @@ export const revertProjectPromptOverrideConfig = async (
   };
 };
 
-export const applyGenerateVideo = async (project: Project, shotId: string, promptOverride?: string) => {
-  const plan = planGenerateVideo(project, shotId);
+export const applyGenerateVideo = async (project: Project, shotId: string, promptOverride?: string, modelOverride: ModelOverride = {}) => {
+  const plan = planGenerateVideo(project, shotId, modelOverride);
   if (!plan.canRun) {
     throw new Error(`Cannot generate video: ${plan.prerequisites.join(' ')}`);
   }
 
-  const result = await generateShotVideo(project.id, shotId, { promptOverride });
+  const result = await generateShotVideo(project.id, shotId, { promptOverride, modelOverride: { videoModel: modelOverride.videoModel } });
   await recordDirectorEvent({
     projectId: project.id,
     source: 'codex',
@@ -925,6 +941,7 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
       promptOverride: promptOverride || null,
       mode: plan.mode,
       model: plan.model,
+      modelOverride: modelOverride.videoModel ? { videoModel: modelOverride.videoModel } : null,
       estimatedCost: plan.estimatedCost,
       result: eventResultPointers(result),
     },

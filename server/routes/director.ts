@@ -259,6 +259,11 @@ router.post('/apply/shot-prompts', audited('director.apply.shot_prompts', async 
   { force: !!req.body.force },
 )));
 
+router.post('/apply/shot-workflow-modes', audited('director.apply.shot_workflow_modes', async (req) => studio.applyShotWorkflowModes(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.shots,
+)));
+
 router.post('/apply/storyboard-prompt', audited('director.apply.storyboard_prompt', async (req) => studio.applyStoryboardPrompt(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
@@ -270,6 +275,12 @@ router.post('/apply/storyboard-prompt', audited('director.apply.storyboard_promp
 router.post('/apply/storyboard-prompts-bulk', audited('director.apply.storyboard_prompts_bulk', async (req) => studio.applyStoryboardPromptsBulk(
   await fullProjectForUser(req.body.projectId, req.userId),
   { shots: req.body.shots, force: !!req.body.force },
+)));
+
+router.post('/apply/storyboard-scene-markdown', audited('director.apply.storyboard_scene_markdown', async (req) => studio.applyStoryboardSceneMarkdown(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.markdown,
+  { force: !!req.body.force },
 )));
 
 router.post('/apply/script', audited('director.apply.script', async (req) => studio.applyScript(
@@ -287,6 +298,12 @@ router.post('/apply/script-markdown', audited('director.apply.script_markdown', 
 router.post('/apply/concept', audited('director.apply.concept', async (req) => studio.applyConcept(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.concept,
+  { baseHash: req.body.baseHash, force: !!req.body.force },
+)));
+
+router.post('/apply/style-direction', audited('director.apply.style_direction', async (req) => studio.applyStyleDirection(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.style,
   { baseHash: req.body.baseHash, force: !!req.body.force },
 )));
 
@@ -319,11 +336,13 @@ router.post('/rollback/project-prompt-override', audited('director.rollback.proj
 const previewGenerateStoryboard = audited('director.preview.generate_storyboard', async (req) => studio.planGenerateStoryboard(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
+  req.body.modelOverride || {},
 ));
 
 const previewGenerateVideo = audited('director.preview.generate_video', async (req) => studio.planGenerateVideo(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
+  req.body.modelOverride || {},
 ));
 
 router.post('/preview/generate-storyboard', previewGenerateStoryboard);
@@ -335,6 +354,7 @@ router.post('/generate/storyboard', audited('director.generate.storyboard', asyn
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
   req.body.artistNote,
+  req.body.modelOverride || {},
 )));
 
 router.post('/generate/storyboards-bulk', audited('director.generate.storyboards_bulk', async (req) => studio.bulkGenerateStoryboards(
@@ -343,6 +363,7 @@ router.post('/generate/storyboards-bulk', audited('director.generate.storyboards
     shotIds: req.body.shotIds,
     force: !!req.body.force,
     artistNote: req.body.artistNote,
+    modelOverride: req.body.modelOverride || {},
   },
 )));
 
@@ -350,6 +371,7 @@ router.post('/generate/video', audited('director.generate.video', async (req) =>
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,
   req.body.promptOverride,
+  req.body.modelOverride || {},
 )));
 
 router.post('/refine/storyboard-image', audited('director.refine.storyboard_image', async (req) => studio.refineStoryboardImage(
@@ -359,6 +381,7 @@ router.post('/refine/storyboard-image', audited('director.refine.storyboard_imag
     feedback: req.body.feedback,
     previousVersionId: req.body.previousVersionId,
     artistReferenceImagePath: req.body.artistReferenceImagePath,
+    modelOverride: req.body.modelOverride || {},
   },
 )));
 

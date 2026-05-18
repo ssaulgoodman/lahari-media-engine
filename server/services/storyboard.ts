@@ -543,6 +543,9 @@ export const generateStoryboardVersion = async (opts: {
   previousVersionId?: string;
   refineMode?: StoryboardRefineMode;
   artistReferenceImagePath?: string;
+  modelOverride?: {
+    storyboardProvider?: string;
+  };
 }): Promise<{
   versionId: string;
   assetId: string;
@@ -605,7 +608,7 @@ ${artistRefNote}`
   const preferences = await getProjectPreferencesState(ctx.project as any);
 
   try {
-    const rendered = await renderWithProvider(preferences.preferences.storyboardProvider, prompt, ctx.project.aspect_ratio || '16:9', refs);
+    const rendered = await renderWithProvider(opts.modelOverride?.storyboardProvider || preferences.preferences.storyboardProvider, prompt, ctx.project.aspect_ratio || '16:9', refs);
     const assetId = uuidv4();
     const versionId = uuidv4();
     const durationMs = Date.now() - t0;

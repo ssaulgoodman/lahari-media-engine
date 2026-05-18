@@ -33,6 +33,9 @@ type VideoGenerationRef = {
 export type GenerateShotVideoOptions = {
   promptOverride?: string;
   refs?: VideoGenerationRef[];
+  modelOverride?: {
+    videoModel?: string;
+  };
 };
 
 export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
@@ -51,9 +54,17 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
   }
 
   const projectPreferences = await getProjectPreferencesState(project as any);
-  const videoModelKey = (projectPreferences.preferences.videoModel || 'veo-3.1-fast') as SegmindModelKey;
+  const videoModelKey = (opts.modelOverride?.videoModel || projectPreferences.preferences.videoModel || 'veo-3.1-fast') as SegmindModelKey;
   const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
-  const useStoryboardMode = modelSpec.family === 'seedance' && !!shot.storyboard_locked && !!shot.storyboard_asset_id;
+  const forcedKeyframe = shot.workflow_mode === 'keyframe';
+  const forcedStoryboard = shot.workflow_mode === 'storyboard';
+  const useStoryboardMode = !forcedKeyframe && modelSpec.family === 'seedance' && !!shot.storyboard_locked && !!shot.storyboard_asset_id;
+
+  if (forcedStoryboard && !useStoryboardMode) {
+    const error = new Error('Shot workflow is storyboard, but no locked storyboard asset is available') as Error & { statusCode?: number };
+    error.statusCode = 400;
+    throw error;
+  }
 
   if (!shot.image_asset_id && !useStoryboardMode) {
     const error = new Error('Shot has no image yet') as Error & { statusCode?: number };

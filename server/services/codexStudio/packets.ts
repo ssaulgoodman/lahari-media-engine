@@ -10,6 +10,7 @@ import {
   scriptContentHash,
   shotPromptHash,
   storyboardPromptHash,
+  styleDirectionHash,
   statusCounts,
   usesStoryboardWorkflow,
   videoPromptHash,
@@ -53,6 +54,7 @@ export const buildProjectPacket = async (project: Project) => {
     baseHashes: {
       concept: conceptHash(project.lockedConcept),
       script: scriptContentHash(project),
+      style: styleDirectionHash(project),
     },
     source: {
       acceptedSeeds: workflow.acceptedSeeds,
@@ -217,6 +219,7 @@ export const buildShotPacket = (project: Project, shotId: string) => {
         storyboardStatus: shot.storyboardStatus,
         endVisualPrompt: shot.endVisualPrompt,
         continuityFrom: shot.continuityFrom,
+        workflowMode: shot.workflowMode || 'auto',
         usePrevStoryboardRef: shot.usePrevStoryboardRef,
         includePrevCutPlan: shot.includePrevCutPlan,
         refinedFromPrevFrame: shot.refinedFromPrevFrame,

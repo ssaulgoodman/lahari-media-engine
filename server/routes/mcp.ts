@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -7,21 +8,21 @@ import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
-import { verifyMcpBearerToken } from '../services/mcpTokens.js';
+import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.2';
-const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
+const HOSTED_MCP_VERSION = '0.1.6';
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then call write_project_notebook for the chosen project. Write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
-Text generation is harness-native: write concepts, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation.
+Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
 Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
 
@@ -40,6 +41,8 @@ const bearerToken = (header?: string | null) => {
   return match?.[1]?.trim() || null;
 };
 
+const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+
 const idString = z.string().min(1).max(160);
 const projectId = idString.describe('Lahari project ID.');
 const shotId = idString.describe('Shot ID within the project.');
@@ -47,8 +50,15 @@ const shortText = z.string().max(2000);
 const mediumText = z.string().max(8000);
 const promptText = z.string().min(1).max(30000);
 const scriptMarkdownText = z.string().min(1).max(120000);
+const storyboardSceneMarkdownText = z.string().min(1).max(80000);
 const optionalPromptText = z.string().max(30000).optional();
+const notebookFilePath = z.string().min(1).max(800).describe('Notebook file path returned by get_project_notebook_manifest.');
 const maxArray = <T extends z.ZodTypeAny>(schema: T, max: number) => z.array(schema).max(max);
+const modelOverrideSchema = z.object({
+  storyboardProvider: idString.optional(),
+  videoModel: idString.optional(),
+}).optional();
+const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 
 const MCP_LIMITS = {
   requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
@@ -159,6 +169,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'list_',
       'search_',
       'get_',
+      'read_',
       'plan_',
       'preview_',
       'review_',
@@ -329,9 +340,77 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('write_project_notebook', {
     title: 'Write project notebook',
-    description: 'Read-only. Returns deterministic local notebook files for this project. The agent should write each returned file path relative to the current workspace.',
+    description: 'Read-only final fallback. Returns deterministic local notebook file payloads in one response. Prefer CLI sync; if npx is blocked, use get_project_notebook_manifest + read_project_notebook_file path-by-path.',
     inputSchema: { projectId },
   }, async ({ projectId }) => studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId)));
+
+  registerTool('get_project_notebook_manifest', {
+    title: 'Get project notebook manifest',
+    description: 'Read-only. Returns notebook file metadata without file bodies. Use with read_project_notebook_file when CLI sync is blocked and write_project_notebook would be too large.',
+    inputSchema: { projectId },
+  }, async ({ projectId }) => {
+    const notebook = await studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId));
+    return {
+      kind: 'lahari.notebook.manifest',
+      notebookVersion: notebook.notebookVersion,
+      generatedAt: notebook.generatedAt,
+      project: notebook.project,
+      baseDir: notebook.baseDir,
+      files: notebook.files.map((file) => ({
+        path: file.path,
+        mode: file.mode,
+        writePolicy: file.writePolicy,
+        description: file.description,
+        hash: sha256(file.content),
+        size: Buffer.byteLength(file.content, 'utf8'),
+      })),
+      next: 'Call read_project_notebook_file for each path you need, then write the returned content to that path relative to the current workspace.',
+    };
+  });
+
+  registerTool('read_project_notebook_file', {
+    title: 'Read project notebook file',
+    description: 'Read-only. Returns one deterministic notebook file body by path. Use after get_project_notebook_manifest to avoid giant MCP payloads.',
+    inputSchema: {
+      projectId,
+      path: notebookFilePath,
+    },
+  }, async ({ projectId, path: requestedPath }) => {
+    const notebook = await studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId));
+    const file = notebook.files.find((candidate) => candidate.path === requestedPath);
+    if (!file) {
+      throw new Error(JSON.stringify({
+        code: 'notebook_file_not_found',
+        message: `Notebook file not found: ${requestedPath}`,
+        details: { requestedPath },
+      }));
+    }
+    return {
+      kind: 'lahari.notebook.file',
+      notebookVersion: notebook.notebookVersion,
+      generatedAt: notebook.generatedAt,
+      project: notebook.project,
+      baseDir: notebook.baseDir,
+      file: {
+        path: file.path,
+        mode: file.mode,
+        writePolicy: file.writePolicy,
+        description: file.description,
+        hash: sha256(file.content),
+        size: Buffer.byteLength(file.content, 'utf8'),
+        content: file.content,
+      },
+    };
+  });
+
+  registerTool('mint_cli_token', {
+    title: 'Mint short-lived CLI sync token',
+    description: 'Mutating security surface. Issues a short-lived project-scoped token for npx @ssaulgoodman420/lahari-cli sync so notebook file bodies do not travel through chat.',
+    inputSchema: {
+      projectId,
+      ttlMinutes: z.number().int().min(5).max(180).optional(),
+    },
+  }, async ({ projectId, ttlMinutes }) => createCliToken(auth.userId, { projectId, ttlMinutes }));
 
   registerTool('review_storyboard_prompts', {
     title: 'Review storyboard prompts',
@@ -420,29 +499,30 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('plan_generate_storyboard', {
     title: 'Plan storyboard generation',
     description: 'Read-only. Reports prerequisites and cost before generating a storyboard board.',
-    inputSchema: { projectId, shotId },
-  }, async ({ projectId, shotId }) => studio.planGenerateStoryboard(await fullProjectForUser(projectId, auth.userId), shotId));
+    inputSchema: { projectId, shotId, modelOverride: modelOverrideSchema },
+  }, async ({ projectId, shotId, modelOverride }) => studio.planGenerateStoryboard(await fullProjectForUser(projectId, auth.userId), shotId, modelOverride || {}));
 
   registerTool('plan_generate_video', {
     title: 'Plan video generation',
     description: 'Read-only. Reports prerequisites and cost before generating a shot video.',
-    inputSchema: { projectId, shotId },
-  }, async ({ projectId, shotId }) => studio.planGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId));
+    inputSchema: { projectId, shotId, modelOverride: modelOverrideSchema },
+  }, async ({ projectId, shotId, modelOverride }) => studio.planGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, modelOverride || {}));
 
-  const generateStoryboard = async ({ projectId, shotId, artistNote }: any) => studio.applyGenerateStoryboard(
+  const generateStoryboard = async ({ projectId, shotId, artistNote, modelOverride }: any) => studio.applyGenerateStoryboard(
     await fullProjectForUser(projectId, auth.userId),
     shotId,
     artistNote,
+    modelOverride || {},
   );
   registerTool('apply_generate_storyboard', {
     title: 'Generate storyboard board',
     description: 'Mutating and paid. Generates a new storyboard board for one shot.',
-    inputSchema: { projectId, shotId, artistNote: shortText.optional() },
+    inputSchema: { projectId, shotId, artistNote: shortText.optional(), modelOverride: modelOverrideSchema },
   }, generateStoryboard);
   registerTool('generate_storyboard', {
     title: 'Generate storyboard board',
     description: 'Alias for apply_generate_storyboard.',
-    inputSchema: { projectId, shotId, artistNote: shortText.optional() },
+    inputSchema: { projectId, shotId, artistNote: shortText.optional(), modelOverride: modelOverrideSchema },
   }, generateStoryboard);
 
   registerTool('bulk_generate_storyboards', {
@@ -453,11 +533,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       shotIds: maxArray(idString, 100).optional(),
       force: z.boolean().optional(),
       artistNote: shortText.optional(),
+      modelOverride: modelOverrideSchema,
     },
-  }, async ({ projectId, shotIds, force, artistNote }) => studio.bulkGenerateStoryboards(await fullProjectForUser(projectId, auth.userId), {
+  }, async ({ projectId, shotIds, force, artistNote, modelOverride }) => studio.bulkGenerateStoryboards(await fullProjectForUser(projectId, auth.userId), {
     shotIds,
     force,
     artistNote,
+    modelOverride: modelOverride || {},
   }));
 
   registerTool('refine_storyboard_image', {
@@ -469,11 +551,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       feedback: mediumText.min(1),
       previousVersionId: idString.optional(),
       artistReferenceImagePath: idString.optional(),
+      modelOverride: modelOverrideSchema,
     },
-  }, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath }) => studio.refineStoryboardImage(
+  }, async ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath, modelOverride }) => studio.refineStoryboardImage(
     await fullProjectForUser(projectId, auth.userId),
     shotId,
-    { feedback, previousVersionId, artistReferenceImagePath },
+    { feedback, previousVersionId, artistReferenceImagePath, modelOverride: modelOverride || {} },
   ));
 
   registerTool('lock_storyboard', {
@@ -495,7 +578,6 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       projectId,
       preferences: z.object({
         textProvider: idString.optional(),
-        imageModel: idString.optional(),
         storyboardProvider: idString.optional(),
         videoModel: idString.optional(),
       }),
@@ -520,6 +602,19 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     },
   }, async ({ projectId, shots, force }) => studio.applyShotPrompts(await fullProjectForUser(projectId, auth.userId), shots, { force }));
 
+  registerTool('apply_shot_workflow_modes', {
+    title: 'Apply shot workflow modes',
+    description: 'Mutating. Persists per-shot workflow mode overrides: auto, storyboard, or keyframe.',
+    inputSchema: {
+      projectId,
+      shots: maxArray(z.object({
+        shotId,
+        workflowMode: workflowModeSchema,
+        note: mediumText.optional(),
+      }), 100).min(1),
+    },
+  }, async ({ projectId, shots }) => studio.applyShotWorkflowModes(await fullProjectForUser(projectId, auth.userId), shots));
+
   registerTool('apply_storyboard_prompt', {
     title: 'Apply storyboard prompt',
     description: 'Mutating. Persists a Codex-written storyboard prompt and cut plan.',
@@ -541,7 +636,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('apply_storyboard_prompts_bulk', {
     title: 'Apply storyboard prompts bulk',
-    description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots.',
+    description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. Prefer apply_storyboard_scene_markdown for artist-facing scene-by-scene writing.',
     inputSchema: {
       projectId,
       shots: maxArray(z.object({
@@ -553,6 +648,16 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, shots, force }) => studio.applyStoryboardPromptsBulk(await fullProjectForUser(projectId, auth.userId), { shots, force }));
+
+  registerTool('apply_storyboard_scene_markdown', {
+    title: 'Apply storyboard scene markdown',
+    description: 'Mutating. Parses an edited drafts/storyboards/<scene>.md file, validates per-shot hashes, and persists storyboard prompts plus Seedance cut plans scene-by-scene.',
+    inputSchema: {
+      projectId,
+      markdown: storyboardSceneMarkdownText,
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, markdown, force }) => studio.applyStoryboardSceneMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { force }));
 
   registerTool('apply_concept', {
     title: 'Apply concept',
@@ -570,6 +675,21 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, concept, baseHash, force }) => studio.applyConcept(await fullProjectForUser(projectId, auth.userId), concept, { baseHash, force }));
+
+  registerTool('apply_style_direction', {
+    title: 'Apply style direction',
+    description: 'Mutating. Persists Codex-written project style direction text without generating or locking a style image.',
+    inputSchema: {
+      projectId,
+      style: z.object({
+        styleDescription: promptText,
+        styleGenerationPrompt: optionalPromptText,
+        colorPalette: mediumText.optional(),
+      }),
+      baseHash: z.string().optional(),
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, style, baseHash, force }) => studio.applyStyleDirection(await fullProjectForUser(projectId, auth.userId), style, { baseHash, force }));
 
   registerTool('apply_video_prompt', {
     title: 'Apply video prompt',
@@ -633,8 +753,8 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   registerTool('apply_generate_video', {
     title: 'Generate shot video',
     description: 'Mutating and paid. Generates a new video for one shot.',
-    inputSchema: { projectId, shotId, promptOverride: optionalPromptText },
-  }, async ({ projectId, shotId, promptOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride));
+    inputSchema: { projectId, shotId, promptOverride: optionalPromptText, modelOverride: modelOverrideSchema },
+  }, async ({ projectId, shotId, promptOverride, modelOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride, modelOverride || {}));
 
   registerTool('lahari_capture_issue', {
     title: 'Capture Lahari director issue',

@@ -5,6 +5,7 @@ import {
   compactText,
   md,
   scriptContentHash,
+  styleDirectionHash,
   shotPromptHash,
   shotLabel,
   storyboardPromptHash,
@@ -16,6 +17,7 @@ import {
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
+import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
 import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
 
 export type NotebookFile = {
@@ -35,7 +37,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-17.editable-script-v1';
+const NOTEBOOK_VERSION = '2026-05-17.agency-pass-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -61,11 +63,11 @@ These three fields are the operating contract for the agent. Seed kind says what
 
 Supabase is canonical. This is an artist notebook, not the Lahari source checkout. Use Lahari MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Lahari instead of substituting shell commands.
 
-If the MCP server returns a newer notebookVersion than the one shown here or in lahari/projects/${project.id}/notebook.json, refresh by calling write_project_notebook and writing the returned files before continuing.
+If the MCP server returns a newer notebookVersion than the one shown here or in lahari/projects/${project.id}/notebook.json, refresh before continuing. Preferred path: call mint_cli_token, then run the returned command for the active shell in this workspace. Use commands.posix on macOS/Linux. Use commands.powershell on Windows; it wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is still blocked, call get_project_notebook_manifest and then read_project_notebook_file path-by-path. Last fallback: call write_project_notebook and write the returned files manually only when the payload is small enough.
 
-Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with write_project_notebook after attach or after major mutations.
+Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
 
-Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
@@ -76,7 +78,7 @@ Use journal.md for your own concise operator notes: what changed, why, and what 
 Default ritual:
 1. resolve_project when the artist names a project; use list_queue/search_catalog only for catalog/queue-backed music-video work
 2. attach_director_session once you have a projectId
-3. write_project_notebook
+3. mint_cli_token, then npx @ssaulgoodman420/lahari-cli sync; if blocked, use get_project_notebook_manifest + read_project_notebook_file
 4. read relevant mirrors and project mode before proposing changes
 5. apply approved changes through typed MCP tools
 6. refresh affected notebook files
@@ -144,8 +146,8 @@ ${diagnosis.productionRead}
 
 - Accepted seeds: ${workflow.acceptedSeeds.join(', ')}
 - Source rules: ${preset.source.rules}
-- Project brief: ${compactText(typeof project.projectBrief === 'string' ? project.projectBrief : JSON.stringify(project.projectBrief || null), 700)}
-- Source payload: ${compactText(typeof project.sourcePayload === 'string' ? project.sourcePayload : JSON.stringify(project.sourcePayload || null), 700)}
+- Project brief: ${project.projectBrief ? md(JSON.stringify(project.projectBrief, null, 2)) : 'None saved.'}
+- Source payload: ${project.sourcePayload ? md(JSON.stringify(project.sourcePayload, null, 2)) : 'None saved.'}
 
 ## Bottleneck
 
@@ -170,10 +172,10 @@ Project: ${project.title}
 
 ## Locked Concept
 
-${locked ? `### ${locked.title || locked.subject || locked.primarySubject || locked.deity || 'Untitled'}
+${locked ? `### ${locked.title || locked.deity || 'Untitled'}
 
 - Direction: ${locked.direction || locked.conceptDirection || 'None'}
-- Subject: ${locked.subject || locked.primarySubject || locked.deity || 'None'}
+- Deity: ${locked.deity || 'None'}
 - Mood: ${locked.mood || 'None'}
 
 ${md(locked.description || locked.conceptDirection || JSON.stringify(locked, null, 2))}` : 'No locked concept.'}
@@ -277,6 +279,7 @@ const buildShotPrompts = (project: Project): string => {
   const body = project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => `## ${shotLabel(sceneIndex, shotIndex)}: ${compactText(shot.direction, 120) || 'Shot'}
 
 - Shot ID: ${shot.id}
+- Workflow mode: ${shot.workflowMode || 'auto'}
 - Shot prompt base hash: ${shotPromptHash(shot)}
 - Storyboard base hash: ${storyboardPromptHash(shot)}
 - Duration: ${shot.duration}s
@@ -347,11 +350,20 @@ ${md(shot.storyboardCutPlan)}
 `,
 });
 
+const buildStoryboardSceneDraftFile = (project: Project, sceneIndex: number, scene: Project['scenes'][number]): NotebookFile => ({
+  path: storyboardSceneDraftPath(project, sceneIndex, scene),
+  mode: 'draft',
+  writePolicy: 'review_before_overwrite',
+  description: `Editable storyboard prompt/cut-plan draft for ${scene.sectionLabel || `Scene ${sceneIndex + 1}`}. Apply with apply_storyboard_scene_markdown.`,
+  content: buildStoryboardSceneMarkdownDraft(project, sceneIndex, scene),
+});
+
 const buildHashes = async (project: Project) => {
   const config = await getProjectConfigState(project);
   return {
     generatedAt: projectUpdatedAt(project),
     script: { hash: scriptContentHash(project) },
+    style: { hash: styleDirectionHash(project) },
     prompts: {
       ...Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
         kind,
@@ -394,6 +406,7 @@ export const buildNotebookMirrorArtifacts = (
     concept?: boolean;
     script?: boolean;
     scriptDraft?: boolean;
+    storyboardSceneIds?: string[];
     style?: boolean;
     cast?: boolean;
     environments?: boolean;
@@ -492,6 +505,12 @@ export const buildNotebookMirrorArtifacts = (
       }
     }
   }
+  if (opts.storyboardSceneIds?.length) {
+    const requested = new Set(opts.storyboardSceneIds);
+    for (const [sceneIndex, scene] of project.scenes.entries()) {
+      if (requested.has(scene.id)) files.push(buildStoryboardSceneDraftFile(project, sceneIndex, scene));
+    }
+  }
   return files;
 };
 
@@ -587,6 +606,7 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
       content: buildScriptMarkdownDraft(project),
     },
+    ...project.scenes.map((scene, sceneIndex) => buildStoryboardSceneDraftFile(project, sceneIndex, scene)),
     {
       path: `${baseDir}/mirrors/style.md`,
       mode: 'mirror',
@@ -672,6 +692,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific npx @ssaulgoodman420/lahari-cli sync command so file bodies do not travel through chat. If shell/npx/npm is blocked, prefer get_project_notebook_manifest + read_project_notebook_file path-by-path. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. Apply scene storyboard drafts with apply_storyboard_scene_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

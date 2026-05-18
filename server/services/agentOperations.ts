@@ -76,6 +76,7 @@ const labelTool = (tool: string, args: Record<string, any>) => {
   if (tool.includes('generate_storyboard') || tool.includes('generate.storyboard')) return `Generating storyboard${shot}`;
   if (tool.includes('refine_storyboard') || tool.includes('refine.storyboard')) return `Refining storyboard${shot}`;
   if (tool.includes('generate_video') || tool.includes('generate.video')) return `Generating video${shot}`;
+  if (tool.includes('storyboard_scene_markdown')) return 'Updating storyboard scene prompts';
   if (tool.includes('apply_storyboard_prompt') || tool.includes('storyboard_prompt')) return `Updating storyboard prompt${shot}`;
   if (tool.includes('apply_script') || tool.includes('apply.script')) return 'Updating script';
   if (tool.includes('apply_concept') || tool.includes('apply.concept')) return 'Updating concept';

@@ -62,7 +62,7 @@ Not every operation should round-trip through the Lahari backend to call an LLM.
 | Storyboard prompt + cut plan writing | Harness-native | Text, conversational |
 | Storyboard prompt refines | Harness-native | Read existing + rewrite per instruction |
 | Video prompt writing/refines | Harness-native | Text, derived from cut plan |
-| Style direction brainstorm | Harness-native (rare; styles → presets) | Text |
+| Style direction brainstorm | Harness-native | Text generation, no double-hop needed |
 | Style preset lock | Tool call | Image upload |
 | Style visualization | Tool call | Image generation API |
 | Character/environment looks | Tool call | Image generation API |
@@ -77,6 +77,10 @@ Not every operation should round-trip through the Lahari backend to call an LLM.
 **The seam: apply-only tools.** Take pre-written structured content, validate against constraints (schema, scene durations, prompt length caps, etc.), persist via the same path as existing apply tools, record a director event. No LLM call inside the tool. Codex writes the content; the apply tool is the constraint enforcer. If the content violates a constraint, apply rejects with structured error and Codex retries.
 
 **The web studio retains its own "Generate" buttons** with backend LLM endpoints so non-harness users still get AI authoring. Two paths converge at the same persistence layer.
+
+**Concept/style simplification:** concept and style ideation follow the same Codex-native apply-only pattern as script/storyboard text. Codex should read the song, script, culture, audience, and project taste; write one or more concept/style directions directly; persist them through typed apply tools; then call visualization only when pixels are needed. The backend "generate 3 ideas + refine idea + visualize" loop remains useful for the civilian Studio button path, but it is not the director-agent default. This removes a needless LLM round-trip, makes edits surgical, and keeps taste reasoning in the harness where the artist is already talking.
+
+**Look recipe overrides:** character and environment look generation have the same project-level recipe override surface as storyboard/video. Directors can tune how cast and environment looks are authored for a project (`character_looks`, `environment_looks`) while keeping actual image rendering as a tool call.
 
 **Nuance on media generation as harness capabilities evolve.** The "tool call" entries above are not permanent boundaries — they reflect where harness capability is *today*. The honest framing is "does the harness have a capable native generator for this specific case":
 
@@ -131,15 +135,16 @@ Three tiers within tier-2 (project state) operations:
 
 **Engine sessions (this repo):** this repo is for code, prompts, infra, docs, schema, and deployment. Internal MCP and CLI are available for engine-side debug, smoke tests, and recovery, but they are not the artist/director surface. When an engineer wants to test director behavior, use an artist-shaped empty folder with remote MCP installed.
 
-**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, calls `write_project_notebook(projectId)`, and the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + drafts + config + journal all written by the tool, not by an `npx setup` step.
+**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, then refreshes the notebook. Preferred path: call `mint_cli_token(projectId)` and run the returned shell-specific command so file bodies move over HTTP directly to disk, not through chat. On Windows, the returned PowerShell command wraps `npx` through `cmd /c` to avoid `npx.ps1` execution-policy blocks. If shell/npx/npm is still blocked, call `get_project_notebook_manifest` and `read_project_notebook_file` path-by-path. Last fallback: call `write_project_notebook(projectId)` and manually write returned file payloads when the notebook is small enough. Either way the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + drafts + config + journal.
 
 Notebook roles:
 - `mirrors/` are read-only Supabase snapshots. Refresh them from notebook output or `changedArtifacts`.
 - `drafts/` are editable working copies. In phase 1, `drafts/script.md` is the script surgery surface; apply with `apply_script_markdown`, which parses strict markdown, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
+- `drafts/storyboards/<scene>.md` files are scene-level storyboard prompt + Seedance cut-plan surfaces. Apply with `apply_storyboard_scene_markdown`; write adjacent shots together so continuity, motifs, and pacing are authored as one scene rather than as isolated prompt calls.
 - `config/` is the project override layer. Edit prompt/preference files locally, then persist with config apply tools.
 - `journal.md` is local working memory, not canonical project state.
 
-Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
+Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. The preferred notebook path uses `npx @ssaulgoodman420/lahari-cli`, so it requires a working Node/npx runtime in the artist harness environment; the manifest + per-file MCP path is the no-npx fallback, and `write_project_notebook` is the small-notebook final fallback. Auth via account-scoped bearer token plus short-lived project-scoped CLI tokens.
 
 **Plugin distribution gates** (all true as of 2026-05-15):
 1. ✅ Second-user setup is two terminal commands (`export TOKEN=...` + `codex mcp add ...` / `claude mcp add-json ...`) plus a one-time harness restart. `/connect` page issues the snippets.
@@ -174,7 +179,7 @@ When a gap shows up in Codex/Claude Code: file it upstream, route around with br
 Sessions are split by **workspace**, not by toggle inside one workspace:
 
 - **Engine sessions** — happen in this repo (`lahari-codex-native` or `abstraction` worktree). Improve code, prompts, infra, docs, schema. Full shell + edit + git access. Internal MCP and CLI are available here for engine-side debug, scripting, and disaster recovery, but those are *tools*, not a separate session type.
-- **Director sessions** — happen in an artist workspace (any empty folder with the remote MCP installed). Attach to a Lahari project via `/mcp`, materialize the workspace via `write_project_notebook`, operate through the apply tool surface. The orchestrator skill at `.agents/skills/lahari-director/SKILL.md` (materialized into the artist workspace by the notebook tool) drives the protocol.
+- **Director sessions** — happen in an artist workspace (any empty folder with the remote MCP installed). Attach to a Lahari project via `/mcp`, materialize the workspace via `mint_cli_token` + `npx @ssaulgoodman420/lahari-cli sync`, or the manifest + per-file MCP fallback when npx is blocked, then operate through the apply tool surface. The orchestrator skill at `.agents/skills/lahari-director/SKILL.md` (materialized into the artist workspace by notebook sync) drives the protocol.
 
 Earlier doctrine ran both in the same worktree as a transitional pattern from before distribution shipped. That's no longer the recommended path — testing director-session behavior is cleaner from an artist-shaped workspace (any empty folder + remote MCP) than from this engine repo.
 

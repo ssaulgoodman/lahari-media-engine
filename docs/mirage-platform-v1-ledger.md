@@ -515,6 +515,7 @@ Append a one-line note when finishing a task. Keep it dated.
 2026-05-18 Claude: D20 added — Mirage uses Segmind for all image+video gen; no Vertex/GCP fallback in Mirage runtime. T1.9 added covering the routing change (Segmind serves Nano Banana Pro + 2; preset default switches to nano-banana-pro; Vertex fallback stripped from studio prefix). Lahari `main` keeps existing GCP fallback path unchanged
 2026-05-18 Claude: D6 tightened — explicit that both Codex Desktop AND Claude Code are supported harnesses; both bring their own LLM subscription; Anthropic/OpenAI are pure web-studio-without-harness concerns. T2.8 Account Keys UI splits into Required vs Optional sections with explanatory copy
 2026-05-18 🔒 LOCKED. Sandbox session ends. Next session opens in `lahari-preset-abstraction` worktree directly (not in the Claude Code sandbox) and starts execution from Day 1 of §6 sequencing
+2026-05-18 Codex: T7 started. Dirty Mirage prep committed as cd3064a; merged latest `main` into `codex/preset-abstraction`, preserving Mirage StartProject/mode-aware docs and taking main notebook-sync/CLI release plumbing. Verification passed: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
 ```
 
 (Append below.)

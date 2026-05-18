@@ -12,7 +12,11 @@ const pkg = require('../package.json');
 
 const DEFAULT_API_URL = 'https://lahari-media-engine-production.up.railway.app';
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
-const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video']);
+const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
+const modelOverrideSchema = z.object({
+  storyboardProvider: z.string().optional(),
+  videoModel: z.string().optional(),
+}).optional();
 
 const textResult = (value) => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
@@ -319,7 +323,7 @@ registerTool('write_storyboard_prompt', {
 
 registerTool('bulk_write_storyboard_prompts', {
   title: 'Bulk write storyboard prompts',
-  description: 'Deprecated remote gap. Prefer apply_storyboard_prompts_bulk with Codex-written content.',
+  description: 'Deprecated remote gap. Prefer apply_storyboard_scene_markdown with Codex-written scene drafts.',
   inputSchema: {
     projectId,
     shotIds: z.array(z.string().min(1)).optional(),
@@ -328,7 +332,7 @@ registerTool('bulk_write_storyboard_prompts', {
     variant: enumStoryboardVariant.optional(),
     artistReferenceImagePath: z.string().optional(),
   },
-}, unsupported('bulk_write_storyboard_prompts', 'Deprecated backend-LLM wrapper intentionally not exposed in remote MCP. Use apply_storyboard_prompts_bulk.'));
+}, unsupported('bulk_write_storyboard_prompts', 'Deprecated backend-LLM wrapper intentionally not exposed in remote MCP. Edit drafts/storyboards/<scene>.md and use apply_storyboard_scene_markdown.'));
 
 registerTool('get_shot_packet', {
   title: 'Get shot packet',
@@ -408,26 +412,26 @@ for (const [name, title] of [
 registerTool('plan_generate_storyboard', {
   title: 'Plan storyboard generation',
   description: 'Read-only. Reports prerequisites and cost before generating a storyboard board.',
-  inputSchema: { projectId, shotId },
-}, ({ projectId, shotId }) => directorPost('/api/director/preview/generate-storyboard', { projectId, shotId }));
+  inputSchema: { projectId, shotId, modelOverride: modelOverrideSchema },
+}, ({ projectId, shotId, modelOverride }) => directorPost('/api/director/preview/generate-storyboard', { projectId, shotId, modelOverride }));
 
 registerTool('plan_generate_video', {
   title: 'Plan video generation',
   description: 'Read-only. Reports prerequisites and cost before generating a shot video.',
-  inputSchema: { projectId, shotId },
-}, ({ projectId, shotId }) => directorPost('/api/director/preview/generate-video', { projectId, shotId }));
+  inputSchema: { projectId, shotId, modelOverride: modelOverrideSchema },
+}, ({ projectId, shotId, modelOverride }) => directorPost('/api/director/preview/generate-video', { projectId, shotId, modelOverride }));
 
 registerTool('apply_generate_storyboard', {
   title: 'Generate storyboard board',
   description: 'Mutating and paid. Generates a new storyboard board for one shot.',
-  inputSchema: { projectId, shotId, artistNote: z.string().optional() },
-}, ({ projectId, shotId, artistNote }) => directorPost('/api/director/generate/storyboard', { projectId, shotId, artistNote }));
+  inputSchema: { projectId, shotId, artistNote: z.string().optional(), modelOverride: modelOverrideSchema },
+}, ({ projectId, shotId, artistNote, modelOverride }) => directorPost('/api/director/generate/storyboard', { projectId, shotId, artistNote, modelOverride }));
 
 registerTool('generate_storyboard', {
   title: 'Generate storyboard board',
   description: 'Alias for apply_generate_storyboard.',
-  inputSchema: { projectId, shotId, artistNote: z.string().optional() },
-}, ({ projectId, shotId, artistNote }) => directorPost('/api/director/generate/storyboard', { projectId, shotId, artistNote }));
+  inputSchema: { projectId, shotId, artistNote: z.string().optional(), modelOverride: modelOverrideSchema },
+}, ({ projectId, shotId, artistNote, modelOverride }) => directorPost('/api/director/generate/storyboard', { projectId, shotId, artistNote, modelOverride }));
 
 registerTool('bulk_generate_storyboards', {
   title: 'Bulk generate storyboard boards',
@@ -437,8 +441,9 @@ registerTool('bulk_generate_storyboards', {
     shotIds: z.array(z.string().min(1)).optional(),
     force: z.boolean().optional(),
     artistNote: z.string().optional(),
+    modelOverride: modelOverrideSchema,
   },
-}, ({ projectId, shotIds, force, artistNote }) => directorPost('/api/director/generate/storyboards-bulk', { projectId, shotIds, force, artistNote }));
+}, ({ projectId, shotIds, force, artistNote, modelOverride }) => directorPost('/api/director/generate/storyboards-bulk', { projectId, shotIds, force, artistNote, modelOverride }));
 
 registerTool('refine_storyboard_image', {
   title: 'Refine storyboard image',
@@ -449,13 +454,15 @@ registerTool('refine_storyboard_image', {
     feedback: z.string().min(1),
     previousVersionId: z.string().optional(),
     artistReferenceImagePath: z.string().optional(),
+    modelOverride: modelOverrideSchema,
   },
-}, ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath }) => directorPost('/api/director/refine/storyboard-image', {
+}, ({ projectId, shotId, feedback, previousVersionId, artistReferenceImagePath, modelOverride }) => directorPost('/api/director/refine/storyboard-image', {
   projectId,
   shotId,
   feedback,
   previousVersionId,
   artistReferenceImagePath,
+  modelOverride,
 }));
 
 registerTool('lock_storyboard', {
@@ -477,7 +484,6 @@ registerTool('apply_project_preferences', {
     projectId,
     preferences: z.object({
       textProvider: z.string().optional(),
-      imageModel: z.string().optional(),
       storyboardProvider: z.string().optional(),
       videoModel: z.string().optional(),
     }),
@@ -502,6 +508,19 @@ registerTool('apply_shot_prompts', {
   },
 }, ({ projectId, shots, force }) => directorPost('/api/director/apply/shot-prompts', { projectId, shots, force }));
 
+registerTool('apply_shot_workflow_modes', {
+  title: 'Apply shot workflow modes',
+  description: 'Mutating. Persists per-shot workflow mode overrides: auto, storyboard, or keyframe.',
+  inputSchema: {
+    projectId,
+    shots: z.array(z.object({
+      shotId: z.string().min(1),
+      workflowMode: z.enum(['auto', 'storyboard', 'keyframe']),
+      note: z.string().optional(),
+    })).min(1),
+  },
+}, ({ projectId, shots }) => directorPost('/api/director/apply/shot-workflow-modes', { projectId, shots }));
+
 registerTool('apply_storyboard_prompt', {
   title: 'Apply storyboard prompt',
   description: 'Mutating. Persists a Codex-written storyboard prompt and cut plan.',
@@ -524,7 +543,7 @@ registerTool('apply_storyboard_prompt', {
 
 registerTool('apply_storyboard_prompts_bulk', {
   title: 'Apply storyboard prompts bulk',
-  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots.',
+  description: 'Mutating. Persists Codex-written storyboard prompts/cut plans for multiple shots. Prefer apply_storyboard_scene_markdown for artist-facing scene-by-scene writing.',
   inputSchema: {
     projectId,
     shots: z.array(z.object({
@@ -536,6 +555,16 @@ registerTool('apply_storyboard_prompts_bulk', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, shots, force }) => directorPost('/api/director/apply/storyboard-prompts-bulk', { projectId, shots, force }));
+
+registerTool('apply_storyboard_scene_markdown', {
+  title: 'Apply storyboard scene markdown',
+  description: 'Mutating. Parses an edited drafts/storyboards/<scene>.md file, validates per-shot hashes, and persists storyboard prompts plus Seedance cut plans scene-by-scene.',
+  inputSchema: {
+    projectId,
+    markdown: z.string().min(1).describe('Full contents of lahari/projects/<projectId>/drafts/storyboards/<scene>.md after scene-level edits.'),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, markdown, force }) => directorPost('/api/director/apply/storyboard-scene-markdown', { projectId, markdown, force }));
 
 registerTool('apply_concept', {
   title: 'Apply concept',
@@ -553,6 +582,21 @@ registerTool('apply_concept', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, concept, baseHash, force }) => directorPost('/api/director/apply/concept', { projectId, concept, baseHash, force }));
+
+registerTool('apply_style_direction', {
+  title: 'Apply style direction',
+  description: 'Mutating. Persists Codex-written project style direction text without generating or locking a style image.',
+  inputSchema: {
+    projectId,
+    style: z.object({
+      styleDescription: z.string().min(1),
+      styleGenerationPrompt: z.string().optional(),
+      colorPalette: z.string().optional(),
+    }),
+    baseHash: z.string().optional(),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, style, baseHash, force }) => directorPost('/api/director/apply/style-direction', { projectId, style, baseHash, force }));
 
 registerTool('apply_video_prompt', {
   title: 'Apply video prompt',
@@ -616,8 +660,8 @@ registerTool('revert_project_prompt_override', {
 registerTool('apply_generate_video', {
   title: 'Generate shot video',
   description: 'Mutating and paid. Generates a new video for one shot.',
-  inputSchema: { projectId, shotId, promptOverride: z.string().optional() },
-}, ({ projectId, shotId, promptOverride }) => directorPost('/api/director/generate/video', { projectId, shotId, promptOverride }));
+  inputSchema: { projectId, shotId, promptOverride: z.string().optional(), modelOverride: modelOverrideSchema },
+}, ({ projectId, shotId, promptOverride, modelOverride }) => directorPost('/api/director/generate/video', { projectId, shotId, promptOverride, modelOverride }));
 
 registerTool('lahari_capture_issue', {
   title: 'Capture Lahari director issue',
