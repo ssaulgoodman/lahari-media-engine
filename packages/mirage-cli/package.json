@@ -1,0 +1,15 @@
+{
+  "name": "@mirage/cli",
+  "version": "0.1.0",
+  "description": "Mirage artist workspace sync CLI.",
+  "type": "module",
+  "bin": {
+    "mirage": "src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
