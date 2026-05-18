@@ -144,7 +144,7 @@ Notebook roles:
 - `config/` is the project override layer. Edit prompt/preference files locally, then persist with config apply tools.
 - `journal.md` is local working memory, not canonical project state.
 
-Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. No Node requirement on the happy path. Auth via account-scoped bearer token.
+Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. The preferred notebook path uses `npx @ssaulgoodman420/lahari-cli`, so it requires a working Node/npx runtime in the artist harness environment; `write_project_notebook` remains the no-shell fallback. Auth via account-scoped bearer token plus short-lived project-scoped CLI tokens.
 
 **Plugin distribution gates** (all true as of 2026-05-15):
 1. ✅ Second-user setup is two terminal commands (`export TOKEN=...` + `codex mcp add ...` / `claude mcp add-json ...`) plus a one-time harness restart. `/connect` page issues the snippets.

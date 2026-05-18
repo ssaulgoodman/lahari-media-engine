@@ -10,7 +10,7 @@ Guidance for Codex when working in this repo. Keep this file aligned with `CLAUD
 
 Supabase is canonical project truth. Local files in artist workspaces are desk copies and drafts for reading, editing, diffing, and handoff. `mirrors/` are read-only DB snapshots. `drafts/` are editable working copies that become production only when an apply tool persists them. `config/` is the editable project override layer.
 
-**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Lahari — remote MCP at `/mcp`, materialized per-project workspaces via `write_project_notebook`. Internal MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) exist here as engine-side debug + scripting tools, not as a director-session surface.
+**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Lahari — remote MCP at `/mcp`, materialized per-project workspaces via `mint_cli_token` + `npx @ssaulgoodman420/lahari-cli sync`, with `write_project_notebook` as the pure-MCP fallback. Internal MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) exist here as engine-side debug + scripting tools, not as a director-session surface.
 
 If you want to test director-session behavior, open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect`, install the remote MCP. Same shape an artist gets. Don't try to do director work from inside this engine repo — that's a transitional pattern from before distribution shipped and it gives a falsely-comfortable shape.
 
