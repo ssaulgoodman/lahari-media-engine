@@ -43,7 +43,6 @@ export const generateElevenLabsSpeech = async ({
   userId,
   voiceId,
   text,
-  deliveryHint,
 }: ElevenLabsSpeechInput): Promise<ElevenLabsSpeechResult> => {
   const apiKey = await requireTenantApiKey(userId, 'elevenlabs');
   const cleanText = text.trim();
@@ -58,7 +57,7 @@ export const generateElevenLabsSpeech = async ({
       Accept: 'audio/mpeg',
     },
     body: JSON.stringify({
-      text: deliveryHint ? `${cleanText}\n\nDelivery note: ${deliveryHint}` : cleanText,
+      text: cleanText,
       model_id: DEFAULT_MODEL_ID,
       voice_settings: {
         stability: 0.45,

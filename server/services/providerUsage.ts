@@ -74,21 +74,14 @@ export const incrementProviderUsageDaily = async (
   provider: ByokProvider,
   delta: { costUsd?: number; charCount?: number },
 ) => {
-  const dayUtc = todayUtc();
   const costUsd = Number(delta.costUsd || 0);
   const charCount = Math.max(0, Math.round(Number(delta.charCount || 0)));
-
-  const existing = await getProviderUsageForToday(userId, provider);
-  const now = new Date().toISOString();
-  const { error } = await getSB()
-    .from(T.provider_usage_daily)
-    .upsert({
-      user_id: userId,
-      provider,
-      day_utc: dayUtc,
-      cost_usd: Number((existing.costUsd + costUsd).toFixed(4)),
-      char_count: existing.charCount + charCount,
-      updated_at: now,
-    }, { onConflict: 'user_id,provider,day_utc' });
-  if (error) throw new Error(`DB upsert provider usage: ${error.message}`);
+  const { error } = await getSB().rpc('studio_increment_provider_usage_daily', {
+    p_user_id: userId,
+    p_provider: provider,
+    p_day_utc: todayUtc(),
+    p_cost_usd: costUsd,
+    p_char_count: charCount,
+  });
+  if (error) throw new Error(`DB increment provider usage: ${error.message}`);
 };

@@ -38,4 +38,39 @@ create unique index if not exists studio_provider_usage_daily_user_provider_day_
 create index if not exists studio_provider_usage_daily_user_day_idx
   on public.studio_provider_usage_daily(user_id, day_utc desc);
 
+create or replace function public.studio_increment_provider_usage_daily(
+  p_user_id uuid,
+  p_provider text,
+  p_day_utc date,
+  p_cost_usd numeric,
+  p_char_count integer
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.studio_provider_usage_daily (
+    user_id,
+    provider,
+    day_utc,
+    cost_usd,
+    char_count,
+    updated_at
+  )
+  values (
+    p_user_id,
+    p_provider,
+    p_day_utc,
+    greatest(p_cost_usd, 0),
+    greatest(p_char_count, 0),
+    now()
+  )
+  on conflict (user_id, provider, day_utc)
+  do update set
+    cost_usd = studio_provider_usage_daily.cost_usd + excluded.cost_usd,
+    char_count = studio_provider_usage_daily.char_count + excluded.char_count,
+    updated_at = now();
+$$;
+
 alter table public.studio_provider_usage_daily enable row level security;
