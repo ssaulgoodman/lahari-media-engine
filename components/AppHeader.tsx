@@ -4,11 +4,29 @@ import { getVideoModel } from '../constants/videoModels';
 import type { AgentOperationRow, RealtimeNotice } from '../hooks/useRealtimePresence';
 
 const PIPELINE_STEPS = [
-  { id: AppStep.UPLOAD, label: 'Queue' },
+  { id: AppStep.UPLOAD, label: 'Start' },
   { id: AppStep.BLUEPRINT, label: 'Blueprint' },
   { id: AppStep.STUDIO, label: 'Studio' },
   { id: AppStep.RENDER, label: 'Render' },
 ];
+
+const WORKFLOW_LABEL: Record<string, string> = {
+  music_video: 'Music Video',
+  anime_scripted: 'Anime',
+};
+
+const SEED_LABEL: Record<string, string> = {
+  audio: 'Audio',
+  script: 'Script',
+  brief: 'Brief',
+  document: 'Document',
+  idea: 'Idea',
+};
+
+const PRESET_LABEL: Record<string, string> = {
+  music_video_default: 'Music Video Default',
+  anime_default: 'Anime Default',
+};
 
 type AppHeaderProps = {
   activeAgentOperationList: AgentOperationRow[];
@@ -46,6 +64,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <>
             <span className="text-zinc-400/60 text-sm">/</span>
             <span className="text-sm text-zinc-300 group-hover:text-white transition-colors truncate max-w-[200px]">{project.title}</span>
+            {WORKFLOW_LABEL[project.workflowKey] && (
+              <span
+                className="text-[10px] uppercase tracking-wider font-mono text-zinc-400 px-1.5 py-0.5 rounded surface-inset"
+                title={`${WORKFLOW_LABEL[project.workflowKey]} · ${SEED_LABEL[project.seedKind] || project.seedKind} seed · ${PRESET_LABEL[project.presetKey] || project.presetKey}`}
+              >
+                {WORKFLOW_LABEL[project.workflowKey]}
+              </span>
+            )}
           </>
         )}
         <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-400/60 group-hover:text-zinc-300 transition-colors flex-shrink-0"><path d="M6 9l6 6 6-6"/></svg>

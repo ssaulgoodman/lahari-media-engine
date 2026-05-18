@@ -5,7 +5,7 @@ import { AnalysisEditor } from './AnalysisEditor';
 import { Storyboard } from './Storyboard';
 import { StepRender } from './StepRender';
 import { XRayPanel } from './XRayPanel';
-import { Dashboard } from './Dashboard';
+import { StartProject, type CreateIntakeOpts } from './StartProject';
 import { PromptsLibrary } from './PromptsLibrary';
 import { RendersModal } from './RendersModal';
 import { AppHeader } from './AppHeader';
@@ -66,7 +66,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const bulkStopRef = useRef({ requested: false, controllers: new Set<AbortController>() });
   // Studio scene navigation
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
-  // Renders viewer (popup) — opened from Dashboard rows or sidebar entries.
+  // Renders viewer (popup) — opened from sidebar entries.
   const [rendersFor, setRendersFor] = useState<{ id: string; title: string } | null>(null);
 
   // Project sidebar
@@ -126,31 +126,38 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     navigateToPhase,
   });
 
-  // ─── Upload & Analyze ───────────────────────────────────────────
+  // ─── Project Intake ─────────────────────────────────────────────
+  // Single entry path for both modes. Music video uploads audio and lands in
+  // Blueprint while server-side analysis runs (polled below); anime parses
+  // the script synchronously and lands in Blueprint already populated.
 
-  const handleFileUpload = async (file: File, metadata?: { title?: string; context?: string; language?: string }) => {
+  const handleCreateFromIntake = async (opts: CreateIntakeOpts) => {
     setLoading(true);
     setError(null);
     try {
-      const p = await api.createProject(file, metadata);
+      const p = await api.createProjectFromIntake(opts);
       setProject(p);
-      setCurrentStep(AppStep.UPLOAD);
-    } catch (err: any) {
-      setError(err.message || 'Failed to analyze audio.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateScriptProject = async (opts: { title?: string; scriptText: string; directorBrief?: string; targetDuration?: number }) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const p = await api.createScriptProject(opts);
-      setProject(p);
+      setLookCandidates({});
+      setActiveSceneIdx(0);
       setCurrentStep(AppStep.BLUEPRINT);
+
+      // Music video starts in `analyzing` while audio transcription / structure
+      // detection runs server-side. Poll until it flips, then refresh project.
+      if (p.status === 'analyzing') {
+        const projectId = p.id;
+        const poll = setInterval(async () => {
+          try {
+            const next = await api.getProject(projectId);
+            if (next.status !== 'analyzing') {
+              clearInterval(poll);
+              setProject(next);
+            }
+          } catch { /* ignore polling errors */ }
+        }, 3000);
+        setTimeout(() => clearInterval(poll), 120000);
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to create script project.');
+      setError(err.message || 'Failed to create project.');
     } finally {
       setLoading(false);
     }
@@ -1265,60 +1272,6 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     api.updateShot(project.id, shotId, updates).catch(console.error);
   };
 
-  // ─── Queue: Start Production ──────────────────────────────────────
-
-  const handleStartProduction = async (queueId: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.startProduction(queueId);
-      setProject(result.project);
-      setLookCandidates({});
-      setActiveSceneIdx(0);
-      // For fresh starts (analyzing) jump to Blueprint; for existing/forked
-      // projects route to whatever phase the project is in.
-      if (result.project.status === 'analyzing' || result.project.status === 'analyzed') {
-        setCurrentStep(AppStep.BLUEPRINT);
-      } else {
-        navigateToPhase(result.project);
-      }
-      // Poll for analysis completion if still analyzing
-      if (result.project.status === 'analyzing') {
-        const projectId = result.project.id;
-        const poll = setInterval(async () => {
-          try {
-            const p = await api.getProject(projectId);
-            if (p.status !== 'analyzing') {
-              clearInterval(poll);
-              setProject(p);
-            }
-          } catch { /* ignore polling errors */ }
-        }, 3000);
-        // Safety: stop polling after 2 minutes
-        setTimeout(() => clearInterval(poll), 120000);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to start production');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOpenProject = async (projectId: string) => {
-    setLoading(true);
-    try {
-      const p = await api.getProject(projectId);
-      setProject(p);
-      setLookCandidates({});
-      setActiveSceneIdx(0);
-      navigateToPhase(p);
-    } catch (err: any) {
-      setError('Failed to load project: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // ─── Project Sidebar ──────────────────────────────────────────
 
   const openSidebar = async () => {
@@ -1409,12 +1362,11 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                 preserve pipeline state underneath without double-rendering. */}
             <AnimatePresence mode="wait">
               {!promptsOpen && currentStep === AppStep.UPLOAD && (
-                <motion.div key="queue" {...pageTransition}>
-                  <Dashboard
-                    onStartProduction={handleStartProduction}
-                    onOpenProject={handleOpenProject}
-                    onCreateScriptProject={handleCreateScriptProject}
-                    onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
+                <motion.div key="start" {...pageTransition}>
+                  <StartProject
+                    onCreate={handleCreateFromIntake}
+                    creating={loading}
+                    error={error}
                   />
                 </motion.div>
               )}
@@ -1564,7 +1516,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
       />
 
-      {/* Renders viewer popup — accessible from Dashboard rows and sidebar entries */}
+      {/* Renders viewer popup — accessible from sidebar entries */}
       {rendersFor && (
         <RendersModal
           projectId={rendersFor.id}

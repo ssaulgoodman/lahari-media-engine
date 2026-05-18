@@ -174,6 +174,12 @@ export interface ApiProject {
   id: string;
   title: string;
   status: ProjectPhase;
+  /** Workflow recipe driving the pipeline. */
+  workflowKey: 'music_video' | 'anime_scripted';
+  /** What the project was seeded from. */
+  seedKind: 'audio' | 'script' | 'brief' | 'document' | 'idea';
+  /** Preset providing taste + defaults. */
+  presetKey: 'music_video_default' | 'anime_default';
   audioPath: string;
   lyrics?: string;
   meaning?: string;
