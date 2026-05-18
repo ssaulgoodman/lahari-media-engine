@@ -258,8 +258,8 @@ export const AccountKeys: React.FC<{
   const loadKeys = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await api.listApiKeys();
-      setKeys(data.keys || []);
+      const resp = await api.listApiKeys();
+      setKeys(resp.data?.providers || []);
     } catch (err: any) {
       setError(err.message || 'Could not load API keys');
     } finally {

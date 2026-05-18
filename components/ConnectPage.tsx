@@ -142,8 +142,8 @@ export const ConnectPage: React.FC<{
   const loadApiKeys = useCallback(async () => {
     if (!user) return;
     try {
-      const data = await api.listApiKeys();
-      setApiKeys((data.keys || []).map((k: any) => ({ provider: k.provider, isSet: k.isSet })));
+      const resp = await api.listApiKeys();
+      setApiKeys((resp.data?.providers || []).map((k: any) => ({ provider: k.provider, isSet: k.isSet })));
     } catch {
       // Keys endpoint may not exist yet during early dev — treat as empty
       setApiKeys([]);
