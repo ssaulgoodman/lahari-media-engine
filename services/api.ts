@@ -883,6 +883,64 @@ export const sendChatMessage = async (projectId: string, message: string) => {
   return handleResponse(res);
 };
 
+// ─── Audio Blueprint (anime workflow) ──────────────────────────────
+// Backend: write-audio-plan + generate-dialogue-audio + audio-plan-cost
+// land in T3. UI is built ahead of backend; calls will 404 until then.
+
+export const writeAudioPlan = async (
+  projectId: string,
+  opts?: { shotIds?: string[]; force?: boolean },
+  signal?: AbortSignal,
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/write-audio-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+    signal,
+  });
+  return handleResponse(res);
+};
+
+export const generateDialogueAudio = async (
+  projectId: string,
+  opts?: { shotIds?: string[]; dialogueIds?: string[]; characterIds?: string[] },
+  signal?: AbortSignal,
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/generate-dialogue-audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts || {}),
+    signal,
+  });
+  return handleResponse(res);
+};
+
+export const getAudioPlanCost = async (
+  projectId: string,
+  opts?: { shotIds?: string[]; dialogueIds?: string[]; characterIds?: string[] },
+) => {
+  const params = new URLSearchParams();
+  if (opts?.shotIds?.length) params.set('shotIds', opts.shotIds.join(','));
+  if (opts?.dialogueIds?.length) params.set('dialogueIds', opts.dialogueIds.join(','));
+  if (opts?.characterIds?.length) params.set('characterIds', opts.characterIds.join(','));
+  const qs = params.toString();
+  const res = await authFetch(`${API}/projects/${projectId}/audio-plan-cost${qs ? `?${qs}` : ''}`);
+  return handleResponse(res);
+};
+
+export const updateCastVoice = async (
+  projectId: string,
+  castMemberId: string,
+  voice: { voiceProvider: 'elevenlabs'; voiceId: string; voiceName?: string },
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/cast/${castMemberId}/voice`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(voice),
+  });
+  return handleResponse(res);
+};
+
 // ─── BYOK API Keys ─────────────────────────────────────────────────
 
 export const listApiKeys = async () => {

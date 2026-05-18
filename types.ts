@@ -51,6 +51,42 @@ export interface ShotCritique {
   suggestions: string;
 }
 
+// ─── Audio Blueprint (anime workflow) ───────────────────────────────
+// Shapes match ledger §7. Backend table support lands in T3.1.
+
+/** Per-shot dialogue delivery path.
+ *  'lipsync' = TTS passed to Seedance with lipsync params + character target;
+ *              video gen produces a lipsynced shot. Requires TTS asset before
+ *              video gen runs.
+ *  'overlay' = TTS not passed to Seedance; video gen produces silent video;
+ *              render mixes TTS over the timeline. */
+export type DialogueStrategy = 'lipsync' | 'overlay';
+
+export type TtsStatus = 'pending' | 'generating' | 'success' | 'error';
+
+export interface DialogueLine {
+  id: string;
+  characterId: string;
+  text: string;
+  delivery?: string;
+  emotion?: string;
+  order: number;
+  paceHint?: 'slow' | 'natural' | 'fast';
+  targetSec?: number;
+  ttsAssetId: string | null;
+  ttsStatus: TtsStatus;
+  ttsError?: string;
+  ttsCharCount?: number;
+  ttsDurationSec?: number;
+}
+
+export interface AudioPlan {
+  dialogueStrategy: DialogueStrategy;
+  dialogue: DialogueLine[];
+  /** Freeform ambient/SFX notes; flows into video prompt context. */
+  soundNotes?: string;
+}
+
 export interface VideoShot {
   id: string;
   workflowMode?: 'auto' | 'storyboard' | 'keyframe';
@@ -103,6 +139,11 @@ export interface VideoShot {
   error?: string;
   lastError?: string;
   refImages?: { id: string; url: string }[];
+  /** Anime workflow: dialogue/SFX plan for this shot. Authored by Codex
+   *  (apply_audio_plan) or backend write-audio-plan. Absent on music_video. */
+  audioPlan?: AudioPlan;
+  /** True when upstream script edits invalidate the existing audio_plan. */
+  audioPlanStale?: boolean;
 }
 
 export interface VideoScene {
@@ -158,6 +199,12 @@ export interface CastMember {
   promptsStale?: boolean;
   referenceAssetId?: string;
   referenceImageUrl?: string;
+  /** Anime workflow: voice provider for TTS generation. v1 = 'elevenlabs'. */
+  voiceProvider?: 'elevenlabs';
+  /** Provider's raw voice ID (e.g. ElevenLabs voice_id). */
+  voiceId?: string;
+  /** Human-readable label for the voice. */
+  voiceName?: string;
 }
 
 export interface Environment {

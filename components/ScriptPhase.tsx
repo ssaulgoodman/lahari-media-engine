@@ -1,13 +1,14 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ApiProject } from '../types';
+import { ApiProject, DialogueLine } from '../types';
 import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { Dropdown } from './Dropdown';
 import { UnlockPill } from './UnlockPill';
 import { getVideoModel } from '../constants/videoModels';
 import { Phase, isLockedPhase } from './BlueprintContextBar';
+import { findPhase } from '../constants/blueprintPhases';
 
 interface Props {
   project: ApiProject;
@@ -34,7 +35,44 @@ export const ScriptPhase: React.FC<Props> = ({
   const [showScriptPrompt, setShowScriptPrompt] = useState(false);
   const [expandedScenes, setExpandedScenes] = useState<Set<string>>(new Set());
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  const [writingDialogue, setWritingDialogue] = useState<Set<string>>(new Set());
   const isSeedanceStoryboard = project.videoModel?.startsWith('seedance');
+
+  // Audio phase visibility is workflow-config driven. Anime exposes it (even
+  // when coming-soon); music_video does not. Same gate keeps dialogue UI out
+  // of music-video projects so the Script phase stays clean.
+  const audioPhaseVisible = !!findPhase(project, 'audio')?.visible;
+
+  const writeDialogueForShot = async (shotId: string) => {
+    setWritingDialogue(prev => new Set(prev).add(shotId));
+    try {
+      const updated = await api.writeAudioPlan(project.id, { shotIds: [shotId] });
+      if (updated?.id) onSetProject?.(updated);
+    } catch (err: any) {
+      showActionError(`Write dialogue failed: ${err.message || 'unknown error'}`);
+    } finally {
+      setWritingDialogue(prev => {
+        const next = new Set(prev);
+        next.delete(shotId);
+        return next;
+      });
+    }
+  };
+
+  const writeDialogueForAllShots = async () => {
+    setWritingDialogue(new Set(['__all__']));
+    try {
+      const updated = await api.writeAudioPlan(project.id);
+      if (updated?.id) onSetProject?.(updated);
+    } catch (err: any) {
+      showActionError(`Write dialogue failed: ${err.message || 'unknown error'}`);
+    } finally {
+      setWritingDialogue(new Set());
+    }
+  };
+
+  const characterName = (id: string) =>
+    project.cast.find(c => c.id === id)?.name || '?';
 
   return (
     <motion.div key="script" {...phaseTransition} className="space-y-6">
@@ -171,6 +209,18 @@ export const ScriptPhase: React.FC<Props> = ({
             <div className="flex items-center gap-3">
               {onUnlockScript && isLockedPhase(project, 'script', project.status) && (
                 <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
+              )}
+              {audioPhaseVisible && project.scenes.length > 0 && (
+                <button
+                  onClick={writeDialogueForAllShots}
+                  disabled={writingDialogue.size > 0 || isLoading}
+                  className="text-[11px] text-zinc-400 hover:text-zinc-200 surface-inset rounded-md px-2.5 py-1 hover:bg-white/[0.06] transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {writingDialogue.has('__all__') && (
+                    <span className="w-3 h-3 border-2 border-zinc-500 border-t-zinc-200 rounded-full animate-spin" />
+                  )}
+                  {writingDialogue.has('__all__') ? 'Writing…' : 'Write all dialogue'}
+                </button>
               )}
               <button
                 className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
@@ -347,6 +397,17 @@ export const ScriptPhase: React.FC<Props> = ({
                                 <span className="text-amber-400/80">· continues</span>
                               )}
                             </div>
+
+                            {audioPhaseVisible && (
+                              <DialogueBlock
+                                shotId={shot.id}
+                                audioPlan={shot.audioPlan}
+                                audioPlanStale={shot.audioPlanStale}
+                                writing={writingDialogue.has(shot.id) || writingDialogue.has('__all__')}
+                                characterName={characterName}
+                                onWrite={() => writeDialogueForShot(shot.id)}
+                              />
+                            )}
                           </div>
                         </div>
                         );
@@ -378,5 +439,103 @@ export const ScriptPhase: React.FC<Props> = ({
         </div>
       )}
     </motion.div>
+  );
+};
+
+// ─── Dialogue display per shot ──────────────────────────────────────
+// Read-mostly view: each line as one row with speaker, text, and tts
+// status pill. Editing/voice-assignment/TTS gen live in Audio phase
+// (T5.4). Empty state shows a "Write dialogue" CTA. Stale flag
+// surfaces an amber rewrite affordance.
+
+interface DialogueBlockProps {
+  shotId: string;
+  audioPlan?: { dialogue: DialogueLine[]; soundNotes?: string };
+  audioPlanStale?: boolean;
+  writing: boolean;
+  characterName: (id: string) => string;
+  onWrite: () => void;
+}
+
+const DialogueBlock: React.FC<DialogueBlockProps> = ({
+  audioPlan, audioPlanStale, writing, characterName, onWrite,
+}) => {
+  const lines = audioPlan?.dialogue || [];
+  const hasLines = lines.length > 0;
+  const soundNotes = audioPlan?.soundNotes;
+
+  if (!hasLines && !writing) {
+    return (
+      <div className="mt-2 pt-2 border-t border-white/[0.04] flex items-center gap-3">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">Dialogue</span>
+        <button
+          onClick={onWrite}
+          className="text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors inline-flex items-center gap-1"
+        >
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Write dialogue
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 pt-2 border-t border-white/[0.04] space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-zinc-500">Dialogue</span>
+        {audioPlanStale && (
+          <span className="text-[10px] uppercase tracking-wider text-amber-300/80 bg-amber-500/[0.06] rounded px-1.5 py-0.5">
+            stale
+          </span>
+        )}
+        {writing && (
+          <span className="text-[10px] text-zinc-400 inline-flex items-center gap-1">
+            <span className="w-2.5 h-2.5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
+            Writing…
+          </span>
+        )}
+        {(audioPlanStale || hasLines) && !writing && (
+          <button
+            onClick={onWrite}
+            className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors ml-auto"
+          >
+            {audioPlanStale ? 'Rewrite' : 'Regenerate'}
+          </button>
+        )}
+      </div>
+      {lines.sort((a, b) => a.order - b.order).map(line => (
+        <div key={line.id} className="flex items-start gap-2 text-xs leading-snug">
+          <span className="text-zinc-400 font-medium min-w-[60px] flex-shrink-0">
+            {characterName(line.characterId)}
+          </span>
+          <span className="text-zinc-300 flex-1 italic">"{line.text}"</span>
+          <span className="flex-shrink-0 flex items-center gap-1.5">
+            {line.delivery && (
+              <span className="text-[10px] text-zinc-500">{line.delivery}</span>
+            )}
+            <TtsStatusPill status={line.ttsStatus} />
+          </span>
+        </div>
+      ))}
+      {soundNotes && (
+        <div className="text-[11px] text-zinc-500 italic leading-snug pt-1">
+          <span className="not-italic text-zinc-600">SFX:</span> {soundNotes}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TtsStatusPill: React.FC<{ status: DialogueLine['ttsStatus'] }> = ({ status }) => {
+  const config = {
+    pending: { color: 'text-zinc-500 bg-white/[0.03]', label: 'pending' },
+    generating: { color: 'text-blue-300/80 bg-blue-500/[0.08]', label: 'gen…' },
+    success: { color: 'text-emerald-300/80 bg-emerald-500/[0.08]', label: 'ready' },
+    error: { color: 'text-red-300/80 bg-red-500/[0.08]', label: 'error' },
+  }[status];
+  return (
+    <span className={`text-[9px] uppercase tracking-wider rounded px-1 py-0.5 ${config.color}`}>
+      {config.label}
+    </span>
   );
 };
