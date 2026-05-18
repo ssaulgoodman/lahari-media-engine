@@ -579,6 +579,9 @@ const getFullProject = async (projectId: string) => {
       description: c.description,
       generationPrompt: c.generation_prompt || undefined,
       promptsStale: !!c.prompts_stale,
+      voiceProvider: c.voice_provider || undefined,
+      voiceId: c.voice_id || undefined,
+      voiceName: c.voice_name || undefined,
       referenceAssetId: c.reference_asset_id,
       referenceImageUrl: c.referenceImageUrl,
     })),
@@ -656,6 +659,8 @@ const getFullProject = async (projectId: string) => {
         critique: shot.critique,
         attemptCount: shot.attempt_count,
         promptsStale: !!shot.prompts_stale,
+        audioPlan: shot.audio_plan || undefined,
+        audioPlanStale: !!shot.audio_plan_stale,
         useNextAsEndFrame: !!shot.use_next_as_end_frame,
         lastError: shot.last_error || undefined,
       }))
@@ -1540,6 +1545,46 @@ router.put('/:id/cast/:memberId', async (req, res) => {
     }
   }
   res.json(await getFullProject(projectId));
+});
+
+router.patch('/:id/cast/:memberId/voice', async (req, res) => {
+  const { voiceProvider, voiceId, voiceName } = req.body;
+  const memberId = paramStr(req.params.memberId);
+  const projectId = paramStr(req.params.id);
+
+  try {
+    if (voiceProvider !== 'elevenlabs') {
+      const err = new Error(`Unsupported voice provider: ${voiceProvider}`);
+      (err as any).statusCode = 400;
+      throw err;
+    }
+    if (typeof voiceId !== 'string' || !voiceId.trim()) {
+      const err = new Error('voiceId is required.');
+      (err as any).statusCode = 400;
+      throw err;
+    }
+
+    await updateRows('cast_members', { id: memberId }, {
+      voice_provider: voiceProvider,
+      voice_id: voiceId.trim(),
+      voice_name: typeof voiceName === 'string' && voiceName.trim() ? voiceName.trim() : null,
+    });
+
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'cast_voice_assigned',
+      entityType: 'cast',
+      entityId: memberId,
+      summary: `Assigned ${voiceProvider} voice to cast member`,
+      payload: { voiceProvider, voiceName: voiceName || null },
+    });
+
+    res.json(await getFullProject(projectId));
+  } catch (err) {
+    sendStructuredError(res, err);
+  }
 });
 
 router.delete('/:id/cast/:memberId', async (req, res) => {

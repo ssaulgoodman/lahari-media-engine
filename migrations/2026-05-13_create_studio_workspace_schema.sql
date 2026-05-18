@@ -86,7 +86,12 @@ create table if not exists studio_cast_members (
   reference_asset_id text references studio_assets(id) on delete set null,
   sort_order int4 default 0,
   generation_prompt text,
-  prompts_stale boolean default false
+  prompts_stale boolean default false,
+  voice_provider text,
+  voice_id text,
+  voice_name text,
+  constraint studio_cast_members_voice_provider_check
+    check (voice_provider is null or voice_provider in ('elevenlabs'))
 );
 
 create index if not exists studio_cast_project_idx
@@ -162,7 +167,9 @@ create table if not exists studio_shots (
   use_prev_storyboard_ref boolean not null default false,
   include_prev_cut_plan boolean default null,
   excluded_refs jsonb not null default '{"storyboard":[],"video":[]}'::jsonb,
-  lipsync_enabled boolean default false
+  lipsync_enabled boolean default false,
+  audio_plan jsonb,
+  audio_plan_stale boolean not null default false
 );
 
 create index if not exists studio_shots_scene_idx
@@ -331,6 +338,27 @@ create unique index if not exists studio_tenant_api_keys_user_provider_idx
 create index if not exists studio_tenant_api_keys_user_updated_idx
   on studio_tenant_api_keys(user_id, updated_at desc);
 
+create table if not exists studio_provider_usage_daily (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  day_utc date not null,
+  cost_usd numeric(10,4) not null default 0,
+  char_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint studio_provider_usage_daily_provider_check
+    check (provider in ('anthropic', 'openai', 'gemini', 'segmind', 'elevenlabs')),
+  constraint studio_provider_usage_daily_nonnegative_check
+    check (cost_usd >= 0 and char_count >= 0)
+);
+
+create unique index if not exists studio_provider_usage_daily_user_provider_day_idx
+  on studio_provider_usage_daily(user_id, provider, day_utc);
+
+create index if not exists studio_provider_usage_daily_user_day_idx
+  on studio_provider_usage_daily(user_id, day_utc desc);
+
 create table if not exists studio_project_config (
   project_id text primary key references studio_projects(id) on delete cascade,
   preferences jsonb not null default '{}'::jsonb,
@@ -410,6 +438,7 @@ alter table studio_director_events enable row level security;
 alter table studio_agent_operations enable row level security;
 alter table studio_mcp_tokens enable row level security;
 alter table studio_tenant_api_keys enable row level security;
+alter table studio_provider_usage_daily enable row level security;
 alter table studio_project_config enable row level security;
 alter table studio_project_prompt_overrides enable row level security;
 alter table studio_renders enable row level security;
