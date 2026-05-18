@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -13,13 +14,13 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.4';
+const HOSTED_MCP_VERSION = '0.1.5';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus npx @ssaulgoodman420/lahari-cli sync to materialize or refresh the notebook without moving file bodies through chat. If shell/npx is unavailable, fall back to write_project_notebook and write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus npx @ssaulgoodman420/lahari-cli sync to materialize or refresh the notebook without moving file bodies through chat. If shell/npx is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -40,6 +41,8 @@ const bearerToken = (header?: string | null) => {
   return match?.[1]?.trim() || null;
 };
 
+const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
+
 const idString = z.string().min(1).max(160);
 const projectId = idString.describe('Lahari project ID.');
 const shotId = idString.describe('Shot ID within the project.');
@@ -49,6 +52,7 @@ const promptText = z.string().min(1).max(30000);
 const scriptMarkdownText = z.string().min(1).max(120000);
 const storyboardSceneMarkdownText = z.string().min(1).max(80000);
 const optionalPromptText = z.string().max(30000).optional();
+const notebookFilePath = z.string().min(1).max(800).describe('Notebook file path returned by get_project_notebook_manifest.');
 const maxArray = <T extends z.ZodTypeAny>(schema: T, max: number) => z.array(schema).max(max);
 const modelOverrideSchema = z.object({
   storyboardProvider: idString.optional(),
@@ -165,6 +169,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'list_',
       'search_',
       'get_',
+      'read_',
       'plan_',
       'preview_',
       'review_',
@@ -335,9 +340,68 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('write_project_notebook', {
     title: 'Write project notebook',
-    description: 'Read-only fallback. Returns deterministic local notebook file payloads. Prefer mint_cli_token + npx @ssaulgoodman420/lahari-cli sync for large artist notebooks.',
+    description: 'Read-only final fallback. Returns deterministic local notebook file payloads in one response. Prefer CLI sync; if npx is blocked, use get_project_notebook_manifest + read_project_notebook_file path-by-path.',
     inputSchema: { projectId },
   }, async ({ projectId }) => studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId)));
+
+  registerTool('get_project_notebook_manifest', {
+    title: 'Get project notebook manifest',
+    description: 'Read-only. Returns notebook file metadata without file bodies. Use with read_project_notebook_file when CLI sync is blocked and write_project_notebook would be too large.',
+    inputSchema: { projectId },
+  }, async ({ projectId }) => {
+    const notebook = await studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId));
+    return {
+      kind: 'lahari.notebook.manifest',
+      notebookVersion: notebook.notebookVersion,
+      generatedAt: notebook.generatedAt,
+      project: notebook.project,
+      baseDir: notebook.baseDir,
+      files: notebook.files.map((file) => ({
+        path: file.path,
+        mode: file.mode,
+        writePolicy: file.writePolicy,
+        description: file.description,
+        hash: sha256(file.content),
+        size: Buffer.byteLength(file.content, 'utf8'),
+      })),
+      next: 'Call read_project_notebook_file for each path you need, then write the returned content to that path relative to the current workspace.',
+    };
+  });
+
+  registerTool('read_project_notebook_file', {
+    title: 'Read project notebook file',
+    description: 'Read-only. Returns one deterministic notebook file body by path. Use after get_project_notebook_manifest to avoid giant MCP payloads.',
+    inputSchema: {
+      projectId,
+      path: notebookFilePath,
+    },
+  }, async ({ projectId, path: requestedPath }) => {
+    const notebook = await studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId));
+    const file = notebook.files.find((candidate) => candidate.path === requestedPath);
+    if (!file) {
+      throw new Error(JSON.stringify({
+        code: 'notebook_file_not_found',
+        message: `Notebook file not found: ${requestedPath}`,
+        details: { requestedPath },
+      }));
+    }
+    return {
+      kind: 'lahari.notebook.file',
+      notebookVersion: notebook.notebookVersion,
+      generatedAt: notebook.generatedAt,
+      project: notebook.project,
+      baseDir: notebook.baseDir,
+      file: {
+        path: file.path,
+        mode: file.mode,
+        writePolicy: file.writePolicy,
+        description: file.description,
+        hash: sha256(file.content),
+        size: Buffer.byteLength(file.content, 'utf8'),
+        content: file.content,
+      },
+    };
+  });
 
   registerTool('mint_cli_token', {
     title: 'Mint short-lived CLI sync token',
