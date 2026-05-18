@@ -49,3 +49,4 @@ supabase/.temp/
 storage/*.db-shm
 storage/*.db-wal
 storage/lahari.db.bak*
+.npmrc

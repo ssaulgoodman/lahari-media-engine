@@ -19,7 +19,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus npx @lahari/cli sync to materialize or refresh the notebook without moving file bodies through chat. If shell/npx is unavailable, fall back to write_project_notebook and write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus npx @ssaulgoodman420/lahari-cli sync to materialize or refresh the notebook without moving file bodies through chat. If shell/npx is unavailable, fall back to write_project_notebook and write every returned file into the current workspace, including project-local skills under .agents/skills and .claude/skills. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -335,13 +335,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('write_project_notebook', {
     title: 'Write project notebook',
-    description: 'Read-only fallback. Returns deterministic local notebook file payloads. Prefer mint_cli_token + npx @lahari/cli sync for large artist notebooks.',
+    description: 'Read-only fallback. Returns deterministic local notebook file payloads. Prefer mint_cli_token + npx @ssaulgoodman420/lahari-cli sync for large artist notebooks.',
     inputSchema: { projectId },
   }, async ({ projectId }) => studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId)));
 
   registerTool('mint_cli_token', {
     title: 'Mint short-lived CLI sync token',
-    description: 'Mutating security surface. Issues a short-lived project-scoped token for npx @lahari/cli sync so notebook file bodies do not travel through chat.',
+    description: 'Mutating security surface. Issues a short-lived project-scoped token for npx @ssaulgoodman420/lahari-cli sync so notebook file bodies do not travel through chat.',
     inputSchema: {
       projectId,
       ttlMinutes: z.number().int().min(5).max(180).optional(),
