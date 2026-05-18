@@ -114,7 +114,7 @@ export const createCliToken = async (
     .single();
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
   const apiUrl = (process.env.LAHARI_API_URL || 'https://lahari-media-engine-production.up.railway.app').replace(/\/+$/, '');
-  const cliPackage = '@lahari/cli@0.1.0';
+  const cliPackage = '@ssaulgoodman420/lahari-cli@0.1.0';
   const posixCommand = `LAHARI_CLI_TOKEN=${token} LAHARI_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
   const powershellCommand = `$env:LAHARI_CLI_TOKEN='${token}'; $env:LAHARI_API_URL='${apiUrl}'; npx -y ${cliPackage} sync ${opts.projectId}`;
   return {
