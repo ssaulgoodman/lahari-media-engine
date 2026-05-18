@@ -39,6 +39,7 @@ const T = {
   mcp_tokens: `${TABLE_PREFIX}_mcp_tokens`,
   project_config: `${TABLE_PREFIX}_project_config`,
   project_prompt_overrides: `${TABLE_PREFIX}_project_prompt_overrides`,
+  tenant_api_keys: `${TABLE_PREFIX}_tenant_api_keys`,
   chat_messages: `${TABLE_PREFIX}_chat_messages`,
   ai_calls: `${TABLE_PREFIX}_ai_calls`,
   renders: `${TABLE_PREFIX}_renders`,

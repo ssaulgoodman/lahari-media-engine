@@ -516,6 +516,7 @@ Append a one-line note when finishing a task. Keep it dated.
 2026-05-18 🔒 LOCKED. Sandbox session ends. Next session opens in `lahari-preset-abstraction` worktree directly (not in the Claude Code sandbox) and starts execution from Day 1 of §6 sequencing
 2026-05-18 Codex: T7 started. Dirty Mirage prep committed as cd3064a; merged latest `main` into the Mirage lane, preserving Mirage StartProject/mode-aware docs and taking main notebook-sync/CLI release plumbing. Verification passed: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
 2026-05-18 Codex: T7 complete locally and pushed to `origin/mirage`; old remote branch was absent. Started T1 package fork: copied Lahari MCP/CLI into `packages/mirage-mcp-server` and `packages/mirage-cli`, renamed package names/env vars/default URL/headers for Mirage. Syntax checks passed for both package entrypoints.
+2026-05-18 Codex: T2 backend skeleton started while Claude owns frontend files. Added `studio_tenant_api_keys` migration/bootstrap table, app-level AES-GCM helper, BYOK resolver, and authenticated `/api/account/api-keys` GET/PUT/DELETE routes. Verification passed on combined tree: `npx tsc --noEmit`, `npm run build`, `git diff --check`.
 ```
 
 (Append below.)

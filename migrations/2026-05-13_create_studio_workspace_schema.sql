@@ -311,6 +311,26 @@ create index if not exists studio_mcp_tokens_active_idx
   on studio_mcp_tokens(token_hash)
   where revoked_at is null;
 
+create table if not exists studio_tenant_api_keys (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  key_label text,
+  key_value_encrypted text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_used_at timestamptz,
+  last_error text,
+  constraint studio_tenant_api_keys_provider_check
+    check (provider in ('anthropic', 'openai', 'gemini', 'segmind', 'elevenlabs'))
+);
+
+create unique index if not exists studio_tenant_api_keys_user_provider_idx
+  on studio_tenant_api_keys(user_id, provider);
+
+create index if not exists studio_tenant_api_keys_user_updated_idx
+  on studio_tenant_api_keys(user_id, updated_at desc);
+
 create table if not exists studio_project_config (
   project_id text primary key references studio_projects(id) on delete cascade,
   preferences jsonb not null default '{}'::jsonb,
@@ -389,6 +409,7 @@ alter table studio_ai_calls enable row level security;
 alter table studio_director_events enable row level security;
 alter table studio_agent_operations enable row level security;
 alter table studio_mcp_tokens enable row level security;
+alter table studio_tenant_api_keys enable row level security;
 alter table studio_project_config enable row level security;
 alter table studio_project_prompt_overrides enable row level security;
 alter table studio_renders enable row level security;
