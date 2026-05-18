@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppShell } from './components/AppShell';
+import { AccountKeys } from './components/AccountKeys';
 import { ConnectPage } from './components/ConnectPage';
 import { SignIn } from './components/SignIn';
 import { useAuth } from './contexts/AuthContext';
@@ -17,6 +18,11 @@ const App: React.FC = () => {
 
   if (window.location.pathname === '/connect') {
     return <ConnectPage user={user} signInWithGoogle={signInWithGoogle} signOut={signOut} />;
+  }
+
+  if (window.location.pathname === '/account/keys') {
+    if (!user) return <SignIn signInWithGoogle={signInWithGoogle} />;
+    return <AccountKeys user={user} signOut={signOut} />;
   }
 
   if (!user) return <SignIn signInWithGoogle={signInWithGoogle} />;

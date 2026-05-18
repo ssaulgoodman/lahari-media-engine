@@ -8,6 +8,23 @@ const mcpUrl = () => `${appOrigin()}/mcp`;
 type Harness = 'codex' | 'claude';
 type CodexPlatform = 'mac' | 'win' | 'linux' | 'cli';
 
+type KeyStatus = {
+  provider: string;
+  isSet: boolean;
+};
+
+type RequiredKeyInfo = {
+  provider: string;
+  label: string;
+  workflows: string[];
+};
+
+const REQUIRED_KEYS: RequiredKeyInfo[] = [
+  { provider: 'segmind', label: 'Segmind', workflows: ['music_video', 'anime_scripted'] },
+  { provider: 'gemini', label: 'Google AI Studio', workflows: ['music_video'] },
+  { provider: 'elevenlabs', label: 'ElevenLabs', workflows: ['anime_scripted'] },
+];
+
 const detectPlatform = (): CodexPlatform => {
   if (typeof navigator === 'undefined') return 'mac';
   const ua = navigator.userAgent;
@@ -21,6 +38,69 @@ const platformLabel = (p: CodexPlatform): string => {
   if (p === 'win') return 'Windows';
   if (p === 'linux') return 'Linux';
   return 'CLI';
+};
+
+const KeyChecklist: React.FC<{
+  keys: KeyStatus[];
+  onGoToKeys: () => void;
+}> = ({ keys, onGoToKeys }) => {
+  const getStatus = (provider: string) => keys.find((k) => k.provider === provider)?.isSet ?? false;
+
+  const missingAny = REQUIRED_KEYS.some((rk) => !getStatus(rk.provider));
+
+  return (
+    <div className="surface rounded-xl p-7 mb-5">
+      <div className="mb-5">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Before you connect</p>
+        <h2 className="text-xl font-display text-white tracking-tight">API keys required</h2>
+        <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">
+          Mirage uses your own API keys for every paid provider. Set the keys for your workflow before minting a token.
+        </p>
+      </div>
+
+      <div className="space-y-2.5 mb-5">
+        {REQUIRED_KEYS.map((rk) => {
+          const isSet = getStatus(rk.provider);
+          return (
+            <div key={rk.provider} className="flex items-center gap-3 py-2 px-3 surface-inset rounded-md">
+              <span className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${isSet ? 'bg-emerald-500/15' : 'bg-white/[0.04]'}`}>
+                {isSet ? (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300"><polyline points="20 6 9 17 4 12"/></svg>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-zinc-500" />
+                )}
+              </span>
+              <div className="flex-1 min-w-0">
+                <span className={`text-sm ${isSet ? 'text-zinc-300' : 'text-white font-medium'}`}>{rk.label}</span>
+                <span className="text-[10px] text-zinc-500 ml-2">
+                  {rk.workflows.map((w) => w.replace('_', ' ')).join(', ')}
+                </span>
+              </div>
+              <span className={`text-[10px] uppercase tracking-wider ${isSet ? 'text-emerald-300/70' : 'text-amber-300/70'}`}>
+                {isSet ? 'set' : 'missing'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-[11px] text-zinc-500 leading-relaxed">
+          Optional keys (Anthropic, OpenAI) are only needed for web studio AI buttons without a harness.
+        </p>
+        <button
+          onClick={onGoToKeys}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex-shrink-0 ${
+            missingAny
+              ? 'bg-white text-black hover:bg-zinc-100'
+              : 'surface-inset text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+          }`}
+        >
+          {missingAny ? 'Set up keys' : 'Manage keys'}
+        </button>
+      </div>
+    </div>
+  );
 };
 
 export const ConnectPage: React.FC<{
@@ -38,6 +118,8 @@ export const ConnectPage: React.FC<{
   const [activeHarness, setActiveHarness] = useState<Harness>('codex');
   const [codexPlatform, setCodexPlatform] = useState<CodexPlatform>('mac');
   const [showFallback, setShowFallback] = useState(false);
+  const [apiKeys, setApiKeys] = useState<KeyStatus[]>([]);
+  const [keysLoading, setKeysLoading] = useState(true);
 
   useEffect(() => {
     setCodexPlatform(detectPlatform());
@@ -57,9 +139,33 @@ export const ConnectPage: React.FC<{
     }
   }, [user]);
 
+  const loadApiKeys = useCallback(async () => {
+    if (!user) return;
+    try {
+      const data = await api.listApiKeys();
+      setApiKeys((data.keys || []).map((k: any) => ({ provider: k.provider, isSet: k.isSet })));
+    } catch {
+      // Keys endpoint may not exist yet during early dev — treat as empty
+      setApiKeys([]);
+    } finally {
+      setKeysLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     loadTokens();
-  }, [loadTokens]);
+    loadApiKeys();
+  }, [loadTokens, loadApiKeys]);
+
+  const hasRequiredKeys = (): boolean => {
+    const getStatus = (provider: string) => apiKeys.find((k) => k.provider === provider)?.isSet ?? false;
+    // At minimum need segmind (all workflows). The other required keys depend on workflow,
+    // but since we don't know the user's workflow at /connect time, we check if they have
+    // at least one complete workflow set.
+    const musicVideoReady = getStatus('segmind') && getStatus('gemini');
+    const animeReady = getStatus('segmind') && getStatus('elevenlabs');
+    return musicVideoReady || animeReady;
+  };
 
   const createToken = async () => {
     setLoading(true);
@@ -102,19 +208,22 @@ export const ConnectPage: React.FC<{
     }
   };
 
+  const goToKeys = () => {
+    window.location.href = '/account/keys';
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-[#141418] flex items-center justify-center px-6 relative overflow-hidden">
-        {/* Subtle ambient glow */}
         <div aria-hidden className="absolute inset-0 pointer-events-none">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-white/[0.015] blur-3xl" />
         </div>
 
         <div className="w-full max-w-md text-center relative">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-6">Lahari Connect</p>
-          <h1 className="text-3xl font-display text-white mb-4 tracking-tight">Connect Lahari to your agent</h1>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-6">Mirage Connect</p>
+          <h1 className="text-3xl font-display text-white mb-4 tracking-tight">Connect Mirage to your agent</h1>
           <p className="text-sm text-zinc-400 mb-10 leading-relaxed max-w-sm mx-auto">
-            Sign in to mint an account-scoped MCP token for Codex Desktop or Claude Code. No service keys. No engine repo.
+            Sign in to set your API keys and mint an account-scoped MCP token for Codex Desktop or Claude Code.
           </p>
           <button
             onClick={() => signInWithGoogle(`${window.location.origin}/connect`)}
@@ -137,26 +246,26 @@ export const ConnectPage: React.FC<{
   const tokenPlaceholder = token || '<token>';
   const mcpEndpoint = mcpUrl();
   const tokenMaskedSuffix = token ? token.slice(-6) : '';
+  const keysReady = hasRequiredKeys();
+  const canMintToken = keysReady || tokens.length > 0;
 
-  // Codex install variants
-  const codexAppFields = `Name: lahari
+  const codexAppFields = `Name: mirage
 Type: Streamable HTTP
 URL: ${mcpEndpoint}
 Bearer token env var: leave blank
 Header key: Authorization
 Header value: Bearer ${tokenPlaceholder}`;
-  const codexCliInstall = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}
-codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN`;
-  const codexWindowsInstall = `[Environment]::SetEnvironmentVariable("LAHARI_MCP_TOKEN", "${tokenPlaceholder}", "User")
-codex mcp remove lahari
-codex mcp add lahari --url ${mcpEndpoint} --bearer-token-env-var LAHARI_MCP_TOKEN
-codex mcp get lahari --json
+  const codexCliInstall = `export MIRAGE_MCP_TOKEN=${tokenPlaceholder}
+codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN`;
+  const codexWindowsInstall = `[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${tokenPlaceholder}", "User")
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp get mirage --json
 Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
 
-  // Claude install
-  const claudeInstall = `export LAHARI_MCP_TOKEN=${tokenPlaceholder}
-claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Authorization":"Bearer ${'${LAHARI_MCP_TOKEN}'}"}}'`;
-  const claudeFallback = `claude mcp add lahari --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpEndpoint}`;
+  const claudeInstall = `export MIRAGE_MCP_TOKEN=${tokenPlaceholder}
+claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Authorization":"Bearer ${'${MIRAGE_MCP_TOKEN}'}"}}'`;
+  const claudeFallback = `claude mcp add mirage --transport http --header "Authorization: Bearer ${tokenPlaceholder}" ${mcpEndpoint}`;
 
   const CodeBlock: React.FC<{ value: string; copyLabel?: string; small?: boolean }> = ({ value, copyLabel, small }) => (
     <div className="relative group">
@@ -180,7 +289,6 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
     </div>
   );
 
-  // Codex tab content per platform
   const codexContent = (() => {
     if (codexPlatform === 'mac' || codexPlatform === 'linux') {
       return (
@@ -210,13 +318,12 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
           </Step>
           <Step n={2} title="Reopen Codex Desktop">
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Start a new chat. The Lahari tools should appear when triggered.
+              Start a new chat. The Mirage tools should appear when triggered.
             </p>
           </Step>
         </div>
       );
     }
-    // CLI advanced
     return (
       <div className="space-y-5">
         <Step n={1} title="In your terminal, run">
@@ -239,12 +346,12 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
       <Step n={1} title="In your terminal, run">
         <CodeBlock value={claudeInstall} copyLabel="Copy commands" />
         <p className="text-[11px] text-zinc-400 leading-relaxed">
-          Single quotes keep <span className="font-mono text-zinc-300">${'{'}LAHARI_MCP_TOKEN{'}'}</span> unexpanded so Claude writes the env reference into <span className="font-mono text-zinc-300">.mcp.json</span>.
+          Single quotes keep <span className="font-mono text-zinc-300">${'{'}MIRAGE_MCP_TOKEN{'}'}</span> unexpanded so Claude writes the env reference into <span className="font-mono text-zinc-300">.mcp.json</span>.
         </p>
       </Step>
       <Step n={2} title="Restart Claude Code in your project folder">
         <p className="text-[11px] text-zinc-400 leading-relaxed">
-          Open any empty folder you want to use as your Lahari workspace.
+          Open any empty folder you want to use as your Mirage workspace.
         </p>
         <button
           onClick={() => setShowFallback(s => !s)}
@@ -260,7 +367,6 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
 
   return (
     <div className="min-h-screen bg-[#141418] text-white px-6 py-12 relative overflow-hidden">
-      {/* Subtle ambient glow */}
       <div aria-hidden className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] rounded-full bg-white/[0.012] blur-3xl" />
       </div>
@@ -269,16 +375,24 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
         {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-12">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-3">Lahari Connect</p>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-3">Mirage Connect</p>
             <h1 className="text-3xl font-display text-white mb-2 tracking-tight">Connect your agent</h1>
             <p className="text-sm text-zinc-300">{user.email || user.id}</p>
           </div>
-          <button
-            onClick={signOut}
-            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors flex-shrink-0"
-          >
-            Switch account
-          </button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <a
+              href="/account/keys"
+              className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
+            >
+              API Keys
+            </a>
+            <button
+              onClick={signOut}
+              className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors flex-shrink-0"
+            >
+              Switch account
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -292,17 +406,25 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
           </div>
         )}
 
+        {/* BYOK gate — show key checklist before token minting */}
+        {!keysLoading && (
+          <KeyChecklist keys={apiKeys} onGoToKeys={goToKeys} />
+        )}
+
         {/* Step 1 — Mint a token */}
-        <div className="surface rounded-xl p-7 mb-5">
+        <div className={`surface rounded-xl p-7 mb-5 ${!canMintToken ? 'opacity-50 pointer-events-none' : ''}`}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 1</p>
               <h2 className="text-xl font-display text-white tracking-tight">Mint your access token</h2>
-              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Shown once. Treat it like a password — anyone with it can act as you in Lahari.</p>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Shown once. Treat it like a password — anyone with it can act as you in Mirage.</p>
+              {!keysReady && tokens.length === 0 && (
+                <p className="text-xs text-amber-300/70 mt-2">Set your required API keys above to unlock token minting.</p>
+              )}
             </div>
             <button
               onClick={createToken}
-              disabled={loading}
+              disabled={loading || !canMintToken}
               className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 transition-colors flex-shrink-0"
             >
               {loading ? (
@@ -352,7 +474,7 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               ) : (
                 <div className="surface-inset rounded-md p-4 flex items-center justify-between gap-3 flex-wrap">
                   <div>
-                    <p className="text-xs font-mono text-zinc-300">{tokenMaskedSuffix ? `lahari_mcp_••••••${tokenMaskedSuffix}` : 'lahari_mcp_••••••'}</p>
+                    <p className="text-xs font-mono text-zinc-300">{tokenMaskedSuffix ? `mirage_mcp_••••••${tokenMaskedSuffix}` : 'mirage_mcp_••••••'}</p>
                     <p className="text-[11px] text-zinc-400 mt-1">Stored in your hands. Keep going.</p>
                   </div>
                   <button
@@ -367,7 +489,7 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
           )}
         </div>
 
-        {/* Step 2 — Install (only after confirmation, but we show always when token exists; confirmation just collapses token) */}
+        {/* Step 2 — Install */}
         {token && (
           <div className="surface rounded-xl p-7 mb-5">
             <div className="mb-6">
@@ -394,10 +516,8 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               ))}
             </div>
 
-            {/* Tab content */}
             {activeHarness === 'codex' ? (
               <>
-                {/* Platform sub-toggle */}
                 <div className="flex items-center gap-1.5 mb-6 flex-wrap">
                   <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mr-1.5">Platform</span>
                   {(['mac', 'win', 'linux', 'cli'] as CodexPlatform[]).map(p => (
@@ -439,10 +559,10 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
                 <h2 className="text-lg font-display text-white tracking-tight mb-3">You're connected when this works</h2>
                 <p className="text-sm text-zinc-300 leading-relaxed mb-3">In your harness chat, ask:</p>
                 <div className="surface-inset rounded-md px-4 py-3 mb-3">
-                  <p className="text-sm text-white font-mono">List my Lahari projects</p>
+                  <p className="text-sm text-white font-mono">List my Mirage projects</p>
                 </div>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  If you see your projects, you're connected. Then try: <span className="text-zinc-300">"Open &lt;song name&gt;"</span> — your agent will materialize a Lahari workspace in the current folder.
+                  If you see your projects, you're connected. Then try: <span className="text-zinc-300">"Start a new anime project"</span> — your agent will guide you through intake.
                 </p>
               </div>
             </div>
@@ -472,15 +592,22 @@ claude mcp add-json lahari '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               <div>
                 <p className="text-zinc-200 font-medium mb-1.5">Authorization errors</p>
                 <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
-                  <li>Confirm you copied the token completely. The full token is ~50 characters starting with <span className="font-mono text-zinc-300">lahari_mcp_</span>.</li>
+                  <li>Confirm you copied the token completely. The full token is ~50 characters starting with <span className="font-mono text-zinc-300">mirage_mcp_</span>.</li>
                   <li>Check the token is still active in the list below.</li>
                   <li>For Claude Code, make sure the env var is set <span className="text-zinc-300">before</span> launching <span className="font-mono text-zinc-300">claude</span>.</li>
                 </ul>
               </div>
               <div>
+                <p className="text-zinc-200 font-medium mb-1.5">API key errors after connecting</p>
+                <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
+                  <li>If a tool returns <span className="text-zinc-300">"missing_key"</span>, visit <a href="/account/keys" className="text-zinc-300 underline underline-offset-2">/account/keys</a> to add or rotate the provider key.</li>
+                  <li>Anthropic and OpenAI keys are only needed for web studio AI buttons — your harness (Codex/Claude Code) brings its own LLM subscription.</li>
+                </ul>
+              </div>
+              <div>
                 <p className="text-zinc-200 font-medium mb-1.5">Different harness or still stuck?</p>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Once connected, the easiest path is to ask your agent to call <span className="font-mono text-zinc-300">lahari_capture_issue</span> with what you tried. Lahari engineering reads these.
+                  Once connected, the easiest path is to ask your agent to call <span className="font-mono text-zinc-300">mirage_capture_issue</span> with what you tried. Mirage engineering reads these.
                 </p>
               </div>
             </div>

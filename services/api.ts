@@ -883,6 +883,27 @@ export const sendChatMessage = async (projectId: string, message: string) => {
   return handleResponse(res);
 };
 
+// ─── BYOK API Keys ─────────────────────────────────────────────────
+
+export const listApiKeys = async () => {
+  const res = await authFetch(`${API}/account/api-keys`);
+  return handleResponse(res);
+};
+
+export const setApiKey = async (provider: string, value: string, label?: string) => {
+  const res = await authFetch(`${API}/account/api-keys/${provider}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value, ...(label ? { label } : {}) }),
+  });
+  return handleResponse(res);
+};
+
+export const deleteApiKey = async (provider: string) => {
+  const res = await authFetch(`${API}/account/api-keys/${provider}`, { method: 'DELETE' });
+  return handleResponse(res);
+};
+
 // ─── Music Video Queue ────────────────────────────────────────────
 
 export const listQueue = async (filters?: { status?: string; deity?: string }) => {
