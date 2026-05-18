@@ -165,7 +165,7 @@ interface Props {
   onSetProject?: (project: ApiProject) => void;
   onSetViewPhase: (phase: Phase) => void;
   onOpenModal: (url: string) => void;
-  showActionError: (msg: string) => void;
+  showActionError: (input: string | unknown) => void;
 }
 
 export const StylePhase: React.FC<Props> = ({

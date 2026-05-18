@@ -23,7 +23,7 @@ interface Props {
   onUpdateProject: (updates: Record<string, any>) => void;
   onSetProject?: (project: ApiProject) => void;
   onSetViewPhase: (phase: Phase) => void;
-  showActionError: (msg: string) => void;
+  showActionError: (input: string | unknown) => void;
 }
 
 export const ScriptPhase: React.FC<Props> = ({

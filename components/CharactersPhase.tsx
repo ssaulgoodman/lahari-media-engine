@@ -26,7 +26,7 @@ interface Props {
   onSetViewPhase: (phase: Phase) => void;
   onOpenModal: (url: string) => void;
   onConfirmDestructive?: (opts: { title: string; description: string; confirmLabel?: string; run: () => any }) => void;
-  showActionError: (msg: string) => void;
+  showActionError: (input: string | unknown) => void;
 }
 
 export const CharactersPhase: React.FC<Props> = ({

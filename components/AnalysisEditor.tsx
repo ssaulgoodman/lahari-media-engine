@@ -10,6 +10,7 @@ import { StylePhase } from './StylePhase';
 import { CharactersPhase } from './CharactersPhase';
 import { EnvironmentsPhase } from './EnvironmentsPhase';
 import * as api from '../services/api';
+import { isMissingKeyError } from '../services/api';
 
 interface Props {
   project: ApiProject;
@@ -64,11 +65,35 @@ export const AnalysisEditor: React.FC<Props> = ({
   const hydratedCharacterCandidates = useRef<Set<string>>(new Set());
   const hydratedEnvironmentCandidates = useRef<Set<string>>(new Set());
 
-  // Shared inline error feedback
-  const [actionError, setActionError] = useState<string | null>(null);
+  // Shared inline error feedback. Banner accepts either a pre-formatted string
+  // (most call sites) or a raw error/unknown — the latter lets BYOK-aware
+  // paths surface a structured `missing_key` action link to /account/keys
+  // without each call site re-implementing the detection.
+  type ActionErrorState = {
+    message: string;
+    action?: { label: string; href: string };
+  };
+  const [actionError, setActionError] = useState<ActionErrorState | null>(null);
   const actionErrorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showActionError = (msg: string) => {
-    setActionError(msg);
+  const showActionError = (input: string | unknown) => {
+    let state: ActionErrorState;
+    if (typeof input === 'string') {
+      state = { message: input };
+    } else if (isMissingKeyError(input)) {
+      const provider = input.provider ? input.provider.charAt(0).toUpperCase() + input.provider.slice(1) : '';
+      state = {
+        message: input.message,
+        action: {
+          label: provider ? `Set up ${provider} key` : 'Set up keys',
+          href: input.setupUrl || '/account/keys',
+        },
+      };
+    } else if (input instanceof Error) {
+      state = { message: input.message };
+    } else {
+      state = { message: String(input || 'Unknown error') };
+    }
+    setActionError(state);
     if (actionErrorTimer.current) clearTimeout(actionErrorTimer.current);
     actionErrorTimer.current = setTimeout(() => setActionError(null), 8000);
   };

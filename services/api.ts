@@ -19,10 +19,49 @@ const authFetch = async (url: string, init?: RequestInit): Promise<Response> => 
   return fetch(url, { ...init, headers });
 };
 
+/** Structured error thrown by the API client. Backend returns
+ *  `{ ok:false, error:{ code, message, provider?, setupUrl?, retryAfterSeconds? } }`
+ *  (see server/services/structuredErrors.ts). This carries the full body so
+ *  UI can branch on `err.code === 'missing_key'` and link to /account/keys. */
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  provider?: string;
+  setupUrl?: string;
+  retryAfterSeconds?: number;
+  details?: unknown;
+
+  constructor(body: {
+    code?: string;
+    message?: string;
+    provider?: string;
+    setupUrl?: string;
+    retryAfterSeconds?: number;
+    details?: unknown;
+  }, status: number) {
+    super(body.message || `Request failed: ${status}`);
+    this.name = 'ApiError';
+    this.code = body.code || 'server_error';
+    this.status = status;
+    if (body.provider) this.provider = body.provider;
+    if (body.setupUrl) this.setupUrl = body.setupUrl;
+    if (typeof body.retryAfterSeconds === 'number') this.retryAfterSeconds = body.retryAfterSeconds;
+    if (body.details !== undefined) this.details = body.details;
+  }
+}
+
+export const isMissingKeyError = (err: unknown): err is ApiError =>
+  err instanceof ApiError && err.code === 'missing_key';
+
 const handleResponse = async (res: Response) => {
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error?.message || body.error || `Request failed: ${res.status}`);
+    const body = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    // Backend's structured shape is `{ ok:false, error:{ code, message, ... } }`.
+    // Legacy routes still return `{ error: 'string' }` — normalize both.
+    const errBody = typeof body.error === 'string'
+      ? { message: body.error }
+      : (body.error || {});
+    throw new ApiError(errBody, res.status);
   }
   return res.json();
 };

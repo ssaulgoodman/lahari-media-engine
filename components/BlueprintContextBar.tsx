@@ -87,19 +87,24 @@ export const isLockedPhase = (project: { workflowKey?: ApiProject['workflowKey']
   return ['environments_locked', 'in_production', 'rendered', 'completed'].includes(status);
 };
 
+export type ActionErrorState = {
+  message: string;
+  action?: { label: string; href: string };
+};
+
 interface Props {
   project: ApiProject;
   isLoading: boolean;
   viewPhase: Phase;
   activePhase: Phase;
   showLaunch: boolean;
-  actionError: string | null;
+  actionError: ActionErrorState | null;
   onSetViewPhase: (phase: Phase) => void;
   onUpdateProject: (updates: Record<string, any>) => void;
   onLaunchStudio: () => void;
   onSetProject?: (project: ApiProject) => void;
   onClearActionError: () => void;
-  showActionError: (msg: string) => void;
+  showActionError: (input: string | unknown) => void;
 }
 
 export const BlueprintContextBar: React.FC<Props> = ({
@@ -132,7 +137,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
       const updated = await api.analyzeAudio(project.id);
       onSetProject?.(updated);
     } catch (err: any) {
-      showActionError(`Analysis failed: ${err.message}`);
+      // Pass the raw error so missing_key (Gemini audio analysis) surfaces
+      // a setup link to /account/keys instead of just a flat string.
+      showActionError(err);
     } finally {
       setIsAnalyzingAudio(false);
     }
@@ -459,13 +466,25 @@ export const BlueprintContextBar: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Action error banner */}
+      {/* Action error banner. Banner has two click targets: the body
+          dismisses; the action link routes to setup (e.g. /account/keys for
+          missing_key errors). Stopping propagation on the link prevents
+          the dismiss handler from swallowing the navigation. */}
       {actionError && (
         <div className="mb-4 px-4 py-2.5 rounded-lg border border-red-500/20 bg-red-500/[0.06] flex items-start gap-2 text-sm text-red-400 cursor-pointer" onClick={onClearActionError}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4 mt-0.5 flex-shrink-0">
             <path fillRule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14ZM8 4a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
           </svg>
-          <span>{actionError}</span>
+          <span className="flex-1">{actionError.message}</span>
+          {actionError.action && (
+            <a
+              href={actionError.action.href}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-shrink-0 text-xs text-red-200 hover:text-white bg-red-500/[0.15] hover:bg-red-500/[0.25] rounded px-2 py-1 transition-colors"
+            >
+              {actionError.action.label} →
+            </a>
+          )}
         </div>
       )}
     </>

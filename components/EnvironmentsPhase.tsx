@@ -20,7 +20,7 @@ interface Props {
   onSetProject?: (project: ApiProject) => void;
   onOpenModal: (url: string) => void;
   onConfirmDestructive?: (opts: { title: string; description: string; confirmLabel?: string; run: () => any }) => void;
-  showActionError: (msg: string) => void;
+  showActionError: (input: string | unknown) => void;
 }
 
 export const EnvironmentsPhase: React.FC<Props> = ({
