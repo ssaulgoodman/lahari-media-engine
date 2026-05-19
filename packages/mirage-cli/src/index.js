@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
-const DEFAULT_API_URL = 'https://mirage-platform-production.up.railway.app';
+const DEFAULT_API_URL = 'https://mirage-platform-production-05ca.up.railway.app';
 const STATE_FILE = '.sync-state.json';
 const LOCK_DIR = '.sync-state.lock';
 

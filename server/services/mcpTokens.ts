@@ -27,7 +27,7 @@ const mcpUrl = () => (
   || process.env.LAHARI_MCP_URL
   || process.env.APP_URL && `${process.env.APP_URL.replace(/\/+$/, '')}/mcp`
   || process.env.PUBLIC_APP_URL && `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/mcp`
-  || 'https://mirage-platform-production.up.railway.app/mcp'
+  || 'https://mirage-platform-production-05ca.up.railway.app/mcp'
 );
 
 const normalizeExpiryDays = (expiresInDays?: number | null) => {
@@ -120,7 +120,7 @@ export const createCliToken = async (
     .select('id')
     .single();
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
-  const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production.up.railway.app').replace(/\/+$/, '');
+  const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production-05ca.up.railway.app').replace(/\/+$/, '');
   // TODO: switch the default to @mirage/cli@0.1.0 once it is published.
   const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/lahari-cli@0.1.0';
   const posixCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;

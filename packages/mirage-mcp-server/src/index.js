@@ -10,7 +10,7 @@ import * as z from 'zod/v4';
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
-const DEFAULT_API_URL = 'https://mirage-platform-production.up.railway.app';
+const DEFAULT_API_URL = 'https://mirage-platform-production-05ca.up.railway.app';
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const modelOverrideSchema = z.object({

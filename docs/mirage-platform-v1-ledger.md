@@ -493,7 +493,7 @@ type MissingKeyError = {
 ## 8. Open Questions
 
 Resolved this round:
-- ~~Mirage domain~~ → use Railway default `mirage-platform-production.up.railway.app` (or whatever Railway issues for the project named `mirage-platform`). No custom DNS in v1
+- ~~Mirage domain~~ → Railway issued `https://mirage-platform-production-05ca.up.railway.app`. No custom DNS in v1.
 - ~~Strategy picker location~~ → Audio phase (T5.6); Studio surfaces the lipsync-blocked warning only (T6.8)
 - ~~Voice ID validation~~ → accept any string at save; fail at gen time with structured error. Cheaper, simpler. Add `/v1/voices` validation in v1.5 if support burden hits
 
@@ -560,6 +560,10 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 2026-05-19 Codex: T1.9 partial provider consolidation. In `DB_TABLE_PREFIX=studio` / Mirage mode, `generateVideoWithFallback` no longer honors `VIDEO_PROVIDER=vertex` and no longer falls back from Segmind to Vertex; Segmind errors surface directly. Lahari/legacy mode keeps the existing Vertex backup path. Image-side Nano Banana Pro-on-Segmind routing still needs provider-endpoint verification before changing runtime image defaults.
 
 2026-05-19 Codex/Claude: Post-E2E polish flags from T5/T6 reviews. Do not act on these before golden-path testing unless they become obvious: (1) Studio `tts needed` jump currently accepts an Audio-phase sessionStorage hint without re-checking workflow visibility; practically safe because only audio-plan shots show the chip, but guard it if a non-audio workflow ever gains stale audio data. (2) Audio phase can show both Rewrite and Generate on a stale shot with pending/error TTS; if testing shows artists generate stale dialogue by accident, de-emphasize or disable Generate while stale. (3) Render overlay currently schedules dialogue lines sequentially inside the shot using `ttsDurationSec`, `targetSec`, or equal fallback slices; if real TTS durations drift, add measured duration extraction and/or an overrun warning UI. (4) Overlay render caps dialogue at shot end and silently skips any remaining lines once `cursorMs >= shotEndMs`; if E2E exposes long-dialogue/short-shot cases, count dropped lines and surface a render warning/director event. (5) In Mirage/studio mode, `VIDEO_PROVIDER=vertex` is intentionally ignored; add a boot-time warning if that env var is present so ops/devs are not confused. (6) Lipsync concat joins TTS clips directly; v1.5 can insert ~150ms silence between lines for more natural pacing. (7) Replace JSON-stringified `Error` structured throw sites like `structuredVideoError` with typed error classes when doing the broader structured-error cleanup.
+
+2026-05-19 Codex: T1.1/T1.2 complete on the new Mirage Supabase project. Verified `studio_projects`, `studio_scenes`, `studio_shots`, `studio_assets`, `studio_cast_members`, `studio_tenant_api_keys`, `studio_provider_usage_daily`, `studio_mcp_tokens`, and `studio_renders` through the service API. Applied missing additive BYOK/audio migrations via linked Supabase CLI because direct Postgres DNS did not resolve locally. Created the branded public storage bucket `mirage-assets` (the earlier `studio-assets` bucket also exists but Railway should use `mirage-assets`).
+
+2026-05-19 Codex: T1.3/T1.4 started. Created Railway project/service `mirage-platform`, generated Railway domain `https://mirage-platform-production-05ca.up.railway.app`, set core production variables for `DB_TABLE_PREFIX=studio`, `SUPABASE_BUCKET=mirage-assets`, Supabase URL/keys, app URLs, CORS, and `MIRAGE_ENCRYPTION_KEY`. Updated Mirage MCP/CLI/server token defaults to the issued Railway URL. Render envs (`REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET`) are still unset pending either a Mirage renderer service or reuse of the existing renderer secret.
 
 ---
 
