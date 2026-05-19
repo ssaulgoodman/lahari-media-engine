@@ -1,10 +1,10 @@
 {
-  "name": "@mirage/mcp-server",
+  "name": "@ssaulgoodman420/mirage-mcp-server",
   "version": "0.1.0",
   "description": "Remote Mirage MCP server for artist workspaces.",
   "type": "module",
   "bin": {
-    "mirage-mcp-server": "./src/index.js"
+    "mirage-mcp-server": "src/index.js"
   },
   "files": [
     "src"

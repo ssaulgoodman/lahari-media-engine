@@ -1,5 +1,5 @@
 {
-  "name": "@mirage/cli",
+  "name": "@ssaulgoodman420/mirage-cli",
   "version": "0.1.0",
   "description": "Mirage artist workspace sync CLI.",
   "type": "module",

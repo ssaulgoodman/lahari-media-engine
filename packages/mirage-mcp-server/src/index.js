@@ -371,7 +371,7 @@ registerTool('write_project_artifacts', {
     includeReport: z.boolean().default(true),
     includeContactSheet: z.boolean().default(true),
   },
-}, unsupported('write_project_artifacts', 'Requires local artifact rendering in @mirage/mcp-server.'));
+}, unsupported('write_project_artifacts', 'Requires local artifact rendering in @ssaulgoodman420/mirage-mcp-server.'));
 
 registerTool('write_project_sheets', {
   title: 'Write focused project sheets',
@@ -381,7 +381,7 @@ registerTool('write_project_sheets', {
     sheetTypes: z.array(z.enum(['overview', 'style', 'references', 'storyboard', 'renders'])).optional(),
     outputDir: z.string().optional(),
   },
-}, unsupported('write_project_sheets', 'Requires local artifact rendering in @mirage/mcp-server.'));
+}, unsupported('write_project_sheets', 'Requires local artifact rendering in @ssaulgoodman420/mirage-mcp-server.'));
 
 registerTool('attach_director_session', {
   title: 'Attach director session',

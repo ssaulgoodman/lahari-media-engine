@@ -121,8 +121,7 @@ export const createCliToken = async (
     .single();
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
   const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production-05ca.up.railway.app').replace(/\/+$/, '');
-  // TODO: switch the default to @mirage/cli@0.1.0 once it is published.
-  const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/lahari-cli@0.1.0';
+  const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.0';
   const posixCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
   const powershellCommand = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
   return {
