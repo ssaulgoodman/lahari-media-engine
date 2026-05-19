@@ -924,7 +924,7 @@ export const sendChatMessage = async (projectId: string, message: string) => {
 
 // ─── Audio Blueprint (anime workflow) ──────────────────────────────
 // Backend: write-audio-plan + generate-dialogue-audio + audio-plan-cost
-// land in T3. UI is built ahead of backend; calls will 404 until then.
+// plus per-shot strategy updates for the Audio phase.
 
 export const writeAudioPlan = async (
   projectId: string,
@@ -964,6 +964,19 @@ export const getAudioPlanCost = async (
   if (opts?.characterIds?.length) params.set('characterIds', opts.characterIds.join(','));
   const qs = params.toString();
   const res = await authFetch(`${API}/projects/${projectId}/audio-plan-cost${qs ? `?${qs}` : ''}`);
+  return handleResponse(res);
+};
+
+export const updateShotAudioPlan = async (
+  projectId: string,
+  shotId: string,
+  patch: { dialogueStrategy: 'lipsync' | 'overlay' },
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/audio-plan`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
   return handleResponse(res);
 };
 

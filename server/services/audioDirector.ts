@@ -108,6 +108,7 @@ export const inferDialogueStrategy = (
 export const sanitizeAudioPlan = (
   raw: any,
   cast: CastRow[],
+  opts: { dialogueStrategy?: AudioPlanDialogueStrategy } = {},
 ): AudioPlan => {
   const castById = new Map(cast.map((member) => [member.id, member]));
   const dialogueInput = Array.isArray(raw?.dialogue) ? raw.dialogue : [];
@@ -135,8 +136,13 @@ export const sanitizeAudioPlan = (
   dialogue.sort((a, b) => a.order - b.order);
   dialogue.forEach((line, idx) => { line.order = idx + 1; });
 
+  const inferredStrategy = inferDialogueStrategy(dialogue, castById);
+  const dialogueStrategy = opts.dialogueStrategy === 'lipsync' && inferredStrategy !== 'lipsync'
+    ? inferredStrategy
+    : opts.dialogueStrategy || inferredStrategy;
+
   return {
-    dialogueStrategy: inferDialogueStrategy(dialogue, castById),
+    dialogueStrategy,
     dialogue,
     soundNotes: clip(raw?.soundNotes, 1000) || undefined,
   };
