@@ -494,11 +494,13 @@ type MissingKeyError = {
 
 Resolved this round:
 - ~~Mirage domain~~ → Railway issued `https://mirage-platform-production-05ca.up.railway.app`. No custom DNS in v1.
+- ~~`MIRAGE_ENCRYPTION_KEY` value~~ → generated during Railway setup and stored in Railway service variables. Keep the backed-up value outside the repo; rotating it breaks decryption of existing BYOK rows.
 - ~~Strategy picker location~~ → Audio phase (T5.6); Studio surfaces the lipsync-blocked warning only (T6.8)
 - ~~Voice ID validation~~ → accept any string at save; fail at gen time with structured error. Cheaper, simpler. Add `/v1/voices` validation in v1.5 if support burden hits
 
 Still open:
-1. **`MIRAGE_ENCRYPTION_KEY` value** — 32 random bytes base64. Generate at Railway-setup time, store in Railway secrets. Back up offline. Same key MUST be used across all instances or decryption breaks. (Operational, resolves during T1.3)
+1. **Supabase Auth redirect configuration** — add the Mirage Railway domain to Supabase Auth / Google OAuth redirect allowlists before user sign-in smoke testing.
+2. **Renderer wiring** — set `REMOTION_RENDERER_URL` and `RENDERER_SHARED_SECRET` once we decide whether Mirage reuses the existing renderer service or gets its own renderer service.
 
 ---
 
@@ -564,6 +566,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 2026-05-19 Codex: T1.1/T1.2 complete on the new Mirage Supabase project. Verified `studio_projects`, `studio_scenes`, `studio_shots`, `studio_assets`, `studio_cast_members`, `studio_tenant_api_keys`, `studio_provider_usage_daily`, `studio_mcp_tokens`, and `studio_renders` through the service API. Applied missing additive BYOK/audio migrations via linked Supabase CLI because direct Postgres DNS did not resolve locally. Created the branded public storage bucket `mirage-assets` (the earlier `studio-assets` bucket also exists but Railway should use `mirage-assets`).
 
 2026-05-19 Codex: T1.3/T1.4 started. Created Railway project/service `mirage-platform`, generated Railway domain `https://mirage-platform-production-05ca.up.railway.app`, set core production variables for `DB_TABLE_PREFIX=studio`, `SUPABASE_BUCKET=mirage-assets`, Supabase URL/keys, app URLs, CORS, and `MIRAGE_ENCRYPTION_KEY`. Updated Mirage MCP/CLI/server token defaults to the issued Railway URL. Render envs (`REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET`) are still unset pending either a Mirage renderer service or reuse of the existing renderer secret.
+
+2026-05-19 Codex: T1.3/T1.4 core app deploy complete. Railway deployment `c2da58cf-acc6-48ae-bcc1-22b2d4a4815a` succeeded; `https://mirage-platform-production-05ca.up.railway.app/api/health` returns 200; root HTML returns 200; deployed JS bundle points at the Mirage Supabase project. Fixed Dockerfile so Vite Supabase vars come from Railway build variables instead of hardcoded legacy values. Remaining infra before full E2E: Supabase/Google auth redirects and renderer env wiring.
 
 ---
 
