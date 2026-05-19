@@ -14,6 +14,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { storageUrl } from '../storage.js';
 
 const router = Router();
 
@@ -23,6 +24,132 @@ const paramStr = (val: string | string[]): string =>
 const activeRenderWindowMs = () => {
   const minutes = Number(process.env.MAX_RENDER_MINUTES || 65);
   return Math.max(1, minutes) * 60 * 1000;
+};
+
+const parseJson = <T>(value: any, fallback: T): T => {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value as T;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+};
+
+const numberMs = (value: unknown, fallback: number) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+const itemSrc = (item: any) => {
+  const src = item?.details?.src;
+  return typeof src === 'string' && src.trim() ? src.trim() : null;
+};
+
+const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: any) => {
+  const trackItemIds = Array.isArray(timeline.trackItemIds) ? [...timeline.trackItemIds] : [];
+  const trackItemsMap = timeline.trackItemsMap && typeof timeline.trackItemsMap === 'object'
+    ? { ...timeline.trackItemsMap }
+    : {};
+  if (trackItemIds.length === 0 || Object.keys(trackItemsMap).length === 0) return timeline;
+
+  const scenes = await selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' });
+  const sceneIds = scenes.map((scene: any) => scene.id);
+  if (sceneIds.length === 0) return timeline;
+  const projectShots = await selectAll('shots', { scene_id: sceneIds }, { orderBy: 'sort_order' });
+  const assetIds = new Set<string>();
+  for (const shot of projectShots) {
+    if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
+    const plan = parseJson<any>(shot.audio_plan, null);
+    if (plan?.dialogueStrategy === 'overlay') {
+      for (const line of plan.dialogue || []) {
+        if (line?.ttsStatus === 'success' && line.ttsAssetId) assetIds.add(line.ttsAssetId);
+      }
+    }
+  }
+  if (assetIds.size === 0) return timeline;
+
+  const assets = await selectAll('assets', { id: [...assetIds] });
+  const assetMap = new Map(assets.map((asset: any) => [asset.id, asset]));
+  const visualItemsBySrc = new Map<string, any[]>();
+  for (const id of trackItemIds) {
+    const item = trackItemsMap[id];
+    if (!item || (item.type !== 'video' && item.type !== 'image')) continue;
+    const src = itemSrc(item);
+    if (!src) continue;
+    const arr = visualItemsBySrc.get(src) || [];
+    arr.push(item);
+    visualItemsBySrc.set(src, arr);
+  }
+
+  let injected = 0;
+  let durationMs = numberMs(timeline.durationMs, 0);
+  for (const shot of projectShots) {
+    const plan = parseJson<any>(shot.audio_plan, null);
+    if (plan?.dialogueStrategy !== 'overlay') continue;
+    const videoAsset = shot.video_asset_id ? assetMap.get(shot.video_asset_id) : null;
+    if (!videoAsset?.file_path) continue;
+    const shotItem = visualItemsBySrc.get(storageUrl(videoAsset.file_path))?.[0];
+    if (!shotItem?.display) continue;
+
+    const shotStartMs = numberMs(shotItem.display.from, 0);
+    const shotEndMs = numberMs(shotItem.display.to, shotStartMs + numberMs(shot.duration, 5) * 1000);
+    const shotDurationMs = Math.max(1, shotEndMs - shotStartMs);
+    const dialogue = [...(plan.dialogue || [])]
+      .filter((line: any) => line?.ttsStatus === 'success' && line.ttsAssetId)
+      .sort((a: any, b: any) => Number(a.order || 0) - Number(b.order || 0));
+    if (dialogue.length === 0) continue;
+
+    let cursorMs = shotStartMs;
+    const fallbackLineMs = Math.max(800, Math.floor(shotDurationMs / dialogue.length));
+    for (const line of dialogue) {
+      const ttsAsset = assetMap.get(line.ttsAssetId);
+      if (!ttsAsset?.file_path) continue;
+      const lineMs = Math.max(
+        500,
+        Math.round(Number(line.ttsDurationSec || line.targetSec || 0) * 1000) || fallbackLineMs,
+      );
+      const itemId = `dialogue-${shot.id}-${line.id || uuidv4()}`;
+      const from = cursorMs;
+      const to = Math.max(from + 500, Math.min(from + lineMs, shotEndMs));
+      if (to <= from) continue;
+      trackItemIds.push(itemId);
+      trackItemsMap[itemId] = {
+        id: itemId,
+        type: 'audio',
+        display: { from, to },
+        details: {
+          src: storageUrl(ttsAsset.file_path),
+          volume: 100,
+          name: `dialogue_${line.order || injected + 1}`,
+        },
+        metadata: {
+          resourceId: itemId,
+          displayName: `Dialogue ${line.order || injected + 1}`,
+          shotId: shot.id,
+          dialogueId: line.id || null,
+          injectedBy: 'mirage_overlay_dialogue',
+        },
+        trackId: 'dialogue-overlay-track',
+        isMain: false,
+        duration: to - from,
+        playbackRate: 1,
+        trim: { from: 0, to: to - from },
+      };
+      injected += 1;
+      cursorMs = to;
+      durationMs = Math.max(durationMs, to);
+      if (cursorMs >= shotEndMs) break;
+    }
+  }
+
+  if (injected === 0) return timeline;
+  return {
+    ...timeline,
+    trackItemIds,
+    trackItemsMap,
+    durationMs: Math.max(numberMs(timeline.durationMs, durationMs), durationMs),
+    metadata: {
+      ...(timeline.metadata || {}),
+      overlayDialogueInjected: injected,
+    },
+  };
 };
 
 router.param('id', async (req, res, next, id) => {
@@ -69,6 +196,8 @@ router.post('/:id/render', async (req, res) => {
     }
   }
 
+  const renderTimeline = await enrichTimelineWithOverlayDialogue(projectId, timeline);
+
   const renderId = uuidv4();
   await insertRow('renders', {
     id: renderId,
@@ -86,7 +215,7 @@ router.post('/:id/render', async (req, res) => {
     entityType: 'render',
     entityId: renderId,
     summary: 'Artist started a final render.',
-    payload: { renderId },
+    payload: { renderId, overlayDialogueInjected: renderTimeline.metadata?.overlayDialogueInjected || 0 },
   });
 
   // Fire-and-forget. The renderer will call /api/renders/callback/:renderId
@@ -101,7 +230,7 @@ router.post('/:id/render', async (req, res) => {
           'content-type': 'application/json',
           'x-renderer-secret': rendererSecret,
         },
-        body: JSON.stringify({ renderId, projectId, timeline }),
+        body: JSON.stringify({ renderId, projectId, timeline: renderTimeline }),
       });
       if (!response.ok) {
         const body = await response.text().catch(() => '');
