@@ -25,7 +25,7 @@ router.post('/projects/:projectId/notebook', async (req, res) => {
     const projectId = paramStr(req.params.projectId);
     const auth = await verifyMcpBearerToken(bearerToken(req.headers.authorization));
     if (auth.tokenKind !== 'cli') {
-      return fail(res, 403, 'wrong_token_kind', 'Notebook sync requires a short-lived Lahari CLI token minted by MCP.');
+      return fail(res, 403, 'wrong_token_kind', 'Notebook sync requires a short-lived Mirage CLI token minted by MCP.');
     }
     if (auth.scopeProjectId !== projectId) {
       return fail(res, 403, 'project_scope_mismatch', 'CLI token is not scoped to this project.', {
@@ -64,7 +64,7 @@ router.post('/projects/:projectId/notebook', async (req, res) => {
     return res.json({
       ok: true,
       data: {
-        kind: 'lahari.notebook.sync',
+        kind: 'mirage.notebook.sync',
         notebookVersion: notebook.notebookVersion,
         generatedAt: notebook.generatedAt,
         project: notebook.project,

@@ -571,6 +571,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-19 Codex: T1.5 MCP setup pass. Hosted `/mcp` route is reachable on the Mirage Railway app and returns JSON-RPC auth errors when called without a bearer token. Scrubbed hosted MCP server name/instructions/tool descriptions from Lahari/queue-first language to Mirage/project-first language, added `mirage_capture_issue` while keeping `lahari_capture_issue` as a legacy alias, exposed `workflowKey`/`presetKey`/`seedKind` in `list_projects`, and removed `deity` from Mirage MCP concept input schemas. `@mirage/mcp-server` is not published yet; `npm pack --dry-run ./packages/mirage-mcp-server` succeeds and confirms the 0.1.0 package shape.
 
+2026-05-19 Codex: T1.5 live MCP smoke passed after applying `migrations/2026-05-19_add_studio_cli_notebook_sync_tokens.sql` to Mirage Supabase. Disposable auth user + temporary `studio_mcp_tokens` row initialized against live `/mcp`; server reports name `mirage`, protocol `2025-06-18`, 60 tools, all audio-plan/TTS tools, and `mirage_capture_issue`. Smoke user/token were deleted afterward; auth user count returned to 0.
+
 ---
 
 ## 10. References
