@@ -86,3 +86,51 @@ export const extractAudioSegment = async (
 
   return uploadFromTmp(outputLocal, 'audio', 'mp3');
 };
+
+/**
+ * Concatenate short dialogue clips into one shot-level MP3 reference.
+ * Seedance accepts a single reference audio today, so lipsync shots with
+ * multiple generated TTS lines need one compact audio asset.
+ */
+export const concatenateAudioFiles = async (audioStoragePaths: string[]): Promise<string> => {
+  const paths = audioStoragePaths.filter(Boolean);
+  if (paths.length === 0) throw new Error('No audio files provided for concat.');
+  if (paths.length === 1) return paths[0];
+
+  const localInputs = await Promise.all(paths.map((p) => downloadToTmp(p)));
+  const outputFilename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp3`;
+  const outputLocal = path.join(os.tmpdir(), 'lahari-cache', outputFilename);
+  fs.mkdirSync(path.dirname(outputLocal), { recursive: true });
+
+  await new Promise<void>((resolve, reject) => {
+    const inputArgs = localInputs.flatMap((input) => ['-i', input]);
+    const concatInputs = localInputs.map((_, index) => `[${index}:a]`).join('');
+    const args = [
+      ...inputArgs,
+      '-filter_complex',
+      `${concatInputs}concat=n=${localInputs.length}:v=0:a=1[aout]`,
+      '-map',
+      '[aout]',
+      '-ac',
+      '2',
+      '-ar',
+      '44100',
+      '-c:a',
+      'libmp3lame',
+      '-b:a',
+      '160k',
+      '-y',
+      outputLocal,
+    ];
+    const proc = spawn('ffmpeg', args);
+    let stderr = '';
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+    proc.on('error', (err) => reject(new Error(`ffmpeg spawn failed: ${err.message}`)));
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-400)}`));
+    });
+  });
+
+  return uploadFromTmp(outputLocal, 'audio', 'mp3');
+};

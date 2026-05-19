@@ -553,6 +553,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 (Append below.)
 
+2026-05-19 Codex: T6.1/T6.2/T6.3 backend video generation path landed. `generateShotVideo` now threads `audio_plan.soundNotes` into the video prompt as visible action cues only, explicitly not generated audio. It treats `shot.audio_plan.dialogueStrategy === 'lipsync'` as the Seedance dialogue-lipsync path: validates every dialogue line has successful TTS, resolves the `dialogue_audio` assets, concatenates multiple lines into one `shot_audio_ref` MP3 with ffmpeg, and passes that reference audio to Seedance for both storyboard and keyframe modes. Missing TTS fails before paid video gen with structured `{ code: 'lipsync_tts_missing', shotId, missingDialogueIds }`; non-Seedance lipsync attempts fail with `{ code: 'lipsync_requires_seedance' }`. `overlay` and absent audio plans remain silent video-gen paths and do not send dialogue text/audio to Seedance. Verification: `npx tsc --noEmit --pretty false` passed. Remaining T6 work is render-time overlay mixing (T6.4/T6.6/T6.7) and E2E validation.
+
 ---
 
 ## 10. References

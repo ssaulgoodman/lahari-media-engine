@@ -3,7 +3,7 @@ import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn 
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { SEGMIND_MODELS, SegmindModelKey } from './segmind.js';
 import { generateVideoWithFallback } from './video-provider.js';
-import { extractAudioSegment, extractLastFrame } from './ffmpeg.js';
+import { concatenateAudioFiles, extractAudioSegment, extractLastFrame } from './ffmpeg.js';
 import { refreshChainedShotPrompt } from './claude.js';
 import { buildSeedanceStoryboardVideoPrompt } from './seedance-storyboard-rd.js';
 import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
@@ -30,12 +30,33 @@ type VideoGenerationRef = {
   id?: string;
 };
 
+type DialogueLine = {
+  id?: string;
+  characterId?: string;
+  text?: string;
+  order?: number;
+  ttsAssetId?: string | null;
+  ttsStatus?: string;
+};
+
+type AudioPlan = {
+  dialogueStrategy?: 'lipsync' | 'overlay';
+  dialogue?: DialogueLine[];
+  soundNotes?: string;
+};
+
 export type GenerateShotVideoOptions = {
   promptOverride?: string;
   refs?: VideoGenerationRef[];
   modelOverride?: {
     videoModel?: string;
   };
+};
+
+const structuredVideoError = (code: string, message: string, details: Record<string, any>, statusCode = 400) => {
+  const error = new Error(JSON.stringify({ code, message, ...details })) as Error & { statusCode?: number };
+  error.statusCode = statusCode;
+  return error;
 };
 
 export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
@@ -183,11 +204,24 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       if (refLabels.length) veoPromptParts.push(refLabels.join('. '));
     }
 
+    const audioPlan = parseJson<AudioPlan | null>(shot.audio_plan, null);
+    const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
+    const visibleSoundCue = soundNotes
+      ? `Visible sound cue to imply through action only, not generated audio: ${soundNotes}`
+      : '';
+    if (visibleSoundCue) {
+      veoPromptParts.push(visibleSoundCue);
+    }
+    const planWantsLipsync = audioPlan?.dialogueStrategy === 'lipsync' && (audioPlan.dialogue?.length || 0) > 0;
+    if (planWantsLipsync && !useStoryboardMode) {
+      veoPromptParts.push('Use the provided reference audio only for natural mouth movement on the visible speaker. Do not add subtitles or readable text.');
+    }
+
     const storyboardPromptBase = useStoryboardMode
       ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
         cutPlanText: storyboardCutPlanText,
         refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
-        lipsyncEnabled: !!shot.lipsync_enabled,
+        lipsyncEnabled: !!shot.lipsync_enabled || planWantsLipsync,
       })
       : '';
     const projectVideoOverride = useStoryboardMode
@@ -196,14 +230,81 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const storyboardPrompt = projectVideoOverride
       ? `${projectVideoOverride.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
       : storyboardPromptBase;
+    const keyframePrompt = opts.promptOverride?.trim()
+      ? [opts.promptOverride.trim(), visibleSoundCue].filter(Boolean).join('\n\n')
+      : veoPromptParts.join('. ');
     const veoPrompt = useStoryboardMode
-      ? storyboardPrompt
-      : opts.promptOverride?.trim() ? opts.promptOverride.trim() : veoPromptParts.join('. ');
+      ? [storyboardPrompt, visibleSoundCue].filter(Boolean).join('\n\n')
+      : keyframePrompt;
     console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
+    const legacySongLipsync = useStoryboardMode && shot.lipsync_enabled && !planWantsLipsync;
     const referenceAudioPaths: string[] = [];
     let referenceAudioAssetId: string | null = null;
-    if (useStoryboardMode && shot.lipsync_enabled) {
+    let referenceAudioMode: 'audio_plan_lipsync' | 'source_audio_lipsync' | null = null;
+
+    if (planWantsLipsync) {
+      if (modelSpec.family !== 'seedance') {
+        throw structuredVideoError(
+          'lipsync_requires_seedance',
+          'Lip-sync dialogue shots require a Seedance video model.',
+          { shotId: shot.id, model: videoModelKey },
+        );
+      }
+      const dialogue = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+      const missingDialogueIds = dialogue
+        .filter((line) => !line.ttsAssetId || line.ttsStatus !== 'success')
+        .map((line) => line.id)
+        .filter(Boolean);
+      if (missingDialogueIds.length > 0) {
+        throw structuredVideoError(
+          'lipsync_tts_missing',
+          'Generate TTS for every dialogue line before creating a lip-sync video.',
+          { shotId: shot.id, missingDialogueIds },
+        );
+      }
+
+      const ttsAssets = await Promise.all(dialogue.map(async (line) => ({
+        line,
+        asset: line.ttsAssetId ? await selectOne('assets', { id: line.ttsAssetId }) : null,
+      })));
+      const unresolvedDialogueIds = ttsAssets
+        .filter(({ asset }) => !asset?.file_path)
+        .map(({ line }) => line.id)
+        .filter(Boolean);
+      if (unresolvedDialogueIds.length > 0) {
+        throw structuredVideoError(
+          'lipsync_tts_missing',
+          'One or more TTS assets could not be resolved for lip-sync video generation.',
+          { shotId: shot.id, missingDialogueIds: unresolvedDialogueIds },
+        );
+      }
+
+      const audioPaths = ttsAssets.map(({ asset }) => asset!.file_path);
+      const audioPath = await concatenateAudioFiles(audioPaths);
+      referenceAudioPaths.push(audioPath);
+      referenceAudioAssetId = audioPaths.length === 1 ? ttsAssets[0].asset!.id : uuidv4();
+      referenceAudioMode = 'audio_plan_lipsync';
+      if (audioPaths.length > 1) {
+        await insertRow('assets', {
+          id: referenceAudioAssetId,
+          project_id: project.id,
+          shot_id: shot.id,
+          category: 'shot_audio_ref',
+          file_path: audioPath,
+          metadata: JSON.stringify({
+            purpose: 'seedance_dialogue_lipsync_reference',
+            dialogueIds: dialogue.map((line) => line.id).filter(Boolean),
+            ttsAssetIds: ttsAssets.map(({ asset }) => asset!.id),
+          }),
+        });
+      }
+      storyboardAudioRefs.push({
+        type: 'audio',
+        label: `Dialogue lip-sync reference (${dialogue.length} line${dialogue.length === 1 ? '' : 's'})`,
+        url: storageUrl(audioPath),
+      });
+    } else if (legacySongLipsync) {
       if (!project.audio_path) {
         throw new Error('Lip-sync is enabled for this shot, but the project has no source audio.');
       }
@@ -216,6 +317,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       const audioPath = await extractAudioSegment(project.audio_path, shotStartSec, shotDurationSec);
       referenceAudioPaths.push(audioPath);
       referenceAudioAssetId = uuidv4();
+      referenceAudioMode = 'source_audio_lipsync';
       await insertRow('assets', {
         id: referenceAudioAssetId,
         project_id: project.id,
@@ -239,7 +341,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const result = await generateVideoWithFallback(useStoryboardMode ? undefined : imageAsset!.file_path, veoPrompt, {
       endImagePath: useStoryboardMode ? undefined : endImagePath,
       referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
-      referenceAudioPaths: useStoryboardMode ? referenceAudioPaths : undefined,
+      referenceAudioPaths: modelSpec.family === 'seedance' ? referenceAudioPaths : undefined,
       aspectRatio: aspect,
       resolution,
       durationSec: shot.duration,
@@ -266,6 +368,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const videoMetadata = JSON.stringify({
       extracted_last_frame_asset_id: extractedAssetId,
       reference_audio_asset_id: referenceAudioAssetId,
+      reference_audio_mode: referenceAudioMode,
+      dialogue_strategy: audioPlan?.dialogueStrategy || null,
     });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
 
@@ -336,7 +440,10 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
           ...storyboardAudioRefs,
         ]
         : imageAsset
-          ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
+          ? [
+            { type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) },
+            ...storyboardAudioRefs,
+          ]
           : [],
       contextChain: await buildContextChain(project.id),
       responseSummary: `Video generated via ${result.provider} (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
@@ -374,7 +481,10 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
           ...storyboardAudioRefs,
         ]
         : imageAsset
-          ? [{ type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) }]
+          ? [
+            { type: 'image' as const, label: 'Start keyframe', url: storageUrl(imageAsset.file_path) },
+            ...storyboardAudioRefs,
+          ]
           : [],
       contextChain: await buildContextChain(project.id),
       durationMs: 0,
