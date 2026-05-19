@@ -68,6 +68,7 @@ export { applyConcept } from './codexStudio/applies/concept.js';
 export { applyStyleDirection } from './codexStudio/applies/style.js';
 export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
 export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';
+export { applyAudioPlan, applyAudioPlanMarkdown, applyCastVoice, generateDialogueAudio, getAudioPlanCost } from './codexStudio/audioPlan.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 import { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';

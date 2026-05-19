@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import {
   compactText,
   md,
+  audioPlanHash,
   scriptContentHash,
   styleDirectionHash,
   shotPromptHash,
@@ -17,6 +18,7 @@ import {
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
+import { buildAudioPlanMarkdownDraft } from './audioPlanMarkdown.js';
 import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
 import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
 
@@ -36,8 +38,9 @@ const LAHARI_SKILL_NAMES = [
   'continuity-auditor',
   'style-ref-critic',
   'render-triage',
+  'audio-director',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-17.agency-pass-v1';
+const NOTEBOOK_VERSION = '2026-05-19.audio-plan-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -67,7 +70,7 @@ If the MCP server returns a newer notebookVersion than the one shown here or in 
 
 Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
 
-Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For audio work, inspect mirrors/audio-plan.md and use apply_audio_plan for structured JSON updates. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
@@ -318,6 +321,50 @@ ${body || 'No shots saved.'}
 `;
 };
 
+const buildAudioPlan = (project: Project): string => {
+  const body = project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => {
+    const plan = shot.audioPlan;
+    const dialogue = plan?.dialogue?.length
+      ? plan.dialogue
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .map((line) => {
+          const character = project.cast.find((member) => member.id === line.characterId);
+          return `| ${line.order} | ${character?.name || line.characterId} | ${line.characterId} | ${line.ttsStatus || 'pending'} | ${line.text.replace(/\|/g, '\\|')} | ${line.delivery || ''} |`;
+        })
+        .join('\n')
+      : '| - | - | - | - | No dialogue lines. | - |';
+    return `## ${shotLabel(sceneIndex, shotIndex)}: ${compactText(shot.direction, 120) || 'Shot'}
+
+- Shot ID: ${shot.id}
+- Base hash: ${audioPlanHash(shot)}
+- Strategy: ${plan?.dialogueStrategy || 'None'}
+- Stale: ${shot.audioPlanStale ? 'yes' : 'no'}
+- Duration: ${shot.duration}s
+
+### Dialogue
+
+| Order | Speaker | Character ID | TTS | Text | Delivery |
+|---:|---|---|---|---|---|
+${dialogue}
+
+### Sound Notes
+
+${md(plan?.soundNotes)}
+`;
+  })).join('\n');
+
+  return `# Audio Plan
+
+Updated: ${projectUpdatedAt(project)}
+Project: ${project.title}
+
+This is a mirror for agent review. Persist changes with apply_audio_plan using the Shot ID and Base hash for each edited shot.
+
+${body || 'No shots saved.'}
+`;
+};
+
 const buildStoryboardFile = (project: Project, sceneIndex: number, shotIndex: number, shot: Project['scenes'][number]['shots'][number]): NotebookFile => ({
   path: `${normalizedProjectDir(project)}/mirrors/storyboards/${shot.id}.md`,
   mode: 'mirror',
@@ -409,10 +456,11 @@ export const buildNotebookMirrorArtifacts = (
     storyboardSceneIds?: string[];
     style?: boolean;
     cast?: boolean;
-    environments?: boolean;
-    shotPrompts?: boolean;
-    storyboardShotIds?: string[];
-  } = {},
+	    environments?: boolean;
+	    shotPrompts?: boolean;
+	    audioPlan?: boolean;
+	    storyboardShotIds?: string[];
+	  } = {},
 ): NotebookFile[] => {
   const baseDir = normalizedProjectDir(project);
   const files: NotebookFile[] = [];
@@ -488,16 +536,32 @@ export const buildNotebookMirrorArtifacts = (
       content: buildEnvironments(project),
     });
   }
-  if (opts.shotPrompts) {
-    files.push({
+	  if (opts.shotPrompts) {
+	    files.push({
       path: `${baseDir}/mirrors/shot-prompts.md`,
       mode: 'mirror',
       writePolicy: 'overwrite',
       description: 'Per-shot prompt mirror.',
       content: buildShotPrompts(project),
     });
-  }
-  if (opts.storyboardShotIds?.length) {
+	  }
+	  if (opts.audioPlan) {
+	    files.push({
+	      path: `${baseDir}/mirrors/audio-plan.md`,
+	      mode: 'mirror',
+	      writePolicy: 'overwrite',
+	      description: 'Per-shot dialogue/TTS audio plan mirror.',
+	      content: buildAudioPlan(project),
+	    });
+	    files.push({
+	      path: `${baseDir}/drafts/audio-plan.md`,
+	      mode: 'draft',
+	      writePolicy: 'review_before_overwrite',
+	      description: 'Editable audio plan draft. Edit JSON per shot and apply with apply_audio_plan_markdown.',
+	      content: buildAudioPlanMarkdownDraft(project),
+	    });
+	  }
+	  if (opts.storyboardShotIds?.length) {
     const requested = new Set(opts.storyboardShotIds);
     for (const [sceneIndex, scene] of project.scenes.entries()) {
       for (const [shotIndex, shot] of scene.shots.entries()) {
@@ -628,14 +692,28 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Environment/location mirror.',
       content: buildEnvironments(project),
     },
-    {
-      path: `${baseDir}/mirrors/shot-prompts.md`,
-      mode: 'mirror',
-      writePolicy: 'overwrite',
-      description: 'Per-shot prompt mirror.',
-      content: buildShotPrompts(project),
-    },
-    ...project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => buildStoryboardFile(project, sceneIndex, shotIndex, shot))),
+	    {
+	      path: `${baseDir}/mirrors/shot-prompts.md`,
+	      mode: 'mirror',
+	      writePolicy: 'overwrite',
+	      description: 'Per-shot prompt mirror.',
+	      content: buildShotPrompts(project),
+	    },
+	    {
+	      path: `${baseDir}/mirrors/audio-plan.md`,
+	      mode: 'mirror',
+	      writePolicy: 'overwrite',
+	      description: 'Per-shot dialogue/TTS audio plan mirror.',
+	      content: buildAudioPlan(project),
+	    },
+	    {
+	      path: `${baseDir}/drafts/audio-plan.md`,
+	      mode: 'draft',
+	      writePolicy: 'review_before_overwrite',
+	      description: 'Editable audio plan draft. Edit JSON per shot and apply with apply_audio_plan_markdown.',
+	      content: buildAudioPlanMarkdownDraft(project),
+	    },
+	    ...project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => buildStoryboardFile(project, sceneIndex, shotIndex, shot))),
     {
       path: `${baseDir}/config/preferences.json`,
       mode: 'config',

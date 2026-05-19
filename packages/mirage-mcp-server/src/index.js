@@ -17,6 +17,27 @@ const modelOverrideSchema = z.object({
   storyboardProvider: z.string().optional(),
   videoModel: z.string().optional(),
 }).optional();
+const dialogueStrategySchema = z.enum(['lipsync', 'overlay']);
+const ttsStatusSchema = z.enum(['pending', 'generating', 'success', 'error']);
+const audioPlanSchema = z.object({
+  dialogueStrategy: dialogueStrategySchema,
+  dialogue: z.array(z.object({
+    id: z.string().min(1),
+    characterId: z.string().min(1),
+    text: z.string().min(1).max(500),
+    delivery: z.string().max(200).optional(),
+    emotion: z.string().max(100).optional(),
+    order: z.number().positive(),
+    paceHint: z.enum(['slow', 'natural', 'fast']).optional(),
+    targetSec: z.number().positive().max(30).optional(),
+    ttsAssetId: z.string().nullable().optional(),
+    ttsStatus: ttsStatusSchema.optional(),
+    ttsError: z.string().max(500).optional(),
+    ttsCharCount: z.number().int().nonnegative().optional(),
+    ttsDurationSec: z.number().nonnegative().optional(),
+  })).max(100),
+  soundNotes: z.string().max(1000).optional(),
+});
 
 const textResult = (value) => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
@@ -644,6 +665,86 @@ registerTool('apply_script_markdown', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, markdown, baseFingerprint, force }) => directorPost('/api/director/apply/script-markdown', { projectId, markdown, baseFingerprint, force }));
+
+registerTool('apply_audio_plan', {
+  title: 'Apply audio plan',
+  description: 'Mutating. Persists Codex-written per-shot dialogue, sound notes, and dialogue strategy.',
+  inputSchema: {
+    projectId,
+    shots: z.array(z.object({
+      shotId,
+      audioPlan: audioPlanSchema,
+      baseHash: z.string().optional(),
+    })).min(1).max(100),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, shots, force }) => directorPost('/api/director/apply/audio-plan', { projectId, shots, force }));
+
+registerTool('apply_audio_plan_markdown', {
+  title: 'Apply audio plan markdown',
+  description: 'Mutating. Parses drafts/audio-plan.md, validates per-shot hashes, and persists audio plans.',
+  inputSchema: {
+    projectId,
+    markdown: z.string().min(1),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, markdown, force }) => directorPost('/api/director/apply/audio-plan-markdown', { projectId, markdown, force }));
+
+registerTool('apply_cast_voice', {
+  title: 'Apply cast voice',
+  description: 'Mutating. Persists a character voice assignment for TTS generation.',
+  inputSchema: {
+    projectId,
+    castMemberId: z.string().min(1),
+    voiceProvider: z.literal('elevenlabs'),
+    voiceId: z.string().min(1),
+    voiceName: z.string().optional(),
+    baseHash: z.string().optional(),
+    force: z.boolean().optional(),
+  },
+}, ({ projectId, castMemberId, voiceProvider, voiceId, voiceName, baseHash, force }) => directorPost('/api/director/apply/cast-voice', {
+  projectId,
+  castMemberId,
+  voiceProvider,
+  voiceId,
+  voiceName,
+  baseHash,
+  force,
+}));
+
+registerTool('get_audio_plan_cost', {
+  title: 'Get audio plan cost',
+  description: 'Read-only. Estimates pending TTS character count/cost and missing voices for selected dialogue.',
+  inputSchema: {
+    projectId,
+    shotIds: z.array(z.string().min(1)).max(100).optional(),
+    dialogueIds: z.array(z.string().min(1)).max(200).optional(),
+    characterIds: z.array(z.string().min(1)).max(100).optional(),
+  },
+}, ({ projectId, shotIds, dialogueIds, characterIds }) => {
+  const qs = new URLSearchParams();
+  if (shotIds?.length) qs.set('shotIds', shotIds.join(','));
+  if (dialogueIds?.length) qs.set('dialogueIds', dialogueIds.join(','));
+  if (characterIds?.length) qs.set('characterIds', characterIds.join(','));
+  const suffix = qs.toString();
+  return directorGet(`/api/director/projects/${encodeURIComponent(projectId)}/audio-plan-cost${suffix ? `?${suffix}` : ''}`);
+});
+
+registerTool('generate_dialogue_audio', {
+  title: 'Generate dialogue audio',
+  description: 'Mutating and paid. Generates ElevenLabs TTS for selected pending/error dialogue lines with assigned voices.',
+  inputSchema: {
+    projectId,
+    shotIds: z.array(z.string().min(1)).max(100).optional(),
+    dialogueIds: z.array(z.string().min(1)).max(200).optional(),
+    characterIds: z.array(z.string().min(1)).max(100).optional(),
+  },
+}, ({ projectId, shotIds, dialogueIds, characterIds }) => directorPost('/api/director/generate/dialogue-audio', {
+  projectId,
+  shotIds,
+  dialogueIds,
+  characterIds,
+}));
 
 registerTool('apply_project_prompt_override', {
   title: 'Apply project prompt override',

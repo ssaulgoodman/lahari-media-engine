@@ -54,6 +54,14 @@ export const videoPromptHash = (shot: Pick<ProjectShot, 'motionPrompt'>): string
   motionPrompt: shot.motionPrompt || '',
 });
 
+export const audioPlanHash = (shot: Pick<ProjectShot, 'audioPlan'>): string => hashJson(shot.audioPlan || null);
+
+export const castVoiceHash = (member: Pick<Project['cast'][number], 'voiceProvider' | 'voiceId' | 'voiceName'>): string => hashJson({
+  voiceProvider: member.voiceProvider || null,
+  voiceId: member.voiceId || null,
+  voiceName: member.voiceName || null,
+});
+
 export const conceptHash = (concept: unknown): string => hashJson(concept || null);
 
 export const styleDirectionHash = (project: Pick<Project, 'styleDescription' | 'styleGenerationPrompt' | 'colorPalette'>): string => hashJson({

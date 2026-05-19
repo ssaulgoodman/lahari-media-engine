@@ -19,6 +19,7 @@ const PAID_TOOLS = new Set([
   'director.generate.storyboard',
   'director.generate.storyboards_bulk',
   'director.generate.video',
+  'director.generate.dialogue_audio',
   'director.refine.storyboard_image',
 ]);
 
@@ -300,6 +301,30 @@ router.post('/apply/script-markdown', audited('director.apply.script_markdown', 
   { baseFingerprint: req.body.baseFingerprint, force: !!req.body.force },
 )));
 
+router.post('/apply/audio-plan', audited('director.apply.audio_plan', async (req) => studio.applyAudioPlan(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.shots,
+  { force: !!req.body.force },
+)));
+
+router.post('/apply/audio-plan-markdown', audited('director.apply.audio_plan_markdown', async (req) => studio.applyAudioPlanMarkdown(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.markdown,
+  { force: !!req.body.force },
+)));
+
+router.post('/apply/cast-voice', audited('director.apply.cast_voice', async (req) => studio.applyCastVoice(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  {
+    castMemberId: req.body.castMemberId,
+    voiceProvider: req.body.voiceProvider,
+    voiceId: req.body.voiceId,
+    voiceName: req.body.voiceName,
+    baseHash: req.body.baseHash,
+  },
+  { force: !!req.body.force },
+)));
+
 router.post('/apply/concept', audited('director.apply.concept', async (req) => studio.applyConcept(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.concept,
@@ -377,6 +402,25 @@ router.post('/generate/video', audited('director.generate.video', async (req) =>
   req.body.shotId,
   req.body.promptOverride,
   req.body.modelOverride || {},
+)));
+
+router.get('/projects/:projectId/audio-plan-cost', audited('director.audio_plan.cost', async (req) => studio.getAudioPlanCost(
+  await fullProjectForUser(paramStr(req.params.projectId), req.userId),
+  {
+    shotIds: typeof req.query.shotIds === 'string' ? req.query.shotIds.split(',').filter(Boolean) : undefined,
+    dialogueIds: typeof req.query.dialogueIds === 'string' ? req.query.dialogueIds.split(',').filter(Boolean) : undefined,
+    characterIds: typeof req.query.characterIds === 'string' ? req.query.characterIds.split(',').filter(Boolean) : undefined,
+  },
+)));
+
+router.post('/generate/dialogue-audio', audited('director.generate.dialogue_audio', async (req) => studio.generateDialogueAudio(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.userId || '',
+  {
+    shotIds: Array.isArray(req.body.shotIds) ? req.body.shotIds : undefined,
+    dialogueIds: Array.isArray(req.body.dialogueIds) ? req.body.dialogueIds : undefined,
+    characterIds: Array.isArray(req.body.characterIds) ? req.body.characterIds : undefined,
+  },
 )));
 
 router.post('/refine/storyboard-image', audited('director.refine.storyboard_image', async (req) => studio.refineStoryboardImage(

@@ -52,6 +52,7 @@ const shortText = z.string().max(2000);
 const mediumText = z.string().max(8000);
 const promptText = z.string().min(1).max(30000);
 const scriptMarkdownText = z.string().min(1).max(120000);
+const audioPlanMarkdownText = z.string().min(1).max(120000);
 const storyboardSceneMarkdownText = z.string().min(1).max(80000);
 const optionalPromptText = z.string().max(30000).optional();
 const notebookFilePath = z.string().min(1).max(800).describe('Notebook file path returned by get_project_notebook_manifest.');
@@ -61,6 +62,27 @@ const modelOverrideSchema = z.object({
   videoModel: idString.optional(),
 }).optional();
 const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
+const dialogueStrategySchema = z.enum(['lipsync', 'overlay']);
+const ttsStatusSchema = z.enum(['pending', 'generating', 'success', 'error']);
+const audioPlanSchema = z.object({
+  dialogueStrategy: dialogueStrategySchema,
+  dialogue: maxArray(z.object({
+    id: idString,
+    characterId: idString,
+    text: z.string().min(1).max(500),
+    delivery: z.string().max(200).optional(),
+    emotion: z.string().max(100).optional(),
+    order: z.number().positive().max(200),
+    paceHint: z.enum(['slow', 'natural', 'fast']).optional(),
+    targetSec: z.number().positive().max(30).optional(),
+    ttsAssetId: idString.nullable().optional(),
+    ttsStatus: ttsStatusSchema.optional(),
+    ttsError: z.string().max(500).optional(),
+    ttsCharCount: z.number().int().nonnegative().optional(),
+    ttsDurationSec: z.number().nonnegative().optional(),
+  }), 100),
+  soundNotes: z.string().max(1000).optional(),
+});
 
 const MCP_LIMITS = {
   requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
@@ -75,6 +97,7 @@ const PAID_TOOLS = new Set([
   'bulk_generate_storyboards',
   'refine_storyboard_image',
   'apply_generate_video',
+  'generate_dialogue_audio',
 ]);
 
 const structuredToolError = (error: unknown) => {
@@ -743,6 +766,80 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, markdown, baseFingerprint, force }) => studio.applyScriptMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { baseFingerprint, force }));
+
+  registerTool('apply_audio_plan', {
+    title: 'Apply audio plan',
+    description: 'Mutating. Persists Codex-written per-shot dialogue, sound notes, and dialogue strategy.',
+    inputSchema: {
+      projectId,
+      shots: maxArray(z.object({
+        shotId,
+        audioPlan: audioPlanSchema,
+        baseHash: idString.optional(),
+      }), 100).min(1),
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, shots, force }) => studio.applyAudioPlan(await fullProjectForUser(projectId, auth.userId), shots, { force }));
+
+  registerTool('apply_audio_plan_markdown', {
+    title: 'Apply audio plan markdown',
+    description: 'Mutating. Parses drafts/audio-plan.md, validates per-shot hashes, and persists audio plans.',
+    inputSchema: {
+      projectId,
+      markdown: audioPlanMarkdownText,
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, markdown, force }) => studio.applyAudioPlanMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { force }));
+
+  registerTool('apply_cast_voice', {
+    title: 'Apply cast voice',
+    description: 'Mutating. Persists a character voice assignment for TTS generation.',
+    inputSchema: {
+      projectId,
+      castMemberId: idString,
+      voiceProvider: z.literal('elevenlabs'),
+      voiceId: idString,
+      voiceName: mediumText.optional(),
+      baseHash: idString.optional(),
+      force: z.boolean().optional(),
+    },
+  }, async ({ projectId, castMemberId, voiceProvider, voiceId, voiceName, baseHash, force }) => studio.applyCastVoice(await fullProjectForUser(projectId, auth.userId), {
+    castMemberId,
+    voiceProvider,
+    voiceId,
+    voiceName,
+    baseHash,
+  }, { force }));
+
+  registerTool('get_audio_plan_cost', {
+    title: 'Get audio plan cost',
+    description: 'Read-only. Estimates pending TTS character count/cost and missing voices for selected dialogue.',
+    inputSchema: {
+      projectId,
+      shotIds: maxArray(idString, 100).optional(),
+      dialogueIds: maxArray(idString, 200).optional(),
+      characterIds: maxArray(idString, 100).optional(),
+    },
+  }, async ({ projectId, shotIds, dialogueIds, characterIds }) => studio.getAudioPlanCost(await fullProjectForUser(projectId, auth.userId), {
+    shotIds,
+    dialogueIds,
+    characterIds,
+  }));
+
+  registerTool('generate_dialogue_audio', {
+    title: 'Generate dialogue audio',
+    description: 'Mutating and paid. Generates ElevenLabs TTS for selected pending/error dialogue lines with assigned voices.',
+    inputSchema: {
+      projectId,
+      shotIds: maxArray(idString, 100).optional(),
+      dialogueIds: maxArray(idString, 200).optional(),
+      characterIds: maxArray(idString, 100).optional(),
+    },
+  }, async ({ projectId, shotIds, dialogueIds, characterIds }) => studio.generateDialogueAudio(await fullProjectForUser(projectId, auth.userId), auth.userId, {
+    shotIds,
+    dialogueIds,
+    characterIds,
+  }));
 
   registerTool('apply_project_prompt_override', {
     title: 'Apply project prompt override',
