@@ -1,11 +1,12 @@
 
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ApiProject } from '../types';
+import { ApiProject, CastMember } from '../types';
 import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { UnlockPill } from './UnlockPill';
 import { Phase, isLockedPhase } from './BlueprintContextBar';
+import { findPhase } from '../constants/blueprintPhases';
 
 interface Props {
   project: ApiProject;
@@ -40,11 +41,39 @@ export const CharactersPhase: React.FC<Props> = ({
   const [castUploading, setCastUploading] = useState<Set<string>>(new Set());
   const [pendingCastRef, setPendingCastRef] = useState<{ memberId: string; file: File; previewUrl: string; note: string } | null>(null);
   const [charRefineImage, setCharRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [savingVoice, setSavingVoice] = useState<Set<string>>(new Set());
   const castGuideUploadRef = useRef<HTMLInputElement>(null);
   const castAsIsUploadRef = useRef<HTMLInputElement>(null);
 
   const activeMember = project.cast.find(c => c.id === activeCastId);
   const activeLooks = activeCastId ? (lookCandidates[activeCastId] || []) : [];
+
+  // Voice editor is workflow-config driven. Anime exposes voice fields (even
+  // when Audio phase is coming-soon); music_video does not. Same gate as the
+  // dialogue UI in ScriptPhase so the two surfaces stay coherent.
+  const voiceFieldsVisible = !!findPhase(project, 'audio')?.visible;
+
+  const saveVoice = async (
+    memberId: string,
+    voice: { voiceProvider: 'elevenlabs'; voiceId: string; voiceName?: string },
+  ) => {
+    setSavingVoice(prev => new Set(prev).add(memberId));
+    try {
+      const updated = await api.updateCastVoice(project.id, memberId, voice);
+      if (updated?.id) onSetProject?.(updated);
+      setSavedFlash(`voice-${memberId}`);
+      setTimeout(() => setSavedFlash(null), 1500);
+    } catch (err) {
+      // Pass raw error so missing_key (ElevenLabs) surfaces a setup link.
+      showActionError(err);
+    } finally {
+      setSavingVoice(prev => {
+        const next = new Set(prev);
+        next.delete(memberId);
+        return next;
+      });
+    }
+  };
 
   const handleCastUploadAsIs = async (castMemberId: string, file: File) => {
     setCastUploading(prev => new Set([...prev, castMemberId]));
@@ -120,12 +149,17 @@ export const CharactersPhase: React.FC<Props> = ({
                       </div>
                       <div className="min-w-0 flex-1 pr-6">
                         <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{member.name}</div>
-                        <div className="text-xs text-zinc-400 truncate flex items-center gap-1">
+                        <div className="text-xs text-zinc-400 truncate flex items-center gap-1.5">
                           {looksLoading.has(member.id) ? (
                             <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
                           ) : hasLook ? (
                             <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
                           ) : 'No look'}
+                          {voiceFieldsVisible && !member.voiceId && (
+                            <span className="ml-1 text-[10px] uppercase tracking-wider text-amber-300/80 bg-amber-500/[0.08] rounded px-1 py-0.5 flex-shrink-0">
+                              needs voice
+                            </span>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -397,6 +431,16 @@ export const CharactersPhase: React.FC<Props> = ({
                   </div>
                 </details>
 
+                {/* Voice (anime workflow only) */}
+                {voiceFieldsVisible && (
+                  <VoiceEditor
+                    member={activeMember}
+                    saving={savingVoice.has(activeMember.id)}
+                    saved={savedFlash === `voice-${activeMember.id}`}
+                    onSave={(voice) => saveVoice(activeMember.id, voice)}
+                  />
+                )}
+
                 {/* Ref chips */}
                 {project.styleAssetUrl && (
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -509,5 +553,127 @@ export const CharactersPhase: React.FC<Props> = ({
         </div>
       </div>
     </motion.div>
+  );
+};
+
+// ─── Voice editor (anime workflow only) ─────────────────────────────
+// One row per cast member: provider dropdown (just 'elevenlabs' for v1),
+// voice_id input (paste raw ID from provider), optional voice_name label.
+// v1 ships paste-voice-ID; voice library is v1.5 (ledger §1 out of scope).
+
+interface VoiceEditorProps {
+  member: CastMember;
+  saving: boolean;
+  saved: boolean;
+  onSave: (voice: { voiceProvider: 'elevenlabs'; voiceId: string; voiceName?: string }) => void;
+}
+
+const VoiceEditor: React.FC<VoiceEditorProps> = ({ member, saving, saved, onSave }) => {
+  const [voiceId, setVoiceId] = useState(member.voiceId || '');
+  const [voiceName, setVoiceName] = useState(member.voiceName || '');
+  const [expanded, setExpanded] = useState(false);
+
+  // Reset local edit state when switching to a different cast member.
+  React.useEffect(() => {
+    setVoiceId(member.voiceId || '');
+    setVoiceName(member.voiceName || '');
+  }, [member.id, member.voiceId, member.voiceName]);
+
+  const isSet = !!member.voiceId;
+  const dirty = voiceId.trim() !== (member.voiceId || '') || voiceName.trim() !== (member.voiceName || '');
+  const canSave = voiceId.trim().length > 0 && dirty && !saving;
+
+  return (
+    <details
+      className="group"
+      open={expanded || !isSet}
+      onToggle={(e) => setExpanded((e.target as HTMLDetailsElement).open)}
+    >
+      <summary className="text-[11px] uppercase tracking-wide text-zinc-500 cursor-pointer hover:text-zinc-400 flex items-center gap-1">
+        <svg className="w-3 h-3 transition-transform group-open:rotate-90" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" /></svg>
+        Voice
+        {isSet ? (
+          <span className="ml-2 text-[10px] normal-case tracking-normal text-emerald-300/80 bg-emerald-500/[0.06] rounded px-1.5 py-0.5">
+            {member.voiceName || member.voiceId?.slice(0, 8) + '…'}
+          </span>
+        ) : (
+          <span className="ml-2 text-[10px] normal-case tracking-normal text-amber-300/80 bg-amber-500/[0.08] rounded px-1.5 py-0.5">
+            not set
+          </span>
+        )}
+        {saved && <span className="ml-1 text-[10px] text-emerald-400/70 normal-case">Saved</span>}
+      </summary>
+      <div className="mt-2 space-y-2.5">
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1">Provider</label>
+          <div className="text-xs text-zinc-300 px-3 py-2 surface-inset rounded-md inline-block">
+            ElevenLabs
+            <span className="text-zinc-500 ml-2 text-[10px]">v1</span>
+          </div>
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1">Voice ID</label>
+          <input
+            type="text"
+            value={voiceId}
+            onChange={(e) => setVoiceId(e.target.value)}
+            placeholder="paste from elevenlabs.io/voice-library"
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            className="w-full font-mono text-xs text-zinc-200 surface-inset rounded-md px-3 py-2 outline-none focus-visible:ring-1 focus-visible:ring-white/20 placeholder:text-zinc-600"
+          />
+          <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+            Find or clone a voice at{' '}
+            <a
+              href="https://elevenlabs.io/app/voice-library"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-400 hover:text-white underline underline-offset-2 transition-colors"
+            >
+              elevenlabs.io/voice-library
+            </a>
+            , then copy its Voice ID.
+          </p>
+        </div>
+        <div>
+          <label className="text-[10px] uppercase tracking-wider text-zinc-500 block mb-1">
+            Label <span className="text-zinc-600 normal-case tracking-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={voiceName}
+            onChange={(e) => setVoiceName(e.target.value)}
+            placeholder={`e.g. "Mina narrator"`}
+            className="w-full text-xs text-zinc-200 surface-inset rounded-md px-3 py-2 outline-none focus-visible:ring-1 focus-visible:ring-white/20 placeholder:text-zinc-600"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onSave({
+              voiceProvider: 'elevenlabs',
+              voiceId: voiceId.trim(),
+              voiceName: voiceName.trim() || undefined,
+            })}
+            disabled={!canSave}
+            className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors inline-flex items-center gap-1.5"
+          >
+            {saving && <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+            {saving ? 'Saving…' : isSet ? 'Update voice' : 'Set voice'}
+          </button>
+          {dirty && !saving && (
+            <button
+              onClick={() => {
+                setVoiceId(member.voiceId || '');
+                setVoiceName(member.voiceName || '');
+              }}
+              className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+    </details>
   );
 };
