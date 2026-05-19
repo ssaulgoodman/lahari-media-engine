@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ApiProject, DialogueLine, TtsStatus, VideoShot, VideoScene } from '../types';
 import * as api from '../services/api';
@@ -41,8 +41,8 @@ export const AudioPhase: React.FC<Props> = ({
     return map;
   }, [project.cast]);
 
-  const lineIsAvailable = (line: { characterId: string; ttsStatus: TtsStatus }) =>
-    isPendingStatus(line.ttsStatus) && castHasVoice.get(line.characterId) === true;
+  const lineIsAvailable = useCallback((line: { characterId: string; ttsStatus: TtsStatus }) =>
+    isPendingStatus(line.ttsStatus) && castHasVoice.get(line.characterId) === true, [castHasVoice]);
 
   // ── Flatten dialogue across all shots with scene context ──
   const allLines: EnrichedLine[] = useMemo(() => {
@@ -77,8 +77,7 @@ export const AudioPhase: React.FC<Props> = ({
       !c.voiceId && allLines.some(l => l.characterId === c.id)
     );
     return { total: allLines.length, ready, available, waitingOnVoice, missingVoiceMembers };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allLines, project.cast, castHasVoice]);
+  }, [allLines, project.cast, castHasVoice, lineIsAvailable]);
 
   // ── Group by shot for rendering ──
   const linesByShot = useMemo(() => {
@@ -133,10 +132,9 @@ export const AudioPhase: React.FC<Props> = ({
           estimatedUsd: (totalChars / 1000) * 0.30, // ElevenLabs Multilingual v2: $0.30/1k chars
           pendingLines: availableLines.length,
         });
-      });
+    });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id, allLines]);
+  }, [project.id, allLines, lineIsAvailable]);
 
   // ── Actions ──
   // Generation always targets the subset the engine can actually process now.
