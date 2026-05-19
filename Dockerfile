@@ -14,8 +14,10 @@ COPY . .
 
 # Vite needs these at build time for the frontend bundle.
 # Anon key is public (safe to embed — it's the equivalent of a public API key).
-ENV VITE_SUPABASE_URL=https://hpyxkrhfyrfmuospnqxu.supabase.co
-ENV VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhweXhrcmhmeXJmbXVvc3BucXh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE5OTU0OTIsImV4cCI6MjA3NzU3MTQ5Mn0.l4fiqR67F2RD_GvE899HgA3LOt3F0S0-yO-gas8pjt8
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
 # Build frontend
 RUN npm run build
