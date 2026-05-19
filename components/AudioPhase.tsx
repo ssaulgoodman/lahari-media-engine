@@ -21,6 +21,7 @@ type EnrichedLine = DialogueLine & {
   sceneId: string;
   sceneLabel: string;
   dialogueStrategy: 'lipsync' | 'overlay';
+  audioPlanStale: boolean;
 };
 
 // "Available" means a line is generatable right now — pending/error AND the
@@ -35,6 +36,9 @@ export const AudioPhase: React.FC<Props> = ({
   // Modal-driven cost preview + confirm gate for bulk and per-shot runs.
   // Per-line Regen stays direct (single small call, no confirmation needed).
   const [pendingRun, setPendingRun] = useState<TtsRunScope | null>(null);
+  // Shot IDs whose audio_plan is being rewritten right now (per T5.7
+  // "Rewrite" action). Driven by writeAudioPlan with force=true.
+  const [rewritingShotIds, setRewritingShotIds] = useState<Set<string>>(new Set());
 
   // Cast voice lookup. Computed once per project; used to filter "available"
   // lines for bulk/per-shot generation and to badge no-voice rows.
@@ -62,6 +66,7 @@ export const AudioPhase: React.FC<Props> = ({
             sceneId: scene.id,
             sceneLabel: scene.sectionLabel || 'Scene',
             dialogueStrategy: plan.dialogueStrategy,
+            audioPlanStale: !!shot.audioPlanStale,
           });
         });
       });
@@ -84,7 +89,7 @@ export const AudioPhase: React.FC<Props> = ({
 
   // ── Group by shot for rendering ──
   const linesByShot = useMemo(() => {
-    const map = new Map<string, { sceneLabel: string; shotIndex: number; dialogueStrategy: 'lipsync' | 'overlay'; lines: EnrichedLine[] }>();
+    const map = new Map<string, { sceneLabel: string; shotIndex: number; dialogueStrategy: 'lipsync' | 'overlay'; audioPlanStale: boolean; lines: EnrichedLine[] }>();
     allLines.forEach(line => {
       let bucket = map.get(line.shotId);
       if (!bucket) {
@@ -92,6 +97,7 @@ export const AudioPhase: React.FC<Props> = ({
           sceneLabel: line.sceneLabel,
           shotIndex: line.shotIndex,
           dialogueStrategy: line.dialogueStrategy,
+          audioPlanStale: line.audioPlanStale,
           lines: [],
         };
         map.set(line.shotId, bucket);
@@ -100,6 +106,16 @@ export const AudioPhase: React.FC<Props> = ({
     });
     return Array.from(map.entries());
   }, [allLines]);
+
+  // Shot IDs whose audio_plan is stale. T5.7 surfaces this as an amber chip
+  // on the shot header and a "Rewrite" action. Per ledger T3.10 + the
+  // 2026-05-19 checkpoint clarification, in-place script edits flip this
+  // flag without dropping dialogue; a full script regenerate replaces
+  // topology and these shot IDs disappear with the old shots.
+  const staleShotIds = useMemo(
+    () => linesByShot.filter(([, b]) => b.audioPlanStale).map(([id]) => id),
+    [linesByShot],
+  );
 
   // ── Actions ──
   // Generation always targets the subset the engine can actually process now.
@@ -121,6 +137,28 @@ export const AudioPhase: React.FC<Props> = ({
       setGeneratingIds(prev => {
         const next = new Set(prev);
         dialogueIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }
+  };
+
+  // Rewrite a stale audio plan in place (script changed, dialogue still
+  // attached but possibly outdated). Calls writeAudioPlan with force=true
+  // so the backend skips its "only stale or empty" filter and regenerates
+  // the requested shot specifically. Per-line Regen during TTS gen is a
+  // different code path — that lives on the DialogueRow.
+  const rewriteStaleShot = async (shotId: string) => {
+    setRewritingShotIds(prev => new Set(prev).add(shotId));
+    try {
+      const resp = await api.writeAudioPlan(project.id, { shotIds: [shotId], force: true });
+      const updated = resp?.project || resp?.data?.project || (resp?.id ? resp : null);
+      if (updated?.id) onSetProject?.(updated);
+    } catch (err) {
+      showActionError(err);
+    } finally {
+      setRewritingShotIds(prev => {
+        const next = new Set(prev);
+        next.delete(shotId);
         return next;
       });
     }
@@ -211,6 +249,7 @@ export const AudioPhase: React.FC<Props> = ({
             {summary.ready > 0 && <> · <span className="text-emerald-300/90">{summary.ready} ready</span></>}
             {summary.available > 0 && <> · <span className="text-zinc-200">{summary.available} available</span></>}
             {summary.waitingOnVoice > 0 && <> · <span className="text-amber-300/80">{summary.waitingOnVoice} waiting on voices</span></>}
+            {staleShotIds.length > 0 && <> · <span className="text-amber-300/80">{staleShotIds.length} stale shot{staleShotIds.length === 1 ? '' : 's'}</span></>}
           </p>
           <button
             onClick={openBulkRun}
@@ -259,8 +298,28 @@ export const AudioPhase: React.FC<Props> = ({
                   <span className="text-xs font-mono text-zinc-500">S{bucket.shotIndex}</span>
                   <span className="text-sm text-zinc-300">{bucket.sceneLabel}</span>
                   <StrategyPill strategy={bucket.dialogueStrategy} />
+                  {bucket.audioPlanStale && (
+                    <span
+                      className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"
+                      title="The script was edited after this audio plan was written. Rewrite to refresh dialogue."
+                    >
+                      stale
+                    </span>
+                  )}
                   <span className="text-[10px] text-zinc-500">{bucket.lines.length} line{bucket.lines.length === 1 ? '' : 's'}</span>
                   <div className="flex-1" />
+                  {bucket.audioPlanStale && (
+                    <button
+                      onClick={() => rewriteStaleShot(shotId)}
+                      disabled={rewritingShotIds.has(shotId) || isLoading}
+                      className="text-[11px] text-amber-200/90 hover:text-white surface-inset rounded-md px-2.5 py-1 hover:bg-amber-500/[0.08] transition-colors disabled:opacity-30 inline-flex items-center gap-1.5"
+                    >
+                      {rewritingShotIds.has(shotId) && (
+                        <span className="w-2.5 h-2.5 border-2 border-amber-400/40 border-t-amber-200 rounded-full animate-spin" />
+                      )}
+                      {rewritingShotIds.has(shotId) ? 'Rewriting…' : 'Rewrite'}
+                    </button>
+                  )}
                   {shotAvailable.length > 0 && (
                     <button
                       onClick={() => openShotRun(bucket.shotIndex, bucket.sceneLabel, shotAvailable, bucket.lines)}
