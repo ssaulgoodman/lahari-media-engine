@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { ApiProject, DialogueLine, TtsStatus, VideoShot, VideoScene } from '../types';
 import * as api from '../services/api';
 import { Phase } from './BlueprintContextBar';
-import { Dropdown } from './Dropdown';
 
 interface Props {
   project: ApiProject;
@@ -23,20 +22,27 @@ type EnrichedLine = DialogueLine & {
   dialogueStrategy: 'lipsync' | 'overlay';
 };
 
-const STATUS_FILTERS: { value: TtsStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'success', label: 'Ready' },
-  { value: 'error', label: 'Errored' },
-];
+// "Available" means a line is generatable right now — pending/error AND the
+// speaking cast member has a voice ID. The harness skips the rest as visible
+// tasks (linked to Characters) rather than blocking the whole batch.
+const isPendingStatus = (s: TtsStatus) => s === 'pending' || s === 'error';
 
 export const AudioPhase: React.FC<Props> = ({
   project, isLoading, phaseTransition, onSetProject, onSetViewPhase, showActionError,
 }) => {
-  const [characterFilter, setCharacterFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<TtsStatus | 'all'>('all');
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
   const [costEstimate, setCostEstimate] = useState<{ totalChars: number; estimatedUsd: number; pendingLines: number } | null>(null);
+
+  // Cast voice lookup. Computed once per project; used to filter "available"
+  // lines for bulk/per-shot generation and to badge no-voice rows.
+  const castHasVoice = useMemo(() => {
+    const map = new Map<string, boolean>();
+    project.cast.forEach(c => map.set(c.id, !!c.voiceId));
+    return map;
+  }, [project.cast]);
+
+  const lineIsAvailable = (line: { characterId: string; ttsStatus: TtsStatus }) =>
+    isPendingStatus(line.ttsStatus) && castHasVoice.get(line.characterId) === true;
 
   // ── Flatten dialogue across all shots with scene context ──
   const allLines: EnrichedLine[] = useMemo(() => {
@@ -60,31 +66,24 @@ export const AudioPhase: React.FC<Props> = ({
     return out;
   }, [project.scenes]);
 
-  // ── Stats ──
-  const stats = useMemo(() => {
-    const total = allLines.length;
+  // ── Top-line counts (kept compact — one inline summary, not a stats grid) ──
+  const summary = useMemo(() => {
     const ready = allLines.filter(l => l.ttsStatus === 'success').length;
-    const pending = allLines.filter(l => l.ttsStatus === 'pending').length;
-    const errored = allLines.filter(l => l.ttsStatus === 'error').length;
-    const missingVoices = project.cast.filter(c =>
-      allLines.some(l => l.characterId === c.id) && !c.voiceId
+    const available = allLines.filter(lineIsAvailable).length;
+    const waitingOnVoice = allLines.filter(l =>
+      isPendingStatus(l.ttsStatus) && castHasVoice.get(l.characterId) !== true
+    ).length;
+    const missingVoiceMembers = project.cast.filter(c =>
+      !c.voiceId && allLines.some(l => l.characterId === c.id)
     );
-    return { total, ready, pending, errored, missingVoices };
-  }, [allLines, project.cast]);
-
-  // ── Filter ──
-  const filteredLines = useMemo(() => {
-    return allLines.filter(line => {
-      if (characterFilter !== 'all' && line.characterId !== characterFilter) return false;
-      if (statusFilter !== 'all' && line.ttsStatus !== statusFilter) return false;
-      return true;
-    });
-  }, [allLines, characterFilter, statusFilter]);
+    return { total: allLines.length, ready, available, waitingOnVoice, missingVoiceMembers };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allLines, project.cast, castHasVoice]);
 
   // ── Group by shot for rendering ──
   const linesByShot = useMemo(() => {
     const map = new Map<string, { sceneLabel: string; shotIndex: number; dialogueStrategy: 'lipsync' | 'overlay'; lines: EnrichedLine[] }>();
-    filteredLines.forEach(line => {
+    allLines.forEach(line => {
       let bucket = map.get(line.shotId);
       if (!bucket) {
         bucket = {
@@ -98,17 +97,20 @@ export const AudioPhase: React.FC<Props> = ({
       bucket.lines.push(line);
     });
     return Array.from(map.entries());
-  }, [filteredLines]);
+  }, [allLines]);
 
-  // ── Cost preview for pending lines ──
+  // ── Cost preview for AVAILABLE lines only ──
+  // What the bulk button would actually charge — lines whose cast has a
+  // voice. The waiting-on-voice lines aren't in the run, so they're not in
+  // the cost. T5.5 will move this into the confirmation modal.
   useEffect(() => {
-    const pendingLines = allLines.filter(l => l.ttsStatus === 'pending' || l.ttsStatus === 'error');
-    if (pendingLines.length === 0) {
+    const availableLines = allLines.filter(lineIsAvailable);
+    if (availableLines.length === 0) {
       setCostEstimate(null);
       return;
     }
     let cancelled = false;
-    api.getAudioPlanCost(project.id, { dialogueIds: pendingLines.map(l => l.id) })
+    api.getAudioPlanCost(project.id, { dialogueIds: availableLines.map(l => l.id) })
       .then(resp => {
         if (cancelled) return;
         // Backend may return either { data: {...} } or {...} shape; tolerate both.
@@ -117,7 +119,7 @@ export const AudioPhase: React.FC<Props> = ({
           setCostEstimate({
             totalChars: data.totalChars || 0,
             estimatedUsd: data.estimatedUsd,
-            pendingLines: data.pendingLines || pendingLines.length,
+            pendingLines: data.pendingLines || availableLines.length,
           });
         }
       })
@@ -125,17 +127,20 @@ export const AudioPhase: React.FC<Props> = ({
         // Cost endpoint may not be live yet (T3.6). Fall back to a local
         // estimate so the UI still shows something useful.
         if (cancelled) return;
-        const totalChars = pendingLines.reduce((acc, l) => acc + (l.text?.length || 0), 0);
+        const totalChars = availableLines.reduce((acc, l) => acc + (l.text?.length || 0), 0);
         setCostEstimate({
           totalChars,
           estimatedUsd: (totalChars / 1000) * 0.30, // ElevenLabs Multilingual v2: $0.30/1k chars
-          pendingLines: pendingLines.length,
+          pendingLines: availableLines.length,
         });
       });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, allLines]);
 
   // ── Actions ──
+  // Generation always targets the subset the engine can actually process now.
+  // Missing voices stay visible as nudges; they don't block ready lines.
   const generateForLines = async (dialogueIds: string[]) => {
     if (dialogueIds.length === 0) return;
     setGeneratingIds(prev => {
@@ -158,10 +163,8 @@ export const AudioPhase: React.FC<Props> = ({
     }
   };
 
-  const generateAllPending = () => {
-    const ids = allLines
-      .filter(l => l.ttsStatus === 'pending' || l.ttsStatus === 'error')
-      .map(l => l.id);
+  const generateAllAvailable = () => {
+    const ids = allLines.filter(lineIsAvailable).map(l => l.id);
     generateForLines(ids);
   };
 
@@ -191,46 +194,44 @@ export const AudioPhase: React.FC<Props> = ({
     );
   }
 
-  const pendingTotal = stats.pending + stats.errored;
-  const hasMissingVoices = stats.missingVoices.length > 0;
-
   return (
-    <motion.div key="audio" {...phaseTransition} className="space-y-5">
-      {/* Header: stats + bulk gen */}
-      <div className="surface rounded-xl p-5">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-5 flex-wrap">
-            <Stat label="Lines" value={stats.total} />
-            <Stat label="Ready" value={stats.ready} accent={stats.ready > 0 ? 'emerald' : undefined} />
-            <Stat label="Pending" value={stats.pending} accent={stats.pending > 0 ? 'amber' : undefined} />
-            {stats.errored > 0 && <Stat label="Errored" value={stats.errored} accent="red" />}
-            {costEstimate && pendingTotal > 0 && (
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-wider text-zinc-500">Est. cost</span>
-                <span className="text-base font-mono text-zinc-200">${costEstimate.estimatedUsd.toFixed(2)}</span>
-                <span className="text-[10px] text-zinc-500">{costEstimate.totalChars.toLocaleString()} chars</span>
-              </div>
+    <motion.div key="audio" {...phaseTransition} className="space-y-4">
+      {/* Header: compact one-line summary + bulk action.
+          Generation always targets the AVAILABLE subset — UI is never stricter
+          than the engine. Missing voices appear as a nudge below, not a gate. */}
+      <div className="surface rounded-xl px-5 py-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-sm text-zinc-300">
+            <span className="text-white font-medium">{summary.total}</span> line{summary.total === 1 ? '' : 's'}
+            {summary.ready > 0 && <> · <span className="text-emerald-300/90">{summary.ready} ready</span></>}
+            {summary.available > 0 && <> · <span className="text-zinc-200">{summary.available} available</span></>}
+            {summary.waitingOnVoice > 0 && <> · <span className="text-amber-300/80">{summary.waitingOnVoice} waiting on voices</span></>}
+            {costEstimate && summary.available > 0 && (
+              <span className="text-zinc-500"> · est. <span className="font-mono text-zinc-300">${costEstimate.estimatedUsd.toFixed(2)}</span></span>
             )}
-          </div>
+          </p>
           <button
-            onClick={generateAllPending}
-            disabled={pendingTotal === 0 || hasMissingVoices || generatingIds.size > 0 || isLoading}
-            title={hasMissingVoices ? `${stats.missingVoices.length} character(s) need a voice ID before generation` : undefined}
+            onClick={generateAllAvailable}
+            disabled={summary.available === 0 || generatingIds.size > 0 || isLoading}
             className="bg-white text-black px-4 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 disabled:opacity-30 transition-colors inline-flex items-center gap-2"
           >
             {generatingIds.size > 0 && <span className="w-3 h-3 border-2 border-zinc-500 border-t-black rounded-full animate-spin" />}
-            {generatingIds.size > 0 ? `Generating ${generatingIds.size}…` : `Generate ${pendingTotal} pending`}
+            {generatingIds.size > 0
+              ? `Generating ${generatingIds.size}…`
+              : summary.available > 0
+                ? `Generate ${summary.available} available`
+                : summary.waitingOnVoice > 0 ? 'Assign voices to enable' : 'Nothing to generate'}
           </button>
         </div>
 
-        {hasMissingVoices && (
-          <div className="mt-4 px-3 py-2 rounded-lg surface-inset border-l-2 border-amber-400/60 flex items-center justify-between gap-3">
-            <span className="text-xs text-amber-200/90">
-              {stats.missingVoices.map(c => c.name).join(', ')} {stats.missingVoices.length === 1 ? 'needs' : 'need'} a voice ID before generation.
+        {summary.missingVoiceMembers.length > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-400">
+            <span>
+              {summary.missingVoiceMembers.map(c => c.name).join(', ')} {summary.missingVoiceMembers.length === 1 ? 'is' : 'are'} waiting on voice IDs — their lines will be skipped.
             </span>
             <button
               onClick={() => onSetViewPhase('characters')}
-              className="text-[11px] text-zinc-300 hover:text-white surface-inset rounded-md px-2.5 py-1 hover:bg-white/[0.06] transition-colors flex-shrink-0"
+              className="text-zinc-300 hover:text-white transition-colors flex-shrink-0"
             >
               Assign voices →
             </button>
@@ -238,57 +239,18 @@ export const AudioPhase: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Filters */}
-      <div className="surface rounded-xl p-4 flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wider text-zinc-500">Character</span>
-          <Dropdown
-            value={characterFilter}
-            onChange={setCharacterFilter}
-            size="xs"
-            options={[
-              { value: 'all', label: 'All' },
-              ...project.cast.map(c => ({ value: c.id, label: c.name })),
-            ]}
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[11px] uppercase tracking-wider text-zinc-500 mr-1">Status</span>
-          {STATUS_FILTERS.map(f => (
-            <button
-              key={f.value}
-              onClick={() => setStatusFilter(f.value)}
-              className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${
-                statusFilter === f.value
-                  ? 'bg-white text-black'
-                  : 'surface-inset text-zinc-400 hover:text-white hover:bg-white/[0.06]'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {(characterFilter !== 'all' || statusFilter !== 'all') && (
-          <button
-            onClick={() => { setCharacterFilter('all'); setStatusFilter('all'); }}
-            className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors ml-auto"
-          >
-            Clear filters
-          </button>
-        )}
-      </div>
-
       {/* Dialogue by shot */}
       {linesByShot.length === 0 ? (
         <div className="surface rounded-xl p-8 text-center text-sm text-zinc-400">
-          No dialogue lines match the current filters.
+          No dialogue lines.
         </div>
       ) : (
         <div className="space-y-3">
           {linesByShot.map(([shotId, bucket]) => {
-            const shotPending = bucket.lines
-              .filter(l => l.ttsStatus === 'pending' || l.ttsStatus === 'error')
-              .map(l => l.id);
+            // Per-shot bulk targets only available lines in the shot.
+            // Matches the harness invariant: never block one line because
+            // another in the same shot is waiting on a voice.
+            const shotAvailable = bucket.lines.filter(lineIsAvailable).map(l => l.id);
             return (
               <div key={shotId} className="surface rounded-xl">
                 <div className="px-5 py-3 flex items-center gap-3 border-b border-white/[0.06]">
@@ -297,13 +259,13 @@ export const AudioPhase: React.FC<Props> = ({
                   <StrategyPill strategy={bucket.dialogueStrategy} />
                   <span className="text-[10px] text-zinc-500">{bucket.lines.length} line{bucket.lines.length === 1 ? '' : 's'}</span>
                   <div className="flex-1" />
-                  {shotPending.length > 0 && (
+                  {shotAvailable.length > 0 && (
                     <button
-                      onClick={() => generateForLines(shotPending)}
-                      disabled={hasMissingVoices || generatingIds.size > 0 || isLoading}
+                      onClick={() => generateForLines(shotAvailable)}
+                      disabled={generatingIds.size > 0 || isLoading}
                       className="text-[11px] text-zinc-300 hover:text-white surface-inset rounded-md px-2.5 py-1 hover:bg-white/[0.06] transition-colors disabled:opacity-30"
                     >
-                      Generate shot
+                      Generate {shotAvailable.length}
                     </button>
                   )}
                 </div>
@@ -329,19 +291,6 @@ export const AudioPhase: React.FC<Props> = ({
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────
-
-const Stat: React.FC<{ label: string; value: number; accent?: 'emerald' | 'amber' | 'red' }> = ({ label, value, accent }) => {
-  const color = accent === 'emerald' ? 'text-emerald-300'
-    : accent === 'amber' ? 'text-amber-300'
-    : accent === 'red' ? 'text-red-300'
-    : 'text-white';
-  return (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</span>
-      <span className={`text-base font-mono ${color}`}>{value}</span>
-    </div>
-  );
-};
 
 const StrategyPill: React.FC<{ strategy: 'lipsync' | 'overlay' }> = ({ strategy }) => (
   <span className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 ${
