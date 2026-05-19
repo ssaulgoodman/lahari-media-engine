@@ -145,7 +145,8 @@ export const AudioPhase: React.FC<Props> = ({
     });
     try {
       const resp = await api.generateDialogueAudio(project.id, { dialogueIds });
-      if (resp?.id) onSetProject?.(resp);
+      const updated = resp?.project || resp?.data?.project || (resp?.id ? resp : null);
+      if (updated?.id) onSetProject?.(updated);
     } catch (err) {
       showActionError(err);
     } finally {

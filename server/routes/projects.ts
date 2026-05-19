@@ -459,12 +459,21 @@ const getFullProject = async (projectId: string) => {
 
   // Collect every asset ID we need to resolve — one bulk fetch instead of N+1
   const assetIds = new Set<string>();
+  const parseAudioPlan = (value: any) => {
+    if (!value) return null;
+    if (typeof value === 'object') return JSON.parse(JSON.stringify(value));
+    try { return JSON.parse(value); } catch { return null; }
+  };
   for (const shot of allShots) {
     if (shot.image_asset_id) assetIds.add(shot.image_asset_id);
     if (shot.end_image_asset_id) assetIds.add(shot.end_image_asset_id);
     if (shot.extracted_last_frame_asset_id) assetIds.add(shot.extracted_last_frame_asset_id);
     if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
     if (shot.storyboard_asset_id) assetIds.add(shot.storyboard_asset_id);
+    const audioPlan = parseAudioPlan(shot.audio_plan);
+    for (const line of audioPlan?.dialogue || []) {
+      if (line?.ttsAssetId) assetIds.add(line.ttsAssetId);
+    }
   }
   for (const c of cast) { if (c.reference_asset_id) assetIds.add(c.reference_asset_id); }
   for (const e of environments) { if (e.reference_asset_id) assetIds.add(e.reference_asset_id); }
@@ -493,6 +502,17 @@ const getFullProject = async (projectId: string) => {
     if (!id) return undefined;
     const a = assetMap.get(id);
     return a ? storageUrl(a.file_path) : undefined;
+  };
+  const hydrateAudioPlan = (value: any) => {
+    const audioPlan = parseAudioPlan(value);
+    if (!audioPlan) return undefined;
+    if (Array.isArray(audioPlan.dialogue)) {
+      audioPlan.dialogue = audioPlan.dialogue.map((line: any) => ({
+        ...line,
+        ttsAssetUrl: resolveUrl(line?.ttsAssetId),
+      }));
+    }
+    return audioPlan;
   };
 
   // Group shots by scene
@@ -659,7 +679,7 @@ const getFullProject = async (projectId: string) => {
         critique: shot.critique,
         attemptCount: shot.attempt_count,
         promptsStale: !!shot.prompts_stale,
-        audioPlan: shot.audio_plan || undefined,
+        audioPlan: hydrateAudioPlan(shot.audio_plan),
         audioPlanStale: !!shot.audio_plan_stale,
         useNextAsEndFrame: !!shot.use_next_as_end_frame,
         lastError: shot.last_error || undefined,
