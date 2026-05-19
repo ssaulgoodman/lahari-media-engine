@@ -173,6 +173,9 @@ Project:
 Title: ${project.title || 'Untitled'}
 Workflow: ${project.workflow_key || preset.workflowKey}
 Preset rules: ${preset.source.rules}
+Dialogue rules: ${preset.audio?.dialogueRules || ''}
+Sound rules: ${preset.audio?.soundRules || ''}
+Strategy rules: ${preset.audio?.strategyRules || ''}
 
 Scene:
 Label: ${scene.section_label || 'Scene'}

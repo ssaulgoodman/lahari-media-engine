@@ -23,6 +23,7 @@ export type WorkflowRecipe = {
     style: WorkflowStageState;
     cast: WorkflowStageState;
     environments: WorkflowStageState;
+    audio: WorkflowStageState;
     studio: WorkflowStageState;
     render: WorkflowStageState;
   };
@@ -75,6 +76,11 @@ export type PipelinePreset = {
     storyboardRules: string;
     videoPromptRules: string;
   };
+  audio: {
+    dialogueRules: string;
+    soundRules: string;
+    strategyRules: string;
+  };
   defaults: {
     imageModel: string;
     videoModel: string;
@@ -98,6 +104,7 @@ export const WORKFLOW_RECIPES: Record<WorkflowRecipeKey, WorkflowRecipe> = {
       style: 'generated',
       cast: 'generated',
       environments: 'generated',
+      audio: 'skipped',
       studio: 'required',
       render: 'required',
     },
@@ -117,6 +124,7 @@ export const WORKFLOW_RECIPES: Record<WorkflowRecipeKey, WorkflowRecipe> = {
       style: 'preset_supplied',
       cast: 'generated',
       environments: 'generated',
+      audio: 'optional',
       studio: 'required',
       render: 'required',
     },
@@ -175,6 +183,11 @@ export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
       storyboardRules: 'Use only objects, gestures, characters, performance choices, and set pieces that belong to the shot and references.',
       videoPromptRules: 'Do not invent a different object, set piece, performance action, or character blocking than the storyboard.',
     },
+    audio: {
+      dialogueRules: 'Music videos usually use the uploaded song as the primary audio. Do not invent spoken dialogue unless the director explicitly asks for narration, skits, or spoken inserts.',
+      soundRules: 'Use ambient or sound-effect notes only when they clarify visual production. The song remains the timeline authority.',
+      strategyRules: 'Audio Blueprint is skipped by default for music videos; any dialogue/TTS work is an explicit custom override.',
+    },
     defaults: {
       imageModel: 'nano-banana-2',
       videoModel: 'seedance-2.0-fast',
@@ -232,6 +245,11 @@ export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
       shotPromptRules: 'Every shot must clarify acting, story information, choreography, or emotional change. Translate inner emotion into facial acting, posture, timing, blocking, and environmental response.',
       storyboardRules: 'Storyboard panels should read like anime layout/key pose boards: clear acting beats, screen direction, continuity, and background geography. Avoid captions, speech bubbles, text, panel numbers, and manga-page effects unless requested.',
       videoPromptRules: 'Animate as a coherent anime shot or edited mini-sequence. Preserve character designs, background layout, screen direction, and action timing from the storyboard. Do not add live-action camera artifacts or unrelated VFX.',
+    },
+    audio: {
+      dialogueRules: 'Preserve uploaded script dialogue whenever present. If the seed only has action beats, write concise production dialogue only when the shot clearly calls for speech. Never put delivery labels, camera notes, or speaker names inside spoken text.',
+      soundRules: 'Use soundNotes for restrained ambient/SFX guidance that helps video generation. Do not build a full Foley timeline in v1.',
+      strategyRules: 'Use lipsync when the speaking character is visible and has a locked look reference. Use overlay for narration, off-screen speech, or any speaker without a usable look reference.',
     },
     defaults: {
       imageModel: 'nano-banana-2',

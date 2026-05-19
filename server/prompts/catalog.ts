@@ -130,6 +130,62 @@ Cover:
 Under 150 words. Write in English.`,
     source: { file: 'server/services/claude.ts', lines: '19-51' },
   },
+  {
+    id: 'write-audio-plan',
+    name: 'Write per-shot dialogue/audio plan',
+    stage: 'blueprint',
+    model: 'project.text_provider',
+    modelLabel: 'Project text provider',
+    triggeredBy: 'Script phase "Write dialogue", Audio phase rewrites, or Codex audio-director apply flow.',
+    summary: 'Writes structured per-shot dialogue, restrained sound notes, and server-inferred lipsync/overlay strategy for anime/dialogue workflows. Music-video workflow skips this by default.',
+    variables: [
+      { name: 'project', description: 'Project title, workflow, preset, and source_payload' },
+      { name: 'scene', description: 'Scene label, narrative description, and any source/lyrics text' },
+      { name: 'shot', description: 'Shot ID, duration, direction, visual prompt, and cast IDs' },
+      { name: 'cast', description: 'Allowed cast IDs with names, descriptions, look availability, and voice assignment state' },
+      { name: 'preset', description: 'Runtime preset, including source and audio rules' },
+    ],
+    template: `You are the audio director for {{preset.label}}.
+
+Write the per-shot audio plan for ONE shot. This is production data, not prose.
+
+Hard rules:
+- Use only the listed cast IDs. Do not invent characters.
+- Preserve uploaded script intent. If source payload includes dialogue for this beat, extract it as close to verbatim as possible.
+- Dialogue text is what TTS will speak. Never include delivery labels, camera notes, speaker names, or parenthetical directions inside dialogue text.
+- delivery is a short performance cue, not spoken text.
+- soundNotes are restrained ambient/SFX guidance for video prompts; do not create a structured SFX list.
+- If the shot has no spoken line, return an empty dialogue array and optional soundNotes.
+- Keep each dialogue text under 500 characters.
+
+Project:
+Title: {{project.title}}
+Workflow: {{project.workflow_key}}
+Preset rules: {{preset.source.rules}}
+Dialogue rules: {{preset.audio.dialogueRules}}
+Sound rules: {{preset.audio.soundRules}}
+Strategy rules: {{preset.audio.strategyRules}}
+
+Scene:
+Label: {{scene.section_label}}
+Narrative: {{scene.narrative_description}}
+Lyrics/source text: {{scene.lyrics}}
+
+Shot:
+ID: {{shot.id}}
+Duration: {{shot.duration}}s
+Direction: {{shot.direction}}
+Visual prompt: {{shot.visual_prompt}}
+
+Allowed cast:
+{{allowedCast}}
+
+Source payload:
+{{source_payload}}
+
+Return only the structured audio plan JSON.`,
+    source: { file: 'server/services/audioDirector.ts', lines: 'buildAudioPlanPrompt' },
+  },
 
   // ─── Blueprint ────────────────────────────────────────────────────
   {

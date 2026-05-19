@@ -34,6 +34,22 @@ const parseJson = <T,>(value: any, fallback: T): T => {
 const platformProjectFields = (fields: Record<string, any>) =>
   supportsPlatformColumns() ? fields : {};
 
+const markAudioPlansStaleForShots = async (shotIds: string[]) => {
+  if (!supportsPlatformColumns()) return;
+  if (shotIds.length === 0) return;
+  const shots = await selectAll('shots', { id: shotIds });
+  for (const shot of shots) {
+    if (shot.audio_plan && !shot.audio_plan_stale) {
+      await updateRows('shots', { id: shot.id }, { audio_plan_stale: true });
+    }
+  }
+};
+
+const markAudioPlansStaleForScene = async (sceneId: string) => {
+  const shots = await selectAll('shots', { scene_id: sceneId });
+  await markAudioPlansStaleForShots(shots.map((shot: any) => shot.id));
+};
+
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
@@ -1559,6 +1575,7 @@ router.put('/:id/cast/:memberId', async (req, res) => {
           const castIds = JSON.parse(shot.cast_ids || '[]');
           if (castIds.includes(memberId)) {
             await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+            await markAudioPlansStaleForShots([shot.id]);
           }
         }
       }
@@ -1646,6 +1663,7 @@ router.put('/:id/environments/:envId', async (req, res) => {
         for (const shot of shots) {
           if (shot.environment_id === envId) {
             await updateRows('shots', { id: shot.id }, { prompts_stale: true });
+            await markAudioPlansStaleForShots([shot.id]);
           }
         }
       }
@@ -1784,6 +1802,7 @@ router.patch('/:id/scenes/:sceneId', async (req, res) => {
     // Scene narrative change → shots in this scene are stale
     if (narrativeDescription !== undefined) {
       await updateRows('shots', { scene_id: sceneId }, { prompts_stale: true });
+      await markAudioPlansStaleForScene(sceneId);
       await recordDirectorEvent({
         projectId,
         userId: req.userId,
@@ -1829,6 +1848,7 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   // "this text was written by the vision rewrite", not "this text is current".
   if (direction !== undefined) {
     await updateRows('shots', { id: shotId }, { direction, prompts_stale: true });
+    await markAudioPlansStaleForShots([shotId]);
     eventTypes.push('direction');
   }
   if (visualPrompt !== undefined) {
@@ -1862,15 +1882,18 @@ router.patch('/:id/shots/:shotId', async (req, res) => {
   const { castIds, environmentId } = req.body;
   if (castIds !== undefined) {
     await updateRows('shots', { id: shotId }, { cast_ids: JSON.stringify(castIds), prompts_stale: true });
+    await markAudioPlansStaleForShots([shotId]);
     eventTypes.push('cast_ids');
   }
   if (environmentId !== undefined) {
     await updateRows('shots', { id: shotId }, { environment_id: environmentId || null, prompts_stale: true });
+    await markAudioPlansStaleForShots([shotId]);
     eventTypes.push('environment_id');
   }
   const { duration } = req.body;
   if (duration !== undefined && typeof duration === 'number' && duration > 0) {
     await updateRows('shots', { id: shotId }, { duration, prompts_stale: true });
+    await markAudioPlansStaleForShots([shotId]);
     eventTypes.push('duration');
   }
 
