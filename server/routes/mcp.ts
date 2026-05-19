@@ -7,7 +7,7 @@ import * as z from 'zod/v4';
 import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
-import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
+import { captureLahariIssue as captureMirageIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
@@ -18,15 +18,15 @@ import { structuredError } from '../services/structuredErrors.js';
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.6';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
-const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
+const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
-Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
+Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call mirage_capture_issue before guessing.`;
 
 type HostedAuth = {
   userId: string;
@@ -46,7 +46,7 @@ const bearerToken = (header?: string | null) => {
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 
 const idString = z.string().min(1).max(160);
-const projectId = idString.describe('Lahari project ID.');
+const projectId = idString.describe('Mirage project ID.');
 const shotId = idString.describe('Shot ID within the project.');
 const shortText = z.string().max(2000);
 const mediumText = z.string().max(8000);
@@ -85,10 +85,10 @@ const audioPlanSchema = z.object({
 });
 
 const MCP_LIMITS = {
-  requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
-  mutatingPerHour: envInt('LAHARI_MCP_MUTATIONS_PER_HOUR', 180),
-  paidPerDay: envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 30),
-  issuesPerHour: envInt('LAHARI_MCP_ISSUES_PER_HOUR', 20),
+  requestPerMinute: envInt('MIRAGE_MCP_REQUESTS_PER_MINUTE', envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120)),
+  mutatingPerHour: envInt('MIRAGE_MCP_MUTATIONS_PER_HOUR', envInt('LAHARI_MCP_MUTATIONS_PER_HOUR', 180)),
+  paidPerDay: envInt('MIRAGE_MCP_PAID_CALLS_PER_DAY', envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 30)),
+  issuesPerHour: envInt('MIRAGE_MCP_ISSUES_PER_HOUR', envInt('LAHARI_MCP_ISSUES_PER_HOUR', 20)),
 };
 
 const PAID_TOOLS = new Set([
@@ -120,13 +120,13 @@ const structuredToolError = (error: unknown) => {
       // Plain Error message; wrap below.
     }
     return {
-      code: error.message.toLowerCase().includes('auth') ? 'auth_expired' : 'lahari_mcp_error',
+      code: error.message.toLowerCase().includes('auth') ? 'auth_expired' : 'mirage_mcp_error',
       message: error.message,
     };
   }
   return {
-    code: 'lahari_mcp_error',
-    message: String(error || 'Unknown Lahari MCP error'),
+    code: 'mirage_mcp_error',
+    message: String(error || 'Unknown Mirage MCP error'),
   };
 };
 
@@ -155,7 +155,7 @@ const remoteSessionState = async (projectId: string, userId: string, opts: { sin
     listDirectorEvents(projectId, { afterSeq: opts.sinceSeq ?? null, limit: 50 }),
   ]);
   return {
-    kind: 'lahari.director.remote_session',
+    kind: 'mirage.director.remote_session',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -187,7 +187,7 @@ const remoteSessionState = async (projectId: string, userId: string, opts: { sin
 
 const createHostedMcpServer = (auth: HostedAuth) => {
   const server = new McpServer({
-    name: 'lahari',
+    name: 'mirage',
     version: HOSTED_MCP_VERSION,
   }, {
     instructions: HOSTED_MCP_INSTRUCTIONS,
@@ -210,7 +210,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project') {
       return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     }
-    if (name === 'add_director_note' || name === 'lahari_capture_issue') {
+    if (name === 'add_director_note' || name === 'lahari_capture_issue' || name === 'mirage_capture_issue') {
       return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
     }
     if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
@@ -245,21 +245,21 @@ const createHostedMcpServer = (auth: HostedAuth) => {
             key: `mcp:paid:${auth.tokenId}`,
             limit: MCP_LIMITS.paidPerDay,
             windowMs: 24 * 60 * 60 * 1000,
-            label: 'Paid Lahari MCP tool',
+            label: 'Paid Mirage MCP tool',
           });
-        } else if (name === 'lahari_capture_issue') {
+        } else if (name === 'lahari_capture_issue' || name === 'mirage_capture_issue') {
           assertRateLimit({
             key: `mcp:issue:${auth.tokenId}`,
             limit: MCP_LIMITS.issuesPerHour,
             windowMs: 60 * 60 * 1000,
-            label: 'Lahari issue capture',
+            label: 'Mirage issue capture',
           });
         } else if (!annotations.readOnlyHint) {
           assertRateLimit({
             key: `mcp:mutating:${auth.tokenId}`,
             limit: MCP_LIMITS.mutatingPerHour,
             windowMs: 60 * 60 * 1000,
-            label: 'Mutating Lahari MCP tool',
+            label: 'Mutating Mirage MCP tool',
           });
         }
         if (!annotations.readOnlyHint) {
@@ -286,29 +286,32 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   const unsupported = (tool: string, reason: string) => async () => {
     throw new Error(JSON.stringify({
       code: 'remote_facade_gap',
-      message: `${tool} is not available in the hosted Lahari MCP server yet.`,
+      message: `${tool} is not available in the hosted Mirage MCP server yet.`,
       details: { tool, reason },
     }, null, 2));
   };
 
   registerTool('list_projects', {
-    title: 'List Lahari projects',
-    description: 'Read-only. Lists recent Lahari projects for the authenticated artist.',
+    title: 'List Mirage projects',
+    description: 'Read-only. Lists recent Mirage projects for the authenticated artist.',
     inputSchema: { limit: z.number().int().min(1).max(100).optional() },
   }, async ({ limit }) => {
     const rows = await selectColumns(
       'projects',
-      'id,title,status,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
+      'id,title,status,preset_key,workflow_key,seed_kind,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
       { user_id: auth.userId },
       { orderBy: 'updated_at', ascending: false, limit: Math.min(Number(limit || 20) || 20, 100) },
     );
     return {
-      kind: 'lahari.project.list',
+      kind: 'mirage.project.list',
       generatedAt: new Date().toISOString(),
       projects: rows.map((row: any) => ({
         id: row.id,
         title: row.title,
         status: row.status,
+        presetKey: row.preset_key || null,
+        workflowKey: row.workflow_key || null,
+        seedKind: row.seed_kind || null,
         songType: row.song_type || null,
         isNarrative: row.is_narrative ?? null,
         isMeditative: row.is_meditative ?? null,
@@ -323,18 +326,18 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   });
 
   registerTool('list_queue', {
-    title: 'List Lahari music queue',
-    description: 'Read-only. Lists music-video queue items for the authenticated artist, including duration, queue status, linked/current project, and next action.',
+    title: 'List legacy music queue',
+    description: 'Read-only legacy source-adapter surface. Mirage direct intake does not require a queue.',
     inputSchema: {
       status: z.string().optional().describe('Optional queue status filter, or "all".'),
-      query: z.string().min(1).max(120).optional().describe('Optional title/deity/language/note search.'),
+      query: z.string().min(1).max(120).optional().describe('Optional title/language/note search.'),
       limit: z.number().int().min(1).max(100).optional(),
     },
   }, async ({ status, query, limit }) => studio.listQueueForDirector(auth.userId, { status, query, limit }));
 
   registerTool('search_catalog', {
-    title: 'Search Lahari catalog',
-    description: 'Read-only. Searches the artist-owned project list plus the music queue by title/transliteration/deity and returns normalized matches.',
+    title: 'Search Mirage catalog',
+    description: 'Read-only. Searches artist-owned projects plus any enabled legacy source-adapter catalog.',
     inputSchema: {
       query: z.string().min(1).max(120),
       limit: z.number().int().min(1).max(50).optional(),
@@ -342,22 +345,22 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   }, async ({ query, limit }) => studio.searchCatalogForDirector(auth.userId, query, { limit }));
 
   registerTool('resolve_project', {
-    title: 'Resolve Lahari project or queue item',
-    description: 'Read-only. Friendly opener for artist phrases like "open Gakaarayaachyam"; resolves project IDs, project titles, and queue/song matches into the next legal action.',
+    title: 'Resolve Mirage project',
+    description: 'Read-only. Friendly opener for artist phrases like "open my anime pilot"; resolves project IDs, project titles, and any enabled source-adapter matches into the next legal action.',
     inputSchema: {
-      query: z.string().min(1).max(120).describe('Project ID, project title, song title, transliteration, deity, or queue label.'),
+      query: z.string().min(1).max(120).describe('Project ID, project title, workflow label, or source-adapter label.'),
     },
   }, async ({ query }) => studio.resolveProjectForDirector(auth.userId, query));
 
   registerTool('get_project_packet', {
     title: 'Get project packet',
-    description: 'Read-only. Returns a compact Codex-oriented packet for one Lahari project.',
+    description: 'Read-only. Returns a compact Codex-oriented packet for one Mirage project.',
     inputSchema: { projectId },
   }, async ({ projectId }) => studio.buildProjectPacket(await fullProjectForUser(projectId, auth.userId)));
 
   registerTool('get_project_actions', {
     title: 'Get project action list',
-    description: 'Read-only. Returns legal next actions for a Lahari project.',
+    description: 'Read-only. Returns legal next actions for a Mirage project.',
     inputSchema: { projectId },
   }, async ({ projectId }) => studio.buildProjectActionList(await fullProjectForUser(projectId, auth.userId)));
 
@@ -380,7 +383,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   }, async ({ projectId }) => {
     const notebook = await studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId));
     return {
-      kind: 'lahari.notebook.manifest',
+      kind: 'mirage.notebook.manifest',
       notebookVersion: notebook.notebookVersion,
       generatedAt: notebook.generatedAt,
       project: notebook.project,
@@ -415,7 +418,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       }));
     }
     return {
-      kind: 'lahari.notebook.file',
+      kind: 'mirage.notebook.file',
       notebookVersion: notebook.notebookVersion,
       generatedAt: notebook.generatedAt,
       project: notebook.project,
@@ -434,7 +437,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('mint_cli_token', {
     title: 'Mint short-lived CLI sync token',
-    description: 'Mutating security surface. Issues a short-lived project-scoped token for npx @ssaulgoodman420/lahari-cli sync so notebook file bodies do not travel through chat.',
+    description: 'Mutating security surface. Issues a short-lived project-scoped token for Mirage CLI sync so notebook file bodies do not travel through chat.',
     inputSchema: {
       projectId,
       ttlMinutes: z.number().int().min(5).max(180).optional(),
@@ -483,7 +486,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('attach_director_session', {
     title: 'Attach director session',
-    description: 'Opens a Lahari project for director work and returns packet/actions/events.',
+    description: 'Opens a Mirage project for director work and returns packet/actions/events.',
     inputSchema: { projectId, note: shortText.optional(), sinceSeq: z.number().optional() },
   }, ({ projectId, note, sinceSeq }) => remoteSessionState(projectId, auth.userId, { note, sinceSeq }));
 
@@ -697,7 +700,6 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         title: mediumText.min(1),
         direction: promptText,
         description: promptText,
-        deity: mediumText.optional(),
         mood: mediumText.optional(),
       }),
       baseHash: z.string().optional(),
@@ -758,7 +760,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('apply_script_markdown', {
     title: 'Apply script markdown',
-    description: 'Mutating and high blast radius. Parses an edited drafts/script.md Lahari script draft, validates fingerprint/durations, and atomically replaces cast, environments, scenes, and shots.',
+    description: 'Mutating and high blast radius. Parses an edited drafts/script.md Mirage script draft, validates fingerprint/durations, and atomically replaces cast, environments, scenes, and shots.',
     inputSchema: {
       projectId,
       markdown: scriptMarkdownText,
@@ -859,8 +861,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     inputSchema: { projectId, shotId, promptOverride: optionalPromptText, modelOverride: modelOverrideSchema },
   }, async ({ projectId, shotId, promptOverride, modelOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride, modelOverride || {}));
 
-  registerTool('lahari_capture_issue', {
-    title: 'Capture Lahari director issue',
+  const captureIssue = async ({ projectId, severity, summary, suggestedFix, recentToolCalls }: any) => {
+    await assertProjectAccess(projectId, auth.userId);
+    return captureMirageIssue({ projectId, severity, summary, suggestedFix, recentToolCalls });
+  };
+
+  registerTool('mirage_capture_issue', {
+    title: 'Capture Mirage director issue',
     description: 'Captures an issue for later engine debugging.',
     inputSchema: {
       projectId,
@@ -869,10 +876,19 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       suggestedFix: mediumText.optional(),
       recentToolCalls: z.unknown().optional(),
     },
-  }, async ({ projectId, severity, summary, suggestedFix, recentToolCalls }) => {
-    await assertProjectAccess(projectId, auth.userId);
-    return captureLahariIssue({ projectId, severity, summary, suggestedFix, recentToolCalls });
-  });
+  }, captureIssue);
+
+  registerTool('lahari_capture_issue', {
+    title: 'Capture director issue (legacy alias)',
+    description: 'Legacy alias for mirage_capture_issue.',
+    inputSchema: {
+      projectId,
+      severity: z.enum(['low', 'mid', 'high']),
+      summary: shortText.min(1),
+      suggestedFix: mediumText.optional(),
+      recentToolCalls: z.unknown().optional(),
+    },
+  }, captureIssue);
 
   return server;
 };
@@ -885,7 +901,7 @@ router.post('/', async (req, res) => {
       key: `mcp:request:${auth.tokenId}`,
       limit: MCP_LIMITS.requestPerMinute,
       windowMs: 60 * 1000,
-      label: 'Lahari MCP request',
+      label: 'Mirage MCP request',
     });
   } catch (error) {
     const structured = structuredToolError(error);
@@ -894,7 +910,7 @@ router.post('/', async (req, res) => {
       jsonrpc: '2.0',
       error: {
         code: error instanceof RateLimitError ? -32029 : -32001,
-        message: structured.message || 'Unauthorized Lahari MCP request',
+        message: structured.message || 'Unauthorized Mirage MCP request',
         data: structured,
       },
       id: (req.body as any)?.id ?? null,
@@ -918,7 +934,7 @@ router.get('/', (_req, res) => {
     jsonrpc: '2.0',
     error: {
       code: -32000,
-      message: 'Lahari MCP uses Streamable HTTP POST requests.',
+      message: 'Mirage MCP uses Streamable HTTP POST requests.',
     },
     id: null,
   });
@@ -929,7 +945,7 @@ router.delete('/', (_req, res) => {
     jsonrpc: '2.0',
     error: {
       code: -32000,
-      message: 'Lahari MCP is stateless; DELETE is not supported.',
+      message: 'Mirage MCP is stateless; DELETE is not supported.',
     },
     id: null,
   });

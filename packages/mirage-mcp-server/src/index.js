@@ -259,10 +259,10 @@ registerTool('list_projects', {
 
 registerTool('list_queue', {
   title: 'List Mirage music queue',
-  description: 'Read-only. Lists music-video queue items for the authenticated artist, including duration, queue status, linked/current project, and next action.',
+  description: 'Read-only legacy source-adapter surface. Mirage direct intake does not require a queue.',
   inputSchema: {
     status: z.string().optional().describe('Optional queue status filter, or "all".'),
-    query: z.string().min(1).max(120).optional().describe('Optional title/deity/language/note search.'),
+    query: z.string().min(1).max(120).optional().describe('Optional title/language/note search.'),
     limit: z.number().int().min(1).max(100).optional(),
   },
 }, ({ status, query, limit }) => {
@@ -275,7 +275,7 @@ registerTool('list_queue', {
 
 registerTool('search_catalog', {
   title: 'Search Mirage catalog',
-  description: 'Read-only. Searches the artist-owned project list plus the music queue by title/transliteration/deity and returns normalized matches.',
+  description: 'Read-only. Searches artist-owned projects plus any enabled legacy source-adapter catalog.',
   inputSchema: {
     query: z.string().min(1).max(120),
     limit: z.number().int().min(1).max(50).optional(),
@@ -287,10 +287,10 @@ registerTool('search_catalog', {
 });
 
 registerTool('resolve_project', {
-  title: 'Resolve Mirage project or queue item',
-  description: 'Read-only. Friendly opener for artist phrases like "open Gakaarayaachyam"; resolves project IDs, project titles, and queue/song matches into the next legal action.',
+  title: 'Resolve Mirage project',
+  description: 'Read-only. Friendly opener for artist phrases like "open my anime pilot"; resolves project IDs, project titles, and any enabled source-adapter matches into the next legal action.',
   inputSchema: {
-    query: z.string().min(1).max(120).describe('Project ID, project title, song title, transliteration, deity, or queue label.'),
+    query: z.string().min(1).max(120).describe('Project ID, project title, workflow label, or source-adapter label.'),
   },
 }, ({ query }) => directorGet(`/api/director/resolve?query=${encodeURIComponent(query)}`));
 
@@ -596,7 +596,6 @@ registerTool('apply_concept', {
       title: z.string().min(1),
       direction: z.string().min(1),
       description: z.string().min(1),
-      deity: z.string().optional(),
       mood: z.string().optional(),
     }),
     baseHash: z.string().optional(),

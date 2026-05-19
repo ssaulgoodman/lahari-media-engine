@@ -569,6 +569,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-19 Codex: T1.3/T1.4 core app deploy complete. Railway deployment `c2da58cf-acc6-48ae-bcc1-22b2d4a4815a` succeeded; `https://mirage-platform-production-05ca.up.railway.app/api/health` returns 200; root HTML returns 200; deployed JS bundle points at the Mirage Supabase project. Fixed Dockerfile so Vite Supabase vars come from Railway build variables instead of hardcoded legacy values. Remaining infra before full E2E: Supabase/Google auth redirects and renderer env wiring.
 
+2026-05-19 Codex: T1.5 MCP setup pass. Hosted `/mcp` route is reachable on the Mirage Railway app and returns JSON-RPC auth errors when called without a bearer token. Scrubbed hosted MCP server name/instructions/tool descriptions from Lahari/queue-first language to Mirage/project-first language, added `mirage_capture_issue` while keeping `lahari_capture_issue` as a legacy alias, exposed `workflowKey`/`presetKey`/`seedKind` in `list_projects`, and removed `deity` from Mirage MCP concept input schemas. `@mirage/mcp-server` is not published yet; `npm pack --dry-run ./packages/mirage-mcp-server` succeeds and confirms the 0.1.0 package shape.
+
 ---
 
 ## 10. References
