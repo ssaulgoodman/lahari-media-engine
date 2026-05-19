@@ -1464,6 +1464,14 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                     onUploadShotRef={handleUploadShotRef}
                     onDeleteShotRef={handleDeleteShotRef}
                     onSetProject={setProject}
+                    onJumpToAudioPhase={() => {
+                      // T6.8: lipsync-blocked chip click in Studio. Hint the
+                      // Blueprint editor to land on Audio phase, then navigate
+                      // back to BLUEPRINT. AnalysisEditor reads + clears the
+                      // hint on mount so this is a one-shot redirect.
+                      try { sessionStorage.setItem('mirage:initialBlueprintPhase', 'audio'); } catch {}
+                      setCurrentStep(AppStep.BLUEPRINT);
+                    }}
                     isLoading={loading}
                   />
                 </motion.div>

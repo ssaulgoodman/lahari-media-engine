@@ -52,6 +52,9 @@ interface Props {
   onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
   onDeleteShotRef?: (shotId: string, assetId: string) => void | Promise<void>;
   onSetProject?: (project: ApiProject) => void;
+  /** T6.8: lipsync-blocked chip click on a ShotCard. AppShell routes back to
+   *  Blueprint Audio phase. */
+  onJumpToAudioPhase?: () => void;
   frameQueue?: string[];
   videoQueue?: string[];
   storyboardPromptQueue?: string[];
@@ -59,7 +62,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, onJumpToAudioPhase, frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue, isLoading }) => {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
@@ -330,6 +333,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   onUploadShotRef={onUploadShotRef}
                   onDeleteShotRef={onDeleteShotRef}
                   onSetProject={onSetProject}
+                  onJumpToAudioPhase={onJumpToAudioPhase}
                   setModalImage={setModalImage}
                 />
               );

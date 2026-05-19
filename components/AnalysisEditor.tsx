@@ -56,7 +56,22 @@ export const AnalysisEditor: React.FC<Props> = ({
   onGenerateScript, onRefineScript, onUpdateScene, onUpdateShot, onGenerateConcepts, onCancelConcepts, onCancelScript, onUnlockConcept, onRefineConcept, onUpdateConcept, onUnlockScript, onUnlockCharacters, onUnlockEnvironments, onUpdateProject, onLaunchStudio, onAdvanceCharacters, onAdvanceEnvironments, onSetProject, onConfirmDestructive,
 }) => {
   const activePhase = getActivePhase(project);
-  const [viewPhase, setViewPhase] = useState<Phase>(activePhase);
+  // One-shot hint from elsewhere in the app (e.g. T6.8 Studio
+  // lipsync-blocked chip → "go to Audio phase"). Read + clear on mount
+  // so subsequent mounts revert to default activePhase logic.
+  const initialPhase: Phase = (() => {
+    try {
+      const hint = sessionStorage.getItem('mirage:initialBlueprintPhase');
+      if (hint) {
+        sessionStorage.removeItem('mirage:initialBlueprintPhase');
+        if (['concept','script','style','characters','environments','audio'].includes(hint)) {
+          return hint as Phase;
+        }
+      }
+    } catch {}
+    return activePhase;
+  })();
+  const [viewPhase, setViewPhase] = useState<Phase>(initialPhase);
   const [modalImage, setModalImage] = useState<string | null>(null);
 
   // Environment look candidates — lifted to orchestrator so they survive tab switches
