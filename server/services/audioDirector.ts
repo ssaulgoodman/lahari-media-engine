@@ -53,7 +53,6 @@ export const AUDIO_PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    dialogueStrategy: { type: 'string', enum: ['lipsync', 'overlay'] },
     dialogue: {
       type: 'array',
       items: {
@@ -68,12 +67,12 @@ export const AUDIO_PLAN_SCHEMA = {
           paceHint: { type: 'string', enum: ['slow', 'natural', 'fast'] },
           targetSec: { type: 'number' },
         },
-        required: ['characterId', 'text', 'delivery', 'emotion', 'order', 'paceHint', 'targetSec'],
+        required: ['characterId', 'text', 'order'],
       },
     },
     soundNotes: { type: 'string' },
   },
-  required: ['dialogueStrategy', 'dialogue', 'soundNotes'],
+  required: ['dialogue'],
 } as const;
 
 const parseCastIds = (raw?: string | null): string[] => {

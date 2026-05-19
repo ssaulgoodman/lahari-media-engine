@@ -27,8 +27,16 @@ router.post('/:id/write-audio-plan', async (req, res) => {
       selectAll('cast_members', { project_id: projectId }, { orderBy: 'sort_order', ascending: true }),
       selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order', ascending: true }),
     ]);
-    if (cast.length === 0) return res.status(400).json({ error: 'No cast members exist yet.' });
-    if (scenes.length === 0) return res.status(400).json({ error: 'No scenes exist yet.' });
+    if (cast.length === 0) {
+      const err = new Error('No cast members exist yet.');
+      (err as any).statusCode = 400;
+      throw err;
+    }
+    if (scenes.length === 0) {
+      const err = new Error('No scenes exist yet.');
+      (err as any).statusCode = 400;
+      throw err;
+    }
 
     const sceneById = new Map(scenes.map((scene: any) => [scene.id, scene]));
     const sceneIds = scenes.map((scene: any) => scene.id);
