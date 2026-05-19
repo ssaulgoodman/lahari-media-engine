@@ -12,6 +12,7 @@ import { mountLooksRoutes } from './generate-looks.js';
 import { mountScriptRoutes } from './generate-script.js';
 import { mountShotRoutes } from './generate-shots.js';
 import { mountVideoRoutes } from './generate-video.js';
+import { mountAudioRoutes } from './generate-audio.js';
 import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
@@ -290,6 +291,7 @@ router.post('/:id/chat', async (req, res) => {
 mountStyleRoutes(router);
 mountLooksRoutes(router);
 mountScriptRoutes(router);
+mountAudioRoutes(router);
 mountShotRoutes(router);
 mountVideoRoutes(router);
 
