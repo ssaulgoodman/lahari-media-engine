@@ -4,6 +4,7 @@ import {
   hasVertexVideoConfig,
   isVertexVeoModelKey,
 } from './vertex-video.js';
+import { supportsPlatformColumns } from '../database.js';
 
 type VideoProvider = 'segmind' | 'vertex';
 
@@ -70,11 +71,12 @@ export const generateVideoWithFallback = async (
 ): Promise<VideoGenerationResult> => {
   const modelKey = opts?.modelKey || 'veo-3.1-fast';
   const canUseVertexModel = isVertexVeoModelKey(modelKey);
+  const studioSchema = supportsPlatformColumns();
 
   // Env override: VIDEO_PROVIDER=vertex skips Segmind entirely for Veo models.
   // Useful when Segmind is out of credits or down. Seedance models still go to
   // Segmind (Vertex doesn't have them).
-  if (process.env.VIDEO_PROVIDER === 'vertex' && canUseVertexModel && hasVertexVideoConfig()) {
+  if (!studioSchema && process.env.VIDEO_PROVIDER === 'vertex' && canUseVertexModel && hasVertexVideoConfig()) {
     console.log(`[video-provider] VIDEO_PROVIDER=vertex — going direct to Vertex for ${modelKey}`);
     return await generateVertexVideo(startImagePath, motionPrompt, { ...opts, modelKey });
   }
@@ -84,7 +86,7 @@ export const generateVideoWithFallback = async (
     return { ...result, provider: 'segmind' };
   } catch (segmindErr: any) {
 
-    if (!canUseVertexModel || !shouldFallbackToVertex(segmindErr)) {
+    if (studioSchema || !canUseVertexModel || !shouldFallbackToVertex(segmindErr)) {
       throw segmindErr;
     }
 

@@ -184,7 +184,7 @@ export const generateSegmindVideo = async (
     if (lower.includes('safety settings') || lower.includes('blocked') || lower.includes('person/face')) {
       userMessage = `Safety filter blocked this image — the AI flagged faces/people in the start frame. Try regenerating the start frame first, or switch to Seedance which has a different safety policy.`;
     } else if (isCreditsError) {
-      userMessage = `Segmind credits exhausted — falling back to Vertex Veo if configured, otherwise this will fail.`;
+      userMessage = `Segmind credits exhausted — add credits or switch models, then retry.`;
     } else if (res.status === 404 || lower.includes('not_found') || lower.includes('not found')) {
       userMessage = `Model ${modelKey} is temporarily unavailable on Segmind (404). This usually resolves in a few minutes — try again shortly.`;
     } else if (res.status === 429 || lower.includes('rate limit') || lower.includes('quota')) {

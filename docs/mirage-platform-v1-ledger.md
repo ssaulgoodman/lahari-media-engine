@@ -557,6 +557,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-19 Codex: T6.4/T6.6 backend render overlay path landed. `/api/projects/:id/render` now augments the outgoing renderer snapshot with injected audio track items for shots whose `audio_plan.dialogueStrategy === 'overlay'` and whose dialogue lines have successful `ttsAssetId`s. Injection matches each shot to its current timeline video clip by video asset URL, then schedules dialogue audio sequentially inside that clip using `ttsDurationSec`, `targetSec`, or an even fallback slice. Lipsync shots are skipped because their dialogue audio is baked into video generation. Existing FFmpeg render path already supports delayed audio items and mixing, so overlay dialogue remains FFmpeg-eligible instead of forcing Remotion. Render-start director event records `overlayDialogueInjected`. Remaining T6 work: optional overrun warning affordance (T6.7) and golden-path validation.
 
+2026-05-19 Codex: T1.9 partial provider consolidation. In `DB_TABLE_PREFIX=studio` / Mirage mode, `generateVideoWithFallback` no longer honors `VIDEO_PROVIDER=vertex` and no longer falls back from Segmind to Vertex; Segmind errors surface directly. Lahari/legacy mode keeps the existing Vertex backup path. Image-side Nano Banana Pro-on-Segmind routing still needs provider-endpoint verification before changing runtime image defaults.
+
 ---
 
 ## 10. References
