@@ -39,12 +39,24 @@ export const AudioPhase: React.FC<Props> = ({
   // Shot IDs whose audio_plan is being rewritten right now (per T5.7
   // "Rewrite" action). Driven by writeAudioPlan with force=true.
   const [rewritingShotIds, setRewritingShotIds] = useState<Set<string>>(new Set());
+  // Shot IDs whose dialogueStrategy is being toggled. Locks the picker
+  // briefly so double-clicks don't fire two PATCH calls.
+  const [updatingStrategyShotIds, setUpdatingStrategyShotIds] = useState<Set<string>>(new Set());
 
   // Cast voice lookup. Computed once per project; used to filter "available"
   // lines for bulk/per-shot generation and to badge no-voice rows.
   const castHasVoice = useMemo(() => {
     const map = new Map<string, boolean>();
     project.cast.forEach(c => map.set(c.id, !!c.voiceId));
+    return map;
+  }, [project.cast]);
+
+  // Cast look-reference lookup. T5.6: lipsync requires every dialogue speaker
+  // in a shot to have a locked look reference (per D3). Used to gate the
+  // strategy picker's lipsync option client-side; backend enforces too.
+  const castHasLook = useMemo(() => {
+    const map = new Map<string, boolean>();
+    project.cast.forEach(c => map.set(c.id, !!c.referenceImageUrl));
     return map;
   }, [project.cast]);
 
@@ -137,6 +149,29 @@ export const AudioPhase: React.FC<Props> = ({
       setGeneratingIds(prev => {
         const next = new Set(prev);
         dialogueIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }
+  };
+
+  // T5.6: per-shot dialogueStrategy override. Backend validates that
+  // lipsync requires every dialogue speaker to have a locked look
+  // reference; UI also gates the lipsync option to match. If the backend
+  // returns lipsync_requires_look_reference (race / stale cast state),
+  // ApiError flows through showActionError with the structured message.
+  const setShotStrategy = async (shotId: string, dialogueStrategy: 'lipsync' | 'overlay') => {
+    setUpdatingStrategyShotIds(prev => new Set(prev).add(shotId));
+    try {
+      const resp = await api.updateShotAudioPlan(project.id, shotId, { dialogueStrategy });
+      // Backend returns the full project directly on this endpoint.
+      const updated = resp?.id ? resp : resp?.project || resp?.data?.project;
+      if (updated?.id) onSetProject?.(updated);
+    } catch (err) {
+      showActionError(err);
+    } finally {
+      setUpdatingStrategyShotIds(prev => {
+        const next = new Set(prev);
+        next.delete(shotId);
         return next;
       });
     }
@@ -292,12 +327,39 @@ export const AudioPhase: React.FC<Props> = ({
             // Matches the harness invariant: never block one line because
             // another in the same shot is waiting on a voice.
             const shotAvailable = bucket.lines.filter(lineIsAvailable).map(l => l.id);
+            // T5.6: lipsync requires every speaker in the shot to have a
+            // locked look reference (D3). Surface the blockers so the
+            // tooltip names exactly which characters need looks.
+            const noLookSpeakers = Array.from(new Set(
+              bucket.lines
+                .filter(l => castHasLook.get(l.characterId) !== true)
+                .map(l => characterName(l.characterId))
+            ));
+            const canLipsync = noLookSpeakers.length === 0;
+            // Lipsync needs TTS baked into the video. Warn if any line
+            // doesn't have a successful asset yet.
+            const lipsyncTtsMissing = bucket.dialogueStrategy === 'lipsync'
+              && bucket.lines.some(l => l.ttsStatus !== 'success');
             return (
               <div key={shotId} className="surface rounded-xl">
                 <div className="px-5 py-3 flex items-center gap-3 border-b border-white/[0.06]">
                   <span className="text-xs font-mono text-zinc-500">S{bucket.shotIndex}</span>
                   <span className="text-sm text-zinc-300">{bucket.sceneLabel}</span>
-                  <StrategyPill strategy={bucket.dialogueStrategy} />
+                  <StrategyPicker
+                    strategy={bucket.dialogueStrategy}
+                    canLipsync={canLipsync}
+                    noLookSpeakers={noLookSpeakers}
+                    updating={updatingStrategyShotIds.has(shotId)}
+                    onChange={(next) => setShotStrategy(shotId, next)}
+                  />
+                  {lipsyncTtsMissing && (
+                    <span
+                      className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"
+                      title="Lipsync bakes TTS audio into the video. Generate TTS for every line before running video gen."
+                    >
+                      tts needed
+                    </span>
+                  )}
                   {bucket.audioPlanStale && (
                     <span
                       className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"
@@ -362,15 +424,60 @@ export const AudioPhase: React.FC<Props> = ({
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-const StrategyPill: React.FC<{ strategy: 'lipsync' | 'overlay' }> = ({ strategy }) => (
-  <span className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 ${
-    strategy === 'lipsync'
-      ? 'text-blue-300/90 bg-blue-500/[0.08]'
-      : 'text-zinc-400 bg-white/[0.04]'
-  }`} title={strategy === 'lipsync' ? 'TTS audio passed to Seedance; video renders with lipsync.' : 'Video stays silent; TTS overlaid at render time.'}>
-    {strategy}
-  </span>
-);
+// T5.6: inline two-segment toggle. Active segment is the current strategy
+// (white/black). Lipsync segment is disabled with an explanatory tooltip
+// when any dialogue speaker in the shot lacks a locked look reference (D3).
+// Overlay is always selectable. Click fires a PATCH to the audio-plan
+// strategy endpoint via setShotStrategy.
+interface StrategyPickerProps {
+  strategy: 'lipsync' | 'overlay';
+  canLipsync: boolean;
+  noLookSpeakers: string[];
+  updating: boolean;
+  onChange: (next: 'lipsync' | 'overlay') => void;
+}
+
+const StrategyPicker: React.FC<StrategyPickerProps> = ({ strategy, canLipsync, noLookSpeakers, updating, onChange }) => {
+  const lipsyncTitle = canLipsync
+    ? 'TTS audio passed to Seedance; video renders with lipsync. Requires every speaker to have a locked look.'
+    : `Needs a locked look reference for: ${noLookSpeakers.join(', ')}`;
+  const overlayTitle = 'Video stays silent; TTS overlaid at render time. Use for narrators or off-screen voices.';
+  const segBase = 'text-[10px] uppercase tracking-wider px-1.5 py-0.5 transition-colors';
+
+  return (
+    <div className="surface-inset rounded inline-flex items-center text-[10px] overflow-hidden" role="group" aria-label="Dialogue strategy">
+      <button
+        onClick={() => !updating && canLipsync && strategy !== 'lipsync' && onChange('lipsync')}
+        disabled={updating || !canLipsync}
+        title={lipsyncTitle}
+        aria-pressed={strategy === 'lipsync'}
+        className={`${segBase} ${
+          strategy === 'lipsync'
+            ? 'bg-blue-500/[0.15] text-blue-200'
+            : canLipsync
+              ? 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
+              : 'text-zinc-600 cursor-not-allowed'
+        }`}
+      >
+        lipsync
+      </button>
+      <button
+        onClick={() => !updating && strategy !== 'overlay' && onChange('overlay')}
+        disabled={updating}
+        title={overlayTitle}
+        aria-pressed={strategy === 'overlay'}
+        className={`${segBase} ${
+          strategy === 'overlay'
+            ? 'bg-white/[0.1] text-zinc-100'
+            : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
+        }`}
+      >
+        overlay
+      </button>
+      {updating && <span className="w-2.5 h-2.5 mx-1.5 border-2 border-zinc-600 border-t-zinc-200 rounded-full animate-spin" />}
+    </div>
+  );
+};
 
 interface DialogueRowProps {
   line: EnrichedLine;
