@@ -18,6 +18,81 @@ import {
   type Project,
 } from './core.js';
 
+const summarizeAudioPlan = (audioPlan: any) => {
+  if (!audioPlan) return null;
+  return {
+    dialogueStrategy: audioPlan.dialogueStrategy || 'overlay',
+    soundNotes: compactText(audioPlan.soundNotes, 350),
+    dialogue: Array.isArray(audioPlan.dialogue)
+      ? audioPlan.dialogue.map((line: any) => ({
+        id: line.id,
+        characterId: line.characterId,
+        text: compactText(line.text, 350),
+        delivery: compactText(line.delivery, 180),
+        emotion: compactText(line.emotion, 120),
+        order: line.order,
+        paceHint: line.paceHint,
+        targetSec: line.targetSec,
+        ttsAssetId: line.ttsAssetId || null,
+        ttsAssetUrl: line.ttsAssetUrl || null,
+        ttsStatus: line.ttsStatus || 'pending',
+        ttsError: compactText(line.ttsError, 220),
+        ttsCharCount: line.ttsCharCount,
+        ttsDurationSec: line.ttsDurationSec,
+      }))
+      : [],
+  };
+};
+
+const buildAudioPhasePacket = (project: Project, workflow: ReturnType<typeof getWorkflowRecipe>) => {
+  if (workflow.stages.audio === 'skipped') {
+    return {
+      state: 'skipped',
+      totalDialogueLines: 0,
+      pendingTtsLineCount: 0,
+      missingVoices: [],
+      audioPlanStaleShotIds: [],
+    };
+  }
+
+  const referencedCastIds = new Set<string>();
+  let totalDialogueLines = 0;
+  let pendingTtsLineCount = 0;
+  const audioPlanStaleShotIds: string[] = [];
+
+  for (const scene of project.scenes) {
+    for (const shot of scene.shots) {
+      if (shot.audioPlanStale) audioPlanStaleShotIds.push(shot.id);
+      const dialogue = shot.audioPlan?.dialogue || [];
+      totalDialogueLines += dialogue.length;
+      for (const line of dialogue as any[]) {
+        if (line.characterId) referencedCastIds.add(line.characterId);
+        if (line.ttsStatus !== 'success' || !line.ttsAssetId) pendingTtsLineCount += 1;
+      }
+    }
+  }
+
+  const missingVoices = project.cast
+    .filter((member) => referencedCastIds.has(member.id) && !member.voiceId)
+    .map((member) => ({ id: member.id, name: member.name }));
+
+  const state = totalDialogueLines === 0
+    ? 'not_started'
+    : audioPlanStaleShotIds.length > 0
+      ? 'stale'
+      : missingVoices.length > 0 || pendingTtsLineCount > 0
+        ? 'needs_tts'
+        : 'ready';
+
+  return {
+    state,
+    totalDialogueLines,
+    pendingTtsLineCount,
+    missingVoices,
+    audioPlanStaleShotIds,
+  };
+};
+
 export const buildProjectPacket = async (project: Project) => {
   const castNames = namesById(project.cast);
   const environmentNames = namesById(project.environments);
@@ -26,6 +101,7 @@ export const buildProjectPacket = async (project: Project) => {
   const projectConfig = await getProjectConfigState(project);
   const preset = getPipelinePreset(project.presetKey);
   const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
+  const audioPhase = buildAudioPhasePacket(project, workflow);
 
   return {
     kind: 'lahari.project.packet',
@@ -95,6 +171,12 @@ export const buildProjectPacket = async (project: Project) => {
         id: member.id,
         name: member.name,
         description: compactText(member.description, 350),
+        voice: {
+          provider: member.voiceProvider || null,
+          id: member.voiceId || null,
+          name: member.voiceName || null,
+          assigned: !!member.voiceId,
+        },
         hasReference: !!member.referenceImageUrl,
         promptsStale: member.promptsStale,
       })),
@@ -108,6 +190,7 @@ export const buildProjectPacket = async (project: Project) => {
     },
     production: {
       counts,
+      audioPhase,
       workflow: usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe',
       renders: {
         count: renders.length,
@@ -143,6 +226,8 @@ export const buildProjectPacket = async (project: Project) => {
           storyboardPromptStatus: shot.storyboardPromptStatus,
           storyboardStatus: shot.storyboardStatus,
           videoStatus: shot.videoStatus,
+          audioPlanStale: !!shot.audioPlanStale,
+          audioPlan: summarizeAudioPlan(shot.audioPlan),
           lastError: compactText(shot.lastError, 250),
         })),
       })),
@@ -227,6 +312,8 @@ export const buildShotPacket = (project: Project, shotId: string) => {
         environment: shot.environmentId ? environmentNames.get(shot.environmentId) || shot.environmentId : null,
         excludedRefs: shot.excludedRefs,
         promptsStale: shot.promptsStale,
+        audioPlanStale: !!shot.audioPlanStale,
+        audioPlan: summarizeAudioPlan(shot.audioPlan),
         locked: shot.locked,
         storyboardLocked: shot.storyboardLocked,
         imageStatus: shot.imageStatus,
