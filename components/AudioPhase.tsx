@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ApiProject, DialogueLine, TtsStatus, VideoShot, VideoScene } from '../types';
 import * as api from '../services/api';
 import { Phase } from './BlueprintContextBar';
+import { TtsGenerateModal, TtsRunScope } from './TtsGenerateModal';
 
 interface Props {
   project: ApiProject;
@@ -31,7 +32,9 @@ export const AudioPhase: React.FC<Props> = ({
   project, isLoading, phaseTransition, onSetProject, onSetViewPhase, showActionError,
 }) => {
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
-  const [costEstimate, setCostEstimate] = useState<{ totalChars: number; estimatedUsd: number; pendingLines: number } | null>(null);
+  // Modal-driven cost preview + confirm gate for bulk and per-shot runs.
+  // Per-line Regen stays direct (single small call, no confirmation needed).
+  const [pendingRun, setPendingRun] = useState<TtsRunScope | null>(null);
 
   // Cast voice lookup. Computed once per project; used to filter "available"
   // lines for bulk/per-shot generation and to badge no-voice rows.
@@ -98,44 +101,6 @@ export const AudioPhase: React.FC<Props> = ({
     return Array.from(map.entries());
   }, [allLines]);
 
-  // ── Cost preview for AVAILABLE lines only ──
-  // What the bulk button would actually charge — lines whose cast has a
-  // voice. The waiting-on-voice lines aren't in the run, so they're not in
-  // the cost. T5.5 will move this into the confirmation modal.
-  useEffect(() => {
-    const availableLines = allLines.filter(lineIsAvailable);
-    if (availableLines.length === 0) {
-      setCostEstimate(null);
-      return;
-    }
-    let cancelled = false;
-    api.getAudioPlanCost(project.id, { dialogueIds: availableLines.map(l => l.id) })
-      .then(resp => {
-        if (cancelled) return;
-        // Backend may return either { data: {...} } or {...} shape; tolerate both.
-        const data = resp?.data || resp;
-        if (data && typeof data.estimatedUsd === 'number') {
-          setCostEstimate({
-            totalChars: data.totalChars || 0,
-            estimatedUsd: data.estimatedUsd,
-            pendingLines: data.pendingLines || availableLines.length,
-          });
-        }
-      })
-      .catch(() => {
-        // Cost endpoint may not be live yet (T3.6). Fall back to a local
-        // estimate so the UI still shows something useful.
-        if (cancelled) return;
-        const totalChars = availableLines.reduce((acc, l) => acc + (l.text?.length || 0), 0);
-        setCostEstimate({
-          totalChars,
-          estimatedUsd: (totalChars / 1000) * 0.30, // ElevenLabs Multilingual v2: $0.30/1k chars
-          pendingLines: availableLines.length,
-        });
-    });
-    return () => { cancelled = true; };
-  }, [project.id, allLines, lineIsAvailable]);
-
   // ── Actions ──
   // Generation always targets the subset the engine can actually process now.
   // Missing voices stay visible as nudges; they don't block ready lines.
@@ -161,10 +126,42 @@ export const AudioPhase: React.FC<Props> = ({
     }
   };
 
-  const generateAllAvailable = () => {
+  // Bulk + per-shot triggers route through the cost-preview modal (D14). The
+  // modal does the cost fetch, lists skipped voices, and only then fires the
+  // actual generation. Per-line Regen stays direct — single small call.
+  const openBulkRun = () => {
     const ids = allLines.filter(lineIsAvailable).map(l => l.id);
-    generateForLines(ids);
+    if (ids.length === 0) return;
+    setPendingRun({ dialogueIds: ids, scopeLabel: `All available · ${ids.length} line${ids.length === 1 ? '' : 's'}` });
   };
+
+  const openShotRun = (shotIndex: number, sceneLabel: string, ids: string[]) => {
+    if (ids.length === 0) return;
+    setPendingRun({ dialogueIds: ids, scopeLabel: `Shot S${shotIndex} · ${sceneLabel}` });
+  };
+
+  // Project-level skipped-voice rollup: characters with unassigned voices,
+  // plus the count of waiting-on-voice lines per character. Surfaced inside
+  // the modal as a nudge — "these will be skipped this run."
+  const skippedVoiceRollup = useMemo(() => {
+    const skipped = new Map<string, { characterId: string; name: string; lineCount: number }>();
+    allLines.forEach(line => {
+      if (!isPendingStatus(line.ttsStatus)) return;
+      if (castHasVoice.get(line.characterId) === true) return;
+      const existing = skipped.get(line.characterId);
+      if (existing) {
+        existing.lineCount += 1;
+      } else {
+        const member = project.cast.find(c => c.id === line.characterId);
+        skipped.set(line.characterId, {
+          characterId: line.characterId,
+          name: member?.name || 'Unknown',
+          lineCount: 1,
+        });
+      }
+    });
+    return [...skipped.values()];
+  }, [allLines, castHasVoice, project.cast]);
 
   const characterName = (id: string) =>
     project.cast.find(c => c.id === id)?.name || '?';
@@ -204,12 +201,9 @@ export const AudioPhase: React.FC<Props> = ({
             {summary.ready > 0 && <> · <span className="text-emerald-300/90">{summary.ready} ready</span></>}
             {summary.available > 0 && <> · <span className="text-zinc-200">{summary.available} available</span></>}
             {summary.waitingOnVoice > 0 && <> · <span className="text-amber-300/80">{summary.waitingOnVoice} waiting on voices</span></>}
-            {costEstimate && summary.available > 0 && (
-              <span className="text-zinc-500"> · est. <span className="font-mono text-zinc-300">${costEstimate.estimatedUsd.toFixed(2)}</span></span>
-            )}
           </p>
           <button
-            onClick={generateAllAvailable}
+            onClick={openBulkRun}
             disabled={summary.available === 0 || generatingIds.size > 0 || isLoading}
             className="bg-white text-black px-4 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 disabled:opacity-30 transition-colors inline-flex items-center gap-2"
           >
@@ -259,7 +253,7 @@ export const AudioPhase: React.FC<Props> = ({
                   <div className="flex-1" />
                   {shotAvailable.length > 0 && (
                     <button
-                      onClick={() => generateForLines(shotAvailable)}
+                      onClick={() => openShotRun(bucket.shotIndex, bucket.sceneLabel, shotAvailable)}
                       disabled={generatingIds.size > 0 || isLoading}
                       className="text-[11px] text-zinc-300 hover:text-white surface-inset rounded-md px-2.5 py-1 hover:bg-white/[0.06] transition-colors disabled:opacity-30"
                     >
@@ -284,6 +278,16 @@ export const AudioPhase: React.FC<Props> = ({
           })}
         </div>
       )}
+      <TtsGenerateModal
+        open={!!pendingRun}
+        scope={pendingRun}
+        projectId={project.id}
+        skippedVoices={skippedVoiceRollup}
+        alreadyReadyCount={summary.ready}
+        onClose={() => setPendingRun(null)}
+        onConfirm={() => pendingRun ? generateForLines(pendingRun.dialogueIds) : undefined}
+        onGoToCharacters={() => onSetViewPhase('characters')}
+      />
     </motion.div>
   );
 };
