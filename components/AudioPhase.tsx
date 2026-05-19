@@ -126,26 +126,12 @@ export const AudioPhase: React.FC<Props> = ({
     }
   };
 
-  // Bulk + per-shot triggers route through the cost-preview modal (D14). The
-  // modal does the cost fetch, lists skipped voices, and only then fires the
-  // actual generation. Per-line Regen stays direct — single small call.
-  const openBulkRun = () => {
-    const ids = allLines.filter(lineIsAvailable).map(l => l.id);
-    if (ids.length === 0) return;
-    setPendingRun({ dialogueIds: ids, scopeLabel: `All available · ${ids.length} line${ids.length === 1 ? '' : 's'}` });
-  };
-
-  const openShotRun = (shotIndex: number, sceneLabel: string, ids: string[]) => {
-    if (ids.length === 0) return;
-    setPendingRun({ dialogueIds: ids, scopeLabel: `Shot S${shotIndex} · ${sceneLabel}` });
-  };
-
-  // Project-level skipped-voice rollup: characters with unassigned voices,
-  // plus the count of waiting-on-voice lines per character. Surfaced inside
-  // the modal as a nudge — "these will be skipped this run."
-  const skippedVoiceRollup = useMemo(() => {
+  // Compute skipped voices for an arbitrary set of candidate lines. The
+  // modal needs to describe the EXACT run — a per-shot trigger must not
+  // mention waiting-voice lines from other shots. See Codex P2.
+  const rollupSkipped = useCallback((candidates: EnrichedLine[]) => {
     const skipped = new Map<string, { characterId: string; name: string; lineCount: number }>();
-    allLines.forEach(line => {
+    candidates.forEach(line => {
       if (!isPendingStatus(line.ttsStatus)) return;
       if (castHasVoice.get(line.characterId) === true) return;
       const existing = skipped.get(line.characterId);
@@ -161,7 +147,31 @@ export const AudioPhase: React.FC<Props> = ({
       }
     });
     return [...skipped.values()];
-  }, [allLines, castHasVoice, project.cast]);
+  }, [castHasVoice, project.cast]);
+
+  // Bulk + per-shot triggers route through the cost-preview modal (D14). The
+  // modal does the cost fetch, lists skipped voices, and only then fires the
+  // actual generation. Per-line Regen stays direct — single small call.
+  // Skipped-voices is baked into the run scope so the modal describes
+  // exactly this batch, not the whole project (Codex P2).
+  const openBulkRun = () => {
+    const ids = allLines.filter(lineIsAvailable).map(l => l.id);
+    if (ids.length === 0) return;
+    setPendingRun({
+      dialogueIds: ids,
+      scopeLabel: `All available · ${ids.length} line${ids.length === 1 ? '' : 's'}`,
+      skippedVoices: rollupSkipped(allLines),
+    });
+  };
+
+  const openShotRun = (shotIndex: number, sceneLabel: string, ids: string[], shotLines: EnrichedLine[]) => {
+    if (ids.length === 0) return;
+    setPendingRun({
+      dialogueIds: ids,
+      scopeLabel: `Shot S${shotIndex} · ${sceneLabel}`,
+      skippedVoices: rollupSkipped(shotLines),
+    });
+  };
 
   const characterName = (id: string) =>
     project.cast.find(c => c.id === id)?.name || '?';
@@ -253,7 +263,7 @@ export const AudioPhase: React.FC<Props> = ({
                   <div className="flex-1" />
                   {shotAvailable.length > 0 && (
                     <button
-                      onClick={() => openShotRun(bucket.shotIndex, bucket.sceneLabel, shotAvailable)}
+                      onClick={() => openShotRun(bucket.shotIndex, bucket.sceneLabel, shotAvailable, bucket.lines)}
                       disabled={generatingIds.size > 0 || isLoading}
                       className="text-[11px] text-zinc-300 hover:text-white surface-inset rounded-md px-2.5 py-1 hover:bg-white/[0.06] transition-colors disabled:opacity-30"
                     >
@@ -282,7 +292,6 @@ export const AudioPhase: React.FC<Props> = ({
         open={!!pendingRun}
         scope={pendingRun}
         projectId={project.id}
-        skippedVoices={skippedVoiceRollup}
         alreadyReadyCount={summary.ready}
         onClose={() => setPendingRun(null)}
         onConfirm={() => pendingRun ? generateForLines(pendingRun.dialogueIds) : undefined}

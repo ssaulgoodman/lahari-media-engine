@@ -6,27 +6,27 @@ import * as api from '../services/api';
 // T5.4a — missing voices appear as a list of skipped tasks with a link to
 // Characters, never as a blocker on the run.
 
+export interface SkippedVoice {
+  characterId: string;
+  name: string;
+  lineCount: number;
+}
+
 export type TtsRunScope = {
   /** Dialogue line IDs that will be generated. Pre-filtered to "available"
    *  (cast has voice + pending/error). */
   dialogueIds: string[];
   /** Human-readable label for the run, e.g. "all available" or "shot S3". */
   scopeLabel: string;
+  /** Waiting-on-voice lines WITHIN THIS SCOPE — the modal must describe the
+   *  exact run, not the whole project. Computed at trigger time. */
+  skippedVoices: SkippedVoice[];
 };
-
-interface SkippedVoice {
-  characterId: string;
-  name: string;
-  lineCount: number;
-}
 
 interface Props {
   open: boolean;
   scope: TtsRunScope | null;
   projectId: string;
-  /** Cast members whose lines are intentionally skipped (no voice assigned).
-   *  Passed in so the modal doesn't need to re-derive scope from project. */
-  skippedVoices: SkippedVoice[];
   /** Already-generated count for context ("12 of 30 lines already ready"). */
   alreadyReadyCount: number;
   onClose: () => void;
@@ -35,8 +35,9 @@ interface Props {
 }
 
 export const TtsGenerateModal: React.FC<Props> = ({
-  open, scope, projectId, skippedVoices, alreadyReadyCount, onClose, onConfirm, onGoToCharacters,
+  open, scope, projectId, alreadyReadyCount, onClose, onConfirm, onGoToCharacters,
 }) => {
+  const skippedVoices = scope?.skippedVoices || [];
   const [cost, setCost] = useState<{ totalChars: number; estimatedUsd: number; pendingLines: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
