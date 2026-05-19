@@ -74,6 +74,9 @@ export interface DialogueLine {
   paceHint?: 'slow' | 'natural' | 'fast';
   targetSec?: number;
   ttsAssetId: string | null;
+  /** Public URL for the generated TTS asset. Hydrated by `getFullProject`
+   *  when ttsAssetId is set; absent before generation. */
+  ttsAssetUrl?: string;
   ttsStatus: TtsStatus;
   ttsError?: string;
   ttsCharCount?: number;

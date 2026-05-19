@@ -35,10 +35,11 @@ const PHASES_BY_WORKFLOW: Record<WorkflowKey, BlueprintPhase[]> = {
     { key: 'style', label: 'Style', visible: true },
     { key: 'characters', label: 'Characters', visible: true },
     { key: 'environments', label: 'Environments', visible: true },
-    // Audio: backend (T3) and TTS production (T5.4) land later in v1.
-    // Surface the slot now so artists see the planned shape; flagging as
-    // coming-soon keeps it visible without offering a broken tab.
-    { key: 'audio', label: 'Audio', visible: true, comingSoon: true },
+    // Audio: live as of T5.4. Write-audio-plan (T3.4) and voice
+    // assignment (T3.7) are shipped; TTS generation (T3.5) and cost
+    // preview (T3.6) land next. Buttons that depend on the latter two
+    // surface ApiError banners until those routes ship.
+    { key: 'audio', label: 'Audio', visible: true },
   ],
 };
 

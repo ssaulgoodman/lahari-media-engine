@@ -9,6 +9,7 @@ import { ScriptPhase } from './ScriptPhase';
 import { StylePhase } from './StylePhase';
 import { CharactersPhase } from './CharactersPhase';
 import { EnvironmentsPhase } from './EnvironmentsPhase';
+import { AudioPhase } from './AudioPhase';
 import * as api from '../services/api';
 import { isMissingKeyError } from '../services/api';
 
@@ -286,6 +287,17 @@ export const AnalysisEditor: React.FC<Props> = ({
             onSetProject={onSetProject}
             onOpenModal={setModalImage}
             onConfirmDestructive={onConfirmDestructive}
+            showActionError={showActionError}
+          />
+        )}
+
+        {viewPhase === 'audio' && (
+          <AudioPhase
+            project={project}
+            isLoading={isLoading}
+            phaseTransition={phaseTransition}
+            onSetProject={onSetProject}
+            onSetViewPhase={setViewPhase}
             showActionError={showActionError}
           />
         )}
