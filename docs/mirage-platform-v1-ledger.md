@@ -76,8 +76,8 @@ Every one of these has been debated and settled in conversation. Don't re-litiga
 | D21 | Schema interpretation doctrine: `project_brief` is artist/director intent; `source_payload` is raw seed material; `target_duration` is default per-shot pacing only; music-video analysis fields (`lyrics`, `meaning`, `musical_structure`, `song_type`, `is_narrative`, `is_meditative`, `analysis_step`) are music-video compatibility fields and must not be repurposed by anime/ads/reels; `audio_plan` is the home for dialogue/TTS/strategy; `lipsync_enabled` is legacy song-lipsync and not the anime dialogue path | Prevents future workflows from repeating the `target_duration` collision. Keeps the schema stable without destructive v1 migrations |
 | D22 | Mirage is backend-first, with explicit realtime exceptions. Browser data truth comes from backend API responses. Direct Supabase client usage is allowed only for auth and explicit realtime presence/update surfaces; those surfaces must be table-prefix aware and backed by owner-scoped RLS policies. New tables default to backend-only until deliberately exposed | Preserves the harness-first mental model while keeping useful live update affordances. Avoids silent client failures from RLS-enabled tables with no policies or hardcoded Lahari table names |
 | D23 | Agent harness is the primary product surface. Beta cohort is Codex Desktop / Claude Code users. Web Studio is overwatch + occasional human nudge, not the primary working surface. UI changes serve the agent first: legible state, no gates the engine doesn't enforce, no UI affordance for things the agent can't also do. The artist surface is a thin observer/operator on top of the same tool registry the agent uses. | First-cohort users are harness-native by design. Duplicating agent capability inside the web UI is wasted scope. Agent does the production work; UI shows state and lets humans nudge. |
-| D24 | Tool registry is the cross-surface contract. Every LLM-driven tool and every apply tool has a manifest in `server/tools/registry.ts` declaring `key`, `label`, `description` (agent-facing), `requires`, `contextInputs`, `produces`, `surface`, optional `preset` scoping, and optional `buildPrompt`. `availableTools(project)` and `blockedTools(project)` are pure functions over the manifest list + project asset state. Both MCP packet and Web UI read the same registry. `WorkflowRecipe.stages` is deprecated — orchestration emerges from tool dependencies. | One source of truth for "what can run when." No hardcoded phase gates. Adding a new tool surfaces in both agent and UI automatically. Adding a new preset is a taste profile + maybe new tool entries, not a separate stage definition. |
-| D25 | Prompt composition: every LLM-driven tool builds its prompt via `composePrompt({ coreTask, inputs, presetTaste, outputContract, userNote })`. `coreTask` is workflow-aware via per-workflow dispatch (separate body files for `music_video` vs `anime_scripted` vs future presets). `inputs` is the formatted project context the tool received. `presetTaste` interpolates taste rules from preset. `outputContract` defines JSON schema or shape contract. `userNote` is optional free-form direction. No prompt may contain workflow nouns from another workflow's domain (no "lyrics" section in anime prompts, no "manga panels" in music-video prompts). The agent (Codex/CC) operates above this layer — it does not build prompts; it calls tools that build their own. | Replaces the "one fat template with nouns swapped" failure mode that drifted during T1-T7 (style brainstorm leaking live-action examples into anime). 3-layer composition was the original promise from `docs/preset-prompt-abstraction-ledger.md`; D25 makes it the locked contract and bans the alternative. |
+| D24 | Tool registry is the cross-surface contract. Every LLM-driven tool and every apply tool has a manifest in `server/tools/registry.ts` declaring `key`, `label`, `description` (agent-facing), `requires`, `contextInputs`, `produces`, `surface`, optional `enabledFor?: WorkflowKey[]` (workflow/profile scoping; omit = available across all profiles), and optional `buildPrompt`. `availableTools(project)` and `blockedTools(project)` are pure functions over the manifest list + project asset state. Both MCP packet and Web UI read the same registry. `WorkflowRecipe.stages` is deprecated — orchestration emerges from tool dependencies. **Vocabulary discipline:** *preset* = taste/defaults (`preset_key` column); *workflow / production profile* = what kind of thing we're making (`workflow_key` column). The manifest scope field gates on **workflow profile**, not preset, and is named accordingly. | One source of truth for "what can run when." No hardcoded phase gates. Adding a new tool surfaces in both agent and UI automatically. Adding a new preset is a taste profile + maybe new tool entries, not a separate stage definition. Vocabulary clarified 2026-05-20 after Codex review — the manifest scope field was misnamed `preset?` when it actually keyed on workflow profile. |
+| D25 | Prompt composition: every LLM-driven tool builds its prompt via `composePrompt({ coreTask, inputs, presetTaste, outputContract, userNote })`. `coreTask` is workflow-aware via per-workflow dispatch (separate body files for `music_video` vs `anime_scripted` vs future profiles). `inputs` is the formatted project context the tool received. `presetTaste` interpolates taste rules from preset. `outputContract` defines JSON schema or shape contract. `userNote` is optional free-form direction. No prompt may contain workflow nouns from another workflow's domain (no "lyrics" section in anime prompts, no "manga panels" in music-video prompts). **Prompt text receives only human-readable production language — never raw workflow/preset enum labels like `anime_scripted` or `music_video_default`. Logs and metadata can reference enum keys; prompt bodies cannot.** The agent (Codex/CC) operates above this layer — it does not build prompts; it calls tools that build their own. | Replaces the "one fat template with nouns swapped" failure mode that drifted during T1-T7 (style brainstorm leaking live-action examples into anime). 3-layer composition was the original promise from `docs/preset-prompt-abstraction-ledger.md`; D25 makes it the locked contract and bans the alternative. Enum-label ban added 2026-05-20 after Codex review caught `Workflow: ${preset.workflowKey}` appearing in the brainstorm prompt — the LLM doesn't need internal identifiers; it needs production language. |
 
 ---
 
@@ -368,7 +368,7 @@ After T7 completes, no more merges flow between `main` and `mirage`. Engine fixe
 | ID | Task | Files / Targets | Owner | Acceptance |
 |---|---|---|---|---|
 | T9.1 | `composePrompt` helper | `server/prompts/_composer.ts` (new) | Codex | 5-part composer: `coreTask` + optional `INPUTS` + optional `TASTE` + `outputContract` + optional `USER NOTE`, joined with double-newlines + uppercase section headers |
-| T9.2 | Migrate `brainstorm-style` | `server/prompts/styleBrainstorm.ts` (new) | Claude | Anime + MV `coreTask` bodies. Anime body uses Saul's verbatim example from the 2026-05-20 design discussion (no Polaroid/documentary leak) |
+| T9.2 | Migrate `brainstorm-style` | `server/prompts/styleBrainstorm.ts` (new) | Claude | Anime + MV `coreTask` bodies. **Anime body is production-neutral within anime production** — the contract is "don't accidentally leave the medium," not "be OVA/cel/vintage." Brainstorm output must be able to cover modern, retro, soft, harsh, photoreal-leaning, fully stylized — anything within anime production. Examples in the prompt (if any) are medium guard rails (what to avoid drifting into), never taste anchors. The 2026-05-20 design discussion example is illustrative of the medium-guard mechanism only. |
 | T9.3 | Migrate `visualize-style` + `refine-style-direction` | `server/prompts/visualizeStyle.ts`, `refineStyle.ts` | Claude | Workflow-scoped bodies; preset taste interpolated |
 | T9.4 | Migrate `generate-concept` + `refine-concept` | `server/prompts/concept.ts` | Claude | Workflow-scoped bodies; drop `deity` legacy params from signature |
 | T9.5 | Migrate `planScenes` (music_video) | `server/prompts/planScenes.ts` | Codex | MV-only `coreTask`; lyrics/structure/meaning as `INPUTS` section; preset shotPlanRules as `TASTE` |
@@ -530,8 +530,9 @@ Post-foundation, pre-E2E. Triggered by the style-brainstorm leak that exposed th
 
 | Day | Claude | Codex |
 |---|---|---|
-| W2.1 | Read D23-D25 + T8 manifest; sketch UI consumption shape; T9.2 anime style brainstorm body drafted (await composer) | T8.1-T8.4 (registry foundation: types, asset resolver, registry, available/blocked) |
-| W2.2 | T9.2 brainstorm-style (anime body verbatim from design discussion; MV body extracted from old fat template) | T9.1 (composer) + T9.10 (audio_plan as reference) + T8.5 (MCP packet exposes registry) |
+| W2.1 | Read D23-D25 + T8 manifest; sketch how UI will consume registry (do NOT start building); draft anime style brainstorm body (production-neutral, not taste-locked) | T8.1-T8.4 (registry foundation: types, asset resolver, registry, available/blocked) |
+| W2.2 | T9.2 brainstorm-style (anime + MV bodies via composer) | T9.1 (composer) + T9.10 (audio_plan as reference migration) + T8.5 (MCP packet exposes registry) |
+| **🚦 Proof gate** | **Before W2.3 begins: run one live anime style brainstorm against the migrated tool. Inspect full composed prompt + LLM output. Validate: (a) no MV chrome leaks, (b) no taste-lock to a specific anime era, (c) directions vary across modern/retro/soft/harsh/photoreal-leaning, (d) MCP packet `availableTools` + `blockedTools` reflect project state correctly, (e) no workflow/preset enum strings appear in the prompt body. If any fail, fix the registry/composer/manifest BEFORE propagating to other tools or the UI. T10 UI work does not start until proof passes.** | |
 | W2.3 | T9.3 visualizeStyle / refineStyle + T9.4 concept | T9.5 planScenes + T9.6 parseScript |
 | W2.4 | T9.7 shotPrompts + T9.8 refineScript + T10.1-T10.2 (hook + AssetShelf component) | T9.9 storyboard + T9.11 retire fat templates |
 | W2.5 | T10.3-T10.7 (per-phase migrations) | T8.6 (deprecate `WorkflowRecipe.stages`) |
@@ -539,6 +540,8 @@ Post-foundation, pre-E2E. Triggered by the style-brainstorm leak that exposed th
 | W2.7 | Slack / E2E prep | Slack / E2E prep |
 
 **Total Wave 2: ~7 working days if both lanes work clean.** Net code DELETED (fat templates + WorkflowRecipe.stages + phase-gate logic) is larger than what's added (registry + composer + AssetShelf).
+
+**Why the proof gate exists:** Codex's 2026-05-20 review correctly flagged that putting the UI consumption layer (T10) ahead of validating the registry+composer is risky — if the foundation produces nonsense, the UI just spreads the nonsense. The proof gate is the smallest meaningful slice that proves the new shape works end-to-end (registry → composer → workflow-aware prompt → sane LLM output → MCP packet exposure) on one broken seam (style brainstorm) and one already-clean reference (audio plan). If both look right, the rest of Wave 2 follows the established pattern. If either looks wrong, we fix the foundation first.
 
 After Wave 2: resume v1 path — Mirage infra provisioning (T1), E2E golden path tests, music-video regression, ship.
 
@@ -651,17 +654,23 @@ type MissingKeyError = {
 ### Tool manifest (D24)
 
 ```ts
+type WorkflowKey = 'music_video' | 'anime_scripted';  // production profile
+
 type ToolManifest = {
   key: string;                  // stable identifier, e.g. 'brainstorm-style'
   label: string;                // human-readable, e.g. 'Brainstorm style'
   description: string;          // agent-facing prose: "use this when X, returns Y"
-  preset?: 'music_video' | 'anime_scripted' | null;  // null = workflow-agnostic
+  enabledFor?: WorkflowKey[];   // omit = available across all profiles; otherwise restrict
   requires: AssetKey[];         // hard inputs — tool can't run without
   contextInputs?: AssetKey[];   // soft inputs — used if present, fine without
   produces: AssetKey[];         // assets this tool creates/updates on success
   surface: ToolSurface;         // where the web UI shows it (e.g. 'asset:style')
   buildPrompt?: (project: ApiProject, userNote?: string) => string;  // LLM tools only
 };
+
+// NOTE: enabledFor gates on workflow profile, not preset. Preset means
+// taste/defaults; workflow means "what kind of thing we're making."
+// See D24 vocabulary discipline note.
 
 type AssetKey =
   | 'audio' | 'scriptText' | 'directorBrief' | 'targetRuntime'
@@ -797,6 +806,12 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 2026-05-19 Codex: T1.5/T1.6 npm publish complete. Published `@ssaulgoodman420/mirage-cli@0.1.0` and `@ssaulgoodman420/mirage-mcp-server@0.1.0` with public access. Registry verification succeeded for both package names/versions/bins; `npm exec --package @ssaulgoodman420/mirage-cli@0.1.0 -- mirage --help` reaches the published CLI and returns its usage text via the unknown-command fallback.
 
 2026-05-20 Claude: Agent-native pivot codified. D23 (agent harness is the primary product surface; web UI is overwatch), D24 (tool registry as cross-surface contract; `WorkflowRecipe.stages` deprecated), D25 (`composePrompt` is the prompt-build doctrine; per-workflow `coreTask` dispatch; no workflow noun leaks). Triggered by Saul's audit of `buildStyleBrainstormPrompt` — anime style brainstorm was leaking live-action/Polaroid examples because the prompt was a music-video-shaped fat template with nouns swapped. Added §4 tracks T8 (registry), T9 (composer migration, ~11 tools split across Codex + Claude), T10 (web UI asset-shelf refactor). §6 Wave 2 sequencing locked: ~7 working days, split lanes, net code deleted not added. §7 contracts updated with `ToolManifest` and `ComposePromptParts` shapes. Navigation aid added to preamble. **This pivot happens before E2E; v1 ships on the new shape.**
+
+2026-05-20 Claude: Wave 2 corrections after Codex review. Four refinements landed in the ledger before work begins:
+- **D25 sharpened** to explicitly ban workflow/preset enum labels (`anime_scripted`, `music_video_default`) from prompt text. Logs may reference keys; prompt bodies receive only human-readable production language. Caught because the old `buildStyleBrainstormPrompt` was injecting `Workflow: ${preset.workflowKey}` directly into the LLM input.
+- **`ToolManifest` field renamed** `preset?: 'music_video' | 'anime_scripted'` → `enabledFor?: WorkflowKey[]`. The old name conflated preset (taste/defaults) with workflow profile (production kind). Vocabulary discipline note added to D24.
+- **T9.2 reframed**: anime body is production-neutral within anime production, not taste-locked to OVA/cel/vintage. The contract is "don't accidentally leave the medium," not "be a specific era." Brainstorm output must span modern/retro/soft/harsh/photoreal-leaning. Saul's 2026-05-20 design example is illustrative of the medium-guard mechanism only.
+- **§6 proof gate inserted** between W2.2 and W2.3. Before any UI (T10) or further tool migrations (T9.3+) begin, run one live anime style brainstorm against the migrated tool and validate the composed prompt + LLM output. Smallest meaningful slice that proves registry+composer+packet end-to-end on one broken seam + one clean reference.
 
 ---
 
