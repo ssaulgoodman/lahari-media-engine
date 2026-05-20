@@ -12,6 +12,8 @@ This is the single source of truth for getting Mirage Platform v1 shipped. Every
 
 Both Claude and Codex read from and append progress to this ledger. Pick a task by its ID (e.g. `T3.2`), do it, check it off, log a one-line note in the Checkpoints section.
 
+**Navigation:** §2 (locked decisions D1-D25), §3 (architecture), §4 (tracks T1-T10), §6 (sequencing), §7 (contracts), §8 (open questions), §9 (checkpoints, append-only). When jumping in cold, read your owned tracks in §4 + tail §9 for what just shipped. The whole file is the single source of truth; if older docs disagree, this wins.
+
 ---
 
 ## 1. Scope
@@ -73,6 +75,9 @@ Every one of these has been debated and settled in conversation. Don't re-litiga
 | D20 | Mirage uses Segmind as the single provider for both image gen and video gen. Default models in Mirage presets resolve to Segmind routes (including Nano Banana Pro, Nano Banana 2, Seedance, Veo). No Vertex / GCP fallback in Mirage runtime. If a Segmind call fails, the call fails (no silent retry to Google) | Saul confirmed Segmind has all image models needed. Collapses required keys (anime = Segmind + ElevenLabs only). Drops GCP runtime dependency from Mirage entirely. Lahari (`main`) keeps Vertex fallback for its own continuity |
 | D21 | Schema interpretation doctrine: `project_brief` is artist/director intent; `source_payload` is raw seed material; `target_duration` is default per-shot pacing only; music-video analysis fields (`lyrics`, `meaning`, `musical_structure`, `song_type`, `is_narrative`, `is_meditative`, `analysis_step`) are music-video compatibility fields and must not be repurposed by anime/ads/reels; `audio_plan` is the home for dialogue/TTS/strategy; `lipsync_enabled` is legacy song-lipsync and not the anime dialogue path | Prevents future workflows from repeating the `target_duration` collision. Keeps the schema stable without destructive v1 migrations |
 | D22 | Mirage is backend-first, with explicit realtime exceptions. Browser data truth comes from backend API responses. Direct Supabase client usage is allowed only for auth and explicit realtime presence/update surfaces; those surfaces must be table-prefix aware and backed by owner-scoped RLS policies. New tables default to backend-only until deliberately exposed | Preserves the harness-first mental model while keeping useful live update affordances. Avoids silent client failures from RLS-enabled tables with no policies or hardcoded Lahari table names |
+| D23 | Agent harness is the primary product surface. Beta cohort is Codex Desktop / Claude Code users. Web Studio is overwatch + occasional human nudge, not the primary working surface. UI changes serve the agent first: legible state, no gates the engine doesn't enforce, no UI affordance for things the agent can't also do. The artist surface is a thin observer/operator on top of the same tool registry the agent uses. | First-cohort users are harness-native by design. Duplicating agent capability inside the web UI is wasted scope. Agent does the production work; UI shows state and lets humans nudge. |
+| D24 | Tool registry is the cross-surface contract. Every LLM-driven tool and every apply tool has a manifest in `server/tools/registry.ts` declaring `key`, `label`, `description` (agent-facing), `requires`, `contextInputs`, `produces`, `surface`, optional `preset` scoping, and optional `buildPrompt`. `availableTools(project)` and `blockedTools(project)` are pure functions over the manifest list + project asset state. Both MCP packet and Web UI read the same registry. `WorkflowRecipe.stages` is deprecated — orchestration emerges from tool dependencies. | One source of truth for "what can run when." No hardcoded phase gates. Adding a new tool surfaces in both agent and UI automatically. Adding a new preset is a taste profile + maybe new tool entries, not a separate stage definition. |
+| D25 | Prompt composition: every LLM-driven tool builds its prompt via `composePrompt({ coreTask, inputs, presetTaste, outputContract, userNote })`. `coreTask` is workflow-aware via per-workflow dispatch (separate body files for `music_video` vs `anime_scripted` vs future presets). `inputs` is the formatted project context the tool received. `presetTaste` interpolates taste rules from preset. `outputContract` defines JSON schema or shape contract. `userNote` is optional free-form direction. No prompt may contain workflow nouns from another workflow's domain (no "lyrics" section in anime prompts, no "manga panels" in music-video prompts). The agent (Codex/CC) operates above this layer — it does not build prompts; it calls tools that build their own. | Replaces the "one fat template with nouns swapped" failure mode that drifted during T1-T7 (style brainstorm leaking live-action examples into anime). 3-layer composition was the original promise from `docs/preset-prompt-abstraction-ledger.md`; D25 makes it the locked contract and bans the alternative. |
 
 ---
 
@@ -163,9 +168,12 @@ Mirage and Lahari are two products that share git history up to 2026-05-18 and d
 
 ---
 
-## 4. The Seven Tracks
+## 4. Tracks
 
 Each track is a coherent workstream. Tasks within a track are mostly sequential; tracks themselves can be parallelized except where noted in §5 (Dependency Graph).
+
+**T1–T7** = v1 foundation (mostly shipped — see §9 checkpoints for status).
+**T8–T10** = agent-native pivot (post-D23/D24/D25, before v1 ship). Codifies tool registry + composer + asset-shelf UI.
 
 ### T1 — Mirage Infrastructure
 
@@ -330,6 +338,74 @@ After T7 completes, no more merges flow between `main` and `mirage`. Engine fixe
 
 ---
 
+### T8 — Tool Registry
+
+**Goal:** Single source of truth for what tools exist, their input/output contracts, and what runs when. Both MCP packet (agent surface) and Web UI (overwatch surface) consume the same registry. D24 codifies the doctrine; T8 implements it.
+
+**Owner:** Codex
+**Depends on:** D23/D24 locked. Foundation for T9 + T10.
+
+| ID | Task | Files / Targets | Acceptance |
+|---|---|---|---|
+| T8.1 | `ToolManifest` type | `server/tools/types.ts` (new) | Type declares: `key`, `label`, `description` (agent-facing prose), `preset?` (null = workflow-agnostic), `requires` (hard inputs), `contextInputs?` (soft inputs), `produces`, `surface` (web-UI placement), `buildPrompt?` (LLM tools) |
+| T8.2 | Asset-presence resolver | `server/tools/assetState.ts` (new) | `hasAsset(project, key)` resolves project state → set of available assets (`audio`, `lyrics`, `concept`, `scriptText`, `cast`, `environments`, `scenes`, `shots`, `styleAsset`, `castLooks`, `envLooks`, `audioPlan`, `castVoices`, `ttsAssets`, `storyboards`, `keyframes`, `videos`, `render`) |
+| T8.3 | Registry enumeration | `server/tools/registry.ts` (new) | All ~18 tools registered with accurate `requires`/`produces`/`description`. Includes generation tools (LLM-driven) AND apply tools (validators). See §7 for shape. |
+| T8.4 | `availableTools` / `blockedTools` | `server/tools/registry.ts` | Pure functions over manifest + project. `blockedTools` returns each tool with the list of missing inputs. |
+| T8.5 | MCP packet exposes registry | `server/services/codexStudio/packets.ts` | Packet includes `production.availableTools[]` and `production.blockedTools[]` each with `{ key, label, description, missing?: string[] }`. Replaces ad-hoc `audioPhase` block (subsumed). |
+| T8.6 | Deprecate `WorkflowRecipe.stages` | `server/presets.ts` | Mark deprecated in code. Stop using in any new route. UI-facing phase visibility moves to `surface` field on tool manifests. |
+
+**Acceptance for T8 as a whole:** Agent (Codex) reads MCP packet, gets a clean list of what it can call right now and what's blocked with reasons. No hardcoded workflow stage logic. Web UI consumes the same lists.
+
+---
+
+### T9 — Prompt Composer Migration
+
+**Goal:** Every LLM-driven tool builds its prompt via `composePrompt` with workflow-aware `coreTask`. Kills the fat-template drift that leaked workflow nouns across workflows (D25).
+
+**Owner:** split — Codex (composer infra + script/audio/storyboard side) + Claude (style/concept/refine side)
+**Depends on:** T8 (registry ties together)
+
+| ID | Task | Files / Targets | Owner | Acceptance |
+|---|---|---|---|---|
+| T9.1 | `composePrompt` helper | `server/prompts/_composer.ts` (new) | Codex | 5-part composer: `coreTask` + optional `INPUTS` + optional `TASTE` + `outputContract` + optional `USER NOTE`, joined with double-newlines + uppercase section headers |
+| T9.2 | Migrate `brainstorm-style` | `server/prompts/styleBrainstorm.ts` (new) | Claude | Anime + MV `coreTask` bodies. Anime body uses Saul's verbatim example from the 2026-05-20 design discussion (no Polaroid/documentary leak) |
+| T9.3 | Migrate `visualize-style` + `refine-style-direction` | `server/prompts/visualizeStyle.ts`, `refineStyle.ts` | Claude | Workflow-scoped bodies; preset taste interpolated |
+| T9.4 | Migrate `generate-concept` + `refine-concept` | `server/prompts/concept.ts` | Claude | Workflow-scoped bodies; drop `deity` legacy params from signature |
+| T9.5 | Migrate `planScenes` (music_video) | `server/prompts/planScenes.ts` | Codex | MV-only `coreTask`; lyrics/structure/meaning as `INPUTS` section; preset shotPlanRules as `TASTE` |
+| T9.6 | Migrate `parseAnimeScript` | `server/prompts/parseScript.ts` | Codex | Anime-only `coreTask`; scriptText + directorBrief + targetRuntime as `INPUTS` |
+| T9.7 | Migrate `writeShotPrompts` | `server/prompts/shotPrompts.ts` | Claude | Workflow-scoped (MV vs anime acting language) |
+| T9.8 | Migrate `refineScript` | `server/prompts/refineScript.ts` | Claude | Workflow-scoped |
+| T9.9 | Migrate `write-storyboard-prompt` + `refine-storyboard` | `server/prompts/storyboard.ts` | Codex | Workflow-scoped; Seedance routing stays inside |
+| T9.10 | Migrate `write-audio-plan` | `server/prompts/audioPlan.ts` | Codex | Anime-only; already isolated. Routes through composer for consistency, becomes reference implementation |
+| T9.11 | Retire fat templates | `server/services/claude.ts`, `server/services/openai-script.ts` | Codex | Old `buildXPrompt` functions deleted; callers go through tool registry's `buildPrompt` |
+
+**Acceptance for T9 as a whole:** Running anime intake → style brainstorm produces actual anime-shaped directions (cel painted, OVA, anime broadcast). No live-action references unless the artist explicitly asks. Same for every other LLM-driven tool — no workflow noun leaks.
+
+---
+
+### T10 — Web UI Asset-Shelf Refactor
+
+**Goal:** Blueprint phase tabs become "asset shelves" — visual organization stays, phase gating dies. Each tab shows the asset(s) it manages and the registry tools that produce/operate on them, enabled when their inputs exist.
+
+**Owner:** Claude
+**Depends on:** T8 (registry consumed by UI)
+
+| ID | Task | Files / Targets | Acceptance |
+|---|---|---|---|
+| T10.1 | `useAvailableTools(project)` hook | `hooks/useAvailableTools.ts` (new) | Resolves registry against project state; returns `{ enabled, blocked }` per surface |
+| T10.2 | `AssetShelf` wrapper component | `components/AssetShelf.tsx` (new) | Renders enabled tool buttons at top, dimmed blocked tools below with "needs: X" hint. Surface-aware filtering. |
+| T10.3 | Migrate ConceptPhase | `components/ConceptPhase.tsx` | Phase tab survives; content becomes AssetShelf with concept tools. No status-gate enforcement. |
+| T10.4 | Migrate ScriptPhase | `components/ScriptPhase.tsx` | Same. Dialogue tools surface for anime (per preset hint in manifest), hide for MV. |
+| T10.5 | Migrate StylePhase | `components/StylePhase.tsx` | Same. |
+| T10.6 | Migrate CharactersPhase | `components/CharactersPhase.tsx` | Same. Voice editor stays per cast. |
+| T10.7 | Migrate EnvironmentsPhase | `components/EnvironmentsPhase.tsx` | Same. |
+| T10.8 | Drop status-gate references | `components/BlueprintContextBar.tsx`, `constants/blueprintPhases.ts` | `isLockedPhase` retires; phase visibility comes from registry tool surfaces + preset hints |
+| T10.9 | "Next move" hint per shelf | each phase | Top-of-shelf chip suggesting the highest-impact runnable tool (or the most-downstream-blocking missing input). Reads same `availableTools` data. |
+
+**Acceptance for T10 as a whole:** A user clicking through Blueprint sees the same familiar tab layout but each tab is now an explicit registry of tools. No tab is "locked"; if a tool's inputs aren't satisfied it dims. The Codex agent operating against the same project sees the same available actions via MCP packet. Two surfaces, one truth.
+
+---
+
 ## 5. Dependency Graph
 
 ```
@@ -383,6 +459,24 @@ Split: Codex owns the backend stack (T7 → T1 → T2 backend → T3 → T4 → 
 | 15 | Bug fixes | Bug fixes |
 
 **Total: ~3 weeks if both lanes work clean.** One slack day each at end. Critical handoff points: end of day 2 (Codex finishes T7, Claude can start drafting Audio phase mocks); end of day 7 (Codex finishes T2 backend, Claude can wire BYOK UI to real endpoints); end of day 10 (Codex finishes T3, Claude's frontend has real APIs to call).
+
+### Wave 2 — Agent-native pivot (T8-T10)
+
+Post-foundation, pre-E2E. Triggered by the style-brainstorm leak that exposed the workflow-noun-stuffing drift (see D25 rationale and §9 checkpoint). Sequenced for handoff cleanliness:
+
+| Day | Claude | Codex |
+|---|---|---|
+| W2.1 | Read D23-D25 + T8 manifest; sketch UI consumption shape; T9.2 anime style brainstorm body drafted (await composer) | T8.1-T8.4 (registry foundation: types, asset resolver, registry, available/blocked) |
+| W2.2 | T9.2 brainstorm-style (anime body verbatim from design discussion; MV body extracted from old fat template) | T9.1 (composer) + T9.10 (audio_plan as reference) + T8.5 (MCP packet exposes registry) |
+| W2.3 | T9.3 visualizeStyle / refineStyle + T9.4 concept | T9.5 planScenes + T9.6 parseScript |
+| W2.4 | T9.7 shotPrompts + T9.8 refineScript + T10.1-T10.2 (hook + AssetShelf component) | T9.9 storyboard + T9.11 retire fat templates |
+| W2.5 | T10.3-T10.7 (per-phase migrations) | T8.6 (deprecate `WorkflowRecipe.stages`) |
+| W2.6 | T10.8 (drop status-gate refs) + T10.9 (next-move chips) | Review pass + Codex MCP smoke test against new registry |
+| W2.7 | Slack / E2E prep | Slack / E2E prep |
+
+**Total Wave 2: ~7 working days if both lanes work clean.** Net code DELETED (fat templates + WorkflowRecipe.stages + phase-gate logic) is larger than what's added (registry + composer + AssetShelf).
+
+After Wave 2: resume v1 path — Mirage infra provisioning (T1), E2E golden path tests, music-video regression, ship.
 
 ---
 
@@ -490,6 +584,61 @@ type MissingKeyError = {
 };
 ```
 
+### Tool manifest (D24)
+
+```ts
+type ToolManifest = {
+  key: string;                  // stable identifier, e.g. 'brainstorm-style'
+  label: string;                // human-readable, e.g. 'Brainstorm style'
+  description: string;          // agent-facing prose: "use this when X, returns Y"
+  preset?: 'music_video' | 'anime_scripted' | null;  // null = workflow-agnostic
+  requires: AssetKey[];         // hard inputs — tool can't run without
+  contextInputs?: AssetKey[];   // soft inputs — used if present, fine without
+  produces: AssetKey[];         // assets this tool creates/updates on success
+  surface: ToolSurface;         // where the web UI shows it (e.g. 'asset:style')
+  buildPrompt?: (project: ApiProject, userNote?: string) => string;  // LLM tools only
+};
+
+type AssetKey =
+  | 'audio' | 'scriptText' | 'directorBrief' | 'targetRuntime'
+  | 'lyrics' | 'musicalStructure' | 'meaning'
+  | 'concept' | 'styleDirections' | 'styleAsset'
+  | 'cast' | 'environments' | 'scenes' | 'shots'
+  | 'castLooks' | 'envLooks'
+  | 'audioPlan' | 'castVoices' | 'ttsAssets'
+  | 'storyboards' | 'keyframes' | 'videos' | 'render';
+
+type ToolSurface =
+  | `asset:${string}`           // asset shelf placement (e.g. 'asset:style')
+  | 'agent-only';               // agent-callable but not surfaced in web UI
+```
+
+### Composed prompt shape (D25)
+
+```ts
+type ComposePromptParts = {
+  coreTask: string;             // workflow-aware "what am I doing", per-workflow dispatch
+  inputs?: string;              // formatted project context the tool received
+  presetTaste?: string;         // taste/rules interpolated from project preset
+  outputContract: string;       // JSON schema or shape contract for the response
+  userNote?: string;            // optional free-form artist direction
+};
+
+// Composed output:
+// <coreTask>
+//
+// INPUTS
+// <inputs>
+//
+// TASTE
+// <presetTaste>
+//
+// <outputContract>
+//
+// USER NOTE
+// <userNote>
+```
+
 ---
 
 ## 8. Open Questions
@@ -582,6 +731,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 2026-05-19 Codex: T1.5/T1.6 package naming updated to Saul's npm scope. Mirage CLI package is `@ssaulgoodman420/mirage-cli`; Mirage MCP facade package is `@ssaulgoodman420/mirage-mcp-server`. Generated `mint_cli_token` commands now default directly to `@ssaulgoodman420/mirage-cli@0.1.0` instead of the temporary Lahari CLI fallback.
 
 2026-05-19 Codex: T1.5/T1.6 npm publish complete. Published `@ssaulgoodman420/mirage-cli@0.1.0` and `@ssaulgoodman420/mirage-mcp-server@0.1.0` with public access. Registry verification succeeded for both package names/versions/bins; `npm exec --package @ssaulgoodman420/mirage-cli@0.1.0 -- mirage --help` reaches the published CLI and returns its usage text via the unknown-command fallback.
+
+2026-05-20 Claude: Agent-native pivot codified. D23 (agent harness is the primary product surface; web UI is overwatch), D24 (tool registry as cross-surface contract; `WorkflowRecipe.stages` deprecated), D25 (`composePrompt` is the prompt-build doctrine; per-workflow `coreTask` dispatch; no workflow noun leaks). Triggered by Saul's audit of `buildStyleBrainstormPrompt` — anime style brainstorm was leaking live-action/Polaroid examples because the prompt was a music-video-shaped fat template with nouns swapped. Added §4 tracks T8 (registry), T9 (composer migration, ~11 tools split across Codex + Claude), T10 (web UI asset-shelf refactor). §6 Wave 2 sequencing locked: ~7 working days, split lanes, net code deleted not added. §7 contracts updated with `ToolManifest` and `ComposePromptParts` shapes. Navigation aid added to preamble. **This pivot happens before E2E; v1 ships on the new shape.**
 
 ---
 
