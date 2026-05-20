@@ -95,34 +95,38 @@ const KeyRow: React.FC<{
   const isSet = status?.isSet ?? false;
 
   return (
-    <div className="flex items-start justify-between gap-4 py-4 group">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2.5 mb-1">
-          <p className="text-sm text-white font-medium">{provider.label}</p>
-          <span
-            className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-              isSet
-                ? 'text-emerald-300/90 bg-emerald-500/10'
-                : 'text-amber-300/90 bg-amber-500/10'
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${isSet ? 'bg-emerald-400' : 'bg-amber-400'}`}
-            />
-            {isSet ? 'Set' : 'Not set'}
-          </span>
-        </div>
-        <p className="text-xs text-zinc-400 leading-relaxed">{provider.description}</p>
+    <div className="flex items-center justify-between gap-4 py-2.5 group">
+      <div className="min-w-0 flex-1 flex items-center gap-2.5">
+        <span className="text-sm text-white font-medium">{provider.label}</span>
+        <span
+          className="text-zinc-500 hover:text-zinc-300 cursor-help transition-colors"
+          title={provider.description}
+          aria-label={provider.description}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+        </span>
+        <span
+          className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
+            isSet
+              ? 'text-emerald-300/90 bg-emerald-500/10'
+              : 'text-amber-300/90 bg-amber-500/10'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${isSet ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {isSet ? 'Set' : 'Not set'}
+        </span>
         {status?.lastUsedAt && (
-          <p className="text-[11px] text-zinc-500 mt-1">
-            Last used {new Date(status.lastUsedAt).toLocaleDateString()}
-          </p>
+          <span className="text-[11px] text-zinc-500 truncate" title={`Last used ${new Date(status.lastUsedAt).toLocaleString()}`}>
+            · used {new Date(status.lastUsedAt).toLocaleDateString()}
+          </span>
         )}
         {status?.lastError && (
-          <p className="text-[11px] text-red-400/80 mt-1">Last error: {status.lastError}</p>
+          <span className="text-[11px] text-red-400/80 truncate" title={status.lastError}>· error</span>
         )}
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0 pt-0.5">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <button
           onClick={() => onSet(provider.key)}
           className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
