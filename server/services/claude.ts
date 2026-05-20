@@ -988,7 +988,7 @@ Match the IDs exactly.`;
 
 // ─── Style Brainstorming (text-only, no images) ─────────────────────
 
-export const brainstormStyleDirections = async (
+export const buildStyleBrainstormPrompt = (
   lyrics: string,
   meaning: string,
   concept: any,
@@ -997,9 +997,8 @@ export const brainstormStyleDirections = async (
   songType?: string,
   isNarrative?: boolean,
   isMeditative?: boolean,
-  textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
-): Promise<{ title: string; description: string }[]> => {
+): string => {
   const typeLabel = songType && songType !== 'unknown' ? songType : null;
   const traits = [
     isNarrative ? 'narrative' : null,
@@ -1009,11 +1008,13 @@ export const brainstormStyleDirections = async (
     ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
     : '';
 
-  const prompt = `You are ${preset.style.dpIdentity}.
+  return `You are ${preset.style.dpIdentity}.
 
+Workflow: ${preset.workflowKey}
+Preset: ${preset.key} — ${preset.label}
 Audience: ${preset.audience}.
 ${preset.style.rules}
-These descriptions will be used as prompts for Gemini image generation.
+These descriptions will be used as prompts for image generation.
 
 SUBJECT: ${conceptSubject(concept)} — ${concept.theme || 'Unknown'}
 Mood: ${concept.mood || 'Unknown'}
@@ -1031,9 +1032,9 @@ ${userNotes ? `USER DIRECTION: All 4 must be variations within this preference:\
 
 Propose 4 distinct visual style directions using the propose_style_directions tool.
 
-Each direction must produce a visibly different reference image: vary color temperature, medium/rendering approach, lighting behavior, and artistic/cultural reference.
+Each direction must produce a visibly different reference image: vary color temperature, rendering approach, lighting behavior, and artistic/cultural reference.
 Do not let all four directions collapse into the same warm, dark, dramatic-lighting variant.
-Photographic, painterly, illustrated, miniature-inspired, or mixed-media directions are all welcome if specific and culturally respectful.
+Stay inside the workflow and preset contract above. User direction can narrow era, texture, mood, reference lineage, or production treatment, but it must not quietly switch the project into an incompatible medium or product form.
 
 For each: a title (2-5 words) and description (2 short punchy sentences, concrete and compact).
 
@@ -1042,11 +1043,35 @@ Do NOT describe characters, scenes, environments, or narrative.
 These descriptions will be used as image generation prompts — be concrete, not literary.
 
 QUALITY GUIDELINES for the image generation downstream:
-- Avoid overly AI/CGI/fantasy look — every direction should feel grounded and intentional in its chosen medium (photographic, painterly, illustrated, miniature, mixed-media, etc.)
+- Avoid overly AI/CGI/fantasy look — every direction should feel grounded and intentional in its chosen medium
 - Avoid excessive intricate details that muddy the image — every element should have clear intention
 - If stylized, it should be tasteful and deliberate, not generic digital art or AI slop
 - Think intentional reference image, not generic concept art`;
+};
 
+export const brainstormStyleDirections = async (
+  lyrics: string,
+  meaning: string,
+  concept: any,
+  userNotes?: string,
+  scriptSummary?: string,
+  songType?: string,
+  isNarrative?: boolean,
+  isMeditative?: boolean,
+  textProvider?: string,
+  preset: PipelinePreset = getRuntimePreset(),
+): Promise<{ directions: { title: string; description: string }[]; prompt: string }> => {
+  const prompt = buildStyleBrainstormPrompt(
+    lyrics,
+    meaning,
+    concept,
+    userNotes,
+    scriptSummary,
+    songType,
+    isNarrative,
+    isMeditative,
+    preset,
+  );
   const { parsedJson } = await generateText(textProvider, {
     userPrompt: prompt,
     maxTokens: 4096,
@@ -1073,7 +1098,7 @@ QUALITY GUIDELINES for the image generation downstream:
     },
   });
   if (!parsedJson?.directions) throw new Error('No style directions generated');
-  return parsedJson.directions;
+  return { directions: parsedJson.directions, prompt };
 };
 
 // ─── Refine a Style Direction (text-only) ───────────────────────────

@@ -72,7 +72,7 @@ Other high-value routers: `projects.ts`, `queue.ts`, `render.ts`, `render-callba
 
 Start: `StartProject.tsx` is Mirage's primary intake surface. Music videos start from uploaded audio; anime starts from pasted/uploaded script. The legacy queue adapter still exists behind `music_video_queue` + `songs`, but it is not the main Mirage frontend entry.
 
-Blueprint: `AnalysisEditor.tsx` orchestrates Concept, Script, Style, Characters, Environments. Style presets in `server/style-presets.ts` lock curated Supabase images directly; preset image is ground truth and `style_description` is intentionally empty. Characters/environments use editable generation prompts and the locked style image as the visual anchor.
+Blueprint: `AnalysisEditor.tsx` orchestrates Concept, Script, Style, Characters, Environments. Mirage v1 does not expose legacy Lahari curated style presets. If clean workflow-specific curated styles return, `server/style-presets.ts` owns them; preset image is ground truth and `style_description` stays intentionally empty. Characters/environments use editable generation prompts and the locked style image as the visual anchor.
 
 Studio: `Storyboard.tsx` orchestrates per-shot production. Keyframe mode uses `PromptToolkit` for first frame / last frame / video. Seedance mode uses `StoryboardPanel` and the two-step storyboard workflow below.
 

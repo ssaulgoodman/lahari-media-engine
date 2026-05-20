@@ -56,7 +56,7 @@ This is the exact same class of bug we fixed when we ripped style-DNA text out o
 
 ### D. Curated style presets
 
-`server/style-presets.ts:34` — Sacred Teal Riverlight description ends with `"earthy human realism"`. Intentional for that preset, but worth noting: presets ship with implicit medium choices baked into their description text, and the artist has no way to override.
+Historical note: the old Lahari curated style presets shipped with implicit medium choices baked into their description text. Mirage removed those presets entirely; any future curated style set must be clean, workflow-specific, and deliberate.
 
 ---
 
@@ -95,7 +95,7 @@ Find/replace across three files. Each replacement: drop "cinematic" and "film st
 
 Also: kill the unused `Hyperrealistic cinematic portrait` / `vintage 16mm film still` direction-seed strings at `imagen.ts:120-123`, `segmind-image.ts:218-224`, `openai-image.ts:246-249` — they're seed bank entries that aren't reached on the curated-preset path anymore, but if any code path still hits them they bias hard toward realism.
 
-**Acceptance:** generate a character look + environment look + shot start frame against the Sacred Teal Riverlight preset and against an uploaded painterly miniature style. Both should track the style image; the painterly one should NOT show realism leak.
+**Acceptance:** generate a character look + environment look + shot start frame against a clean curated preset and against an uploaded painterly miniature style. Both should track the style image; the painterly one should NOT show realism leak.
 
 ### Tier 2 — Trim "cinematic" from the Seedance storyboard prompt (P1, ~30 min, no schema)
 
@@ -150,7 +150,7 @@ Skip if Tier 3 is good enough — most artists will set medium explicitly anyway
 - **Video generation prompts** (`generate-video.ts`) — these are `motionPrompt + ref labels`. No "cinematic" in the user-facing path. Don't touch.
 - **Audio analysis prompts** (`gemini.ts`) — no medium language.
 - **The `videoMode` montage/cinematic toggle** in script writer — that's about pacing/cuts, not visual medium. Leave it; it's orthogonal to this fix.
-- **Style-preset descriptions** themselves — "earthy human realism" in Sacred Teal Riverlight is intentional for that preset. The artist who picks it gets what they asked for.
+- **Style-preset descriptions** themselves — future curated presets may still carry intentional medium choices. The artist who picks one gets what they asked for.
 
 ---
 

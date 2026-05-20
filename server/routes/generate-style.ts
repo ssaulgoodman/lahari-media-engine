@@ -126,7 +126,7 @@ export const mountStyleRoutes = (router: Router) => {
         ? scenes.map((s: any) => `[${s.section_label}] ${s.narrative_description}`).join('\n')
         : undefined;
 
-      const directions = await brainstormStyleDirections(
+      const { directions, prompt } = await brainstormStyleDirections(
         project.lyrics || '',
         project.meaning || '',
         concept,
@@ -143,10 +143,10 @@ export const mountStyleRoutes = (router: Router) => {
       await logCall({
         projectId: project.id,
         stage: 'brainstorm-styles',
-        model: 'claude-opus-4-6',
-        prompt: `Brainstorm 4 style directions | Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood}${userNotes ? ` | User notes: ${userNotes}` : ''}`,
+        model: project.text_provider || 'claude-opus-4-7',
+        prompt,
         contextChain: await buildContextChain(project.id),
-        responseSummary: JSON.stringify(directions),
+        responseSummary: JSON.stringify({ presetKey: preset.key, workflowKey: preset.workflowKey, directions }),
         durationMs,
         costEstimate: 0.01,
       });
@@ -167,7 +167,7 @@ export const mountStyleRoutes = (router: Router) => {
       await logCall({
         projectId: project.id,
         stage: 'brainstorm-styles',
-        model: 'claude-opus-4-6',
+        model: project.text_provider || 'claude-opus-4-7',
         prompt: `Brainstorm 4 style directions`,
         durationMs: 0,
         error: err.message,

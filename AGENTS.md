@@ -242,7 +242,7 @@ Generate router modules:
 2. **Blueprint** (`AnalysisEditor.tsx`) - Concept, Script, Style, Characters, Environments.
    - Concept/style/refines use the project `text_provider` via `server/services/text-provider.ts`.
    - Script writing remains Claude Opus direct (`planScenes`, `refineScript`, `writeShotPrompts`) because it uses extended thinking plus a validation loop.
-   - Style presets lock directly from curated Supabase images in `server/style-presets.ts`; preset style image is ground truth and `style_description` is intentionally empty.
+   - Mirage v1 does not expose legacy curated Lahari style presets. If curated styles return, they must be workflow/preset-specific clean assets in `server/style-presets.ts`; the locked preset image is ground truth and `style_description` stays intentionally empty.
    - Characters/environments use editable generation prompts and the locked style image as the visual ground truth.
 
 3. **Studio** (`Storyboard.tsx`) - Per-shot production.

@@ -229,7 +229,7 @@ Claude receives explicit structural guidance based on the chosen mode:
 | **Artist control** | Click any of the four preset cards in the Style phase → one-shot lock. No visualize / regenerate step. |
 | **generation_prompt** | None — the curated PNG is the ground truth. |
 
-Four devotional presets are currently registered: Sacred Golden Serenity, Pure Temple Morning, Warm Incense Devotion, and Sacred Teal Riverlight. Their curated anchor PNGs live in Supabase Storage at `styles/presets/<key>.png` and are backed up in [`docs/assets/style-presets/`](assets/style-presets/).
+Mirage v1 does not expose legacy Lahari curated styles. If curated styles return, they must be workflow/preset-specific clean assets registered in `server/style-presets.ts`.
 
 **Important:** the old `POST /:id/visualize-style-preset` endpoint was **removed**. That path was generating a fresh image from the description text and ignoring the curated PNG entirely — it produced drift, not the curated look. The new `lock-style-preset` route points the project's style asset directly at the curated file_path (same shared-asset pattern as forks), runs the standard `/lock-style` downstream-stale logic, and skips any text-to-image work.
 
