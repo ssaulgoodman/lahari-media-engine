@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { PipelinePreset } from '../presets.js';
+export { buildAudioPlanPrompt } from '../prompts/audioPlan.js';
 
 export type AudioPlanDialogueStrategy = 'lipsync' | 'overlay';
 export type AudioPlanDialogueLine = {
@@ -34,21 +34,6 @@ type CastRow = {
   voice_name?: string | null;
 };
 
-type SceneRow = {
-  id: string;
-  section_label?: string | null;
-  lyrics?: string | null;
-  narrative_description?: string | null;
-};
-
-type ShotRow = {
-  id: string;
-  direction?: string | null;
-  visual_prompt?: string | null;
-  duration?: number | null;
-  cast_ids?: string | null;
-};
-
 export const AUDIO_PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -74,16 +59,6 @@ export const AUDIO_PLAN_SCHEMA = {
   },
   required: ['dialogue'],
 } as const;
-
-const parseCastIds = (raw?: string | null): string[] => {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
-};
 
 const clip = (value: unknown, max: number): string => {
   if (typeof value !== 'string') return '';
@@ -146,59 +121,4 @@ export const sanitizeAudioPlan = (
     dialogue,
     soundNotes: clip(raw?.soundNotes, 1000) || undefined,
   };
-};
-
-export const buildAudioPlanPrompt = (
-  project: any,
-  scene: SceneRow,
-  shot: ShotRow,
-  cast: CastRow[],
-  preset: PipelinePreset,
-): string => {
-  const shotCastIds = parseCastIds(shot.cast_ids);
-  const shotCast = cast.filter((member) => shotCastIds.includes(member.id));
-  const allowedCast = shotCast.length > 0 ? shotCast : cast;
-  const sourcePayload = typeof project.source_payload === 'string'
-    ? project.source_payload
-    : JSON.stringify(project.source_payload || {}, null, 2);
-
-  return `You are the audio director for ${preset.label}.
-
-Write the per-shot audio plan for ONE shot. This is production data, not prose.
-
-Hard rules:
-- Use only the listed cast IDs. Do not invent characters.
-- Preserve uploaded script intent. If source payload includes dialogue for this beat, extract it as close to verbatim as possible.
-- Dialogue text is what TTS will speak. Never include delivery labels, camera notes, speaker names, or parenthetical directions inside dialogue text.
-- delivery is a short performance cue, not spoken text.
-- soundNotes are restrained ambient/SFX guidance for video prompts; do not create a structured SFX list.
-- If the shot has no spoken line, return an empty dialogue array and optional soundNotes.
-- Keep each dialogue text under 500 characters.
-
-Project:
-Title: ${project.title || 'Untitled'}
-Workflow: ${project.workflow_key || preset.workflowKey}
-Preset rules: ${preset.source.rules}
-Dialogue rules: ${preset.audio?.dialogueRules || ''}
-Sound rules: ${preset.audio?.soundRules || ''}
-Strategy rules: ${preset.audio?.strategyRules || ''}
-
-Scene:
-Label: ${scene.section_label || 'Scene'}
-Narrative: ${scene.narrative_description || ''}
-Lyrics/source text: ${scene.lyrics || ''}
-
-Shot:
-ID: ${shot.id}
-Duration: ${shot.duration || 0}s
-Direction: ${shot.direction || ''}
-Visual prompt: ${shot.visual_prompt || ''}
-
-Allowed cast:
-${allowedCast.map((member) => `- ${member.id} | ${member.name} | hasLook=${!!member.reference_asset_id} | voice=${member.voice_provider && member.voice_id ? `${member.voice_provider}:${member.voice_name || member.voice_id}` : 'unset'} | ${member.description || ''}`).join('\n') || '- No cast available'}
-
-Source payload:
-${sourcePayload.slice(0, 6000)}
-
-Return only the structured audio plan JSON.`;
 };

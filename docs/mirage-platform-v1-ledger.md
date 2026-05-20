@@ -347,11 +347,11 @@ After T7 completes, no more merges flow between `main` and `mirage`. Engine fixe
 
 | ID | Task | Files / Targets | Acceptance |
 |---|---|---|---|
-| T8.1 | `ToolManifest` type | `server/tools/types.ts` (new) | Type declares: `key`, `label`, `description` (agent-facing prose), `preset?` (null = workflow-agnostic), `requires` (hard inputs), `contextInputs?` (soft inputs), `produces`, `surface` (web-UI placement), `buildPrompt?` (LLM tools) |
-| T8.2 | Asset-presence resolver | `server/tools/assetState.ts` (new) | `hasAsset(project, key)` resolves project state → set of available assets (`audio`, `lyrics`, `concept`, `scriptText`, `cast`, `environments`, `scenes`, `shots`, `styleAsset`, `castLooks`, `envLooks`, `audioPlan`, `castVoices`, `ttsAssets`, `storyboards`, `keyframes`, `videos`, `render`) |
+| T8.1 | `ToolManifest` type | `server/tools/types.ts` (new) | Type declares: `key`, `label`, `description` (agent-facing prose), `enabledFor?` (workflow profile gate), `requires` (hard inputs), `contextInputs?` (soft inputs), `produces`, `surface` (web-UI placement), `buildPrompt?` (LLM tools) |
+| T8.2 | Asset-presence resolver | `server/tools/assetState.ts` (new) | `hasAsset(project, key)` resolves project state → set of available assets (`audio`, `lyrics`, `concept`, `scriptText`, `cast`, `environments`, `scenes`, `shots`, `shotPrompts`, `storyboardPrompts`, `styleAsset`, `castLooks`, `envLooks`, `audioPlan`, `castVoices`, `ttsAssets`, `storyboards`, `keyframes`, `videos`, `render`) |
 | T8.3 | Registry enumeration | `server/tools/registry.ts` (new) | All ~18 tools registered with accurate `requires`/`produces`/`description`. Includes generation tools (LLM-driven) AND apply tools (validators). See §7 for shape. |
 | T8.4 | `availableTools` / `blockedTools` | `server/tools/registry.ts` | Pure functions over manifest + project. `blockedTools` returns each tool with the list of missing inputs. |
-| T8.5 | MCP packet exposes registry | `server/services/codexStudio/packets.ts` | Packet includes `production.availableTools[]` and `production.blockedTools[]` each with `{ key, label, description, missing?: string[] }`. Replaces ad-hoc `audioPhase` block (subsumed). |
+| T8.5 | MCP packet exposes registry | `server/services/codexStudio/packets.ts` | Packet includes `production.availableTools[]` and `production.blockedTools[]` each with `{ key, label, description, missing?: string[] }`. During proof gate this ships alongside the old `audioPhase` block; after validation, `audioPhase` can be retired. |
 | T8.6 | Deprecate `WorkflowRecipe.stages` | `server/presets.ts` | Mark deprecated in code. Stop using in any new route. UI-facing phase visibility moves to `surface` field on tool manifests. |
 
 **Acceptance for T8 as a whole:** Agent (Codex) reads MCP packet, gets a clean list of what it can call right now and what's blocked with reasons. No hardcoded workflow stage logic. Web UI consumes the same lists.
@@ -677,6 +677,7 @@ type AssetKey =
   | 'lyrics' | 'musicalStructure' | 'meaning'
   | 'concept' | 'styleDirections' | 'styleAsset'
   | 'cast' | 'environments' | 'scenes' | 'shots'
+  | 'shotPrompts' | 'storyboardPrompts'
   | 'castLooks' | 'envLooks'
   | 'audioPlan' | 'castVoices' | 'ttsAssets'
   | 'storyboards' | 'keyframes' | 'videos' | 'render';
@@ -812,6 +813,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 - **`ToolManifest` field renamed** `preset?: 'music_video' | 'anime_scripted'` → `enabledFor?: WorkflowKey[]`. The old name conflated preset (taste/defaults) with workflow profile (production kind). Vocabulary discipline note added to D24.
 - **T9.2 reframed**: anime body is production-neutral within anime production, not taste-locked to OVA/cel/vintage. The contract is "don't accidentally leave the medium," not "be a specific era." Brainstorm output must span modern/retro/soft/harsh/photoreal-leaning. Saul's 2026-05-20 design example is illustrative of the medium-guard mechanism only.
 - **§6 proof gate inserted** between W2.2 and W2.3. Before any UI (T10) or further tool migrations (T9.3+) begin, run one live anime style brainstorm against the migrated tool and validate the composed prompt + LLM output. Smallest meaningful slice that proves registry+composer+packet end-to-end on one broken seam + one clean reference.
+
+2026-05-20 Codex: W2 Codex foundation slice started. Added `server/tools` registry primitives (`ToolManifest`, asset-state resolver, `availableTools`/`blockedTools`) using asset availability rather than phase status. The registry uses `enabledFor` for workflow gating and keeps produced assets precise (`write-shot-prompts` produces `shotPrompts`; `generate-keyframe` produces `keyframes`; storyboard planning/rendering split likewise). MCP project packets now expose `production.availableTools` and `production.blockedTools` alongside the existing `audioPhase` packet for the proof gate. Added `composePrompt` plus composer-routed `write-audio-plan` as the clean reference implementation; prompt text uses production language and no workflow/preset enum labels. Verified on live anime project `IT SAID OH`: packet lists available script/style/prompt tools and blocks character/env looks on `styleAsset`, dialogue audio on `audioPlan` + actual speaker voices, and render on `videos`. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, packet smoke via `buildProjectPacket`.
 
 ---
 

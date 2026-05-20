@@ -1,5 +1,6 @@
 import { getProjectConfigState } from '../projectConfig.js';
 import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
+import { availableTools, blockedTools } from '../../tools/registry.js';
 import {
   compactText,
   conceptHash,
@@ -102,6 +103,8 @@ export const buildProjectPacket = async (project: Project) => {
   const preset = getPipelinePreset(project.presetKey);
   const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
   const audioPhase = buildAudioPhasePacket(project, workflow);
+  const available = availableTools(project);
+  const blocked = blockedTools(project);
 
   return {
     kind: 'lahari.project.packet',
@@ -191,6 +194,8 @@ export const buildProjectPacket = async (project: Project) => {
     production: {
       counts,
       audioPhase,
+      availableTools: available,
+      blockedTools: blocked,
       workflow: usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe',
       renders: {
         count: renders.length,
