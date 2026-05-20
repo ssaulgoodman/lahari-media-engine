@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   selectAll, selectOne, insertRow, insertMany,
   updateRows, deleteRows, countRows, maxVal, incrementColumn,
-  selectColumns, getSB, T, supportsPlatformColumns,
+  selectColumns, getSB, T, supportsPlatformColumns, usesLegacyQueueAdapter,
 } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
 import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
@@ -255,7 +255,7 @@ const forkProject = async (
     meaning: src.meaning,
     video_mode: src.video_mode,
     image_model: src.image_model,
-    storyboard_provider: src.storyboard_provider || 'gpt-image-2',
+    storyboard_provider: src.storyboard_provider || 'nano-banana-2',
     target_duration: src.target_duration,
     cost_estimate: src.cost_estimate,
     style_exploration: (() => {
@@ -820,7 +820,7 @@ const createAudioProjectFromSeed = async (opts: {
     status: 'analyzing',
     audio_path: audioPath,
     image_model: preset.defaults.imageModel,
-    storyboard_provider: 'gpt-image-2',
+    storyboard_provider: preset.defaults.imageModel,
     video_model: preset.defaults.videoModel,
     aspect_ratio: preset.defaults.aspectRatio,
     video_mode: preset.defaults.videoMode,
@@ -949,14 +949,15 @@ const createScriptProjectFromSeed = async (opts: {
   const projectId = uuidv4();
   const title = String(bodyString(opts.body, 'title') || `Untitled ${workflow.label} Project`).trim() || `Untitled ${workflow.label} Project`;
   const directorBrief = bodyString(opts.body, 'directorBrief');
-  const targetDuration = bodyNumber(opts.body, 'targetDuration');
+  const targetRuntime = bodyNumber(opts.body, 'targetRuntime') ?? bodyNumber(opts.body, 'targetDuration');
+  const targetShotDuration = bodyNumber(opts.body, 'targetShotDuration') || preset.defaults.pacing;
 
   await insertRow('projects', {
     id: projectId,
     title,
     status: 'analyzing',
     lyrics: scriptText,
-    meaning: directorBrief || '',
+    meaning: '',
     musical_structure: JSON.stringify([]),
     locked_concept: JSON.stringify({
       title,
@@ -969,15 +970,16 @@ const createScriptProjectFromSeed = async (opts: {
     style_description: preset.style.presetBible || preset.style.rules,
     video_mode: preset.defaults.videoMode,
     image_model: preset.defaults.imageModel,
+    storyboard_provider: preset.defaults.imageModel,
     video_model: preset.defaults.videoModel,
     aspect_ratio: preset.defaults.aspectRatio,
-    target_duration: targetDuration || preset.defaults.pacing,
+    target_duration: targetShotDuration,
     user_id: opts.userId,
     ...platformProjectFields({
       preset_key: preset.key,
       workflow_key: workflow.key,
       seed_kind: seedKind,
-      project_brief: { title, directorBrief, targetDuration },
+      project_brief: { title, directorBrief, targetRuntime, targetShotDuration },
       source_payload: { kind: seedKind, title, scriptText, originalName: opts.file?.originalname },
     }),
   });
@@ -989,17 +991,26 @@ const createScriptProjectFromSeed = async (opts: {
       scriptText,
       title,
       directorBrief,
-      targetDuration,
+      targetDuration: targetRuntime,
       preset,
     });
     const totalShots = await insertProductionPlan(projectId, data);
     const durationMs = Date.now() - t0;
 
+    const projectBrief = {
+      title: data.title || title,
+      directorBrief,
+      targetRuntime,
+      targetShotDuration,
+      logline: data.logline || '',
+    };
+
     await updateRows('projects', { id: projectId }, {
       title: data.title || title,
       status: 'scripted',
       last_script_prompt: data.prompt,
-      meaning: data.logline || directorBrief || '',
+      meaning: data.logline || '',
+      ...platformProjectFields({ project_brief: projectBrief }),
       updated_at: new Date().toISOString(),
     });
 
@@ -1363,32 +1374,41 @@ router.patch('/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Delete project — also resets the linked queue item back to 'queued'
+// Delete project — legacy Lahari queue projects also reset their linked queue row.
 router.delete('/:id', async (req, res) => {
-  const projectId = paramStr(req.params.id);
+  try {
+    const projectId = paramStr(req.params.id);
+    let queueRow: Awaited<ReturnType<typeof findQueueByProjectIds>> = null;
 
-  // Walk fork chain to find the queue row (same logic as publish)
-  const chain: string[] = [projectId];
-  let cur = projectId;
-  while (true) {
-    const row = await selectOne('projects', { id: cur });
-    if (!row?.parent_project_id) break;
-    chain.push(row.parent_project_id);
-    cur = row.parent_project_id;
+    if (usesLegacyQueueAdapter()) {
+      // Walk fork chain to find the queue row (same logic as publish)
+      const chain: string[] = [projectId];
+      let cur = projectId;
+      while (true) {
+        const row = await selectOne('projects', { id: cur });
+        if (!row?.parent_project_id) break;
+        chain.push(row.parent_project_id);
+        cur = row.parent_project_id;
+      }
+
+      // Reset queue item if this was the linked project.
+      queueRow = await findQueueByProjectIds(chain);
+    }
+
+    await deleteRows('projects', { id: projectId });
+
+    if (queueRow && queueRow.lahari_project_id === projectId) {
+      await updateQueueItem(queueRow.id, {
+        status: 'queued',
+        lahari_project_id: null as any,
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[delete-project] failed:', err);
+    sendStructuredError(res, err);
   }
-
-  // Reset queue item if this was the linked project
-  const queueRow = await findQueueByProjectIds(chain);
-  await deleteRows('projects', { id: projectId });
-
-  if (queueRow && queueRow.lahari_project_id === projectId) {
-    await updateQueueItem(queueRow.id, {
-      status: 'queued',
-      lahari_project_id: null as any,
-    });
-  }
-
-  res.json({ ok: true });
 });
 
 // Fork — deep-copy a project as a new one. Used before destructive ops
@@ -1705,9 +1725,10 @@ router.get('/:id/renders', async (req, res) => {
     if (rr.storage_path && rr.video_url) urlByPath.set(rr.storage_path, rr.video_url);
   }
 
-  // Mark which render matches the queue row's current `video_url`, so the UI
-  // can label it and refuse to delete it without confirmation.
-  const queueRow = await findQueueByProjectIds([projectId]);
+  // In legacy Lahari mode, mark which render matches the queue row's current
+  // `video_url`, so the UI can label it and refuse to delete it without
+  // confirmation. Mirage's clean schema has no queue catalog.
+  const queueRow = usesLegacyQueueAdapter() ? await findQueueByProjectIds([projectId]) : null;
   const currentUrl = (queueRow as any)?.video_url || null;
 
   const renders = rows.map((r: any) => {
@@ -1740,7 +1761,7 @@ router.delete('/:id/renders/:assetId', async (req, res) => {
   // Compare against the renderer-provided URL stored on lahari_renders when
   // available — the renderer can upload to a different bucket than this
   // backend's default, so storageUrl(file_path) wouldn't match queue.video_url.
-  const queueRow = await findQueueByProjectIds([projectId]);
+  const queueRow = usesLegacyQueueAdapter() ? await findQueueByProjectIds([projectId]) : null;
   const currentUrl = (queueRow as any)?.video_url || null;
   const renderRow: any = await selectOne('renders', {
     project_id: projectId, storage_path: asset.file_path, status: 'completed',

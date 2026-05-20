@@ -165,14 +165,34 @@ export const BlueprintContextBar: React.FC<Props> = ({
       + (project.isMeditative ? ' · Meditative' : '')
       + (project.isNarrative ? ' · Narrative' : '')
     : null;
-  const analysisItems = [
-    { label: 'Lyrics', present: !!project.lyrics },
-    { label: 'Structure', present: project.musicalStructure?.length > 0 },
-    { label: 'Meaning', present: !!project.meaning },
-    ...(songTypeLabel ? [{ label: songTypeLabel, present: true }] : []),
-  ];
-  const hasAnalysis = !!(project.meaning || project.musicalStructure?.length > 0 || project.lyrics);
-  const needsAnalysis = !project.lyrics || !project.meaning || !(project.musicalStructure?.length > 0);
+  const isMusicVideo = project.workflowKey === 'music_video';
+  const isScriptSeed = project.seedKind === 'script';
+  const directorBrief = typeof project.projectBrief?.directorBrief === 'string'
+    ? project.projectBrief.directorBrief.trim()
+    : '';
+  const logline = typeof project.projectBrief?.logline === 'string' && project.projectBrief.logline.trim()
+    ? project.projectBrief.logline.trim()
+    : (isScriptSeed && project.meaning && project.meaning !== directorBrief ? project.meaning : '');
+  const sourceLabel = isScriptSeed ? 'Script seed' : 'Lyrics';
+  const structureLabel = isMusicVideo ? 'Musical structure' : 'Structure';
+  const analysisItems = isMusicVideo
+    ? [
+      { label: 'Lyrics', present: !!project.lyrics },
+      { label: 'Structure', present: project.musicalStructure?.length > 0 },
+      { label: 'Meaning', present: !!project.meaning },
+      ...(songTypeLabel ? [{ label: songTypeLabel, present: true }] : []),
+    ]
+    : [
+      { label: sourceLabel, present: !!project.lyrics },
+      { label: structureLabel, present: project.musicalStructure?.length > 0 },
+      ...(directorBrief ? [{ label: 'Brief', present: true }] : []),
+      ...(logline ? [{ label: 'Logline', present: true }] : []),
+    ];
+  const hasAnalysis = !!(directorBrief || logline || project.musicalStructure?.length > 0 || project.lyrics || (isMusicVideo && project.meaning));
+  const missingAnalysisItems = analysisItems.filter(i => !i.present);
+  const needsAnalysis = isMusicVideo
+    ? (!project.lyrics || !project.meaning || !(project.musicalStructure?.length > 0))
+    : false;
 
   return (
     <>
@@ -357,13 +377,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 options={STORYBOARD_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
             </div>
-            {/* Text model — controls concept, style, refines (frame, motion,
-                chained-shot, char/env look, style refine, concept refine),
-                meaning summary, image-style analyzer, and storyboard prompt
-                writer. Script writer is intentionally NOT routed here — it
-                uses Claude Opus's extended thinking + a validation loop
-                that doesn't port cleanly to other vendors yet. The label
-                makes that gap explicit so the artist isn't surprised. */}
             <div className="flex-1 px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Text model</div>
               <Dropdown
@@ -371,7 +384,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 onChange={v => onUpdateProject({ textProvider: v })}
                 options={TEXT_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
-              <div className="text-[10px] text-zinc-500 leading-tight">Used for concept, style, refines, storyboard. Script writer: Claude + GPT-5.5 only — picking Gemini falls back to Claude for script.</div>
             </div>
             <div className="flex-[1.4] px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
@@ -421,7 +433,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                         className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
                       >
                         {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-                        {isAnalyzingAudio ? 'Analyzing…' : `Fill missing (${analysisItems.filter(i => !i.present).map(i => i.label).join(', ')})`}
+                        {isAnalyzingAudio ? 'Analyzing…' : `Fill missing (${missingAnalysisItems.map(i => i.label).join(', ')})`}
                       </button>
                     </div>
                   )}
@@ -431,7 +443,19 @@ export const BlueprintContextBar: React.FC<Props> = ({
                       <span className="text-sm text-white">{songTypeLabel}</span>
                     </div>
                   )}
-                  {project.meaning && (
+                  {directorBrief && (
+                    <div>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Director brief</h4>
+                      <Markdown>{directorBrief}</Markdown>
+                    </div>
+                  )}
+                  {logline && (
+                    <div>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">{isScriptSeed ? 'Logline' : 'Meaning'}</h4>
+                      <Markdown>{logline}</Markdown>
+                    </div>
+                  )}
+                  {isMusicVideo && project.meaning && !logline && (
                     <div>
                       <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Meaning</h4>
                       <Markdown>{project.meaning}</Markdown>
@@ -439,7 +463,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                   )}
                   {project.musicalStructure?.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Musical structure</h4>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">{structureLabel}</h4>
                       <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                         {project.musicalStructure.map((section, idx) => (
                           <div key={idx} className="surface-inset rounded-md px-3 py-2 text-sm">
@@ -455,7 +479,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                   )}
                   {project.lyrics && (
                     <div>
-                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Lyrics</h4>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">{sourceLabel}</h4>
                       <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-sans whitespace-pre-wrap leading-relaxed">{project.lyrics}</pre>
                     </div>
                   )}

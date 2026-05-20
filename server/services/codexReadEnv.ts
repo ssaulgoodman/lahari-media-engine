@@ -35,7 +35,8 @@ const loadFirstExistingEnv = (): string | null => {
 
 const testSupabaseKey = async (url: string, key: string): Promise<boolean> => {
   try {
-    const res = await fetch(`${url}/rest/v1/lahari_projects?select=id&limit=1`, {
+    const tablePrefix = process.env.DB_TABLE_PREFIX || 'lahari';
+    const res = await fetch(`${url}/rest/v1/${tablePrefix}_projects?select=id&limit=1`, {
       headers: {
         apikey: key,
         authorization: `Bearer ${key}`,

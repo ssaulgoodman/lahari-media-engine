@@ -231,6 +231,21 @@ export interface ApiProject {
   seedKind: 'audio' | 'script' | 'brief' | 'document' | 'idea';
   /** Preset providing taste + defaults. */
   presetKey: 'music_video_default' | 'anime_default';
+  projectBrief?: {
+    title?: string;
+    context?: string;
+    directorBrief?: string;
+    targetRuntime?: number;
+    targetDuration?: number;
+    logline?: string;
+    [key: string]: unknown;
+  } | null;
+  sourcePayload?: {
+    kind?: string;
+    title?: string;
+    originalName?: string;
+    [key: string]: unknown;
+  } | null;
   audioPath: string;
   lyrics?: string;
   meaning?: string;

@@ -8,7 +8,7 @@ import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
-import { selectOne, insertRow, updateRows, getSB, T, supportsPlatformColumns } from '../database.js';
+import { selectOne, insertRow, updateRows, getSB, T, supportsPlatformColumns, usesLegacyQueueAdapter } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { getFullProject } from './projects.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
@@ -42,6 +42,13 @@ function parseSrtToTimestamped(srt: string): string {
 }
 
 const router = Router();
+
+router.use((_req, res, next) => {
+  if (usesLegacyQueueAdapter()) return next();
+  return res.status(404).json({
+    error: 'Legacy music queue is disabled for this studio workspace. Use direct project intake instead.',
+  });
+});
 
 // List queue with optional filters
 router.get('/', async (req, res) => {
@@ -390,22 +397,25 @@ export const finalizePublish = async (
     file_path: videoPath,
   });
 
-  const chain: string[] = [projectId];
-  let cur = projectId;
-  while (true) {
-    const row = await selectOne('projects', { id: cur });
-    if (!row?.parent_project_id) break;
-    chain.push(row.parent_project_id);
-    cur = row.parent_project_id;
-  }
+  let queueRow: Awaited<ReturnType<typeof findQueueByProjectIds>> = null;
+  if (usesLegacyQueueAdapter()) {
+    const chain: string[] = [projectId];
+    let cur = projectId;
+    while (true) {
+      const row = await selectOne('projects', { id: cur });
+      if (!row?.parent_project_id) break;
+      chain.push(row.parent_project_id);
+      cur = row.parent_project_id;
+    }
 
-  const queueRow = await findQueueByProjectIds(chain);
-  if (queueRow) {
-    await updateQueueItem(queueRow.id, {
-      status: 'completed',
-      video_url: videoUrl,
-      lahari_project_id: projectId,
-    });
+    queueRow = await findQueueByProjectIds(chain);
+    if (queueRow) {
+      await updateQueueItem(queueRow.id, {
+        status: 'completed',
+        video_url: videoUrl,
+        lahari_project_id: projectId,
+      });
+    }
   }
 
   await updateRows('projects', { id: projectId }, {

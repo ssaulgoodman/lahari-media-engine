@@ -102,14 +102,15 @@ const slugify = (value: string): string => {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'lahari-project';
+    .slice(0, 80) || 'mirage-project';
 };
 
 const appBaseUrl = () => (
-  process.env.LAHARI_STUDIO_URL
+  process.env.MIRAGE_STUDIO_URL
+  || process.env.LAHARI_STUDIO_URL
   || process.env.APP_URL
   || process.env.PUBLIC_APP_URL
-  || 'https://lahari-media-engine-production.up.railway.app'
+  || 'https://mirage-platform-production-05ca.up.railway.app'
 ).replace(/\/+$/, '');
 
 const studioStepParam = (step: 'queue' | 'blueprint' | 'studio' | 'render') => step;
@@ -185,7 +186,7 @@ export const appendSessionJournalEntry = (project: { id: string; title: string }
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry(title, body));
   return journalPath;
@@ -211,20 +212,20 @@ export const listProjects = async (limitArg?: string) => {
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20;
   const rows = await selectColumns(
     'projects',
-    'id,title,status,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
+    'id,title,status,preset_key,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
     {},
     { orderBy: 'updated_at', ascending: false, limit },
   );
 
   return {
-    kind: 'lahari.project.list',
+    kind: 'mirage.project.list',
     generatedAt: new Date().toISOString(),
     limit,
     projects: rows.map((row: any) => ({
       id: row.id,
       title: row.title,
       status: row.status,
-      preset: 'bhakti-music-video',
+      preset: row.preset_key || 'music_video_default',
       songType: row.song_type || null,
       isNarrative: row.is_narrative ?? null,
       isMeditative: row.is_meditative ?? null,

@@ -22,9 +22,9 @@ If a column is "engine primitive" only when interpreted one way and "workflow in
 | `StartProject.tsx:106` (anime intake, before my fix) | Total episode runtime in seconds. Artist intent. |
 | `claude.ts:411` (parseAnimeScriptToPlan) | Passed to LLM as "TARGET RUNTIME: about X seconds." |
 
-**Verdict:** name is per-shot pacing; usage drifted to "also stash episode runtime here." Saul's resolution: `target_duration` stays as per-shot pacing (engine setting). Episode runtime intent moves to `project_brief.targetRuntime`. **StartProject has been updated** (already wrote `targetRuntime` to the intake opts). Backend `/api/projects/intake` needs a matching update: route `targetRuntime` into `project_brief.targetRuntime`, drop it from `target_duration`.
+**Verdict:** name is per-shot pacing; usage drifted to "also stash episode runtime here." Saul's resolution: `target_duration` stays as per-shot pacing (engine setting). Episode runtime intent moves to `project_brief.targetRuntime`.
 
-**One change needed before close:** server/routes/projects.ts intake handler should accept `targetRuntime` separately from `targetDuration` and store it in `project_brief`.
+**Resolved locally:** `StartProject` sends `targetRuntime`, and `server/routes/projects.ts` stores it in `project_brief.targetRuntime` while writing preset shot pacing to `target_duration`. `generate-script.ts` also clamps old polluted values so legacy test projects with `target_duration=120` do not produce 120-second shots.
 
 ---
 
@@ -102,7 +102,7 @@ Read sites use `!!shot.refined_from_prev_frame` to coerce. Write sites use `0` /
 ## Low / consistency
 
 - `studio_mcp_tokens.user_id` is `text` while `studio_tenant_api_keys.user_id` is `uuid not null references auth.users(id)`. Inconsistent. Fix during the v1.5 cleanup.
-- `studio_project_prompt_overrides.kind` enum lacks `'audio_plan'` — artists can't override the audio-director prompt per-project. Real gap if anime artists want to fine-tune voice direction. Add to the next migration.
+- `studio_project_prompt_overrides.kind` enum lacks `'character_looks'`, `'environment_looks'`, and `'audio_plan'` — artists can't override the look-generation or audio-director prompts per-project. Real gap for the R29/R28 override contract. Add to the next migration.
 - `last_script_prompt` / `last_concept_prompt` / `last_write_shots_prompt` on `studio_projects` — "remember the last prompt used" cache. Still live (drives "View prompt" buttons). Could move to `studio_ai_calls` (already has the prompt) but it's a query indirection. Acceptable.
 - `studio_renders.terminal_at` / `terminal_payload` — naming leak from Modal renderer ("terminal" = final state). Cosmetic.
 
@@ -120,11 +120,11 @@ Read sites use `!!shot.refined_from_prev_frame` to coerce. Write sites use `0` /
 
 If we're closing this audit before E2E ship:
 
-1. **Now (critical, blocks current bug fully):** Backend intake handler routes `targetRuntime` → `project_brief.targetRuntime` instead of `target_duration`. (Codex slice, ~30 min.)
-2. **Now (small, prevents future drift):** Add `'audio_plan'` to `studio_project_prompt_overrides.kind` enum.
-3. **Before v1 ship (medium):** `cast_ids` → join table. Engine primitive that's actively painful.
+1. **Now (done locally):** Backend intake handler routes `targetRuntime` → `project_brief.targetRuntime` instead of `target_duration`; `target_duration` remains per-shot pacing.
+2. **Now (small, prevents future drift):** Add `'character_looks'`, `'environment_looks'`, and `'audio_plan'` to `studio_project_prompt_overrides.kind`.
+3. **Now (v1 correctness):** Mirage realtime must be table-prefix aware and backed by owner-scoped RLS policies for any `studio_*` tables the browser subscribes to.
 4. **Before workflow #3 (the pattern fix):** Move music_video-specific columns to `project_brief.audioAnalysis`. Or accept the dead-weight columns and revisit when adding ads/reels.
-5. **v1.5 cosmetic pass:** TEXT→JSONB conversions, int4→boolean conversions, `studio_mcp_tokens.user_id` uuid+FK.
+5. **v1.5 cosmetic pass:** TEXT→JSONB conversions, int4→boolean conversions, `studio_mcp_tokens.user_id` uuid+FK, optional `cast_ids` join table if querying shot/cast relationships becomes painful.
 
 Saul's call on #4 is the big one. Doing it now means coordinated migration + ~6 service files. Doing it later means the next workflow inherits the bleed and may compound it.
 

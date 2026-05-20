@@ -76,50 +76,44 @@ export const ScriptPhase: React.FC<Props> = ({
 
   return (
     <motion.div key="script" {...phaseTransition} className="space-y-6">
-      {/* Director Settings */}
-      <div className="surface rounded-xl p-5">
-        <div className="flex items-end gap-6 flex-wrap">
-          <div className="space-y-2">
-            <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Style</label>
-            <div className="flex gap-1 surface-inset rounded-md p-0.5">
-              <button
-                onClick={() => onUpdateProject({ videoMode: 'montage' })}
-                className={`px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${project.videoMode === 'montage' ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
-                title="Quick cuts, varied angles, visual variety — each shot is a self-contained moment"
-              >
-                Montage
-              </button>
-              <button
-                onClick={() => onUpdateProject({ videoMode: 'cinematic' })}
-                className={`px-3 py-1.5 rounded text-[11px] font-medium transition-colors ${project.videoMode === 'cinematic' ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
-                title="Smooth visual flow, shots connect to each other with continuity between frames"
-              >
-                Cinematic
-              </button>
-            </div>
+      {/* Director Settings — single dense row, matches BlueprintContextBar's
+          Dropdown shape for aspect/resolution/model controls. */}
+      <div className="surface rounded-xl p-4">
+        <div className="flex items-center gap-5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Style</span>
+            <Dropdown
+              value={project.videoMode || 'montage'}
+              onChange={v => onUpdateProject({ videoMode: v })}
+              size="xs"
+              title="Drives Claude's script-planning prompt. Montage = rhythmic coverage, each shot a clear beat. Cinematic = fewer stronger moments with continuity. Preset picks a sensible default."
+              options={[
+                { value: 'montage', label: 'Montage' },
+                { value: 'cinematic', label: 'Cinematic' },
+              ]}
+            />
           </div>
           {(() => {
             const model = getVideoModel(project.videoModel);
             const durations = model.durations;
-            return durations.length === 1 ? (
-              <div className="space-y-2">
-                <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Shot length</label>
-                <div className="px-3 py-1.5 text-[11px] font-mono text-zinc-300">{durations[0]}s <span className="text-zinc-500 font-sans">(fixed by {model.label})</span></div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <label className="text-[11px] uppercase font-medium text-zinc-400 tracking-wide block">Shot length</label>
-                <div className="flex gap-1 surface-inset rounded-md p-0.5">
-                  {durations.map(d => (
-                    <button
-                      key={d}
-                      onClick={() => onUpdateProject({ targetDuration: d })}
-                      className={`px-3 py-1.5 rounded text-[11px] font-mono transition-colors ${project.targetDuration === d ? 'bg-white text-black' : 'text-zinc-400 hover:text-zinc-300'}`}
-                    >
-                      {d}s
-                    </button>
-                  ))}
-                </div>
+            const selectedDuration = durations.includes(project.targetDuration)
+              ? project.targetDuration
+              : durations[0];
+            return (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Shot length</span>
+                {durations.length === 1 ? (
+                  <span className="text-xs font-mono text-zinc-300">
+                    {durations[0]}s <span className="text-zinc-400">· fixed by {model.label}</span>
+                  </span>
+                ) : (
+                  <Dropdown
+                    value={String(selectedDuration)}
+                    onChange={v => onUpdateProject({ targetDuration: Number(v) })}
+                    size="xs"
+                    options={durations.map(d => ({ value: String(d), label: `${d}s` }))}
+                  />
+                )}
               </div>
             );
           })()}

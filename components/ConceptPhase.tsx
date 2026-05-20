@@ -56,7 +56,7 @@ export const ConceptPhase: React.FC<Props> = ({
           {/* Editable concept fields */}
           <div className="grid grid-cols-3 gap-4 text-xs">
             {[
-              { key: 'deity', label: 'Deity' },
+              { key: 'subject', label: 'Subject' },
               { key: 'mood', label: 'Mood' },
               { key: 'conceptDirection', label: 'Direction' },
             ].map(({ key, label }) => (
@@ -74,7 +74,7 @@ export const ConceptPhase: React.FC<Props> = ({
                     }
                   }}
                   className="text-white outline-none border-b border-dashed border-white/[0.1] hover:border-white/[0.3] focus-visible:border-white/40 focus-visible:ring-0 pb-0.5 cursor-text transition-colors"
-                >{(project.lockedConcept as any)?.[key]}</span>
+                >{key === 'subject' ? ((project.lockedConcept as any)?.subject || (project.lockedConcept as any)?.primarySubject || (project.lockedConcept as any)?.deity) : (project.lockedConcept as any)?.[key]}</span>
                 {savedFlash === `concept-${key}` && <span className="text-[10px] text-emerald-400/70 ml-1">Saved</span>}
               </div>
             ))}
@@ -155,7 +155,7 @@ export const ConceptPhase: React.FC<Props> = ({
               <AutoGrowTextarea
                 value={conceptNote}
                 onChange={e => setConceptNote(e.target.value)}
-                placeholder="Optional nudge — e.g. 'more abstract, less literal deity imagery'"
+                placeholder="Optional nudge — e.g. 'more abstract, more character-driven, quieter mood'"
                 rows={1}
                 disabled={isLoading}
                 className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed text-left disabled:opacity-50"
@@ -347,7 +347,7 @@ export const ConceptPhase: React.FC<Props> = ({
                   <span className="text-[11px] text-zinc-400 font-mono">{idx + 1}</span>
                 </div>
                 <div className="space-y-2 text-sm flex-1">
-                  <div><span className="text-white font-medium">Deity:</span> <span className="text-zinc-300">{concept.deity}</span></div>
+                  <div><span className="text-white font-medium">Subject:</span> <span className="text-zinc-300">{concept.subject || concept.primarySubject || concept.deity}</span></div>
                   <div><span className="text-white font-medium">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
                   <p className="text-zinc-300 leading-relaxed">{concept.theme}</p>
                   {concept.description && <p className="text-zinc-400 text-xs leading-relaxed">{concept.description}</p>}

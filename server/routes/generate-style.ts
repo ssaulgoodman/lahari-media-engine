@@ -201,6 +201,7 @@ export const mountStyleRoutes = (router: Router) => {
         subject,
         genPrompt,
         preset,
+        getImageGenerationModelName(project.image_model),
       );
       const durationMs = Date.now() - t0;
 

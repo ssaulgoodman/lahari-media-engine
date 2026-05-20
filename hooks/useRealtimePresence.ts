@@ -4,6 +4,9 @@ import { ApiProject } from '../types';
 import * as api from '../services/api';
 import { supabase } from '../lib/supabase';
 
+const TABLE_PREFIX = (import.meta.env.VITE_DB_TABLE_PREFIX as string | undefined) || 'studio';
+const table = (name: string) => `${TABLE_PREFIX}_${name}`;
+
 export type AgentOperationRow = {
   id: string;
   project_id: string;
@@ -84,8 +87,8 @@ export const useRealtimePresence = (
     const handleProjectChange = (payload: any) => {
       const row = (payload.new || payload.old) as any;
       if (row?.project_id && row.project_id !== projectId) return;
-      if (row?.id && row.id !== projectId && payload.table === 'lahari_projects') return;
-      if (payload.table === 'lahari_director_events' && row?.source === 'codex') {
+      if (row?.id && row.id !== projectId && payload.table === table('projects')) return;
+      if (payload.table === table('director_events') && row?.source === 'codex') {
         scheduleRealtimeProjectRefresh(row.summary || 'Codex updated the project');
         return;
       }
@@ -93,19 +96,18 @@ export const useRealtimePresence = (
     };
 
     const channel = supabase
-      .channel(`lahari-project-${projectId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_agent_operations', filter: `project_id=eq.${projectId}` }, handleAgentOperation)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_projects', filter: `id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_scenes', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_shots', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_cast_members', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_environments', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_assets', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_storyboard_versions', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_renders', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_config', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_prompt_overrides', filter: `project_id=eq.${projectId}` }, handleProjectChange)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lahari_director_events', filter: `project_id=eq.${projectId}` }, handleProjectChange);
+      .channel(`${TABLE_PREFIX}-project-${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('agent_operations'), filter: `project_id=eq.${projectId}` }, handleAgentOperation)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('projects'), filter: `id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('scenes'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('cast_members'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('environments'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('assets'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('storyboard_versions'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('renders'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('project_config'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: table('project_prompt_overrides'), filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: table('director_events'), filter: `project_id=eq.${projectId}` }, handleProjectChange);
 
     channel.subscribe();
 

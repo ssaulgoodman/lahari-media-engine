@@ -102,6 +102,7 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `DB_TABLE_PREFIX` - optional. Defaults to `lahari`. Set to `studio` for the fresh platform DB.
+- `VITE_DB_TABLE_PREFIX` - optional frontend realtime table prefix. Defaults to `studio` in this Mirage lane. Set to match `DB_TABLE_PREFIX` if testing a legacy/prefixed environment.
 - `SUPABASE_BUCKET` / `STORAGE_BUCKET` - optional. Defaults to `lahari-assets`. Set to something like `studio-assets` for the clean project.
 - `CORS_ORIGINS` - comma-separated in prod.
 - `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` - sibling renderer service URL and `x-renderer-secret`.

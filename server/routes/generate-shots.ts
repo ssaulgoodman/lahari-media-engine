@@ -256,6 +256,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       failedImagePath,
       aspectRatio: project.aspect_ratio || '16:9',
       additionalRefs: additionalRefs.length > 0 ? additionalRefs : undefined,
+      model: getImageGenerationModelName(project.image_model),
     });
 
     const durationMs = Date.now() - t0;
@@ -712,6 +713,7 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
       additionalRefs: extraRefs.length > 0 ? extraRefs : undefined,
       userFeedback: shot.end_user_feedback || undefined,
       failedImagePath: failedEndFramePath,
+      model: getImageGenerationModelName(project.image_model),
     });
 
     const assetId = uuidv4();

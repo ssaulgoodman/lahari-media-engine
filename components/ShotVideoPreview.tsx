@@ -10,7 +10,7 @@ interface Props {
 
 // Two independent audio channels:
 // 1. Video native audio (speaker icon) — muted by default, most Veo/Seedance clips are silent
-// 2. Song audio (music note icon) — plays the devotional track at the shot's timestamp
+// 2. Source audio (music note icon) — plays the project audio at the shot's timestamp
 export const ShotVideoPreview: React.FC<Props> = ({ videoUrl, audioUrl, globalStartSec, durationSec, className }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);

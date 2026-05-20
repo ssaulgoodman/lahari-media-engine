@@ -142,12 +142,13 @@ const checkSupabase = async (): Promise<SetupCheck[]> => {
   }
 
   try {
-    const res = await supabaseFetch('/rest/v1/lahari_projects?select=id,title,status&limit=1');
+    const tablePrefix = process.env.DB_TABLE_PREFIX || 'lahari';
+    const res = await supabaseFetch(`/rest/v1/${tablePrefix}_projects?select=id,title,status&limit=1`);
     const body = await res.text();
     checks.push({
       name: 'supabase:projects',
       status: res.ok ? 'ok' : 'fail',
-      message: res.ok ? 'listed 1 Lahari project row successfully' : `failed to list projects: ${res.status} ${body.slice(0, 220)}`,
+      message: res.ok ? `listed 1 ${tablePrefix} project row successfully` : `failed to list projects: ${res.status} ${body.slice(0, 220)}`,
     });
   } catch (error) {
     checks.push({

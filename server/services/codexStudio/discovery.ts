@@ -1,12 +1,13 @@
-import { getSB, T } from '../../database.js';
+import { getSB, T, usesLegacyQueueAdapter } from '../../database.js';
 import { listQueue, type QueueItem } from '../supabase.js';
 import { webStudioUrl } from './core.js';
 
 const appBaseUrl = () => (
-  process.env.LAHARI_STUDIO_URL
+  process.env.MIRAGE_STUDIO_URL
+  || process.env.LAHARI_STUDIO_URL
   || process.env.APP_URL
   || process.env.PUBLIC_APP_URL
-  || 'https://lahari-media-engine-production.up.railway.app'
+  || 'https://mirage-platform-production-05ca.up.railway.app'
 ).replace(/\/+$/, '');
 
 const clampLimit = (limit?: number, fallback = 20, max = 100) => {
@@ -126,6 +127,17 @@ const normalizeProjectMatch = (project: UserProjectRow) => ({
 
 export const listQueueForDirector = async (userId: string, opts: { status?: string; query?: string; limit?: number } = {}) => {
   const limit = clampLimit(opts.limit);
+  if (!usesLegacyQueueAdapter()) {
+    return {
+      kind: 'mirage.queue.list',
+      generatedAt: new Date().toISOString(),
+      limit,
+      query: opts.query || null,
+      status: opts.status || 'all',
+      message: 'Legacy music queue is disabled for this studio workspace. Use direct project intake or search projects by title.',
+      items: [],
+    };
+  }
   const query = normalize(opts.query);
   const rows = await listQueue({ status: opts.status || 'all', currentUserId: userId });
   const filtered = query
@@ -137,7 +149,7 @@ export const listQueueForDirector = async (userId: string, opts: { status?: stri
   const sliced = filtered.slice(0, limit);
   const projectsByQueue = await loadUserProjectsByQueue(userId, sliced.map((item) => item.id));
   return {
-    kind: 'lahari.queue.list',
+    kind: 'mirage.queue.list',
     generatedAt: new Date().toISOString(),
     limit,
     query: opts.query || null,
@@ -160,11 +172,13 @@ export const searchCatalogForDirector = async (userId: string, query: string, op
     .limit(limit);
   if (error) throw new Error(`DB project search: ${error.message}`);
 
-  const queue = await listQueueForDirector(userId, { query: clean, limit });
+  const queue = usesLegacyQueueAdapter()
+    ? await listQueueForDirector(userId, { query: clean, limit })
+    : { items: [] as any[] };
   const projectMatches = ((projects as UserProjectRow[]) || []).map(normalizeProjectMatch);
   const queueMatches = queue.items.filter((item: any) => !projectMatches.some((project: any) => project.sourceQueueId && project.sourceQueueId === item.queueId));
   return {
-    kind: 'lahari.catalog.search',
+    kind: 'mirage.catalog.search',
     generatedAt: new Date().toISOString(),
     query: clean,
     matches: [...projectMatches, ...queueMatches].slice(0, limit),
@@ -183,17 +197,17 @@ export const resolveProjectForDirector = async (userId: string, query: string) =
     .maybeSingle();
   if (exactProject && exactProject.user_id !== userId) {
     return {
-      kind: 'lahari.project.resolve',
+      kind: 'mirage.project.resolve',
       query: clean,
       status: 'not_owned_by_this_account',
-      message: 'A project with this ID exists, but it is not owned by the authenticated Lahari account.',
+      message: 'A project with this ID exists, but it is not owned by the authenticated Mirage account.',
       matches: [],
     };
   }
   if (exactProject) {
     const project = normalizeProjectMatch(exactProject as UserProjectRow);
     return {
-      kind: 'lahari.project.resolve',
+      kind: 'mirage.project.resolve',
       query: clean,
       status: 'project_found',
       project,
@@ -208,7 +222,7 @@ export const resolveProjectForDirector = async (userId: string, query: string) =
     const match: any = attachable[0];
     const projectId = match.type === 'project' ? match.projectId : match.currentUserProjectId;
     return {
-      kind: 'lahari.project.resolve',
+      kind: 'mirage.project.resolve',
       query: clean,
       status: 'project_found',
       projectId,
@@ -225,7 +239,7 @@ export const resolveProjectForDirector = async (userId: string, query: string) =
   if (search.matches.length === 1) {
     const match: any = search.matches[0];
     return {
-      kind: 'lahari.project.resolve',
+      kind: 'mirage.project.resolve',
       query: clean,
       status: match.type === 'queue_item' ? 'queue_item_found_not_started' : 'project_found',
       match,
@@ -234,7 +248,7 @@ export const resolveProjectForDirector = async (userId: string, query: string) =
     };
   }
   return {
-    kind: 'lahari.project.resolve',
+    kind: 'mirage.project.resolve',
     query: clean,
     status: search.matches.length ? 'multiple_matches' : 'not_found',
     matches: search.matches,

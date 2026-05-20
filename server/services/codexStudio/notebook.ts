@@ -30,7 +30,7 @@ export type NotebookFile = {
   description: string;
 };
 
-const normalizedProjectDir = (project: Project) => `lahari/projects/${project.id}`;
+const normalizedProjectDir = (project: Project) => `mirage/projects/${project.id}`;
 const LAHARI_SKILL_NAMES = [
   'lahari-director',
   'storyboard-prompt-craft',
@@ -51,9 +51,9 @@ const buildWorkspaceInstructions = (project: Project): string => {
   const preset = getPipelinePreset(project.presetKey);
   const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
   const seedKind = project.seedKind || workflow.primarySeed;
-  return `# Lahari Workspace
+  return `# Mirage Workspace
 
-This folder is the local notebook for Lahari project "${project.title}" (${project.id}).
+This folder is the local notebook for Mirage project "${project.title}" (${project.id}).
 
 Notebook version: ${NOTEBOOK_VERSION}
 
@@ -62,19 +62,19 @@ Project mode:
 - Workflow: ${workflow.key} — ${workflow.summary}
 - Preset: ${preset.key} — ${preset.label}
 
-These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which pipeline stages are required, optional, supplied, or skipped. Preset says taste/model/default prompt rules. Do not assume songs, lyrics, deity, temple, devotional context, or audio analysis unless this project's seed/workflow/preset says so.
+These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which pipeline stages are required, optional, supplied, or skipped. Preset says taste/model/default prompt rules. Do not assume songs, lyrics, religious subjects, fixed locations, or audio analysis unless this project's seed/workflow/preset says so.
 
-Supabase is canonical. This is an artist notebook, not the Lahari source checkout. Use Lahari MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Lahari instead of substituting shell commands.
+Supabase is canonical. This is an artist notebook, not the engine source checkout. Use Mirage MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Mirage instead of substituting shell commands.
 
-If the MCP server returns a newer notebookVersion than the one shown here or in lahari/projects/${project.id}/notebook.json, refresh before continuing. Preferred path: call mint_cli_token, then run the returned command for the active shell in this workspace. Use commands.posix on macOS/Linux. Use commands.powershell on Windows; it wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is still blocked, call get_project_notebook_manifest and then read_project_notebook_file path-by-path. Last fallback: call write_project_notebook and write the returned files manually only when the payload is small enough.
+If the MCP server returns a newer notebookVersion than the one shown here or in mirage/projects/${project.id}/notebook.json, refresh before continuing. Preferred path: call mint_cli_token, then run the returned command for the active shell in this workspace. Use commands.posix on macOS/Linux. Use commands.powershell on Windows; it wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is still blocked, call get_project_notebook_manifest and then read_project_notebook_file path-by-path. Last fallback: call write_project_notebook and write the returned files manually only when the payload is small enough.
 
-Files under mirrors/ are read-only desk copies written from Lahari state. Do not hand-edit mirrors; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
+Files under mirrors/ are read-only desk copies written from Mirage state. Do not hand-edit mirrors; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
 
 Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For audio work, inspect mirrors/audio-plan.md and use apply_audio_plan for structured JSON updates. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
-Project-local Lahari skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
+Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
 
 Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
 
@@ -96,7 +96,7 @@ const readSkillBody = (skillName: string): string => {
   ];
   const skillPath = skillPathCandidates.find((candidate) => fs.existsSync(candidate));
   if (!skillPath) {
-    throw new Error(`Lahari notebook skill resource missing: ${skillName}`);
+    throw new Error(`Mirage notebook skill resource missing: ${skillName}`);
   }
   return fs.readFileSync(skillPath, 'utf8');
 };
@@ -108,14 +108,14 @@ const buildSkillFiles = (): NotebookFile[] => LAHARI_SKILL_NAMES.flatMap((skillN
       path: `.agents/skills/${skillName}/SKILL.md`,
       mode: 'skill',
       writePolicy: 'overwrite',
-      description: `Codex project-local Lahari skill: ${skillName}. Restart/open a fresh session after first write.`,
+      description: `Codex project-local Mirage skill: ${skillName}. Restart/open a fresh session after first write.`,
       content,
     },
     {
       path: `.claude/skills/${skillName}/SKILL.md`,
       mode: 'skill',
       writePolicy: 'overwrite',
-      description: `Claude Code project-local Lahari skill: ${skillName}. Restart/open a fresh session after first write.`,
+      description: `Claude Code project-local Mirage skill: ${skillName}. Restart/open a fresh session after first write.`,
       content,
     },
   ];
@@ -175,10 +175,10 @@ Project: ${project.title}
 
 ## Locked Concept
 
-${locked ? `### ${locked.title || locked.deity || 'Untitled'}
+${locked ? `### ${locked.title || locked.subject || locked.primarySubject || locked.deity || 'Untitled'}
 
 - Direction: ${locked.direction || locked.conceptDirection || 'None'}
-- Deity: ${locked.deity || 'None'}
+- Subject: ${locked.subject || locked.primarySubject || locked.deity || 'None'}
 - Mood: ${locked.mood || 'None'}
 
 ${md(locked.description || locked.conceptDirection || JSON.stringify(locked, null, 2))}` : 'No locked concept.'}
@@ -624,14 +624,14 @@ export const buildProjectNotebook = async (project: Project) => {
       path: 'AGENTS.md',
       mode: 'instructions',
       writePolicy: 'overwrite',
-      description: 'Workspace-local Lahari notebook instructions.',
+      description: 'Workspace-local Mirage notebook instructions.',
       content: buildWorkspaceInstructions(project),
     },
     {
       path: 'CLAUDE.md',
       mode: 'instructions',
       writePolicy: 'overwrite',
-      description: 'Claude Code workspace-local Lahari notebook instructions.',
+      description: 'Claude Code workspace-local Mirage notebook instructions.',
       content: buildWorkspaceInstructions(project),
     },
     ...buildSkillFiles(),
@@ -747,7 +747,7 @@ export const buildProjectNotebook = async (project: Project) => {
       mode: 'journal',
       writePolicy: 'create_if_missing',
       description: 'Local operator journal. Append notes here; do not overwrite unless intentionally resetting the notebook.',
-      content: `# Lahari Journal
+      content: `# Mirage Journal
 
 Project: ${project.title}
 Project ID: ${project.id}
@@ -760,7 +760,7 @@ Opened project and wrote the initial local notebook.
   ];
 
   return {
-    kind: 'lahari.project.notebook',
+    kind: 'mirage.project.notebook',
     notebookVersion: NOTEBOOK_VERSION,
     generatedAt: new Date().toISOString(),
     project: {

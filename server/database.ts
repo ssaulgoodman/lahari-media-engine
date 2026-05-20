@@ -24,6 +24,7 @@ const getSB = (): SupabaseClient => {
 const TABLE_PREFIX = process.env.DB_TABLE_PREFIX || 'lahari';
 export const supportsPlatformColumns = (): boolean =>
   TABLE_PREFIX === 'studio' || process.env.DB_INCLUDE_PLATFORM_COLUMNS === '1';
+export const usesLegacyQueueAdapter = (): boolean => TABLE_PREFIX !== 'studio';
 
 // Table name mapping — keeps route code clean while DB uses prefixed names.
 const T = {

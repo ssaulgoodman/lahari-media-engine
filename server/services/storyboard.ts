@@ -520,7 +520,7 @@ const renderWithProvider = async (
     };
   }
 
-  const imagePath = await generateNanoBanana2(prompt, aspectRatio, refs);
+  const imagePath = await generateNanoBanana2(prompt, aspectRatio, refs, provider.runtimeModel);
   return {
     storagePath: imagePath,
     model: provider.runtimeModel,

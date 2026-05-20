@@ -4,7 +4,7 @@
  * PRESET ABSTRACTION WARNING (2026-05-17): this catalog is currently a
  * legacy/internal reference surface. Runtime prompt builders have begun moving
  * to core + workflow + preset composition (`server/presets.ts`), and this file
- * still contains older Lahari/devotional examples in several templates. Do not
+ * still contains older compatibility examples in several templates. Do not
  * treat it as public Prompt Library copy until the catalog is regenerated from
  * or hand-synced with the runtime builders.
  *
@@ -208,7 +208,7 @@ Return only the structured audio plan JSON.`,
       { name: 'context', description: 'Optional song context' },
       { name: 'userNote', description: 'Optional director note to steer the concepts' },
     ],
-    template: `You are a visionary music video director planning an Indian devotional music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
+    template: `You are a visionary music video director planning a music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
 
 SONG: {{title}} ({{language}})
 SONG TYPE (from audio analysis): {{songType}}, {{traits}}
@@ -233,11 +233,11 @@ Generate EXACTLY 3 creative directions for a music video. Each should offer a ge
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
-    summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Uses song type + meditative/narrative signals to keep devotional songs from drifting into generic plot logic.',
+    summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Uses song type + meditative/narrative signals to keep the video from drifting into generic plot logic.',
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
-      { name: 'concept', description: 'Locked concept (deity, direction, theme, expanded description, mood)' },
+      { name: 'concept', description: 'Locked concept (subject, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
@@ -257,7 +257,7 @@ DIRECTOR STYLE:
 SONG TYPE (from audio analysis): {{songType}}, {{traits}}
 
 CONCEPT:
-Deity/subject: {{concept.deity}}
+Subject: {{concept.subject || concept.primarySubject || concept.deity}}
 Direction: {{concept.conceptDirection}}
 Core idea: {{concept.theme}}
 Expanded brief: {{concept.description}}
@@ -273,10 +273,10 @@ Example: 21s at 8s → ceil(21/8) = 3 shots (8+8+5).
 Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
 
 SEEDANCE STORYBOARD PACING (when videoModel starts with "seedance"):
-- A Lahari shot is one storyboard-controlled clip, not one continuous camera take.
+- A studio shot is one storyboard-controlled clip, not one continuous camera take.
 - Each shot may contain internal cuts and angles, but it must stay one clear story/music idea.
 - Prefer 15s when the phrase supports a real mini-scene.
-- Allowed range: 4-15s. Use 4-8s only for short transitions or quick devotional responses.
+- Allowed range: 4-15s. Use 4-8s only for short transitions or quick responses.
 - Shot durations inside each scene must add exactly to the scene duration.
 - direction should be a practical edited beat sequence that a storyboard can show.
 ═══════════════════════════════════════════════════════════════
@@ -291,13 +291,13 @@ SCENE rules:
 - Each shot direction should describe WHAT HAPPENS in the moment, not framing or camera movement
 - Good: "Ganesha receives the offering, his expression softens"
 - Good: "Devotee prostrates before the idol, hands trembling"
-- Good: "Each sacred name reveals a different facet of Ganesha's presence in the temple space"
-- Good: "The devotee's offering becomes the bridge between human longing and divine grace"
+- Good: "Each repeated phrase reveals a different facet of the central character's inner state"
+- Good: "The object in the character's hands becomes the bridge between longing and decision"
 - Bad: "Slow dolly in on Ganesha"
-- Bad: "Wide establishing shot of temple"
-{{isMeditative ? "- For meditative/devotional pieces: prefer revelation, invocation, darshan, ritual progression, symbolic manifestation, and contemplative presence over plot twists or problem-solution arcs." : ""}}
+- Bad: "Wide establishing shot of the location"
+{{isMeditative ? "- For meditative/contemplative pieces: prefer gradual revelation, ritualized action, symbolic progression, and presence over plot twists or problem-solution arcs." : ""}}
 - Avoid mechanical alternation between two visual worlds unless the song truly demands it
-- Not every sacred name or attribute needs a literal illustration
+- Not every lyric, line, or attribute needs a literal illustration
 - Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields
 - Build progression across the scene: invocation -> deepening presence -> surrender`,
     source: { file: 'server/services/claude.ts', lines: 'planScenes' },
@@ -313,7 +313,7 @@ SCENE rules:
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
-      { name: 'concept', description: 'Locked concept (deity, direction, theme, expanded description, mood)' },
+      { name: 'concept', description: 'Locked concept (subject, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
       { name: 'meaning', description: 'Meaning summary' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
@@ -324,12 +324,12 @@ SCENE rules:
       { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `You are the practical script planner for Lahari, an AI music-video tool for devotional songs.
+    template: `You are the practical script planner for Mirage, an AI video studio for music videos.
 
 Your job is production structure: cast, reusable locations, scenes, and what physically happens in each shot.
 Write for assets that artists can actually generate and storyboard. Be concrete, calm, and shootable.
 
-Do not write pompous poetry. Do not use vague phrases like "divine grace flows", "cosmic energy blooms", or "the universe awakens" unless you translate them into visible human action, ritual action, or a simple physical image.
+Do not write pompous poetry. Do not use vague phrases like "cosmic energy blooms", "the universe awakens", or "emotion fills the air" unless you translate them into visible human action, environmental action, or a simple physical image.
 Do not include camera directions, lens choices, color palette, art style, rendering language, or overbuilt fantasy architecture in the script. Storyboard and cinematography steps happen later.
 Avoid impossible crowds, dozens of extras, elaborate VFX, and prop chaos unless the song explicitly demands it.
 
@@ -337,7 +337,7 @@ DIRECTOR STYLE: {{videoMode}}
 SONG TYPE: {{songType}}, {{traits}}
 
 CONCEPT:
-Deity/subject: {{concept.deity}}
+Subject: {{concept.subject || concept.primarySubject || concept.deity}}
 Direction: {{concept.conceptDirection}}
 Core idea: {{concept.theme}}
 Expanded brief: {{concept.description}}
@@ -354,10 +354,10 @@ MUSICAL STRUCTURE:
 
 {{videoModel startsWith seedance ? "
 SEEDANCE STORYBOARD PACING:
-- A Lahari shot is one storyboard-controlled clip, not one continuous camera take.
+- A studio shot is one storyboard-controlled clip, not one continuous camera take.
 - Each shot may contain internal cuts and angles, but it must be one clear story/music idea.
 - Prefer 15s when the phrase supports a real mini-scene.
-- Allowed range: 4-15s. Use 4-8s only for short transitions or quick devotional responses.
+- Allowed range: 4-15s. Use 4-8s only for short transitions or quick responses.
 - Shot durations inside each scene must add exactly to the scene duration.
 - direction should be a practical edited beat sequence that a storyboard can show.
 " : "
@@ -372,7 +372,7 @@ Return only JSON matching the strict schema.
 
 CAST:
 - Include only characters actually needed.
-- Include the deity and key human figures by proper names.
+- Include the main subject and key figures by proper names.
 - Descriptions are neutral reusable reference identities: physical appearance, cultural identity, costume, ornaments. No action, no props in hands, no art style.
 
 ENVIRONMENTS:
@@ -405,12 +405,12 @@ SCENES:
       { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNotes', description: 'Optional preference for all 4 variations' },
     ],
-    template: `You are a Director of Photography designing the visual language for an Indian devotional music video.
+    template: `You are a Director of Photography designing the visual language for a music video.
 
-The audience is Indian. The imagery must feel culturally authentic, not generic fantasy.
+The imagery must feel specific to the artist's world and source material, not generic fantasy.
 These descriptions will be used as prompts for Gemini image generation.
 
-SONG: {{concept.deity}} — {{concept.theme}}
+SONG: {{concept.subject || concept.primarySubject || concept.deity}} — {{concept.theme}}
 Mood: {{concept.mood}}
 Language: {{concept.language}}
 {{songType || traits ? "SONG TYPE: " + [songType, traits].filter(Boolean).join(", ") : ""}}
@@ -427,7 +427,7 @@ MEANING:
 Propose 4 distinct visual style directions using the propose_style_directions tool.
 
 Each direction must produce a visibly different reference image: vary color temperature, medium/rendering approach, lighting behavior, and artistic/cultural reference.
-Do not let all four directions collapse into warm, dark, temple-chiaroscuro variants.
+Do not let all four directions collapse into the same warm, dark, high-contrast variant.
 Photographic, painterly, illustrated, miniature-inspired, or mixed-media directions are all welcome if specific and culturally respectful.
 
 For each: a title (2-5 words) and description (2 short punchy sentences, concrete and compact).
@@ -454,7 +454,7 @@ QUALITY GUIDELINES for the image generation downstream:
     variables: [
       { name: 'currentDescription', description: 'Current direction text' },
       { name: 'feedback', description: 'Director feedback' },
-      { name: 'concept', description: 'Locked concept (for mood/deity context)' },
+      { name: 'concept', description: 'Locked concept (for subject/mood context)' },
     ],
     template: `You are an elite DP refining a visual direction based on feedback.
 
@@ -462,7 +462,7 @@ CURRENT DIRECTION:
 {{currentDescription}}
 
 CONTEXT:
-- Deity/Subject: {{concept.deity}}
+- Subject: {{concept.subject || concept.primarySubject || concept.deity}}
 - Mood: {{concept.mood}}
 
 USER FEEDBACK:
@@ -621,11 +621,11 @@ SEEDANCE 2.0 PROMPTING MODE:
 - Think like a production storyboard: each motionPrompt should read as a timed action cue for this exact shot duration, not a loose mood sentence.
 - Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
 - Use each shot's listed duration when helpful: \"Over 5s...\" or \"During the final second...\" for holds, reveals, and beat hits.
-- Lahari provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
+- The studio provides final audio in render or via explicit audio references, and Segmind is called with generate_audio=false unless the workflow says otherwise. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects by default.
 - You may reference the song rhythm visually: \"on the vocal phrase\", \"on the drum accent\", \"as the line resolves\", \"with the chant pulse\". Keep it visible and editorial.
 - Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
-- If the start frame must stay consistent, say so positively: \"maintain the same face, costume, and temple geometry while...\"
-- Avoid multi-shot language inside one Lahari shot unless the direction explicitly requires a transition. Lahari stitches separate clips later.
+- If the start frame must stay consistent, say so positively: \"maintain the same face, costume, and room geometry while...\"
+- Avoid multi-shot language inside one studio shot unless the direction explicitly requires a transition. The render stage stitches separate clips later.
 " : "
 VIDEO MODEL PROMPTING MODE:
 - The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
@@ -650,7 +650,7 @@ BEFORE RETURNING, CHECK THE SEQUENCE:
 - No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
 - No mystical VFX unless explicitly described in the shot direction
 - At least consider 'prev_shot' for direct intensifications — don't default to all cuts
-- Every shot must advance the devotional arc, not just restate the previous beat
+- Every shot must advance the emotional or narrative arc, not just restate the previous beat
 
 Match the IDs exactly.`,
     source: { file: 'server/services/claude.ts', lines: 'writeShotPrompts' },
@@ -680,7 +680,7 @@ Match the IDs exactly.`,
       { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
       { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
     ],
-    template: `You are an art director planning one panel of a devotional music video storyboard. The locked style reference image is attached as vision input — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts:
+    template: `You are an art director planning one video storyboard. The locked style reference image is attached as vision input — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts:
 
 1. storyboardPrompt: ONE short image-render prompt (~330 words max). MUST include the panel layout + per-panel action descriptions inline + an explicit inter-panel consistency demand: style/lighting/palette from the style ref, character identity (face/costume/jewelry) from cast refs, environment geometry from the env ref — all stay CONSISTENT across every panel. Without this line panels drift apart and look like different scenes. Keep it lean: no "contract" bullet lists, no animation rules, no quality boilerplate, no "cinematic film still" language — cinema language fights non-realistic locked styles.
 2. cutPlanText: one short action line per panel. Format: "Panel N — <action>". No timestamps, no separate camera/action/motion-cue fields. Drives the downstream Seedance video prompt only.
@@ -711,7 +711,7 @@ Panel 2 ...`,
     model: 'nano-banana-2 / nano-banana-pro / gpt-image-2',
     modelLabel: 'Storyboard image provider (project storyboard_provider)',
     triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
-    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Three provider options: nano-banana-2 (Segmind, default), nano-banana-pro (Google gemini-3-pro-image-preview), gpt-image-2 (OpenAI).',
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Three provider options, all routed through Segmind BYOK: nano-banana-2 (default), nano-banana-pro, and gpt-image-2.',
     variables: [
       { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
       { name: 'storyboardProvider', description: 'Project storyboard provider: nano-banana-2 | nano-banana-pro | gpt-image-2' },
@@ -865,12 +865,12 @@ Output via rewrite_motion_prompt tool: { motionPrompt }`,
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6',
     triggeredBy: "Fires when you click 'Refine' on the locked concept.",
-    summary: 'Claude rewrites concept fields (theme, mood, conceptDirection) based on feedback while preserving deity and title.',
+    summary: 'Claude rewrites concept fields (theme, mood, conceptDirection) based on feedback while preserving subject and title.',
     variables: [
       { name: 'lockedConcept', description: 'Current locked concept JSON' },
       { name: 'feedback', description: 'Director feedback' },
     ],
-    template: `Refine the locked concept based on feedback. Keep deity and title.
+    template: `Refine the locked concept based on feedback. Keep subject and title.
 Rewrite: theme, mood, conceptDirection. Output via tool.`,
     source: { file: 'server/services/claude.ts', lines: 'refineConceptDirection' },
   },
@@ -997,7 +997,7 @@ Do not render text, panel borders, numbers, gutters, or split-screen artifacts f
       { name: 'compiledPrompt', description: 'The prompt that produced this image' },
       { name: 'styleDNA', description: 'Locked style keywords' },
     ],
-    template: `You are a meticulous Art Director reviewing this generated image for a devotional music video.
+    template: `You are a meticulous Art Director reviewing this generated image for a video project.
 
 SCORING RUBRIC (0-10):
   9-10: Publication ready. Style is spot-on, characters are recognizable, composition is compelling.

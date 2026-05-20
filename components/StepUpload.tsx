@@ -114,11 +114,11 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
         {/* Additional context */}
         <div className="surface rounded-xl p-6 space-y-3">
           <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Additional Context</h3>
-          <p className="text-zinc-400 text-[11px]">Add notes to guide concept generation — deity, narrative ideas, visual references.</p>
+          <p className="text-zinc-400 text-[11px]">Add notes to guide concept generation — subject, premise, tone, visual references.</p>
           <textarea
             value={editedContext}
             onChange={(e) => setEditedContext(e.target.value)}
-            placeholder="e.g. This is a devotional song for Lord Shiva…"
+            placeholder="e.g. Dreamlike coming-of-age anime with quiet city nights and a bittersweet ending..."
             className="w-full h-20 surface-inset rounded-lg p-4 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none"
           />
         </div>

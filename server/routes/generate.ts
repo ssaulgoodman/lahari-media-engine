@@ -68,6 +68,7 @@ router.post('/:id/generate-styles', async (req, res) => {
       notes || project.style_description,
       undefined,
       preset,
+      getStyleOptionsModelName(project.image_model),
     );
     const durationMs = Date.now() - t0;
 

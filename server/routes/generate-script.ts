@@ -16,6 +16,19 @@ import { getProjectRuntimePreset } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 
+const allowedShotDurations = (videoModel?: string | null): number[] => {
+  const model = String(videoModel || '');
+  if (model.startsWith('seedance')) return [4, 5, 6, 8, 10, 12, 15];
+  if (model.includes('fast')) return [8];
+  return [4, 6, 8];
+};
+
+const safeBasePacing = (project: any): number => {
+  const durations = allowedShotDurations(project.video_model);
+  const requested = Number(project.target_duration || durations[durations.length - 1] || 15);
+  return durations.includes(requested) ? requested : durations[durations.length - 1] || 15;
+};
+
 export const mountScriptRoutes = (router: Router) => {
 
 // ─── Generate Script ────────────────────────────────────────────────
@@ -65,7 +78,7 @@ router.post('/:id/generate-script', async (req, res) => {
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
-      basePacing: project.target_duration || 15,
+      basePacing: safeBasePacing(project),
       minShotDuration: getModelMinDuration(project.video_model),
       videoModel: project.video_model || undefined,
       userNote,
@@ -143,7 +156,7 @@ router.post('/:id/generate-script', async (req, res) => {
       });
 
       // Calculate per-shot durations: base pacing for all, last shot gets remainder (clamped)
-      const basePacing = project.target_duration || 15;
+      const basePacing = safeBasePacing(project);
       const sceneStartSec = parseTimestamp(scene.startTime);
       const sceneEndSec = parseTimestamp(scene.endTime);
       const sceneDuration = Math.max(0, sceneEndSec - sceneStartSec);
@@ -300,7 +313,7 @@ router.post('/:id/refine-script', async (req, res) => {
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
-      basePacing: project.target_duration || 15,
+      basePacing: safeBasePacing(project),
       minShotDuration: getModelMinDuration(project.video_model),
       preset: getProjectRuntimePreset(project, req.body?.presetKey),
       videoModel: project.video_model || undefined,
@@ -374,7 +387,7 @@ router.post('/:id/refine-script', async (req, res) => {
       // Calculate per-shot durations: standard mode uses base pacing +
       // remainder; Seedance storyboard mode preserves the planner's 4-15s
       // clip durations.
-      const basePacing = project.target_duration || 15;
+      const basePacing = safeBasePacing(project);
       const isSeedanceStoryboard = String(project.video_model || '').startsWith('seedance');
       const sceneStartSec = parseTimestamp(scene.startTime);
       const sceneEndSec = parseTimestamp(scene.endTime);

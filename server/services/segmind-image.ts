@@ -12,7 +12,11 @@ type RefImage = {
 };
 
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
-const NANO_BANANA_2_ENDPOINT = `${SEGMIND_BASE}/nano-banana-2`;
+const SEGMIND_IMAGE_ENDPOINTS: Record<string, string> = {
+  'nano-banana-2': `${SEGMIND_BASE}/nano-banana-2`,
+  'nano-banana-pro': `${SEGMIND_BASE}/nano-banana-pro`,
+  'gpt-image-2': `${SEGMIND_BASE}/gpt-image-2`,
+};
 const MAX_REFS = 14;
 
 const normalizeAspectRatio = (aspectRatio = '16:9'): string => {
@@ -25,6 +29,13 @@ const outputResolution = (): '1K' | '2K' | '4K' => {
   // Nano Banana 2 advertises 512px, but 16:9/1:1 512px requests fall below
   // the current pixel minimum and are rejected by the upstream model.
   return ['1K', '2K', '4K'].includes(value) ? value as any : '1K';
+};
+
+const gptImageSize = (aspectRatio = '16:9'): string => {
+  const normalized = normalizeAspectRatio(aspectRatio);
+  if (normalized === '1:1') return '1024x1024';
+  if (normalized === '9:16' || normalized === '3:4' || normalized === '4:5' || normalized === '2:3') return '1024x1536';
+  return '1536x1024';
 };
 
 const styleReferenceGuard = (refs: RefImage[]): string => {
@@ -110,37 +121,52 @@ export const generateNanoBanana2 = async (
   prompt: string,
   aspectRatio = '16:9',
   refs: RefImage[] = [],
+  model = 'nano-banana-2',
 ): Promise<string> => {
+  const runtimeModel = SEGMIND_IMAGE_ENDPOINTS[model] ? model : 'nano-banana-2';
   const cappedRefs = refs.slice(0, MAX_REFS);
   const imageUrls = await Promise.all(cappedRefs.map(refToUrl));
   const guardedPrompt = `${styleReferenceGuard(cappedRefs)}${prompt}`;
 
-  console.log(`[segmind-image] nano-banana-2 refs=${imageUrls.length}, aspect=${aspectRatio}, resolution=${outputResolution()}, prompt=${guardedPrompt.slice(0, 90)}...`);
+  console.log(`[segmind-image] ${runtimeModel} refs=${imageUrls.length}, aspect=${aspectRatio}, resolution=${outputResolution()}, prompt=${guardedPrompt.slice(0, 90)}...`);
 
-  const res = await fetch(NANO_BANANA_2_ENDPOINT, {
+  const body = runtimeModel === 'gpt-image-2'
+    ? {
+        prompt: guardedPrompt,
+        image_urls: imageUrls,
+        size: gptImageSize(aspectRatio),
+        quality: process.env.SEGMIND_GPT_IMAGE_QUALITY || 'high',
+        moderation: 'auto',
+        background: 'opaque',
+        output_compression: 100,
+        output_format: 'png',
+      }
+    : {
+        prompt: guardedPrompt,
+        image_urls: imageUrls,
+        web_search: false,
+        aspect_ratio: normalizeAspectRatio(aspectRatio),
+        output_format: 'png',
+        thinking_level: 'minimal',
+        safety_tolerance: 4,
+        output_resolution: outputResolution(),
+        response_modalities: 'TEXT_AND_IMAGE',
+        seed: Math.floor(Math.random() * 1000000),
+      };
+
+  const res = await fetch(SEGMIND_IMAGE_ENDPOINTS[runtimeModel], {
     method: 'POST',
     headers: {
       'x-api-key': await requireProviderApiKey('segmind'),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      prompt: guardedPrompt,
-      image_urls: imageUrls,
-      web_search: false,
-      aspect_ratio: normalizeAspectRatio(aspectRatio),
-      output_format: 'png',
-      thinking_level: 'minimal',
-      safety_tolerance: 4,
-      output_resolution: outputResolution(),
-      response_modalities: 'TEXT_AND_IMAGE',
-      seed: Math.floor(Math.random() * 1000000),
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    console.error(`[segmind-image] ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
-    throw new Error(`Nano Banana 2 failed (${res.status}). ${errText.slice(0, 180)}`);
+    console.error(`[segmind-image] ${runtimeModel} ${res.status} ${res.statusText}: ${errText.slice(0, 500)}`);
+    throw new Error(`${runtimeModel} failed (${res.status}). ${errText.slice(0, 180)}`);
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -154,7 +180,7 @@ export const generateNanoBanana2 = async (
     throw new Error(`Nano Banana 2 returned an unreadable response: ${text.slice(0, 180)}`);
   });
   const image = findImageString(json);
-  if (!image) throw new Error(`Nano Banana 2 returned no image result: ${JSON.stringify(json).slice(0, 300)}`);
+  if (!image) throw new Error(`${runtimeModel} returned no image result: ${JSON.stringify(json).slice(0, 300)}`);
   return saveImageString(image);
 };
 
@@ -163,9 +189,10 @@ const generateMany = async (
   aspectRatio: string,
   refs: RefImage[],
   count: number,
+  model?: string,
 ): Promise<string[]> => {
   const settled = await Promise.allSettled(
-    Array.from({ length: count }, () => generateNanoBanana2(prompt, aspectRatio, refs))
+    Array.from({ length: count }, () => generateNanoBanana2(prompt, aspectRatio, refs, model))
   );
   const paths = settled
     .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
@@ -180,7 +207,8 @@ const generateMany = async (
 
 export const generateImageWithRefs = async (
   parts: ContentPart[],
-  aspectRatio = '16:9'
+  aspectRatio = '16:9',
+  model?: string,
 ): Promise<string> => {
   const texts: string[] = [];
   const refs: RefImage[] = [];
@@ -199,15 +227,15 @@ export const generateImageWithRefs = async (
     }
   }
 
-  return generateNanoBanana2(texts.join('\n\n'), aspectRatio, refs);
+  return generateNanoBanana2(texts.join('\n\n'), aspectRatio, refs, model);
 };
 
 export const generateStyleOptions = async (
   subject: string,
   styleNotes?: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- signature parity with imagen.ts
   _projectId?: string,
   preset: PipelinePreset = getRuntimePreset(),
+  model?: string,
 ): Promise<{ style: string; assetPath: string }[]> => {
   const directions = styleNotes
     ? [
@@ -227,7 +255,7 @@ export const generateStyleOptions = async (
   const settled = await Promise.allSettled(
     directions.map(async (direction) => {
       const prompt = `Create one reusable visual style reference frame for ${preset.style.subjectPrompt(subject)}. ${direction}. Focus on lighting, palette, material texture, rendering approach, and atmosphere. Do not make a character reference portrait, collage, poster, or text image. ${preset.looks.qualityRules}`;
-      const assetPath = await generateNanoBanana2(prompt, '16:9', []);
+      const assetPath = await generateNanoBanana2(prompt, '16:9', [], model);
       return { style: direction, assetPath };
     })
   );
@@ -242,9 +270,10 @@ export const generateSingleStyleImage = async (
   subject: string,
   generationPrompt?: string,
   preset?: PipelinePreset,
+  model?: string,
 ): Promise<string> => {
   const prompt = generationPrompt || buildStylePrompt(styleDescription, subject, preset);
-  return generateNanoBanana2(prompt, '16:9', []);
+  return generateNanoBanana2(prompt, '16:9', [], model);
 };
 
 export const generateCharacterLooks = async (
@@ -254,10 +283,7 @@ export const generateCharacterLooks = async (
   aspectRatio: string = '16:9',
   userRefImagePath?: string,
   generationPrompt?: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- accepted
-  // for signature parity with imagen.ts; Segmind's nano-banana-2 is the
-  // single model, the registry's runtimeModel is informational here.
-  _model?: string,
+  model?: string,
   preset?: PipelinePreset,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
@@ -270,7 +296,7 @@ export const generateCharacterLooks = async (
   if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   prompt += `\n\nImportant: create a NEW isolated character portrait. Do not use the style reference as a background or layout.`;
 
-  return generateMany(prompt, aspectRatio, refs, 3);
+  return generateMany(prompt, aspectRatio, refs, 3, model);
 };
 
 export const generateEnvironmentLooks = async (
@@ -280,8 +306,7 @@ export const generateEnvironmentLooks = async (
   userRefImagePath?: string,
   userNote?: string,
   generationPrompt?: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _model?: string,
+  model?: string,
   preset?: PipelinePreset,
 ): Promise<string[]> => {
   const refs: RefImage[] = [];
@@ -293,7 +318,7 @@ export const generateEnvironmentLooks = async (
   let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx, preset });
   if (userNote) prompt += `\n\nDirector note: ${userNote}`;
 
-  return generateMany(prompt, aspectRatio, refs, 3);
+  return generateMany(prompt, aspectRatio, refs, 3, model);
 };
 
 export const generateShotStartFrame = async (opts: {
@@ -307,6 +332,7 @@ export const generateShotStartFrame = async (opts: {
   failedImagePath?: string;
   aspectRatio?: string;
   additionalRefs?: { imagePath: string }[];
+  model?: string;
 }): Promise<string> => {
   const refs: RefImage[] = [];
   for (const ref of opts.characterRefs) refs.push({ label: `Character identity reference: ${ref.name}`, imagePath: ref.imagePath });
@@ -330,7 +356,7 @@ Preserve character identities from character references. Match the environment r
   if (opts.userFeedback) prompt += `\n\nDirector note: ${opts.userFeedback}`;
   prompt += `\n\nSingle frame. No text, no watermark. Avoid generic fantasy, excessive AI gloss, and copying reference-image layouts.`;
 
-  return generateNanoBanana2(prompt, opts.aspectRatio || '16:9', refs);
+  return generateNanoBanana2(prompt, opts.aspectRatio || '16:9', refs, opts.model);
 };
 
 export const generateShotEndFrame = async (opts: {
@@ -343,6 +369,7 @@ export const generateShotEndFrame = async (opts: {
   additionalRefs?: { imagePath: string }[];
   userFeedback?: string;
   failedImagePath?: string;
+  model?: string;
 }): Promise<string> => {
   const refs: RefImage[] = [];
   if (opts.startFramePath) refs.push({ label: 'Start frame of this shot', imagePath: opts.startFramePath });
@@ -361,5 +388,5 @@ The start-frame reference shows the beginning. Generate what the camera sees mom
   if (opts.userFeedback) prompt += `\n\nDirector note: ${opts.userFeedback}`;
   prompt += `\n\nSingle frame. No text, no watermark.`;
 
-  return generateNanoBanana2(prompt, '16:9', refs);
+  return generateNanoBanana2(prompt, '16:9', refs, opts.model);
 };

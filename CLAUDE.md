@@ -31,6 +31,8 @@ Useful checks: `npm run build`, `npx tsc --noEmit`, `git diff --check`. There is
 - `SEGMIND_API_KEY` - video generation and Nano Banana 2 image renderer.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
+- `DB_TABLE_PREFIX` - backend table prefix. Mirage uses `studio`; Lahari uses `lahari`.
+- `VITE_DB_TABLE_PREFIX` - frontend realtime table prefix. Defaults to `studio` in this Mirage lane; set to match `DB_TABLE_PREFIX` when needed.
 - `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` - sibling renderer service and `x-renderer-secret`.
 - `RENDER_ENGINE` (optional, default `ffmpeg`) - renderer engine. FFmpeg fast path falls back to Remotion when ineligible. Defaults: `FFMPEG_PRESET=veryfast`, `FFMPEG_CRF=23`, `FFMPEG_AUDIO_BITRATE=192k`.
 - Vertex fallback: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Only Veo fallback / legacy extraction paths need this.

@@ -83,21 +83,21 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
         key: `director-api:paid:${req.userId || req.ip}`,
         limit: DIRECTOR_LIMITS.paidPerDay,
         windowMs: 24 * 60 * 60 * 1000,
-        label: 'Paid Lahari Director API call',
+        label: 'Paid Mirage Director API call',
       });
     } else if (tool === 'director.issues.capture') {
       assertRateLimit({
         key: `director-api:issue:${req.userId || req.ip}`,
         limit: DIRECTOR_LIMITS.issuesPerHour,
         windowMs: 60 * 60 * 1000,
-        label: 'Lahari issue capture',
+        label: 'Mirage issue capture',
       });
     } else if (!tool.includes('.version') && !tool.includes('.list') && !tool.includes('.search') && !tool.includes('.resolve') && !tool.includes('.packet') && !tool.includes('.status') && !tool.includes('.actions') && !tool.includes('.notebook') && !tool.includes('.session') && !tool.includes('.preview')) {
       assertRateLimit({
         key: `director-api:mutating:${req.userId || req.ip}`,
         limit: DIRECTOR_LIMITS.mutatingPerHour,
         windowMs: 60 * 60 * 1000,
-        label: 'Mutating Lahari Director API call',
+        label: 'Mutating Mirage Director API call',
       });
     }
     const isReadOnly = tool.includes('.version')
@@ -160,7 +160,7 @@ const remoteSessionState = async (projectId: string, userId?: string, opts: { si
     listDirectorEvents(projectId, { afterSeq: opts.sinceSeq ?? null, limit: 50 }),
   ]);
   return {
-    kind: 'lahari.director.remote_session',
+    kind: 'mirage.director.remote_session',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -191,7 +191,7 @@ const remoteSessionState = async (projectId: string, userId?: string, opts: { si
 };
 
 router.get('/version', audited('director.version', async () => ({
-  kind: 'lahari.director.version',
+  kind: 'mirage.director.version',
   version: DIRECTOR_API_VERSION,
   minimumMcpServerVersion: '0.1.0',
 })));
@@ -204,7 +204,7 @@ router.get('/projects', audited('director.projects.list', async (req) => {
     { orderBy: 'updated_at', ascending: false, limit: Math.min(Number(req.query.limit || 20) || 20, 100) },
   );
   return {
-    kind: 'lahari.project.list',
+    kind: 'mirage.project.list',
     generatedAt: new Date().toISOString(),
     projects: rows.map((row: any) => ({
       id: row.id,

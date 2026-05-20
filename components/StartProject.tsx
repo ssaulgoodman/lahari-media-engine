@@ -13,6 +13,7 @@ export interface CreateIntakeOpts {
   context?: string;
   language?: string;
   directorBrief?: string;
+  targetRuntime?: number;
   targetDuration?: number;
 }
 
@@ -102,7 +103,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
         scriptText: scriptText.trim(),
         title: scriptTitle.trim() || undefined,
         directorBrief: scriptBrief.trim() || undefined,
-        targetDuration: scriptRuntime.trim() ? Number(scriptRuntime) : undefined,
+        targetRuntime: scriptRuntime.trim() ? Number(scriptRuntime) : undefined,
       });
     }
   };
@@ -240,7 +241,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
               <input
                 value={scriptRuntime}
                 onChange={(e) => setScriptRuntime(e.target.value.replace(/[^\d]/g, ''))}
-                placeholder="Runtime · sec"
+                placeholder="Total runtime · sec"
                 inputMode="numeric"
                 className={`w-full ${FIELD_BASE} font-mono tabular-nums`}
               />

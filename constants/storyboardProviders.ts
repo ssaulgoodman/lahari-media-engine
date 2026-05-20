@@ -10,38 +10,29 @@ export interface StoryboardProviderSpec {
 
 // Order matters: first entry is the default storyboard renderer for new
 // projects. Nano Banana 2 stays default for cost — storyboards are boards
-// (low-stakes drafts), not final frames; Segmind's pricing wins for that
-// workload. Nano Banana Pro (Google's gemini-3-pro-image-preview) added as
-// the high-quality ref-conditioning option for artists who want maximum
-// identity preservation across the board's panels. GPT Image 2 remains for
-// comparison / fallback.
+// (low-stakes drafts), not final frames. Mirage routes all storyboard
+// provider options through Segmind BYOK.
 export const STORYBOARD_PROVIDERS: StoryboardProviderSpec[] = [
   {
     key: 'nano-banana-2',
     label: 'Nano Banana 2',
-    // TEMP routing: Segmind credits exhausted 2026-05-13. Switched to Google
-    // Developer API path running `gemini-3.1-flash-image-preview` (Google's
-    // Nano Banana 2 equivalent, Flash tier). Storyboard output quality is
-    // close to Segmind's nano-banana-2; ref-conditioning is Gemini-native.
-    // TO RESTORE SEGMIND when credits are back: set provider='segmind' and
-    // runtimeModel='nano-banana-2'. No other changes needed.
-    provider: 'google',
-    runtimeModel: 'gemini-3.1-flash-image-preview',
-    note: 'Routed to Google Gemini 3.1 Flash Image while Segmind credits are out.',
+    provider: 'segmind',
+    runtimeModel: 'nano-banana-2',
+    note: 'Segmind Nano Banana 2. Fast, lower-cost storyboard board rendering with refs.',
   },
   {
     key: 'nano-banana-pro',
     label: 'Nano Banana Pro',
-    provider: 'google',
-    runtimeModel: 'gemini-3-pro-image-preview',
-    note: 'Google Gemini 3 Pro Image (Nano Banana Pro). Strongest ref-image conditioning — best for storyboards that need to hold character identity across panels.',
+    provider: 'segmind',
+    runtimeModel: 'nano-banana-pro',
+    note: 'Segmind Nano Banana Pro. Strong ref-image conditioning for identity-sensitive boards.',
   },
   {
     key: 'gpt-image-2',
     label: 'GPT Image 2',
-    provider: 'openai',
+    provider: 'segmind',
     runtimeModel: 'gpt-image-2',
-    note: 'Higher storyboard quality, more expensive.',
+    note: 'Segmind GPT Image 2. Higher-detail storyboard rendering and typography.',
   },
 ];
 

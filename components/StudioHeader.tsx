@@ -142,7 +142,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               <div className="absolute top-full right-0 mt-2 w-96 bg-zinc-900 border border-white/[0.08] rounded-xl p-4 shadow-2xl z-30 space-y-2">
                 <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-zinc-400">
                   <span>Story</span>
-                  {concept.deity && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.deity}</span></>}
+                  {(concept.subject || concept.primarySubject || concept.deity) && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.subject || concept.primarySubject || concept.deity}</span></>}
                   {concept.mood && <><span>·</span><span className="text-zinc-300 normal-case tracking-normal">{concept.mood}</span></>}
                 </div>
                 <p className="text-sm text-zinc-300 leading-relaxed">{concept.conceptDirection || concept.theme}</p>
@@ -188,7 +188,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                 <AutoGrowTextarea
                   value={bulkNote}
                   onChange={e => setBulkNote(e.target.value)}
-                  placeholder="Rewrite note — e.g. 'more deity close-ups', 'reduce camera motion'"
+                  placeholder="Rewrite note — e.g. 'more character close-ups', 'reduce camera motion'"
                   rows={1}
                   className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
                   onKeyDown={e => {

@@ -110,6 +110,7 @@ export const createProjectFromIntake = async (opts: {
   language?: string;
   scriptText?: string;
   directorBrief?: string;
+  targetRuntime?: number;
   targetDuration?: number;
 }) => {
   const form = new FormData();
@@ -122,6 +123,7 @@ export const createProjectFromIntake = async (opts: {
   if (opts.language) form.append('language', opts.language);
   if (opts.scriptText) form.append('scriptText', opts.scriptText);
   if (opts.directorBrief) form.append('directorBrief', opts.directorBrief);
+  if (opts.targetRuntime) form.append('targetRuntime', String(opts.targetRuntime));
   if (opts.targetDuration) form.append('targetDuration', String(opts.targetDuration));
 
   const res = await authFetch(`${API}/projects/intake`, { method: 'POST', body: form });
