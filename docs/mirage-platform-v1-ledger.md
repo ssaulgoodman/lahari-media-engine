@@ -404,6 +404,70 @@ After T7 completes, no more merges flow between `main` and `mirage`. Engine fixe
 
 **Acceptance for T10 as a whole:** A user clicking through Blueprint sees the same familiar tab layout but each tab is now an explicit registry of tools. No tab is "locked"; if a tool's inputs aren't satisfied it dims. The Codex agent operating against the same project sees the same available actions via MCP packet. Two surfaces, one truth.
 
+**Refactor shape (one source of truth so neither agent reconstructs it):**
+
+The split: each phase has two layers of content. **Asset display** (bespoke per phase — concept cards, script breakdown, style image grid, cast cards, env cards, dialogue table) survives because that's the visual cockpit Blueprint earns its keep on. **Tool buttons** (today: bespoke per-phase imperative buttons with handlers wired from AppShell) become registry-driven via `<AssetShelf>` wrapper.
+
+Concrete `ConceptPhase` as worked example (other phases follow same pattern):
+
+```tsx
+// BEFORE — ~350 lines, three branches on phase status, four bespoke buttons
+{isLockedPhase(project, 'concept', project.status) ? (
+  <LockedConceptCard />
+  <UnlockPill onClick={onUnlockConcept} />
+  <RefineBox onSubmit={onRefineConcept} />
+) : project.conceptOptions.length === 0 ? (
+  <button onClick={onGenerateConcepts}>Generate Concepts</button>
+) : (
+  <ConceptCards />
+  <button onClick={() => onLockConcept(i)}>Lock</button>
+)}
+
+// AFTER — ~150 lines, no status branching, registry decides buttons
+<AssetShelf surface="asset:concept" project={project}>
+  <ConceptCards concept={project.lockedConcept ?? project.conceptOptions} />
+</AssetShelf>
+```
+
+`AssetShelf` internals (T10.2):
+
+```tsx
+const { enabled, blocked } = useAvailableTools(project, surface);
+return (
+  <>
+    <div className="tool-row">
+      {enabled.map(t => <ToolButton tool={t} onRun={runTool(t.key)} />)}
+      {blocked.map(t => (
+        <ToolButton tool={t} disabled title={`needs ${t.missing.join(', ')}`} />
+      ))}
+    </div>
+    {children}
+  </>
+);
+```
+
+What stays bespoke per phase: the asset-render children inside `<AssetShelf>`. What gets deleted: status-branching logic, imperative button wiring, per-phase handler props on AppShell.
+
+**Expected line-count delta as a sanity check:**
+
+| Component | Today | After | Net |
+|---|---|---|---|
+| ConceptPhase | ~350 | ~150 | −200 |
+| ScriptPhase | ~440 | ~280 | −160 |
+| StylePhase | ~500 | ~280 | −220 |
+| CharactersPhase | ~700 | ~480 | −220 |
+| EnvironmentsPhase | ~400 | ~260 | −140 |
+| AudioPhase | ~440 (already registry-shaped post-T5.4a) | ~360 | −80 |
+| BlueprintContextBar (status-gate logic) | ~440 | ~360 | −80 |
+| constants/blueprintPhases.ts | ~75 | ~55 | −20 |
+| New: AssetShelf.tsx | 0 | ~80 | +80 |
+| New: useAvailableTools.ts | 0 | ~40 | +40 |
+| **Net** | | | **~−1,000 lines** |
+
+If a migration PR diverges meaningfully from these numbers (e.g. ConceptPhase ends up at 280 instead of 150), it's a signal that bespoke logic is sneaking back in and should be pushed into either the registry manifest or a shared `AssetShelf` affordance instead.
+
+**Mental shift in one sentence:** today each phase decides what buttons exist by reading project status; after T10, the registry decides what buttons exist by reading project assets, and the phase is just *where* those buttons land visually.
+
 ---
 
 ## 5. Dependency Graph
