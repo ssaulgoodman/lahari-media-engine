@@ -19,53 +19,62 @@ type ProviderInfo = {
   placeholder: string;
 };
 
-const REQUIRED_PROVIDERS: Record<string, ProviderInfo[]> = {
-  music_video: [
-    {
-      key: 'segmind',
-      label: 'Segmind',
-      description: 'Image generation (Nano Banana Pro/2) and video generation (Seedance, Veo)',
-      docsUrl: 'https://www.segmind.com/api-keys',
-      placeholder: 'SG_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    },
-    {
-      key: 'gemini',
-      label: 'Google AI Studio',
-      description: 'Audio analysis, transcription, and structure detection',
-      docsUrl: 'https://aistudio.google.com/apikey',
-      placeholder: 'AIzaSy...',
-    },
-  ],
-  anime_scripted: [
-    {
-      key: 'segmind',
-      label: 'Segmind',
-      description: 'Image generation (Nano Banana Pro/2) and video generation (Seedance, Veo)',
-      docsUrl: 'https://www.segmind.com/api-keys',
-      placeholder: 'SG_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    },
-    {
-      key: 'elevenlabs',
-      label: 'ElevenLabs',
-      description: 'Text-to-speech for character dialogue',
-      docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
-      placeholder: 'sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    },
-  ],
+// Workflow → required-provider list. Used both for the per-workflow readiness
+// pill at the top of the Required section and for deriving the unique required
+// provider set.
+const REQUIRED_PROVIDERS: Record<string, { label: string; providers: ProviderInfo[] }> = {
+  music_video: {
+    label: 'Music Video',
+    providers: [
+      {
+        key: 'segmind',
+        label: 'Segmind',
+        description: 'Image generation (Nano Banana Pro/2) and video generation (Seedance, Veo).',
+        docsUrl: 'https://www.segmind.com/api-keys',
+        placeholder: 'SG_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      },
+      {
+        key: 'gemini',
+        label: 'Google AI Studio',
+        description: 'Audio analysis, transcription, and structure detection.',
+        docsUrl: 'https://aistudio.google.com/apikey',
+        placeholder: 'AIzaSy...',
+      },
+    ],
+  },
+  anime_scripted: {
+    label: 'Anime',
+    providers: [
+      {
+        key: 'segmind',
+        label: 'Segmind',
+        description: 'Image generation (Nano Banana Pro/2) and video generation (Seedance, Veo).',
+        docsUrl: 'https://www.segmind.com/api-keys',
+        placeholder: 'SG_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      },
+      {
+        key: 'elevenlabs',
+        label: 'ElevenLabs',
+        description: 'Text-to-speech for character dialogue.',
+        docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
+        placeholder: 'sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      },
+    ],
+  },
 };
 
 const OPTIONAL_PROVIDERS: ProviderInfo[] = [
   {
     key: 'anthropic',
     label: 'Anthropic',
-    description: 'Powers Generate Concept, Script, Refine, and other AI buttons in the web studio',
+    description: 'Powers Generate Concept, Script, Refine, and other AI buttons in the web studio.',
     docsUrl: 'https://console.anthropic.com/settings/keys',
     placeholder: 'sk-ant-api03-...',
   },
   {
     key: 'openai',
     label: 'OpenAI',
-    description: 'GPT Image 2 storyboards and optional GPT script writer',
+    description: 'GPT Image 2 storyboards and optional GPT script writer.',
     docsUrl: 'https://platform.openai.com/api-keys',
     placeholder: 'sk-proj-...',
   },
@@ -74,8 +83,8 @@ const OPTIONAL_PROVIDERS: ProviderInfo[] = [
 const allRequiredProviders = (): ProviderInfo[] => {
   const seen = new Set<ProviderKey>();
   const result: ProviderInfo[] = [];
-  for (const providers of Object.values(REQUIRED_PROVIDERS)) {
-    for (const p of providers) {
+  for (const workflow of Object.values(REQUIRED_PROVIDERS)) {
+    for (const p of workflow.providers) {
       if (!seen.has(p.key)) {
         seen.add(p.key);
         result.push(p);
@@ -85,6 +94,8 @@ const allRequiredProviders = (): ProviderInfo[] => {
   return result;
 };
 
+// Single-line, dense row. Provider name → (i) tooltip → status pill →
+// inline last-used / last-error. Rotate/Set + Remove on the right.
 const KeyRow: React.FC<{
   provider: ProviderInfo;
   status: KeyStatus | undefined;
@@ -95,11 +106,11 @@ const KeyRow: React.FC<{
   const isSet = status?.isSet ?? false;
 
   return (
-    <div className="flex items-center justify-between gap-4 py-2.5 group">
-      <div className="min-w-0 flex-1 flex items-center gap-2.5">
+    <div className="flex items-center justify-between gap-3 py-2.5 group">
+      <div className="min-w-0 flex-1 flex items-center gap-2.5 flex-wrap">
         <span className="text-sm text-white font-medium">{provider.label}</span>
         <span
-          className="text-zinc-500 hover:text-zinc-300 cursor-help transition-colors"
+          className="text-zinc-400/70 hover:text-zinc-200 cursor-help transition-colors"
           title={provider.description}
           aria-label={provider.description}
         >
@@ -118,18 +129,18 @@ const KeyRow: React.FC<{
           {isSet ? 'Set' : 'Not set'}
         </span>
         {status?.lastUsedAt && (
-          <span className="text-[11px] text-zinc-500 truncate" title={`Last used ${new Date(status.lastUsedAt).toLocaleString()}`}>
+          <span className="text-[11px] text-zinc-400 truncate" title={`Last used ${new Date(status.lastUsedAt).toLocaleString()}`}>
             · used {new Date(status.lastUsedAt).toLocaleDateString()}
           </span>
         )}
         {status?.lastError && (
-          <span className="text-[11px] text-red-400/80 truncate" title={status.lastError}>· error</span>
+          <span className="text-[11px] text-red-400/80 truncate" title={status.lastError}>· last call errored</span>
         )}
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
           onClick={() => onSet(provider.key)}
-          className="px-3 py-1.5 text-xs text-zinc-300 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
+          className="px-2.5 py-1 text-xs text-zinc-300 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
         >
           {isSet ? 'Rotate' : 'Set key'}
         </button>
@@ -137,7 +148,7 @@ const KeyRow: React.FC<{
           <button
             onClick={() => onDelete(provider.key)}
             disabled={deleting}
-            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-red-300 surface-inset rounded-md hover:bg-red-500/[0.06] transition-colors disabled:opacity-50"
+            className="px-2.5 py-1 text-xs text-zinc-400 hover:text-red-300 surface-inset rounded-md hover:bg-red-500/[0.06] transition-colors disabled:opacity-50"
           >
             Remove
           </button>
@@ -146,6 +157,10 @@ const KeyRow: React.FC<{
     </div>
   );
 };
+
+// Field styling matches the platform's input density (BlueprintContextBar,
+// ScriptPhase, StartProject share this exact shape).
+const FIELD_BASE = 'w-full surface-inset rounded-md px-2.5 py-1.5 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20';
 
 const SetKeyModal: React.FC<{
   provider: ProviderInfo;
@@ -159,7 +174,7 @@ const SetKeyModal: React.FC<{
 
   const handleSave = async () => {
     const trimmed = value.trim();
-    if (!trimmed) return;
+    if (!trimmed || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -172,46 +187,58 @@ const SetKeyModal: React.FC<{
     }
   };
 
+  // Escape closes, Enter on the key input submits.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md surface-raised rounded-xl p-6">
-        <h3 className="text-lg font-display text-white tracking-tight mb-1">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true" aria-labelledby="setkey-title">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+      <div className="relative w-full max-w-md surface-raised rounded-xl p-5">
+        <h3 id="setkey-title" className="text-lg font-display text-white tracking-tight mb-1">
           {provider.label} API Key
         </h3>
-        <p className="text-xs text-zinc-400 mb-5 leading-relaxed">
-          Paste your key below. It will be encrypted at rest and never shown again.
+        <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
+          Encrypted at rest and never shown again after save.
         </p>
 
-        <div className="space-y-3 mb-5">
+        <div className="space-y-3 mb-4">
           <div>
-            <label className="block text-[11px] uppercase tracking-wider text-zinc-400 mb-1.5">
-              API Key
-            </label>
+            <label className="block text-[11px] uppercase tracking-wider text-zinc-400 mb-1.5">API key</label>
             <input
               type="password"
               value={value}
               onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
               placeholder={provider.placeholder}
               autoFocus
-              className="w-full px-3 py-2.5 text-sm font-mono text-zinc-200 surface-inset rounded-md border-0 outline-none focus:ring-1 focus:ring-white/20 placeholder:text-zinc-600"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              className={`${FIELD_BASE} font-mono`}
             />
           </div>
           <div>
             <label className="block text-[11px] uppercase tracking-wider text-zinc-400 mb-1.5">
-              Label <span className="text-zinc-500 normal-case tracking-normal">(optional)</span>
+              Label <span className="text-zinc-400 normal-case tracking-normal">(optional)</span>
             </label>
             <input
               type="text"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSave(); } }}
               placeholder={`e.g. "personal", "team account"`}
-              className="w-full px-3 py-2.5 text-sm text-zinc-200 surface-inset rounded-md border-0 outline-none focus:ring-1 focus:ring-white/20 placeholder:text-zinc-600"
+              className={FIELD_BASE}
             />
           </div>
         </div>
 
-        <p className="text-[11px] text-zinc-500 mb-4 leading-relaxed">
+        <p className="text-[11px] text-zinc-400 mb-4 leading-relaxed">
           Get your key at{' '}
           <a
             href={provider.docsUrl}
@@ -229,19 +256,21 @@ const SetKeyModal: React.FC<{
           </div>
         )}
 
-        <div className="flex justify-end gap-3">
+        <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+            disabled={saving}
+            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={!value.trim() || saving}
-            className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 transition-colors"
+            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 transition-colors inline-flex items-center gap-2"
           >
-            {saving ? 'Saving...' : 'Save key'}
+            {saving && <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+            {saving ? 'Saving…' : 'Save key'}
           </button>
         </div>
       </div>
@@ -271,9 +300,7 @@ export const AccountKeys: React.FC<{
     }
   }, [user]);
 
-  useEffect(() => {
-    loadKeys();
-  }, [loadKeys]);
+  useEffect(() => { loadKeys(); }, [loadKeys]);
 
   const handleSet = (providerKey: ProviderKey) => {
     const all = [...allRequiredProviders(), ...OPTIONAL_PROVIDERS];
@@ -301,10 +328,17 @@ export const AccountKeys: React.FC<{
 
   const getStatus = (providerKey: ProviderKey) => keys.find((k) => k.provider === providerKey);
 
+  // history.back() returns the user to wherever they came from (their open
+  // project, /connect, etc.). If they typed the URL directly with no history,
+  // fall back to "/".
+  const goBack = () => {
+    if (window.history.length > 1) window.history.back();
+    else window.location.href = '/';
+  };
+
   if (!user) return null;
 
   const required = allRequiredProviders();
-  const optional = OPTIONAL_PROVIDERS;
 
   return (
     <div className="min-h-screen bg-[#141418] text-white px-6 py-12 relative overflow-hidden">
@@ -314,27 +348,24 @@ export const AccountKeys: React.FC<{
 
       <div className="max-w-2xl mx-auto relative">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-10">
+        <div className="flex items-start justify-between gap-4 mb-8">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-3">
-              Account
-            </p>
-            <h1 className="text-3xl font-display text-white mb-2 tracking-tight">API Keys</h1>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-3">Account</p>
+            <h1 className="text-2xl font-display text-white mb-1.5 tracking-tight">API Keys</h1>
             <p className="text-sm text-zinc-400 leading-relaxed max-w-md">
-              Mirage uses your own API keys for every paid provider. Keys are encrypted at rest and
-              never logged.
+              Mirage uses your own API keys for every paid provider. Keys are encrypted at rest and never logged.
             </p>
           </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            <a
-              href="/"
-              className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={goBack}
+              className="px-2.5 py-1 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
             >
-              Studio
-            </a>
+              ← Back
+            </button>
             <button
               onClick={signOut}
-              className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
+              className="px-2.5 py-1 text-xs text-zinc-400 hover:text-white surface-inset rounded-md hover:bg-white/[0.06] transition-colors"
             >
               Sign out
             </button>
@@ -342,11 +373,11 @@ export const AccountKeys: React.FC<{
         </div>
 
         {error && (
-          <div className="mb-6 text-sm text-amber-200/90 surface-inset rounded-md px-3 py-2 border-l-2 border-amber-400/60">
-            {error}
+          <div className="mb-5 px-3 py-2 rounded-md surface-inset border-l-2 border-amber-400/60 flex items-start gap-3 text-sm text-amber-200/90">
+            <span className="flex-1">{error}</span>
             <button
               onClick={() => setError(null)}
-              className="ml-3 text-xs text-zinc-400 hover:text-white"
+              className="text-[11px] text-zinc-400 hover:text-white transition-colors"
             >
               dismiss
             </button>
@@ -354,47 +385,40 @@ export const AccountKeys: React.FC<{
         )}
 
         {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="surface rounded-xl p-6">
-                <div className="skeleton h-4 w-24 rounded mb-2" />
-                <div className="skeleton h-3 w-48 rounded" />
+          <div className="space-y-4">
+            {[1, 2].map((i) => (
+              <div key={i} className="surface rounded-xl p-5">
+                <div className="skeleton h-3.5 w-20 rounded mb-3" />
+                <div className="skeleton h-9 w-full rounded" />
               </div>
             ))}
           </div>
         ) : (
           <>
             {/* Required keys */}
-            <div className="surface rounded-xl p-7 mb-5">
-              <div className="mb-4">
-                <h2 className="text-base font-display text-white tracking-tight mb-1">
-                  Required
-                </h2>
+            <div className="surface rounded-xl p-5 mb-4">
+              <div className="mb-3">
+                <h2 className="text-sm font-medium text-white mb-1">Required</h2>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  These providers power core generation. You need at least the keys for your
-                  workflow before anything runs.
+                  Core generation needs these. Complete at least one workflow lane before anything runs.
                 </p>
               </div>
 
-              {/* Workflow badges */}
+              {/* Workflow readiness pills */}
               <div className="flex flex-wrap gap-2 mb-4">
-                {Object.entries(REQUIRED_PROVIDERS).map(([workflow, providers]) => {
-                  const allSet = providers.every((p) => getStatus(p.key)?.isSet);
+                {Object.entries(REQUIRED_PROVIDERS).map(([workflowKey, workflow]) => {
+                  const allSet = workflow.providers.every((p) => getStatus(p.key)?.isSet);
                   return (
                     <span
-                      key={workflow}
+                      key={workflowKey}
                       className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-2 py-1 rounded-md ${
                         allSet
                           ? 'text-emerald-300/80 bg-emerald-500/[0.08]'
                           : 'text-zinc-400 bg-white/[0.03]'
                       }`}
                     >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          allSet ? 'bg-emerald-400' : 'bg-zinc-500'
-                        }`}
-                      />
-                      {workflow.replace('_', ' ')}
+                      <span className={`w-1.5 h-1.5 rounded-full ${allSet ? 'bg-emerald-400' : 'bg-zinc-500'}`} />
+                      {workflow.label}
                     </span>
                   );
                 })}
@@ -415,19 +439,16 @@ export const AccountKeys: React.FC<{
             </div>
 
             {/* Optional keys */}
-            <div className="surface rounded-xl p-7">
-              <div className="mb-4">
-                <h2 className="text-base font-display text-white tracking-tight mb-1">
-                  Optional
-                </h2>
+            <div className="surface rounded-xl p-5">
+              <div className="mb-3">
+                <h2 className="text-sm font-medium text-white mb-1">Optional</h2>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  Only needed if you use the web studio AI buttons (Generate Concept, Refine Script,
-                  etc.) without Codex Desktop or Claude Code. Both harnesses bring their own LLM
-                  subscription.
+                  Only needed for web-studio AI buttons (Generate Concept, Refine Script, etc.) without a harness.
+                  Codex Desktop and Claude Code bring their own LLM subscription.
                 </p>
               </div>
               <div className="divide-y divide-white/[0.06]">
-                {optional.map((p) => (
+                {OPTIONAL_PROVIDERS.map((p) => (
                   <KeyRow
                     key={p.key}
                     provider={p}
