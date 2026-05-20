@@ -128,6 +128,13 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </span>
           </div>
         )}
+        <a
+          href="/account/keys"
+          className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
+          title="Your API keys for paid providers (BYOK). Required before generation."
+        >
+          API Keys
+        </a>
         <button
           onClick={onOpenPrompts}
           className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
