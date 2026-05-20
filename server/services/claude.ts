@@ -441,8 +441,6 @@ Return the plan using the parse_anime_script tool.`;
   const response = await client.messages.create({
     model: OPUS,
     max_tokens: 16384,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'high' } as any,
     tools: [{
       name: 'parse_anime_script',
       description: 'Parse a script-first anime project into cast, environments, scenes, and shots.',
