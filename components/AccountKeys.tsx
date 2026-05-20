@@ -23,7 +23,7 @@ type ProviderInfo = {
 // pill at the top of the Required section and for deriving the unique required
 // provider set.
 const REQUIRED_PROVIDERS: Record<string, { label: string; providers: ProviderInfo[] }> = {
-  music_video: {
+  music_led: {
     label: 'Music Video',
     providers: [
       {
@@ -42,8 +42,8 @@ const REQUIRED_PROVIDERS: Record<string, { label: string; providers: ProviderInf
       },
     ],
   },
-  anime_scripted: {
-    label: 'Anime',
+  scripted_narrative: {
+    label: 'Scripted Narrative',
     providers: [
       {
         key: 'segmind',

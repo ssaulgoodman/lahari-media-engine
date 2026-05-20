@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 
-export type IntakeMode = 'music_video' | 'anime_scripted';
+export type IntakeMode = 'music_led' | 'scripted_narrative';
 
 export interface CreateIntakeOpts {
   workflowKey: IntakeMode;
@@ -33,7 +33,7 @@ const MODES: Array<{
   description: string;
 }> = [
   {
-    key: 'music_video',
+    key: 'music_led',
     label: 'Music Video',
     presetKey: 'music_video_default',
     presetLabel: 'Music Video Default',
@@ -42,7 +42,7 @@ const MODES: Array<{
     description: 'Upload a track. Scenes sync to musical structure; concept, style, cast, and shots come from there.',
   },
   {
-    key: 'anime_scripted',
+    key: 'scripted_narrative',
     label: 'Anime',
     presetKey: 'anime_default',
     presetLabel: 'Anime Default',
@@ -57,7 +57,7 @@ const MODES: Array<{
 const FIELD_BASE = 'surface-inset rounded-md px-2.5 py-1.5 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20';
 
 export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => {
-  const [mode, setMode] = useState<IntakeMode>('music_video');
+  const [mode, setMode] = useState<IntakeMode>('music_led');
 
   // Music video state
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -79,15 +79,15 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
     if (!audioTitle) setAudioTitle(file.name.replace(/\.[^.]+$/, ''));
   };
 
-  const canSubmit = mode === 'music_video'
+  const canSubmit = mode === 'music_led'
     ? !!audioFile && !creating
     : !!scriptText.trim() && !creating;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
-    if (mode === 'music_video') {
+    if (mode === 'music_led') {
       await onCreate({
-        workflowKey: 'music_video',
+        workflowKey: 'music_led',
         seedKind: 'audio',
         presetKey: 'music_video_default',
         seedFile: audioFile!,
@@ -97,7 +97,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
       });
     } else {
       await onCreate({
-        workflowKey: 'anime_scripted',
+        workflowKey: 'scripted_narrative',
         seedKind: 'script',
         presetKey: 'anime_default',
         scriptText: scriptText.trim(),
@@ -149,7 +149,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
 
       {/* Mode-specific form */}
       <div className="border border-white/[0.06] rounded-lg bg-white/[0.015] p-4 space-y-3">
-        {mode === 'music_video' && (
+        {mode === 'music_led' && (
           <>
             <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Audio seed</p>
 
@@ -224,7 +224,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
           </>
         )}
 
-        {mode === 'anime_scripted' && (
+        {mode === 'scripted_narrative' && (
           <>
             <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Script seed</p>
 
@@ -283,8 +283,8 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
           >
             {creating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
             {creating
-              ? (mode === 'music_video' ? 'Uploading…' : 'Parsing…')
-              : (mode === 'music_video' ? 'Start project' : 'Parse & open Studio')}
+              ? (mode === 'music_led' ? 'Uploading…' : 'Parsing…')
+              : (mode === 'music_led' ? 'Start project' : 'Parse & open Studio')}
           </button>
         </div>
       </div>

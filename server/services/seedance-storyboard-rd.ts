@@ -48,7 +48,7 @@ const castLine = (input: StoryboardRdInput) =>
   input.castNames.length ? input.castNames.join(', ') : 'No recurring character in frame';
 
 const presetFor = (input: StoryboardRdInput) => input.preset || getRuntimePreset();
-const isMusicVideoWorkflow = (input: StoryboardRdInput) => presetFor(input).workflowKey === 'music_video';
+const isMusicVideoWorkflow = (input: StoryboardRdInput) => presetFor(input).workflowKey === 'music_led';
 const projectLabel = (input: StoryboardRdInput) => isMusicVideoWorkflow(input) ? 'Song' : 'Project';
 const sourceExcerptLabel = (input: StoryboardRdInput) => isMusicVideoWorkflow(input) ? 'Lyrics/phrase' : 'Script/source excerpt';
 

@@ -36,16 +36,16 @@ type WorkflowLane = {
 
 const WORKFLOW_LANES: WorkflowLane[] = [
   {
-    key: 'music_video',
-    label: 'Music Video',
+    key: 'music_led',
+    label: 'Music-led',
     providers: [
       { provider: 'segmind', label: 'Segmind' },
       { provider: 'gemini', label: 'Google AI Studio' },
     ],
   },
   {
-    key: 'anime_scripted',
-    label: 'Anime',
+    key: 'scripted_narrative',
+    label: 'Scripted Narrative',
     providers: [
       { provider: 'segmind', label: 'Segmind' },
       { provider: 'elevenlabs', label: 'ElevenLabs' },

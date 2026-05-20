@@ -101,7 +101,7 @@ export const createProject = async (
 };
 
 export const createProjectFromIntake = async (opts: {
-  workflowKey: 'music_video' | 'anime_scripted';
+  workflowKey: 'music_led' | 'scripted_narrative' | 'music_video' | 'anime_scripted';
   seedKind: 'audio' | 'script' | 'brief' | 'document' | 'idea';
   presetKey?: 'music_video_default' | 'anime_default';
   seedFile?: File;
@@ -141,7 +141,7 @@ export const createScriptProject = async (opts: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      workflowKey: 'anime_scripted',
+      workflowKey: 'scripted_narrative',
       seedKind: 'script',
       presetKey: 'anime_default',
       ...opts,

@@ -46,7 +46,7 @@ const formatConceptForScriptPrompt = (concept: any): string => {
 };
 
 const workflowSourceLabels = (preset: PipelinePreset) => {
-  const isMusicVideo = preset.workflowKey === 'music_video';
+  const isMusicVideo = preset.workflowKey === 'music_led';
   return {
     sourceBlock: isMusicVideo ? 'LYRICS / AUDIO SOURCE' : 'SCRIPT / SOURCE MATERIAL',
     structureBlock: isMusicVideo ? 'MUSICAL STRUCTURE' : 'SCENE / TIMING STRUCTURE',
@@ -524,7 +524,7 @@ const WRITE_SHOT_PROMPTS_SCHEMA = {
 
 const buildWriteShotPromptsText = (input: WriteShotPromptsInput): string => {
   const preset = input.preset || getRuntimePreset();
-  const isMusicVideo = preset.workflowKey === 'music_video';
+  const isMusicVideo = preset.workflowKey === 'music_led';
   const shotList = input.shots.map((s, i) =>
     `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | ${isMusicVideo ? 'Lyric/audio cue' : 'Source beat'}: ${s.sceneLyrics || (isMusicVideo ? 'instrumental' : 'not specified')}`
   ).join('\n');

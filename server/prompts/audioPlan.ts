@@ -65,6 +65,8 @@ export const buildAudioPlanPrompt = (
 Write dialogue lines, delivery cues, and restrained sound notes for this shot only.
 This is structured production data that will drive TTS, lipsync, overlay audio, and video-generation context. It is not prose and it is not a script rewrite.`;
 
+  const workflowContext = `This is a scripted narrative project. The script/story is the production spine; audio data should support scene beats, acting, dialogue, and continuity.`;
+
   const inputs = `Project title: ${project.title || 'Untitled'}
 
 Scene label: ${scene.section_label || 'Scene'}
@@ -102,5 +104,5 @@ Return only structured audio-plan JSON with:
 - dialogue: array of { characterId, text, order, delivery?, emotion?, paceHint?, targetSec? }
 - soundNotes?: string`;
 
-  return composePrompt({ coreTask, inputs, presetTaste, outputContract });
+  return composePrompt({ coreTask, workflowContext, inputs, presetTaste, outputContract });
 };

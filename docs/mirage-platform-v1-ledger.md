@@ -834,6 +834,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-20 Codex review note: Adjusted D26 to call `music_led` / `scripted_narrative` the canonical target keys, not already-migrated runtime truth. The migration must keep `music_video` / `anime_scripted` as compatibility aliases until code, DB rows, frontend refs, and MCP packets move together. Also corrected T9 wording so the new foundation is shared coreTask + workflowContext + presetTaste, not "workflow-aware coreTask" or anime-era examples.
 
+2026-05-20 Codex: T9.12 + D26 runtime alias slice landed. `composePrompt` now supports optional `workflowContext` with a `CONTEXT` section, and the audio-plan reference prompt uses it. `server/presets.ts` now defines canonical workflow keys `music_led` / `scripted_narrative` with legacy aliases `music_video` / `anime_scripted`; new intake writes canonical keys, old rows hydrate through `normalizeWorkflowKey`, registry `enabledFor` values use canonical keys, and MCP `list_projects` returns canonical workflow keys. Frontend intake, BYOK lanes, header labels, and Blueprint phases understand canonical keys while keeping legacy phase aliases for old project objects. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`, packet smoke on existing `IT SAID OH` row (`anime_scripted` stored → `scripted_narrative` hydrated), and intake resolver smoke for both old/new workflow strings.
+
 ---
 
 ## 10. References

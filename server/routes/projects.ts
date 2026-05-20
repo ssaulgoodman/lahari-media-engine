@@ -12,7 +12,7 @@ import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js'
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
-import { getProjectRuntimePreset, resolveProjectIntake } from '../presets.js';
+import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } from '../presets.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
@@ -277,7 +277,7 @@ const forkProject = async (
     video_model: src.video_model,
     ...platformProjectFields({
       preset_key: src.preset_key || 'music_video_default',
-      workflow_key: src.workflow_key || 'music_video',
+      workflow_key: normalizeWorkflowKey(src.workflow_key) || 'music_led',
       seed_kind: src.seed_kind || (src.audio_path ? 'audio' : 'brief'),
       project_brief: src.project_brief || null,
       source_payload: src.source_payload || null,
@@ -567,7 +567,7 @@ const getFullProject = async (projectId: string) => {
     title: project.title,
     status: project.status,
     presetKey: project.preset_key || 'music_video_default',
-    workflowKey: project.workflow_key || 'music_video',
+    workflowKey: normalizeWorkflowKey(project.workflow_key) || 'music_led',
     seedKind: project.seed_kind || (project.audio_path ? 'audio' : 'brief'),
     projectBrief: project.project_brief || null,
     sourcePayload: project.source_payload || null,
@@ -796,7 +796,7 @@ const createAudioProjectFromSeed = async (opts: {
   userId: string;
 }) => {
   const { workflow, seedKind, preset } = resolveProjectIntake({
-    workflowKey: bodyString(opts.body, 'workflowKey') || 'music_video',
+    workflowKey: bodyString(opts.body, 'workflowKey') || 'music_led',
     seedKind: bodyString(opts.body, 'seedKind') || 'audio',
     presetKey: bodyString(opts.body, 'presetKey'),
   });
@@ -936,7 +936,7 @@ const createScriptProjectFromSeed = async (opts: {
   }
 
   const { workflow, seedKind, preset } = resolveProjectIntake({
-    workflowKey: bodyString(opts.body, 'workflowKey') || 'anime_scripted',
+    workflowKey: bodyString(opts.body, 'workflowKey') || 'scripted_narrative',
     seedKind: bodyString(opts.body, 'seedKind') || 'script',
     presetKey: bodyString(opts.body, 'presetKey') || 'anime_default',
   });
@@ -1053,12 +1053,12 @@ router.post('/intake', upload.single('seedFile'), async (req, res) => {
       presetKey: bodyString(req.body, 'presetKey'),
     });
 
-    if (workflow.key === 'music_video' && seedKind === 'audio') {
+    if (workflow.key === 'music_led' && seedKind === 'audio') {
       if (!req.file) return res.status(400).json({ error: 'Audio seed file required' });
       return res.json(await createAudioProjectFromSeed({ file: req.file, body: req.body, userId: req.userId }));
     }
 
-    if (workflow.key === 'anime_scripted' && seedKind === 'script') {
+    if (workflow.key === 'scripted_narrative' && seedKind === 'script') {
       return res.json(await createScriptProjectFromSeed({ body: req.body, userId: req.userId, file: req.file }));
     }
 

@@ -51,7 +51,7 @@ export interface ShotCritique {
   suggestions: string;
 }
 
-// ─── Audio Blueprint (anime workflow) ───────────────────────────────
+// ─── Audio Blueprint (scripted narrative workflow) ──────────────────
 // Shapes match ledger §7. Backend table support lands in T3.1.
 
 /** Per-shot dialogue delivery path.
@@ -142,7 +142,7 @@ export interface VideoShot {
   error?: string;
   lastError?: string;
   refImages?: { id: string; url: string }[];
-  /** Anime workflow: dialogue/SFX plan for this shot. Authored by Codex
+  /** Scripted narrative workflow: dialogue/SFX plan for this shot. Authored by Codex
    *  (apply_audio_plan) or backend write-audio-plan. Absent on music_video. */
   audioPlan?: AudioPlan;
   /** True when upstream script edits invalidate the existing audio_plan. */
@@ -202,7 +202,7 @@ export interface CastMember {
   promptsStale?: boolean;
   referenceAssetId?: string;
   referenceImageUrl?: string;
-  /** Anime workflow: voice provider for TTS generation. v1 = 'elevenlabs'. */
+  /** Scripted narrative workflow: voice provider for TTS generation. v1 = 'elevenlabs'. */
   voiceProvider?: 'elevenlabs';
   /** Provider's raw voice ID (e.g. ElevenLabs voice_id). */
   voiceId?: string;
@@ -226,7 +226,7 @@ export interface ApiProject {
   title: string;
   status: ProjectPhase;
   /** Workflow recipe driving the pipeline. */
-  workflowKey: 'music_video' | 'anime_scripted';
+  workflowKey: 'music_led' | 'scripted_narrative' | 'music_video' | 'anime_scripted';
   /** What the project was seeded from. */
   seedKind: 'audio' | 'script' | 'brief' | 'document' | 'idea';
   /** Preset providing taste + defaults. */

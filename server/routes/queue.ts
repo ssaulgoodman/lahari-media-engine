@@ -196,7 +196,7 @@ router.post('/:queueId/start', async (req, res) => {
       source_queue_id: queueId,
       ...(supportsPlatformColumns() ? {
         preset_key: 'music_video_default',
-        workflow_key: 'music_video',
+        workflow_key: 'music_led',
         seed_kind: 'audio',
         project_brief: { title: item.song_name || 'Untitled', source: 'legacy_queue' },
         source_payload: { kind: 'queue', queueId, songId: item.song_id },

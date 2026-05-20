@@ -8,10 +8,12 @@ export type WorkflowStageState =
   | 'preset_supplied'
   | 'skipped';
 
-export type WorkflowRecipeKey = 'music_video' | 'anime_scripted';
+export type CanonicalWorkflowRecipeKey = 'music_led' | 'scripted_narrative';
+export type LegacyWorkflowRecipeKey = 'music_video' | 'anime_scripted';
+export type WorkflowRecipeKey = CanonicalWorkflowRecipeKey | LegacyWorkflowRecipeKey;
 
 export type WorkflowRecipe = {
-  key: WorkflowRecipeKey;
+  key: CanonicalWorkflowRecipeKey;
   label: string;
   primarySeed: SeedKind;
   acceptedSeeds: SeedKind[];
@@ -35,7 +37,7 @@ export type PipelinePresetKey = 'music_video_default' | 'anime_default';
 
 export type PipelinePreset = {
   key: PipelinePresetKey;
-  workflowKey: WorkflowRecipeKey;
+  workflowKey: CanonicalWorkflowRecipeKey;
   label: string;
   toolName: string;
   audience: string;
@@ -90,10 +92,21 @@ export type PipelinePreset = {
   };
 };
 
-export const WORKFLOW_RECIPES: Record<WorkflowRecipeKey, WorkflowRecipe> = {
-  music_video: {
-    key: 'music_video',
-    label: 'Music Video',
+export const WORKFLOW_KEY_ALIASES: Record<LegacyWorkflowRecipeKey, CanonicalWorkflowRecipeKey> = {
+  music_video: 'music_led',
+  anime_scripted: 'scripted_narrative',
+};
+
+export const normalizeWorkflowKey = (key?: string | null): CanonicalWorkflowRecipeKey | null => {
+  if (!key) return null;
+  if (key === 'music_led' || key === 'scripted_narrative') return key;
+  return WORKFLOW_KEY_ALIASES[key as LegacyWorkflowRecipeKey] || null;
+};
+
+export const WORKFLOW_RECIPES: Record<CanonicalWorkflowRecipeKey, WorkflowRecipe> = {
+  music_led: {
+    key: 'music_led',
+    label: 'Music-led',
     primarySeed: 'audio',
     acceptedSeeds: ['audio', 'brief', 'document', 'idea'],
     summary: 'Audio-first video production: analyze song, shape a concept, plan scenes and shots, generate refs, then produce clips and render.',
@@ -111,9 +124,9 @@ export const WORKFLOW_RECIPES: Record<WorkflowRecipeKey, WorkflowRecipe> = {
     projectBriefRules: 'Normalize uploaded audio, lyrics/SRT, artist notes, and optional documents into a music-video brief: title, language, meaning, musical sections, target audience, subject, emotion, constraints, and references.',
     shotPlanRules: 'Shot plans follow musical structure and timing. The track supplies duration and rhythm; each scene maps to a musical section.',
   },
-  anime_scripted: {
-    key: 'anime_scripted',
-    label: 'Anime Scripted',
+  scripted_narrative: {
+    key: 'scripted_narrative',
+    label: 'Scripted Narrative',
     primarySeed: 'script',
     acceptedSeeds: ['script', 'brief', 'document', 'idea'],
     summary: 'Script-first anime production: parse script into scenes, shots, cast, and environments; use a preset style bible; then produce boards/clips.',
@@ -136,7 +149,7 @@ export const WORKFLOW_RECIPES: Record<WorkflowRecipeKey, WorkflowRecipe> = {
 export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
   music_video_default: {
     key: 'music_video_default',
-    workflowKey: 'music_video',
+    workflowKey: 'music_led',
     label: 'Music Video',
     toolName: 'Studio',
     audience: 'music-video artists, directors, and producers',
@@ -198,8 +211,8 @@ export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
   },
   anime_default: {
     key: 'anime_default',
-    workflowKey: 'anime_scripted',
-    label: 'Anime Scripted',
+    workflowKey: 'scripted_narrative',
+    label: 'Anime',
     toolName: 'Anime Studio',
     audience: 'anime creators, showrunners, and episode directors',
     source: {
@@ -261,11 +274,12 @@ export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
   },
 };
 
-export const DEFAULT_WORKFLOW_RECIPE_KEY: WorkflowRecipeKey = 'music_video';
+export const DEFAULT_WORKFLOW_RECIPE_KEY: CanonicalWorkflowRecipeKey = 'music_led';
 export const DEFAULT_PRESET_KEY: PipelinePresetKey = 'music_video_default';
 
 export const getWorkflowRecipe = (key?: string | null): WorkflowRecipe => {
-  if (key && key in WORKFLOW_RECIPES) return WORKFLOW_RECIPES[key as WorkflowRecipeKey];
+  const normalized = normalizeWorkflowKey(key);
+  if (normalized) return WORKFLOW_RECIPES[normalized];
   return WORKFLOW_RECIPES[DEFAULT_WORKFLOW_RECIPE_KEY];
 };
 
@@ -297,7 +311,7 @@ export const resolveProjectIntake = (opts: {
   seedKind?: string | null;
   presetKey?: string | null;
 }): { workflow: WorkflowRecipe; seedKind: SeedKind; preset: PipelinePreset } => {
-  if (opts.workflowKey && !(opts.workflowKey in WORKFLOW_RECIPES)) {
+  if (opts.workflowKey && !normalizeWorkflowKey(opts.workflowKey)) {
     const err = new Error(`Unknown workflow "${opts.workflowKey}".`);
     (err as any).statusCode = 400;
     throw err;

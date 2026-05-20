@@ -165,7 +165,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
       + (project.isMeditative ? ' · Meditative' : '')
       + (project.isNarrative ? ' · Narrative' : '')
     : null;
-  const isMusicVideo = project.workflowKey === 'music_video';
+  const isMusicVideo = project.workflowKey === 'music_led' || project.workflowKey === 'music_video';
   const isScriptSeed = project.seedKind === 'script';
   const directorBrief = typeof project.projectBrief?.directorBrief === 'string'
     ? project.projectBrief.directorBrief.trim()

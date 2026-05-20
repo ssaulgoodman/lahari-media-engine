@@ -1,5 +1,6 @@
 export type ComposePromptParts = {
   coreTask: string;
+  workflowContext?: string;
   inputs?: string;
   presetTaste?: string;
   outputContract: string;
@@ -13,6 +14,7 @@ const section = (title: string, body?: string): string | null => {
 
 export const composePrompt = (parts: ComposePromptParts): string => [
   parts.coreTask.trim(),
+  section('CONTEXT', parts.workflowContext),
   section('INPUTS', parts.inputs),
   section('TASTE', parts.presetTaste),
   parts.outputContract.trim(),

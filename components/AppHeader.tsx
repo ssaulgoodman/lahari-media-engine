@@ -11,6 +11,8 @@ const PIPELINE_STEPS = [
 ];
 
 const WORKFLOW_LABEL: Record<string, string> = {
+  music_led: 'Music-led',
+  scripted_narrative: 'Scripted',
   music_video: 'Music Video',
   anime_scripted: 'Anime',
 };

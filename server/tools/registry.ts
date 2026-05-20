@@ -1,9 +1,10 @@
 import type { Project } from '../services/codexStudio/core.js';
+import { normalizeWorkflowKey } from '../presets.js';
 import { getAssetState } from './assetState.js';
 import type { AssetKey, BlockedTool, ResolvedTool, ToolManifest, WorkflowKey } from './types.js';
 
 const workflowForProject = (project: Project): WorkflowKey =>
-  (project.workflowKey || 'music_video') as WorkflowKey;
+  normalizeWorkflowKey(project.workflowKey) || 'music_led';
 
 const resolveTool = (tool: ToolManifest): ResolvedTool => ({
   key: tool.key,
@@ -45,7 +46,7 @@ export const TOOL_REGISTRY: ToolManifest[] = [
     key: 'plan-scenes-from-music',
     label: 'Plan music-video scenes',
     description: 'Turn analyzed audio, lyrics, and musical structure into production scenes and shots.',
-    enabledFor: ['music_video'],
+    enabledFor: ['music_led'],
     requires: ['audio', 'musicalStructure'],
     contextInputs: ['lyrics', 'meaning', 'concept'],
     produces: ['scenes', 'shots', 'cast', 'environments'],
@@ -55,7 +56,7 @@ export const TOOL_REGISTRY: ToolManifest[] = [
     key: 'parse-script',
     label: 'Parse script',
     description: 'Extract scenes, shots, cast, and environments from a script, treatment, or episode seed.',
-    enabledFor: ['anime_scripted'],
+    enabledFor: ['scripted_narrative'],
     requires: ['scriptText'],
     contextInputs: ['directorBrief', 'targetRuntime'],
     produces: ['scenes', 'shots', 'cast', 'environments'],
@@ -155,7 +156,7 @@ export const TOOL_REGISTRY: ToolManifest[] = [
     key: 'write-audio-plan',
     label: 'Write audio plan',
     description: 'Write per-shot dialogue, delivery cues, sound notes, and dialogue strategy for scripted projects.',
-    enabledFor: ['anime_scripted'],
+    enabledFor: ['scripted_narrative'],
     requires: ['scenes', 'shots', 'cast'],
     contextInputs: ['scriptText', 'directorBrief'],
     produces: ['audioPlan'],
@@ -165,7 +166,7 @@ export const TOOL_REGISTRY: ToolManifest[] = [
     key: 'assign-cast-voice',
     label: 'Assign cast voice',
     description: 'Persist a TTS provider voice ID for a cast member.',
-    enabledFor: ['anime_scripted'],
+    enabledFor: ['scripted_narrative'],
     requires: ['cast'],
     produces: ['castVoices'],
     surface: 'asset:characters',
@@ -174,7 +175,7 @@ export const TOOL_REGISTRY: ToolManifest[] = [
     key: 'generate-dialogue-audio',
     label: 'Generate dialogue audio',
     description: 'Generate TTS assets for dialogue lines that have assigned character voices.',
-    enabledFor: ['anime_scripted'],
+    enabledFor: ['scripted_narrative'],
     requires: ['audioPlan', 'castVoices'],
     produces: ['ttsAssets'],
     surface: 'asset:audio',

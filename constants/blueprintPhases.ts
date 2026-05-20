@@ -21,15 +21,22 @@ export type WorkflowKey = ApiProject['workflowKey'];
  * the returned list rather than branching on workflow strings.
  */
 const PHASES_BY_WORKFLOW: Record<WorkflowKey, BlueprintPhase[]> = {
+  music_led: [
+    { key: 'concept', label: 'Concept', visible: true },
+    { key: 'script', label: 'Script', visible: true },
+    { key: 'style', label: 'Style', visible: true },
+    { key: 'characters', label: 'Characters', visible: true },
+    { key: 'environments', label: 'Environments', visible: true },
+    // music_led.audio = 'skipped' per WorkflowRecipe — no Audio tab.
+  ],
   music_video: [
     { key: 'concept', label: 'Concept', visible: true },
     { key: 'script', label: 'Script', visible: true },
     { key: 'style', label: 'Style', visible: true },
     { key: 'characters', label: 'Characters', visible: true },
     { key: 'environments', label: 'Environments', visible: true },
-    // music_video.audio = 'skipped' per WorkflowRecipe — no Audio tab.
   ],
-  anime_scripted: [
+  scripted_narrative: [
     { key: 'concept', label: 'Concept', visible: true },
     { key: 'script', label: 'Script', visible: true },
     { key: 'style', label: 'Style', visible: true },
@@ -41,9 +48,17 @@ const PHASES_BY_WORKFLOW: Record<WorkflowKey, BlueprintPhase[]> = {
     // surface ApiError banners until those routes ship.
     { key: 'audio', label: 'Audio', visible: true },
   ],
+  anime_scripted: [
+    { key: 'concept', label: 'Concept', visible: true },
+    { key: 'script', label: 'Script', visible: true },
+    { key: 'style', label: 'Style', visible: true },
+    { key: 'characters', label: 'Characters', visible: true },
+    { key: 'environments', label: 'Environments', visible: true },
+    { key: 'audio', label: 'Audio', visible: true },
+  ],
 };
 
-const DEFAULT_WORKFLOW: WorkflowKey = 'music_video';
+const DEFAULT_WORKFLOW: WorkflowKey = 'music_led';
 
 const resolveWorkflow = (project: { workflowKey?: WorkflowKey }): WorkflowKey =>
   (project.workflowKey && PHASES_BY_WORKFLOW[project.workflowKey]) ? project.workflowKey : DEFAULT_WORKFLOW;

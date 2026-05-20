@@ -1,7 +1,7 @@
-import type { PipelinePresetKey, WorkflowRecipeKey } from '../presets.js';
+import type { CanonicalWorkflowRecipeKey, PipelinePresetKey } from '../presets.js';
 import type { Project } from '../services/codexStudio/core.js';
 
-export type WorkflowKey = WorkflowRecipeKey;
+export type WorkflowKey = CanonicalWorkflowRecipeKey;
 export type PresetKey = PipelinePresetKey;
 
 export type AssetKey =

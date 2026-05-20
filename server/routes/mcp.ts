@@ -14,6 +14,7 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 import { runWithRequestContext } from '../requestContext.js';
 import { structuredError } from '../services/structuredErrors.js';
+import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.6';
@@ -310,7 +311,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         title: row.title,
         status: row.status,
         presetKey: row.preset_key || null,
-        workflowKey: row.workflow_key || null,
+        workflowKey: normalizeWorkflowKey(row.workflow_key),
         seedKind: row.seed_kind || null,
         songType: row.song_type || null,
         isNarrative: row.is_narrative ?? null,

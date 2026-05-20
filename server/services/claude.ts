@@ -340,7 +340,7 @@ const formatShotExamples = (preset: PipelinePreset): string => {
 };
 
 const workflowSourceLabels = (preset: PipelinePreset) => {
-  const isMusicVideo = preset.workflowKey === 'music_video';
+  const isMusicVideo = preset.workflowKey === 'music_led';
   return {
     sourceBlock: isMusicVideo
       ? 'LYRICS / AUDIO SOURCE'
@@ -817,7 +817,7 @@ export const writeShotPrompts = async (
   const client = await getClient();
   const preset = context.preset || getRuntimePreset();
   const labels = workflowSourceLabels(preset);
-  const isMusicVideo = preset.workflowKey === 'music_video';
+  const isMusicVideo = preset.workflowKey === 'music_led';
 
   const shotList = shots.map((s, i) =>
     `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | ${isMusicVideo ? 'Lyric/audio cue' : 'Source beat'}: ${s.sceneLyrics || (isMusicVideo ? 'instrumental' : 'not specified')}`
