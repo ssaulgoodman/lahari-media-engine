@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { AutoGrowTextarea } from './AutoGrowTextarea';
 
 export type IntakeMode = 'music_video' | 'anime_scripted';
 
@@ -37,7 +38,7 @@ const MODES: Array<{
     presetLabel: 'Music Video Default',
     seedLabel: 'Audio',
     tagline: 'Audio-first',
-    description: 'Upload a track. Scenes are synced to the musical structure, then concept, style, cast, and shots come from there.',
+    description: 'Upload a track. Scenes sync to musical structure; concept, style, cast, and shots come from there.',
   },
   {
     key: 'anime_scripted',
@@ -46,9 +47,13 @@ const MODES: Array<{
     presetLabel: 'Anime Default',
     seedLabel: 'Script',
     tagline: 'Script-first',
-    description: 'Paste a scene or episode script. Cast, environments, scenes, and shots are parsed straight into Studio.',
+    description: 'Paste a scene or episode script. Cast, environments, scenes, and shots parse straight into Studio.',
   },
 ];
+
+// Shared input/textarea classes. Matches the dense surface-inset look used
+// across BlueprintContextBar, ScriptPhase, CharactersPhase, etc.
+const FIELD_BASE = 'surface-inset rounded-md px-2.5 py-1.5 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20';
 
 export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => {
   const [mode, setMode] = useState<IntakeMode>('music_video');
@@ -70,14 +75,12 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
   const handleAudioPick = (file: File | null) => {
     if (!file) return;
     setAudioFile(file);
-    if (!audioTitle) {
-      // Pre-fill title from filename minus extension.
-      setAudioTitle(file.name.replace(/\.[^.]+$/, ''));
-    }
+    if (!audioTitle) setAudioTitle(file.name.replace(/\.[^.]+$/, ''));
   };
 
-  const canSubmit =
-    mode === 'music_video' ? !!audioFile && !creating : !!scriptText.trim() && !creating;
+  const canSubmit = mode === 'music_video'
+    ? !!audioFile && !creating
+    : !!scriptText.trim() && !creating;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -105,7 +108,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
   };
 
   return (
-    <div className="max-w-5xl mx-auto pb-32 space-y-8">
+    <div className="max-w-4xl mx-auto pb-32 space-y-6">
       <div>
         <h2 className="text-2xl font-display font-medium text-white">Start a project</h2>
         <p className="text-sm text-zinc-400 mt-1">Pick what you're making. Each mode brings its own seed and defaults.</p>
@@ -120,23 +123,23 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
               key={m.key}
               type="button"
               onClick={() => setMode(m.key)}
-              className={`text-left p-5 rounded-xl border transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/30 ${
+              className={`text-left p-4 rounded-lg border transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/30 ${
                 active
                   ? 'border-white/30 bg-white/[0.04]'
                   : 'border-white/[0.06] bg-white/[0.015] hover:border-white/[0.12] hover:bg-white/[0.025]'
               }`}
             >
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-lg font-display text-white">{m.label}</h3>
+              <div className="flex items-baseline justify-between gap-2">
+                <h3 className="text-base font-display text-white">{m.label}</h3>
                 <span className={`text-[10px] uppercase tracking-wider font-mono ${active ? 'text-white' : 'text-zinc-400'}`}>
                   {active ? 'Selected' : m.tagline}
                 </span>
               </div>
-              <p className="text-sm text-zinc-300 mt-2 leading-relaxed">{m.description}</p>
-              <div className="text-[11px] text-zinc-400 mt-4 flex items-center gap-3">
-                <span>Seed: <span className="text-zinc-300">{m.seedLabel}</span></span>
+              <p className="text-xs text-zinc-300 mt-1.5 leading-relaxed">{m.description}</p>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-400 mt-3 flex items-center gap-2 font-mono">
+                <span>Seed · <span className="text-zinc-300">{m.seedLabel}</span></span>
                 <span className="text-zinc-600">·</span>
-                <span>Preset: <span className="text-zinc-300">{m.presetLabel}</span></span>
+                <span>Preset · <span className="text-zinc-300">{m.presetLabel}</span></span>
               </div>
             </button>
           );
@@ -144,13 +147,10 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
       </div>
 
       {/* Mode-specific form */}
-      <div className="border border-white/[0.06] rounded-xl bg-white/[0.015] p-5">
+      <div className="border border-white/[0.06] rounded-lg bg-white/[0.015] p-4 space-y-3">
         {mode === 'music_video' && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">Audio seed</p>
-              <p className="text-xs text-zinc-400 mt-1">Drop an mp3/wav/m4a, or click to choose.</p>
-            </div>
+          <>
+            <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Audio seed</p>
 
             <div
               onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -162,7 +162,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
                 if (f) handleAudioPick(f);
               }}
               onClick={() => audioInputRef.current?.click()}
-              className={`relative cursor-pointer rounded-lg border-2 border-dashed transition-colors p-8 text-center ${
+              className={`relative cursor-pointer rounded-md border-2 border-dashed transition-colors p-6 text-center ${
                 dragging
                   ? 'border-white/40 bg-white/[0.05]'
                   : audioFile
@@ -179,7 +179,7 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
               />
               {audioFile ? (
                 <div className="flex items-center justify-center gap-3 text-sm">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"><path d="M20 6L9 17l-5-5"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"><path d="M20 6L9 17l-5-5"/></svg>
                   <span className="text-white truncate max-w-[420px]">{audioFile.name}</span>
                   <span className="text-zinc-400 text-xs">{(audioFile.size / 1024 / 1024).toFixed(1)} MB</span>
                   <button
@@ -198,84 +198,92 @@ export const StartProject: React.FC<Props> = ({ onCreate, creating, error }) => 
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_160px] gap-2">
               <input
                 value={audioTitle}
                 onChange={(e) => setAudioTitle(e.target.value)}
                 placeholder="Project title (optional)"
-                className="surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                className={`w-full ${FIELD_BASE}`}
               />
               <input
                 value={audioLanguage}
                 onChange={(e) => setAudioLanguage(e.target.value)}
                 placeholder="Language (optional)"
-                className="surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                className={`w-full ${FIELD_BASE}`}
               />
             </div>
 
-            <textarea
+            <AutoGrowTextarea
               value={audioContext}
               onChange={(e) => setAudioContext(e.target.value)}
               placeholder="Brief, context, or director note (optional)"
-              className="w-full h-20 surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none"
+              rows={2}
+              className={`w-full ${FIELD_BASE} leading-relaxed`}
             />
-          </div>
+          </>
         )}
 
         {mode === 'anime_scripted' && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-zinc-400 font-medium">Script seed</p>
-              <p className="text-xs text-zinc-400 mt-1">Paste a scene, episode beat, or full script. The parser will pull out cast, environments, scenes, and shots.</p>
-            </div>
+          <>
+            <p className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Script seed</p>
 
-            <input
-              value={scriptTitle}
-              onChange={(e) => setScriptTitle(e.target.value)}
-              placeholder="Project title (optional)"
-              className="w-full surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
-            />
-
-            <textarea
-              value={scriptText}
-              onChange={(e) => setScriptText(e.target.value)}
-              placeholder={'INT. CLASSROOM - AFTERNOON\nMina pauses at the doorway. The room goes quiet.\n\nREN\n  You came back.'}
-              className="w-full h-56 surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-y font-mono leading-relaxed"
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_180px] gap-3">
-              <textarea
-                value={scriptBrief}
-                onChange={(e) => setScriptBrief(e.target.value)}
-                placeholder="Director brief (optional)"
-                className="surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20 resize-none h-20"
+            {/* Title + Runtime on one row — both single-line, so heights match.
+                Pairing Runtime with a multiline textarea (old layout) is what
+                made the runtime box look massive. */}
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_140px] gap-2">
+              <input
+                value={scriptTitle}
+                onChange={(e) => setScriptTitle(e.target.value)}
+                placeholder="Project title (optional)"
+                className={`w-full ${FIELD_BASE}`}
               />
               <input
                 value={scriptRuntime}
                 onChange={(e) => setScriptRuntime(e.target.value.replace(/[^\d]/g, ''))}
-                placeholder="Runtime (sec)"
+                placeholder="Runtime · sec"
                 inputMode="numeric"
-                className="surface-inset rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-500 outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+                className={`w-full ${FIELD_BASE} font-mono tabular-nums`}
               />
             </div>
-          </div>
+
+            {/* Script paste — AutoGrow so pasted content never traps in a
+                scroll well. The parser pulls cast/environments/scenes/shots. */}
+            <AutoGrowTextarea
+              value={scriptText}
+              onChange={(e) => setScriptText(e.target.value)}
+              placeholder={'INT. CLASSROOM — AFTERNOON\nMina pauses at the doorway. The room goes quiet.\n\nREN\n  You came back.'}
+              rows={10}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              className={`w-full ${FIELD_BASE} font-mono text-[13px] leading-relaxed min-h-[220px]`}
+            />
+
+            <AutoGrowTextarea
+              value={scriptBrief}
+              onChange={(e) => setScriptBrief(e.target.value)}
+              placeholder="Director brief (optional) — tone, references, what NOT to do"
+              rows={2}
+              className={`w-full ${FIELD_BASE} leading-relaxed`}
+            />
+          </>
         )}
 
         {error && (
-          <p className="text-xs text-red-400 mt-4">{error}</p>
+          <p className="text-xs text-red-400">{error}</p>
         )}
 
-        <div className="flex items-center justify-end mt-5">
+        <div className="flex items-center justify-end pt-1">
           <button
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="px-5 py-2 bg-white text-black rounded-md text-sm font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
-            {creating && <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+            {creating && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
             {creating
               ? (mode === 'music_video' ? 'Uploading…' : 'Parsing…')
-              : (mode === 'music_video' ? 'Start Project' : 'Parse & Open Studio')}
+              : (mode === 'music_video' ? 'Start project' : 'Parse & open Studio')}
           </button>
         </div>
       </div>
