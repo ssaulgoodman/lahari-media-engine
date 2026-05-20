@@ -59,7 +59,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         onClick={onOpenSidebar}
         className="flex items-center gap-2.5 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md flex-shrink-0"
       >
-        <span className="text-sm font-display font-semibold text-white tracking-tight">Lahari</span>
+        <span className="text-sm font-display font-semibold text-white tracking-tight">Mirage</span>
         {project && (
           <>
             <span className="text-zinc-400/60 text-sm">/</span>

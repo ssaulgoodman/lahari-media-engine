@@ -98,8 +98,8 @@ app.get('/{*path}', (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n  Lahari Media Engine API`);
-  console.log(`  ─────────────────────`);
+  console.log(`\n  Mirage Studio API`);
+  console.log(`  ─────────────────`);
   console.log(`  Local:   http://localhost:${PORT}`);
   console.log(`  API:     http://localhost:${PORT}/api`);
   console.log(`  Storage: http://localhost:${PORT}/storage\n`);

@@ -1116,7 +1116,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
       // artist may be deep in another shot while this finished. Stopped
       // runs intentionally don't notify; the artist clicked Stop and
       // already knows the state.
-      void notifyBulkComplete('Lahari · Prompts done', `${targets.length} storyboard prompt${targets.length === 1 ? '' : 's'} written.`);
+      void notifyBulkComplete('Mirage · Prompts done', `${targets.length} storyboard prompt${targets.length === 1 ? '' : 's'} written.`);
     } finally {
       setStoryboardPromptQueue([]);
     }
@@ -1141,7 +1141,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
       if (bulkStopRef.current.requested) return;
       const latest = await api.getProject(project.id);
       setProject(latest);
-      void notifyBulkComplete('Lahari · Storyboards done', `${targets.length} board${targets.length === 1 ? '' : 's'} rendered.`);
+      void notifyBulkComplete('Mirage · Storyboards done', `${targets.length} board${targets.length === 1 ? '' : 's'} rendered.`);
     } finally {
       setStoryboardImageQueue([]);
     }
@@ -1186,7 +1186,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         setProject(latestProject);
       }
       if (!bulkStopRef.current.requested && totalFired > 0) {
-        void notifyBulkComplete('Lahari · Frames done', `${totalFired} shot frame${totalFired === 1 ? '' : 's'} generated.`);
+        void notifyBulkComplete('Mirage · Frames done', `${totalFired} shot frame${totalFired === 1 ? '' : 's'} generated.`);
       }
     } finally {
       setFrameQueue([]);
@@ -1250,7 +1250,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         setProject(latestProject);
       }
       if (!bulkStopRef.current.requested && totalFired > 0) {
-        void notifyBulkComplete('Lahari · Videos done', `${totalFired} shot clip${totalFired === 1 ? '' : 's'} generated.`);
+        void notifyBulkComplete('Mirage · Videos done', `${totalFired} shot clip${totalFired === 1 ? '' : 's'} generated.`);
       }
     } finally {
       setVideoQueue([]);

@@ -12,8 +12,8 @@ const GoogleIcon: React.FC = () => (
 export const SignIn: React.FC<{ signInWithGoogle: () => Promise<void> }> = ({ signInWithGoogle }) => (
   <div className="min-h-screen bg-[#141418] flex items-center justify-center">
     <div className="text-center">
-      <h1 className="text-2xl font-display text-white mb-2">Lahari Media Engine</h1>
-      <p className="text-zinc-400 text-sm mb-8">AI-powered devotional music video production</p>
+      <h1 className="text-2xl font-display text-white mb-2">Mirage</h1>
+      <p className="text-zinc-400 text-sm mb-8">AI video production studio</p>
       <button
         onClick={() => signInWithGoogle()}
         className="inline-flex items-center gap-3 px-6 py-3 bg-white text-black rounded-lg font-medium text-sm hover:bg-zinc-100 transition-colors"
