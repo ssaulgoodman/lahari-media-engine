@@ -1,32 +1,75 @@
 # Wave 2 — `presetTaste` drafts for T9.2 brainstorm-style
 
-**Status:** Drafts. Not committed to `server/presets.ts` yet. To be applied when T9.12 (composer signature extension) lands and T9.2 (brainstorm-style migration) begins.
+**Status:** Drafts, ready to apply. T9.12 composer extension landed in `ed9efd2`; T9.2 is unblocked.
 
-**Doctrine reminder (D25 reframed):** medium-guard lives in `presetTaste`, NOT in `coreTask`. The shared `coreTask` is workflow-agnostic ("Propose 4 distinct visual style directions, no story/scenes/characters, cover a real range"). The per-preset `style.rules` field carries medium + taste rules that injected into the `TASTE` section of the composed prompt.
+**Doctrine reminder (D25 reframed):** medium-guard lives in `presetTaste`, NOT in `coreTask`. The shared `coreTask` is workflow-agnostic. The per-preset taste field carries medium + drift rules into the `TASTE` section of the composed prompt.
 
-These drafts target the `style.rules` field on `PipelinePreset` in `server/presets.ts:PIPELINE_PRESETS`. They replace what's currently there for the brainstorm-style use case; we will also extend `style.rules` if other tools (`visualize-style`, `refine-style-direction`) need richer guidance.
+**Architectural correction (post Codex review):** `preset.style.rules` is **shared across multiple surfaces** — script parser (`server/services/claude.ts:413`), initial `style_description` on script intake (`server/routes/projects.ts:970`), brainstorm, visualize, refine. Dropping brainstorm-specific instructions like "return 4 distinct directions, cover a range" into `style.rules` contaminates the parser and style-description seed. **Fix:** split into two layers:
+
+- `style.rules` keeps the **shared style language**: medium statement + drift bans. Consumed by every surface that needs to know what kind of visual world this is.
+- `style.brainstormTaste?` (new optional field) carries **brainstorm-only** rules: aesthetic range coverage + distinctness. Consumed only by the brainstorm tool builder.
 
 ---
 
-## `anime_default.style.rules` — proposed
+## Schema change
+
+Extend `PipelinePreset.style` in `server/presets.ts`:
+
+```ts
+style: {
+  dpIdentity: string;
+  rules: string;                // shared style language (medium + drift bans)
+  brainstormTaste?: string;     // brainstorm-tool-only: range coverage + distinctness
+  subjectPrompt: (subject: string) => string;
+  presetBible?: string;
+};
+```
+
+Other tools (visualize, refine, parser, looks) continue reading `style.rules`. They never read `style.brainstormTaste`. If a future tool needs its own taste slice, add a similarly-named optional field — generalize the shape only when a second tool needs it.
+
+---
+
+## `anime_default.style.rules` — proposed (shared)
+
+Replaces existing field. Used by brainstorm, visualize, refine, script parser, initial style_description.
 
 ```
 Medium is anime: hand-illustrated frames, drawn linework, painted or
-flat-color rendering, animated camera and staging. Stay inside anime
-production.
+flat-color rendering, animated camera and staging. The output reads
+as a drawn/animated frame, not as a photographed or photoreal object
+pretending to be one.
 
-Range of legitimate anime aesthetics that should remain available:
-modern flat-color digital production, retro cel-painted television,
-soft watercolor or pastel illustration, harsh high-contrast graphic
-styles, photoreal-leaning anime backgrounds, ink-and-wash or sketch-
-forward work, stylized limited-animation looks. Do not collapse to
-a single era or treatment when proposing directions.
+Do not let directions, descriptions, or generated frames drift into
+live-action photography, documentary stills, Polaroid or film-stock
+realism as the apparent medium. Technical ingredients like cel-shaded
+CG, 3D-assisted backgrounds, painted photoreal-leaning environments,
+and digital compositing are all legitimate inside anime production —
+what matters is that the final image reads as anime, not as a
+photographed scene with anime styling slapped on top.
+```
 
-Avoid drifting into: live-action photography, documentary stills,
-Polaroid or film-stock realism, 3D CGI renders, motion-capture
-realism, photoreal pastiches. If a reference would naturally read as
-a photographed object rather than a drawn frame, it does not belong
-in an anime direction.
+**Why this shape:**
+- Establishes the medium (anime, drawn/animated frame)
+- Bans the **failure mode** ("reads as photograph"), not technical ingredients
+- Explicitly OKs cel-shaded CG / 3D-assisted backgrounds / photoreal-leaning painted backgrounds — all legitimate anime production
+- Works as the shared baseline for all visual tools, not just brainstorm
+
+---
+
+## `anime_default.style.brainstormTaste` — proposed (new field)
+
+Brainstorm-only. Appended into the `TASTE` section when the brainstorm tool runs.
+
+```
+Cover a real range across legitimate anime aesthetics. Each of the
+four directions should sit in a clearly different corner of the
+anime production space: modern flat-color digital, retro cel-painted
+television, soft watercolor or pastel illustration, harsh
+high-contrast graphic, photoreal-leaning painted backgrounds with
+anime characters, ink-and-wash or sketch-forward, stylized
+limited-animation looks. These are starting points, not a fixed
+menu — pick four that actually contrast with each other given this
+project.
 
 Each direction must be distinct from the others in palette, line
 treatment, rendering, and overall mood. Avoid restating the same
@@ -34,47 +77,51 @@ look with different adjectives.
 ```
 
 **Why this shape:**
-- Medium-guard explicit (anime, hand-illustrated, drawn frames)
-- Range coverage explicit so brainstorm won't taste-lock to OVA/cel/vintage
-- Negative space named (the Polaroid/photoreal drift modes)
+- Range coverage explicit so brainstorm doesn't taste-lock to OVA/cel/vintage
+- "Starting points, not a fixed menu" — the LLM picks four that contrast for THIS project, not the four named
 - Distinctness rule prevents 4 directions that are 4 adjectives on the same thing
-- No enum labels ("anime_default", "scripted_narrative")
-- No workflow nouns from other workflows ("song", "lyrics", "musical structure")
+- No enum labels, no other-workflow nouns
 
 ---
 
-## `music_video_default.style.rules` — proposed
+## `music_video_default.style.rules` — proposed (shared)
 
 ```
 Music video has no fixed medium. Animation, live-action, mixed media,
-abstract, motion graphics, documentary, photography, performance
-capture — all fit. Lean into the medium that suits the song's energy
-and the artist's intent.
+motion graphics, photography, performance capture, projection, lo-fi
+formats — any visual production can be the medium. The medium choice
+is part of the treatment, not a constraint to work around.
 
-Each direction is one coherent visual world the video could live
-inside: its rendering medium, palette, lighting language, and overall
-mood. Cover a real range across media and aesthetics. Do not collapse
-to a single look type when proposing directions.
-
-Vary medium, lighting, texture, era, camera grammar, and production
-design across directions. Each must be distinct from the others.
-Avoid restating the same treatment with different adjectives.
-
-Should feel like an intentional music-video treatment, not generic
-stock fantasy or AI-renderscape filler.
+Should feel like an intentional music-video production, not generic
+stock fantasy, AI-renderscape filler, or default-grade visual mood
+collage. Specificity beats genre cliché.
 ```
 
 **Why this shape:**
 - Medium-permissive (the music_led counterpart to anime's medium-guard)
-- Explicit range coverage so brainstorm doesn't collapse to "all live-action" or "all animated"
-- Distinctness rule
-- Anti-slop guard ("generic stock fantasy", "AI-renderscape filler") — preserved from existing rules
+- Anti-slop guard — preserved from existing rules
 - No anime nouns ("character-model consistency", "key poses", "anime production language")
-- No enum labels
+- No brainstorm-specific instruction ("return 4 directions") — that's now in `brainstormTaste`
 
 ---
 
-## How these get used in T9.2
+## `music_video_default.style.brainstormTaste` — proposed (new field)
+
+```
+Cover a real range across mediums and aesthetics. Vary the medium
+(animation, live-action, mixed, abstract, motion graphics,
+photography-leaning, etc.), the lighting language, the texture, the
+era reference, the camera grammar, and the production design across
+the four directions. Each direction should sit in a clearly different
+production space.
+
+Each must be distinct from the others. Avoid restating the same
+treatment with different adjectives.
+```
+
+---
+
+## How T9.2 builds the prompt
 
 ```ts
 // server/prompts/styleBrainstorm.ts
@@ -88,6 +135,9 @@ const WORKFLOW_CONTEXTS: Record<WorkflowKey, string> = {
     "visual world the episode or film sits inside.",
 };
 
+const composedPresetTaste = (preset: PipelinePreset): string =>
+  [preset.style.rules, preset.style.brainstormTaste].filter(Boolean).join('\n\n');
+
 export const buildStyleBrainstormPrompt = (
   project: ApiProject,
   preset: PipelinePreset,
@@ -96,11 +146,10 @@ export const buildStyleBrainstormPrompt = (
   coreTask:
     "Propose 4 distinct visual style directions for this project. " +
     "Each direction is one coherent visual world the project could " +
-    "live inside. Do not write story, scenes, or characters. " +
-    "Cover a real range across legitimate aesthetics for this medium.",
+    "live inside. Do not write story, scenes, or characters.",
   workflowContext: WORKFLOW_CONTEXTS[preset.workflowKey],
   inputs: formatProjectInputs(project),
-  presetTaste: preset.style.rules,
+  presetTaste: composedPresetTaste(preset),
   outputContract:
     "Return exactly 4 directions as JSON. Each direction:\n" +
     "- title: short evocative name (2-5 words)\n" +
@@ -109,32 +158,29 @@ export const buildStyleBrainstormPrompt = (
     "Hard rules:\n" +
     "- No character names. No scene beats. No plot.\n" +
     "- Do not number directions with story arcs.\n" +
-    "- Each direction independent; do not restate one with different adjectives.",
+    "- Each direction independent.",
   userNote,
 });
 ```
 
-The `coreTask` and `outputContract` are shared (one body, all workflows). `workflowContext` is a per-workflow string (literal short prose, not an enum). `presetTaste` is whatever the project's preset has in `style.rules` — that's where medium-guard lives.
+`coreTask` and `outputContract` are shared across workflows. `workflowContext` is a per-workflow string. `presetTaste` is `style.rules` (shared) + `style.brainstormTaste` (brainstorm-only) concatenated — the brainstorm tool is the only place those two layers compose.
 
 ---
 
 ## Sanity check against the proof gate criteria
 
-Validation criteria from ledger §6 W2 proof gate:
-
-- **(a) No music-led chrome leaks into a scripted_narrative + anime_default run:** anime preset has no "song", "lyrics", "musical" nouns ✓
-- **(b) No taste-lock to a specific anime era:** anime preset explicitly lists 7 different aesthetic ranges that must remain available; no canonical "this is the right anime" anchor ✓
-- **(c) Directions vary across modern/retro/minimal/maximal/painterly/graphic:** anime preset explicitly names the range; will need to verify LLM honors this on live run ⏳
-- **(d) MCP packet `availableTools`+`blockedTools` correct:** unchanged by these drafts (registry side; covered by T8) ✓
+- **(a) No music-led chrome leaks into a scripted_narrative + anime_default run:** anime preset has no music nouns ✓
+- **(b) No taste-lock to a specific anime era:** brainstormTaste explicitly frames the 7 listed aesthetics as "starting points, not a fixed menu" — and the rules layer no longer bans technical ingredients that would have over-constrained ✓
+- **(c) Directions vary across modern/retro/minimal/maximal/painterly/graphic possibilities inside anime production:** brainstormTaste names this range explicitly ⏳ (verify on live run)
+- **(d) MCP packet `availableTools`+`blockedTools` correct:** unchanged by these drafts ✓
 - **(e) No workflow/preset enum strings in prompt body:** both drafts use only production language ✓
-- **(f) Shared coreTask + workflowContext + presetTaste layering holds (no medium-guard in coreTask):** coreTask says "cover a real range across legitimate aesthetics for this medium" — references "this medium" abstractly, with the medium itself defined by presetTaste. Layering holds ✓
+- **(f) Shared coreTask + workflowContext + presetTaste layering holds:** coreTask is workflow-agnostic; medium-guard lives in `style.rules` (shared); brainstorm-specific range/distinctness lives in `style.brainstormTaste`. Layering is clean ✓
+- **(g) No contamination of other surfaces:** script parser at `claude.ts:413` and initial `style_description` at `projects.ts:970` continue reading `style.rules` only; new field is brainstorm-tool-only ✓
 
 ---
 
 ## Open questions
 
-1. **Should `anime_default.style.rules` also cover non-brainstorm tools** (visualize-style, refine-style-direction, looks generation, shot prompts)? The current rules in presets.ts have separate fields for each (`style.rules`, `looks.qualityRules`, `studio.shotPromptRules`). For now, replace only `style.rules` for the brainstorm migration; other tools' rules stay as-is until their own T9.x migration.
+1. **Other tools that need their own taste slice later?** Visualize-style will likely want a different taste shape (image-generation prompt rules vs. text-direction rules). Defer to T9.3 — add `style.visualizeTaste?` then if needed, or refactor `style` into `toolTaste: { brainstorm?, visualize?, ... }` if a third tool also needs one. Don't pre-generalize.
 
-2. **Does music_video_default need a second medium-flag for "vary medium" vs "lean into one"?** Some artists want eclectic directions, others want a focused medium. v1 default is "vary medium" per the existing rules. Defer richer toggling to v1.5.
-
-3. **What about workflowContext for deferred archetypes (campaign, short_form)?** Add the strings when the workflow lands; they don't need to be defined now.
+2. **`style.presetBible`** — currently used as a higher-priority fallback over `style.rules` in `projects.ts:970` and `claude.ts:413`. For anime it carries a "Default anime look: clean 2D animation key art..." line that overlaps with the new `style.rules`. After T9.2, consider deleting `presetBible` and folding any unique content into `style.rules`. Out of scope for the brainstorm slice; flag for follow-up cleanup.

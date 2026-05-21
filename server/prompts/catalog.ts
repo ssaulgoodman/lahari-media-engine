@@ -397,55 +397,46 @@ SCENES:
     summary: 'Proposes 4 distinct visual style directions — lighting, palette, texture, cultural references.',
     variables: [
       { name: 'concept', description: 'Locked concept' },
-      { name: 'preset', description: 'Runtime preset: workflow, label, audience, and style rules' },
-      { name: 'lyrics', description: 'Music-video lyrics or legacy source text (truncated to 3000 chars)' },
-      { name: 'meaning', description: 'Music-video meaning or legacy logline (1500 chars)' },
-      { name: 'scriptSummary', description: 'Optional script summary once it exists' },
-      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
-      { name: 'isNarrative', description: 'Has dramatic arc?' },
-      { name: 'isMeditative', description: 'Contemplative/inward?' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context; never raw workflow enum labels' },
+      { name: 'presetTaste', description: 'Preset style rules + brainstorm-only taste rules' },
+      { name: 'sourceText', description: 'Lyrics/source excerpt for music-led projects; script/source excerpt for scripted narrative projects' },
+      { name: 'meaning', description: 'Music-led meaning/intent, or scripted director brief/logline when available' },
+      { name: 'scriptSummary', description: 'Optional scene/script overview once it exists' },
       { name: 'userNotes', description: 'Optional preference for all 4 variations' },
     ],
-    template: `You are {{preset.style.dpIdentity}}.
+    template: `Propose 4 distinct visual style directions for this project.
 
-Workflow: {{preset.workflowKey}}
-Preset: {{preset.key}} — {{preset.label}}
-Audience: {{preset.audience}}.
+Each direction is one coherent visual world the project could live inside.
+Do not write story, scenes, characters, camera shot lists, or plot beats.
+Cover a real range across legitimate aesthetics for the medium described in TASTE.
+
+CONTEXT
+{{workflowContext}}
+
+INPUTS
+{{formatted project subject, concept/theme, mood, source excerpt, meaning/logline, and script overview}}
+
+TASTE
 {{preset.style.rules}}
-These descriptions will be used as prompts for image generation.
+{{preset.style.brainstormTaste}}
 
-SUBJECT: {{concept.subject || concept.primarySubject || concept.deity}} — {{concept.theme}}
-Mood: {{concept.mood}}
-Language: {{concept.language}}
-{{songType || traits ? "SONG TYPE: " + [songType, traits].filter(Boolean).join(", ") : ""}}
+Return exactly 4 directions as JSON.
 
-LYRICS:
-{{lyrics}}
+Each direction:
+- title: short evocative name, 2-5 words
+- description: 2 compact sentences describing palette, line or medium treatment, rendering, lighting, texture, and overall mood
 
-MEANING:
-{{meaning}}
+Hard rules:
+- No character names.
+- No scene beats.
+- No plot.
+- Do not number directions as story arcs.
+- Each direction must be independently usable as an image-generation style prompt.
+- Do not restate one look with different adjectives.
 
-{{scriptSummary ? "SCRIPT OVERVIEW:\\n" + scriptSummary : ""}}
-{{userNotes ? "USER DIRECTION: All 4 must be variations within this preference:\\n" + userNotes : ""}}
-
-Propose 4 distinct visual style directions using the propose_style_directions tool.
-
-Each direction must produce a visibly different reference image: vary color temperature, rendering approach, lighting behavior, and artistic/cultural reference.
-Do not let all four directions collapse into the same warm, dark, dramatic-lighting variant.
-Stay inside the workflow and preset contract above. User direction can narrow era, texture, mood, reference lineage, or production treatment, but it must not quietly switch the project into an incompatible medium or product form.
-
-For each: a title (2-5 words) and description (2 short punchy sentences, concrete and compact).
-
-Description covers ONLY transferable visual treatment: lighting, color palette, texture/medium, cultural references.
-Do NOT describe characters, scenes, environments, or narrative.
-These descriptions will be used as image generation prompts — be concrete, not literary.
-
-QUALITY GUIDELINES for the image generation downstream:
-- Avoid overly AI/CGI/fantasy look — every direction should feel grounded and intentional in its chosen medium
-- Avoid excessive intricate details that muddy the image — every element should have clear intention
-- If stylized, it should be tasteful and deliberate, not generic digital art or AI slop
-- Think intentional reference image, not generic concept art`,
-    source: { file: 'server/services/claude.ts', lines: 'brainstormStyleDirections' },
+USER NOTE
+{{userNotes}}`,
+    source: { file: 'server/prompts/styleBrainstorm.ts', lines: 'buildStyleBrainstormPrompt' },
   },
   {
     id: 'refine-style-direction',

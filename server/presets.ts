@@ -65,6 +65,7 @@ export type PipelinePreset = {
   style: {
     dpIdentity: string;
     rules: string;
+    brainstormTaste?: string;
     subjectPrompt: (subject: string) => string;
     presetBible?: string;
   };
@@ -183,7 +184,12 @@ export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
     },
     style: {
       dpIdentity: 'a Director of Photography designing the visual language for a music video',
-      rules: 'The imagery should feel like an intentional music-video treatment, not generic stock fantasy. Vary medium, lighting, texture, era, camera grammar, and production design.',
+      rules: `Music video has no fixed medium. Animation, live-action, mixed media, motion graphics, photography, performance capture, projection, lo-fi formats, and editorial treatments can all fit when they serve the track and director intent.
+
+Should feel like an intentional music-video production, not generic stock fantasy, AI-renderscape filler, or default-grade visual mood collage. Specificity beats genre cliché.`,
+      brainstormTaste: `Cover a real range across mediums and aesthetics. Vary the medium, lighting language, texture, era reference, camera grammar, and production design across the four directions.
+
+Each direction should sit in a clearly different production space. Avoid restating the same treatment with different adjectives.`,
       subjectPrompt: (subject) => `a music video about ${subject}`,
     },
     looks: {
@@ -245,7 +251,12 @@ export const PIPELINE_PRESETS: Record<PipelinePresetKey, PipelinePreset> = {
     },
     style: {
       dpIdentity: 'an anime art director defining production-ready visual language',
-      rules: 'Use anime production language: character-model consistency, clean silhouettes, readable acting, controlled background detail, strong key poses, and coherent lighting. Avoid live-action photoreal defaults unless the director asks for hybrid realism.',
+      rules: `Medium is anime: hand-illustrated frames, drawn linework, painted or flat-color rendering, animated camera and staging. The output reads as a drawn/animated frame, not as a photographed or photoreal object pretending to be one.
+
+Do not let directions, descriptions, or generated frames drift into live-action photography, documentary stills, Polaroid or film-stock realism as the apparent medium. Technical ingredients like cel-shaded CG, 3D-assisted backgrounds, painted photoreal-leaning environments, and digital compositing are legitimate inside anime production when the final image still reads as anime.`,
+      brainstormTaste: `Cover a real range across legitimate anime aesthetics. Each of the four directions should sit in a clearly different corner of the anime production space: modern flat-color digital, retro cel-painted television, soft watercolor or pastel illustration, harsh high-contrast graphic, photoreal-leaning painted backgrounds with anime characters, ink-and-wash or sketch-forward, stylized limited-animation looks. These are starting points, not a fixed menu; pick four that actually contrast with each other given this project.
+
+Each direction must be distinct in palette, line treatment, rendering, lighting, and mood. Avoid restating the same look with different adjectives.`,
       subjectPrompt: (subject) => `an anime scene production bible for ${subject}`,
       presetBible: 'Default anime look: clean 2D animation key art, expressive but consistent faces, readable silhouettes, detailed painted backgrounds, restrained camera motion, strong acting poses, no live-action photorealism.',
     },
