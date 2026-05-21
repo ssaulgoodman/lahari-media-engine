@@ -1,5 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
+import { clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 type StyleBrainstormPromptInput = {
   sourceText?: string;
@@ -11,22 +12,6 @@ type StyleBrainstormPromptInput = {
   isNarrative?: boolean;
   isMeditative?: boolean;
   preset: PipelinePreset;
-};
-
-const clip = (value: unknown, max: number): string => {
-  const text = typeof value === 'string' ? value.trim() : '';
-  return text.length > max ? text.slice(0, max) : text;
-};
-
-const conceptSubject = (concept: any): string =>
-  concept?.subject || concept?.primarySubject || concept?.title || 'Unknown';
-
-const workflowContextFor = (preset: PipelinePreset): string => {
-  if (preset.workflowKey === 'scripted_narrative') {
-    return 'This is a scripted narrative project. The style directions become the visual world the episode, film, or scene work sits inside.';
-  }
-
-  return 'This is a music-led project. The style directions become the visual world the music video sits inside.';
 };
 
 const formatInputs = (input: StyleBrainstormPromptInput): string => {

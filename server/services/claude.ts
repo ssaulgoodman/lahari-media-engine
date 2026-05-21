@@ -17,6 +17,8 @@ import {
 } from './script-validation.js';
 import { requireProviderApiKey } from './byok/providerKeys.js';
 import { buildStyleBrainstormPrompt as buildComposedStyleBrainstormPrompt } from '../prompts/styleBrainstorm.js';
+import { buildRefineStylePrompt } from '../prompts/refineStyle.js';
+import { buildGenerateConceptPrompt, buildRefineConceptPrompt } from '../prompts/concept.js';
 
 const getClient = async () => new Anthropic({ apiKey: await requireProviderApiKey('anthropic') });
 
@@ -85,69 +87,20 @@ export const generateConceptOptions = async (
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ concepts: any[]; prompt: string }> => {
-  const typeLabel = songType && songType !== 'unknown' ? songType : null;
-  const traits = [
-    isNarrative ? 'narrative (has dramatic arc)' : null,
-    isMeditative ? 'meditative (contemplative, inward)' : null,
-  ].filter(Boolean);
-  const songTypeSignal = typeLabel || traits.length
-    ? `SONG TYPE (from audio analysis): ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
-    : '';
-
-  const structureSummary = (musicalStructure || []).slice(0, 8).map((s: any) =>
-    `${s.label || 'Section'} [${s.startTime}–${s.endTime}]${s.energyLevel ? ` (${s.energyLevel})` : ''}${s.description ? `: ${s.description}` : ''}`
-  ).join('\n');
-
-  const songContext = `SONG: ${title} (${language})
-${context ? `CONTEXT: ${context}` : ''}
-${songTypeSignal}
-${structureSummary ? `\nMUSICAL STRUCTURE:\n${structureSummary}` : ''}
-
-LYRICS:
-${(lyrics || '').substring(0, 4000)}
-
-MEANING:
-${meaning}`;
-
-  let prompt: string;
-
-  if (directorBrief) {
-    // Path B: Director has a specific vision — generate ONE concept.
-    prompt = `You are ${preset.concept.directorIdentity}. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
-
-PRESET RULES:
-${preset.concept.rules}
-
-${songContext}
-
-DIRECTOR'S BRIEF:
-${directorBrief}
-${userNote ? `\nADDITIONAL NOTE: ${userNote}\n` : ''}
-Generate EXACTLY 1 concept that realizes the director's vision. Flesh out their idea into a complete concept — don't override their intent, expand on it. Fill in all structured fields so the production pipeline can work with it.
-
-Return EXACTLY 1 concept in the concepts array.`;
-  } else {
-    prompt = `You are ${preset.concept.directorIdentity}. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
-
-PRESET RULES:
-${preset.concept.rules}
-
-${songContext}
-${userNote ? `\nDIRECTOR NOTE (must follow): ${userNote}\n` : ''}
-Generate EXACTLY 3 creative directions for ${preset.toolName}. Each should offer a genuinely different visual approach, but all must respect the source material — read the source signals and meaning carefully.
-
-For each direction provide:
-- title: 2-4 word creative title
-- subject: ${preset.concept.subjectDescription}
-- mood: one distinct emotional keyword (different per direction)
-- theme: the core narrative idea (1 sentence)
-- conceptDirection: a short creative label for this direction (examples: ${preset.concept.directionExamples.join(', ')} — NOT generic labels like "traditional" or "modern")
-- description: 2-3 sentences expanding the concept — what the viewer sees, the emotional arc, the world of this video
-
-Visual style is decided in a separate phase — do NOT include art style, color palette, or cinematography here. Focus purely on narrative direction and concept.
-
-Return EXACTLY 3 concepts in the concepts array.`;
-  }
+  const prompt = buildGenerateConceptPrompt({
+    title,
+    language,
+    sourceText: lyrics,
+    meaning,
+    musicalStructure,
+    context,
+    songType,
+    isNarrative,
+    isMeditative,
+    directorBrief,
+    userNote,
+    preset,
+  });
 
   // Concept gen uses the primary runtime model (Opus on Claude, GPT-5.5 on
   // OpenAI, Gemini 3 Pro on Gemini). Schema is enforced natively per vendor
@@ -197,24 +150,11 @@ export const refineConceptDirection = async (
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
 ): Promise<any> => {
-  const prompt = `You are ${preset.concept.directorIdentity}. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write camera/lens/cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
-
-PRESET RULES:
-${preset.concept.rules}
-
-CURRENT LOCKED CONCEPT:
-- Title: ${currentConcept.title || ''}
-- Subject: ${conceptSubject(currentConcept)}
-- Mood: ${currentConcept.mood || ''}
-- Theme: ${currentConcept.theme || ''}
-- Direction: ${currentConcept.conceptDirection || ''}
-
-DIRECTOR FEEDBACK:
-${feedback}
-
-Revise the concept incorporating the feedback. Keep the core identity intact — this is a refinement, not a replacement. Update only the fields that the feedback touches. If the feedback says "darker mood" just update mood, don't rewrite everything.
-
-Visual style is decided in a separate phase — do NOT include art style or color palette.`;
+  const prompt = buildRefineConceptPrompt({
+    currentConcept,
+    feedback,
+    preset,
+  });
 
   // Refine path → cheap sibling per provider via useRefineModel.
   const { parsedJson } = await generateText(textProvider, {
@@ -1074,19 +1014,12 @@ export const refineStyleDirection = async (
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
 ): Promise<{ title: string; description: string }> => {
-  const prompt = `You are an elite DP refining a visual direction based on feedback.
-
-CURRENT DIRECTION:
-${currentDescription}
-
-CONTEXT:
-- ${preset.concept.subjectField}: ${conceptSubject(concept)}
-- Mood: ${concept.mood || 'Unknown'}
-
-USER FEEDBACK:
-${feedback}
-
-Revise the direction incorporating the feedback. Keep it cohesive and internally consistent. The description will be used as an image generation prompt — be vivid and concrete. Focus on visual STYLE, MOOD, and ATMOSPHERE — no character descriptions.`;
+  const prompt = buildRefineStylePrompt({
+    currentDescription,
+    feedback,
+    concept,
+    preset,
+  });
 
   const { parsedJson } = await generateText(textProvider, {
     userPrompt: prompt,

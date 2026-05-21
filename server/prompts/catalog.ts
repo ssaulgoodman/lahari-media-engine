@@ -195,36 +195,47 @@ Return only the structured audio plan JSON.`,
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Generate concept' on the Concept phase.",
-    summary: 'Proposes 3 creative directions adapted to the song type. Receives songType + isNarrative + isMeditative from audio analysis — no hardcoded direction labels.',
+    summary: 'Proposes 3 creative narrative directions for the project (or 1 if a director brief is set). Composed via composePrompt; concept stays story/brief-level — style and medium are decided in later phases. User note is a hard creative constraint inside the tool contract.',
     variables: [
-      { name: 'title', description: 'Song title' },
-      { name: 'language', description: 'Song language' },
-      { name: 'lyrics', description: 'Full lyrics (truncated to 4000 chars)' },
-      { name: 'meaning', description: 'Meaning summary' },
-      { name: 'musicalStructure', description: 'Human-readable section summary' },
-      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'title', description: 'Project title' },
+      { name: 'language', description: 'Project language' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context; never raw workflow enum labels' },
+      { name: 'presetTaste', description: 'preset.concept.rules — concept-layer rules only; no style/medium content' },
+      { name: 'userNotePolicy', description: 'Hard-constraint policy: all directions satisfy the note; conflicts translate to concept-layer intent' },
+      { name: 'sourceText', description: 'Lyrics (music_led) or script excerpt (scripted_narrative)' },
+      { name: 'meaning', description: 'Music meaning/intent OR director brief/logline' },
+      { name: 'musicalStructure', description: 'Section summary for music_led' },
+      { name: 'scriptSummary', description: 'Optional script overview for scripted_narrative' },
+      { name: 'songType', description: 'Audio classification for music_led' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },
       { name: 'isMeditative', description: 'Contemplative/inward?' },
-      { name: 'context', description: 'Optional song context' },
-      { name: 'userNote', description: 'Optional director note to steer the concepts' },
+      { name: 'context', description: 'Optional project context' },
+      { name: 'directorBrief', description: "If set, output is EXACTLY 1 concept that realizes the brief instead of 3 directions" },
+      { name: 'userNote', description: 'Optional director nudge for this generation call' },
     ],
-    template: `You are a visionary music video director planning a music video. The visual medium is decided in a separate phase via the locked style reference — could be photographic, painterly, illustrated, miniature, mixed-media, or anything else — so do not write cinematography directions, color palette, or art style here. Focus on story, beats, and what visibly happens.
+    template: `Propose creative narrative directions for this project.
 
-SONG: {{title}} ({{language}})
-SONG TYPE (from audio analysis): {{songType}}, {{traits}}
+Each direction is one coherent idea — what the viewer follows, what visibly happens, the emotional arc, the world the work lives in. Focus on story, beats, and what visibly happens.
 
-MUSICAL STRUCTURE:
-{{musicalStructure}}
+Visual style, palette, and cinematography are decided in later phases. Do not include art-style language, camera directions, or color palette in any field — those belong to the style phase, not the concept phase.
 
-LYRICS:
-{{lyrics}}
+CONTEXT
+{{workflowContext}}
 
-MEANING:
-{{meaning}}
-{{userNote ? "DIRECTOR NOTE (must follow): " + userNote : ""}}
+INPUTS
+{{formatted title, language, source text, meaning, musical structure or script overview, audio classification, director brief if set}}
 
-Generate EXACTLY 3 creative directions for a music video. Each should offer a genuinely different visual approach, but all must respect the song's nature — read the SONG TYPE and MEANING carefully.`,
-    source: { file: 'server/services/claude.ts', lines: 'generateConceptOptions' },
+TASTE
+{{preset.concept.rules}}
+
+USER NOTE POLICY
+{{If USER NOTE is present, treat it as a hard creative constraint. All returned directions must satisfy it. Conflicts with source/preset/tool contract are refused or translated to concept-layer intent. Variety means distinct directions inside the constraint.}}
+
+Return EXACTLY 3 concepts (or 1 if directorBrief is set). Each: title, subject, mood, theme, conceptDirection, description.
+
+USER NOTE
+{{userNote}}`,
+    source: { file: 'server/prompts/concept.ts', lines: 'buildGenerateConceptPrompt' },
   },
   {
     id: 'plan-scenes',
@@ -445,28 +456,37 @@ USER NOTE
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6',
     triggeredBy: "Fires when you add feedback on a style direction and click 'Refine'.",
-    summary: 'Revises one style direction using director feedback, kept cohesive, vivid, and concrete.',
+    summary: 'Revises one style direction using director feedback. Composed via composePrompt; user note (the feedback) is applied surgically — preserve identity, do not regenerate. If feedback conflicts with medium guard, translate to medium-safe analogue.',
     variables: [
       { name: 'currentDescription', description: 'Current direction text' },
-      { name: 'feedback', description: 'Director feedback' },
+      { name: 'currentTitle', description: 'Optional current title' },
+      { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
       { name: 'concept', description: 'Locked concept (for subject/mood context)' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context' },
+      { name: 'presetTaste', description: 'preset.style.rules — medium + drift bans' },
+      { name: 'userNotePolicy', description: 'Surgical-application policy: touch only addressed fields, preserve identity, translate medium conflicts' },
     ],
-    template: `You are an elite DP refining a visual direction based on feedback.
+    template: `Revise the current style direction text using the director's feedback.
 
-CURRENT DIRECTION:
-{{currentDescription}}
+This is a surgical refinement, not a replacement. Preserve the direction's core identity. Update only the aspects the feedback addresses; leave the rest of the description intact.
 
-CONTEXT:
-- Subject: {{concept.subject || concept.primarySubject || concept.deity}}
-- Mood: {{concept.mood}}
+CONTEXT
+{{workflowContext}}
 
-USER FEEDBACK:
-{{feedback}}
+INPUTS
+{{Subject, mood, theme, and the current direction text}}
 
-Revise the direction incorporating the feedback. Keep it cohesive and internally consistent. The description will be used as an image generation prompt — be vivid and concrete. Focus on visual STYLE, MOOD, and ATMOSPHERE — no character descriptions.
+TASTE
+{{preset.style.rules}}
 
-Use the refine_direction tool.`,
-    source: { file: 'server/services/claude.ts', lines: '472-493' },
+USER NOTE POLICY
+{{Apply surgically. Touch only what the note addresses. Preserve identity. Refuse medium conflicts or translate to medium-safe analogue.}}
+
+Return refined direction as JSON: title (revise only if note touches it), description (2 compact sentences).
+
+USER NOTE
+{{feedback}}`,
+    source: { file: 'server/prompts/refineStyle.ts', lines: 'buildRefineStylePrompt' },
   },
   // Note: curated style presets no longer involve any AI prompt. The /lock-
   // style-preset endpoint points a new project-scoped asset row at the
@@ -860,14 +880,37 @@ Output via rewrite_motion_prompt tool: { motionPrompt }`,
     model: 'claude-sonnet-4-6',
     modelLabel: 'Claude Sonnet 4.6',
     triggeredBy: "Fires when you click 'Refine' on the locked concept.",
-    summary: 'Claude rewrites concept fields (theme, mood, conceptDirection) based on feedback while preserving subject and title.',
+    summary: 'Revises the locked concept using director feedback. Composed via composePrompt; user note (the feedback) is applied surgically — preserve locked fields, touch only what the note addresses. Concept stays story/brief-level; style and medium are decided later.',
     variables: [
       { name: 'lockedConcept', description: 'Current locked concept JSON' },
-      { name: 'feedback', description: 'Director feedback' },
+      { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context' },
+      { name: 'presetTaste', description: 'preset.concept.rules — concept-layer rules only; no style/medium content' },
+      { name: 'userNotePolicy', description: 'Surgical-application policy: touch only addressed fields, preserve locked fields, refuse layer-violating notes' },
     ],
-    template: `Refine the locked concept based on feedback. Keep subject and title.
-Rewrite: theme, mood, conceptDirection. Output via tool.`,
-    source: { file: 'server/services/claude.ts', lines: 'refineConceptDirection' },
+    template: `Revise the locked concept using the director's feedback.
+
+This is a refinement, not a replacement — preserve the core identity. Update only the fields the feedback addresses; leave the rest unchanged.
+
+Visual style, palette, and cinematography belong to later phases. Do not introduce art-style language, camera directions, or color palette here.
+
+CONTEXT
+{{workflowContext}}
+
+INPUTS
+{{Current concept: title, subject, mood, theme, conceptDirection, description}}
+
+TASTE
+{{preset.concept.rules}}
+
+USER NOTE POLICY
+{{Apply surgically. Touch only fields addressed by the note. Preserve locked fields. Refuse style/medium asks at this layer and translate to concept-layer intent.}}
+
+Return refined concept as JSON. Fields not addressed by the feedback carry forward unchanged.
+
+USER NOTE
+{{feedback}}`,
+    source: { file: 'server/prompts/concept.ts', lines: 'buildRefineConceptPrompt' },
   },
   {
     id: 'refine-script',

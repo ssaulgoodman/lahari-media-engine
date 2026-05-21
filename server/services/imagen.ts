@@ -10,6 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 import { saveBase64, readAsBase64 } from '../storage.js';
 import { getRuntimePreset, PipelinePreset } from '../presets.js';
 import { requireProviderApiKey } from './byok/providerKeys.js';
+import { buildVisualizeStylePrompt } from '../prompts/visualizeStyle.js';
 
 const getAI = async () => new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
 
@@ -185,17 +186,8 @@ export const generateStyleOptions = async (
  * Build the default style visualization prompt from description + subject.
  * Produces a reusable style reference frame — not a scene, character portrait, or poster.
  */
-export const buildStylePrompt = (styleDescription: string, subject: string, preset: PipelinePreset = getRuntimePreset()): string => {
-  return `Create one reusable visual style reference frame for ${preset.style.subjectPrompt(subject)}. ${styleDescription}
-
-The image should demonstrate the style system clearly: lighting behavior, color palette, texture or medium, rendering approach, and atmosphere. Use a motif, prop, environment detail, or production-design element that belongs to the concept, but keep the focus on style rather than story.
-
-It may be photographic, painterly, illustrated, miniature-inspired, or mixed-media if the style direction calls for it. High production value, no text, no watermark.
-
-Do not make a character portrait, storyboard frame, poster, collage, or narrative scene. Keep the composition clean enough that the visual treatment is easy to read and reuse downstream.
-
-${preset.looks.qualityRules}`;
-};
+export const buildStylePrompt = (styleDescription: string, subject: string, preset: PipelinePreset = getRuntimePreset()): string =>
+  buildVisualizeStylePrompt({ styleDescription, subject, preset });
 
 export const generateSingleStyleImage = async (
   styleDescription: string,
