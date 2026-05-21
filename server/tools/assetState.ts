@@ -68,7 +68,12 @@ export const getAssetState = (project: ToolProject): Set<AssetKey> => {
   if (hasText(project.lyrics)) assets.add('lyrics');
   if (project.musicalStructure.length > 0) assets.add('musicalStructure');
   if (hasText(project.meaning)) assets.add('meaning');
-  if (project.lockedConcept || project.conceptOptions.length > 0) assets.add('concept');
+  // `concept` means a locked concept that downstream tools can build on
+  // (refine-concept revises this exact thing; looks/script/style use it
+  // as soft context). Unlocked options are exploratory and don't satisfy
+  // `requires: ['concept']`. If we ever need a softer "options exist"
+  // signal, add a separate asset key.
+  if (project.lockedConcept) assets.add('concept');
   if ((project.styleExploration?.slots || []).length > 0) assets.add('styleDirections');
   if (project.styleAssetUrl) assets.add('styleAsset');
   if (project.cast.length > 0) assets.add('cast');

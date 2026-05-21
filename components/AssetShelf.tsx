@@ -12,6 +12,11 @@ interface AssetShelfProps {
    *  refine, etc.). Returning a Promise puts the button in a loading
    *  state until it resolves. */
   onRunTool: (toolKey: string) => void | Promise<void>;
+  /** Externally-controlled disabled state for the whole shelf — e.g.
+   *  parent's `isLoading` during an active generation. Independently
+   *  prevents tool clicks while the parent's flight is in progress, so
+   *  callbacks that don't return a Promise still can't race. */
+  disabled?: boolean;
   /** Tools to hide from the shelf entirely (e.g. controls the parent
    *  intentionally renders inline). Useful during the migration while
    *  some flows still want bespoke UI for one or two tools. */
@@ -83,7 +88,7 @@ const ToolButton: React.FC<ToolButtonProps> = ({ tool, disabled, busy, onClick, 
 );
 
 export const AssetShelf: React.FC<AssetShelfProps> = ({
-  surface, project, onRunTool, hideToolKeys, children, className,
+  surface, project, onRunTool, disabled, hideToolKeys, children, className,
 }) => {
   const { enabled, blocked } = useAvailableTools(project, surface);
   const [busyKey, setBusyKey] = React.useState<string | null>(null);
@@ -121,6 +126,7 @@ export const AssetShelf: React.FC<AssetShelfProps> = ({
               key={tool.key}
               tool={tool}
               busy={busyKey === tool.key}
+              disabled={disabled && busyKey !== tool.key}
               onClick={runTool(tool.key)}
             />
           ))}

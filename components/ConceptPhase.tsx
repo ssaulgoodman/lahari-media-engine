@@ -11,7 +11,9 @@ interface Props {
   isLoading: boolean;
   phaseTransition: Record<string, any>;
   onLockConcept: (index: number) => void;
-  onGenerateConcepts?: (opts?: { userNote?: string; directorBrief?: string }) => void;
+  // void return is tolerated so existing call sites that don't await still
+  // work; AssetShelf's busy state lights up when these resolve as promises.
+  onGenerateConcepts?: (opts?: { userNote?: string; directorBrief?: string }) => Promise<void> | void;
   onCancelConcepts?: () => void;
   onUnlockConcept?: () => void;
   onRefineConcept?: (feedback: string) => Promise<void> | void;
@@ -36,17 +38,20 @@ export const ConceptPhase: React.FC<Props> = ({
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
 
-  const handleRunTool = (toolKey: string) => {
+  const handleRunTool = async (toolKey: string) => {
     if (toolKey === 'generate-concept' && onGenerateConcepts) {
       const opts: { userNote?: string; directorBrief?: string } = {};
       if (directorBrief.trim()) opts.directorBrief = directorBrief.trim();
       else if (generateNote.trim()) opts.userNote = generateNote.trim();
-      onGenerateConcepts(Object.keys(opts).length ? opts : undefined);
       setGenerateNote('');
       setDirectorBrief('');
+      // Await so AssetShelf's busy spinner reflects the parent's flight.
+      // Tolerates void-returning parents (await resolves immediately).
+      await Promise.resolve(onGenerateConcepts(Object.keys(opts).length ? opts : undefined));
     } else if (toolKey === 'refine-concept' && onRefineConcept && refineFeedback.trim()) {
-      onRefineConcept(refineFeedback.trim());
+      const feedback = refineFeedback.trim();
       setRefineFeedback('');
+      await Promise.resolve(onRefineConcept(feedback));
     }
   };
 
@@ -70,7 +75,7 @@ export const ConceptPhase: React.FC<Props> = ({
         </div>
       )}
 
-      <AssetShelf surface="asset:concept" project={project} onRunTool={handleRunTool}>
+      <AssetShelf surface="asset:concept" project={project} onRunTool={handleRunTool} disabled={isLoading}>
         <div className="surface rounded-xl p-4 space-y-3">
           <div className="text-[11px] uppercase tracking-wide text-zinc-500">Inputs (used by the tool you fire above)</div>
           <AutoGrowTextarea
