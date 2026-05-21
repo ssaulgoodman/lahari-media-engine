@@ -96,6 +96,25 @@ const SURFACE_LABELS: Record<string, string> = {
   'agent-only': 'Agent only',
 };
 
+// Humanize workflow enum keys for display. Per D26 these are the
+// canonical archetype names; legacy aliases collapse to the canonical
+// label so old rows don't show two variants.
+const WORKFLOW_LABELS: Record<string, string> = {
+  music_led: 'Music-led',
+  music_video: 'Music-led',
+  scripted_narrative: 'Scripted narrative',
+  anime_scripted: 'Scripted narrative',
+};
+
+const formatWorkflowList = (keys?: string[]): string =>
+  (keys || []).map((key) => WORKFLOW_LABELS[key] || key).join(' · ');
+
+const WORKFLOW_FILTERS: Array<{ key: string; label: string; match: (tool: ToolRecipe) => boolean }> = [
+  { key: 'all', label: 'All workflows', match: () => true },
+  { key: 'music_led', label: 'Music-led', match: (tool) => !tool.enabledFor || tool.enabledFor.some((k) => WORKFLOW_LABELS[k] === 'Music-led') },
+  { key: 'scripted_narrative', label: 'Scripted narrative', match: (tool) => !tool.enabledFor || tool.enabledFor.some((k) => WORKFLOW_LABELS[k] === 'Scripted narrative') },
+];
+
 const formatAssetList = (keys: string[], fallback: string): string =>
   keys.length ? keys.map((key) => ASSET_LABELS[key] || key).join(', ') : fallback;
 
@@ -129,6 +148,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modelFilter, setModelFilter] = useState<string>('all');
+  const [workflowFilter, setWorkflowFilter] = useState<string>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -197,14 +217,18 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
 
   const totalCalls = prompts.reduce((acc, p) => acc + (p.usage?.callCount || 0), 0);
   const totalSpend = prompts.reduce((acc, p) => acc + (p.usage?.totalCost || 0), 0);
+  const visibleTools = useMemo(() => {
+    const matcher = WORKFLOW_FILTERS.find((f) => f.key === workflowFilter) || WORKFLOW_FILTERS[0];
+    return tools.filter((tool) => matcher.match(tool));
+  }, [tools, workflowFilter]);
   const toolsBySurface = useMemo(() => {
     const map: Record<string, ToolRecipe[]> = {};
-    for (const tool of tools) {
+    for (const tool of visibleTools) {
       if (!map[tool.surface]) map[tool.surface] = [];
       map[tool.surface].push(tool);
     }
     return Object.entries(map);
-  }, [tools]);
+  }, [visibleTools]);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -250,6 +274,20 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
           />
         </div>
         <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
+          {WORKFLOW_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setWorkflowFilter(f.key)}
+              className={`text-xs px-2.5 py-1.5 transition-colors ${
+                workflowFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
+              }`}
+              title="Filter Tool Recipes by workflow. Prompt templates below are not filtered."
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
           {MODEL_FILTERS.map((f) => (
             <button
               key={f.key}
@@ -280,7 +318,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                   Registry-owned actions shared by the web UI and agent harness.
                 </p>
                 <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
-                  {tools.length}
+                  {workflowFilter === 'all' ? tools.length : `${visibleTools.length} / ${tools.length}`}
                 </span>
               </div>
 
@@ -290,18 +328,18 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                     <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-2">{SURFACE_LABELS[surface] || surface}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {surfaceTools.map((tool) => (
-                        <div key={tool.key} className="rounded-lg border border-white/[0.06] px-4 py-3 bg-white/[0.015]">
+                        <div key={tool.key} className="group rounded-lg border border-white/[0.06] px-4 py-3 bg-white/[0.015]" title={`Registry key: ${tool.key}`}>
                           <div className="flex items-start gap-3">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <h3 className="text-sm font-medium text-white truncate">{tool.label}</h3>
-                                <span className="text-[10px] text-zinc-500 font-mono truncate">{tool.key}</span>
+                                <span className="text-[10px] text-zinc-500 font-mono truncate opacity-0 group-hover:opacity-100 transition-opacity">{tool.key}</span>
                               </div>
                               <p className="text-xs text-zinc-400 leading-relaxed">{tool.description}</p>
                             </div>
                             {tool.enabledFor && tool.enabledFor.length > 0 && (
-                              <span className="text-[10px] text-zinc-400 font-mono bg-white/[0.04] rounded px-1.5 py-0.5 flex-shrink-0">
-                                {tool.enabledFor.join(', ')}
+                              <span className="text-[10px] text-zinc-300 bg-white/[0.04] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">
+                                {formatWorkflowList(tool.enabledFor)}
                               </span>
                             )}
                           </div>
