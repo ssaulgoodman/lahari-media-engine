@@ -96,9 +96,15 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
       const scene = project.scenes[target.sceneIndex];
       const prevShot = scene?.shots[target.shotIndex - 1];
       if (prevShot) {
+        const useNextAsEndFrame = input.continuityFrom === 'prev_shot';
         await updateRows('shots', { id: prevShot.id }, {
-          use_next_as_end_frame: input.continuityFrom === 'prev_shot' ? 1 : 0,
+          use_next_as_end_frame: useNextAsEndFrame ? 1 : 0,
         });
+        // Reflect in the notebook mirror so this apply's response is
+        // self-consistent. Merge over any pending update of the prev shot
+        // from earlier in the loop (don't clobber its continuityFrom etc).
+        const existing = nextShotsById.get(prevShot.id) || prevShot;
+        nextShotsById.set(prevShot.id, { ...existing, useNextAsEndFrame });
       }
     }
 
