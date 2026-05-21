@@ -474,7 +474,7 @@ If a migration PR diverges meaningfully from these numbers (e.g. ConceptPhase en
 
 ### T11 — Tool Recipes / Prompt Transparency
 
-**Goal:** Replace the old Prompt Catalog mental model ("one giant template per prompt") with an artist-readable Tool Recipes surface that explains what each production tool does, what it reads, what it changes, and how composer sections assemble behind the scenes.
+**Goal:** Replace the old Prompt Catalog mental model ("one giant template per prompt") with an artist-readable Tool Recipes surface that explains what each production tool does, what it reads, what it changes, and how composer sections assemble behind the scenes. This is not cosmetic: it is the product/debug surface that proves presets, composer sections, user notes, and project overrides are actually attached to tool calls.
 
 **Owner:** Claude for UI/docs, Codex for registry/composer data plumbing if needed
 **Timing:** Endgame polish after T10 asset shelves and before/alongside E2E hardening. Do not interrupt T10.
@@ -484,10 +484,12 @@ If a migration PR diverges meaningfully from these numbers (e.g. ConceptPhase en
 | T11.1 | Rename/reframe Prompt Catalog UI | `components/PromptsLibrary.tsx` or replacement | Surface reads as "Tool Recipes" / "Production Brain", not a raw prompt dump |
 | T11.2 | Registry-backed recipe cards | prompt/tool library UI + `server/tools` manifest | Each card shows what the tool does, what it reads, what it produces, and where it appears in Blueprint/Studio |
 | T11.3 | Composer section viewer | prompt/tool library UI | Advanced drawer shows final composed sections: Core Task, Context, Inputs, Taste, User Note Policy, Output Contract, User Note |
-| T11.4 | Editable override layer | project config prompt override UI + agent notebook config | Artists/agents edit preset taste or project override notes, not core task/output contract by default |
-| T11.5 | Permission boundary | UI copy + MCP/agent docs | Core task/output contract are engine-level surfaces; project overrides are artist/director surfaces |
+| T11.4 | Composer-aware runtime logging | backend tool calls + `studio_ai_calls`/xray metadata | Every LLM/image/video tool call records the tool key, preset key, workflow key, and composed section labels so "what prompt actually ran?" is answerable from the UI/logs |
+| T11.5 | Editable override layer | project config prompt override UI + agent notebook config | Artists/agents edit preset taste or project override notes as named composer sections; core task/output contract stay engine-level by default |
+| T11.6 | Override application contract | prompt builders + project config loaders | Overrides apply by section (`presetTaste`, `workflowContext`, `userNotePolicy`, or project note) rather than replacing a whole fat template; final composed prompt preview shows the effective merged result |
+| T11.7 | Permission boundary | UI copy + MCP/agent docs | Core task/output contract are engine-level surfaces; preset taste and project/director notes are artist/director surfaces |
 
-**Acceptance for T11 as a whole:** Artists can understand "what happens behind the scenes" without reading a wall of raw prompt text. The UI makes the new composer architecture feel simpler: tool/action → inputs → preset taste → project override → output contract. It should not imply that a single static template is the truth.
+**Acceptance for T11 as a whole:** Artists can understand "what happens behind the scenes" without reading a wall of raw prompt text. The UI makes the new composer architecture feel simpler: tool/action → inputs → preset taste → project override → output contract. It should not imply that a single static template is the truth. During E2E, Saul should be able to click from a generated result to the exact effective recipe sections that produced it and see whether the preset/taste/context/user note/project override attached correctly.
 
 ---
 
