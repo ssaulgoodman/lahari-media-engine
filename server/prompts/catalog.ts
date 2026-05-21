@@ -586,14 +586,17 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Auto-fires once at the end of Blueprint, or when you click 'Rewrite all' in Studio.",
-    summary: 'Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot). "Cinematic but renderable" — functional for AI models without being literary or schematic.',
+    summary: 'Composed via composePrompt. Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot). User note is a hard creative constraint applied across every shot; conflicts with the locked style reference or preset rules translate to closest valid intent. "Cinematic but renderable" — functional for AI models without being literary or schematic.',
     variables: [
       { name: 'shots', description: 'List of shots with id, direction, duration, cast, scene context' },
       { name: 'cast', description: 'Character descriptions' },
-      { name: 'videoModel', description: 'Selected video model; adds Seedance-specific motion prompt guidance' },
-      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
-      { name: 'isNarrative', description: 'Has dramatic arc?' },
-      { name: 'isMeditative', description: 'Contemplative/inward?' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context' },
+      { name: 'presetTaste', description: 'preset.studio.shotPromptRules' },
+      { name: 'userNotePolicy', description: 'Hard-constraint policy applied to every shot; refuse conflicts with style ref / preset' },
+      { name: 'videoModel', description: 'Selected video model; appends Seedance-specific guidance to INPUTS' },
+      { name: 'songType', description: 'Audio classification (music_led only)' },
+      { name: 'isNarrative', description: 'Has dramatic arc? (music_led only)' },
+      { name: 'isMeditative', description: 'Contemplative/inward? — appends pacing guidance' },
       { name: 'concept', description: 'Used only for mood anchor' },
       { name: 'userNote', description: 'Optional director note' },
       { name: 'previousBatchTail', description: 'Tail of previous batch for continuity context' },
@@ -688,7 +691,7 @@ BEFORE RETURNING, CHECK THE SEQUENCE:
 - Every shot must advance the emotional or narrative arc, not just restate the previous beat
 
 Match the IDs exactly.`,
-    source: { file: 'server/services/claude.ts', lines: 'writeShotPrompts' },
+    source: { file: 'server/prompts/shotPrompts.ts', lines: 'buildWriteShotPromptsPrompt' },
   },
   {
     id: 'seedance-storyboard-image',
@@ -939,23 +942,42 @@ USER NOTE
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Refine script' and enter feedback.",
-    summary: 'Claude Opus surgically edits the existing script based on feedback. Uses extended thinking + validation loop for standard pacing or Seedance storyboard clip durations.',
+    summary: 'Composed via composePrompt. Surgically refines the existing script using director feedback (user note). Preserve scenes/shots not addressed, do not rename existing cast/environments (their names are IDs downstream), keep source structure. Extended thinking + validation loop reruns on shot-count/duration violations. Standard mode: ceil(scene_duration / pacing) shots per scene. Seedance storyboard mode: 4-15s clips that sum to scene duration.',
     variables: [
       { name: 'currentScript', description: 'Full current script (cast, environments, scenes with shots)' },
-      { name: 'feedback', description: 'Director feedback' },
+      { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
       { name: 'concept', description: 'Locked concept' },
-      { name: 'lyrics', description: 'Full lyrics' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context' },
+      { name: 'presetTaste', description: 'preset.script.sceneRules + planner identity' },
+      { name: 'userNotePolicy', description: 'Surgical-application policy: preserve unchanged scenes, do not rename cast/environments' },
+      { name: 'sourceText', description: 'Lyrics (music_led) or script excerpt (scripted_narrative)' },
+      { name: 'meaning', description: 'Meaning / director brief' },
       { name: 'musicalStructure', description: 'Sections with timestamps' },
-      { name: 'pacing', description: 'Shot duration in seconds' },
-      { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
-      { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip duration validation' },
+      { name: 'basePacing', description: 'Shot duration in seconds' },
+      { name: 'minShotDuration', description: 'Video model minimum clip length' },
+      { name: 'videoModel', description: 'Seedance triggers storyboard-clip duration rules' },
     ],
-    template: `Surgical refinement with 5 preservation rules. Extended thinking (8K budget) for pacing math.
-Standard mode: shot counts must equal ceil(scene_duration / {{pacing}}); last shot gets the remainder.
-Seedance storyboard mode: each shot is a 4-15s storyboard clip; shot durations must add exactly to the scene duration and each direction may describe 2-5 internal edited beats.
-Validation loop: if shot counts or Seedance durations are wrong, errors are sent back as tool_result.
-Same plan_music_video tool output.`,
-    source: { file: 'server/services/claude.ts', lines: 'refineScript' },
+    template: `Refine the existing production script using the director's feedback.
+
+This is SURGICAL refinement, not rewriting from scratch. Think editor, not new writer.
+
+CONTEXT
+{{workflowContext}}
+
+INPUTS
+{{Concept, source text, meaning, structure, pacing guidance (Seedance or standard), current script JSON}}
+
+TASTE
+{{preset.script.sceneRules + planner identity}}
+
+USER NOTE POLICY
+{{Preserve unchanged scenes/shots exactly. Do not rename existing cast/environments — they are IDs. Every shot keeps castNames + environmentName. Refuse style/medium asks at this layer.}}
+
+Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.
+
+USER NOTE
+{{feedback}}`,
+    source: { file: 'server/prompts/refineScript.ts', lines: 'buildRefineScriptPrompt' },
   },
   {
     id: 'chained-shot-refresh',

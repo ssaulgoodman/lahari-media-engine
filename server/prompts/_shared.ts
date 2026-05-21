@@ -11,10 +11,10 @@ export const clip = (value: unknown, max: number): string => {
 
 /**
  * Extract a human-readable subject from a concept object, tolerating the
- * legacy `primarySubject` / `deity` aliases.
+ * legacy `primarySubject` alias.
  */
 export const conceptSubject = (concept: any): string =>
-  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || 'Unknown';
+  concept?.subject || concept?.primarySubject || concept?.title || 'Unknown';
 
 /**
  * The small graph-context string that goes into the `CONTEXT` section of

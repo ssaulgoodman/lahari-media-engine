@@ -21,6 +21,8 @@ import { buildRefineStylePrompt } from '../prompts/refineStyle.js';
 import { buildGenerateConceptPrompt, buildRefineConceptPrompt } from '../prompts/concept.js';
 import { buildParseScriptPrompt } from '../prompts/parseScript.js';
 import { buildPlanScenesPrompt } from '../prompts/planScenes.js';
+import { buildRefineScriptPrompt } from '../prompts/refineScript.js';
+import { buildWriteShotPromptsPrompt } from '../prompts/shotPrompts.js';
 
 const getClient = async () => new Anthropic({ apiKey: await requireProviderApiKey('anthropic') });
 
@@ -265,36 +267,12 @@ export interface ScriptInput {
   videoMode: string;
 }
 
-const formatConceptForScriptPrompt = (concept: any): string => {
-  const lines = [
-    `Subject: ${conceptSubject(concept)}`,
-    `Direction: ${concept?.conceptDirection || concept?.title || 'Untitled direction'}`,
-    `Core idea: ${concept?.theme || ''}`,
-    `Expanded brief: ${concept?.description || concept?.lyricsSummary || ''}`,
-    `Mood: ${concept?.mood || ''}`,
-  ];
-  return lines.filter(line => !line.endsWith(': ')).join('\n');
-};
-
-const formatShotExamples = (preset: PipelinePreset): string => {
-  const good = preset.script.shotExamples.good.map((example) => `  Good: "${example}"`).join('\n');
-  const bad = preset.script.shotExamples.bad.map((example) => `  Bad: "${example}"`).join('\n');
-  return [good, bad].filter(Boolean).join('\n');
-};
-
-const workflowSourceLabels = (preset: PipelinePreset) => {
-  const isMusicVideo = preset.workflowKey === 'music_led';
-  return {
-    sourceBlock: isMusicVideo
-      ? 'LYRICS / AUDIO SOURCE'
-      : 'SCRIPT / SOURCE MATERIAL',
-    structureBlock: isMusicVideo
-      ? 'MUSICAL STRUCTURE'
-      : 'SCENE / TIMING STRUCTURE',
-    timingNoun: isMusicVideo ? 'music' : 'source',
-    sectionNoun: isMusicVideo ? 'musical section' : 'script section',
-  };
-};
+// Helpers `formatConceptForScriptPrompt`, `formatShotExamples`, and
+// `workflowSourceLabels` were removed when planScenes/parseScript/refineScript/
+// writeShotPrompts migrated to composePrompt (T9.5–T9.8). Each prompt builder
+// now owns its own input formatting, so this file no longer needs them.
+// `server/services/openai-script.ts` still has its own copies; they retire when
+// T9.11 retires the OpenAI fat templates.
 
 // parseTimestamp moved to ./script-validation.ts (shared with openai/gemini
 // planners). Re-export as local name to keep the rest of this file unchanged.
@@ -481,88 +459,21 @@ export const refineScript = async (
   const client = await getClient();
   const preset = context.preset || getRuntimePreset();
   const pacing = context.basePacing || 15;
-  const minDuration = context.minShotDuration || 4;
   const isSeedanceStoryboard = context.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
-  const labels = workflowSourceLabels(preset);
 
-  const currentJson = JSON.stringify({
-    cast: currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
-    environments: currentScript.environments.map((e: any) => ({ name: e.name, description: e.description })),
-    scenes: currentScript.scenes.map((s: any) => ({
-      sectionLabel: s.sectionLabel || s.section_label,
-      startTime: s.startTime || s.start_time,
-      endTime: s.endTime || s.end_time,
-      narrativeDescription: s.narrativeDescription || s.narrative_description,
-      shots: (s.shots || []).map((sh: any) => ({
-        direction: sh.direction || sh.visual_prompt || '',
-        duration: sh.duration,
-        castNames: sh.castNames || sh.cast_names || [],
-        environmentName: sh.environmentName || sh.environment_name || '',
-      }))
-    }))
-  }, null, 2);
-
-  const pacingGuidance = isSeedanceStoryboard
-    ? `SEEDANCE STORYBOARD PACING:
-Video model: ${context.videoModel}
-In this mode, a ${preset.toolName} "shot" is a storyboard clip, not one continuous camera take.
-Each shot may contain internal edits, multiple angles, and beat hits, but it must still serve one clear story/music idea.
-
-Allowed range: 4-${seedanceMaxDuration} seconds per shot.
-For each scene, shot durations must add up to the scene duration exactly.
-If you edit a scene, include duration for every shot in that scene. Preserve existing durations in untouched scenes.
-Do not create zero-second cuts or filler shots.`
-    : `SHOT BUDGET: Every shot = ${pacing} seconds. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets the remainder. This is a HARD CONSTRAINT — write EXACTLY ceil(duration/${pacing}) shots per scene.
-Video model minimum clip length: ${minDuration}s. Shots shorter than this will be generated at ${minDuration}s and trimmed in the render timeline — this is fine, don't adjust your shot count to avoid it.`;
-
-  const prompt = `You are ${preset.script.plannerIdentity} refining an existing ${preset.toolName} script based on the director's feedback. The visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
-
-CONCEPT:
-${formatConceptForScriptPrompt(context.concept)}
-
-${labels.sourceBlock}:
-${context.lyrics}
-
-MEANING: ${context.meaning}
-
-${labels.structureBlock}: ${context.musicalStructure}
-
-${pacingGuidance}
-
-═══════════════════════════════════════
-CURRENT SCRIPT (your starting point):
-═══════════════════════════════════════
-${currentJson}
-
-═══════════════════════════════════════
-DIRECTOR'S FEEDBACK:
-═══════════════════════════════════════
-${feedback}
-
-═══════════════════════════════════════
-
-Your job is SURGICAL REFINEMENT, not rewriting from scratch. Think of yourself as an editor, not a new writer.
-
-REFINEMENT PRINCIPLES:
-1. PRESERVE what works. If the director says "fix scene 4", scenes 1-3 and 5+ must come back IDENTICAL — same narratives, same shots, same cast assignments, same environments.
-2. SCOPE your changes to what the feedback asks for. "More intimate in scene 4" means rethink scene 4's shots — don't touch the cast list or environments unless the feedback requires it.
-3. RESPECT the existing cast and environments. These may already have locked reference images. Do NOT rename characters or environments — their names are IDs in the system. You may add new ones if the feedback requires new characters or locations.
-4. MAINTAIN source structure. Section labels and timestamps are fixed — they come from the project source analysis. Do not change them.
-5. Every shot MUST have castNames (characters visible) and environmentName (location). This is critical — the video model uses these to send reference images for consistency.
-${isSeedanceStoryboard ? '6. In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive storyboard clip. Include shot.duration for every shot.' : ''}
-
-CAST rules (same as original script):
-- ${preset.script.castRules}
-- Description = physical appearance for image generation. 2-3 sentences.
-- No art style in descriptions
-
-ENVIRONMENT rules:
-- ${preset.script.environmentRules}
-- Description = physical space. 2 sentences.
-- No art style
-
-Return the COMPLETE updated script using the plan_music_video tool — all scenes, not just the changed ones. The system replaces the old script entirely with your output.`;
+  const prompt = buildRefineScriptPrompt({
+    currentScript,
+    feedback,
+    concept: context.concept,
+    sourceText: context.lyrics,
+    meaning: context.meaning,
+    musicalStructure: context.musicalStructure,
+    basePacing: context.basePacing,
+    minShotDuration: context.minShotDuration,
+    videoModel: context.videoModel,
+    preset,
+  });
 
   console.log(`[refineScript] Extended thinking + validation loop (pacing=${pacing}s, seedanceStoryboard=${!!isSeedanceStoryboard})`);
 
@@ -636,136 +547,19 @@ export const writeShotPrompts = async (
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = await getClient();
   const preset = context.preset || getRuntimePreset();
-  const labels = workflowSourceLabels(preset);
-  const isMusicVideo = preset.workflowKey === 'music_led';
 
-  const shotList = shots.map((s, i) =>
-    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | ${isMusicVideo ? 'Lyric/audio cue' : 'Source beat'}: ${s.sceneLyrics || (isMusicVideo ? 'instrumental' : 'not specified')}`
-  ).join('\n');
-
-  const castList = context.cast.map(c => `${c.name}: ${c.description}`).join('\n');
-
-  const tailContext = previousBatchTail?.length
-    ? `\nPREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\n${previousBatchTail.map(t => `[${t.id}]: visual: "${t.visualPrompt}" | motion: "${t.motionPrompt}"`).join('\n')}\n`
-    : '';
-
-  const userNoteBlock = context.userNote
-    ? `\nUSER DIRECTION (apply to this rewrite): ${context.userNote}\n`
-    : '';
-
-  // Song type signal
-  const typeLabel = context.songType && context.songType !== 'unknown' ? context.songType : null;
-  const traits = [
-    context.isNarrative ? 'narrative' : null,
-    context.isMeditative ? 'meditative' : null,
-  ].filter(Boolean);
-  const songTypeSignal = typeLabel || traits.length
-    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
-    : '';
-
-  const meditativeGuidance = context.isMeditative ? `
-PATIENT / CONTEMPLATIVE PACING:
-- Favor stillness, patience, and negative space. Let the frame breathe.
-- Resist the urge to fill every shot with spectacle. A still face, a tightening hand, or a small environmental change can carry more weight than overt VFX.
-- Show emotional presence through atmosphere and reaction, not abstract explanation.
-- When a supernatural or heightened element appears, keep it grounded in the shot's visible state.` : '';
-
-  const timingReference = isMusicVideo
-    ? 'song rhythm visually: "on the vocal phrase", "on the drum accent", "as the line resolves", "with the rhythm pulse"'
-    : 'source timing visually: "on the dialogue beat", "as the action lands", "during the reaction beat", "as the scene turns"';
-
-  const modelGuidance = context.videoModel?.startsWith('seedance') ? `
-SEEDANCE 2.0 PROMPTING MODE:
-- Think like a production storyboard: each motionPrompt should read as a timed action cue for this exact shot duration, not a loose mood sentence.
-- Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
-- Use each shot's listed duration when helpful: "Over 5s..." or "During the final second..." for holds, reveals, and beat hits.
-- ${preset.toolName} provides the finished song in render, and Segmind is called with generate_audio=false. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects.
-- You may reference the ${timingReference}. Keep it visible and editorial.
-- Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
-- If the start frame must stay consistent, say so positively: "maintain the same face, costume, and environment geometry while..."
-- Avoid multi-shot language inside one ${preset.toolName} shot unless the direction explicitly requires a transition. ${preset.toolName} stitches separate clips later.` : `
-VIDEO MODEL PROMPTING MODE:
-- The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
-- Do not request generated audio, dialogue, subtitles, or sound effects.`;
-
-  const prompt = `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
-
-WRITE PROMPTS THAT ARE RENDERABLE.
-
-The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words. The locked style reference is the ground truth for medium; words like "cinematic" pull stylized projects back toward realism.
-
-These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
-
-But do not become schematic. Avoid layout jargon like "left half", "right half", "split-focus", or "perfect symmetry" unless the shot truly depends on that exact arrangement.
-
-Translate emotion into physical evidence:
-- a still face
-- a hand tightening
-- a light settling
-- dust or rain moving through space
-- a body freezing before it answers
-- distance between two figures
-
-EXAMPLES — the boundary between renderable and not:
-
-GOOD visualPrompt:
-"Medium side shot: Mina stops at the classroom doorway, one hand still on the frame, while the hallway behind her falls out of focus. Her shoulders are tense and her eyes stay fixed on the empty desk."
-
-GOOD visualPrompt:
-"Low wide shot from the workshop floor: the half-built machine fills the background while Ren kneels in the foreground, tools scattered around his knees, staring at the cracked control panel."
-
-GOOD motionPrompt:
-"Static hold as Mina tightens her grip on the doorframe; the hallway lights flicker once behind her."
-
-GOOD motionPrompt:
-"Slow push-in toward Ren's face as he exhales and reaches for the broken switch."
-
-BAD visualPrompt:
-"Mina understands the weight of her destiny." — emotional interpretation, not renderable.
-
-BAD visualPrompt:
-"A symmetrical split-focus composition with one character on the left third and the object on the right third." — schematic layout jargon unless the shot truly needs it.
-
-BAD motionPrompt:
-"The camera slowly dollies in to heighten the emotional atmosphere." — generic movement and non-visual rationale.
-
-BAD motionPrompt:
-"Glowing energy fills the room as cosmic particles swirl around everyone." — generic VFX not grounded in the shot direction.
-
-${songTypeSignal}
-Mood: ${context.concept.mood || 'unspecified'}
-Video model: ${context.videoModel || 'default'}
-Preset rules:
-${preset.studio.shotPromptRules}
-
-CHARACTERS:
-${castList}
-${userNoteBlock}${tailContext}
-SHOTS TO WRITE:
-${shotList}
-${modelGuidance}
-${meditativeGuidance}
-For EACH shot, write using the write_shot_prompts tool:
-
-- visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
-  ONLY include characters listed in that shot's Cast field.
-
-- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, environmental motion, and visible timing against the song when useful. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
-
-- continuityFrom: 'cut' or 'prev_shot'.
-  Use 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment — a gaze becoming a close-up, stillness cracking into recognition, a slow reveal continuing across an edit point.
-  Use 'cut' when the shot begins a new beat, scale, angle, or emotional step.
-  The first shot of a scene is ALWAYS 'cut'.
-
-BEFORE RETURNING, CHECK THE SEQUENCE:
-- No invented geography (corridors, archways, courtyards not in the direction)
-- No repeated camera verb across consecutive shots
-- No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
-- No generic VFX unless explicitly described in the shot direction
-- At least consider 'prev_shot' for direct intensifications — don't default to all cuts
-- Every shot must advance the ${labels.timingNoun} arc, story beat, performance beat, or visual idea, not just restate the previous beat
-
-Match the IDs exactly.`;
+  const prompt = buildWriteShotPromptsPrompt({
+    shots,
+    cast: context.cast,
+    concept: context.concept,
+    userNote: context.userNote,
+    songType: context.songType,
+    isNarrative: context.isNarrative,
+    isMeditative: context.isMeditative,
+    videoModel: context.videoModel,
+    previousBatchTail,
+    preset,
+  });
 
   // Build tool schema with exact shot IDs
   const response = await client.messages.create({
