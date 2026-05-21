@@ -17,7 +17,6 @@ export interface XRayContext {
   lockedConcept?: string;   // e.g. "Ethereal Dreamscape — Lord Murugan"
   lockedStyle?: string;     // e.g. "Dark Renaissance chiaroscuro"
   lockedCharacters?: string[]; // e.g. ["Murugan: portrait ref locked", "Parvati: portrait ref locked"]
-  videoMode?: string;
   additionalNotes?: string;
 }
 
@@ -118,9 +117,6 @@ export const buildContextChain = async (projectId: string): Promise<XRayContext>
       : undefined,
     lockedCharacters: hasLockedCast
       ? cast.map((c: any) => `${c.name}: ${c.reference_asset_id ? 'ref locked' : 'NO ref'}`)
-      : undefined,
-    videoMode: project.status === 'scripted' || project.status === 'in_production' || project.status === 'rendered'
-      ? project.video_mode
       : undefined,
   };
 };

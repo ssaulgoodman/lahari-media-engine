@@ -253,7 +253,6 @@ const forkProject = async (
     style_asset_id: remapAsset(src.style_asset_id),
     color_palette: src.color_palette,
     meaning: src.meaning,
-    video_mode: src.video_mode,
     image_model: src.image_model,
     storyboard_provider: src.storyboard_provider || 'nano-banana-2',
     target_duration: src.target_duration,
@@ -598,7 +597,6 @@ const getFullProject = async (projectId: string) => {
       return se;
     })(),
     colorPalette: project.color_palette,
-    videoMode: project.video_mode,
     imageModel: project.image_model || IMAGE_MODELS[0].key,
     storyboardProvider: project.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
     videoModel: project.video_model || VIDEO_MODELS[0].key,
@@ -823,7 +821,6 @@ const createAudioProjectFromSeed = async (opts: {
     storyboard_provider: preset.defaults.imageModel,
     video_model: preset.defaults.videoModel,
     aspect_ratio: preset.defaults.aspectRatio,
-    video_mode: preset.defaults.videoMode,
     user_id: opts.userId,
     ...platformProjectFields({
       preset_key: preset.key,
@@ -968,7 +965,6 @@ const createScriptProjectFromSeed = async (opts: {
       description: directorBrief || 'Parsed from an uploaded script.',
     }),
     style_description: preset.style.presetBible || preset.style.rules,
-    video_mode: preset.defaults.videoMode,
     image_model: preset.defaults.imageModel,
     storyboard_provider: preset.defaults.imageModel,
     video_model: preset.defaults.videoModel,
@@ -1327,11 +1323,10 @@ router.patch('/:id/concept', async (req, res) => {
 
 // Update project settings
 router.patch('/:id', async (req, res) => {
-  const { title, videoMode, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, textProvider, aspectRatio, videoResolution } = req.body;
+  const { title, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, textProvider, aspectRatio, videoResolution } = req.body;
   const updates: Record<string, any> = {};
 
   if (title !== undefined) updates.title = title;
-  if (videoMode !== undefined) updates.video_mode = videoMode;
   if (imageModel !== undefined) updates.image_model = imageModel;
   if (storyboardProvider !== undefined) updates.storyboard_provider = storyboardProvider;
   if (videoModel !== undefined) updates.video_model = videoModel;

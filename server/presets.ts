@@ -88,7 +88,6 @@ export type PipelinePreset = {
     imageModel: string;
     videoModel: string;
     aspectRatio: string;
-    videoMode: string;
     pacing: number;
   };
 };
@@ -211,7 +210,6 @@ Each direction should sit in a clearly different production space. Avoid restati
       imageModel: 'nano-banana-2',
       videoModel: 'seedance-2.0-fast',
       aspectRatio: '16:9',
-      videoMode: 'montage',
       pacing: 8,
     },
   },
@@ -279,7 +277,6 @@ Each direction must be distinct in palette, line treatment, rendering, lighting,
       imageModel: 'nano-banana-2',
       videoModel: 'seedance-2.0-fast',
       aspectRatio: '16:9',
-      videoMode: 'cinematic',
       pacing: 6,
     },
   },

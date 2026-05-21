@@ -80,19 +80,6 @@ export const ScriptPhase: React.FC<Props> = ({
           Dropdown shape for aspect/resolution/model controls. */}
       <div className="surface rounded-xl p-4">
         <div className="flex items-center gap-5 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-mono">Style</span>
-            <Dropdown
-              value={project.videoMode || 'montage'}
-              onChange={v => onUpdateProject({ videoMode: v })}
-              size="xs"
-              title="Drives Claude's script-planning prompt. Montage = rhythmic coverage, each shot a clear beat. Cinematic = fewer stronger moments with continuity. Preset picks a sensible default."
-              options={[
-                { value: 'montage', label: 'Montage' },
-                { value: 'cinematic', label: 'Cinematic' },
-              ]}
-            />
-          </div>
           {(() => {
             const model = getVideoModel(project.videoModel);
             const durations = model.durations;

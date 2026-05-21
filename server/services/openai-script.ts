@@ -12,7 +12,6 @@ import { buildWriteShotPromptsPrompt } from '../prompts/shotPrompts.js';
 
 type PlanScenesInput = {
   concept: any;
-  videoMode: string;
   lyrics: string;
   meaning: string;
   musicalStructure: string;
@@ -225,7 +224,6 @@ type RefineScriptInput = {
   currentScript: { cast: any[]; environments: any[]; scenes: any[] };
   feedback: string;
   concept: any;
-  videoMode: string;
   lyrics: string;
   meaning: string;
   musicalStructure: string;

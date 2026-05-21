@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { ApiProject, ConceptOption, CastMember, Environment, VideoMode } from '../types';
+import { ApiProject, ConceptOption, CastMember, Environment } from '../types';
 import { ImageModal } from './ImageModal';
 import { BlueprintContextBar, Phase, getActivePhase, phaseIndex } from './BlueprintContextBar';
 import { ConceptPhase } from './ConceptPhase';

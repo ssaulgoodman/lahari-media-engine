@@ -5,7 +5,6 @@ import { clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 type PlanScenesPromptInput = {
   concept: any;
-  videoMode: string;
   lyrics: string;
   meaning: string;
   musicalStructure: string;
@@ -47,10 +46,6 @@ const formatSourceSignals = (input: PlanScenesPromptInput): string => {
     `Musical structure:\n${clip(input.musicalStructure, 3000)}`,
   ].filter(Boolean).join('\n\n');
 };
-
-const modeGuidance = (videoMode: string): string => videoMode === 'cinematic'
-  ? 'Director mode: cinematic. Use fewer, more sustained moments with stronger continuity and deeper immersion.'
-  : 'Director mode: montage. Use rhythmic, discrete moments with broader coverage of the emotional and musical world.';
 
 const pacingGuidance = (input: PlanScenesPromptInput): string => {
   const pacing = input.basePacing || input.preset.defaults.pacing || 15;
@@ -105,7 +100,6 @@ export const buildPlanScenesPrompt = (input: PlanScenesPromptInput): string => {
   const presetTaste = [
     input.preset.source.rules,
     getPresetWorkflow(input.preset).shotPlanRules,
-    modeGuidance(input.videoMode),
     pacingGuidance(input),
     `Cast rules:\n${input.preset.script.castRules}`,
     `Environment rules:\n${input.preset.script.environmentRules}`,

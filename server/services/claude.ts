@@ -260,7 +260,6 @@ const SCRIPT_TOOL = {
 
 export interface ScriptInput {
   concept: any;
-  videoMode: string;
 }
 
 // Helpers `formatConceptForScriptPrompt`, `formatShotExamples`, and
@@ -450,7 +449,7 @@ export const planScenes = async (
 export const refineScript = async (
   currentScript: { cast: any[]; environments: any[]; scenes: any[] },
   feedback: string,
-  context: { concept: any; videoMode: string; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string; preset?: PipelinePreset }
+  context: { concept: any; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string; preset?: PipelinePreset }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = await getClient();
   const preset = context.preset || getRuntimePreset();

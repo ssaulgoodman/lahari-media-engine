@@ -118,7 +118,6 @@ export const buildProjectPacket = async (project: Project) => {
       workflowKey: workflow.key,
       workflowLabel: workflow.label,
       seedKind: project.seedKind || workflow.primarySeed,
-      videoMode: project.videoMode,
       imageModel: project.imageModel,
       storyboardProvider: project.storyboardProvider,
       videoModel: project.videoModel,

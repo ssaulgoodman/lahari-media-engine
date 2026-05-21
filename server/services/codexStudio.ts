@@ -1365,7 +1365,6 @@ export const previewRewriteScript = async (project: Project, userNote?: string) 
   const mode: 'generate' | 'refine' = project.scenes.length ? 'refine' : 'generate';
   const context = {
     concept: project.lockedConcept || {},
-    videoMode: project.videoMode || 'montage',
     lyrics: project.lyrics || '',
     meaning: project.meaning || '',
     musicalStructure: musicalStructureText(project),
@@ -1551,7 +1550,9 @@ export const applyRewriteScriptPreview = async (previewJsonPath: string, project
         duration: Number(shot.duration || project.targetDuration || 15),
         cast_ids: JSON.stringify(castIds),
         environment_id: environmentId,
-        use_next_as_end_frame: project.videoMode === 'cinematic' ? 1 : 0,
+        // Defaults off; writeShotPrompts apply derives it later from
+        // per-shot continuity_from. Replaces old videoMode heuristic.
+        use_next_as_end_frame: 0,
         sort_order: shotIndex,
         image_status: 'idle',
         video_status: 'idle',

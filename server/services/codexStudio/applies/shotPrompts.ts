@@ -87,6 +87,21 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
     if (input.continuityFrom !== undefined) dbUpdate.continuity_from = input.continuityFrom;
 
     await updateRows('shots', { id: input.shotId }, dbUpdate);
+
+    // Derive use_next_as_end_frame on the previous shot when continuity
+    // changes. continuity_from='prev_shot' means the previous shot must
+    // extract its end frame to chain into this one. Replaces the old
+    // project-level videoMode='cinematic' heuristic.
+    if (input.continuityFrom !== undefined && target.shotIndex > 0) {
+      const scene = project.scenes[target.sceneIndex];
+      const prevShot = scene?.shots[target.shotIndex - 1];
+      if (prevShot) {
+        await updateRows('shots', { id: prevShot.id }, {
+          use_next_as_end_frame: input.continuityFrom === 'prev_shot' ? 1 : 0,
+        });
+      }
+    }
+
     const newHash = shotPromptHash(nextShot);
     updates.push({ shotId: input.shotId, fieldsChanged, newHash });
     nextShotsById.set(input.shotId, nextShot);

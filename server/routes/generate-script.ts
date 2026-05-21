@@ -66,7 +66,7 @@ router.post('/:id/generate-script', async (req, res) => {
   const concept = JSON.parse(project.locked_concept || '{}');
 
   const scriptProviderLabel = useOpenAIScriptWriter ? 'openai' : 'claude';
-  const scriptPrompt = `Plan script + propose cast for "${project.title}" — Provider: ${scriptProviderLabel} | Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood} | Mode: ${project.video_mode || 'montage'}${userNote ? ' | Note: ' + userNote : ''}`;
+  const scriptPrompt = `Plan script + propose cast for "${project.title}" — Provider: ${scriptProviderLabel} | Concept: ${concept.conceptDirection || concept.title} | Mood: ${concept.mood}${userNote ? ' | Note: ' + userNote : ''}`;
 
   try {
     console.log(`[${project.id}] Generating script + cast via ${scriptProviderLabel}${userNote ? ' with note: ' + userNote : ''}...`);
@@ -74,7 +74,6 @@ router.post('/:id/generate-script', async (req, res) => {
     const t0 = Date.now();
     const scriptInput = {
       concept,
-      videoMode: project.video_mode || 'montage',
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
@@ -191,7 +190,11 @@ router.post('/:id/generate-script', async (req, res) => {
           motion_prompt: '',
           duration,
           cast_ids: JSON.stringify(castIds),
-          use_next_as_end_frame: project.video_mode === 'cinematic' ? 1 : 0,
+          // use_next_as_end_frame is no longer derived from a project-level
+          // mode. It defaults off; writeShotPrompts apply derives it from
+          // the per-shot continuity_from decision (set on the prev shot when
+          // a later shot resolves to continuity_from='prev_shot').
+          use_next_as_end_frame: 0,
           sort_order: shIdx,
           environment_id: envId,
         });
@@ -309,7 +312,6 @@ router.post('/:id/refine-script', async (req, res) => {
 
     const refineInput = {
       concept,
-      videoMode: project.video_mode || 'montage',
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',
@@ -550,6 +552,23 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
           continuity_from: continuity,
           prompts_stale: false,
         });
+
+        // Derive use_next_as_end_frame on the previous shot: when this shot
+        // wants prev_shot continuity, the previous shot needs its end frame
+        // extracted for the chain. Replaces the old project-level
+        // videoMode='cinematic' → all-shots heuristic.
+        const currentShot = await selectOne('shots', { id: p.id });
+        if (currentShot && currentShot.sort_order > 0) {
+          const [prevShot] = await selectAll('shots',
+            { scene_id: currentShot.scene_id, sort_order: currentShot.sort_order - 1 },
+            { limit: 1 }
+          );
+          if (prevShot) {
+            await updateRows('shots', { id: prevShot.id }, {
+              use_next_as_end_frame: continuity === 'prev_shot' ? 1 : 0,
+            });
+          }
+        }
       }
 
       // Keep last 2 shots as continuity context for next batch

@@ -15,8 +15,6 @@ export enum GenerationStatus {
   STALE = 'stale',
 }
 
-export type VideoMode = 'montage' | 'cinematic';
-
 export type ProjectPhase =
   | 'uploaded'
   | 'analyzing'
@@ -257,7 +255,6 @@ export interface ApiProject {
   styleGenerationPrompt?: string;
   styleExploration?: { slots: { title: string; description: string; imageUrl?: string; assetId?: string }[]; userSlot?: { title: string; description: string; imageUrl?: string; assetId?: string }; presetSlots?: PresetSlotCache } | null;
   colorPalette?: string;
-  videoMode: VideoMode;
   songType?: string;
   isNarrative?: boolean;
   isMeditative?: boolean;

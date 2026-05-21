@@ -506,7 +506,6 @@ Outputs are printed as storage keys/paths and mirrored in ${OUT_DIR}.`);
     fs.mkdirSync(outDir, { recursive: true });
     const result = await planScenes({
       concept,
-      videoMode: project.video_mode || 'montage',
       lyrics: project.lyrics || '',
       meaning: project.meaning || '',
       musicalStructure: project.musical_structure || '',

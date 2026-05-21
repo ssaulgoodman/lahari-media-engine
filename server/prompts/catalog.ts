@@ -238,7 +238,6 @@ USER NOTE
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
     summary: 'Plans the full music-led video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Composed via composePrompt; user note is a hard structural constraint inside source timing and preset rules.',
     variables: [
-      { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
       { name: 'concept', description: 'Locked concept (subject, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
@@ -334,7 +333,6 @@ Hard rules:
     triggeredBy: 'Experimental script generation path when scriptProvider/openai runtime flag is selected.',
     summary: 'Alternative script planner using the same composed plan-scenes prompt, cast/environment/scene/shot JSON contract, and validation loop as the Claude planner.',
     variables: [
-      { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
       { name: 'concept', description: 'Locked concept (subject, direction, theme, expanded description, mood)' },
       { name: 'lyrics', description: 'Full lyrics' },
