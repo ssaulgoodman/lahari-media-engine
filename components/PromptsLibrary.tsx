@@ -219,8 +219,28 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
   const totalSpend = prompts.reduce((acc, p) => acc + (p.usage?.totalCost || 0), 0);
   const visibleTools = useMemo(() => {
     const matcher = WORKFLOW_FILTERS.find((f) => f.key === workflowFilter) || WORKFLOW_FILTERS[0];
-    return tools.filter((tool) => matcher.match(tool));
-  }, [tools, workflowFilter]);
+    const q = search.trim().toLowerCase();
+    return tools.filter((tool) => {
+      if (!matcher.match(tool)) return false;
+      if (!q) return true;
+      // Search hits the artist-facing fields (label, description, surface,
+      // produced/required asset labels) AND the registry key for debugging.
+      // Per Codex review on 5ad7c29: search box must filter the primary
+      // Tool Recipes grid, not only the legacy template list.
+      const assetSearchText = [...tool.requires, ...tool.contextInputs, ...tool.produces]
+        .map((key) => ASSET_LABELS[key] || key)
+        .join(' ')
+        .toLowerCase();
+      const surfaceLabel = (SURFACE_LABELS[tool.surface] || tool.surface).toLowerCase();
+      return (
+        tool.label.toLowerCase().includes(q) ||
+        tool.description.toLowerCase().includes(q) ||
+        tool.key.toLowerCase().includes(q) ||
+        surfaceLabel.includes(q) ||
+        assetSearchText.includes(q)
+      );
+    });
+  }, [tools, workflowFilter, search]);
   const toolsBySurface = useMemo(() => {
     const map: Record<string, ToolRecipe[]> = {};
     for (const tool of visibleTools) {
@@ -318,7 +338,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                   Registry-owned actions shared by the web UI and agent harness.
                 </p>
                 <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
-                  {workflowFilter === 'all' ? tools.length : `${visibleTools.length} / ${tools.length}`}
+                  {visibleTools.length === tools.length ? tools.length : `${visibleTools.length} / ${tools.length}`}
                 </span>
               </div>
 
@@ -553,7 +573,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
       {/* Footer note */}
       {!loading && filtered.length > 0 && (
         <div className="mt-12 pt-6 border-t border-white/[0.06] text-[11px] text-zinc-400 font-mono text-center">
-          {tools.length} tools · {filtered.length} of {prompts.length} prompt references shown — overrides happen by composer section, not by replacing a whole hidden template
+          {visibleTools.length} of {tools.length} tools · {filtered.length} of {prompts.length} prompt references shown — overrides happen by composer section, not by replacing a whole hidden template
         </div>
       )}
     </div>
