@@ -117,28 +117,72 @@ export const AssetShelf: React.FC<AssetShelfProps> = ({
 
   const hasTools = visibleEnabled.length > 0 || visibleBlocked.length > 0;
 
+  // Next-move hint (T10.9): point the artist at the most natural next
+  // action on this shelf. Heuristic:
+  //   - If any tool is enabled, recommend the first one (registry order
+  //     approximates the natural blueprint flow: brainstorm before refine,
+  //     plan before write, etc.). Clicking the chip fires the same handler
+  //     as the tool button.
+  //   - If everything's blocked, name the missing assets from the first
+  //     blocked tool. Informational chip — the artist needs to satisfy
+  //     those upstream before this shelf can run anything.
+  // The chip is a hint that sits above the tool row; the buttons are
+  // still the primary affordance.
+  const nextMove: { kind: 'run'; tool: ResolvedTool } | { kind: 'blocked'; tool: BlockedTool } | null =
+    visibleEnabled[0]
+      ? { kind: 'run', tool: visibleEnabled[0] }
+      : visibleBlocked[0]
+        ? { kind: 'blocked', tool: visibleBlocked[0] }
+        : null;
+
   return (
     <div className={className}>
       {hasTools && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          {visibleEnabled.map((tool) => (
-            <ToolButton
-              key={tool.key}
-              tool={tool}
-              busy={busyKey === tool.key}
-              disabled={disabled && busyKey !== tool.key}
-              onClick={runTool(tool.key)}
-            />
-          ))}
-          {visibleBlocked.map((tool) => (
-            <ToolButton
-              key={tool.key}
-              tool={tool}
-              disabled
-              title={`needs ${formatMissing(tool.missing)} · ${tool.description}`}
-            />
-          ))}
-        </div>
+        <>
+          {nextMove && (
+            <div className="mb-2">
+              {nextMove.kind === 'run' ? (
+                <button
+                  type="button"
+                  onClick={runTool(nextMove.tool.key)}
+                  disabled={disabled && busyKey !== nextMove.tool.key}
+                  title={nextMove.tool.description}
+                  className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="text-zinc-500">→ Next:</span>
+                  <span className="font-medium">{nextMove.tool.label}</span>
+                </button>
+              ) : (
+                <div
+                  className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500"
+                  title={nextMove.tool.description}
+                >
+                  <span>→ Waiting on:</span>
+                  <span className="font-medium text-zinc-400">{formatMissing(nextMove.tool.missing)}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+            {visibleEnabled.map((tool) => (
+              <ToolButton
+                key={tool.key}
+                tool={tool}
+                busy={busyKey === tool.key}
+                disabled={disabled && busyKey !== tool.key}
+                onClick={runTool(tool.key)}
+              />
+            ))}
+            {visibleBlocked.map((tool) => (
+              <ToolButton
+                key={tool.key}
+                tool={tool}
+                disabled
+                title={`needs ${formatMissing(tool.missing)} · ${tool.description}`}
+              />
+            ))}
+          </div>
+        </>
       )}
       {children}
     </div>
