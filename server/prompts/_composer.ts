@@ -3,6 +3,7 @@ export type ComposePromptParts = {
   workflowContext?: string;
   inputs?: string;
   presetTaste?: string;
+  userNotePolicy?: string;
   outputContract: string;
   userNote?: string;
 };
@@ -17,6 +18,7 @@ export const composePrompt = (parts: ComposePromptParts): string => [
   section('CONTEXT', parts.workflowContext),
   section('INPUTS', parts.inputs),
   section('TASTE', parts.presetTaste),
+  section('USER NOTE POLICY', parts.userNotePolicy),
   parts.outputContract.trim(),
   section('USER NOTE', parts.userNote),
 ].filter(Boolean).join('\n\n');

@@ -62,6 +62,12 @@ Each direction is one coherent visual world the project could live inside.
 Do not write story, scenes, characters, camera shot lists, or plot beats.
 Cover a real range across legitimate aesthetics for the medium described in TASTE.`;
 
+const USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract and TASTE rules. All 4 directions must satisfy it.
+
+If the note conflicts with the medium guard in TASTE (e.g. asking for a photographic or live-action medium when the project is anime), translate the intent into the closest medium-safe analogue rather than leaving the medium. For anime, that means treating a "Polaroid" request as a printed-photo-inspired color/texture treatment still rendered as a drawn anime frame, not as an actual photograph.
+
+Range means variety inside the user note when one is provided, not in spite of it. With no user note, cover the full legitimate range described in TASTE.`;
+
 const OUTPUT_CONTRACT = `Return exactly 4 directions as JSON.
 
 Each direction:
@@ -74,7 +80,8 @@ Hard rules:
 - No plot.
 - Do not number directions as story arcs.
 - Each direction must be independently usable as an image-generation style prompt.
-- Do not restate one look with different adjectives.`;
+- Do not restate one look with different adjectives.
+- When USER NOTE is present, all 4 directions satisfy it; range is variation inside the noted constraint.`;
 
 export const buildStyleBrainstormPrompt = (input: StyleBrainstormPromptInput): string => {
   const presetTaste = [
@@ -87,6 +94,7 @@ export const buildStyleBrainstormPrompt = (input: StyleBrainstormPromptInput): s
     workflowContext: workflowContextFor(input.preset),
     inputs: formatInputs(input),
     presetTaste,
+    userNotePolicy: USER_NOTE_POLICY,
     outputContract: OUTPUT_CONTRACT,
     userNote: input.userNote,
   });
