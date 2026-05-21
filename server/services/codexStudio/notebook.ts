@@ -175,10 +175,10 @@ Project: ${project.title}
 
 ## Locked Concept
 
-${locked ? `### ${locked.title || locked.subject || locked.primarySubject || locked.deity || 'Untitled'}
+${locked ? `### ${locked.title || locked.subject || locked.primarySubject || 'Untitled'}
 
 - Direction: ${locked.direction || locked.conceptDirection || 'None'}
-- Subject: ${locked.subject || locked.primarySubject || locked.deity || 'None'}
+- Subject: ${locked.subject || locked.primarySubject || 'None'}
 - Mood: ${locked.mood || 'None'}
 
 ${md(locked.description || locked.conceptDirection || JSON.stringify(locked, null, 2))}` : 'No locked concept.'}

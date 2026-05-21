@@ -11,6 +11,7 @@ import { buildContextChain, logCall } from '../xray.js';
 import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
 import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
 import { getProjectRuntimePreset } from '../presets.js';
+import { buildStoryboardPlannerPrompt } from '../prompts/storyboard.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -344,9 +345,6 @@ export const planStoryboardPrompt = async (opts: {
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
   const projectStoryboardOverride = await getProjectPromptOverride(opts.projectId, 'storyboard');
   const preferences = await getProjectPreferencesState(ctx.project as any);
-  const projectStoryboardOverrideBlock = projectStoryboardOverride
-    ? `\nProject storyboard recipe override:\n${projectStoryboardOverride.trim()}\n`
-    : '';
   // Provider selection: per-project setting. Falls back to the registry's
   // first entry (Claude Opus) when text_provider is null on the row. The
   // env-var override (OPENAI_STORYBOARD_PLANNER_MODEL) is no longer
@@ -355,9 +353,6 @@ export const planStoryboardPrompt = async (opts: {
   const providerSpec = getTextProvider(providerKey);
   const currentPrompt = ctx.shot.storyboard_prompt || '';
   const currentCutPlan = ctx.shot.storyboard_cut_plan || '';
-  const artistRefNote = opts.artistReferenceImagePath
-    ? `\nThe artist also attached a visual reference image. Use it only to understand the requested refinement, composition, gesture, board layout, or mood. Do not copy unrelated identity/style details from it.`
-    : '';
 
   // Continuity from previous shot — two independent flags both come from
   // shot row state. include_prev_cut_plan resolves through the smart-default
@@ -369,62 +364,21 @@ export const planStoryboardPrompt = async (opts: {
   const prevCutPlanTail = includePrevCutPlan && prevShot?.storyboard_cut_plan
     ? String(prevShot.storyboard_cut_plan).trim()
     : '';
-  const continuityBlock = prevCutPlanTail
-    ? `\n\nPrevious shot ended with the following cut plan:\n${prevCutPlanTail}\n\nContinue from that visual state. Do not re-establish location, character positions, or camera if the previous shot just covered them — open this shot from where the previous one left off.`
-    : '';
   // Vision-continuity instruction: only meaningful when the planner is
   // actually getting the previous storyboard image. Refs filter below
   // controls whether we send it; this note tells the model how to use it.
   const prevStoryboardRef = ctx.refMeta.find((r) => r.excludableKey === 'prev_storyboard');
-  const prevStoryboardNote = prevStoryboardRef
-    ? `\n\nThe attached image labeled "Previous shot storyboard (continuity)" is the previous shot's board. Read its last panel as the handoff state for this shot — match character positions, screen direction, and lighting from there. Do not copy its composition wholesale.`
-    : '';
-
-  const prompt = opts.artistNote?.trim()
-    ? `You are an art director refining one storyboard for ${ctx.input.preset?.toolName || 'this video project'}. The locked style reference image is the visual ground truth — read it to understand the medium and match it. Rewrite the saved storyboard render prompt and cut plan using the artist note.
-
-Artist note:
-${opts.artistNote.trim()}
-${artistRefNote}${prevStoryboardNote}${continuityBlock}
-
-Current storyboard render prompt:
-${currentPrompt || '(none)'}
-
-Current cut plan:
-${currentCutPlan || '(none)'}
-
-${projectStoryboardOverrideBlock}
-Original source brief:
-${basePrompt}
-
-Return only JSON with keys:
-{
-  "storyboardPrompt": "the actual prompt sent to the image model — must include the panel layout, subject/setting context, per-panel action descriptions (Panel 1: ..., Panel 2: ..., one line each describing what visibly happens), AND an explicit inter-panel consistency demand naming what each locked ref controls (style → medium/lighting/palette; characters → identity/costume; environment → physical space). Plus the no-text-in-panels rule. Under ~330 words. No 'contract' bullet lists, no animation rules, no quality boilerplate, no 'cinematic film still' language — image models read short clear prompts better, and cinema language fights non-realistic locked styles.",
-  "cutPlanText": "the same per-panel beats reformatted for the video model. Format: 'Panel N — <action>'. One short line per panel. No timestamps, no camera-jargon fields."
-}`
-    : `You are an art director planning one storyboard board for ${ctx.input.preset?.toolName || 'this video project'}. The locked style reference image is the visual ground truth — read it to understand the medium (photographic, painterly, illustrated, miniature, mixed-media, anime, or another project style) and match it. Convert the source brief below into two saved artifacts for a two-step storyboard workflow.
-
-1. storyboardPrompt — the actual prompt the storyboard image model will read. It MUST include:
-   - The panel layout (grid spec, 16:9 panels, borders, background)
-   - One-line subject/shot context (what the moment is)
-   - **Per-panel action descriptions**, one short sentence per panel, in order. Without these the image model invents incoherent panels — this is the most important part. Format: "Panel 1: <framing> — <action>". Use plain visual language, not camera jargon.
-   - **Inter-panel consistency demand (REQUIRED — this is the line that prevents panels from drifting into different scenes):** explicitly instruct the image model to keep visual style, lighting/palette, character identity (face, costume, silhouette), and environment geometry CONSISTENT across every panel. State which locked reference controls which aspect: style reference → medium/lighting/palette; character references → identity/costume; environment reference → physical space.
-   - No-text-in-panels rule (no captions, numbers, labels, arrows)
-
-   Keep the whole thing under ~330 words. Do NOT include "contract" bullet lists, animation rules, emotional-arc instructions, or quality boilerplate ("masterpiece", "ultra-HD", "cinematic film still", etc.) — image models follow short clear prompts dramatically better than long ones, and "cinematic"-style language fights non-realistic locked styles.
-
-2. cutPlanText — the same panel beats reformatted for the video model. ONE LINE PER PANEL. Format: "Panel N — <action>". Plain action beats, no timestamps, no separate camera/action/motion-cue fields.
-
-The panel actions appear in BOTH outputs — image model needs them inline to know what to draw per panel, video model needs them as a clean list to understand the beats.
-
-Source brief:
-${basePrompt}${projectStoryboardOverrideBlock}${prevStoryboardNote}${continuityBlock}
-
-Return only JSON with keys:
-{
-  "storyboardPrompt": "complete image-model prompt with per-panel actions inline AND the inter-panel consistency demand",
-  "cutPlanText": "Panel N — <action> per panel, one line each"
-}`;
+  const prompt = buildStoryboardPlannerPrompt({
+    sourceBrief: basePrompt,
+    currentPrompt,
+    currentCutPlan,
+    artistNote: opts.artistNote,
+    hasArtistReference: !!opts.artistReferenceImagePath,
+    hasPreviousStoryboardRef: !!prevStoryboardRef,
+    previousCutPlanTail: prevCutPlanTail || undefined,
+    projectOverride: projectStoryboardOverride || undefined,
+    preset: ctx.input.preset,
+  });
 
   const plannerRefs = withArtistRef(ctx.refs, ctx.refMeta, opts.artistReferenceImagePath);
   // Vision inputs to the planner. Originally "text-only by design", but

@@ -31,8 +31,6 @@ const getClient = async () => new Anthropic({ apiKey: await requireProviderApiKe
 // routes through generateText() which picks the model from project.text_provider.
 const SONNET = 'claude-sonnet-4-6';
 const OPUS = 'claude-opus-4-7';
-const conceptSubject = (concept: any, fallback = 'Unknown'): string =>
-  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback;
 
 // ─── Meaning Summary (Stage 3) ──────────────────────────────────────
 
@@ -128,7 +126,6 @@ export const generateConceptOptions = async (
                 language: { type: 'string', description: 'Detected language' },
                 subject: { type: 'string', description: preset.concept.subjectDescription },
                 primarySubject: { type: 'string', description: 'Legacy-compatible alias for subject' },
-                deity: { type: 'string', description: 'Legacy-compatible alias only when the subject truly is a deity' },
                 mood: { type: 'string', description: 'Emotional keyword — unique per concept' },
                 theme: { type: 'string', description: 'Core narrative idea (1 sentence)' },
                 lyricsSummary: { type: 'string', description: 'Brief meaning summary' },
@@ -174,7 +171,6 @@ export const refineConceptDirection = async (
           title: { type: 'string' },
           subject: { type: 'string' },
           primarySubject: { type: 'string' },
-          deity: { type: 'string' },
           mood: { type: 'string' },
           theme: { type: 'string' },
           conceptDirection: { type: 'string' },

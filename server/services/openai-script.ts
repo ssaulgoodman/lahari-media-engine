@@ -4,9 +4,11 @@ import {
   validateScriptStructure,
   buildCorrectivePrompt,
   assignDeterministicDurations,
-  parseTimestamp,
 } from './script-validation.js';
 import { requireProviderApiKey } from './byok/providerKeys.js';
+import { buildPlanScenesPrompt } from '../prompts/planScenes.js';
+import { buildRefineScriptPrompt } from '../prompts/refineScript.js';
+import { buildWriteShotPromptsPrompt } from '../prompts/shotPrompts.js';
 
 type PlanScenesInput = {
   concept: any;
@@ -30,30 +32,6 @@ const OPENAI_SCRIPT_MODEL = process.env.OPENAI_SCRIPT_MODEL || 'gpt-5.5';
 const OPENAI_SCRIPT_REASONING_EFFORT = process.env.OPENAI_SCRIPT_REASONING_EFFORT || 'medium';
 
 const getClient = async () => new OpenAI({ apiKey: await requireProviderApiKey('openai') });
-
-const conceptSubject = (concept: any, fallback = 'Unknown'): string =>
-  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || fallback;
-
-const formatConceptForScriptPrompt = (concept: any): string => {
-  const lines = [
-    `Subject: ${conceptSubject(concept)}`,
-    `Direction: ${concept?.conceptDirection || concept?.title || 'Untitled direction'}`,
-    `Core idea: ${concept?.theme || ''}`,
-    `Expanded brief: ${concept?.description || concept?.lyricsSummary || ''}`,
-    `Mood: ${concept?.mood || ''}`,
-  ];
-  return lines.filter(line => !line.endsWith(': ')).join('\n');
-};
-
-const workflowSourceLabels = (preset: PipelinePreset) => {
-  const isMusicVideo = preset.workflowKey === 'music_led';
-  return {
-    sourceBlock: isMusicVideo ? 'LYRICS / AUDIO SOURCE' : 'SCRIPT / SOURCE MATERIAL',
-    structureBlock: isMusicVideo ? 'MUSICAL STRUCTURE' : 'SCENE / TIMING STRUCTURE',
-  };
-};
-
-// parseTimestamp is now in ./script-validation.ts (shared with claude/gemini)
 
 const SCRIPT_SCHEMA = {
   type: 'object',
@@ -144,83 +122,11 @@ const buildPrompt = (
   errors?: string[],
 ): string => {
   const preset = input.preset || getRuntimePreset();
-  const pacing = input.basePacing || 15;
-  const minDuration = input.minShotDuration || 4;
-  const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
-  const seedanceMaxDuration = 15;
-  const labels = workflowSourceLabels(preset);
-  const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
-  const traits = [
-    input.isNarrative ? 'narrative' : null,
-    input.isMeditative ? 'meditative' : null,
-  ].filter(Boolean);
-  const songTypeSignal = typeLabel || traits.length
-    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
-    : '';
-
-  const pacingGuidance = isSeedanceStoryboard
-    ? `SEEDANCE STORYBOARD PACING:
-- A ${preset.toolName} shot is one storyboard-controlled clip, not one continuous camera take.
-- Each shot may contain internal cuts and angles, but it must be one clear story/music idea.
-- Prefer 15s when the phrase supports a real mini-scene.
-- Allowed range: 4-${seedanceMaxDuration}s. Use 4-8s only for short transitions, refrains, or quick responses.
-- Shot durations inside each scene must add exactly to the scene duration.
-- direction should be a practical edited beat sequence that a storyboard can show.`
-    : `STANDARD PACING:
-- Base shot length is ${pacing}s.
-- For each scene, write exactly ceil(scene_duration / ${pacing}) shots.
-- The app will assign deterministic durations later.
-- Video model minimum clip length is ${minDuration}s.`;
-
   const retry = errors?.length
     ? `\nVALIDATION FAILED. Return a corrected full JSON plan. Fix exactly these issues:\n${errors.map((err) => `- ${err}`).join('\n')}\n`
     : '';
-
-  return `You are the practical script planner for ${preset.toolName}, an AI video production tool.
-
-Your job is production structure: cast, reusable locations, scenes, and what physically happens in each shot.
-Write for assets that artists can actually generate and storyboard. Be concrete, calm, and shootable.
-
-Do not write pompous poetry. Do not use vague phrases like "memory floods the space", "cosmic energy blooms", or "the universe awakens" unless you translate them into visible human action, environmental change, performance, or a simple physical image.
-Do not include camera directions, lens choices, color palette, art style, rendering language, or overbuilt fantasy architecture in the script. Storyboard and cinematography steps happen later.
-Avoid impossible crowds, dozens of extras, elaborate VFX, and prop chaos unless the song explicitly demands it.
-${preset.script.sceneRules}
-
-DIRECTOR STYLE: ${input.videoMode === 'cinematic' ? 'Cinematic - fewer stronger moments with continuity.' : 'Montage - rhythmic coverage, each shot is a clear beat.'}
-${songTypeSignal}
-
-CONCEPT:
-${formatConceptForScriptPrompt(input.concept)}
-
-${labels.sourceBlock}:
-${input.lyrics}
-
-MEANING:
-${input.meaning}
-
-${labels.structureBlock}:
-${input.musicalStructure}
-
-${pacingGuidance}
-${input.userNote ? `\nDIRECTOR NOTE: ${input.userNote}\n` : ''}
-${retry}
-Return only JSON matching the schema.
-
-CAST:
-- Include only characters actually needed.
-- Descriptions are neutral reusable reference identities: physical appearance, role, silhouette, wardrobe/costume, and distinguishing details. No action, no props in hands, no art style.
-${preset.script.castRules}
-
-ENVIRONMENTS:
-- Descriptions are physical spaces only: landscape/architecture/scale/atmosphere. No art style.
-${preset.script.environmentRules}
-
-SCENES:
-- Follow provided structure timestamps exactly.
-- narrativeDescription is plain and concrete, 1-2 sentences.
-- Every shot must have environmentName from your environment list.
-- Every visible character must be in castNames.
-- direction = what happens in the clip. In Seedance mode it can be 2-5 internal beats, but keep one coherent clip idea.`;
+  return `${buildPlanScenesPrompt({ ...input, preset })}
+${retry}`;
 };
 
 export const planScenesOpenAI = async (
@@ -248,7 +154,7 @@ export const planScenesOpenAI = async (
       text: {
         format: {
           type: 'json_schema',
-          name: 'studio_music_video_script',
+          name: 'studio_script_plan',
           strict: true,
           schema: SCRIPT_SCHEMA,
         },
@@ -262,7 +168,7 @@ export const planScenesOpenAI = async (
       requestBody.input = buildCorrectivePrompt(lastErrors, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
     } else {
       requestBody.input = [
-        { role: 'system', content: 'You return strict JSON for a music video production planner.' },
+        { role: 'system', content: 'You return strict JSON for a video production planner.' },
         { role: 'user', content: initialPrompt },
       ];
     }
@@ -331,73 +237,18 @@ type RefineScriptInput = {
 
 const buildRefinePrompt = (input: RefineScriptInput): string => {
   const preset = input.preset || getRuntimePreset();
-  const labels = workflowSourceLabels(preset);
-  const pacing = input.basePacing || 15;
-  const minDuration = input.minShotDuration || 4;
-  const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
-  const seedanceMaxDuration = 15;
-
-  const currentJson = JSON.stringify({
-    cast: input.currentScript.cast.map((c: any) => ({ name: c.name, description: c.description })),
-    environments: input.currentScript.environments.map((e: any) => ({ name: e.name, description: e.description })),
-    scenes: input.currentScript.scenes.map((s: any) => ({
-      sectionLabel: s.sectionLabel || s.section_label,
-      startTime: s.startTime || s.start_time,
-      endTime: s.endTime || s.end_time,
-      narrativeDescription: s.narrativeDescription || s.narrative_description,
-      shots: (s.shots || []).map((sh: any) => ({
-        direction: sh.direction || sh.visual_prompt || '',
-        duration: sh.duration,
-        castNames: sh.castNames || sh.cast_names || [],
-        environmentName: sh.environmentName || sh.environment_name || '',
-      })),
-    })),
-  }, null, 2);
-
-  const pacingGuidance = isSeedanceStoryboard
-    ? `SEEDANCE STORYBOARD PACING:
-A ${preset.toolName} shot is one storyboard-controlled clip, not one continuous take.
-Allowed range: 4-${seedanceMaxDuration}s per shot. Durations must add exactly to the scene duration.
-If you edit a scene, include duration for every shot. Preserve existing durations in untouched scenes.`
-    : `SHOT BUDGET: Every shot = ${pacing}s. Shots per scene = ceil(scene_duration / ${pacing}). Last shot gets remainder. HARD CONSTRAINT.
-Video model minimum clip length: ${minDuration}s — shorter shots are generated at model floor and trimmed in render.`;
-
-  return `You are the practical script editor for ${preset.toolName}. Refine an existing video script based on director feedback. Visual medium is decided separately via the locked style reference — do not add cinematography, camera, or color-palette directions.
-
-CONCEPT:
-${formatConceptForScriptPrompt(input.concept)}
-
-${labels.sourceBlock}:
-${input.lyrics}
-
-MEANING: ${input.meaning}
-
-${labels.structureBlock}: ${input.musicalStructure}
-
-${pacingGuidance}
-
-═══════════════════════════════════════
-CURRENT SCRIPT (your starting point):
-═══════════════════════════════════════
-${currentJson}
-
-═══════════════════════════════════════
-DIRECTOR'S FEEDBACK:
-═══════════════════════════════════════
-${input.feedback}
-
-═══════════════════════════════════════
-
-SURGICAL REFINEMENT. Not a rewrite.
-
-1. PRESERVE what works. Unchanged scenes come back IDENTICAL — same narratives, shots, cast assignments, environments.
-2. SCOPE changes to what feedback asks for.
-3. RESPECT existing cast and environment names — they are IDs. Don't rename. Add new ones only if feedback requires.
-4. MAINTAIN musical structure. Section labels and timestamps are fixed.
-5. Every shot MUST have castNames + environmentName.
-${isSeedanceStoryboard ? '6. Seedance mode: shot.direction may describe 2-5 internal beats but one cohesive clip. Include shot.duration.' : ''}
-
-Return the COMPLETE updated script (strict JSON) — every scene, not just the changed ones.`;
+  return buildRefineScriptPrompt({
+    currentScript: input.currentScript,
+    feedback: input.feedback,
+    concept: input.concept,
+    sourceText: input.lyrics,
+    meaning: input.meaning,
+    musicalStructure: input.musicalStructure,
+    basePacing: input.basePacing,
+    minShotDuration: input.minShotDuration,
+    videoModel: input.videoModel,
+    preset,
+  });
 };
 
 export const refineScriptOpenAI = async (
@@ -420,7 +271,7 @@ export const refineScriptOpenAI = async (
       text: {
         format: {
           type: 'json_schema',
-          name: 'lahari_music_video_script',
+          name: 'studio_script_refine',
           strict: true,
           schema: SCRIPT_SCHEMA,
         },
@@ -433,7 +284,7 @@ export const refineScriptOpenAI = async (
       requestBody.input = buildCorrectivePrompt(lastErrors, { pacing, isSeedanceStoryboard, seedanceMaxDuration });
     } else {
       requestBody.input = [
-        { role: 'system', content: 'You return strict JSON for a music video production planner.' },
+        { role: 'system', content: 'You return strict JSON for a video production planner.' },
         { role: 'user', content: initialPrompt },
       ];
     }
@@ -524,80 +375,7 @@ const WRITE_SHOT_PROMPTS_SCHEMA = {
 
 const buildWriteShotPromptsText = (input: WriteShotPromptsInput): string => {
   const preset = input.preset || getRuntimePreset();
-  const isMusicVideo = preset.workflowKey === 'music_led';
-  const shotList = input.shots.map((s, i) =>
-    `Shot ${i + 1} [${s.id}]: "${s.direction}" | ${s.duration}s | Cast: ${s.castNames.join(', ') || 'none'} | Scene: ${s.sceneNarrative} | ${isMusicVideo ? 'Lyric/audio cue' : 'Source beat'}: ${s.sceneLyrics || (isMusicVideo ? 'instrumental' : 'not specified')}`
-  ).join('\n');
-
-  const castList = input.cast.map(c => `${c.name}: ${c.description}`).join('\n');
-
-  const tailContext = input.previousBatchTail?.length
-    ? `\nPREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\n${input.previousBatchTail.map(t => `[${t.id}]: visual: "${t.visualPrompt}" | motion: "${t.motionPrompt}"`).join('\n')}\n`
-    : '';
-
-  const userNoteBlock = input.userNote ? `\nUSER DIRECTION (apply to this rewrite): ${input.userNote}\n` : '';
-  const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
-  const traits = [input.isNarrative ? 'narrative' : null, input.isMeditative ? 'meditative' : null].filter(Boolean);
-  const songTypeSignal = typeLabel || traits.length
-    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
-    : '';
-
-  const meditativeGuidance = input.isMeditative ? `
-PATIENT / CONTEMPLATIVE PACING:
-- Favor stillness, patience, and negative space.
-- A still face, a tightening hand, or a small environmental change can carry weight.
-- Show emotional presence through atmosphere and reaction, not VFX.` : '';
-
-  const timingReference = isMusicVideo
-    ? 'song rhythm visually ("on the vocal phrase", "as the line resolves")'
-    : 'source timing visually ("on the dialogue beat", "as the action lands")';
-
-  const modelGuidance = input.videoModel?.startsWith('seedance') ? `
-SEEDANCE 2.0 PROMPTING:
-- motionPrompt = timed action cue for this exact shot duration.
-- Name subject + visible change + camera move in clean order.
-- Use duration when helpful ("over 5s...", "during the final second...").
-- The app mixes final audio in render. Do NOT request generated audio.
-- Reference ${timingReference} only.
-- Simple, physically plausible camera.
-- If start frame must stay consistent: "maintain the same face, costume, geometry while...".` : `
-VIDEO MODEL PROMPTING:
-- Model gets a start frame; final audio is added in render. motionPrompt describes visible action + camera only.
-- Do NOT request generated audio, dialogue, subtitles, or SFX.`;
-
-  return `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
-
-WRITE PROMPTS THAT ARE RENDERABLE.
-
-The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words.
-
-Every sentence must describe something visible or animateable. No metaphor, no inner emotion. Avoid "seems to", "as if", or invisible causes. Describe the visible effect directly.
-
-But do not become schematic. Avoid "left half", "right half", "split-focus", "perfect symmetry" unless the shot truly depends on that arrangement.
-
-Translate emotion into physical evidence: a still face, a hand tightening, a light settling, dust or rain moving through space, a body freezing before it answers, distance between two figures.
-
-${songTypeSignal}
-Mood: ${input.concept?.mood || 'unspecified'}
-Video model: ${input.videoModel || 'default'}
-Preset rules:
-${preset.studio.shotPromptRules}
-
-CHARACTERS:
-${castList}
-${userNoteBlock}${tailContext}
-SHOTS TO WRITE:
-${shotList}
-${modelGuidance}
-${meditativeGuidance}
-
-For EACH shot:
-- id: must match the [id] above EXACTLY.
-- visualPrompt: the start frame. Brief: camera position, shot scale, subject placement, spatial relationship, location, one key visible detail. ONLY characters listed in that shot's Cast. Don't invent geography.
-- motionPrompt: one sentence. What changes — character action, camera movement, environmental motion. Name camera verb if it moves (push-in, pan, tracking, pull-back). Simplest truthful motion. A static hold is valid.
-- continuityFrom: 'cut' (default) or 'prev_shot' (when this shot directly intensifies/reveals/sustains the previous moment). First shot of a scene is ALWAYS 'cut'.
-
-Match the IDs exactly. Return one entry per shot.`;
+  return buildWriteShotPromptsPrompt({ ...input, preset });
 };
 
 export const writeShotPromptsOpenAI = async (

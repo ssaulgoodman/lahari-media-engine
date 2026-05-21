@@ -60,7 +60,7 @@ export const buildAudioPlanPrompt = (
   const shotCast = cast.filter((member) => shotCastIds.includes(member.id));
   const allowedCast = shotCast.length > 0 ? shotCast : cast;
 
-  const coreTask = `You are writing production audio data for one shot in a scripted animated video.
+  const coreTask = `Write production audio data for one shot.
 
 Write dialogue lines, delivery cues, and restrained sound notes for this shot only.
 This is structured production data that will drive TTS, lipsync, overlay audio, and video-generation context. It is not prose and it is not a script rewrite.`;

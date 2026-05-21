@@ -45,7 +45,7 @@ ${md(scene.narrativeDescription)}
 ${shotSummary || 'No shots.'}`;
   }).join('\n\n');
 
-  return `# Lahari Director Report
+  return `# Mirage Director Report
 
 Generated: ${new Date().toISOString()}
 
@@ -54,7 +54,7 @@ Generated: ${new Date().toISOString()}
 - Title: ${project.title}
 - ID: ${project.id}
 - Status: ${project.status}
-- Preset: bhakti-music-video
+- Preset: ${project.presetKey || 'unknown'}
 - Song type: ${project.songType || 'unknown'}${project.isMeditative ? ', meditative' : ''}${project.isNarrative ? ', narrative' : ''}
 - Workflow: ${workflow}
 - Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
@@ -93,7 +93,7 @@ ${md(compactText(project.meaning, 1200))}
 
 ## Concept
 
-${project.lockedConcept ? `Locked: ${project.lockedConcept.title || project.lockedConcept.deity || 'Untitled'}\n\n${md(project.lockedConcept.description || project.lockedConcept.conceptDirection)}` : 'No locked concept.'}
+${project.lockedConcept ? `Locked: ${project.lockedConcept.title || project.lockedConcept.subject || project.lockedConcept.primarySubject || 'Untitled'}\n\n${md(project.lockedConcept.description || project.lockedConcept.conceptDirection)}` : 'No locked concept.'}
 
 ## Style
 

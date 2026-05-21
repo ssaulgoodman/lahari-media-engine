@@ -8,7 +8,6 @@ export type ConceptApplyInput = {
   title: string;
   direction: string;
   description: string;
-  deity?: string;
   mood?: string;
 };
 
@@ -16,7 +15,6 @@ export const applyConcept = async (project: Project, concept: ConceptApplyInput,
   const validation = ensureLength('title', concept?.title, 200, { required: true })
     || ensureLength('direction', concept?.direction, 500, { required: true })
     || ensureLength('description', concept?.description, 2000, { required: true })
-    || ensureLength('deity', concept?.deity, 100)
     || ensureLength('mood', concept?.mood, 200)
     || validateBaseHash(conceptHash(project.lockedConcept), opts.baseHash, opts.force);
   if (validation) return validation;
@@ -25,7 +23,6 @@ export const applyConcept = async (project: Project, concept: ConceptApplyInput,
     title: concept.title.trim(),
     direction: concept.direction.trim(),
     description: concept.description.trim(),
-    ...(concept.deity?.trim() ? { deity: concept.deity.trim() } : {}),
     ...(concept.mood?.trim() ? { mood: concept.mood.trim() } : {}),
   };
   const hasScript = project.scenes.length > 0;

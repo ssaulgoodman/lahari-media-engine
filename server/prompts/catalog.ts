@@ -145,46 +145,38 @@ Under 150 words. Write in English.`,
       { name: 'cast', description: 'Allowed cast IDs with names, descriptions, look availability, and voice assignment state' },
       { name: 'preset', description: 'Runtime preset, including source and audio rules' },
     ],
-    template: `You are the audio director for {{preset.label}}.
+    template: `CORE TASK
+Write dialogue lines, delivery cues, and restrained sound notes for one shot only.
+This is structured production data that drives TTS, lipsync, overlay audio, and video-generation context. It is not prose and it is not a script rewrite.
 
-Write the per-shot audio plan for ONE shot. This is production data, not prose.
+CONTEXT
+{{workflowContextFor(preset)}}
 
-Hard rules:
+INPUTS
+Project title: {{project.title}}
+Scene label: {{scene.section_label}}
+Scene narrative: {{scene.narrative_description}}
+Scene source text: {{scene.lyrics}}
+Shot ID: {{shot.id}}
+Shot duration: {{shot.duration}}s
+Shot direction: {{shot.direction}}
+Shot visual prompt: {{shot.visual_prompt}}
+Allowed cast: {{allowedCast}}
+Raw source material: {{source_payload}}
+
+TASTE
+{{preset.source.rules}}
+{{preset.audio.dialogueRules}}
+{{preset.audio.soundRules}}
+{{preset.audio.strategyRules}}
+
+OUTPUT CONTRACT
 - Use only the listed cast IDs. Do not invent characters.
-- Preserve uploaded script intent. If source payload includes dialogue for this beat, extract it as close to verbatim as possible.
-- Dialogue text is what TTS will speak. Never include delivery labels, camera notes, speaker names, or parenthetical directions inside dialogue text.
+- Dialogue text is exactly what TTS will speak. Never include delivery labels, camera notes, speaker names, or parenthetical directions inside dialogue text.
 - delivery is a short performance cue, not spoken text.
-- soundNotes are restrained ambient/SFX guidance for video prompts; do not create a structured SFX list.
 - If the shot has no spoken line, return an empty dialogue array and optional soundNotes.
-- Keep each dialogue text under 500 characters.
-
-Project:
-Title: {{project.title}}
-Workflow: {{project.workflow_key}}
-Preset rules: {{preset.source.rules}}
-Dialogue rules: {{preset.audio.dialogueRules}}
-Sound rules: {{preset.audio.soundRules}}
-Strategy rules: {{preset.audio.strategyRules}}
-
-Scene:
-Label: {{scene.section_label}}
-Narrative: {{scene.narrative_description}}
-Lyrics/source text: {{scene.lyrics}}
-
-Shot:
-ID: {{shot.id}}
-Duration: {{shot.duration}}s
-Direction: {{shot.direction}}
-Visual prompt: {{shot.visual_prompt}}
-
-Allowed cast:
-{{allowedCast}}
-
-Source payload:
-{{source_payload}}
-
-Return only the structured audio plan JSON.`,
-    source: { file: 'server/services/audioDirector.ts', lines: 'buildAudioPlanPrompt' },
+- Return only structured audio-plan JSON.`,
+    source: { file: 'server/prompts/audioPlan.ts', lines: 'buildAudioPlanPrompt' },
   },
 
   // ─── Blueprint ────────────────────────────────────────────────────
@@ -340,7 +332,7 @@ Hard rules:
     model: 'gpt-5.5',
     modelLabel: 'GPT-5.5 (Responses structured output)',
     triggeredBy: 'Experimental script generation path when scriptProvider/openai runtime flag is selected.',
-    summary: 'Alternative script planner tuned to be practical and shootable, with the same cast/environment/scene/shot JSON contract and validation loop as the Claude planner.',
+    summary: 'Alternative script planner using the same composed plan-scenes prompt, cast/environment/scene/shot JSON contract, and validation loop as the Claude planner.',
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
@@ -350,73 +342,35 @@ Hard rules:
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Base shot duration for keyframe mode' },
       { name: 'minShotDuration', description: 'Video model minimum clip length' },
-      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'songType', description: 'Audio classification for music-led projects' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },
       { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `You are the practical script planner for Mirage, an AI video studio for music videos.
+    template: `This path delegates to server/prompts/planScenes.ts and then asks GPT-5.5 for the same strict JSON schema used by the Claude planner.
 
-Your job is production structure: cast, reusable locations, scenes, and what physically happens in each shot.
-Write for assets that artists can actually generate and storyboard. Be concrete, calm, and shootable.
+CORE TASK
+Plan the production structure: cast, reusable environments, scenes aligned to source timing, and concrete shot directions.
 
-Do not write pompous poetry. Do not use vague phrases like "cosmic energy blooms", "the universe awakens", or "emotion fills the air" unless you translate them into visible human action, environmental action, or a simple physical image.
-Do not include camera directions, lens choices, color palette, art style, rendering language, or overbuilt fantasy architecture in the script. Storyboard and cinematography steps happen later.
-Avoid impossible crowds, dozens of extras, elaborate VFX, and prop chaos unless the song explicitly demands it.
+CONTEXT
+{{workflowContextFor(preset)}}
 
-DIRECTOR STYLE: {{videoMode}}
-SONG TYPE: {{songType}}, {{traits}}
+INPUTS
+{{concept, source text, meaning/director brief, musical or timing structure, model pacing, and optional user note}}
 
-CONCEPT:
-Subject: {{concept.subject || concept.primarySubject || concept.deity}}
-Direction: {{concept.conceptDirection}}
-Core idea: {{concept.theme}}
-Expanded brief: {{concept.description}}
-Mood: {{concept.mood}}
+TASTE
+{{preset.source.rules}}
+{{preset.workflow.scriptRules}}
+{{preset.script.sceneRules}}
+{{preset.script.castRules}}
+{{preset.script.environmentRules}}
 
-LYRICS:
-{{lyrics}}
+USER NOTE POLICY
+{{Hard structural constraint when present; source timing and output contract still win.}}
 
-MEANING:
-{{meaning}}
-
-MUSICAL STRUCTURE:
-{{musicalStructure}}
-
-{{videoModel startsWith seedance ? "
-SEEDANCE STORYBOARD PACING:
-- A studio shot is one storyboard-controlled clip, not one continuous camera take.
-- Each shot may contain internal cuts and angles, but it must be one clear story/music idea.
-- Prefer 15s when the phrase supports a real mini-scene.
-- Allowed range: 4-15s. Use 4-8s only for short transitions or quick responses.
-- Shot durations inside each scene must add exactly to the scene duration.
-- direction should be a practical edited beat sequence that a storyboard can show.
-" : "
-STANDARD PACING:
-- Base shot length is {{pacing}}s.
-- For each scene, write exactly ceil(scene_duration / {{pacing}}) shots.
-- The app will assign deterministic durations later.
-- Video model minimum clip length is {{minShotDuration}}s.
-"}}
-
-Return only JSON matching the strict schema.
-
-CAST:
-- Include only characters actually needed.
-- Include the main subject and key figures by proper names.
-- Descriptions are neutral reusable reference identities: physical appearance, cultural identity, costume, ornaments. No action, no props in hands, no art style.
-
-ENVIRONMENTS:
-- Use 2-3 reusable locations unless the song truly needs more.
-- Descriptions are physical spaces only: landscape/architecture/scale/atmosphere. No art style.
-
-SCENES:
-- Follow musical structure timestamps exactly.
-- narrativeDescription is plain and concrete, 1-2 sentences.
-- Every shot must have environmentName from your environment list.
-- Every visible character must be in castNames.
-- direction = what happens in the clip. In Seedance mode it can be 2-5 internal beats, but keep one coherent clip idea.`,
-    source: { file: 'server/services/openai-script.ts', lines: 'buildPrompt' },
+OUTPUT CONTRACT
+Return only the script JSON schema: cast, environments, scenes, shots.`,
+    source: { file: 'server/prompts/planScenes.ts + server/services/openai-script.ts', lines: 'buildPlanScenesPrompt / planScenesOpenAI' },
   },
   {
     id: 'brainstorm-style-directions',
@@ -601,96 +555,34 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
       { name: 'userNote', description: 'Optional director note' },
       { name: 'previousBatchTail', description: 'Tail of previous batch for continuity context' },
     ],
-    template: `You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Your outputs go directly to an image model (visualPrompt) and a video model (motionPrompt).
+    template: `CORE TASK
+Write renderable visualPrompt + motionPrompt pairs for the listed shots. The script already planned what happens; this tool turns those beats into image/video model instructions.
 
-WRITE PROMPTS THAT ARE RENDERABLE.
+CONTEXT
+{{workflowContextFor(preset)}}
 
-The visual medium (photographic, painterly, illustrated, miniature, mixed-media, anything else) is locked separately via the project's style reference image — the image renderer will see that ref and the prompt together. Describe what visibly happens and what the frame contains; do NOT dictate art style, color palette, rendering language, or "cinematic"/"film still" framing in words. The locked style reference is the ground truth for medium; words like "cinematic" pull stylized projects back toward realism.
-
-These prompts are for image and video models, so every sentence must describe something visible or animateable. Do not write poetry, metaphor, or inner emotion directly. Avoid phrases like "seems to", "as if", or invisible causes such as grace, breath, presence, warmth, or devotion. Describe the visible effect directly.
-
-But do not become schematic. Avoid layout jargon like "left half", "right half", "split-focus", or "perfect symmetry" unless the shot truly depends on that exact arrangement.
-
-Translate emotion into physical evidence:
-- a still face
-- a hand tightening
-- a flame settling
-- moisture on stone
-- a body lowering into prostration
-- distance between two figures
-
-EXAMPLES — the boundary between renderable and not:
-
-GOOD visualPrompt:
-"Medium side shot: the devotee sits cross-legged before the stone murti, placing a brass lamp on the floor between them. The murti is mostly in shadow, with only the lower belly and trunk catching the lamplight."
-
-GOOD visualPrompt:
-"Low wide shot from the shrine floor: the devotee lies in full prostration in the foreground, forehead touching stone, while the Ganesha murti rises behind him in stillness. The brass lamp burns between them."
-
-GOOD motionPrompt:
-"Static hold as the devotee lowers his forehead to the floor; only the lamp flame moves."
-
-GOOD motionPrompt:
-"Slow push-in toward the murti's cheek as a bead of moisture begins to slide down the carved stone."
-
-BAD visualPrompt:
-"The devotee surrenders his ego before the timeless grace of the divine." — emotional interpretation, not renderable.
-
-BAD visualPrompt:
-"A symmetrical split-focus composition with the devotee on the left third and the murti on the right third." — schematic layout jargon unless the shot truly needs it.
-
-BAD motionPrompt:
-"The camera slowly dollies in to heighten the sacred atmosphere." — generic movement and non-visual rationale.
-
-BAD motionPrompt:
-"Golden divine energy fills the sanctum as cosmic particles swirl around Ganesha." — mystical VFX not grounded in the shot direction.
-
-{{songType}}, {{traits}}
+INPUTS
 Mood: {{concept.mood}}
 Video model: {{videoModel}}
+Characters: {{castList}}
+Previous batch tail: {{previousBatchTail}}
+Shots to write: {{shotList}}
+Model guidance: {{seedance or default video guidance}}
+Music-led audio classification/pacing flags appear only for music-led projects.
 
-CHARACTERS:
-{{castList}}
-{{userNote}}{{previousBatchTail}}
-SHOTS TO WRITE:
-{{shotList}}
-{{videoModel startsWith seedance ? "
-SEEDANCE 2.0 PROMPTING MODE:
-- Think like a production storyboard: each motionPrompt should read as a timed action cue for this exact shot duration, not a loose mood sentence.
-- Seedance follows explicit subject + motion + camera + timing well. Name the subject, the visible change, and the camera move in a clean order.
-- Use each shot's listed duration when helpful: \"Over 5s...\" or \"During the final second...\" for holds, reveals, and beat hits.
-- The studio provides final audio in render or via explicit audio references, and Segmind is called with generate_audio=false unless the workflow says otherwise. Do NOT ask Seedance to generate music, voiceover, dialogue, or sound effects by default.
-- You may reference the song rhythm visually: \"on the vocal phrase\", \"on the drum accent\", \"as the line resolves\", \"with the chant pulse\". Keep it visible and editorial.
-- Keep camera choreography simple and physically plausible. Seedance rewards clear cuts, short moves, stable subjects, and consistency locks more than overloaded cinematic adjectives.
-- If the start frame must stay consistent, say so positively: \"maintain the same face, costume, and room geometry while...\"
-- Avoid multi-shot language inside one studio shot unless the direction explicitly requires a transition. The render stage stitches separate clips later.
-" : "
-VIDEO MODEL PROMPTING MODE:
-- The model gets a start frame and the final song is added in render, so the motionPrompt should describe visible action and camera motion only.
-- Do not request generated audio, dialogue, subtitles, or sound effects.
-"}}
-{{meditativeGuidance}}
-For EACH shot, write using the write_shot_prompts tool:
+TASTE
+{{preset.studio.shotPromptRules}}
 
-- visualPrompt: The start frame. Brief but complete: camera position, shot scale, subject placement, spatial relationship, location, and one key visible detail. The model already has character/environment/style reference IMAGES — do not describe art style or color palette. Do allow functional lighting when it defines the frame ("lamplight catches the carved cheek", "the face emerges from shadow"). Preserve the shot's real geography. Do not invent corridors, arches, rooms, props, or layouts not implied by the shot direction or environment.
-  ONLY include characters listed in that shot's Cast field.
+USER NOTE POLICY
+{{If USER NOTE is present, treat it as a hard creative constraint across every shot unless it conflicts with the locked style reference, preset rules, cast/environment facts, or output contract.}}
 
-- motionPrompt: One sentence. The video model already SEES the start frame. Say only what changes: character action, camera movement, environmental motion, and visible timing against the song when useful. Name the camera verb when it moves (push-in, pan, tracking, pull-back). Prefer the simplest truthful motion. A static hold is valid when the beat is carried by stillness.
-
-- continuityFrom: 'cut' or 'prev_shot'.
-  Use 'prev_shot' when this shot directly intensifies, reveals, or sustains the previous shot's final moment — a gaze becoming a close-up, stillness cracking into recognition, a slow reveal continuing across an edit point.
-  Use 'cut' when the shot begins a new beat, scale, angle, or emotional step.
-  The first shot of a scene is ALWAYS 'cut'.
-
-BEFORE RETURNING, CHECK THE SEQUENCE:
-- No invented geography (corridors, archways, courtyards not in the direction)
-- No repeated camera verb across consecutive shots
-- No schematic composition shortcuts unless truly necessary (symmetrical two-shot, split-focus, left-third/right-third)
-- No mystical VFX unless explicitly described in the shot direction
-- At least consider 'prev_shot' for direct intensifications — don't default to all cuts
-- Every shot must advance the emotional or narrative arc, not just restate the previous beat
-
-Match the IDs exactly.`,
+OUTPUT CONTRACT
+- id must exactly match the shot ID.
+- visualPrompt is the start frame: subject placement, shot scale, spatial relationship, location, and one key visible detail. No art style or palette; the locked style reference owns medium.
+- motionPrompt is one sentence describing only visible change: character action, camera movement, environmental motion, or timing.
+- continuityFrom is cut or prev_shot. First shot of a scene is always cut.
+- Do not invent geography, props, characters, generated audio, subtitles, or invisible emotion.
+- Return one entry per shot.`,
     source: { file: 'server/prompts/shotPrompts.ts', lines: 'buildWriteShotPromptsPrompt' },
   },
   {
@@ -700,7 +592,7 @@ Match the IDs exactly.`,
     model: 'per-project text_provider (refine sibling)',
     modelLabel: 'Claude Sonnet / GPT-5.5 / Gemini 3.1 Flash (refine tier)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
-    summary: 'Planner step. Converts one Seedance shot brief into two saved artifacts: storyboardPrompt for the image renderer (panel actions baked INLINE so the image model knows what to draw per panel) and cutPlanText for Seedance video. Routes through project.text_provider using the cheap refine model (Sonnet / GPT-5.5 / Gemini Flash). The locked style image is now sent as a VISION input to the planner so it can adjust the medium language in its output for stylized projects (miniature, painterly, illustrated, etc.) — previously it was text-only and inherited cinema bias. Output must include an explicit inter-panel consistency demand (style/identity/environment stay consistent across all panels) — the trimmed-prompt regression had dropped that line and panels were drifting apart.',
+    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. Panel actions appear in both outputs; locked refs and preset taste decide the medium.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'concept', description: 'Locked concept summary' },
@@ -718,29 +610,37 @@ Match the IDs exactly.`,
       { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
       { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
     ],
-    template: `You are an art director planning one video storyboard. The locked style reference image is attached as vision input — read it to understand the medium (cinematic photographic, painterly, miniature, illustrated, mixed-media, etc.) and match it. Convert the source brief below into two saved artifacts:
+    template: `CORE TASK
+Plan one storyboard board and cut plan for a two-step storyboard workflow.
 
-1. storyboardPrompt: ONE short image-render prompt (~330 words max). MUST include the panel layout + per-panel action descriptions inline + an explicit inter-panel consistency demand: style/lighting/palette from the style ref, character identity (face/costume/jewelry) from cast refs, environment geometry from the env ref — all stay CONSISTENT across every panel. Without this line panels drift apart and look like different scenes. Keep it lean: no "contract" bullet lists, no animation rules, no quality boilerplate, no "cinematic film still" language — cinema language fights non-realistic locked styles.
-2. cutPlanText: one short action line per panel. Format: "Panel N — <action>". No timestamps, no separate camera/action/motion-cue fields. Drives the downstream Seedance video prompt only.
+CONTEXT
+{{workflowContextFor(preset)}}
 
-Source brief (trimmed ~750 chars):
-Storyboard a {{rows}}x{{cols}} grid for one {{clipDuration}}s clip of {{title}}.
-Concept: {{concept}}. Mood: {{mood}}. Pacing: {{musicalCue}}.
-Shot: {{clipDirection}}
-Cast: {{castNames || "none"}}
-Setting: {{environmentName || "unspecified"}}
-Read left-to-right, top-to-bottom. No visible panel numbers, captions, borders, or readable text inside panels. Keep style/identity from the reference images. Each panel = a different frame from the same clip with visible action and clear camera angle.
+INPUTS
+Source brief: {{shot title, concept, scene, clip direction, cast, environment, duration, panel grid}}
+Current storyboard prompt: {{currentPrompt, refine only}}
+Current cut plan: {{currentCutPlan, refine only}}
+Previous storyboard ref: {{present when enabled}}
+Previous cut plan tail: {{present when enabled}}
+Artist reference: {{present during refine with image}}
 
-{{prevStoryboardImage ? "Continuity: the prev shot's locked storyboard is attached as vision input — match its color/light treatment and screen direction." : ""}}
-{{prevCutPlanText ? "Prev shot cut plan (text context):\\n" + prevCutPlanText : ""}}
-{{artistNote ? "Artist note (refine):\\n" + artistNote : ""}}
+TASTE
+{{preset.style.rules}}
+{{preset.studio.storyboardRules}}
+{{project storyboard override}}
 
-Return:
-storyboardPrompt: "..."
-cutPlanText:
-Panel 1 [MM:SS-MM:SS] camera:<...>; action:<...>; motion:<...>
-Panel 2 ...`,
-    source: { file: 'server/services/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'writeStoryboardPrompt / buildStoryboardPrompt' },
+USER NOTE POLICY
+{{Refine only: apply director feedback surgically; preserve source brief, locked refs, panel logic, and continuity unless the note changes them.}}
+
+OUTPUT CONTRACT
+Return only JSON:
+{
+  "storyboardPrompt": "complete image-model prompt with panel layout, subject/setting context, per-panel action descriptions inline, explicit inter-panel consistency demand, and no-text-in-panels rule",
+  "cutPlanText": "Panel N — <action> per panel, one line each"
+}
+
+storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
+    source: { file: 'server/prompts/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'buildStoryboardPlannerPrompt / buildStoryboardPrompt' },
   },
   {
     id: 'render-seedance-storyboard-image',

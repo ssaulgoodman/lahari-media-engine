@@ -176,7 +176,7 @@ const sessionState = (
       id: project.id,
       title: project.title,
       status: project.status,
-      preset: 'bhakti-music-video',
+      preset: project.presetKey || 'unknown',
       imageModel: project.imageModel,
       storyboardProvider: project.storyboardProvider,
       videoModel: project.videoModel,
@@ -1002,7 +1002,7 @@ ${md(project.lyrics)}
 const buildConceptNotesMarkdown = (project: Project): string => {
   const locked = project.lockedConcept;
   const options = project.conceptOptions.length
-    ? project.conceptOptions.map((option: any, index: number) => `## Option ${index + 1}: ${option.title || option.deity || 'Untitled'}
+    ? project.conceptOptions.map((option: any, index: number) => `## Option ${index + 1}: ${option.title || option.subject || option.primarySubject || 'Untitled'}
 
 ${md(option.description || option.conceptDirection || JSON.stringify(option, null, 2))}`).join('\n\n')
     : 'No concept options saved.';
@@ -1014,7 +1014,7 @@ Updated: ${new Date().toISOString()}
 
 ## Locked Concept
 
-${locked ? `### ${locked.title || locked.deity || 'Untitled'}
+${locked ? `### ${locked.title || locked.subject || locked.primarySubject || 'Untitled'}
 
 ${md(locked.description || locked.conceptDirection || JSON.stringify(locked, null, 2))}` : 'No locked concept.'}
 
