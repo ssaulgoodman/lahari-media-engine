@@ -521,7 +521,7 @@ export const StylePhase: React.FC<Props> = ({
             <AutoGrowTextarea
               value={brainstormNotes}
               onChange={(e) => setBrainstormNotes(e.target.value)}
-              placeholder="Style preferences (optional) — e.g. 'painterly', 'dark and moody', 'cel-shaded anime'"
+              placeholder="Style preferences (optional) — e.g. 'painterly', 'dark and moody', 'high contrast'"
               rows={1}
               className="flex-1 min-w-[200px] surface-inset rounded-md px-3 py-1.5 text-sm text-white outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.metaKey && !e.shiftKey) { e.preventDefault(); handleBrainstorm(); } }}

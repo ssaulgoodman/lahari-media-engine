@@ -6,6 +6,7 @@ import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { UnlockPill } from './UnlockPill';
 import { Phase, isLockedPhase } from './BlueprintContextBar';
+import { AssetShelf } from './AssetShelf';
 
 interface Props {
   project: ApiProject;
@@ -95,6 +96,11 @@ export const EnvironmentsPhase: React.FC<Props> = ({
     setPendingEnvRef(null);
   };
 
+  // EnvironmentsPhase registry surface (T10.7): generate-environment-looks
+  // is a PER-ENVIRONMENT affordance (fires from the env detail panel,
+  // parameterized by envId). Hide from AssetShelf so the registry
+  // contract holds and the bespoke per-row UI stays the source of truth.
+  // Wrapper stays so any future project-level env tool self-surfaces.
   return (
     <motion.div key="environments" {...phaseTransition} className="space-y-6">
       {onUnlockEnvironments && isLockedPhase(project, 'environments', project.status) && (
@@ -102,6 +108,12 @@ export const EnvironmentsPhase: React.FC<Props> = ({
           <UnlockPill onClick={onUnlockEnvironments} disabled={isLoading} label="Unlock environments" />
         </div>
       )}
+      <AssetShelf
+        surface="asset:environments"
+        project={project}
+        onRunTool={() => {}}
+        hideToolKeys={['generate-environment-looks']}
+      />
       {project.environments.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Env sidebar */}

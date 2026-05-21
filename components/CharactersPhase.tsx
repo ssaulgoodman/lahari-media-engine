@@ -7,6 +7,7 @@ import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { UnlockPill } from './UnlockPill';
 import { Phase, isLockedPhase } from './BlueprintContextBar';
 import { findPhase } from '../constants/blueprintPhases';
+import { AssetShelf } from './AssetShelf';
 
 interface Props {
   project: ApiProject;
@@ -103,6 +104,14 @@ export const CharactersPhase: React.FC<Props> = ({
     setPendingCastRef(null);
   };
 
+  // CharactersPhase registry surface (T10.6): both registered tools
+  // (generate-character-looks, assign-cast-voice) are PER-CAST-MEMBER
+  // affordances — they fire from the per-character sidebar / detail
+  // panel, not as project-level shelf buttons. Hide them from
+  // AssetShelf so the registry contract holds (parameterized tools
+  // don't double-surface) and the bespoke per-row UI stays the source
+  // of truth. The wrapper stays so any FUTURE project-level character
+  // tool (e.g. "bulk-generate-all-looks") would self-surface.
   return (
     <motion.div key="characters" {...phaseTransition} className="space-y-6">
       {onUnlockCharacters && isLockedPhase(project, 'characters', project.status) && (
@@ -110,6 +119,12 @@ export const CharactersPhase: React.FC<Props> = ({
           <UnlockPill onClick={onUnlockCharacters} disabled={isLoading} label="Unlock characters" />
         </div>
       )}
+      <AssetShelf
+        surface="asset:characters"
+        project={project}
+        onRunTool={() => {}}
+        hideToolKeys={['generate-character-looks', 'assign-cast-voice']}
+      />
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Cast sidebar */}
         <div className="lg:col-span-3">
