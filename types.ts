@@ -277,4 +277,59 @@ export interface ApiProject {
   costEstimate: number;
   createdAt: string;
   updatedAt: string;
+  /** Tool registry projection (D24): tools the agent + UI can run right
+   *  now, and tools that are blocked with the assets each needs.
+   *  Computed server-side via `availableTools`/`blockedTools` in the
+   *  tool registry. Same data the MCP packet surfaces. */
+  availableTools: ResolvedTool[];
+  blockedTools: BlockedTool[];
+}
+
+// ─── Tool Registry (mirror of server/tools/types.ts) ────────────────
+// Kept in frontend types.ts to avoid pulling server code into the bundle.
+
+export type AssetKey =
+  | 'audio'
+  | 'scriptText'
+  | 'directorBrief'
+  | 'targetRuntime'
+  | 'lyrics'
+  | 'musicalStructure'
+  | 'meaning'
+  | 'concept'
+  | 'styleDirections'
+  | 'styleAsset'
+  | 'cast'
+  | 'environments'
+  | 'scenes'
+  | 'shots'
+  | 'shotPrompts'
+  | 'storyboardPrompts'
+  | 'castLooks'
+  | 'envLooks'
+  | 'audioPlan'
+  | 'castVoices'
+  | 'ttsAssets'
+  | 'storyboards'
+  | 'keyframes'
+  | 'videos'
+  | 'render';
+
+export type ToolSurface = `asset:${string}` | 'agent-only';
+
+export type WorkflowKey = 'music_led' | 'scripted_narrative';
+
+export interface ResolvedTool {
+  key: string;
+  label: string;
+  description: string;
+  surface: ToolSurface;
+  enabledFor?: WorkflowKey[];
+  requires: AssetKey[];
+  contextInputs?: AssetKey[];
+  produces: AssetKey[];
+}
+
+export interface BlockedTool extends ResolvedTool {
+  missing: AssetKey[];
 }

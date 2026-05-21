@@ -13,6 +13,7 @@ import { transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { summarizeMeaning, generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } from '../presets.js';
+import { availableTools, blockedTools } from '../tools/registry.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
@@ -455,7 +456,11 @@ export { forkProject };
 
 // ─── Helper: build full project response ────────────────────────────
 
-const getFullProject = async (projectId: string) => {
+// _getFullProjectCore returns the project shape WITHOUT the tool-registry
+// projection. `Project` (used by registry's asset-state resolver and
+// codexStudio code) is derived from this so adding registry output to
+// getFullProject can't recurse on itself at the type level.
+const _getFullProjectCore = async (projectId: string) => {
   // Parallel fetch: project + cast + environments + scenes + chat — 5 queries instead of serial
   const [project, cast, environments, scenes, chatMessages] = await Promise.all([
     selectOne('projects', { id: projectId }),
@@ -561,7 +566,7 @@ const getFullProject = async (projectId: string) => {
   }
   const styleAssetUrl = resolveUrl(project.style_asset_id);
 
-  return {
+  const fullProject = {
     id: project.id,
     title: project.title,
     status: project.status,
@@ -704,6 +709,24 @@ const getFullProject = async (projectId: string) => {
     costEstimate: project.cost_estimate,
     createdAt: project.created_at,
     updatedAt: project.updated_at,
+  };
+
+  return fullProject;
+};
+
+export type FullProjectCore = Awaited<ReturnType<typeof _getFullProjectCore>>;
+
+// getFullProject wraps the core shape with the registry projection so
+// every refresh path surfaces what's runnable + blocked. Frontend reads
+// project.availableTools / project.blockedTools off the same payload the
+// MCP packet uses (D24). Asset-state resolver runs over `fullProject`,
+// which is the type registry/assetState already expects.
+const getFullProject = async (projectId: string) => {
+  const fullProject = await _getFullProjectCore(projectId);
+  return {
+    ...fullProject,
+    availableTools: availableTools(fullProject),
+    blockedTools: blockedTools(fullProject),
   };
 };
 

@@ -2,13 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { selectAll, selectColumns } from '../../database.js';
-import type { getFullProject } from '../../routes/projects.js';
+import type { FullProjectCore } from '../../routes/projects.js';
 import { IMAGE_MODELS } from '../../../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS } from '../../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../../constants/textProviders.js';
 import { VIDEO_MODELS } from '../../../constants/videoModels.js';
 
-export type Project = Awaited<ReturnType<typeof getFullProject>>;
+// Project mirrors the core fullProject shape (no tool-registry projection).
+// availableTools/blockedTools live on the API response (getFullProject)
+// but are computed FROM Project, so deriving Project from
+// _getFullProjectCore avoids the type recursion.
+export type Project = FullProjectCore;
 export type ProjectShot = Project['scenes'][number]['shots'][number];
 
 export const compactText = (value?: string | null, max = 700): string | null => {

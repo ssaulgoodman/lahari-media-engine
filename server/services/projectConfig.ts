@@ -2,13 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { getSB, T } from '../database.js';
-import type { getFullProject } from '../routes/projects.js';
+import type { FullProjectCore } from '../routes/projects.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
-type Project = Awaited<ReturnType<typeof getFullProject>>;
+// Match codexStudio/core.ts: derive from the core shape so the registry
+// projection on getFullProject doesn't recurse into the type.
+type Project = FullProjectCore;
 
 export const PROJECT_PROMPT_OVERRIDE_KINDS = ['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks'] as const;
 export type ProjectPromptOverrideKind = typeof PROJECT_PROMPT_OVERRIDE_KINDS[number];
