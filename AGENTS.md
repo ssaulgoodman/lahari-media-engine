@@ -1,20 +1,20 @@
 # AGENTS.md
 
-Guidance for Codex when working in this repo. Keep this file aligned with `CLAUDE.md`, `docs/pipeline-anatomy.md`, `server/prompts/catalog.ts`, and the doctrine when pipeline behavior changes.
+Guidance for Codex when working in this repo. Keep this file aligned with `CLAUDE.md`, `docs/pipeline-anatomy.md`, `docs/mirage-platform-v1-ledger.md`, `server/tools/registry.ts`, `server/prompts/*`, and the doctrine when pipeline behavior changes.
 
 **Architectural context (read first):**
+- `docs/mirage-platform-v1-ledger.md` — current Mirage v1 decisions, task tracks, checkpoints, and pending workstreams.
 - `docs/codex-native-doctrine.md` — durable operating contract. Three editability tiers, MCP/CLI boundary, session-type protocol, distribution arc.
-- `docs/codex-native-review-ledger.md` — current R# status, "Current State" snapshot at top, pending workstreams.
 
 ## Operating Principle
 
 Supabase is canonical project truth. Local files in artist workspaces are desk copies and drafts for reading, editing, diffing, and handoff. `mirrors/` are read-only DB snapshots. `drafts/` are editable working copies that become production only when an apply tool persists them. `config/` is the editable project override layer.
 
-**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Lahari — remote MCP at `/mcp`, materialized per-project workspaces via `write_project_notebook`. Internal MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) exist here as engine-side debug + scripting tools, not as a director-session surface.
+**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Mirage — remote MCP at `/mcp`, materialized per-project workspaces via `write_project_notebook`. Internal legacy MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) still exist as engine-side debug + scripting tools, not as the director-session surface.
 
 If you want to test director-session behavior, open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect`, install the remote MCP. Same shape an artist gets. Don't try to do director work from inside this engine repo — that's a transitional pattern from before distribution shipped and it gives a falsely-comfortable shape.
 
-The Lahari web app is the visual studio. Use deep links to it for visual approval moments instead of rebuilding visual review.
+The Mirage web app is the visual studio. Use deep links to it for visual approval moments instead of rebuilding visual review.
 
 ## Workspace Layout
 
@@ -27,7 +27,7 @@ This checkout is the **Mirage platform lane**.
 
 Do Mirage platform work here. Do not switch the main checkout away from `main` for Lahari work, and do not use this checkout for urgent Lahari production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
-Artists do not use this repo. They mint a token at `https://lahari-media-engine-production.up.railway.app/connect`, paste an install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask "open <song name>." The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, drafts, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine.
+Artists do not use this repo. They mint a token at the deployed Mirage `/connect` page, paste the install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask to open a project. The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (mirrors, drafts, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine. Current CLI snippets use `@ssaulgoodman420/mirage-cli`.
 
 Current notebook contract:
 - `mirrors/` are overwritten from Supabase and should not be hand-edited.
@@ -39,10 +39,10 @@ Director-session work in this engine repo is a developer-only path — used for 
 
 ## Preset Abstraction Context
 
-This lane is for turning the Lahari-shaped engine into a clean video studio platform for non-Lahari artists. The implementation can keep using the existing pipeline shape and legacy table names while we refactor, but the product direction is no longer devotional/Bhakti/Lahari-specific.
+This lane is for turning the Lahari-shaped engine into a clean video studio platform for non-Lahari artists. The implementation can keep using the existing pipeline shape and legacy table names where they are compatibility boundaries, but the product direction is Mirage: no devotional/Bhakti/Lahari assumptions in generic runtime surfaces.
 
 North star:
-- Build a clean platform with presets/workflows. First serious presets are `music_video_default` and `anime_default`.
+- Build a clean platform with presets/workflows. v1 active workflow archetypes are `music_led` and `scripted_narrative`; first serious presets are `music_video_default` and `anime_default`.
 - Do not assume deity, temple, devotional, Bhakti, or Lahari context in generic runtime prompts.
 - Extract domain taste into preset configuration: concept/script prompt rules, source assumptions, model defaults, style/cast/environment guidance, output format defaults, and workflow capabilities.
 - Keep deterministic pipeline semantics intact: Blueprint -> Looks -> Studio -> Render. Do not replace the pipeline with a generic agent loop.
@@ -50,15 +50,17 @@ North star:
 - Prefer a strangler approach: route prompts/model/default choices through presets, keep legacy compatibility where needed, and gradually remove hardcoded assumptions.
 
 Current strategy:
-- Preset/workflow source of truth lives in `server/presets.ts`.
-- Treat `Preset` and `SeedKind` separately. A preset is taste/model/defaults; a seed is the starting material (`audio`, `script`, `brief`, `document`, `idea`).
+- Preset/workflow source of truth lives in `server/presets.ts`. Canonical workflow keys are `music_led` and `scripted_narrative`; legacy `music_video` / `anime_scripted` are aliases only.
+- Treat `Preset`, `Workflow`, and `SeedKind` separately. A workflow is the planner/source spine, a preset is taste/model/defaults, and a seed is the starting material (`audio`, `script`, `brief`, `document`, `idea`).
+- Tool availability lives in `server/tools/registry.ts`. The web Blueprint shelves and MCP packets should both read `availableTools` / `blockedTools` instead of inventing phase gates.
+- LLM prompt builders use `composePrompt` sections: core task, workflow context, inputs, preset taste, user-note policy, output contract, user note. Do not reintroduce fat templates with hidden preset/workflow labels.
 - Treat queue as one source adapter, not the universal intake model. Non-Lahari users may start from a pasted/uploaded script, audio, brief, document, or idea.
 - Runtime schema can be switched by env: `DB_TABLE_PREFIX=lahari` uses the legacy production-shaped tables, `DB_TABLE_PREFIX=studio` uses clean platform tables.
 - New non-Lahari work should use a fresh Supabase project with the `studio_*` schema. Do not point generic artists at the Lahari/Bhakti production DB.
 - The clean DB bootstrap migration is `migrations/2026-05-13_create_studio_workspace_schema.sql`; operator notes are in `docs/studio-db-bootstrap.md`.
 - Storage bucket is configurable with `SUPABASE_BUCKET` / `STORAGE_BUCKET`; default remains `lahari-assets` for compatibility.
 - Platform-only project columns (`preset_key`, `workflow_key`, `seed_kind`, `project_brief`, `source_payload`) are only written when the platform schema is enabled.
-- `server/prompts/catalog.ts` is still a legacy prompt-library/reference surface and must be scrubbed before the Prompt Library is treated as public/product truth.
+- The product-facing prompt surface is **Tool Recipes**, backed by the registry and composer/X-Ray recipe traces. `server/prompts/catalog.ts` is now a secondary legacy/template reference and must stay truthful, but it is not the primary product contract.
 
 Good starting docs:
 - `docs/abstraction-platform-plan.md` — merged Codex-native platform plan and strategic shape.
@@ -78,9 +80,9 @@ npm run dev          # Backend :3003 (or PORT env), frontend :3002 (Vite proxies
 npm run dev:server   # Backend only
 npm run dev:client   # Frontend only
 npm run build        # Vite production build -> dist/
-npm run lahari -- setup  # validate env/Supabase and register Lahari MCP in Codex + Claude Code
-npm run lahari       # Codex-native Lahari CLI helpers
-npm run lahari:mcp   # Codex-native Lahari MCP adapter
+npm run lahari -- setup  # legacy internal setup helper; artists use deployed Mirage /connect instead
+npm run lahari       # legacy-named internal CLI helpers around codexStudio
+npm run lahari:mcp   # legacy-named in-process MCP debug adapter
 npm start            # Production: Express serves dist/ + /api + /storage from one origin
 ```
 
@@ -109,28 +111,28 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 - `RENDER_ENGINE` (optional, default `ffmpeg`) - Modal renderer engine. `ffmpeg` uses the fast FFmpeg concat path for eligible timelines and falls back to Remotion. `remotion` forces Remotion for everything. `FFMPEG_PRESET` default `veryfast`, `FFMPEG_CRF` default `23`, `FFMPEG_AUDIO_BITRATE` default `192k`.
 - Vertex fallback: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Used only as Veo fallback and by last-frame extraction paths that still need GCP config.
 
-Production app: https://lahari-media-engine-production.up.railway.app
+Production Mirage app: https://mirage-platform-production-05ca.up.railway.app
 
 ## Engine Session Protocol
 
-**Before substantive work, read `docs/codex-native-doctrine.md`** for the operating contract (editability tiers, MCP/CLI boundary, harness-native vs tool-call, permission model, source-of-truth rules, distribution arc, discipline list). Cross-reference `docs/codex-native-review-ledger.md` "Current State" snapshot at the top for what's actually shipped and what's pending.
+**Before substantive work, read `docs/mirage-platform-v1-ledger.md`** for current Mirage v1 state and task ownership. Also read `docs/codex-native-doctrine.md` when the work touches MCP/CLI boundary, harness-native behavior, permissions, source-of-truth rules, or distribution.
 
-Sessions in this repo are engine sessions only — improving Lahari itself (code, prompts, infra, docs, schema, deployment). Director-session work (operating Lahari on a specific song) happens in artist-shaped workspaces against deployed Lahari, not here. See "Operating Principle" above.
+Sessions in this repo are engine sessions only — improving Mirage itself (code, prompts, infra, docs, schema, deployment). Director-session work (operating Mirage on a specific project) happens in artist-shaped workspaces against deployed Mirage, not here. See "Operating Principle" above.
 
 ### Engine Session Opening Move
 
 1. `pwd` + `git status --short --branch` — confirm which worktree and which branch.
-2. Skim the "Current State" snapshot at the top of `docs/codex-native-review-ledger.md` — know what's shipped, what's pending operationally, what the next workstream is.
-3. Skim recent captured issues if any (`lahari_issues` table or `.lahari/issues/`).
+2. Skim the latest checkpoints and active tracks in `docs/mirage-platform-v1-ledger.md` — know what's shipped, what's pending operationally, and what the next workstream is.
+3. Skim recent captured issues if any (`lahari_issues` table or `.mirage/issues/` local debug files).
 4. Then ask the user what to build, fix, or review.
 
 ### When an engineer wants to experience director-session behavior
 
-Open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect` against your own Lahari account, paste the install snippet, restart the harness, ask "open <song name>." Same path an artist takes. That's the surface to test — not the internal MCP from inside this repo (the internal path bypasses real auth, real rate limits, real network conditions, and presents a falsely-comfortable shape).
+Open any empty folder in Codex Desktop or Claude Code, mint a token at the deployed Mirage `/connect` page, paste the install snippet, restart the harness, ask to open a project. Same path an artist takes. That's the surface to test — not the internal MCP from inside this repo (the internal path bypasses real auth, real rate limits, real network conditions, and presents a falsely-comfortable shape).
 
 ### Full Operating Skill
 
-The full director rubric (taste checks for concept/script/style/shots/assets, permission rules, output style examples) lives at `.agents/skills/lahari-director/SKILL.md`. Read it when giving creative feedback or proposing changes — it captures the production language and refusal patterns to follow.
+The full director rubric (taste checks for concept/script/style/shots/assets/audio, permission rules, output style examples) lives at `.agents/skills/mirage-director/SKILL.md`. Read it when giving creative feedback or proposing changes — it captures the production language and refusal patterns to follow.
 
 ## Internal Debug Surfaces
 
@@ -174,18 +176,18 @@ npm run lahari -- apply video-prompt <projectId> <shotId> <motion-prompt.md> [ba
 npm run lahari -- apply script <projectId> <script.json> [baseFingerprint|force]
 ```
 
-Generated local artifacts from internal debug commands live under `.lahari/` and are intentionally ignored:
+Generated local artifacts from current internal debug commands live under `.mirage/` and are intentionally ignored:
 
-- `.lahari/codex/` - director reports and contact sheets
-- `.lahari/projects/<projectId>/` - local Codex workbench mirror (`brief.md`, `audio-analysis.md`, `script.md`, `storyboard-prompts.md`, snapshots)
-- `.lahari/sessions/<projectId>/` - `state.json` and `journal.md`
-- `.lahari/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
+- `.mirage/codex/` - director reports and contact sheets
+- `.mirage/projects/<projectId>/` - local Codex workbench mirror (`brief.md`, `audio-analysis.md`, `script.md`, `storyboard-prompts.md`, snapshots)
+- `.mirage/sessions/<projectId>/` - `state.json` and `journal.md`
+- `.mirage/previews/<projectId>/` - preview JSON/Markdown/runtime prompts
 
-Durable artist/operator decisions are written to Supabase `lahari_director_events`. Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.lahari/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
+Durable artist/operator decisions are written to Supabase director events (`lahari_director_events` in legacy mode, prefix-mapped for studio mode where applicable). Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.mirage/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
 
-Remote artist notebooks use `lahari/projects/<projectId>/` instead of `.lahari/`. That folder is created by `write_project_notebook`, not by this repo's internal CLI.
+Remote artist notebooks use `mirage/projects/<projectId>/` instead of `.mirage/`. That folder is created by `write_project_notebook`, not by this repo's internal CLI.
 
-**Realtime transport is shipped (R36):** `lahari_agent_operations` table tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across 13 project-relevant tables for cascade refresh.
+**Realtime transport is shipped (R36):** prefix-mapped `agent_operations` tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across project-relevant tables for cascade refresh.
 
 Permission boundary:
 
@@ -194,11 +196,11 @@ Permission boundary:
 - Apply commands mutate Supabase and must be explicit user-approved commands. They require a valid `SUPABASE_SERVICE_KEY`; Codex tools may fall back to `VITE_SUPABASE_ANON_KEY` for read-only work, but apply tools refuse anon fallback.
 - Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.
 
-The CLI and in-process MCP are engine-side debugging surfaces — useful for scripts, audit inspection, disaster recovery, and one-off operations. They are **not** the director-session surface. The director surface for artists lives at deployed Lahari over remote MCP. Don't shoehorn director work through CLI here unless you are explicitly debugging the engine path.
+The CLI and in-process MCP are engine-side debugging surfaces — useful for scripts, audit inspection, disaster recovery, and one-off operations. They are **not** the director-session surface. The director surface for artists lives at deployed Mirage over remote MCP. Don't shoehorn director work through CLI here unless you are explicitly debugging the engine path.
 
 ## Architecture
 
-**Studio engine** — AI-powered video production tool evolving from the Lahari music-video engine. The current app still contains legacy Lahari names and queue code, but the Mirage lane is making the core platform clean enough for non-Lahari artists.
+**Studio engine** — AI-powered video production tool evolving from the Lahari music-video engine. The app still contains some legacy Lahari names at source-adapter and DB-column boundaries, but the Mirage lane is making the core platform clean enough for non-Lahari artists.
 
 - Frontend: React 19 + Vite, Tailwind via CDN.
 - Backend: Express 5, stateless, Supabase-backed.
@@ -207,21 +209,22 @@ The CLI and in-process MCP are engine-side debugging surfaces — useful for scr
 
 Auth: Supabase Auth with Google OAuth. Backend uses `requireAuth`. Project ownership is enforced at route params. Child URL/body IDs are scoped through route params and `scope-helpers.ts`. No null-owner bypass.
 
-1. **Intake** (`StartProject.tsx`) — Direct project creation is the platform path. Music videos start from uploaded audio. Anime starts from pasted/uploaded script. The old `music_video_queue` flow remains a legacy backend/source adapter, not the default platform UI.
-2. **Blueprint** (`AnalysisEditor.tsx`) — 5 phases lock in creative direction:
-   - Concept (Claude Opus, 3 options, regen with note)
-   - Script (Claude Opus by default, optional GPT-5.5 experiment, proposes cast + environments + scenes + shots with validated durations)
-   - Style (Claude brainstorm → Gemini 3 Pro Image visualize → Claude vision enrich DNA)
+1. **Intake** (`StartProject.tsx`) — Direct project creation is the platform path. `music_led` projects start from uploaded audio. `scripted_narrative` projects, including the anime preset, start from pasted/uploaded script or related source material. The old `music_video_queue` flow remains a legacy backend/source adapter, not the default platform UI.
+2. **Blueprint** (`AnalysisEditor.tsx`) — asset shelves for project graph setup:
+   - Concept (project text provider, 3 options or 1 director-brief option, regen with note)
+   - Script (script writer / parser proposes cast + environments + scenes + shots with validated durations)
+   - Style (text-provider brainstorm → selected image provider visualize → style asset lock)
    - Characters (Gemini 3 Pro Image, 3 parallel calls per char)
    - Environments (Gemini 3 Pro Image, 3 parallel calls per env)
-   - Auto-writes shot prompts (Claude Opus) with full context at the end.
+   - Audio for scripted narrative when needed: dialogue plan, cast voice IDs, TTS generation, lipsync/overlay strategy.
+   - Auto-writes shot prompts with full context when prerequisites exist.
 3. **Studio** (`Storyboard.tsx`) — Per-shot:
    - Keyframe mode: generate start frame (Gemini 3 Pro Image with full ref chain)
    - Seedance storyboard mode: generate/refine/lock an ordered storyboard board first, then generate video from storyboard + refs
    - Generate video (Veo 3.1 or Seedance 2.0 via Segmind)
    - ffmpeg extracts last frame → becomes continuity ref for next shot if `continuity_from === 'prev_shot'`
    - Lock shot (requires start + video)
-4. **Render** (`StepRender.tsx`) — Client-side FFmpeg WASM stitches videos + audio.
+4. **Render** (`StepRender.tsx`) — timeline snapshot posts to the backend render endpoint; FFmpeg is preferred for eligible timelines and Remotion remains the fallback for richer edits.
 
 Generate router modules:
 
@@ -346,13 +349,23 @@ Known caveat: `lahari_shots.prompts_stale` is shared by keyframe `visual_prompt`
 
 ## Prompt Sources
 
-`server/prompts/catalog.ts` is the read-only prompt catalog. It must stay in sync with runtime prompt changes in:
+The current prompt/tool architecture has three layers:
 
-- `server/services/claude.ts`
-- `server/services/openai-script.ts`
+- `server/tools/registry.ts` — cross-surface tool contract: what exists, what it needs, what it reads, what it produces, and where it appears.
+- `server/prompts/*` + `server/prompts/_composer.ts` — runtime prompt builders. Keep core task, workflow context, inputs, preset taste, user-note policy, output contract, and user note as explicit sections.
+- `components/PromptsLibrary.tsx` / `/api/prompts` — artist/debug surface now framed as Tool Recipes, with legacy template references below.
+
+`server/prompts/catalog.ts` is a secondary read-only template/reference surface. It must stay in sync with runtime prompt changes, but do not treat it as the primary source of truth over the registry/composer.
+
+Runtime prompt changes commonly touch:
+
+- `server/prompts/*`
+- `server/tools/registry.ts` when a tool's inputs/outputs/availability change
+- `server/services/claude.ts` and `server/services/openai-script.ts` shims
 - `server/services/storyboard.ts`
 - `server/services/seedance-storyboard-rd.ts`
 - `server/routes/generate-video.ts`
+- `components/PromptsLibrary.tsx` if the artist-facing recipe surface changes
 
 **Legacy source-catalog tables (only in the old Lahari Supabase project):**
 - `songs` — 1490 songs with `audio_storage_url` / `drive_audio_url`
@@ -371,6 +384,8 @@ Important clean-platform project fields:
 - `seed_kind`
 - `project_brief`
 - `source_payload`
+
+Canonical workflow values are `music_led` and `scripted_narrative`. Legacy rows may still contain `music_video` or `anime_scripted`; normalize them at read boundaries and do not emit them in new artist-facing packets/UI.
 
 Important current project fields:
 - `image_model`
@@ -396,8 +411,8 @@ Important shot fields:
 - `PATCH /api/queue/:queueId` — update status / video_url
 
 **Direct intake:**
-- `POST /api/projects` — upload audio, analyze lyrics/structure, create a music-video project
-- `POST /api/projects/script` — paste/upload script, parse into scenes/shots/cast/environments, create an anime/script-first project
+- `POST /api/projects` — upload audio, analyze lyrics/structure, create a `music_led` project
+- `POST /api/projects/script` — paste/upload script, parse into scenes/shots/cast/environments, create a `scripted_narrative` project, usually with the anime preset for v1
 
 **Blueprint:**
 - `POST /api/projects/:id/generate-concepts` (userNote optional)
@@ -406,6 +421,7 @@ Important shot fields:
 - `POST /api/projects/:id/generate-looks`, `lock-character`, `advance-characters`
 - `POST /api/projects/:id/generate-environment-look`, `lock-environment`, `advance-environments`
 - `POST /api/projects/:id/write-shot-prompts`
+- `POST /api/projects/:id/write-audio-plan`, `audio-plan-cost`, `generate-dialogue-audio`
 
 Studio:
 - `POST /api/projects/:id/shots/:shotId/generate-image`
