@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repo. Keep this file compact. Full pipeline details live in `docs/pipeline-anatomy.md`; prompt inventory lives in `server/prompts/catalog.ts`; Codex-specific primer lives in `AGENTS.md`.
+Guidance for Claude Code when working in this repo. Keep this file compact. Full pipeline details live in `docs/pipeline-anatomy.md`; current Mirage v1 task state lives in `docs/mirage-platform-v1-ledger.md`; Codex-specific primer lives in `AGENTS.md`.
 
 ## Build & Run
 
@@ -10,7 +10,7 @@ npm run dev          # Backend :3003 (or PORT env), frontend :3002 (Vite proxies
 npm run dev:server   # Backend only
 npm run dev:client   # Frontend only
 npm run build        # Vite production build -> dist/
-npm run lahari -- setup  # validate env/Supabase and register Lahari MCP in Codex + Claude Code
+npm run lahari -- setup  # legacy internal setup helper; artists use deployed Mirage /connect instead
 npm start            # Production: Express serves dist/ + /api + /storage from one origin
 ```
 
@@ -37,7 +37,7 @@ Useful checks: `npm run build`, `npx tsc --noEmit`, `git diff --check`. There is
 - `RENDER_ENGINE` (optional, default `ffmpeg`) - renderer engine. FFmpeg fast path falls back to Remotion when ineligible. Defaults: `FFMPEG_PRESET=veryfast`, `FFMPEG_CRF=23`, `FFMPEG_AUDIO_BITRATE=192k`.
 - Vertex fallback: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Only Veo fallback / legacy extraction paths need this.
 
-Production: https://lahari-media-engine-production.up.railway.app
+Production Mirage app: https://mirage-platform-production-05ca.up.railway.app
 
 ## Non-Negotiables
 
@@ -45,10 +45,10 @@ Auth and ownership: Supabase Auth via `requireAuth`. Project route params verify
 
 Simple mutations usually return `{ ok: true }` and frontend applies optimistic updates. AI/generate/refine/fork/analyze/fetch-style actions still return full project snapshots. Do not casually convert one shape to the other without checking frontend expectations.
 
-Artist director work happens through deployed remote MCP, not inside this engine repo. `write_project_notebook` materializes an artist workspace with `mirrors/`, `drafts/`, `config/`, `journal.md`, AGENTS/CLAUDE files, and skills. `mirrors/` are read-only Supabase snapshots. `drafts/script.md` is editable; apply it with `apply_script_markdown`, which parses the strict markdown format, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
+Artist director work happens through deployed Mirage remote MCP, not inside this engine repo. `write_project_notebook` materializes an artist workspace with `mirrors/`, `drafts/`, `config/`, `journal.md`, AGENTS/CLAUDE files, and skills under `mirage/projects/<projectId>/`. `mirrors/` are read-only Supabase snapshots. `drafts/script.md` is editable; apply it with `apply_script_markdown`, which parses the strict markdown format, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
 
 Prompt source-of-truth discipline:
-- Runtime prompt changes must be reflected in `server/prompts/catalog.ts`.
+- Runtime prompt changes must keep the registry/composer/tool-recipe surfaces aligned: `server/tools/registry.ts`, `server/prompts/*`, `/api/prompts`, `components/PromptsLibrary.tsx`, and the secondary reference `server/prompts/catalog.ts`.
 - Pipeline behavior changes must update `docs/pipeline-anatomy.md`.
 - Keep `CLAUDE.md` short; do not paste full prompt bodies or long endpoint inventories here.
 
@@ -70,13 +70,13 @@ Other high-value routers: `projects.ts`, `queue.ts`, `render.ts`, `render-callba
 
 ## Pipeline Shape
 
-Start: `StartProject.tsx` is Mirage's primary intake surface. Music videos start from uploaded audio; anime starts from pasted/uploaded script. The legacy queue adapter still exists behind `music_video_queue` + `songs`, but it is not the main Mirage frontend entry.
+Start: `StartProject.tsx` is Mirage's primary intake surface. `music_led` projects start from uploaded audio. `scripted_narrative` projects, including the anime preset, start from pasted/uploaded script or related source material. The legacy queue adapter still exists behind `music_video_queue` + `songs`, but it is not the main Mirage frontend entry.
 
-Blueprint: `AnalysisEditor.tsx` orchestrates Concept, Script, Style, Characters, Environments. Mirage v1 does not expose legacy Lahari curated style presets. If clean workflow-specific curated styles return, `server/style-presets.ts` owns them; preset image is ground truth and `style_description` stays intentionally empty. Characters/environments use editable generation prompts and the locked style image as the visual anchor.
+Blueprint: `AnalysisEditor.tsx` now behaves as asset shelves for Concept, Script, Style, Characters, Environments, and Audio where available. Tool availability comes from `server/tools/registry.ts` and project `availableTools` / `blockedTools`, not status-stage branching. Mirage v1 does not expose legacy Lahari curated style presets. If clean workflow-specific curated styles return, `server/style-presets.ts` owns them; preset image is ground truth and `style_description` stays intentionally empty. Characters/environments use editable generation prompts and the locked style image as the visual anchor.
 
 Studio: `Storyboard.tsx` orchestrates per-shot production. Keyframe mode uses `PromptToolkit` for first frame / last frame / video. Seedance mode uses `StoryboardPanel` and the two-step storyboard workflow below.
 
-Render: `StepRender.tsx` posts the render-authoritative timeline snapshot to `/api/projects/:id/render`. Main backend inserts `lahari_renders` and calls the sibling renderer. Frontend polls `/render-status`.
+Render: `StepRender.tsx` posts the render-authoritative timeline snapshot to `/api/projects/:id/render`. Main backend inserts a prefix-mapped renders row and calls the sibling renderer. Frontend polls `/render-status`.
 
 ## Providers
 
@@ -91,6 +91,15 @@ Render: `StepRender.tsx` posts the render-authoritative timeline snapshot to `/a
 | Video | Segmind Seedance/Veo variants, with Vertex fallback for Veo infra/billing only | `video-provider.ts`, `segmind.ts` |
 
 Text-provider routing does **not** include script writing. `planScenes`, `refineScript`, and `writeShotPrompts` stay on Claude Opus because they rely on extended thinking and validation/retry semantics.
+
+## Prompt / Tool Recipes
+
+The current architecture is registry + composer, not a pile of fat prompt templates.
+
+- `server/tools/registry.ts` is the cross-surface contract for what tools exist, what they need/read/produce, and where they appear.
+- `server/prompts/*` and `server/prompts/_composer.ts` build runtime prompts from explicit sections: core task, workflow context, inputs, preset taste, user-note policy, output contract, user note.
+- `components/PromptsLibrary.tsx` is the Tool Recipes UI. It should show artist-readable tool behavior first; raw prompt/template references are secondary/debug.
+- Avoid injecting workflow/preset enum labels into LLM prompt bodies. Logs may carry keys; prompts should receive human production language.
 
 ## Seedance Storyboard Mode
 
@@ -140,6 +149,8 @@ Upstream changes mark downstream `prompts_stale`; UI shows amber "Outdated". No 
 Known caveat: `lahari_shots.prompts_stale` is shared by keyframe `visual_prompt` and storyboard `storyboard_prompt`. Rewriting one clears the shared flag. Future schema should split `visual_prompt_stale` and `storyboard_prompt_stale`.
 
 ## Database Pointers
+
+Canonical workflow values are `music_led` and `scripted_narrative`. Legacy rows may still contain `music_video` or `anime_scripted`; normalize at read boundaries and do not emit legacy keys in new artist-facing UI or MCP packets.
 
 Project fields to remember: `image_model`, `storyboard_provider`, `text_provider`, `video_model`, `source_queue_id`, `style_exploration`, `aspect_ratio`, `video_resolution`.
 
