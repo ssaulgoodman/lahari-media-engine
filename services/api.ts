@@ -555,6 +555,22 @@ export const refineScript = async (projectId: string, feedback: string, signal?:
   return handleResponse(res);
 };
 
+// Re-parse the existing script seed (scripted_narrative projects). Destructive:
+// wipes existing cast/environments/scenes/shots. Mirrors the registry's
+// `parse-script` tool (T10.4); separate from `generateScript` which targets
+// music-led re-generation (requires audio).
+export const parseScript = async (projectId: string, userNote?: string, signal?: AbortSignal) => {
+  const body: Record<string, any> = {};
+  if (userNote) body.userNote = userNote;
+  const res = await authFetch(`${API}/projects/${projectId}/parse-script`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  return handleResponse(res);
+};
+
 export const generateScript = async (projectId: string, userNote?: string, opts?: { fork?: boolean; scriptProvider?: 'claude' | 'openai' }, signal?: AbortSignal) => {
   const body: Record<string, any> = {};
   if (userNote) body.userNote = userNote;

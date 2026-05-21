@@ -1252,8 +1252,95 @@ router.post('/:id/lock-concept', async (req, res) => {
 
 // Unlock concept — pure navigation: reveal the concept options grid
 // without touching anything downstream. locked_concept stays so we know
-// what was previously chosen. The cascade-wipe only triggers if the user
-// then picks a DIFFERENT concept via /lock-concept (see that endpoint).
+// Re-parse the existing script seed and replace the production plan.
+// Wired to the parse-script registry tool (T10.4): scripted_narrative
+// projects need a re-parse path because /generate-script hard-fails on
+// missing audio. Destructive — wipes cast / environments / scenes /
+// shots before insert (same as the music-led regen path).
+router.post('/:id/parse-script', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const project = await selectOne('projects', { id: projectId });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const sourcePayload = project.source_payload || {};
+  const scriptText = (sourcePayload as any).scriptText;
+  if (typeof scriptText !== 'string' || !scriptText.trim()) {
+    return res.status(400).json({
+      error: 'No script text found in source payload. Re-upload the script to re-parse.',
+    });
+  }
+
+  const preset = getProjectRuntimePreset(project, req.body?.presetKey);
+  const projectBrief = (project.project_brief || {}) as Record<string, unknown>;
+  const title = (projectBrief.title as string) || project.title || 'Untitled';
+  const directorBriefBase = (projectBrief.directorBrief as string) || '';
+  const userNote = String(req.body?.userNote || '').trim();
+  // userNote layers onto directorBrief for this call so the registry
+  // contract holds: parse-script gets one input note, the parser uses it.
+  const directorBrief = userNote
+    ? (directorBriefBase ? `${directorBriefBase}\n\nAdditional note: ${userNote}` : userNote)
+    : directorBriefBase;
+  const targetRuntime = typeof projectBrief.targetRuntime === 'number'
+    ? (projectBrief.targetRuntime as number)
+    : null;
+
+  try {
+    console.log(`[${projectId}] Re-parsing scripted_narrative seed via ${preset.key}...`);
+    const t0 = Date.now();
+    const data = await parseAnimeScriptToPlan({
+      scriptText,
+      title,
+      directorBrief,
+      targetDuration: targetRuntime || undefined,
+      preset,
+    });
+    const totalShots = await insertProductionPlan(projectId, data);
+    const durationMs = Date.now() - t0;
+
+    const updatedBrief = {
+      ...projectBrief,
+      title: data.title || title,
+      directorBrief: directorBriefBase, // preserve original (don't fold userNote in permanently)
+      logline: data.logline || projectBrief.logline || '',
+    };
+
+    await updateRows('projects', { id: projectId }, {
+      title: data.title || title,
+      status: 'scripted',
+      last_script_prompt: data.prompt,
+      meaning: data.logline || project.meaning || '',
+      ...platformProjectFields({ project_brief: updatedBrief }),
+      updated_at: new Date().toISOString(),
+    });
+
+    await logCall({
+      projectId,
+      stage: 'parse-script',
+      model: 'claude-opus-4-7',
+      prompt: data.prompt,
+      responseSummary: `Re-parsed ${data.cast.length} cast, ${data.environments.length} environments, ${data.scenes.length} scenes, ${totalShots} shots.`,
+      durationMs,
+      costEstimate: 0.02,
+    });
+    await incrementColumn('projects', { id: projectId }, 'cost_estimate', 0.02);
+
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'script_reparsed',
+      entityType: 'project',
+      entityId: projectId,
+      summary: `Re-parsed script seed; ${data.scenes.length} scenes / ${totalShots} shots.`,
+    });
+
+    res.json(await getFullProject(projectId));
+  } catch (err: any) {
+    console.error(`[${projectId}] parse-script failed:`, err);
+    return sendStructuredError(res, err);
+  }
+});
+
 router.post('/:id/unlock-concept', async (req, res) => {
   const projectId = paramStr(req.params.id);
   await updateRows('projects', { id: projectId }, { status: 'analyzed', updated_at: new Date().toISOString() });

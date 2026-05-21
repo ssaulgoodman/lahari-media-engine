@@ -88,10 +88,23 @@ export const ScriptPhase: React.FC<Props> = ({
   };
 
   const handleRunTool = async (toolKey: string) => {
-    if (toolKey === 'parse-script' || toolKey === 'plan-scenes-from-music') {
+    if (toolKey === 'plan-scenes-from-music') {
+      // music_led path — hits /generate-script which reads project.audioPath.
       const note = scriptNote.trim() || undefined;
       setScriptNote('');
       await Promise.resolve(onGenerateScript(note));
+    } else if (toolKey === 'parse-script') {
+      // scripted_narrative path — hits /parse-script which reads
+      // project.source_payload.scriptText. Separate route because
+      // /generate-script hard-fails on missing audio (T10.4 dispatch fix).
+      const note = scriptNote.trim() || undefined;
+      setScriptNote('');
+      try {
+        const updated = await api.parseScript(project.id, note);
+        if (updated?.id) onSetProject?.(updated);
+      } catch (err: any) {
+        showActionError(`Parse script failed: ${err.message || 'unknown error'}`);
+      }
     } else if (toolKey === 'refine-script' && onRefineScript) {
       if (!scriptNote.trim()) return;
       const note = scriptNote.trim();
