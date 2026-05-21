@@ -1250,8 +1250,6 @@ router.post('/:id/lock-concept', async (req, res) => {
   res.json(await getFullProject(projectId));
 });
 
-// Unlock concept — pure navigation: reveal the concept options grid
-// without touching anything downstream. locked_concept stays so we know
 // Re-parse the existing script seed and replace the production plan.
 // Wired to the parse-script registry tool (T10.4): scripted_narrative
 // projects need a re-parse path because /generate-script hard-fails on
