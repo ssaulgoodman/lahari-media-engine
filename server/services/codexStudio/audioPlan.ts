@@ -226,7 +226,7 @@ export const applyAudioPlan = async (
 
   const notebookProject = nextPlansByShot.size ? nextProjectWithAudioPlans(project, nextPlansByShot) : project;
   return {
-    kind: 'lahari.apply.audio_plan',
+    kind: 'mirage.apply.audio_plan',
     projectId: project.id,
     applied,
     rejected,
@@ -252,7 +252,7 @@ export const applyAudioPlanMarkdown = async (
   if ('error' in result) return result;
   return {
     ...result,
-    kind: 'lahari.apply.audio_plan_markdown',
+    kind: 'mirage.apply.audio_plan_markdown',
     note: 'Applied audio plan markdown. Review rejected rows before continuing; valid rows were persisted.',
   };
 };
@@ -303,7 +303,7 @@ export const applyCastVoice = async (
   });
   appendApplyJournal(project, 'applied cast voice', `${member.name}\nCast ID: ${member.id}\nProvider: ${input.voiceProvider}\nVoice: ${updatedMember.voiceName || input.voiceId}\nNew hash: ${newHash}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
   return {
-    kind: 'lahari.apply.cast_voice',
+    kind: 'mirage.apply.cast_voice',
     projectId: project.id,
     castMemberId: member.id,
     newHash,
@@ -340,7 +340,7 @@ export const getAudioPlanCost = async (
     }
   }
   return {
-    kind: 'lahari.audio_plan.cost',
+    kind: 'mirage.audio_plan.cost',
     projectId: project.id,
     totalChars,
     estimatedUsd: estimateTtsUsd(totalChars),
@@ -455,7 +455,7 @@ export const generateDialogueAudio = async (
   });
 
   return {
-    kind: 'lahari.audio_plan.dialogue_audio',
+    kind: 'mirage.audio_plan.dialogue_audio',
     projectId: project.id,
     generated,
     failed,

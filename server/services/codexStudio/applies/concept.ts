@@ -66,7 +66,7 @@ export const applyConcept = async (project: Project, concept: ConceptApplyInput,
   appendApplyJournal(project, 'applied concept', `Title: ${nextConcept.title}\nNew hash: ${newHash}\nMarked prompts stale: ${hasScript}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   return {
-    kind: 'lahari.apply.concept',
+    kind: 'mirage.apply.concept',
     projectId: project.id,
     concept: nextConcept,
     newHash,

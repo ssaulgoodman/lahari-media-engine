@@ -138,7 +138,7 @@ export const applyShotPrompts = async (project: Project, shots: ShotPromptApplyI
     : project;
 
   return {
-    kind: 'lahari.apply.shot_prompts',
+    kind: 'mirage.apply.shot_prompts',
     projectId: project.id,
     shotsUpdated: updates.length,
     updates,

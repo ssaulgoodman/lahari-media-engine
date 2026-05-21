@@ -493,6 +493,27 @@ If a migration PR diverges meaningfully from these numbers (e.g. ConceptPhase en
 
 ---
 
+### T12 — MCP / Notebook / Packet Polish
+
+**Goal:** Make the agent-facing Mirage surface as clean as the web/composer surface. Remote MCP packets, generated workspace instructions, project-local skills, notebook paths, and action results must teach Mirage's current concepts (`music_led`, `scripted_narrative`, `preset_key`, `seed_kind`, `availableTools` / `blockedTools`) and not old Lahari assumptions.
+
+**Owner:** Codex
+**Timing:** Before E2E. Do not start outside-artist testing until this passes.
+
+| ID | Task | Files / Targets | Acceptance |
+|---|---|---|---|
+| T12.1 | Ledger + audit checklist | `docs/mirage-platform-v1-ledger.md` | MCP/notebook/skill/packet legacy surfaces are explicitly tracked |
+| T12.2 | Mirage director skill | `.agents/skills/mirage-director/SKILL.md`, `server/services/codexStudio/notebook.ts` | Generated notebooks install `mirage-director`; visible text says Mirage, canonical workflow keys, and `mirage_capture_issue` |
+| T12.3 | Skill shard canonicalization | `.agents/skills/audio-director`, `script-doctor`, `style-ref-critic`, `storyboard-prompt-craft`, `continuity-auditor`, `render-triage` | Shards read `seed_kind` / canonical workflow / preset from packet; no legacy workflow keys except labeled compatibility notes |
+| T12.4 | Packet kind + action result branding | `server/services/codexStudio/packets.ts`, `storyboardOps.ts`, `audioPlan.ts`, `applies/*`, `plans.ts`, `core.ts` | MCP-exposed packet/result `kind` values use `mirage.*`; old `lahari.*` remains only as explicit compatibility alias or internal debug filename if justified |
+| T12.5 | Notebook path / format names | `scriptMarkdown.ts`, `storyboardMarkdown.ts`, `notebook.ts` | Generated notebook files use `mirage/projects/...`; draft format labels stop saying `lahari-*` |
+| T12.6 | CLI / action copy cleanup | `plans.ts`, notebook instructions, MCP descriptions | Artist-facing suggestions reference MCP tools or Mirage CLI, not `npm run lahari` engine-debug commands |
+| T12.7 | MCP smoke test | hosted or local MCP | connect -> resolve/list -> attach -> packet -> notebook manifest/file -> mint_cli_token; packet has canonical keys and available/blocked tools |
+
+**Acceptance for T12 as a whole:** A fresh empty workspace synced through Mirage MCP receives Mirage-branded `AGENTS.md` and skills. Project and shot packets expose canonical `workflowKey`, `presetKey`, `seedKind`, `availableTools`, and `blockedTools`. The generated skills teach the agent the current Mirage architecture without old Lahari workflow labels except explicit compatibility notes. Smoke testing proves an agent can attach and know the next action from packet/notebook without reading this engine repo.
+
+---
+
 ## 5. Dependency Graph
 
 ```
@@ -881,6 +902,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 2026-05-21 Claude/Codex: T10.9 completed and reviewed. AssetShelf now shows a subtle "Next" chip for the first runnable tool on a shelf, or "Waiting on" with the missing assets when all visible tools are blocked. Codex review found and fixed one duplicate-click seam: the chip now disables while the shelf is externally disabled or while that tool key is already busy, matching the main tool-row behavior. This closes Wave 2 structurally: registry -> composer -> AssetShelf is now the shared web/agent contract.
 
 2026-05-21 Codex: T11 first slice landed. Composer now has a structured section model (`composePromptSections`, `inspectComposedPrompt`) and rendered prompts include an explicit `OUTPUT CONTRACT` section so the final prompt can be inspected without guessing. X-Ray `ai_calls.context_chain.recipe` now records tool key, preset key, workflow key, section labels, and section bodies for every logged call using the actual prompt text; no schema migration required. The X-Ray drawer shows a "Tool recipe" section above the raw prompt. `/api/prompts` now returns registry tool recipes, and the Prompt Library page is reframed as "Tool Recipes" with cards for what each tool needs/reads/produces before the legacy prompt references. Also scrubbed the last X-Ray concept-summary `deity` fallback. This is the minimum product/debug surface for "why did this output happen?" before E2E.
+
+2026-05-21 Codex: T12 added and first MCP polish slice completed. Ledger now tracks MCP/notebook/packet polish as a first-class pre-E2E lane. Generated notebooks now install `mirage-director` instead of `lahari-director`, use notebook version `2026-05-21.mcp-polish-v1`, and teach canonical `music_led` / `scripted_narrative` project mode. Script/audio skills were canonicalized, script/storyboard draft formats moved to `mirage-*`, storyboard draft paths use `mirage/projects/...`, project/shot packets use `mirage.project.packet` / `mirage.shot.packet`, and CodexStudio apply/generation/action result kinds now return `mirage.*`. Artist-facing action suggestions now point to MCP tools instead of `npm run lahari` engine-debug commands. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
 
 ---
 

@@ -31,8 +31,8 @@ export type NotebookFile = {
 };
 
 const normalizedProjectDir = (project: Project) => `mirage/projects/${project.id}`;
-const LAHARI_SKILL_NAMES = [
-  'lahari-director',
+const MIRAGE_SKILL_NAMES = [
+  'mirage-director',
   'storyboard-prompt-craft',
   'script-doctor',
   'continuity-auditor',
@@ -40,7 +40,7 @@ const LAHARI_SKILL_NAMES = [
   'render-triage',
   'audio-director',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-19.audio-plan-v1';
+const NOTEBOOK_VERSION = '2026-05-21.mcp-polish-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -101,7 +101,7 @@ const readSkillBody = (skillName: string): string => {
   return fs.readFileSync(skillPath, 'utf8');
 };
 
-const buildSkillFiles = (): NotebookFile[] => LAHARI_SKILL_NAMES.flatMap((skillName) => {
+const buildSkillFiles = (): NotebookFile[] => MIRAGE_SKILL_NAMES.flatMap((skillName) => {
   const content = readSkillBody(skillName);
   return [
     {

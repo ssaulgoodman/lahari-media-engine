@@ -106,7 +106,7 @@ export const applyScript = async (
   appendApplyJournal(project, 'applied script', `Scenes: ${counts.scenes}\nShots: ${counts.shots}\nNew fingerprint: ${newFingerprint}\nForce: ${!!opts.force}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   return {
-    kind: 'lahari.apply.script',
+    kind: 'mirage.apply.script',
     projectId: project.id,
     counts,
     newFingerprint,

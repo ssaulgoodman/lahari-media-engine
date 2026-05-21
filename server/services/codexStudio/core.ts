@@ -515,7 +515,7 @@ export const deriveDirectorDiagnosis = (project: Project) => {
   );
 
   return {
-    kind: 'lahari.director.diagnosis',
+    kind: 'mirage.director.diagnosis',
     generatedAt: new Date().toISOString(),
     checkpoint: {
       key: checkpoint.key,

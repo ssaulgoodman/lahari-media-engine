@@ -52,7 +52,7 @@ export const applyStyleDirection = async (
   appendApplyJournal(project, 'applied style direction', `New hash: ${newHash}\nDescription chars: ${nextProject.styleDescription.length}\nGeneration prompt chars: ${nextProject.styleGenerationPrompt?.length || 0}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   return {
-    kind: 'lahari.apply.style_direction',
+    kind: 'mirage.apply.style_direction',
     projectId: project.id,
     style: {
       styleDescription: nextProject.styleDescription,

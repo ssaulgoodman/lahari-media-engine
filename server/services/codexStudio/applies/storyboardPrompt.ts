@@ -177,7 +177,7 @@ export const applyStoryboardSceneMarkdown = async (
   };
   return {
     ...result,
-    kind: 'lahari.apply.storyboard_scene_markdown',
+    kind: 'mirage.apply.storyboard_scene_markdown',
     scene: {
       id: scene.id,
       label: scene.sectionLabel || `Scene ${project.scenes.findIndex((candidate) => candidate.id === scene.id) + 1}`,

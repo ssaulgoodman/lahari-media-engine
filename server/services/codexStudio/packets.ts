@@ -108,7 +108,7 @@ export const buildProjectPacket = async (project: Project) => {
   const blocked = blockedTools(project);
 
   return {
-    kind: 'lahari.project.packet',
+    kind: 'mirage.project.packet',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -271,7 +271,7 @@ export const buildShotPacket = (project: Project, shotId: string) => {
     const nextShot = shotIndex < scene.shots.length - 1 ? scene.shots[shotIndex + 1] : null;
 
     return {
-      kind: 'lahari.shot.packet',
+      kind: 'mirage.shot.packet',
       generatedAt: new Date().toISOString(),
       project: {
         id: project.id,

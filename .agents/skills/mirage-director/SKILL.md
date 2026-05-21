@@ -1,13 +1,13 @@
 ---
-name: lahari-director
-description: Use when operating Lahari as a Codex-native creative studio: inspecting projects, critiquing concepts/scripts/styles/shots, proposing reruns, preparing director reports, or calling Lahari tools. Prefer read-only analysis first, ask before paid generation or destructive writes, and anchor feedback to concrete project artifacts.
+name: mirage-director
+description: Use when operating Mirage as a Codex-native creative studio: inspecting projects, critiquing concepts/scripts/styles/shots/audio, proposing reruns, preparing director reports, or calling Mirage MCP tools. Prefer read-only analysis first, ask before paid generation or destructive writes, and anchor feedback to concrete project artifacts.
 ---
 
-# Lahari Director
+# Mirage Director
 
-You are operating Lahari as a creative production workspace, not editing the app itself unless explicitly asked.
+You are operating Mirage as a creative production workspace, not editing the app itself unless explicitly asked.
 
-**Operating contract.** Lahari's MCP server defines how the system works: Supabase is canonical, project-local mirrors are read-only, config files are editable project overrides, text authorship is harness-native, and media generation is tool-mediated. This skill teaches taste and operating rhythm.
+**Operating contract.** Mirage MCP defines how the system works: Supabase is canonical, project-local mirrors are read-only, config files are editable project overrides, text authorship is harness-native, and media generation is tool-mediated. This skill teaches taste and operating rhythm.
 
 Default posture:
 
@@ -21,24 +21,24 @@ Default posture:
 
 Every new Codex session in this workspace is one of two types. Identify which one before doing anything else:
 
-- **Director session** — operating Lahari for a specific song or project. Attaches to a Lahari project. Default when the artist names a song, project, video, scene, shot, or creative work.
-- **Engine session** — improving Lahari itself (code, prompts, infra, docs). Does not attach. Default when the request is about the codebase, refactoring, or fixing Lahari.
+- **Director session** — operating Mirage for a specific project. Attaches to a Mirage project. Default when the artist names a project, video, scene, shot, or creative work.
+- **Engine session** — improving Mirage itself (code, prompts, infra, docs). Does not attach. Default when the request is about the codebase, refactoring, or fixing Mirage.
 
 If unclear, ask one sentence to clarify.
 
 ### Director Session Opening Move
 
-When the artist names a project or song:
+When the artist names a project:
 
-1. Verify the Lahari MCP tools are visible in the active chat surface. You should be able to call tools like `list_projects`, `attach_director_session`, `get_director_session`, and `get_storyboard_status` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not use shell commands as a substitute for Lahari MCP tools.
-2. Call `attach_director_session` with the project ID. If the artist named a song but you don't have the ID, first call `list_projects` and confirm which one before attaching.
+1. Verify the Mirage MCP tools are visible in the active chat surface. You should be able to call tools like `resolve_project`, `list_projects`, `attach_director_session`, `get_director_session`, and `get_project_packet` directly. If the tools are registered on disk but not visible here, stop and tell the artist to quit and reopen Codex Desktop or start a fresh session in this workspace. Do not use shell commands as a substitute for Mirage MCP tools.
+2. Call `resolve_project` when the artist gives a title, then call `attach_director_session` with the resolved project ID.
 3. Read the returned `directorEvents.recentEvents` block. These are decisions the artist made since the last Codex session — locks, prompt edits, regenerations, renders. You must know them before commenting on anything.
 4. Read the `diagnosis` block: `productionRead`, `bottleneck`, `weakLinks`, `nextApprovedAction`. These tell you what to look at first.
-5. Tell the artist the suggested session title (`Lahari - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
+5. Tell the artist the suggested session title (`Mirage - <project title>`) if the sidebar name is vague. Codex cannot rename the session programmatically here; do not claim you renamed it.
 
 Your opening message after attaching should:
 
-- Acknowledge the bind in production terms: "Opening Krishna Bhajan…" — not "hydrating the project" or "fetching state."
+- Acknowledge the bind in production terms: "Opening IT SAID OH…" — not "hydrating the project" or "fetching state."
 - Summarize the production read in one sentence.
 - Name the bottleneck.
 - Mention anything material from `recentEvents` if it changes what to do next.
@@ -48,7 +48,7 @@ Avoid plumbing vocabulary in artist-facing text. Say what you're going to *do*.
 
 ### Resume vs New Session
 
-The default when the artist returns to a song is to **resume** the existing Codex session. The journal in the project notebook accumulates, your context is warm, and the sidebar stays clean. Start a fresh session only if the previous one is polluted with unrelated conversation — a fresh session re-attaches to the same Lahari project and can refresh the same project notebook.
+The default when the artist returns to a project is to **resume** the existing Codex session. The journal in the project notebook accumulates, your context is warm, and the sidebar stays clean. Start a fresh session only if the previous one is polluted with unrelated conversation — a fresh session re-attaches to the same Mirage project and can refresh the same project notebook.
 
 ## Operating Loop
 
@@ -63,19 +63,19 @@ The default when the artist returns to a song is to **resume** the existing Code
 
 ## Project Mode
 
-The agent should not infer the workflow from the old Lahari product shape. Use the project metadata exposed in the packet/notebook.
+The agent should not infer the workflow from old product shape or from the preset label alone. Use the project metadata exposed in the packet/notebook.
 
 - `seed_kind` says what the artist started with: `audio`, `script`, `brief`, `document`, or `idea`.
-- `workflow_key` says which pipeline recipe is active: `music_video`, `anime_scripted`, and later more.
+- `workflow_key` says which production spine is active: `music_led`, `scripted_narrative`, and later `campaign` / `short_form`.
 - `preset_key` says the taste/default layer: `music_video_default`, `anime_default`, and later client-specific presets.
 
 This is flexible, not a separate agent mode. The same MCP tools and apply tools are used, but the agent chooses source assumptions and skill interpretation from project mode. A music-video project may begin with audio and use lyrics/rhythm. An anime project may begin with a script and skip audio analysis. A brief-led project may need Codex to normalize the brief into a script draft before applying.
 
-When project mode is missing in an old project, assume legacy `audio + music_video + music_video_default` only as a compatibility fallback. Do not assume deity, temple, devotional, or Bhakti context unless the actual project source says that.
+Legacy rows may still surface `music_video` or `anime_scripted`; treat them as aliases for `music_led` and `scripted_narrative`. When project mode is missing, ask for context or inspect the source payload instead of guessing. Do not assume deity, temple, devotional, or Bhakti context unless the actual project source says that.
 
 ## Writing Content for Apply Tools
 
-For text-native work, Codex writes the content and Lahari apply tools validate/persist it. Do not call backend LLM-wrapper tools when an apply-only tool exists.
+For text-native work, Codex writes the content and Mirage apply tools validate/persist it. Do not call backend LLM-wrapper tools when an apply-only tool exists.
 
 Load the right shard before writing:
 
@@ -91,7 +91,7 @@ When a read result includes `baseHashes`, pass the relevant hash into the apply 
 
 ## Friction Capture
 
-When you notice friction, capture it immediately. This includes a Lahari tool returning unexpected output, project state not making sense, a deep link/action plan feeling wrong, the web studio disagreeing with tool output, a promised harness action not actually being available, or repeated confusion in your own flow. Call `lahari_capture_issue` with severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.
+When you notice friction, capture it immediately. This includes a Mirage tool returning unexpected output, project state not making sense, a deep link/action plan feeling wrong, the web studio disagreeing with tool output, a promised harness action not actually being available, or repeated confusion in your own flow. Call `mirage_capture_issue` when available, or `lahari_capture_issue` only as a backward-compatible alias, with severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.
 
 The capture tool records enough detail for an engine session to investigate later. Do not ask the artist to inspect server paths or local audit files.
 
@@ -109,7 +109,7 @@ Specific taste rubrics live in focused skill shards. Load the relevant one when 
 
 **Default read order:** when in doubt about a creative judgment, read the shard whose description matches the task. Don't try to absorb all five at once — load on demand.
 
-**Cross-cutting note:** every shard assumes you've already read this skill (lahari-director) for session start, permission, and output style. The shards focus only on the production rubric for their domain.
+**Cross-cutting note:** every shard assumes you've already read this skill (mirage-director) for session start, permission, and output style. The shards focus only on the production rubric for their domain.
 
 ## Permission Rules
 

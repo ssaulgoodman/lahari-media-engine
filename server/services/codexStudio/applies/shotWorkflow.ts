@@ -74,7 +74,7 @@ export const applyShotWorkflowModes = async (
   }
 
   return {
-    kind: 'lahari.apply.shot_workflow_modes',
+    kind: 'mirage.apply.shot_workflow_modes',
     projectId: project.id,
     applied,
     rejected,

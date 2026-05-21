@@ -9,7 +9,7 @@ Audio planning is production data for the video engine. It is not a prose rewrit
 
 Read the project packet first:
 
-- `workflow_key` tells you whether Audio is part of the workflow. `music_video` normally skips Audio; `anime_scripted` uses it.
+- `workflow_key` tells you whether Audio is part of the workflow. `music_led` normally skips Audio; `scripted_narrative` uses it when the preset/story needs dialogue or narration. Legacy keys `music_video` and `anime_scripted` are aliases only.
 - `preset_key` gives the taste/defaults. Follow preset audio rules when present.
 - `production.audioPhase` tells you state, missing voices, pending TTS lines, and stale audio-plan shot IDs.
 - Cast entries carry `voice.assigned`, `voice.provider`, `voice.id`, and look/reference state.

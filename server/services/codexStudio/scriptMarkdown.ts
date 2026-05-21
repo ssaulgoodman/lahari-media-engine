@@ -4,7 +4,7 @@ import {
 } from './core.js';
 import { applyError, type ApplyError } from './applies/helpers.js';
 
-export const SCRIPT_MARKDOWN_FORMAT = 'lahari-script-v1';
+export const SCRIPT_MARKDOWN_FORMAT = 'mirage-script-v1';
 
 type ParsedScriptMarkdown = {
   baseFingerprint: string | null;

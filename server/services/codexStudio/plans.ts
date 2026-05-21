@@ -29,8 +29,8 @@ export const buildProjectActionList = (project: Project) => {
           estimatedCost: plan.estimatedCost,
           prerequisites: plan.prerequisites,
           webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
-          cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
           mcpTool: 'apply_generate_storyboard',
+          mcpInstruction: `Call apply_generate_storyboard with projectId=${project.id} and shotId=${shot.id}.`,
           plan,
         });
       }
@@ -45,8 +45,8 @@ export const buildProjectActionList = (project: Project) => {
           paid: false,
           webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard' }),
           prerequisites: [],
-          cli: `npm run lahari -- apply lock-storyboard ${project.id} ${shot.id}`,
           mcpTool: 'lock_storyboard',
+          mcpInstruction: `Call lock_storyboard with projectId=${project.id} and shotId=${shot.id}.`,
         });
       }
 
@@ -63,8 +63,8 @@ export const buildProjectActionList = (project: Project) => {
             estimatedCost: plan.estimatedCost,
             prerequisites: plan.prerequisites,
             webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-video' }),
-            cli: `npm run lahari -- apply generate-video ${project.id} ${shot.id}`,
             mcpTool: 'apply_generate_video',
+            mcpInstruction: `Call apply_generate_video with projectId=${project.id} and shotId=${shot.id}.`,
             plan,
           });
         }
@@ -79,14 +79,14 @@ export const buildProjectActionList = (project: Project) => {
           canRun: false,
           paid: false,
           webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-video' }),
-          prerequisites: ['No native lock-shot apply tool yet; use the Lahari web studio review control.'],
+          prerequisites: ['No native lock-shot apply tool yet; use the Mirage web studio review control.'],
         });
       }
     }
   }
 
   return {
-    kind: 'lahari.project.actions',
+    kind: 'mirage.project.actions',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -138,18 +138,20 @@ export const buildStoryboardPromptReview = (project: Project) => {
         },
         nextNativeAction: plan?.canRun ? {
           kind: 'generate_storyboard',
-          cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
+          mcpTool: 'apply_generate_storyboard',
+          mcpInstruction: `Call apply_generate_storyboard with projectId=${project.id} and shotId=${shot.id}.`,
           webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
           estimatedCost: plan.estimatedCost,
         } : null,
         webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard-prompt' }),
-        rewriteCommand: `npm run lahari -- preview rewrite-storyboard-prompt ${project.id} ${shot.id}`,
+        rewriteTool: 'apply_storyboard_prompt',
+        rewriteNote: 'Rewrite the prompt in the notebook draft, then call apply_storyboard_prompt or apply_storyboard_scene_markdown with the preserved shot ID and base hash.',
       });
     }
   }
 
   return {
-    kind: 'lahari.storyboard_prompt.review',
+    kind: 'mirage.storyboard_prompt.review',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,

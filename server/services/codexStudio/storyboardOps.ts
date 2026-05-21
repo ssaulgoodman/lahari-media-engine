@@ -96,7 +96,7 @@ export const planGenerateStoryboard = (project: Project, shotId: string, modelOv
     : Number(process.env.OPENAI_STORYBOARD_RENDER_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0.12));
 
   return {
-    kind: 'lahari.generation_plan.storyboard',
+    kind: 'mirage.generation_plan.storyboard',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -182,15 +182,15 @@ export const buildStoryboardStatus = (project: Project) => {
         kind: 'generate_storyboard',
         canRun: true,
         paid: true,
-        cli: `npm run lahari -- apply generate-storyboard ${project.id} ${shot.id}`,
         mcpTool: 'apply_generate_storyboard',
+        mcpInstruction: `Call apply_generate_storyboard with projectId=${project.id} and shotId=${shot.id}.`,
         webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'generate-storyboard' }),
       } : shot.storyboardUrl && !shot.storyboardLocked ? {
         kind: 'lock_storyboard',
         canRun: true,
         paid: false,
-        cli: `npm run lahari -- apply lock-storyboard ${project.id} ${shot.id}`,
         mcpTool: 'lock_storyboard',
+        mcpInstruction: `Call lock_storyboard with projectId=${project.id} and shotId=${shot.id}.`,
         webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard' }),
       } : null;
 
@@ -229,7 +229,7 @@ export const buildStoryboardStatus = (project: Project) => {
   }
 
   return {
-    kind: 'lahari.storyboard.status',
+    kind: 'mirage.storyboard.status',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -288,7 +288,7 @@ export const writeStoryboardPromptForShot = async (project: Project, shotId: str
   });
 
   return {
-    kind: 'lahari.apply.write_storyboard_prompt',
+    kind: 'mirage.apply.write_storyboard_prompt',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     shot: {
@@ -378,7 +378,7 @@ export const bulkWriteStoryboardPrompts = async (project: Project, opts: {
   );
 
   return {
-    kind: 'lahari.apply.bulk_write_storyboard_prompts',
+    kind: 'mirage.apply.bulk_write_storyboard_prompts',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     paid: true,
@@ -430,7 +430,7 @@ export const planGenerateVideo = (project: Project, shotId: string, modelOverrid
   ].filter(Boolean) as string[];
 
   return {
-    kind: 'lahari.generation_plan.video',
+    kind: 'mirage.generation_plan.video',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -512,7 +512,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
   });
 
   return {
-    kind: 'lahari.generation_result.storyboard',
+    kind: 'mirage.generation_result.storyboard',
     generatedAt: new Date().toISOString(),
     project: plan.project,
     shot: plan.shot,
@@ -611,7 +611,7 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
   );
 
   return {
-    kind: 'lahari.generation_result.bulk_storyboards',
+    kind: 'mirage.generation_result.bulk_storyboards',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title, storyboardProvider: project.storyboardProvider },
     paid: true,
@@ -687,7 +687,7 @@ export const refineStoryboardImage = async (project: Project, shotId: string, op
   });
 
   return {
-    kind: 'lahari.generation_result.refine_storyboard_image',
+    kind: 'mirage.generation_result.refine_storyboard_image',
     generatedAt: new Date().toISOString(),
     project: plan.project,
     shot: plan.shot,
@@ -737,7 +737,7 @@ export const lockStoryboardBoard = async (project: Project, shotId: string, vers
   });
 
   return {
-    kind: 'lahari.apply.lock_storyboard',
+    kind: 'mirage.apply.lock_storyboard',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     shot: {
@@ -776,7 +776,7 @@ export const unlockStoryboardBoard = async (project: Project, shotId: string) =>
   const notebookProject = withShotPatch(project, shotId, { storyboardLocked: false });
 
   return {
-    kind: 'lahari.apply.unlock_storyboard',
+    kind: 'mirage.apply.unlock_storyboard',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     shot: {
@@ -818,7 +818,7 @@ export const applyProjectPreferencesConfig = async (
   );
 
   return {
-    kind: 'lahari.apply.project_preferences',
+    kind: 'mirage.apply.project_preferences',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     preferences: result.preferences,
@@ -863,7 +863,7 @@ export const applyProjectPromptOverrideConfig = async (
   );
 
   return {
-    kind: 'lahari.apply.project_prompt_override',
+    kind: 'mirage.apply.project_prompt_override',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     promptOverride: result,
@@ -908,7 +908,7 @@ export const revertProjectPromptOverrideConfig = async (
   );
 
   return {
-    kind: 'lahari.apply.revert_project_prompt_override',
+    kind: 'mirage.apply.revert_project_prompt_override',
     generatedAt: new Date().toISOString(),
     project: { id: project.id, title: project.title },
     promptOverride: result,
@@ -958,7 +958,7 @@ export const applyGenerateVideo = async (project: Project, shotId: string, promp
   });
 
   return {
-    kind: 'lahari.generation_result.video',
+    kind: 'mirage.generation_result.video',
     generatedAt: new Date().toISOString(),
     project: plan.project,
     shot: plan.shot,

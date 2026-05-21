@@ -1,7 +1,7 @@
 import { storyboardPromptHash, type Project } from './core.js';
 import { applyError, type ApplyError } from './applies/helpers.js';
 
-export const STORYBOARD_SCENE_MARKDOWN_FORMAT = 'lahari-storyboard-scene-v1';
+export const STORYBOARD_SCENE_MARKDOWN_FORMAT = 'mirage-storyboard-scene-v1';
 
 export type ParsedStoryboardSceneMarkdown = {
   projectId: string | null;
@@ -60,7 +60,7 @@ export const storyboardSceneDraftPath = (
   project: Project,
   sceneIndex: number,
   scene: Project['scenes'][number],
-): string => `lahari/projects/${project.id}/drafts/storyboards/${sceneSlug(sceneIndex, scene)}.md`;
+): string => `mirage/projects/${project.id}/drafts/storyboards/${sceneSlug(sceneIndex, scene)}.md`;
 
 export const buildStoryboardSceneMarkdownDraft = (
   project: Project,

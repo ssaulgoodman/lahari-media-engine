@@ -69,7 +69,7 @@ export const applyVideoPrompt = async (
   appendApplyJournal(project, 'applied video prompt', `${shotApplyLabel(target)}\nShot ID: ${shotId}\nMotion prompt chars: ${nextMotionPrompt.length}\nNew hash: ${newHash}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId, action: 'generate-video' })}`);
 
   return {
-    kind: 'lahari.apply.video_prompt',
+    kind: 'mirage.apply.video_prompt',
     projectId: project.id,
     shotId,
     newHash,
