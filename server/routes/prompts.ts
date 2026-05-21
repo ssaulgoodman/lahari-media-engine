@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getSB, T } from '../database.js';
 import { PROMPT_CATALOG, STAGE_META } from '../prompts/catalog.js';
+import { TOOL_REGISTRY } from '../tools/registry.js';
 
 const router = Router();
 
@@ -71,7 +72,19 @@ router.get('/', async (_req, res) => {
       };
     });
 
-    res.json({ prompts, stages: STAGE_META });
+    const tools = TOOL_REGISTRY.map((tool) => ({
+      key: tool.key,
+      label: tool.label,
+      description: tool.description,
+      enabledFor: tool.enabledFor,
+      requires: tool.requires,
+      contextInputs: tool.contextInputs || [],
+      produces: tool.produces,
+      surface: tool.surface,
+      hasPromptBuilder: Boolean(tool.buildPrompt),
+    }));
+
+    res.json({ prompts, stages: STAGE_META, tools });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

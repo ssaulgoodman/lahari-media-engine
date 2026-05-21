@@ -24,6 +24,18 @@ type PromptMeta = {
 
 type StageMeta = { label: string; description: string; order: number };
 
+type ToolRecipe = {
+  key: string;
+  label: string;
+  description: string;
+  enabledFor?: string[];
+  requires: string[];
+  contextInputs: string[];
+  produces: string[];
+  surface: string;
+  hasPromptBuilder: boolean;
+};
+
 interface Props {
   onBack: () => void;
 }
@@ -69,6 +81,7 @@ const TemplateBody: React.FC<{ text: string }> = ({ text }) => {
 
 export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
   const [prompts, setPrompts] = useState<PromptMeta[]>([]);
+  const [tools, setTools] = useState<ToolRecipe[]>([]);
   const [stages, setStages] = useState<Record<string, StageMeta>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -88,6 +101,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
         const data = await res.json();
         if (!aborted) {
           setPrompts(data.prompts || []);
+          setTools(data.tools || []);
           setStages(data.stages || {});
         }
       } finally {
@@ -140,6 +154,14 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
 
   const totalCalls = prompts.reduce((acc, p) => acc + (p.usage?.callCount || 0), 0);
   const totalSpend = prompts.reduce((acc, p) => acc + (p.usage?.totalCost || 0), 0);
+  const toolsBySurface = useMemo(() => {
+    const map: Record<string, ToolRecipe[]> = {};
+    for (const tool of tools) {
+      if (!map[tool.surface]) map[tool.surface] = [];
+      map[tool.surface].push(tool);
+    }
+    return Object.entries(map);
+  }, [tools]);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -155,16 +177,16 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             </svg>
             Back
           </button>
-          <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Prompts</h1>
+          <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Tool Recipes</h1>
           <p className="text-sm text-zinc-400 mt-1.5 max-w-xl">
-            The templates that drive every AI call in the pipeline. Read-only for now — editable per project in a later release.
+            What each production tool reads, changes, and produces. Advanced drawers show the prompt text behind older and composed calls.
           </p>
         </div>
         {!loading && (
           <div className="text-right">
-            <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Lifetime usage</div>
+            <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Registry + usage</div>
             <div className="text-sm text-zinc-300 tabular-nums mt-1">
-              {totalCalls.toLocaleString()} calls · ${totalSpend.toFixed(2)}
+              {tools.length.toLocaleString()} tools · {totalCalls.toLocaleString()} calls · ${totalSpend.toFixed(2)}
             </div>
           </div>
         )}
@@ -180,7 +202,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, summary, template…"
+            placeholder="Search name, summary, recipe, template…"
             className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 pl-9 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-white/20 rounded-md"
           />
         </div>
@@ -199,19 +221,76 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
         </div>
       </div>
 
-      {/* Content */}
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
             <div key={i} className="surface rounded-xl h-20 skeleton" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-sm text-zinc-400">
-          No prompts match your filter.
-        </div>
       ) : (
         <div className="space-y-10">
+          {toolsBySurface.length > 0 && (
+            <section>
+              <div className="flex items-baseline gap-4 mb-3 pb-2 border-b border-white/[0.06]">
+                <h2 className="text-lg font-display font-medium text-white tracking-tight">Production Tools</h2>
+                <p className="text-xs text-zinc-400 flex-1 truncate">
+                  Registry-owned actions shared by the web UI and agent harness.
+                </p>
+                <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
+                  {tools.length}
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                {toolsBySurface.map(([surface, surfaceTools]) => (
+                  <div key={surface}>
+                    <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-2">{surface}</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {surfaceTools.map((tool) => (
+                        <div key={tool.key} className="rounded-lg border border-white/[0.06] px-4 py-3 bg-white/[0.015]">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-sm font-medium text-white truncate">{tool.label}</h3>
+                                <span className="text-[10px] text-zinc-500 font-mono truncate">{tool.key}</span>
+                              </div>
+                              <p className="text-xs text-zinc-400 leading-relaxed">{tool.description}</p>
+                            </div>
+                            {tool.enabledFor && tool.enabledFor.length > 0 && (
+                              <span className="text-[10px] text-zinc-400 font-mono bg-white/[0.04] rounded px-1.5 py-0.5 flex-shrink-0">
+                                {tool.enabledFor.join(', ')}
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3 grid grid-cols-3 gap-2 text-[10px]">
+                            <div>
+                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Needs</div>
+                              <div className="text-zinc-400 font-mono">{tool.requires.length ? tool.requires.join(', ') : 'nothing'}</div>
+                            </div>
+                            <div>
+                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Reads</div>
+                              <div className="text-zinc-400 font-mono">{tool.contextInputs.length ? tool.contextInputs.join(', ') : 'minimal context'}</div>
+                            </div>
+                            <div>
+                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Produces</div>
+                              <div className="text-zinc-300 font-mono">{tool.produces.join(', ')}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="text-center py-16 text-sm text-zinc-400">
+              No prompt templates match your filter.
+            </div>
+          ) : null}
+
           {grouped.map(([stageKey, stagePrompts]) => {
             const meta = stages[stageKey];
             return (
@@ -221,7 +300,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                     {meta?.label || stageKey}
                   </h2>
                   <p className="text-xs text-zinc-400 flex-1 truncate">
-                    {meta?.description || ''}
+                    {meta?.description || 'Legacy/template reference. Runtime recipes above are the primary contract.'}
                   </p>
                   <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
                     {stagePrompts.length}
@@ -349,7 +428,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                                 {/* Template */}
                                 <div>
                                   <div className="flex items-center justify-between mb-2">
-                                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Template</div>
+                                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Prompt text / composed sections</div>
                                     <button
                                       onClick={() => copy(p.id, p.template)}
                                       className="text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1"
@@ -393,7 +472,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
       {/* Footer note */}
       {!loading && filtered.length > 0 && (
         <div className="mt-12 pt-6 border-t border-white/[0.06] text-[11px] text-zinc-400 font-mono text-center">
-          {filtered.length} of {prompts.length} prompts shown — Phase 1 read-only
+          {tools.length} tools · {filtered.length} of {prompts.length} prompt references shown — overrides happen by composer section, not by replacing a whole hidden template
         </div>
       )}
     </div>

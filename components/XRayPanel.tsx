@@ -32,6 +32,20 @@ interface XRayEntry {
   createdAt: string;
 }
 
+type RecipeSection = {
+  key: string;
+  title: string;
+  body: string;
+};
+
+type RecipeTrace = {
+  toolKey?: string;
+  presetKey?: string;
+  workflowKey?: string;
+  sectionLabels?: string[];
+  sections?: RecipeSection[];
+};
+
 interface Props {
   projectId: string;
   isOpen: boolean;
@@ -183,6 +197,7 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
             const imageOutputs = (call.outputAssets || []).filter(a => a.url && (a.category === 'style' || a.category === 'character' || a.category === 'shot_image' || a.category === 'shot_end_frame' || a.category === 'shot_extracted_last_frame'));
             const videoOutputs = (call.outputAssets || []).filter(a => a.url && a.category === 'shot_video');
             const imageRefs = call.referenceInputs.filter(r => r.type === 'image' && r.url);
+            const recipe = call.contextChain?.recipe as RecipeTrace | undefined;
             const time = new Date(call.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
             return (
@@ -208,6 +223,32 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
 
                 {isExpanded && (
                   <div className="px-5 pb-5 pt-1 space-y-4">
+                    {recipe && (
+                      <div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Tool recipe</div>
+                        <div className="surface-inset rounded-md p-3 space-y-3">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                            {recipe.toolKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 font-mono">{recipe.toolKey}</span>}
+                            {recipe.workflowKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-mono">{recipe.workflowKey}</span>}
+                            {recipe.presetKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-mono">{recipe.presetKey}</span>}
+                          </div>
+                          {recipe.sections && recipe.sections.length > 0 && (
+                            <div className="space-y-2">
+                              {recipe.sections.map((section) => (
+                                <details key={`${call.id}-${section.key}`} className="group">
+                                  <summary className="cursor-pointer list-none flex items-center gap-2 text-[11px] text-zinc-400 hover:text-zinc-200">
+                                    <span className="font-mono uppercase tracking-wide">{section.title}</span>
+                                    <span className="text-zinc-500 font-mono">{section.body.length} chars</span>
+                                  </summary>
+                                  <pre className="mt-1.5 text-xs text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed border-l border-white/[0.08] pl-3">{section.body}</pre>
+                                </details>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Prompt */}
                     <div>
                       <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Prompt</div>

@@ -880,6 +880,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-21 Claude/Codex: T10.9 completed and reviewed. AssetShelf now shows a subtle "Next" chip for the first runnable tool on a shelf, or "Waiting on" with the missing assets when all visible tools are blocked. Codex review found and fixed one duplicate-click seam: the chip now disables while the shelf is externally disabled or while that tool key is already busy, matching the main tool-row behavior. This closes Wave 2 structurally: registry -> composer -> AssetShelf is now the shared web/agent contract.
 
+2026-05-21 Codex: T11 first slice landed. Composer now has a structured section model (`composePromptSections`, `inspectComposedPrompt`) and rendered prompts include an explicit `OUTPUT CONTRACT` section so the final prompt can be inspected without guessing. X-Ray `ai_calls.context_chain.recipe` now records tool key, preset key, workflow key, section labels, and section bodies for every logged call using the actual prompt text; no schema migration required. The X-Ray drawer shows a "Tool recipe" section above the raw prompt. `/api/prompts` now returns registry tool recipes, and the Prompt Library page is reframed as "Tool Recipes" with cards for what each tool needs/reads/produces before the legacy prompt references. Also scrubbed the last X-Ray concept-summary `deity` fallback. This is the minimum product/debug surface for "why did this output happen?" before E2E.
+
 ---
 
 ## 10. References

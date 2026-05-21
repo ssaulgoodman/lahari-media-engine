@@ -5,6 +5,7 @@
  */
 import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectOne, insertRow } from './database.js';
+import { inspectComposedPrompt, type ComposePromptSection } from './prompts/_composer.js';
 
 export interface XRayReference {
   type: 'image' | 'audio' | 'text';
@@ -14,10 +15,19 @@ export interface XRayReference {
 }
 
 export interface XRayContext {
-  lockedConcept?: string;   // e.g. "Ethereal Dreamscape — Lord Murugan"
-  lockedStyle?: string;     // e.g. "Dark Renaissance chiaroscuro"
-  lockedCharacters?: string[]; // e.g. ["Murugan: portrait ref locked", "Parvati: portrait ref locked"]
+  lockedConcept?: string;
+  lockedStyle?: string;
+  lockedCharacters?: string[];
   additionalNotes?: string;
+  recipe?: XRayRecipeTrace;
+}
+
+export interface XRayRecipeTrace {
+  toolKey?: string;
+  presetKey?: string;
+  workflowKey?: string;
+  sectionLabels: string[];
+  sections: ComposePromptSection[];
 }
 
 export interface XRayEntry {
@@ -53,8 +63,15 @@ export const logCall = async (params: {
   durationMs: number;
   costEstimate?: number;
   error?: string;
+  toolKey?: string;
+  presetKey?: string;
+  workflowKey?: string;
 }): Promise<string> => {
   const id = uuidv4();
+  const contextChain: XRayContext = { ...(params.contextChain || {}) };
+  const recipe = await buildRecipeTrace(params);
+  if (recipe) contextChain.recipe = recipe;
+
   await insertRow('ai_calls', {
     id,
     project_id: params.projectId,
@@ -62,7 +79,7 @@ export const logCall = async (params: {
     model: params.model,
     prompt: params.prompt,
     reference_inputs: JSON.stringify(params.referenceInputs || []),
-    context_chain: JSON.stringify(params.contextChain || {}),
+    context_chain: JSON.stringify(contextChain),
     response_summary: params.responseSummary || '',
     output_asset_ids: JSON.stringify(params.outputAssetIds || []),
     duration_ms: params.durationMs,
@@ -70,6 +87,57 @@ export const logCall = async (params: {
     error: params.error || null,
   });
   return id;
+};
+
+const STAGE_TOOL_KEY: Record<string, string> = {
+  'generate-concepts': 'generate-concept',
+  'refine-concept': 'refine-concept',
+  'generate-script': 'plan-scenes-from-music',
+  'parse-script': 'parse-script',
+  'parse-script-intake': 'parse-script',
+  'refine-script': 'refine-script',
+  'brainstorm-styles': 'brainstorm-style',
+  'visualize-style': 'visualize-style',
+  'refine-style-direction': 'refine-style-direction',
+  'write-shot-prompts': 'write-shot-prompts',
+  'write-audio-plan': 'write-audio-plan',
+  'write-storyboard-prompt': 'write-storyboard-prompt',
+  'refine-storyboard-prompt': 'write-storyboard-prompt',
+  'generate-dialogue-audio': 'generate-dialogue-audio',
+  'generate-shot-start-frame': 'generate-keyframe',
+  'generate-shot-video': 'generate-video-from-keyframe',
+};
+
+const buildRecipeTrace = async (params: {
+  projectId: string;
+  stage: string;
+  prompt: string;
+  toolKey?: string;
+  presetKey?: string;
+  workflowKey?: string;
+}): Promise<XRayRecipeTrace | undefined> => {
+  const sections = inspectComposedPrompt(params.prompt);
+  if (!sections.length) return undefined;
+
+  let presetKey = params.presetKey;
+  let workflowKey = params.workflowKey;
+  if (!presetKey || !workflowKey) {
+    try {
+      const project: any = await selectOne('projects', { id: params.projectId });
+      presetKey ||= project?.preset_key;
+      workflowKey ||= project?.workflow_key;
+    } catch {
+      // Recipe metadata should never make logging fail.
+    }
+  }
+
+  return {
+    toolKey: params.toolKey || STAGE_TOOL_KEY[params.stage] || params.stage,
+    presetKey,
+    workflowKey,
+    sectionLabels: sections.map((item) => item.title),
+    sections,
+  };
 };
 
 /**
@@ -110,7 +178,7 @@ export const buildContextChain = async (projectId: string): Promise<XRayContext>
   // Only include things the user has explicitly locked — not defaults
   return {
     lockedConcept: concept
-      ? `${concept.conceptDirection} — ${concept.deity} / ${concept.mood}`
+      ? `${concept.conceptDirection || concept.title || 'Concept'} — ${concept.subject || concept.primarySubject || project.title || 'subject'} / ${concept.mood || 'mood'}`
       : undefined,
     lockedStyle: project.status !== 'analyzed' && project.status !== 'concept_locked'
       ? project.style_description || undefined
