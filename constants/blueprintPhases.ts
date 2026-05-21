@@ -27,7 +27,8 @@ const PHASES_BY_WORKFLOW: Record<WorkflowKey, BlueprintPhase[]> = {
     { key: 'style', label: 'Style', visible: true },
     { key: 'characters', label: 'Characters', visible: true },
     { key: 'environments', label: 'Environments', visible: true },
-    // music_led.audio = 'skipped' per WorkflowRecipe — no Audio tab.
+    // No audio-tool surface for music-led v1 — no Audio tab until T10 derives
+    // phase affordances directly from the registry.
   ],
   music_video: [
     { key: 'concept', label: 'Concept', visible: true },

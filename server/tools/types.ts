@@ -1,8 +1,8 @@
 import type { CanonicalWorkflowRecipeKey, PipelinePresetKey } from '../presets.js';
-import type { Project } from '../services/codexStudio/core.js';
 
 export type WorkflowKey = CanonicalWorkflowRecipeKey;
 export type PresetKey = PipelinePresetKey;
+export type ToolProject = Record<string, any>;
 
 export type AssetKey =
   | 'audio'
@@ -33,7 +33,7 @@ export type AssetKey =
 
 export type ToolSurface = `asset:${string}` | 'agent-only';
 
-export type PromptBuilder = (project: Project, userNote?: string) => string;
+export type PromptBuilder = (project: ToolProject, userNote?: string) => string;
 
 export type ToolManifest = {
   key: string;

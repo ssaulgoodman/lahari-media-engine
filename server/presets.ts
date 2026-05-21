@@ -1,13 +1,5 @@
 export type SeedKind = 'audio' | 'script' | 'brief' | 'document' | 'idea';
 
-export type WorkflowStageState =
-  | 'required'
-  | 'optional'
-  | 'generated'
-  | 'user_supplied'
-  | 'preset_supplied'
-  | 'skipped';
-
 export type CanonicalWorkflowRecipeKey = 'music_led' | 'scripted_narrative';
 export type LegacyWorkflowRecipeKey = 'music_video' | 'anime_scripted';
 export type WorkflowRecipeKey = CanonicalWorkflowRecipeKey | LegacyWorkflowRecipeKey;
@@ -18,17 +10,6 @@ export type WorkflowRecipe = {
   primarySeed: SeedKind;
   acceptedSeeds: SeedKind[];
   summary: string;
-  stages: {
-    audioAnalysis: WorkflowStageState;
-    concept: WorkflowStageState;
-    script: WorkflowStageState;
-    style: WorkflowStageState;
-    cast: WorkflowStageState;
-    environments: WorkflowStageState;
-    audio: WorkflowStageState;
-    studio: WorkflowStageState;
-    render: WorkflowStageState;
-  };
   projectBriefRules: string;
   shotPlanRules: string;
 };
@@ -110,17 +91,6 @@ export const WORKFLOW_RECIPES: Record<CanonicalWorkflowRecipeKey, WorkflowRecipe
     primarySeed: 'audio',
     acceptedSeeds: ['audio', 'brief', 'document', 'idea'],
     summary: 'Audio-first video production: analyze song, shape a concept, plan scenes and shots, generate refs, then produce clips and render.',
-    stages: {
-      audioAnalysis: 'required',
-      concept: 'generated',
-      script: 'generated',
-      style: 'generated',
-      cast: 'generated',
-      environments: 'generated',
-      audio: 'skipped',
-      studio: 'required',
-      render: 'required',
-    },
     projectBriefRules: 'Normalize uploaded audio, lyrics/SRT, artist notes, and optional documents into a music-video brief: title, language, meaning, musical sections, target audience, subject, emotion, constraints, and references.',
     shotPlanRules: 'Shot plans follow musical structure and timing. The track supplies duration and rhythm; each scene maps to a musical section.',
   },
@@ -130,17 +100,6 @@ export const WORKFLOW_RECIPES: Record<CanonicalWorkflowRecipeKey, WorkflowRecipe
     primarySeed: 'script',
     acceptedSeeds: ['script', 'brief', 'document', 'idea'],
     summary: 'Script-first anime production: parse script into scenes, shots, cast, and environments; use a preset style bible; then produce boards/clips.',
-    stages: {
-      audioAnalysis: 'skipped',
-      concept: 'optional',
-      script: 'user_supplied',
-      style: 'preset_supplied',
-      cast: 'generated',
-      environments: 'generated',
-      audio: 'optional',
-      studio: 'required',
-      render: 'required',
-    },
     projectBriefRules: 'Normalize the uploaded script or episode brief into logline, runtime target, scene list, character list, locations, dialogue/audio needs, continuity constraints, and production notes. Do not require lyrics or song structure.',
     shotPlanRules: 'Shot plans follow scene beats and dialogue/action timing rather than musical sections. Preserve the uploaded script unless the director asks for story changes.',
   },

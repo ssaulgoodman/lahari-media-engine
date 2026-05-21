@@ -62,7 +62,7 @@ Project mode:
 - Workflow: ${workflow.key} — ${workflow.summary}
 - Preset: ${preset.key} — ${preset.label}
 
-These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which pipeline stages are required, optional, supplied, or skipped. Preset says taste/model/default prompt rules. Do not assume songs, lyrics, religious subjects, fixed locations, or audio analysis unless this project's seed/workflow/preset says so.
+These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which planner/source spine applies. Preset says taste/model/default prompt rules. Available and blocked tools in the project packet are the source of truth for what can run next. Do not assume songs, lyrics, religious subjects, fixed locations, or audio analysis unless this project's seed/workflow/preset/tool list says so.
 
 Supabase is canonical. This is an artist notebook, not the engine source checkout. Use Mirage MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Mirage instead of substituting shell commands.
 

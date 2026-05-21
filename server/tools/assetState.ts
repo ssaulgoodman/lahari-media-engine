@@ -1,38 +1,37 @@
-import type { Project } from '../services/codexStudio/core.js';
-import type { AssetKey } from './types.js';
+import type { AssetKey, ToolProject } from './types.js';
 
 const hasText = (value?: string | null): boolean => !!value && value.trim().length > 0;
 
-const hasSourcePayloadText = (project: Project, key: string): boolean => {
+const hasSourcePayloadText = (project: ToolProject, key: string): boolean => {
   const payload = project.sourcePayload;
   return !!payload && typeof payload[key] === 'string' && (payload[key] as string).trim().length > 0;
 };
 
-const hasAnyAudioPlan = (project: Project): boolean =>
+const hasAnyAudioPlan = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) => !!shot.audioPlan));
 
-const hasAnyTtsAsset = (project: Project): boolean =>
+const hasAnyTtsAsset = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) =>
     (shot.audioPlan?.dialogue || []).some((line: any) => !!line.ttsAssetId && line.ttsStatus === 'success')
   ));
 
-const hasAnyShotPrompts = (project: Project): boolean =>
+const hasAnyShotPrompts = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) =>
     hasText(shot.visualPrompt) || hasText(shot.motionPrompt)
   ));
 
-const hasAnyStoryboardPrompts = (project: Project): boolean =>
+const hasAnyStoryboardPrompts = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) =>
     hasText(shot.storyboardPrompt)
   ));
 
-const hasAllCastLooks = (project: Project): boolean =>
+const hasAllCastLooks = (project: ToolProject): boolean =>
   project.cast.length > 0 && project.cast.every((member) => !!member.referenceImageUrl || !!member.referenceAssetId);
 
-const hasAllEnvLooks = (project: Project): boolean =>
+const hasAllEnvLooks = (project: ToolProject): boolean =>
   project.environments.length > 0 && project.environments.every((env) => !!env.referenceImageUrl || !!env.referenceAssetId);
 
-const hasVoicesForPlannedDialogue = (project: Project): boolean => {
+const hasVoicesForPlannedDialogue = (project: ToolProject): boolean => {
   const referencedCastIds = new Set<string>();
   for (const scene of project.scenes) {
     for (const shot of scene.shots) {
@@ -48,16 +47,16 @@ const hasVoicesForPlannedDialogue = (project: Project): boolean => {
   return Array.from(referencedCastIds).every((castId) => voiceByCastId.get(castId));
 };
 
-const hasStoryboards = (project: Project): boolean =>
+const hasStoryboards = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) => !!shot.storyboardUrl || !!shot.storyboardAssetId));
 
-const hasKeyframes = (project: Project): boolean =>
+const hasKeyframes = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) => !!shot.imageUrl));
 
-const hasVideos = (project: Project): boolean =>
+const hasVideos = (project: ToolProject): boolean =>
   project.scenes.some((scene) => scene.shots.some((shot) => !!shot.videoUrl));
 
-export const getAssetState = (project: Project): Set<AssetKey> => {
+export const getAssetState = (project: ToolProject): Set<AssetKey> => {
   const assets = new Set<AssetKey>();
   const hasScenes = project.scenes.length > 0;
   const shotCount = project.scenes.reduce((count, scene) => count + scene.shots.length, 0);
@@ -91,4 +90,4 @@ export const getAssetState = (project: Project): Set<AssetKey> => {
   return assets;
 };
 
-export const hasAsset = (project: Project, key: AssetKey): boolean => getAssetState(project).has(key);
+export const hasAsset = (project: ToolProject, key: AssetKey): boolean => getAssetState(project).has(key);

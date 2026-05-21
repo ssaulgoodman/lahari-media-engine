@@ -1,6 +1,6 @@
 import { getProjectConfigState } from '../projectConfig.js';
 import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
-import { availableTools, blockedTools } from '../../tools/registry.js';
+import { allToolsForProject, availableTools, blockedTools } from '../../tools/registry.js';
 import {
   compactText,
   conceptHash,
@@ -45,8 +45,9 @@ const summarizeAudioPlan = (audioPlan: any) => {
   };
 };
 
-const buildAudioPhasePacket = (project: Project, workflow: ReturnType<typeof getWorkflowRecipe>) => {
-  if (workflow.stages.audio === 'skipped') {
+const buildAudioPhasePacket = (project: Project) => {
+  const hasAudioTools = allToolsForProject(project).some((tool) => tool.surface === 'asset:audio');
+  if (!hasAudioTools) {
     return {
       state: 'skipped',
       totalDialogueLines: 0,
@@ -102,7 +103,7 @@ export const buildProjectPacket = async (project: Project) => {
   const projectConfig = await getProjectConfigState(project);
   const preset = getPipelinePreset(project.presetKey);
   const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
-  const audioPhase = buildAudioPhasePacket(project, workflow);
+  const audioPhase = buildAudioPhasePacket(project);
   const available = availableTools(project);
   const blocked = blockedTools(project);
 

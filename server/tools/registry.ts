@@ -1,9 +1,8 @@
-import type { Project } from '../services/codexStudio/core.js';
 import { normalizeWorkflowKey } from '../presets.js';
 import { getAssetState } from './assetState.js';
-import type { AssetKey, BlockedTool, ResolvedTool, ToolManifest, WorkflowKey } from './types.js';
+import type { AssetKey, BlockedTool, ResolvedTool, ToolManifest, ToolProject, WorkflowKey } from './types.js';
 
-const workflowForProject = (project: Project): WorkflowKey =>
+const workflowForProject = (project: ToolProject): WorkflowKey =>
   normalizeWorkflowKey(project.workflowKey) || 'music_led';
 
 const resolveTool = (tool: ToolManifest): ResolvedTool => ({
@@ -209,19 +208,19 @@ export const TOOL_REGISTRY: ToolManifest[] = [
   },
 ];
 
-export const allToolsForProject = (project: Project): ToolManifest[] => {
+export const allToolsForProject = (project: ToolProject): ToolManifest[] => {
   const workflowKey = workflowForProject(project);
   return TOOL_REGISTRY.filter((tool) => isEnabledForWorkflow(tool, workflowKey));
 };
 
-export const availableTools = (project: Project): ResolvedTool[] => {
+export const availableTools = (project: ToolProject): ResolvedTool[] => {
   const assets = getAssetState(project);
   return allToolsForProject(project)
     .filter((tool) => missingInputs(tool, assets).length === 0)
     .map(resolveTool);
 };
 
-export const blockedTools = (project: Project): BlockedTool[] => {
+export const blockedTools = (project: ToolProject): BlockedTool[] => {
   const assets = getAssetState(project);
   return allToolsForProject(project)
     .map((tool) => ({ tool, missing: missingInputs(tool, assets) }))
