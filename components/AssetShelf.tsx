@@ -145,7 +145,7 @@ export const AssetShelf: React.FC<AssetShelfProps> = ({
                 <button
                   type="button"
                   onClick={runTool(nextMove.tool.key)}
-                  disabled={disabled && busyKey !== nextMove.tool.key}
+                  disabled={Boolean(disabled) || busyKey === nextMove.tool.key}
                   title={nextMove.tool.description}
                   className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >

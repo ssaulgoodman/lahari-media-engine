@@ -878,6 +878,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-21 Codex: T10.8 completed. Removed `getStatusLockedPhase` / `isLockedPhase` from `BlueprintContextBar`; tab checkmarks now derive from navigation progress (`activePhase`) rather than status-stage gates. Script/Style/Characters/Environments unlock affordances now use explicit `canReopenBlueprintPhase()` status checks that mirror backend rewind endpoints, keeping unlock UX separate from tool availability. Remaining phase visibility still comes from `constants/blueprintPhases.ts` until the next shelf-level pass; tool availability remains registry-owned. Validation: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
 
+2026-05-21 Claude/Codex: T10.9 completed and reviewed. AssetShelf now shows a subtle "Next" chip for the first runnable tool on a shelf, or "Waiting on" with the missing assets when all visible tools are blocked. Codex review found and fixed one duplicate-click seam: the chip now disables while the shelf is externally disabled or while that tool key is already busy, matching the main tool-row behavior. This closes Wave 2 structurally: registry -> composer -> AssetShelf is now the shared web/agent contract.
+
 ---
 
 ## 10. References
