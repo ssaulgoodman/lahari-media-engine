@@ -56,6 +56,49 @@ const formatDuration = (ms: number | null): string => {
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
 };
 
+const ASSET_LABELS: Record<string, string> = {
+  audio: 'audio',
+  scriptText: 'script',
+  directorBrief: 'director brief',
+  targetRuntime: 'target runtime',
+  lyrics: 'lyrics',
+  musicalStructure: 'musical structure',
+  meaning: 'meaning',
+  concept: 'locked concept',
+  styleDirections: 'style directions',
+  styleAsset: 'locked style',
+  cast: 'cast',
+  environments: 'environments',
+  scenes: 'scenes',
+  shots: 'shots',
+  shotPrompts: 'shot prompts',
+  storyboardPrompts: 'storyboard prompts',
+  castLooks: 'character looks',
+  envLooks: 'environment looks',
+  audioPlan: 'audio plan',
+  castVoices: 'cast voices',
+  ttsAssets: 'dialogue audio',
+  storyboards: 'storyboards',
+  keyframes: 'keyframes',
+  videos: 'videos',
+  render: 'final render',
+};
+
+const SURFACE_LABELS: Record<string, string> = {
+  'asset:concept': 'Concept',
+  'asset:script': 'Script',
+  'asset:style': 'Style',
+  'asset:characters': 'Characters',
+  'asset:environments': 'Environments',
+  'asset:audio': 'Audio',
+  'asset:studio': 'Studio',
+  'asset:render': 'Render',
+  'agent-only': 'Agent only',
+};
+
+const formatAssetList = (keys: string[], fallback: string): string =>
+  keys.length ? keys.map((key) => ASSET_LABELS[key] || key).join(', ') : fallback;
+
 // Inline visual for {{variables}} — renders them as subtle chips so the
 // template remains scannable. Falls back to plain text otherwise.
 const TemplateBody: React.FC<{ text: string }> = ({ text }) => {
@@ -244,7 +287,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
               <div className="space-y-4">
                 {toolsBySurface.map(([surface, surfaceTools]) => (
                   <div key={surface}>
-                    <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-2">{surface}</div>
+                    <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-2">{SURFACE_LABELS[surface] || surface}</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {surfaceTools.map((tool) => (
                         <div key={tool.key} className="rounded-lg border border-white/[0.06] px-4 py-3 bg-white/[0.015]">
@@ -265,15 +308,15 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                           <div className="mt-3 grid grid-cols-3 gap-2 text-[10px]">
                             <div>
                               <div className="uppercase tracking-wide text-zinc-500 mb-1">Needs</div>
-                              <div className="text-zinc-400 font-mono">{tool.requires.length ? tool.requires.join(', ') : 'nothing'}</div>
+                              <div className="text-zinc-400">{formatAssetList(tool.requires, 'nothing')}</div>
                             </div>
                             <div>
                               <div className="uppercase tracking-wide text-zinc-500 mb-1">Reads</div>
-                              <div className="text-zinc-400 font-mono">{tool.contextInputs.length ? tool.contextInputs.join(', ') : 'minimal context'}</div>
+                              <div className="text-zinc-400">{formatAssetList(tool.contextInputs, 'minimal context')}</div>
                             </div>
                             <div>
                               <div className="uppercase tracking-wide text-zinc-500 mb-1">Produces</div>
-                              <div className="text-zinc-300 font-mono">{tool.produces.join(', ')}</div>
+                              <div className="text-zinc-300">{formatAssetList(tool.produces, 'nothing')}</div>
                             </div>
                           </div>
                         </div>

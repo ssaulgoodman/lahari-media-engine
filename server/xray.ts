@@ -108,6 +108,9 @@ const STAGE_TOOL_KEY: Record<string, string> = {
   'generate-shot-video': 'generate-video-from-keyframe',
 };
 
+// Keep this map aligned with every stage string passed to logCall(). Unknown
+// stages still log, but the recipe trace falls back to the raw stage name
+// instead of the registry tool key.
 const buildRecipeTrace = async (params: {
   projectId: string;
   stage: string;

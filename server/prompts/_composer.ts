@@ -62,6 +62,10 @@ const SECTION_TITLES: Array<{ key: ComposePromptSectionKey; title: string }> = [
   { key: 'userNote', title: 'USER NOTE' },
 ];
 
+// Best-effort parser for already-rendered prompts in X-Ray. It intentionally
+// uses exact line matches for composer headers, so callers that already have
+// structured parts should prefer composePromptSections() over this reverse
+// parser.
 export const inspectComposedPrompt = (prompt: string): ComposePromptSection[] => {
   const text = prompt.trim();
   if (!text) return [];
