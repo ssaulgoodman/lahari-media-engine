@@ -905,6 +905,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-21 Codex: T12 added and first MCP polish slice completed. Ledger now tracks MCP/notebook/packet polish as a first-class pre-E2E lane. Generated notebooks now install `mirage-director` instead of `lahari-director`, use notebook version `2026-05-21.mcp-polish-v1`, and teach canonical `music_led` / `scripted_narrative` project mode. Script/audio skills were canonicalized, script/storyboard draft formats moved to `mirage-*`, storyboard draft paths use `mirage/projects/...`, project/shot packets use `mirage.project.packet` / `mirage.shot.packet`, and CodexStudio apply/generation/action result kinds now return `mirage.*`. Artist-facing action suggestions now point to MCP tools instead of `npm run lahari` engine-debug commands. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
 
+2026-05-21 Codex: T12 follow-up after Claude review. Closed the mixed-namespace seam missed in `899111c`: root `server/services/codexStudio.ts` director-session/preview/apply/rollback/workbench responses now use `mirage.*` kinds, local engine desk-copy paths moved from `.lahari/*` to `.mirage/*`, and `server/services/lahariAudit.ts` was renamed to `mirageAudit.ts`. Hosted/director routes import `captureMirageIssue`; the old `captureLahariIssue` export remains only as a compatibility alias for the internal legacy `mcp/lahari.ts` adapter. Remaining `lahari_project_id` references are legacy queue DB column names, not agent-surface branding.
+
 ---
 
 ## 10. References

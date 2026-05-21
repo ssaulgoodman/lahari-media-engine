@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
-import { captureLahariIssue, recordMcpAudit } from '../server/services/lahariAudit.js';
+import { captureLahariIssue, recordMcpAudit } from '../server/services/mirageAudit.js';
 
 const loadStudio = async () => {
   const [{ getFullProject }, studio] = await Promise.all([

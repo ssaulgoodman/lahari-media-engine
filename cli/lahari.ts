@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
-import { formatAuditTail, recordCliAudit } from '../server/services/lahariAudit.js';
+import { formatAuditTail, recordCliAudit } from '../server/services/mirageAudit.js';
 import { runLahariSetup } from '../server/services/lahariSetup.js';
 import { IMAGE_MODELS, getImageModel } from '../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS, getStoryboardProvider } from '../constants/storyboardProviders.js';

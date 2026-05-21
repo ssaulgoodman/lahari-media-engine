@@ -33,8 +33,8 @@ const dayStamp = (date = new Date()) => date.toISOString().slice(0, 10);
 
 const timestampSlug = () => new Date().toISOString().replace(/[:.]/g, '-');
 
-const auditBaseDir = () => path.join(process.cwd(), '.lahari', 'audit');
-const issuesDir = () => path.join(process.cwd(), '.lahari', 'issues');
+const auditBaseDir = () => path.join(process.cwd(), '.mirage', 'audit');
+const issuesDir = () => path.join(process.cwd(), '.mirage', 'issues');
 
 const safeProjectScope = (projectId?: string | null) => {
   if (!projectId) return '_unscoped';
@@ -104,9 +104,9 @@ export const redactAuditValue = (value: unknown, depth = 0): unknown => {
 
 const projectIdFromPath = (value: string) => {
   const normalized = value.replace(/\\/g, '/');
-  return normalized.match(/\.lahari\/previews\/([^/]+)/)?.[1]
-    || normalized.match(/\.lahari\/sessions\/([^/]+)/)?.[1]
-    || normalized.match(/\.lahari\/projects\/([^/]+)/)?.[1]
+  return normalized.match(/\.mirage\/previews\/([^/]+)/)?.[1]
+    || normalized.match(/\.mirage\/sessions\/([^/]+)/)?.[1]
+    || normalized.match(/\.mirage\/projects\/([^/]+)/)?.[1]
     || null;
 };
 
@@ -261,7 +261,7 @@ export const formatAuditTail = (projectId?: string | null, limit = 20) => {
   }).join('\n');
 };
 
-export const captureLahariIssue = (input: {
+export const captureMirageIssue = (input: {
   projectId?: string | null;
   severity: IssueSeverity;
   summary: string;
@@ -269,7 +269,7 @@ export const captureLahariIssue = (input: {
   recentToolCalls?: unknown;
 }) => {
   const issue = {
-    kind: 'lahari.issue',
+    kind: 'mirage.issue',
     capturedAt: new Date().toISOString(),
     projectId: input.projectId || null,
     severity: input.severity,
@@ -286,10 +286,12 @@ export const captureLahariIssue = (input: {
   const result: Record<string, unknown> = {
     ...issue,
     issueRef: issueFile.replace(/\.json$/, ''),
-    note: 'Issue captured for Lahari engine debugging. Server filesystem paths are intentionally not exposed.',
+    note: 'Issue captured for Mirage engine debugging. Server filesystem paths are intentionally not exposed.',
   };
   if (process.env.NODE_ENV !== 'production') {
     result.path = filePath;
   }
   return result;
 };
+
+export const captureLahariIssue = captureMirageIssue;

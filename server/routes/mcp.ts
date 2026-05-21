@@ -7,7 +7,7 @@ import * as z from 'zod/v4';
 import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
-import { captureLahariIssue as captureMirageIssue, recordMcpAudit } from '../services/lahariAudit.js';
+import { captureMirageIssue, recordMcpAudit } from '../services/mirageAudit.js';
 import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';

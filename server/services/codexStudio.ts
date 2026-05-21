@@ -170,7 +170,7 @@ const sessionState = (
   const checkpoint = deriveCheckpointState(project);
   const diagnosis = deriveDirectorDiagnosis(project);
   return {
-    kind: 'lahari.director.session',
+    kind: 'mirage.director.session',
     updatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -208,7 +208,7 @@ const sessionState = (
       contactSheet: defaultArtifactPath(project, 'contact-sheet.html'),
     },
     guardrails: [
-      'Supabase is canonical project truth; .lahari files are Codex desk copies.',
+      'Supabase is canonical project truth; .mirage files are Codex desk copies.',
       'Read-only inspection is allowed without approval.',
       'Ask before paid generation, DB writes, lock/unlock changes, deletes, publish, or destructive rewrites.',
       'Use preview/diff artifacts before overwriting creative work.',
@@ -234,7 +234,7 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   const journalPath = sessionJournalPath(project.id);
   const journalAlreadyExisted = fs.existsSync(journalPath);
   if (!journalAlreadyExisted) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
 
   const actions = state.checkpoint.recommendedActions.length
@@ -261,10 +261,10 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
 
   return {
-    kind: 'lahari.director.session.attached',
+    kind: 'mirage.director.session.attached',
     projectId: project.id,
     projectTitle: project.title,
-    suggestedCodexSessionTitle: `Lahari - ${project.title}`,
+    suggestedCodexSessionTitle: `Mirage - ${project.title}`,
     artistOpening: `Working on ${project.title}`,
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
     statePath: sessionStatePath(project.id),
@@ -277,7 +277,7 @@ export const attachDirectorSession = async (project: Project, note?: string) => 
     checkpoint: state.checkpoint,
     diagnosis: state.diagnosis,
     directorEvents: state.directorEvents,
-    sourceOfTruth: 'Supabase is canonical; .lahari files are local Codex desk copies.',
+    sourceOfTruth: 'Supabase is canonical; .mirage files are local Codex desk copies.',
   };
 };
 
@@ -287,7 +287,7 @@ export const getDirectorSession = (project: Project) => {
   const currentState = sessionState(project);
 
   return {
-    kind: 'lahari.director.session.read',
+    kind: 'mirage.director.session.read',
     projectId: project.id,
     exists: fs.existsSync(statePath) || fs.existsSync(journalPath),
     currentState,
@@ -307,13 +307,13 @@ export const addDirectorSessionNote = (project: Project, note: string) => {
 
   const journalPath = sessionJournalPath(project.id);
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
 
   fs.appendFileSync(journalPath, journalEntry('operator note', `${note.trim()}\n\nCheckpoint: ${state.checkpoint.label}`));
 
   return {
-    kind: 'lahari.director.session.note_added',
+    kind: 'mirage.director.session.note_added',
     projectId: project.id,
     statePath: sessionStatePath(project.id),
     journalPath,
@@ -344,7 +344,7 @@ type ShotPromptPreviewShot = {
 };
 
 type ShotPromptPreviewFile = {
-  kind: 'lahari.preview.rewrite_shot_prompts';
+  kind: 'mirage.preview.rewrite_shot_prompts';
   previewId: string;
   generatedAt: string;
   project: {
@@ -535,7 +535,7 @@ export const previewRewriteShotPrompts = async (project: Project, userNote?: str
   const promptText = batchPrompts.join('\n\n');
 
   const preview = {
-    kind: 'lahari.preview.rewrite_shot_prompts',
+    kind: 'mirage.preview.rewrite_shot_prompts',
     previewId,
     generatedAt: now,
     project: {
@@ -583,7 +583,7 @@ const readShotPromptPreview = (previewJsonPath: string): ShotPromptPreviewFile =
   const resolved = path.resolve(previewJsonPath);
   if (!fs.existsSync(resolved)) throw new Error(`Preview JSON not found: ${resolved}`);
   const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (parsed?.kind !== 'lahari.preview.rewrite_shot_prompts') {
+  if (parsed?.kind !== 'mirage.preview.rewrite_shot_prompts') {
     throw new Error('Preview JSON is not a lahari.preview.rewrite_shot_prompts artifact.');
   }
   if (!parsed.project?.id || !Array.isArray(parsed.shots)) {
@@ -615,7 +615,7 @@ export const getRewriteShotPromptsApplyPlan = async (previewJsonPath: string, pr
   const hasShots = preview.shots.length > 0;
 
   return {
-    kind: 'lahari.apply_plan.rewrite_shot_prompts',
+    kind: 'mirage.apply_plan.rewrite_shot_prompts',
     previewId: preview.previewId,
     previewPath: path.resolve(previewJsonPath),
     project: {
@@ -672,7 +672,7 @@ export const applyRewriteShotPromptsPreview = async (previewJsonPath: string, pr
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('applied shot prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShots updated: ${preview.shots.length}\nChanged shots: ${changed.length}\n\nNo frames, videos, assets, or locks were changed.`));
   await recordDirectorEvent({
@@ -692,7 +692,7 @@ export const applyRewriteShotPromptsPreview = async (previewJsonPath: string, pr
   });
 
   return {
-    kind: 'lahari.apply.rewrite_shot_prompts',
+    kind: 'mirage.apply.rewrite_shot_prompts',
     previewId: preview.previewId,
     projectId: project.id,
     shotsUpdated: preview.shots.length,
@@ -703,7 +703,7 @@ export const applyRewriteShotPromptsPreview = async (previewJsonPath: string, pr
 };
 
 type StoryboardPromptPreviewFile = {
-  kind: 'lahari.preview.rewrite_storyboard_prompt';
+  kind: 'mirage.preview.rewrite_storyboard_prompt';
   previewId: string;
   generatedAt: string;
   project: { id: string; title: string; status: string; textProvider?: string; storyboardProvider?: string };
@@ -793,7 +793,7 @@ export const previewRewriteStoryboardPrompt = async (project: Project, shotId: s
   const markdownPath = defaultPreviewPath(project, previewId, 'preview.md');
 
   const preview: StoryboardPromptPreviewFile = {
-    kind: 'lahari.preview.rewrite_storyboard_prompt',
+    kind: 'mirage.preview.rewrite_storyboard_prompt',
     previewId,
     generatedAt: now,
     project: {
@@ -835,7 +835,7 @@ const readStoryboardPromptPreview = (previewJsonPath: string): StoryboardPromptP
   const resolved = path.resolve(previewJsonPath);
   if (!fs.existsSync(resolved)) throw new Error(`Preview JSON not found: ${resolved}`);
   const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (parsed?.kind !== 'lahari.preview.rewrite_storyboard_prompt') {
+  if (parsed?.kind !== 'mirage.preview.rewrite_storyboard_prompt') {
     throw new Error('Preview JSON is not a lahari.preview.rewrite_storyboard_prompt artifact.');
   }
   if (!parsed.project?.id || !parsed.shot?.id) {
@@ -859,7 +859,7 @@ export const getRewriteStoryboardPromptApplyPlan = async (previewJsonPath: strin
     || preview.shot.before.storyboardCutPlan !== preview.shot.after.storyboardCutPlan;
 
   return {
-    kind: 'lahari.apply_plan.rewrite_storyboard_prompt',
+    kind: 'mirage.apply_plan.rewrite_storyboard_prompt',
     previewId: preview.previewId,
     previewPath: path.resolve(previewJsonPath),
     project: { id: project.id, title: project.title, status: project.status },
@@ -900,7 +900,7 @@ export const applyRewriteStoryboardPromptPreview = async (previewJsonPath: strin
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('applied storyboard prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShot updated: ${preview.shot.id}\n\nExisting storyboard/video outputs were marked stale for review when present. No assets or locks were changed.`));
   await recordDirectorEvent({
@@ -920,7 +920,7 @@ export const applyRewriteStoryboardPromptPreview = async (previewJsonPath: strin
   });
 
   return {
-    kind: 'lahari.apply.rewrite_storyboard_prompt',
+    kind: 'mirage.apply.rewrite_storyboard_prompt',
     previewId: preview.previewId,
     projectId: project.id,
     shotId: preview.shot.id,
@@ -1131,7 +1131,7 @@ Local Codex notes live here. This file is not overwritten by hydration.
   ];
 
   return {
-    kind: 'lahari.project.workbench',
+    kind: 'mirage.project.workbench',
     generatedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -1145,7 +1145,7 @@ Local Codex notes live here. This file is not overwritten by hydration.
 };
 
 type ScriptPreviewFile = {
-  kind: 'lahari.preview.rewrite_script';
+  kind: 'mirage.preview.rewrite_script';
   previewId: string;
   generatedAt: string;
   project: { id: string; title: string; status: string; videoModel?: string; textProvider?: string };
@@ -1393,7 +1393,7 @@ export const previewRewriteScript = async (project: Project, userNote?: string) 
     scenes: result.scenes || [],
   };
   const preview: ScriptPreviewFile = {
-    kind: 'lahari.preview.rewrite_script',
+    kind: 'mirage.preview.rewrite_script',
     previewId,
     generatedAt: now,
     project: {
@@ -1430,7 +1430,7 @@ const readScriptPreview = (previewJsonPath: string): ScriptPreviewFile => {
   const resolved = path.resolve(previewJsonPath);
   if (!fs.existsSync(resolved)) throw new Error(`Preview JSON not found: ${resolved}`);
   const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (parsed?.kind !== 'lahari.preview.rewrite_script') {
+  if (parsed?.kind !== 'mirage.preview.rewrite_script') {
     throw new Error('Preview JSON is not a lahari.preview.rewrite_script artifact.');
   }
   if (!parsed.project?.id || !parsed.script?.scenes) {
@@ -1450,7 +1450,7 @@ export const getRewriteScriptApplyPlan = async (previewJsonPath: string, project
   const canApply = hasScript && !drifted && !downstreamVisualWork;
 
   return {
-    kind: 'lahari.apply_plan.rewrite_script',
+    kind: 'mirage.apply_plan.rewrite_script',
     previewId: preview.previewId,
     previewPath: path.resolve(previewJsonPath),
     project: { id: project.id, title: project.title, status: project.status },
@@ -1572,7 +1572,7 @@ export const applyRewriteScriptPreview = async (previewJsonPath: string, project
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('applied script preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nMode: ${preview.mode}\nScenes: ${preview.afterCounts.scenes}\nShots: ${preview.afterCounts.shots}\n\nNo assets, frames, videos, or locks existed at apply time.`));
   await recordDirectorEvent({
@@ -1592,7 +1592,7 @@ export const applyRewriteScriptPreview = async (previewJsonPath: string, project
   });
 
   return {
-    kind: 'lahari.apply.rewrite_script',
+    kind: 'mirage.apply.rewrite_script',
     previewId: preview.previewId,
     projectId: project.id,
     scenesWritten: preview.afterCounts.scenes,
@@ -1638,7 +1638,7 @@ export const rollbackRewriteShotPromptsPreview = async (previewJsonPath: string,
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('rolled back shot prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShots restored: ${preview.shots.length}`));
   await recordDirectorEvent({
@@ -1652,7 +1652,7 @@ export const rollbackRewriteShotPromptsPreview = async (previewJsonPath: string,
   });
 
   return {
-    kind: 'lahari.rollback.rewrite_shot_prompts',
+    kind: 'mirage.rollback.rewrite_shot_prompts',
     previewId: preview.previewId,
     projectId: project.id,
     shotsRestored: preview.shots.length,
@@ -1684,7 +1684,7 @@ export const rollbackRewriteStoryboardPromptPreview = async (previewJsonPath: st
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('rolled back storyboard prompt preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nShot restored: ${preview.shot.id}`));
   await recordDirectorEvent({
@@ -1698,7 +1698,7 @@ export const rollbackRewriteStoryboardPromptPreview = async (previewJsonPath: st
   });
 
   return {
-    kind: 'lahari.rollback.rewrite_storyboard_prompt',
+    kind: 'mirage.rollback.rewrite_storyboard_prompt',
     previewId: preview.previewId,
     projectId: project.id,
     shotId: preview.shot.id,
@@ -1729,7 +1729,7 @@ export const rollbackRewriteScriptPreview = async (previewJsonPath: string, proj
   const journalPath = sessionJournalPath(project.id);
   fs.mkdirSync(path.dirname(journalPath), { recursive: true });
   if (!fs.existsSync(journalPath)) {
-    fs.writeFileSync(journalPath, `# Lahari Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
+    fs.writeFileSync(journalPath, `# Mirage Director Journal\n\nProject: ${project.title}\nID: ${project.id}\n`);
   }
   fs.appendFileSync(journalPath, journalEntry('rolled back script preview', `Preview ID: ${preview.previewId}\nPreview JSON: ${path.resolve(previewJsonPath)}\nRestored scenes: ${preview.beforeRows.scenes.length}`));
   await recordDirectorEvent({
@@ -1743,7 +1743,7 @@ export const rollbackRewriteScriptPreview = async (previewJsonPath: string, proj
   });
 
   return {
-    kind: 'lahari.rollback.rewrite_script',
+    kind: 'mirage.rollback.rewrite_script',
     previewId: preview.previewId,
     projectId: project.id,
     scenesRestored: preview.beforeRows.scenes.length,

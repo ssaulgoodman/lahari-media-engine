@@ -129,11 +129,11 @@ export const webStudioUrl = (projectId: string, opts: { step?: 'queue' | 'bluepr
 };
 
 export const defaultArtifactPath = (project: Project, suffix: string): string => {
-  return path.join(process.cwd(), '.lahari', 'codex', `${slugify(project.title)}-${suffix}`);
+  return path.join(process.cwd(), '.mirage', 'codex', `${slugify(project.title)}-${suffix}`);
 };
 
 export const defaultPreviewPath = (project: Project, previewId: string, suffix: string): string => {
-  return path.join(process.cwd(), '.lahari', 'previews', project.id, `${previewId}-${suffix}`);
+  return path.join(process.cwd(), '.mirage', 'previews', project.id, `${previewId}-${suffix}`);
 };
 
 export const writeArtifact = (filePath: string, content: string) => {
@@ -167,7 +167,7 @@ export const md = (value?: string | null): string => {
 };
 
 export const sessionDir = (projectId: string): string => {
-  return path.join(process.cwd(), '.lahari', 'sessions', projectId);
+  return path.join(process.cwd(), '.mirage', 'sessions', projectId);
 };
 
 export const sessionStatePath = (projectId: string): string => {
@@ -179,7 +179,7 @@ export const sessionJournalPath = (projectId: string): string => {
 };
 
 export const defaultProjectWorkbenchDir = (project: Project): string => {
-  return path.join(process.cwd(), '.lahari', 'projects', project.id);
+  return path.join(process.cwd(), '.mirage', 'projects', project.id);
 };
 
 export const journalEntry = (title: string, body: string): string => {

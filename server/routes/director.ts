@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
-import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
+import { captureMirageIssue, recordMcpAudit } from '../services/mirageAudit.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
@@ -451,7 +451,7 @@ router.post('/issues/capture', audited('director.issues.capture', async (req) =>
   if (req.body.summary.length > 2000) throw new Error('summary is too long');
   if (typeof req.body.suggestedFix === 'string' && req.body.suggestedFix.length > 8000) throw new Error('suggestedFix is too long');
   await assertProjectAccess(req.body.projectId, req.userId);
-  return captureLahariIssue({
+  return captureMirageIssue({
     projectId: req.body.projectId,
     severity: req.body.severity || 'mid',
     summary: req.body.summary,
