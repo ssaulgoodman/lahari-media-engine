@@ -6,6 +6,7 @@ import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { Dropdown } from './Dropdown';
 import { UnlockPill } from './UnlockPill';
+import { AssetShelf } from './AssetShelf';
 import { getVideoModel } from '../constants/videoModels';
 import { Phase, isLockedPhase } from './BlueprintContextBar';
 import { findPhase } from '../constants/blueprintPhases';
@@ -14,8 +15,8 @@ interface Props {
   project: ApiProject;
   isLoading: boolean;
   phaseTransition: Record<string, any>;
-  onGenerateScript: (userNote?: string) => void;
-  onRefineScript?: (feedback: string) => void;
+  onGenerateScript: (userNote?: string) => Promise<void> | void;
+  onRefineScript?: (feedback: string) => Promise<void> | void;
   onUpdateScene?: (sceneId: string, updates: { narrativeDescription?: string }) => void;
   onUpdateShot?: (sceneId: string, shotId: string, updates: { direction?: string; visualPrompt?: string; castIds?: string[]; environmentId?: string | null; duration?: number }) => void;
   onCancelScript?: () => void;
@@ -26,6 +27,12 @@ interface Props {
   showActionError: (input: string | unknown) => void;
 }
 
+// ScriptPhase is now registry-driven (T10.4). The Director Settings bar's
+// bespoke generate/regenerate buttons + the dialogue header CTA are gone:
+// AssetShelf reads the workflow-gated tools (parse-script for scripted_narrative,
+// plan-scenes-from-music for music_led, refine-script, write-audio-plan) from
+// the registry and surfaces only what's runnable. Per-shot dialogue write
+// stays inline (parameterized by shotId, not a tool-level affordance).
 export const ScriptPhase: React.FC<Props> = ({
   project, isLoading, phaseTransition,
   onGenerateScript, onRefineScript, onUpdateScene, onUpdateShot, onCancelScript, onUnlockScript,
@@ -38,10 +45,19 @@ export const ScriptPhase: React.FC<Props> = ({
   const [writingDialogue, setWritingDialogue] = useState<Set<string>>(new Set());
   const isSeedanceStoryboard = project.videoModel?.startsWith('seedance');
 
-  // Audio phase visibility is workflow-config driven. Anime exposes it (even
-  // when coming-soon); music_video does not. Same gate keeps dialogue UI out
-  // of music-video projects so the Script phase stays clean.
+  // Dialogue UI visibility comes from the workflow phase config. Anime
+  // exposes it; music_video does not. Same gate keeps per-shot dialogue
+  // blocks out of music-video projects. (T10.8 will replace this with a
+  // direct registry check.)
   const audioPhaseVisible = !!findPhase(project, 'audio')?.visible;
+
+  const characterName = (id: string) =>
+    project.cast.find(c => c.id === id)?.name || '?';
+
+  const flash = (key: string) => {
+    setSavedFlash(key);
+    setTimeout(() => setSavedFlash(null), 1500);
+  };
 
   const writeDialogueForShot = async (shotId: string) => {
     setWritingDialogue(prev => new Set(prev).add(shotId));
@@ -59,7 +75,7 @@ export const ScriptPhase: React.FC<Props> = ({
     }
   };
 
-  const writeDialogueForAllShots = async () => {
+  const writeAllDialogue = async () => {
     setWritingDialogue(new Set(['__all__']));
     try {
       const updated = await api.writeAudioPlan(project.id);
@@ -71,14 +87,27 @@ export const ScriptPhase: React.FC<Props> = ({
     }
   };
 
-  const characterName = (id: string) =>
-    project.cast.find(c => c.id === id)?.name || '?';
+  const handleRunTool = async (toolKey: string) => {
+    if (toolKey === 'parse-script' || toolKey === 'plan-scenes-from-music') {
+      const note = scriptNote.trim() || undefined;
+      setScriptNote('');
+      await Promise.resolve(onGenerateScript(note));
+    } else if (toolKey === 'refine-script' && onRefineScript) {
+      if (!scriptNote.trim()) return;
+      const note = scriptNote.trim();
+      setScriptNote('');
+      await Promise.resolve(onRefineScript(note));
+    } else if (toolKey === 'write-audio-plan') {
+      await writeAllDialogue();
+    }
+  };
+
+  const totalShots = project.scenes.reduce((acc, s) => acc + s.shots.length, 0);
 
   return (
     <motion.div key="script" {...phaseTransition} className="space-y-6">
-      {/* Director Settings — single dense row, matches BlueprintContextBar's
-          Dropdown shape for aspect/resolution/model controls. */}
-      <div className="surface rounded-xl p-4">
+      {/* Director Settings + AssetShelf */}
+      <div className="surface rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-5 flex-wrap">
           {(() => {
             const model = getVideoModel(project.videoModel);
@@ -104,8 +133,8 @@ export const ScriptPhase: React.FC<Props> = ({
               </div>
             );
           })()}
-          <div className="flex items-center gap-2 ml-auto">
-            {project.scenes.length > 0 && (
+          <div className="ml-auto flex items-center gap-2">
+            {project.scenes.length > 0 && project.lastScriptPrompt && (
               <button
                 onClick={() => setShowScriptPrompt(s => !s)}
                 className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors px-2 py-1"
@@ -113,75 +142,68 @@ export const ScriptPhase: React.FC<Props> = ({
                 {showScriptPrompt ? 'Hide prompt' : 'View prompt'}
               </button>
             )}
-            {isLoading ? (
+            {isLoading && onCancelScript && (
               <button
-                onClick={() => onCancelScript?.()}
-                className="bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] px-5 py-2 rounded-md font-semibold text-xs flex items-center gap-2 transition-colors"
+                onClick={onCancelScript}
+                className="bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] px-3 py-1.5 rounded-md text-[11px] flex items-center gap-2 transition-colors"
                 title="Stop the in-flight script generation."
               >
-                <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>
+                <div className="w-2.5 h-2.5 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
                 Stop
-              </button>
-            ) : (
-              <button
-                onClick={() => { onGenerateScript(scriptNote || undefined); setScriptNote(''); }}
-                className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 flex items-center gap-2 transition-colors"
-              >
-                {project.scenes.length > 0 ? 'Regenerate' : 'Generate Script'}
               </button>
             )}
           </div>
         </div>
 
-        {/* Note + prompt preview */}
-        {project.scenes.length > 0 && (
-          <div className="space-y-3 pt-2">
+        <AssetShelf
+          surface="asset:script"
+          project={project}
+          onRunTool={handleRunTool}
+          disabled={isLoading || writingDialogue.size > 0}
+        >
+          <div className="space-y-2">
             <AutoGrowTextarea
               value={scriptNote}
               onChange={e => setScriptNote(e.target.value)}
-              placeholder="e.g. 'make scene 3 more intimate' or 'add a close-up of Ganesha in scene 2'"
+              placeholder={
+                project.scenes.length > 0
+                  ? "Refine note (used by Refine script) — e.g. 'make scene 3 more intimate'"
+                  : "Optional nudge for the first generation — e.g. 'tighter pacing in choruses'"
+              }
               rows={1}
               className="w-full surface-inset rounded-md px-3 py-2 text-sm text-zinc-300 placeholder:text-zinc-400 outline-none focus-visible:ring-1 focus-visible:ring-white/20 leading-relaxed"
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.metaKey && !e.shiftKey && scriptNote.trim()) {
-                  e.preventDefault();
-                  if (onRefineScript) { onRefineScript(scriptNote); setScriptNote(''); }
-                }
-              }}
             />
-            <div className="flex items-center gap-2">
-              {onRefineScript && (
-                <button
-                  onClick={() => { if (scriptNote.trim()) { onRefineScript(scriptNote); setScriptNote(''); } }}
-                  disabled={!scriptNote.trim() || isLoading}
-                  className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors"
-                >
-                  Refine script
-                </button>
-              )}
-              <span className="text-[11px] text-zinc-500">Enter = refine (keeps what works) · Regenerate = fresh start</span>
-            </div>
-            {showScriptPrompt && project.lastScriptPrompt && (
-              <pre className="surface-inset rounded-md p-3 text-sm text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{project.lastScriptPrompt}</pre>
-            )}
+            <p className="text-[11px] text-zinc-500">
+              Tools above read this note. Refine keeps what works; Plan/Parse rebuilds the script from scratch.
+            </p>
           </div>
-        )}
+          {showScriptPrompt && project.lastScriptPrompt && (
+            <pre className="mt-3 surface-inset rounded-md p-3 text-xs text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed">{project.lastScriptPrompt}</pre>
+          )}
+        </AssetShelf>
       </div>
 
-      {/* Loading — first gen */}
+      {/* First-gen loading skeleton */}
       {isLoading && project.scenes.length === 0 && (
         <div className="flex flex-col items-center justify-center h-48 space-y-3">
-          <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+          <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
           <p className="text-zinc-400 text-sm">Writing your script...</p>
         </div>
       )}
 
-      {/* Scenes */}
+      {/* Empty state */}
+      {!isLoading && project.scenes.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-48 text-zinc-400 text-sm">
+          <p>Run the script tool above to create a shot list.</p>
+        </div>
+      )}
+
+      {/* Scenes / shots */}
       {project.scenes.length > 0 && (
         <div className="surface rounded-xl relative">
           {isLoading && (
             <div className="absolute inset-0 bg-black/60 rounded-xl z-10 flex flex-col items-center justify-center gap-3">
-              <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin"></div>
+              <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
               <p className="text-zinc-300 text-sm">Rewriting script...</p>
             </div>
           )}
@@ -190,18 +212,6 @@ export const ScriptPhase: React.FC<Props> = ({
             <div className="flex items-center gap-3">
               {onUnlockScript && isLockedPhase(project, 'script', project.status) && (
                 <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
-              )}
-              {audioPhaseVisible && project.scenes.length > 0 && (
-                <button
-                  onClick={writeDialogueForAllShots}
-                  disabled={writingDialogue.size > 0 || isLoading}
-                  className="text-[11px] text-zinc-400 hover:text-zinc-200 surface-inset rounded-md px-2.5 py-1 hover:bg-white/[0.06] transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
-                >
-                  {writingDialogue.has('__all__') && (
-                    <span className="w-3 h-3 border-2 border-zinc-500 border-t-zinc-200 rounded-full animate-spin" />
-                  )}
-                  {writingDialogue.has('__all__') ? 'Writing…' : 'Write all dialogue'}
-                </button>
               )}
               <button
                 className="text-[11px] text-zinc-400 hover:text-zinc-300 transition-colors"
@@ -216,7 +226,7 @@ export const ScriptPhase: React.FC<Props> = ({
                 {expandedScenes.size === project.scenes.length ? 'Collapse All' : 'Expand All'}
               </button>
               <span className="text-[11px] font-mono text-zinc-400">
-                {project.scenes.length} Scenes / {project.scenes.reduce((acc, s) => acc + s.shots.length, 0)} Shots
+                {project.scenes.length} Scenes / {totalShots} Shots
               </span>
             </div>
           </div>
@@ -252,8 +262,7 @@ export const ScriptPhase: React.FC<Props> = ({
                           const val = e.currentTarget.textContent?.trim();
                           if (val && val !== scene.narrativeDescription) {
                             onUpdateScene?.(scene.id, { narrativeDescription: val });
-                            setSavedFlash(scene.id);
-                            setTimeout(() => setSavedFlash(null), 1500);
+                            flash(scene.id);
                           }
                         }}
                         className="text-zinc-300 text-sm leading-relaxed outline-none border-b border-dashed border-transparent hover:border-white/[0.15] focus-visible:border-white/30 cursor-text transition-colors"
@@ -275,9 +284,6 @@ export const ScriptPhase: React.FC<Props> = ({
                         <p className="text-zinc-400 italic text-sm leading-relaxed mb-3">"{scene.lyrics}"</p>
                       )}
                       {scene.shots.map((shot, sIdx) => {
-                        const castNames = (shot.castIds || [])
-                          .map(id => project.cast.find(c => c.id === id)?.name)
-                          .filter(Boolean) as string[];
                         const env = shot.environmentId ? project.environments.find(e => e.id === shot.environmentId) : null;
                         const realMotion = shot.motionPrompt && shot.motionPrompt !== 'Cinematic camera movement' ? shot.motionPrompt : null;
                         const scriptText = isSeedanceStoryboard
@@ -298,8 +304,7 @@ export const ScriptPhase: React.FC<Props> = ({
                                 } else {
                                   onUpdateShot?.(scene.id, shot.id, { visualPrompt: val });
                                 }
-                                  setSavedFlash(shot.id);
-                                  setTimeout(() => setSavedFlash(null), 1500);
+                                flash(shot.id);
                               }}
                               className="text-sm text-zinc-300 leading-relaxed outline-none border-b border-dashed border-transparent hover:border-white/[0.15] focus-visible:border-white/30 cursor-text transition-colors"
                             >{scriptText || '—'}</div>
@@ -308,7 +313,6 @@ export const ScriptPhase: React.FC<Props> = ({
                               <div className="text-sm text-zinc-400 leading-relaxed">{realMotion}</div>
                             )}
                             <div className="text-[11px] text-zinc-400 flex gap-3 flex-wrap items-center">
-                              {/* Duration (read-only) + split */}
                               <span className="flex items-center gap-1 font-mono">
                                 <span className="text-zinc-300">{shot.duration}</span>
                                 <span className="text-zinc-500">s</span>
@@ -319,8 +323,7 @@ export const ScriptPhase: React.FC<Props> = ({
                                       try {
                                         const p = await api.splitShot(project.id, shot.id);
                                         onSetProject?.(p);
-                                        setSavedFlash(shot.id);
-                                        setTimeout(() => setSavedFlash(null), 1500);
+                                        flash(shot.id);
                                       } catch (err: any) { showActionError(`Shot split failed: ${err.message}`); }
                                     }}
                                     className="text-zinc-500 hover:text-zinc-300 transition-colors ml-1"
@@ -330,7 +333,6 @@ export const ScriptPhase: React.FC<Props> = ({
                                   </button>
                                 )}
                               </span>
-                              {/* Cast multi-select */}
                               <span className="flex items-center gap-1">
                                 <span className="text-zinc-500">Cast:</span>
                                 {project.cast.map(c => {
@@ -342,8 +344,7 @@ export const ScriptPhase: React.FC<Props> = ({
                                         const current = shot.castIds || [];
                                         const next = active ? current.filter(id => id !== c.id) : [...current, c.id];
                                         onUpdateShot?.(scene.id, shot.id, { castIds: next });
-                                        setSavedFlash(shot.id);
-                                        setTimeout(() => setSavedFlash(null), 1500);
+                                        flash(shot.id);
                                       }}
                                       className={`px-1.5 py-0.5 rounded transition-colors ${active ? 'bg-white/[0.1] text-zinc-200' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}
                                     >
@@ -355,7 +356,6 @@ export const ScriptPhase: React.FC<Props> = ({
                                   <button onClick={() => onSetViewPhase('characters')} className="text-zinc-500 hover:text-zinc-300 underline underline-offset-2">+ add</button>
                                 )}
                               </span>
-                              {/* Environment select */}
                               <span className="flex items-center gap-1">
                                 <span className="text-zinc-500">Env:</span>
                                 <Dropdown
@@ -363,8 +363,7 @@ export const ScriptPhase: React.FC<Props> = ({
                                   onChange={v => {
                                     if (v === '__add__') { onSetViewPhase('environments'); return; }
                                     onUpdateShot?.(scene.id, shot.id, { environmentId: v || null });
-                                    setSavedFlash(shot.id);
-                                    setTimeout(() => setSavedFlash(null), 1500);
+                                    flash(shot.id);
                                   }}
                                   size="xs"
                                   options={[
@@ -402,12 +401,6 @@ export const ScriptPhase: React.FC<Props> = ({
         </div>
       )}
 
-      {project.scenes.length === 0 && !isLoading && (
-        <div className="flex flex-col items-center justify-center h-48 text-zinc-400 text-sm">
-          <p>Hit "Generate Script" to create a cinematic shot list.</p>
-        </div>
-      )}
-
       {project.scenes.length > 0 && (
         <div className="flex justify-end">
           <button
@@ -425,9 +418,9 @@ export const ScriptPhase: React.FC<Props> = ({
 
 // ─── Dialogue display per shot ──────────────────────────────────────
 // Read-mostly view: each line as one row with speaker, text, and tts
-// status pill. Editing/voice-assignment/TTS gen live in Audio phase
-// (T5.4). Empty state shows a "Write dialogue" CTA. Stale flag
-// surfaces an amber rewrite affordance.
+// status pill. Editing/voice-assignment/TTS gen live in Audio phase.
+// Per-shot "Write dialogue" stays bespoke (parameterized by shotId);
+// "Write all dialogue" lives in AssetShelf above.
 
 interface DialogueBlockProps {
   shotId: string;
