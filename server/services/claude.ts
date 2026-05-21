@@ -19,6 +19,8 @@ import { requireProviderApiKey } from './byok/providerKeys.js';
 import { buildStyleBrainstormPrompt as buildComposedStyleBrainstormPrompt } from '../prompts/styleBrainstorm.js';
 import { buildRefineStylePrompt } from '../prompts/refineStyle.js';
 import { buildGenerateConceptPrompt, buildRefineConceptPrompt } from '../prompts/concept.js';
+import { buildParseScriptPrompt } from '../prompts/parseScript.js';
+import { buildPlanScenesPrompt } from '../prompts/planScenes.js';
 
 const getClient = async () => new Anthropic({ apiKey: await requireProviderApiKey('anthropic') });
 
@@ -197,7 +199,7 @@ export const refineConceptDirection = async (
 // Shared tool schema for planScenes + refineScript
 const SCRIPT_TOOL = {
   name: 'plan_music_video',
-  description: 'Plan the full music video structure — cast + environments + scenes + shots',
+  description: 'Plan the full music-led video structure — cast + environments + scenes + shots',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -207,8 +209,8 @@ const SCRIPT_TOOL = {
         items: {
           type: 'object',
           properties: {
-            name: { type: 'string', description: 'Character name (e.g. "Goddess Mahalakshmi")' },
-            description: { type: 'string', description: 'Physical appearance + cultural identity for image generation. 2-3 sentences. Start with who they are in mythology. No art style.' }
+            name: { type: 'string', description: 'Character, performer, object, group, or recurring figure name (e.g. "Lead singer", "Girl in red coat", "Mirror dancer")' },
+            description: { type: 'string', description: 'Reusable physical identity for reference generation. 2-3 sentences. Face/body/wardrobe/silhouette/role. No art style and no scene-specific action.' }
           },
           required: ['name', 'description']
         }
@@ -219,8 +221,8 @@ const SCRIPT_TOOL = {
         items: {
           type: 'object',
           properties: {
-            name: { type: 'string', description: 'Environment name (e.g. "Vaikuntha Palace", "Cosmic Ocean")' },
-            description: { type: 'string', description: 'Physical space + cultural reference. 2 sentences. No art style.' }
+            name: { type: 'string', description: 'Reusable environment or location name (e.g. "Night rooftop", "Empty train platform", "Flooded rehearsal room")' },
+            description: { type: 'string', description: 'Physical space and continuity details. 2 sentences. Layout, scale, architecture/landscape, lighting, atmosphere. No art style.' }
           },
           required: ['name', 'description']
         }
@@ -341,50 +343,21 @@ export const parseAnimeScriptToPlan = async (input: {
     ? input.targetDuration
     : undefined;
 
-  const prompt = `You are ${preset.script.plannerIdentity}.
-
-Convert the uploaded anime script into a production-ready scene and shot plan.
-
-SOURCE TITLE:
-${input.title || 'Untitled'}
-
-${input.directorBrief ? `DIRECTOR BRIEF:\n${input.directorBrief}\n` : ''}
-${targetDuration ? `TARGET RUNTIME: about ${targetDuration} seconds.\n` : ''}
-STYLE CONTEXT:
-${preset.style.presetBible || preset.style.rules}
-
-SCRIPT:
-${input.scriptText}
-
-Your job is extraction and production planning, not rewriting the story.
-
-Rules:
-- Preserve the script's story intent, scene order, and character actions.
-- Break the script into production scenes and shots.
-- Use approximate timings. If the script has no timing, assign practical shot durations around ${pacing}s, longer for dialogue/action beats.
-- Extract cast members needed on screen.
-- Extract reusable environments/backgrounds.
-- Shot directions describe WHAT HAPPENS, not camera/lens/style.
-- Do not include art style in cast or environment descriptions.
-- Every shot must have castNames and environmentName.
-
-CAST rules:
-${preset.script.castRules}
-
-ENVIRONMENT rules:
-${preset.script.environmentRules}
-
-SCENE rules:
-${preset.script.sceneRules}
-
-Return the plan using the parse_anime_script tool.`;
+  const prompt = buildParseScriptPrompt({
+    scriptText: input.scriptText,
+    title: input.title,
+    directorBrief: input.directorBrief,
+    targetDuration,
+    pacing,
+    preset,
+  });
 
   const response = await client.messages.create({
     model: OPUS,
     max_tokens: 16384,
     tools: [{
-      name: 'parse_anime_script',
-      description: 'Parse a script-first anime project into cast, environments, scenes, and shots.',
+      name: 'parse_scripted_narrative',
+      description: 'Parse a script-first narrative project into cast, environments, scenes, and shots.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -397,7 +370,7 @@ Return the plan using the parse_anime_script tool.`;
         required: ['cast', 'environments', 'scenes'],
       },
     }],
-    tool_choice: { type: 'tool', name: 'parse_anime_script' },
+    tool_choice: { type: 'tool', name: 'parse_scripted_narrative' },
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -423,101 +396,7 @@ export const planScenes = async (
   const minDuration = input.minShotDuration || 4;
   const isSeedanceStoryboard = input.videoModel?.startsWith('seedance');
   const seedanceMaxDuration = 15;
-  const labels = workflowSourceLabels(preset);
-  const shotExamples = formatShotExamples(preset);
-
-  // Song type signal
-  const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
-  const traits = [
-    input.isNarrative ? 'narrative' : null,
-    input.isMeditative ? 'meditative' : null,
-  ].filter(Boolean);
-  const songTypeSignal = typeLabel || traits.length
-    ? `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`
-    : '';
-
-  const modeGuidance = input.videoMode === 'cinematic'
-    ? `DIRECTOR STYLE: Cinematic — fewer, more sustained moments. Stronger continuity between shots, deeper immersion. Each scene builds and breathes.`
-    : `DIRECTOR STYLE: Montage — rhythmic, many discrete moments. Broader coverage of the emotional and spiritual world. Each shot is its own beat.`;
-
-  const pacingGuidance = isSeedanceStoryboard
-    ? `═══ SEEDANCE STORYBOARD PACING (CRITICAL — think through this before writing) ═══
-Video model: ${input.videoModel}
-In this mode, a ${preset.toolName} "shot" is a storyboard clip, not one continuous camera take.
-Each shot may contain internal edits, multiple angles, and beat hits, but it must still serve one clear story/music idea.
-
-Target clip length: 15 seconds whenever the ${labels.timingNoun} beat can support a mini-scene.
-Allowed practical range: 4-15 seconds. Use shorter clips for short phrases, transitions, refrains, reactions, action fragments, or quick beat responses.
-For each scene, shot durations must add up to the scene duration exactly.
-Good examples:
-- 30s scene -> 15 + 15
-- 28s scene -> 15 + 13
-- 20s scene -> 10 + 10 or 15 + 5
-- 12s scene -> 12
-
-Write each shot.direction as an edited mini-sequence, not a single camera setup.
-${shotExamples}
-
-Do not create zero-second cuts or filler shots. Every shot must have duration > 0.
-Do not include art style, color palette, rendering language, or architecture not present in the scene/environment.
-═══════════════════════════════════════════════════════════════════════`
-    : `═══ PACING RULES (CRITICAL — think through this before writing) ═══
-Base shot length: ${pacing} seconds.
-For each scene: number_of_shots = ceil(scene_duration / ${pacing})
-Every shot is ${pacing}s except the LAST shot which gets the remainder.
-
-Example: 21s scene at ${pacing}s → ceil(21/${pacing}) = ${Math.ceil(21 / pacing)} shots (${Array.from({length: Math.ceil(21 / pacing)}, (_, i) => i === Math.ceil(21 / pacing) - 1 ? `${21 - (Math.ceil(21 / pacing) - 1) * pacing}s` : `${pacing}s`).join(' + ')}).
-
-Video model minimum clip length: ${minDuration}s. Shots shorter than this get padded — don't adjust shot count to avoid it.
-
-BEFORE writing shots for each scene, calculate its duration and shot count. Write EXACTLY that many shots.
-═══════════════════════════════════════════════════════════════════`;
-
-  const prompt = `You are ${preset.script.plannerIdentity}. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
-
-${modeGuidance}
-${songTypeSignal}
-
-CONCEPT:
-${formatConceptForScriptPrompt(input.concept)}
-
-${labels.sourceBlock}:
-${input.lyrics}
-
-MEANING: ${input.meaning}
-
-${labels.structureBlock}: ${input.musicalStructure}
-
-${pacingGuidance}
-${input.userNote ? `\nDIRECTOR NOTE (must follow): ${input.userNote}\n` : ''}
-Plan the full ${preset.toolName} production using the plan_music_video tool.
-
-CAST rules:
-- ${preset.script.castRules}
-- Description = REUSABLE physical identity for image generation. 2-3 sentences.
-- Do NOT include actions, props in hands, or scene-specific details — this generates a neutral reference portrait reused across shots
-- No art style — just what the character looks like
-
-ENVIRONMENT rules:
-- ${preset.script.environmentRules}
-- Description = physical space: architecture, landscape, scale, lighting, atmosphere. 2 sentences.
-- No art style — just the place itself
-
-SCENE rules:
-- ${preset.script.sceneRules}
-- One scene per ${labels.sectionNoun} — follow the provided timestamps exactly
-- narrativeDescription: what happens in this scene, 1-2 sentences
-- Each shot needs a direction: WHAT HAPPENS in this moment (the narrative beat, the action, the emotional shift). NOT camera directions — those come later.
-${shotExamples}
-${isSeedanceStoryboard ? '- In Seedance storyboard mode, each shot.direction may describe 2-5 internal edited beats, but it must remain one cohesive clip idea. Include shot.duration for every shot.' : ''}
-- Avoid mechanical alternation between two visual worlds unless the source truly demands it. Let beats bridge, transform, reveal, or escalate.
-- Avoid generic spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields, or unrelated VFX. Use overt visual effects only when earned by the source.
-- Build progression across the scene. Each shot should advance the same emotional, narrative, or performance movement, not just restate it in a new image.
-
-IMPORTANT — character and environment assignment:
-- Every shot MUST have an environmentName from the environment list
-- Every character who appears in a shot MUST be listed in castNames
-- Do NOT skip character/environment assignment`;
+  const prompt = buildPlanScenesPrompt({ ...input, basePacing: pacing, minShotDuration: minDuration, preset });
 
   console.log(`[planScenes] Extended thinking + validation loop (pacing=${pacing}s, seedanceStoryboard=${!!isSeedanceStoryboard})`);
 

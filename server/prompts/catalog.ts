@@ -244,7 +244,7 @@ USER NOTE
     model: 'claude-opus-4-7',
     modelLabel: 'Claude Opus 4.7',
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
-    summary: 'Plans the full video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Uses song type + meditative/narrative signals to keep the video from drifting into generic plot logic.',
+    summary: 'Plans the full music-led video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Composed via composePrompt; user note is a hard structural constraint inside source timing and preset rules.',
     variables: [
       { name: 'videoMode', description: '"montage" or "cinematic"' },
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
@@ -254,64 +254,84 @@ USER NOTE
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds (default 15 — matches Seedance storyboard-mode workhorse clip length)' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
-      { name: 'songType', description: 'Audio classification: stotra/chant/bhajan/kirtan/song/unknown' },
+      { name: 'workflowContext', description: 'Human-readable music-led production context; never raw workflow enum labels' },
+      { name: 'presetTaste', description: 'Source rules, workflow shot-plan rules, pacing, and preset script rules' },
+      { name: 'userNotePolicy', description: 'Hard-constraint policy: all structure satisfies the note unless source timing/tool contract wins' },
+      { name: 'songType', description: 'Audio classification when available' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },
       { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `You are a music video director. Your job is to plan the STRUCTURE — cast, locations, scenes, and what happens in each shot. A cinematographer will later decide framing and camera work, so focus on WHAT HAPPENS, not how the camera moves.
+    template: `Plan the production structure for a music-led video.
 
-DIRECTOR STYLE:
-- Montage: "rhythmic, many discrete moments, broader coverage of the emotional and spiritual world."
-- Cinematic: "fewer, more sustained moments, stronger continuity, deeper immersion."
+Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.
 
-SONG TYPE (from audio analysis): {{songType}}, {{traits}}
+CONTEXT
+{{workflowContext}}
 
-CONCEPT:
-Subject: {{concept.subject || concept.primarySubject || concept.deity}}
-Direction: {{concept.conceptDirection}}
-Core idea: {{concept.theme}}
-Expanded brief: {{concept.description}}
-Mood: {{concept.mood}}
+INPUTS
+{{Concept, audio classification, lyrics/source text, meaning/intent, musical structure}}
 
-[lyrics, meaning, musical structure injected]
+TASTE
+{{preset.source.rules}}
+{{workflow.shotPlanRules}}
+{{director mode + pacing guidance}}
+{{preset.script.castRules / environmentRules / sceneRules / shot examples}}
 
-═══ PACING RULES (extended thinking reasons through this) ═══
-Base shot length: {{pacing}} seconds.
-For each scene: number_of_shots = ceil(scene_duration / {{pacing}})
-Every shot is {{pacing}}s except the LAST shot which gets the remainder.
-Example: 21s at 8s → ceil(21/8) = 3 shots (8+8+5).
-Video model min clip: {{minShotDuration}}s — shorter shots get generated at model floor and trimmed in render.
+USER NOTE POLICY
+{{If USER NOTE is present, all returned structure satisfies it. If it conflicts with source timing or production constraints, preserve the contract and translate the note into closest valid structural intent.}}
 
-SEEDANCE STORYBOARD PACING (when videoModel starts with "seedance"):
-- A studio shot is one storyboard-controlled clip, not one continuous camera take.
-- Each shot may contain internal cuts and angles, but it must stay one clear story/music idea.
-- Prefer 15s when the phrase supports a real mini-scene.
-- Allowed range: 4-15s. Use 4-8s only for short transitions or quick responses.
-- Shot durations inside each scene must add exactly to the scene duration.
-- direction should be a practical edited beat sequence that a storyboard can show.
-═══════════════════════════════════════════════════════════════
+Return the plan using the plan_music_video tool.
 
 Uses extended thinking (8K budget) so Claude reasons through pacing math.
-Validation loop: enforces EXACT shot count per scene (not just max).
+Validation loop: enforces shot counts/duration sums plus cast/env references.
 Errors sent back as tool_result for self-correction (max 3 attempts).
 
-CAST rules: reusable physical identity — face, skin, costume, ornaments.
-No actions, no props in hands (these are for reference portraits, not scenes).
-SCENE rules:
-- Each shot direction should describe WHAT HAPPENS in the moment, not framing or camera movement
-- Good: "Ganesha receives the offering, his expression softens"
-- Good: "Devotee prostrates before the idol, hands trembling"
-- Good: "Each repeated phrase reveals a different facet of the central character's inner state"
-- Good: "The object in the character's hands becomes the bridge between longing and decision"
-- Bad: "Slow dolly in on Ganesha"
-- Bad: "Wide establishing shot of the location"
-{{isMeditative ? "- For meditative/contemplative pieces: prefer gradual revelation, ritualized action, symbolic progression, and presence over plot twists or problem-solution arcs." : ""}}
-- Avoid mechanical alternation between two visual worlds unless the song truly demands it
-- Not every lyric, line, or attribute needs a literal illustration
-- Avoid generic mystical spectacle by default: floating symbols, cosmic particles, glowing script, abstract energy fields
-- Build progression across the scene: invocation -> deepening presence -> surrender`,
-    source: { file: 'server/services/claude.ts', lines: 'planScenes' },
+USER NOTE
+{{userNote}}`,
+    source: { file: 'server/prompts/planScenes.ts', lines: 'buildPlanScenesPrompt' },
+  },
+  {
+    id: 'parse-script-intake',
+    name: 'Parse script seed',
+    stage: 'blueprint',
+    model: 'claude-opus-4-7',
+    modelLabel: 'Claude Opus 4.7',
+    triggeredBy: 'Fires when a script-first project is created from direct intake.',
+    summary: 'Converts an uploaded script/treatment into cast, environments, scenes, and shots. Composed via composePrompt; preserves story intent and uses preset rules for extraction/planning.',
+    variables: [
+      { name: 'workflowContext', description: 'Human-readable scripted narrative context; never raw workflow enum labels' },
+      { name: 'scriptText', description: 'Uploaded script, treatment, or episode brief' },
+      { name: 'directorBrief', description: 'Optional intake brief' },
+      { name: 'targetRuntime', description: 'Optional total runtime target, stored in project_brief' },
+      { name: 'presetTaste', description: 'Source rules, workflow shot-plan rules, pacing, cast/env extraction rules, and scene planning rules' },
+    ],
+    template: `Convert the uploaded script into a production-ready scene and shot plan.
+
+This is extraction and production planning, not story rewriting. Preserve story intent, scene order, character actions, and dialogue order unless the director brief explicitly asks for adaptation.
+
+CONTEXT
+{{workflowContext}}
+
+INPUTS
+{{Source title, director brief, target runtime, script text}}
+
+TASTE
+{{preset.source.rules}}
+{{workflow.shotPlanRules}}
+{{default pacing}}
+{{preset.script.castRules / environmentRules / sceneRules}}
+
+Return the plan using the parse_scripted_narrative tool.
+
+Hard rules:
+- Break the script into production scenes and shots.
+- Extract cast members needed on screen.
+- Extract reusable environments/backgrounds.
+- Shot directions describe what happens, not camera/lens/style.
+- Every shot has castNames and environmentName.
+- Do not invent new plot turns, characters, or locations unless required to make an underspecified brief producible.`,
+    source: { file: 'server/prompts/parseScript.ts', lines: 'buildParseScriptPrompt' },
   },
   {
     id: 'plan-scenes-openai',

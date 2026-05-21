@@ -14,7 +14,7 @@ export const clip = (value: unknown, max: number): string => {
  * legacy `primarySubject` / `deity` aliases.
  */
 export const conceptSubject = (concept: any): string =>
-  concept?.subject || concept?.primarySubject || concept?.title || 'Unknown';
+  concept?.subject || concept?.primarySubject || concept?.deity || concept?.title || 'Unknown';
 
 /**
  * The small graph-context string that goes into the `CONTEXT` section of
