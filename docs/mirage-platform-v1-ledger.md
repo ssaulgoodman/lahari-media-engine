@@ -874,6 +874,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-21 Codex: T8.6 completed. Removed `WorkflowRecipe.stages` from `server/presets.ts`; workflows now describe planner/source spine only. MCP project packet audio-phase compatibility block derives `skipped` from the registry (`no asset:audio tools`) instead of stage metadata. Artist notebook copy now tells agents to use available/blocked tools as the source of truth for what can run next. Registry types were decoupled from the full project API type so adding `availableTools`/`blockedTools` to project responses cannot create type recursion. Validation: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
 
+2026-05-21 Codex: T10.8 completed. Removed `getStatusLockedPhase` / `isLockedPhase` from `BlueprintContextBar`; tab checkmarks now derive from navigation progress (`activePhase`) rather than status-stage gates. Script/Style/Characters/Environments unlock affordances now use explicit `canReopenBlueprintPhase()` status checks that mirror backend rewind endpoints, keeping unlock UX separate from tool availability. Remaining phase visibility still comes from `constants/blueprintPhases.ts` until the next shelf-level pass; tool availability remains registry-owned. Validation: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
+
 ---
 
 ## 10. References

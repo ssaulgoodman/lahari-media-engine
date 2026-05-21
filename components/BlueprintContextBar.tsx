@@ -66,27 +66,6 @@ export const getActivePhase = (project: ApiProject): Phase => {
   return phaseIndex(project, dataPhase) > phaseIndex(project, statusPhase) ? dataPhase : statusPhase;
 };
 
-export const getStatusLockedPhase = (project: { workflowKey?: ApiProject['workflowKey'] }, status: string): Phase => {
-  const navigable = getNavigablePhaseKeys(project);
-  const lastPhase = navigable[navigable.length - 1] || 'concept';
-  switch (status) {
-    case 'uploaded': case 'analyzing': case 'analyzed': case 'error': return 'concept';
-    case 'concept_locked': return 'script';
-    case 'scripted': return 'style';
-    case 'style_locked': return 'characters';
-    default: return lastPhase;
-  }
-};
-
-export const isLockedPhase = (project: { workflowKey?: ApiProject['workflowKey'] }, phase: Phase, status: string): boolean => {
-  if (isPhaseComingSoon(project, phase)) return false;
-  const statusLocked = getStatusLockedPhase(project, status);
-  const navigable = getNavigablePhaseKeys(project);
-  const lastPhase = navigable[navigable.length - 1] || 'concept';
-  if (phase !== lastPhase) return phaseIndex(project, phase) < phaseIndex(project, statusLocked);
-  return ['environments_locked', 'in_production', 'rendered', 'completed'].includes(status);
-};
-
 export type ActionErrorState = {
   message: string;
   action?: { label: string; href: string };
@@ -294,9 +273,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
             {visiblePhases.map((phaseDef, idx) => {
               const phase = phaseDef.key;
               const comingSoon = !!phaseDef.comingSoon;
-              const locked = isLockedPhase(project, phase, project.status);
               const active = viewPhase === phase;
               const accessible = canAccess(phase);
+              const completed = !comingSoon && accessible && phaseIndex(project, phase) < phaseIndex(project, activePhase);
               return (
                 <React.Fragment key={phase}>
                   <button
@@ -308,14 +287,14 @@ export const BlueprintContextBar: React.FC<Props> = ({
                         ? 'text-white'
                         : comingSoon
                           ? 'text-zinc-500 cursor-not-allowed'
-                          : locked
+                          : completed
                             ? 'text-zinc-300 hover:text-white'
                             : accessible
                               ? 'text-zinc-400 hover:text-zinc-300'
                               : 'text-zinc-400/40 cursor-not-allowed'
                     }`}
                   >
-                    {locked && !comingSoon && (
+                    {completed && (
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5 mr-1 inline" aria-hidden="true">
                         <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
                       </svg>
@@ -328,7 +307,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                     )}
                     {active && <span aria-hidden="true" className="absolute left-3 right-3 -bottom-0.5 h-px bg-white/60" />}
                   </button>
-                  {idx < visiblePhases.length - 1 && <div className={`w-6 h-px ${locked && !comingSoon ? 'bg-white/20' : 'bg-white/[0.06]'}`} />}
+                  {idx < visiblePhases.length - 1 && <div className={`w-6 h-px ${completed ? 'bg-white/20' : 'bg-white/[0.06]'}`} />}
                 </React.Fragment>
               );
             })}

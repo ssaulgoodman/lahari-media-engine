@@ -5,9 +5,10 @@ import { ApiProject, CastMember } from '../types';
 import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { UnlockPill } from './UnlockPill';
-import { Phase, isLockedPhase } from './BlueprintContextBar';
+import { Phase } from './BlueprintContextBar';
 import { findPhase } from '../constants/blueprintPhases';
 import { AssetShelf } from './AssetShelf';
+import { canReopenBlueprintPhase } from '../constants/projectStatus';
 
 interface Props {
   project: ApiProject;
@@ -114,7 +115,7 @@ export const CharactersPhase: React.FC<Props> = ({
   // tool (e.g. "bulk-generate-all-looks") would self-surface.
   return (
     <motion.div key="characters" {...phaseTransition} className="space-y-6">
-      {onUnlockCharacters && isLockedPhase(project, 'characters', project.status) && (
+      {onUnlockCharacters && canReopenBlueprintPhase(project, 'characters') && (
         <div className="flex justify-end">
           <UnlockPill onClick={onUnlockCharacters} disabled={isLoading} label="Unlock characters" />
         </div>

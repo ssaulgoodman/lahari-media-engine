@@ -5,8 +5,9 @@ import { ApiProject } from '../types';
 import * as api from '../services/api';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { UnlockPill } from './UnlockPill';
-import { Phase, isLockedPhase } from './BlueprintContextBar';
+import { Phase } from './BlueprintContextBar';
 import { AssetShelf } from './AssetShelf';
+import { canReopenBlueprintPhase } from '../constants/projectStatus';
 
 interface Props {
   project: ApiProject;
@@ -103,7 +104,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
   // Wrapper stays so any future project-level env tool self-surfaces.
   return (
     <motion.div key="environments" {...phaseTransition} className="space-y-6">
-      {onUnlockEnvironments && isLockedPhase(project, 'environments', project.status) && (
+      {onUnlockEnvironments && canReopenBlueprintPhase(project, 'environments') && (
         <div className="flex justify-end">
           <UnlockPill onClick={onUnlockEnvironments} disabled={isLoading} label="Unlock environments" />
         </div>

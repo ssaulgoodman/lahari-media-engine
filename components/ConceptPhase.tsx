@@ -21,12 +21,10 @@ interface Props {
   onSetViewPhase: (phase: Phase) => void;
 }
 
-// ConceptPhase is now registry-driven (T10.3). The bespoke status-branch
-// logic (isLockedPhase + conceptOptions.length === 0 + ...) is gone:
-// AssetShelf reads availableTools/blockedTools from the project and renders
-// generate-concept / refine-concept buttons keyed by their asset preconditions.
-// Phase content is purely data-driven: input fields, locked-concept block,
-// and concept options grid show based on project state, not status enum.
+// ConceptPhase is registry-driven (T10.3): AssetShelf reads
+// availableTools/blockedTools from the project and renders concept tools keyed
+// by asset preconditions. Phase content is data-driven: input fields,
+// locked-concept block, and concept options grid show from project state.
 export const ConceptPhase: React.FC<Props> = ({
   project, isLoading, phaseTransition,
   onLockConcept, onGenerateConcepts, onCancelConcepts, onUnlockConcept, onRefineConcept, onUpdateConcept,

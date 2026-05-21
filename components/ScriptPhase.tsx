@@ -8,8 +8,9 @@ import { Dropdown } from './Dropdown';
 import { UnlockPill } from './UnlockPill';
 import { AssetShelf } from './AssetShelf';
 import { getVideoModel } from '../constants/videoModels';
-import { Phase, isLockedPhase } from './BlueprintContextBar';
+import { Phase } from './BlueprintContextBar';
 import { findPhase } from '../constants/blueprintPhases';
+import { canReopenBlueprintPhase } from '../constants/projectStatus';
 
 interface Props {
   project: ApiProject;
@@ -223,7 +224,7 @@ export const ScriptPhase: React.FC<Props> = ({
           <div className="p-5 flex justify-between items-center border-b border-white/[0.06]">
             <h3 className="text-sm font-medium text-white">Script Breakdown</h3>
             <div className="flex items-center gap-3">
-              {onUnlockScript && isLockedPhase(project, 'script', project.status) && (
+              {onUnlockScript && canReopenBlueprintPhase(project, 'script') && (
                 <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
               )}
               <button

@@ -8,6 +8,7 @@ import { Markdown } from './Markdown';
 import { UnlockPill } from './UnlockPill';
 import { AssetShelf } from './AssetShelf';
 import { Phase } from './BlueprintContextBar';
+import { canReopenBlueprintPhase } from '../constants/projectStatus';
 
 // ─── Style Slot ────────────────────────────────────────────────
 interface StyleSlot {
@@ -162,12 +163,12 @@ interface Props {
   showActionError: (input: string | unknown) => void;
 }
 
-// StylePhase is now registry-driven (T10.5). AssetShelf surfaces the
+// StylePhase is registry-driven (T10.5). AssetShelf surfaces the
 // project-level brainstorm-style tool; per-slot visualize/refine/lock stay
-// bespoke (parameterized by slot, not modeled at tool level). Status-gated
-// branching (isLockedPhase) replaced with data-driven check on
-// project.styleAssetUrl. T10.4 dispatch rule respected: every surfaced
-// tool key (just brainstorm-style here) traces to POST /brainstorm-styles.
+// bespoke (parameterized by slot, not modeled at tool level). Locked/explorer
+// rendering is driven by project.styleAssetUrl. T10.4 dispatch rule respected:
+// every surfaced tool key (just brainstorm-style here) traces to POST
+// /brainstorm-styles.
 export const StylePhase: React.FC<Props> = ({
   project, isLoading, phaseTransition,
   onLockStyle, onUnlockStyle, onUpdateProject, onSetProject, onSetViewPhase, onOpenModal, showActionError,
@@ -203,7 +204,6 @@ export const StylePhase: React.FC<Props> = ({
   const [presetLockingKey, setPresetLockingKey] = useState<string | null>(null);
 
   // Locked-state is data-driven: presence of a locked style asset URL.
-  // (T10.5 dropped the isLockedPhase status branching in favor of this.)
   const hasLockedStyle = !!project.styleAssetUrl;
 
   useEffect(() => {
@@ -441,7 +441,7 @@ export const StylePhase: React.FC<Props> = ({
               >
                 Explore New
               </button>
-              {project.status === 'style_locked' && (
+              {canReopenBlueprintPhase(project, 'style') && (
                 <UnlockPill onClick={onUnlockStyle} disabled={isLoading} />
               )}
             </div>
@@ -456,7 +456,7 @@ export const StylePhase: React.FC<Props> = ({
             <div className="flex-1 px-5 py-4 space-y-4">
               <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Style DNA</h4>
               <Markdown>{project.styleDescription || ''}</Markdown>
-              {project.status === 'style_locked' && (
+              {canReopenBlueprintPhase(project, 'style') && (
                 <button
                   onClick={() => onSetViewPhase('characters')}
                   className="bg-white text-black px-5 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 transition-colors flex items-center gap-2"
