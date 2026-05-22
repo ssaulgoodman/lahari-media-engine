@@ -65,10 +65,7 @@ export interface DialogueLine {
   id: string;
   characterId: string;
   text: string;
-  delivery?: string;
-  emotion?: string;
   order: number;
-  paceHint?: 'slow' | 'natural' | 'fast';
   targetSec?: number;
   ttsAssetId: string | null;
   /** Public URL for the generated TTS asset. Hydrated by `getFullProject`

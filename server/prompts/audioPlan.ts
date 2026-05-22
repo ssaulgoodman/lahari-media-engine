@@ -62,7 +62,7 @@ export const buildAudioPlanPrompt = (
 
   const coreTask = `Write production audio data for one shot.
 
-Write dialogue lines, delivery cues, and restrained sound notes for this shot only.
+Write spoken dialogue lines and restrained sound notes for this shot only.
 This is structured production data that will drive TTS, lipsync, overlay audio, and video-generation context. It is not prose and it is not a script rewrite.`;
 
   const workflowContext = `This is a scripted narrative project. The script/story is the production spine; audio data should support scene beats, acting, dialogue, and continuity.`;
@@ -95,13 +95,13 @@ ${formatSourcePayload(project)}`;
 - Use only the listed cast IDs. Do not invent characters.
 - Preserve uploaded script intent. If source material includes dialogue for this beat, extract it as close to verbatim as possible.
 - Dialogue text is exactly what TTS will speak. Never include delivery labels, camera notes, speaker names, or parenthetical directions inside dialogue text.
-- delivery is a short performance cue, not spoken text.
 - soundNotes are restrained ambient/SFX guidance for video prompts; do not create a structured SFX list.
 - If the shot has no spoken line, return an empty dialogue array and optional soundNotes.
 - Keep each dialogue text under 500 characters.
+- targetSec is optional; include it only when the line's approximate timing is obvious from the shot.
 
 Return only structured audio-plan JSON with:
-- dialogue: array of { characterId, text, order, delivery?, emotion?, paceHint?, targetSec? }
+- dialogue: array of { characterId, text, order, targetSec? }
 - soundNotes?: string`;
 
   return composePrompt({ coreTask, workflowContext, inputs, presetTaste, outputContract });

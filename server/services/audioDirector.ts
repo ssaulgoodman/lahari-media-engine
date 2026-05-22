@@ -6,10 +6,7 @@ export type AudioPlanDialogueLine = {
   id: string;
   characterId: string;
   text: string;
-  delivery?: string;
-  emotion?: string;
   order: number;
-  paceHint?: 'slow' | 'natural' | 'fast';
   targetSec?: number;
   ttsAssetId: string | null;
   ttsStatus: 'pending' | 'generating' | 'success' | 'error';
@@ -46,10 +43,7 @@ export const AUDIO_PLAN_SCHEMA = {
         properties: {
           characterId: { type: 'string' },
           text: { type: 'string' },
-          delivery: { type: 'string' },
-          emotion: { type: 'string' },
           order: { type: 'number' },
-          paceHint: { type: 'string', enum: ['slow', 'natural', 'fast'] },
           targetSec: { type: 'number' },
         },
         required: ['characterId', 'text', 'order'],
@@ -63,11 +57,6 @@ export const AUDIO_PLAN_SCHEMA = {
 const clip = (value: unknown, max: number): string => {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, max);
-};
-
-const normalizePace = (value: unknown): 'slow' | 'natural' | 'fast' => {
-  if (value === 'slow' || value === 'fast') return value;
-  return 'natural';
 };
 
 export const inferDialogueStrategy = (
@@ -97,10 +86,7 @@ export const sanitizeAudioPlan = (
         id: `dlg_${uuidv4().slice(0, 8)}`,
         characterId,
         text,
-        delivery: clip(line?.delivery, 200) || undefined,
-        emotion: clip(line?.emotion, 100) || undefined,
         order: Number.isFinite(Number(line?.order)) ? Number(line.order) : idx + 1,
-        paceHint: normalizePace(line?.paceHint),
         targetSec: Number.isFinite(targetSec) && targetSec > 0 ? Math.min(targetSec, 30) : undefined,
         ttsAssetId: null,
         ttsStatus: 'pending',

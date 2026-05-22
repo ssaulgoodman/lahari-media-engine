@@ -330,10 +330,10 @@ const buildAudioPlan = (project: Project): string => {
         .sort((a, b) => a.order - b.order)
         .map((line) => {
           const character = project.cast.find((member) => member.id === line.characterId);
-          return `| ${line.order} | ${character?.name || line.characterId} | ${line.characterId} | ${line.ttsStatus || 'pending'} | ${line.text.replace(/\|/g, '\\|')} | ${line.delivery || ''} |`;
+          return `| ${line.order} | ${character?.name || line.characterId} | ${line.characterId} | ${line.ttsStatus || 'pending'} | ${line.text.replace(/\|/g, '\\|')} |`;
         })
         .join('\n')
-      : '| - | - | - | - | No dialogue lines. | - |';
+      : '| - | - | - | - | No dialogue lines. |';
     return `## ${shotLabel(sceneIndex, shotIndex)}: ${compactText(shot.direction, 120) || 'Shot'}
 
 - Shot ID: ${shot.id}
@@ -344,8 +344,8 @@ const buildAudioPlan = (project: Project): string => {
 
 ### Dialogue
 
-| Order | Speaker | Character ID | TTS | Text | Delivery |
-|---:|---|---|---|---|---|
+| Order | Speaker | Character ID | TTS | Text |
+|---:|---|---|---|---|
 ${dialogue}
 
 ### Sound Notes

@@ -8,7 +8,6 @@ export type GenerateSpeechInput = {
   provider: string;
   voiceId: string;
   text: string;
-  deliveryHint?: string;
 };
 
 export type GenerateSpeechResult = {

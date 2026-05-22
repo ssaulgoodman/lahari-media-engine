@@ -270,7 +270,6 @@ router.post('/:id/generate-dialogue-audio', async (req, res) => {
           provider: member.voice_provider,
           voiceId: member.voice_id,
           text: target.line.text,
-          deliveryHint: target.line.delivery,
         });
         const ext = extForMime(speech.mimeType);
         const filePath = await saveBuffer(speech.audioBuffer, 'audio', ext);

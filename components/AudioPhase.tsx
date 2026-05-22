@@ -451,13 +451,9 @@ const DialogueRow: React.FC<DialogueRowProps> = ({ line, castName, castVoiceSet,
       <span className="text-xs text-zinc-400 font-medium w-20 flex-shrink-0 truncate" title={castName}>{castName}</span>
       <div className="flex-1 min-w-0 space-y-1">
         <p className="text-sm text-zinc-200 italic leading-snug">"{line.text}"</p>
-        <div className="flex items-center gap-3 flex-wrap text-[11px] text-zinc-500">
-          {line.delivery && <span>{line.delivery}</span>}
-          {line.paceHint && line.paceHint !== 'natural' && <span>· {line.paceHint}</span>}
-          {line.ttsCharCount !== undefined && <span>· {line.ttsCharCount} chars</span>}
-          {line.ttsDurationSec !== undefined && <span>· {line.ttsDurationSec.toFixed(1)}s</span>}
-          {line.ttsError && status === 'error' && <span className="text-red-400">· {line.ttsError}</span>}
-        </div>
+        {line.ttsError && status === 'error' && (
+          <div className="text-[11px] text-red-400">{line.ttsError}</div>
+        )}
         {line.ttsAssetUrl && status === 'success' && (
           <audio controls src={line.ttsAssetUrl} className="w-full max-w-md mt-2 h-8" preload="none" />
         )}

@@ -23,10 +23,7 @@ export type AudioPlanDialogueLine = {
   id: string;
   characterId: string;
   text: string;
-  delivery?: string;
-  emotion?: string;
   order: number;
-  paceHint?: 'slow' | 'natural' | 'fast';
   targetSec?: number;
   ttsAssetId: string | null;
   ttsStatus: TtsStatus;
@@ -79,11 +76,6 @@ const extForMime = (mimeType: string) => {
 const normalizeStrategy = (value: unknown): DialogueStrategy | null =>
   value === 'lipsync' || value === 'overlay' ? value : null;
 
-const normalizePace = (value: unknown): 'slow' | 'natural' | 'fast' => {
-  if (value === 'slow' || value === 'fast') return value;
-  return 'natural';
-};
-
 const clip = (value: unknown, max: number): string => (
   typeof value === 'string' ? value.trim().slice(0, max) : ''
 );
@@ -113,10 +105,7 @@ const validateAudioPlanInput = (project: Project, shotId: string, raw: any): { a
       id,
       characterId,
       text,
-      delivery: clip(line?.delivery, 200) || undefined,
-      emotion: clip(line?.emotion, 100) || undefined,
       order: Number.isFinite(Number(line?.order)) ? Number(line.order) : index + 1,
-      paceHint: normalizePace(line?.paceHint),
       targetSec: Number.isFinite(targetSec) && targetSec > 0 ? Math.min(targetSec, 30) : undefined,
       ttsAssetId: typeof line?.ttsAssetId === 'string' ? line.ttsAssetId : null,
       ttsStatus: line?.ttsStatus === 'success' || line?.ttsStatus === 'generating' || line?.ttsStatus === 'error' ? line.ttsStatus : 'pending',
@@ -391,7 +380,6 @@ export const generateDialogueAudio = async (
         provider: member.voiceProvider,
         voiceId: member.voiceId,
         text: target.line.text,
-        deliveryHint: target.line.delivery,
       });
       const ext = extForMime(speech.mimeType);
       const filePath = await saveBuffer(speech.audioBuffer, 'audio', ext);

@@ -1,11 +1,11 @@
 ---
 name: audio-director
-description: Use when writing, reviewing, or applying per-shot audio plans: dialogue lines, delivery cues, soundNotes, character voice mapping, and lipsync vs overlay strategy. Triggered by "write audio plan," "generate dialogue," "who needs voices," "lipsync this shot," or when calling apply/generate audio tools.
+description: Use when writing, reviewing, or applying per-shot audio plans: spoken dialogue lines, soundNotes, character voice mapping, and project-level lipsync vs overlay mode. Triggered by "write audio plan," "generate dialogue," "who needs voices," "lipsync this shot," or when calling apply/generate audio tools.
 ---
 
 # Audio Director
 
-Audio planning is production data for the video engine. It is not a prose rewrite of the script and it is not a full sound-design pass. Your job is to make the smallest useful graph: who speaks, what text TTS should speak, how it should be delivered, whether it is lipsynced or overlaid, and what ambient/sound context the video prompt should know.
+Audio planning is production data for the video engine. It is not a prose rewrite of the script and it is not a full sound-design pass. Your job is to make the smallest useful graph: who speaks, what text TTS should speak, and what ambient/sound context the video prompt should know.
 
 Read the project packet first:
 
@@ -20,15 +20,12 @@ Do not assume lyrics, a music queue, deity, temple, devotional context, or exist
 
 Each shot may have:
 
-- `dialogueStrategy`: `lipsync` or `overlay`
 - `dialogue[]`: ordered spoken lines
 - `soundNotes`: restrained ambient/SFX guidance for video prompting
 
 Dialogue text is exactly what TTS will speak. Do not put speaker names, delivery labels, camera notes, parentheticals, or stage directions inside `text`.
 
-Use `delivery` for performance notes: "quietly, trying not to wake anyone", "breathless but controlled", "flat, hiding panic". Keep it short. ElevenLabs v1 may not obey it directly, but it is still useful project data and may feed later providers.
-
-Use `paceHint` only when pace matters: `slow`, `natural`, or `fast`. Natural is the default.
+Do not create separate delivery/pace prose. If the exact acting is important, keep it in the script/shot direction where the artist can see it, not as hidden audio metadata.
 
 ## Preserve The Source
 
@@ -38,17 +35,13 @@ If the seed only has action beats or a brief, write dialogue only when the shot 
 
 Never invent a new speaking character. Use only cast IDs already present in the project. If a line needs a character that does not exist, stop and propose adding cast first.
 
-## Strategy Choice
+## Project Mode
 
-Use `lipsync` when the speaker is visibly on screen and has a usable locked look/reference. All dialogue lines in a lipsync shot need generated TTS before video generation.
+Dialogue video mode is project-level, not per-shot.
 
-Use `overlay` for:
+Use `lipsync` when generated TTS should be passed into video generation for mouth movement. All dialogue lines in a lipsync shot need generated TTS before video generation.
 
-- narrator or voiceover
-- off-screen speech
-- radio/phone/intercom speech
-- characters without a locked look/reference
-- shots where the video model should not try to mouth-sync
+Use `overlay` when the video model should perform the dialogue natively and generated TTS is mixed into the final render.
 
 When unsure, prefer `overlay`. It is more forgiving and can be mixed during render.
 
@@ -72,7 +65,7 @@ For v1, sound effects are usually described to the video model or reserved for l
 
 If script direction, scene narrative, cast assignment, environment, duration, or cast/environment descriptions changed after an audio plan was written, treat `audioPlanStale` as real. Review and rewrite only the affected shots. Preserve usable lines unless the source beat changed.
 
-When applying a revised plan, keep existing `ttsAssetId` only if the line text, speaker, and delivery intent are still the same. If the spoken text changes, reset that line to pending so stale audio is not reused.
+When applying a revised plan, keep existing `ttsAssetId` only if the line text and speaker are still the same. If the spoken text changes, reset that line to pending so stale audio is not reused.
 
 ## Harness Posture
 

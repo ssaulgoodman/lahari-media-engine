@@ -146,7 +146,7 @@ Under 150 words. Write in English.`,
       { name: 'preset', description: 'Runtime preset, including source and audio rules' },
     ],
     template: `CORE TASK
-Write dialogue lines, delivery cues, and restrained sound notes for one shot only.
+Write spoken dialogue lines and restrained sound notes for one shot only.
 This is structured production data that drives TTS, lipsync, overlay audio, and video-generation context. It is not prose and it is not a script rewrite.
 
 CONTEXT
@@ -173,8 +173,8 @@ TASTE
 OUTPUT CONTRACT
 - Use only the listed cast IDs. Do not invent characters.
 - Dialogue text is exactly what TTS will speak. Never include delivery labels, camera notes, speaker names, or parenthetical directions inside dialogue text.
-- delivery is a short performance cue, not spoken text.
 - If the shot has no spoken line, return an empty dialogue array and optional soundNotes.
+- targetSec is optional; include it only when the line's approximate timing is obvious from the shot.
 - Return only structured audio-plan JSON.`,
     source: { file: 'server/prompts/audioPlan.ts', lines: 'buildAudioPlanPrompt' },
   },

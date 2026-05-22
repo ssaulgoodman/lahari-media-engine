@@ -909,6 +909,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-22 Codex: Audio/video strategy simplified after local test. Removed the per-shot Audio phase `StrategyPicker` and its PATCH route; dialogue delivery is now a single project-level `projectBrief.dialogueVideoMode` with two modes. `lipsync` passes generated TTS into video generation and blocks when TTS is missing; `overlay` prompts the video model to perform the dialogue natively and injects generated TTS during render. Studio shot warnings and render overlay injection now read the project-level mode instead of `shot.audioPlan.dialogueStrategy`. The old per-shot field remains as legacy audio-plan data but is no longer a control surface. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
 
+2026-05-22 Codex: Audio-plan shape trimmed after local UI review. Removed delivery/pace/emotion as generated audio-plan categories; new audio plans write only spoken dialogue, order, optional target timing, and restrained soundNotes. Audio phase no longer displays hidden delivery/pace metadata, TTS generation no longer passes delivery hints, MCP/notebook packets omit those fields, and the audio-director skill now says exact acting belongs in visible script/shot direction rather than hidden audio metadata. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
+
 ---
 
 ## 10. References

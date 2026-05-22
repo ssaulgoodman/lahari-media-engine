@@ -154,7 +154,7 @@ export const TOOL_REGISTRY: ToolManifest[] = [
   {
     key: 'write-audio-plan',
     label: 'Write audio plan',
-    description: 'Write per-shot dialogue, delivery cues, sound notes, and dialogue strategy for scripted projects.',
+    description: 'Write per-shot spoken dialogue and restrained sound notes for scripted projects.',
     enabledFor: ['scripted_narrative'],
     requires: ['scenes', 'shots', 'cast'],
     contextInputs: ['scriptText', 'directorBrief'],

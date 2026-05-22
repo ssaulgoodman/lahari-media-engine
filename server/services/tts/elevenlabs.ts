@@ -4,7 +4,6 @@ export type ElevenLabsSpeechInput = {
   userId: string;
   voiceId: string;
   text: string;
-  deliveryHint?: string;
 };
 
 export type ElevenLabsSpeechResult = {
