@@ -1434,6 +1434,7 @@ router.patch('/:id/concept', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const { title, targetDuration, styleDescription, colorPalette, imageModel, storyboardProvider, videoModel, textProvider, aspectRatio, videoResolution } = req.body;
   const updates: Record<string, any> = {};
+  const projectId = paramStr(req.params.id);
 
   if (title !== undefined) updates.title = title;
   if (imageModel !== undefined) updates.image_model = imageModel;
@@ -1447,11 +1448,20 @@ router.patch('/:id', async (req, res) => {
   if (colorPalette !== undefined) updates.color_palette = colorPalette;
   if (req.body.styleExploration !== undefined) updates.style_exploration = JSON.stringify(req.body.styleExploration);
   if (req.body.styleGenerationPrompt !== undefined) updates.style_generation_prompt = req.body.styleGenerationPrompt || null;
+  if (req.body.projectBrief !== undefined) {
+    const existing = await selectOne('projects', { id: projectId });
+    const currentBrief = existing?.project_brief && typeof existing.project_brief === 'object'
+      ? existing.project_brief
+      : {};
+    const nextBrief = req.body.projectBrief && typeof req.body.projectBrief === 'object'
+      ? req.body.projectBrief
+      : {};
+    updates.project_brief = { ...currentBrief, ...nextBrief };
+  }
 
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No fields to update' });
 
   updates.updated_at = new Date().toISOString();
-  const projectId = paramStr(req.params.id);
   await updateRows('projects', { id: projectId }, updates);
 
   // Staleness propagation: style_description change invalidates all downstream generation_prompts

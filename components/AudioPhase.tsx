@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { ApiProject, DialogueLine, TtsStatus, VideoShot, VideoScene } from '../types';
+import { ApiProject, DialogueLine, DialogueVideoMode, TtsStatus, VideoShot, VideoScene } from '../types';
 import * as api from '../services/api';
 import { Phase } from './BlueprintContextBar';
 import { TtsGenerateModal, TtsRunScope } from './TtsGenerateModal';
@@ -20,7 +20,6 @@ type EnrichedLine = DialogueLine & {
   shotIndex: number;
   sceneId: string;
   sceneLabel: string;
-  dialogueStrategy: 'lipsync' | 'overlay';
   audioPlanStale: boolean;
 };
 
@@ -28,6 +27,8 @@ type EnrichedLine = DialogueLine & {
 // speaking cast member has a voice ID. The harness skips the rest as visible
 // tasks (linked to Characters) rather than blocking the whole batch.
 const isPendingStatus = (s: TtsStatus) => s === 'pending' || s === 'error';
+const dialogueVideoMode = (project: ApiProject): DialogueVideoMode =>
+  project.projectBrief?.dialogueVideoMode === 'lipsync' ? 'lipsync' : 'overlay';
 
 export const AudioPhase: React.FC<Props> = ({
   project, isLoading, phaseTransition, onSetProject, onSetViewPhase, showActionError,
@@ -39,24 +40,13 @@ export const AudioPhase: React.FC<Props> = ({
   // Shot IDs whose audio_plan is being rewritten right now (per T5.7
   // "Rewrite" action). Driven by writeAudioPlan with force=true.
   const [rewritingShotIds, setRewritingShotIds] = useState<Set<string>>(new Set());
-  // Shot IDs whose dialogueStrategy is being toggled. Locks the picker
-  // briefly so double-clicks don't fire two PATCH calls.
-  const [updatingStrategyShotIds, setUpdatingStrategyShotIds] = useState<Set<string>>(new Set());
+  const mode = dialogueVideoMode(project);
 
   // Cast voice lookup. Computed once per project; used to filter "available"
   // lines for bulk/per-shot generation and to badge no-voice rows.
   const castHasVoice = useMemo(() => {
     const map = new Map<string, boolean>();
     project.cast.forEach(c => map.set(c.id, !!c.voiceId));
-    return map;
-  }, [project.cast]);
-
-  // Cast look-reference lookup. T5.6: lipsync requires every dialogue speaker
-  // in a shot to have a locked look reference (per D3). Used to gate the
-  // strategy picker's lipsync option client-side; backend enforces too.
-  const castHasLook = useMemo(() => {
-    const map = new Map<string, boolean>();
-    project.cast.forEach(c => map.set(c.id, !!c.referenceImageUrl));
     return map;
   }, [project.cast]);
 
@@ -77,7 +67,6 @@ export const AudioPhase: React.FC<Props> = ({
             shotIndex: idx + 1,
             sceneId: scene.id,
             sceneLabel: scene.sectionLabel || 'Scene',
-            dialogueStrategy: plan.dialogueStrategy,
             audioPlanStale: !!shot.audioPlanStale,
           });
         });
@@ -101,14 +90,13 @@ export const AudioPhase: React.FC<Props> = ({
 
   // ── Group by shot for rendering ──
   const linesByShot = useMemo(() => {
-    const map = new Map<string, { sceneLabel: string; shotIndex: number; dialogueStrategy: 'lipsync' | 'overlay'; audioPlanStale: boolean; lines: EnrichedLine[] }>();
+    const map = new Map<string, { sceneLabel: string; shotIndex: number; audioPlanStale: boolean; lines: EnrichedLine[] }>();
     allLines.forEach(line => {
       let bucket = map.get(line.shotId);
       if (!bucket) {
         bucket = {
           sceneLabel: line.sceneLabel,
           shotIndex: line.shotIndex,
-          dialogueStrategy: line.dialogueStrategy,
           audioPlanStale: line.audioPlanStale,
           lines: [],
         };
@@ -154,26 +142,24 @@ export const AudioPhase: React.FC<Props> = ({
     }
   };
 
-  // T5.6: per-shot dialogueStrategy override. Backend validates that
-  // lipsync requires every dialogue speaker to have a locked look
-  // reference; UI also gates the lipsync option to match. If the backend
-  // returns lipsync_requires_look_reference (race / stale cast state),
-  // ApiError flows through showActionError with the structured message.
-  const setShotStrategy = async (shotId: string, dialogueStrategy: 'lipsync' | 'overlay') => {
-    setUpdatingStrategyShotIds(prev => new Set(prev).add(shotId));
+  const setProjectMode = async (nextMode: DialogueVideoMode) => {
+    if (nextMode === mode || isLoading) return;
     try {
-      const resp = await api.updateShotAudioPlan(project.id, shotId, { dialogueStrategy });
-      // Backend returns the full project directly on this endpoint.
-      const updated = resp?.id ? resp : resp?.project || resp?.data?.project;
-      if (updated?.id) onSetProject?.(updated);
+      await api.updateProject(project.id, {
+        projectBrief: {
+          ...(project.projectBrief || {}),
+          dialogueVideoMode: nextMode,
+        },
+      });
+      onSetProject?.({
+        ...project,
+        projectBrief: {
+          ...(project.projectBrief || {}),
+          dialogueVideoMode: nextMode,
+        },
+      });
     } catch (err) {
       showActionError(err);
-    } finally {
-      setUpdatingStrategyShotIds(prev => {
-        const next = new Set(prev);
-        next.delete(shotId);
-        return next;
-      });
     }
   };
 
@@ -313,6 +299,45 @@ export const AudioPhase: React.FC<Props> = ({
             </button>
           </div>
         )}
+
+        <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500">Dialogue video mode</div>
+            <p className="mt-1 text-xs text-zinc-400">
+              {mode === 'lipsync'
+                ? 'TTS is passed into video generation for baked lip-sync.'
+                : 'Video is prompted to perform the dialogue; generated TTS is overlaid in the render.'}
+            </p>
+          </div>
+          <div className="surface-inset rounded-lg inline-flex overflow-hidden text-xs" role="group" aria-label="Dialogue video mode">
+            <button
+              onClick={() => setProjectMode('lipsync')}
+              disabled={isLoading}
+              aria-pressed={mode === 'lipsync'}
+              title="Pass generated TTS into Seedance during video generation. Requires successful TTS for every line in the shot."
+              className={`px-3 py-2 transition-colors disabled:opacity-40 ${
+                mode === 'lipsync'
+                  ? 'bg-blue-500/[0.15] text-blue-100'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
+              }`}
+            >
+              Lipsync with TTS
+            </button>
+            <button
+              onClick={() => setProjectMode('overlay')}
+              disabled={isLoading}
+              aria-pressed={mode === 'overlay'}
+              title="Prompt the video model to perform dialogue natively, then mix generated TTS into the final render."
+              className={`px-3 py-2 transition-colors disabled:opacity-40 ${
+                mode === 'overlay'
+                  ? 'bg-white/[0.10] text-white'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
+              }`}
+            >
+              Native voice + overlay
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Dialogue by shot */}
@@ -327,31 +352,16 @@ export const AudioPhase: React.FC<Props> = ({
             // Matches the harness invariant: never block one line because
             // another in the same shot is waiting on a voice.
             const shotAvailable = bucket.lines.filter(lineIsAvailable).map(l => l.id);
-            // T5.6: lipsync requires every speaker in the shot to have a
-            // locked look reference (D3). Surface the blockers so the
-            // tooltip names exactly which characters need looks.
-            const noLookSpeakers = Array.from(new Set(
-              bucket.lines
-                .filter(l => castHasLook.get(l.characterId) !== true)
-                .map(l => characterName(l.characterId))
-            ));
-            const canLipsync = noLookSpeakers.length === 0;
-            // Lipsync needs TTS baked into the video. Warn if any line
-            // doesn't have a successful asset yet.
-            const lipsyncTtsMissing = bucket.dialogueStrategy === 'lipsync'
+            const lipsyncTtsMissing = mode === 'lipsync'
               && bucket.lines.some(l => l.ttsStatus !== 'success');
             return (
               <div key={shotId} className="surface rounded-xl">
                 <div className="px-5 py-3 flex items-center gap-3 border-b border-white/[0.06]">
                   <span className="text-xs font-mono text-zinc-500">S{bucket.shotIndex}</span>
                   <span className="text-sm text-zinc-300">{bucket.sceneLabel}</span>
-                  <StrategyPicker
-                    strategy={bucket.dialogueStrategy}
-                    canLipsync={canLipsync}
-                    noLookSpeakers={noLookSpeakers}
-                    updating={updatingStrategyShotIds.has(shotId)}
-                    onChange={(next) => setShotStrategy(shotId, next)}
-                  />
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 bg-white/[0.04] rounded px-1.5 py-0.5">
+                    {mode === 'lipsync' ? 'lipsync' : 'overlay'}
+                  </span>
                   {lipsyncTtsMissing && (
                     <span
                       className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"
@@ -423,61 +433,6 @@ export const AudioPhase: React.FC<Props> = ({
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────
-
-// T5.6: inline two-segment toggle. Active segment is the current strategy
-// (white/black). Lipsync segment is disabled with an explanatory tooltip
-// when any dialogue speaker in the shot lacks a locked look reference (D3).
-// Overlay is always selectable. Click fires a PATCH to the audio-plan
-// strategy endpoint via setShotStrategy.
-interface StrategyPickerProps {
-  strategy: 'lipsync' | 'overlay';
-  canLipsync: boolean;
-  noLookSpeakers: string[];
-  updating: boolean;
-  onChange: (next: 'lipsync' | 'overlay') => void;
-}
-
-const StrategyPicker: React.FC<StrategyPickerProps> = ({ strategy, canLipsync, noLookSpeakers, updating, onChange }) => {
-  const lipsyncTitle = canLipsync
-    ? 'TTS audio passed to Seedance; video renders with lipsync. Requires every speaker to have a locked look.'
-    : `Needs a locked look reference for: ${noLookSpeakers.join(', ')}`;
-  const overlayTitle = 'Video stays silent; TTS overlaid at render time. Use for narrators or off-screen voices.';
-  const segBase = 'text-[10px] uppercase tracking-wider px-1.5 py-0.5 transition-colors';
-
-  return (
-    <div className="surface-inset rounded inline-flex items-center text-[10px] overflow-hidden" role="group" aria-label="Dialogue strategy">
-      <button
-        onClick={() => !updating && canLipsync && strategy !== 'lipsync' && onChange('lipsync')}
-        disabled={updating || !canLipsync}
-        title={lipsyncTitle}
-        aria-pressed={strategy === 'lipsync'}
-        className={`${segBase} ${
-          strategy === 'lipsync'
-            ? 'bg-blue-500/[0.15] text-blue-200'
-            : canLipsync
-              ? 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
-              : 'text-zinc-600 cursor-not-allowed'
-        }`}
-      >
-        lipsync
-      </button>
-      <button
-        onClick={() => !updating && strategy !== 'overlay' && onChange('overlay')}
-        disabled={updating}
-        title={overlayTitle}
-        aria-pressed={strategy === 'overlay'}
-        className={`${segBase} ${
-          strategy === 'overlay'
-            ? 'bg-white/[0.1] text-zinc-100'
-            : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
-        }`}
-      >
-        overlay
-      </button>
-      {updating && <span className="w-2.5 h-2.5 mx-1.5 border-2 border-zinc-600 border-t-zinc-200 rounded-full animate-spin" />}
-    </div>
-  );
-};
 
 interface DialogueRowProps {
   line: EnrichedLine;

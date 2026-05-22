@@ -145,12 +145,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   // show it as soon as it exists, alongside any video that gets generated.
   const showMediaSection = isStoryboardMode ? (hasStoryboard || hasVideo || shot.storyboardStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING) : true;
 
-  // T6.8: lipsync-blocked warning. When this shot is set to `lipsync` and any
-  // dialogue line lacks a successful TTS asset, the video gen call will fail
-  // server-side (Codex T6.2 returns `lipsync_tts_missing`). Surface the gap
-  // here before the artist hits Generate; click jumps to Audio phase.
-  const lipsyncTtsMissing = shot.audioPlan?.dialogueStrategy === 'lipsync'
-    && (shot.audioPlan.dialogue?.some(line => line.ttsStatus !== 'success') ?? false);
+  // Project-level lipsync mode bakes TTS into video generation. Surface missing
+  // TTS before the artist hits Generate; click jumps to Audio phase.
+  const projectWantsLipsync = project.projectBrief?.dialogueVideoMode === 'lipsync';
+  const lipsyncTtsMissing = projectWantsLipsync
+    && (shot.audioPlan?.dialogue?.some(line => line.ttsStatus !== 'success') ?? false);
 
   // Build auto video prompt for display (mirrors server-side generate-video.ts logic)
   const buildAutoVeoPrompt = () => {

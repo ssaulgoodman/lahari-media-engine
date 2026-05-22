@@ -44,6 +44,12 @@ type AudioPlan = {
   dialogue?: DialogueLine[];
   soundNotes?: string;
 };
+type DialogueVideoMode = 'lipsync' | 'overlay';
+
+const dialogueVideoMode = (project: any): DialogueVideoMode => {
+  const brief = parseJson<Record<string, any>>(project?.project_brief, {});
+  return brief.dialogueVideoMode === 'lipsync' ? 'lipsync' : 'overlay';
+};
 
 export type GenerateShotVideoOptions = {
   promptOverride?: string;
@@ -205,6 +211,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     }
 
     const audioPlan = parseJson<AudioPlan | null>(shot.audio_plan, null);
+    const projectDialogueMode = dialogueVideoMode(project);
     const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
     const visibleSoundCue = soundNotes
       ? `Visible sound cue to imply through action only, not generated audio: ${soundNotes}`
@@ -212,9 +219,26 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     if (visibleSoundCue) {
       veoPromptParts.push(visibleSoundCue);
     }
-    const planWantsLipsync = audioPlan?.dialogueStrategy === 'lipsync' && (audioPlan.dialogue?.length || 0) > 0;
+    const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    const hasDialogue = dialogueLines.length > 0;
+    const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
+    let dialoguePerformanceCue = '';
     if (planWantsLipsync && !useStoryboardMode) {
       veoPromptParts.push('Use the provided reference audio only for natural mouth movement on the visible speaker. Do not add subtitles or readable text.');
+    }
+    if (projectDialogueMode === 'overlay' && hasDialogue) {
+      const castNameById = new Map(activeCast.map((c: any) => [c.id, c.name || 'Speaker']));
+      const dialogueBrief = dialogueLines
+        .map((line) => {
+          const speaker = castNameById.get(line.characterId || '') || 'Speaker';
+          return `${speaker}: "${String(line.text || '').trim()}"`;
+        })
+        .filter(Boolean)
+        .join(' ');
+      if (dialogueBrief) {
+        dialoguePerformanceCue = `Dialogue performance: visible speakers should naturally say these lines with mouth movement and acting timed to the shot. The final edit may overlay generated TTS, so do not add subtitles or readable text. ${dialogueBrief}`;
+        veoPromptParts.push(dialoguePerformanceCue);
+      }
     }
 
     const storyboardPromptBase = useStoryboardMode
@@ -231,10 +255,10 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       ? `${projectVideoOverride.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
       : storyboardPromptBase;
     const keyframePrompt = opts.promptOverride?.trim()
-      ? [opts.promptOverride.trim(), visibleSoundCue].filter(Boolean).join('\n\n')
+      ? [opts.promptOverride.trim(), visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n')
       : veoPromptParts.join('. ');
     const veoPrompt = useStoryboardMode
-      ? [storyboardPrompt, visibleSoundCue].filter(Boolean).join('\n\n')
+      ? [storyboardPrompt, visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n')
       : keyframePrompt;
     console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
@@ -251,8 +275,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
           { shotId: shot.id, model: videoModelKey },
         );
       }
-      const dialogue = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-      const missingDialogueIds = dialogue
+      const missingDialogueIds = dialogueLines
         .filter((line) => !line.ttsAssetId || line.ttsStatus !== 'success')
         .map((line) => line.id)
         .filter(Boolean);
@@ -264,7 +287,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         );
       }
 
-      const ttsAssets = await Promise.all(dialogue.map(async (line) => ({
+      const ttsAssets = await Promise.all(dialogueLines.map(async (line) => ({
         line,
         asset: line.ttsAssetId ? await selectOne('assets', { id: line.ttsAssetId }) : null,
       })));
@@ -294,14 +317,14 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
           file_path: audioPath,
           metadata: JSON.stringify({
             purpose: 'seedance_dialogue_lipsync_reference',
-            dialogueIds: dialogue.map((line) => line.id).filter(Boolean),
+            dialogueIds: dialogueLines.map((line) => line.id).filter(Boolean),
             ttsAssetIds: ttsAssets.map(({ asset }) => asset!.id),
           }),
         });
       }
       storyboardAudioRefs.push({
         type: 'audio',
-        label: `Dialogue lip-sync reference (${dialogue.length} line${dialogue.length === 1 ? '' : 's'})`,
+        label: `Dialogue lip-sync reference (${dialogueLines.length} line${dialogueLines.length === 1 ? '' : 's'})`,
         url: storageUrl(audioPath),
       });
     } else if (legacySongLipsync) {
@@ -369,7 +392,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       extracted_last_frame_asset_id: extractedAssetId,
       reference_audio_asset_id: referenceAudioAssetId,
       reference_audio_mode: referenceAudioMode,
-      dialogue_strategy: audioPlan?.dialogueStrategy || null,
+      dialogue_strategy: projectDialogueMode,
     });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
 

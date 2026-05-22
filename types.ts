@@ -52,13 +52,12 @@ export interface ShotCritique {
 // ─── Audio Blueprint (scripted narrative workflow) ──────────────────
 // Shapes match ledger §7. Backend table support lands in T3.1.
 
-/** Per-shot dialogue delivery path.
- *  'lipsync' = TTS passed to Seedance with lipsync params + character target;
- *              video gen produces a lipsynced shot. Requires TTS asset before
- *              video gen runs.
- *  'overlay' = TTS not passed to Seedance; video gen produces silent video;
- *              render mixes TTS over the timeline. */
+/** Legacy per-shot audio-plan hint. Runtime uses projectBrief.dialogueVideoMode. */
 export type DialogueStrategy = 'lipsync' | 'overlay';
+/** Project-level dialogue video path.
+ *  'lipsync' = generated TTS is passed into video generation.
+ *  'overlay' = video is prompted to perform dialogue; render mixes generated TTS over the timeline. */
+export type DialogueVideoMode = 'lipsync' | 'overlay';
 
 export type TtsStatus = 'pending' | 'generating' | 'success' | 'error';
 
@@ -233,6 +232,7 @@ export interface ApiProject {
     title?: string;
     context?: string;
     directorBrief?: string;
+    dialogueVideoMode?: DialogueVideoMode;
     targetRuntime?: number;
     targetDuration?: number;
     logline?: string;

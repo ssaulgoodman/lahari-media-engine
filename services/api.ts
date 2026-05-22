@@ -941,8 +941,7 @@ export const sendChatMessage = async (projectId: string, message: string) => {
 };
 
 // ─── Audio Blueprint (anime workflow) ──────────────────────────────
-// Backend: write-audio-plan + generate-dialogue-audio + audio-plan-cost
-// plus per-shot strategy updates for the Audio phase.
+// Backend: write-audio-plan + generate-dialogue-audio + audio-plan-cost.
 
 export const writeAudioPlan = async (
   projectId: string,
@@ -982,19 +981,6 @@ export const getAudioPlanCost = async (
   if (opts?.characterIds?.length) params.set('characterIds', opts.characterIds.join(','));
   const qs = params.toString();
   const res = await authFetch(`${API}/projects/${projectId}/audio-plan-cost${qs ? `?${qs}` : ''}`);
-  return handleResponse(res);
-};
-
-export const updateShotAudioPlan = async (
-  projectId: string,
-  shotId: string,
-  patch: { dialogueStrategy: 'lipsync' | 'overlay' },
-) => {
-  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/audio-plan`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  });
   return handleResponse(res);
 };
 

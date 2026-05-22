@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { selectAll, selectOne, updateRows, incrementColumn, insertRow } from '../database.js';
 import { getProjectRuntimePreset } from '../presets.js';
 import { buildContextChain, logCall } from '../xray.js';
-import { buildAudioPlanPrompt, AUDIO_PLAN_SCHEMA, inferDialogueStrategy, sanitizeAudioPlan, type AudioPlan, type AudioPlanDialogueLine } from '../services/audioDirector.js';
+import { buildAudioPlanPrompt, AUDIO_PLAN_SCHEMA, sanitizeAudioPlan, type AudioPlan, type AudioPlanDialogueLine } from '../services/audioDirector.js';
 import { generateText } from '../services/text-provider.js';
 import { generateSpeech } from '../services/tts/index.js';
 import { assertDailyCapAvailable, incrementProviderUsageDaily } from '../services/providerUsage.js';
@@ -217,71 +217,6 @@ router.post('/:id/write-audio-plan', async (req, res) => {
     res.json(await getFullProject(projectId));
   } catch (err) {
     console.error(`[${projectId}] Write audio plan failed:`, err);
-    sendStructuredError(res, err);
-  }
-});
-
-router.patch('/:id/shots/:shotId/audio-plan', async (req, res) => {
-  const projectId = paramStr(req.params.id);
-  const shotId = paramStr(req.params.shotId);
-  try {
-    const project = await selectOne('projects', { id: projectId });
-    if (!project) return res.status(404).json({ error: 'Project not found' });
-
-    const shot = await selectOne('shots', { id: shotId });
-    if (!shot) return res.status(404).json({ error: 'Shot not found' });
-    const scene = await selectOne('scenes', { id: shot.scene_id, project_id: projectId });
-    if (!scene) return res.status(404).json({ error: 'Shot not found in project' });
-
-    const audioPlan = parseAudioPlan(shot.audio_plan);
-    if (!audioPlan) {
-      const err = new Error('Shot has no audio plan yet.');
-      (err as any).statusCode = 400;
-      throw err;
-    }
-
-    const dialogueStrategy = req.body?.dialogueStrategy;
-    if (dialogueStrategy !== 'lipsync' && dialogueStrategy !== 'overlay') {
-      const err = new Error('dialogueStrategy must be "lipsync" or "overlay".');
-      (err as any).statusCode = 400;
-      throw err;
-    }
-
-    const cast = await selectAll('cast_members', { project_id: projectId }, { orderBy: 'sort_order', ascending: true });
-    const castById = new Map(cast.map((member: any) => [member.id, member]));
-    const inferred = inferDialogueStrategy(audioPlan.dialogue, castById);
-    if (dialogueStrategy === 'lipsync' && inferred !== 'lipsync') {
-      const err = new Error(JSON.stringify({
-        code: 'lipsync_requires_look_reference',
-        message: 'Cannot set lipsync while a dialogue speaker has no locked look reference.',
-      }));
-      (err as any).statusCode = 400;
-      throw err;
-    }
-
-    const updatedPlan: AudioPlan = {
-      ...audioPlan,
-      dialogueStrategy,
-    };
-    await updateRows('shots', { id: shotId }, {
-      audio_plan: updatedPlan,
-    });
-    await updateRows('projects', { id: projectId }, { updated_at: new Date().toISOString() });
-    await recordDirectorEvent({
-      projectId,
-      userId: req.userId,
-      source: 'web',
-      eventType: 'audio_plan_strategy_updated',
-      entityType: 'shot',
-      entityId: shotId,
-      summary: `Artist set audio strategy to ${dialogueStrategy} for shot ${shotId}.`,
-      payload: {
-        dialogueStrategy,
-      },
-    });
-
-    res.json(await getFullProject(projectId));
-  } catch (err) {
     sendStructuredError(res, err);
   }
 });

@@ -43,6 +43,10 @@ const itemSrc = (item: any) => {
 };
 
 const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: any) => {
+  const project = await selectOne('projects', { id: projectId });
+  const brief = parseJson<Record<string, any>>(project?.project_brief, {});
+  if (brief.dialogueVideoMode === 'lipsync') return timeline;
+
   const trackItemIds = Array.isArray(timeline.trackItemIds) ? [...timeline.trackItemIds] : [];
   const trackItemsMap = timeline.trackItemsMap && typeof timeline.trackItemsMap === 'object'
     ? { ...timeline.trackItemsMap }
@@ -57,10 +61,8 @@ const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: an
   for (const shot of projectShots) {
     if (shot.video_asset_id) assetIds.add(shot.video_asset_id);
     const plan = parseJson<any>(shot.audio_plan, null);
-    if (plan?.dialogueStrategy === 'overlay') {
-      for (const line of plan.dialogue || []) {
-        if (line?.ttsStatus === 'success' && line.ttsAssetId) assetIds.add(line.ttsAssetId);
-      }
+    for (const line of plan?.dialogue || []) {
+      if (line?.ttsStatus === 'success' && line.ttsAssetId) assetIds.add(line.ttsAssetId);
     }
   }
   if (assetIds.size === 0) return timeline;
@@ -82,7 +84,7 @@ const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: an
   let durationMs = numberMs(timeline.durationMs, 0);
   for (const shot of projectShots) {
     const plan = parseJson<any>(shot.audio_plan, null);
-    if (plan?.dialogueStrategy !== 'overlay') continue;
+    if (!Array.isArray(plan?.dialogue) || plan.dialogue.length === 0) continue;
     const videoAsset = shot.video_asset_id ? assetMap.get(shot.video_asset_id) : null;
     if (!videoAsset?.file_path) continue;
     const shotItem = visualItemsBySrc.get(storageUrl(videoAsset.file_path))?.[0];
