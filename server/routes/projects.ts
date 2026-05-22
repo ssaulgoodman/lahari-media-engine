@@ -15,6 +15,7 @@ import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } from '../presets.js';
 import { availableTools, blockedTools } from '../tools/registry.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
+import { isLegacyLookPrompt } from '../prompts/lookPrompts.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
 // (pre-queue.ts-default-fill) get the current default instead of a stale
@@ -617,7 +618,7 @@ const _getFullProjectCore = async (projectId: string) => {
       name: c.name,
       description: c.description,
       generationPrompt: c.generation_prompt || undefined,
-      promptsStale: !!c.prompts_stale,
+      promptsStale: !!c.prompts_stale || isLegacyLookPrompt(c.generation_prompt),
       voiceProvider: c.voice_provider || undefined,
       voiceId: c.voice_id || undefined,
       voiceName: c.voice_name || undefined,
@@ -629,7 +630,7 @@ const _getFullProjectCore = async (projectId: string) => {
       name: e.name,
       description: e.description,
       generationPrompt: e.generation_prompt || undefined,
-      promptsStale: !!e.prompts_stale,
+      promptsStale: !!e.prompts_stale || isLegacyLookPrompt(e.generation_prompt),
       referenceAssetId: e.reference_asset_id,
       referenceImageUrl: e.referenceImageUrl,
     })),
