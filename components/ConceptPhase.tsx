@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { ApiProject } from '../types';
 import { AutoGrowTextarea } from './AutoGrowTextarea';
 import { AssetShelf } from './AssetShelf';
+import { UnlockPill } from './UnlockPill';
 import { Phase } from './BlueprintContextBar';
 
 interface Props {
@@ -129,7 +130,7 @@ export const ConceptPhase: React.FC<Props> = ({
               <h3 className="text-sm font-medium text-white">Locked Concept</h3>
             </div>
             {onUnlockConcept && (
-              <button onClick={onUnlockConcept} disabled={isLoading} className="text-[11px] text-zinc-400 hover:text-zinc-200 underline disabled:opacity-50">Unlock</button>
+              <UnlockPill onClick={onUnlockConcept} disabled={isLoading} />
             )}
           </div>
           <div className="grid grid-cols-3 gap-4 text-xs">

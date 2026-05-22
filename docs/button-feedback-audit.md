@@ -39,17 +39,17 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 | # | File:line | Button | Action fired | Current feedback | Status |
 |---|---|---|---|---|---|
 | L1 | `ConceptPhase.tsx:206` | Concept card "Choose" | `onLockConcept(idx)` → `AppShell.handleLockConcept` (async, may show destructive dialog) | Click gated by `!isLoading`; grid-wide overlay "Locking concept..." only appears once `isLoading` flips. No per-card visual on click. | ⏳ |
-| L2 | `ConceptPhase.tsx:132` | "Unlock" (next to Locked Concept header) | `onUnlockConcept` → `api.unlockConcept` | `disabled={isLoading}` only. No spinner / label swap. | ⏳ |
+| L2 | `ConceptPhase.tsx:132` | "Unlock" (next to Locked Concept header) | `onUnlockConcept` → `api.unlockConcept` | `disabled={isLoading}` only. No spinner / label swap. | ✅ Slice A · migrated to UnlockPill |
 | L3 | `CharactersPhase.tsx:391` | Look candidate "Lock" (per look in detail panel) | `onLockCharacter(memberId, assetId)` → `AppShell.handleLockCharacter` (async backend) | Plain button. No busy / disabled. | ⏳ |
-| L4 | `CharactersPhase.tsx:120` | "Unlock characters" pill | `onUnlockCharacters` | `disabled={isLoading}` only. | ⏳ |
+| L4 | `CharactersPhase.tsx:120` | "Unlock characters" pill | `onUnlockCharacters` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L5 | `EnvironmentsPhase.tsx:381` | Env look candidate "Lock" | `handleEnvLock(envId, assetId)` (local async) | Plain button. No busy / disabled. | ⏳ |
-| L6 | `EnvironmentsPhase.tsx:109` | "Unlock environments" pill | `onUnlockEnvironments` | `disabled={isLoading}` only. | ⏳ |
+| L6 | `EnvironmentsPhase.tsx:109` | "Unlock environments" pill | `onUnlockEnvironments` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L7 | `StylePhase.tsx` StyleRow Lock button (per slot) | "Lock style" (over image) | `onLock` → `handleLockSlot` (async) | Single shared `isLocking` flag — clicking one slot dims that button but NOT other slots' lock buttons. Multi-slot race possible. | ⏳ |
 | L8 | `StylePhase.tsx:679` | Custom-slot "Lock style" (user vision pane) | `handleLockSlot(userSlot)` | Same `isLocking` shared flag. | ⏳ |
 | L9 | `StylePhase.tsx:648` | "Use uploaded image as style" | `handleLockUploadedDirect` | Has `isLocking` + spinner + "Locking…" label. ✅ Already correct — verify. | ✅ keep |
 | L10 | `StylePhase.tsx:413` | Curated preset "Use this style" | `handleLockPreset(preset)` | Per-preset `presetLockingKey` + spinner + label. ✅ Already correct. | ✅ keep |
-| L11 | `StylePhase.tsx:445` | Style phase "Unlock" pill | `onUnlockStyle` | `disabled={isLoading}` only. | ⏳ |
-| L12 | `ScriptPhase.tsx:241` | Script "Unlock" pill | `onUnlockScript` | `disabled={isLoading}` only. | ⏳ |
+| L11 | `StylePhase.tsx:445` | Style phase "Unlock" pill | `onUnlockStyle` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
+| L12 | `ScriptPhase.tsx:241` | Script "Unlock" pill | `onUnlockScript` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L13 | `ShotCard.tsx:329` | Per-shot lock button (icon) | `onLockShot(scene.id, shot.id)` | `disabled={isGenerating || ...}` — uses generation flag, not a dedicated lock-in-flight flag. Click while another shot is generating disables; click during its own lock — no feedback. | ⏳ |
 | L14 | `ShotCard.tsx` storyboard | Storyboard lock / unlock (in StoryboardPanel) | `onLockStoryboard` / `onUnlockStoryboard` | Need to verify — flagged for inspection. | 🔍 |
 
