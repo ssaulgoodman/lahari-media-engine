@@ -166,16 +166,9 @@ export const CharactersPhase: React.FC<Props> = ({
                       <div className="min-w-0 flex-1 pr-6">
                         <div className="text-sm font-medium text-white line-clamp-2 leading-snug">{member.name}</div>
                         <div className="text-xs text-zinc-400 truncate flex items-center gap-1.5">
-                          {looksLoading.has(member.id) ? (
-                            <><div className="w-3 h-3 border border-zinc-600 border-t-white rounded-full animate-spin"></div> Generating…</>
-                          ) : hasLook ? (
+                          {hasLook ? (
                             <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 text-white flex-shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg> Look set</>
                           ) : 'No look'}
-                          {voiceFieldsVisible && !member.voiceId && (
-                            <span className="ml-1 text-[10px] uppercase tracking-wider text-amber-300/80 bg-amber-500/[0.08] rounded px-1 py-0.5 flex-shrink-0">
-                              needs voice
-                            </span>
-                          )}
                         </div>
                       </div>
                     </button>
