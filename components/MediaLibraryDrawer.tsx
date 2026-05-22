@@ -29,6 +29,7 @@ interface Props {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideClosedHandle?: boolean;
+  newMediaUrls?: Set<string>;
 }
 
 // Cache history per shot in component state so switching scenes doesn't
@@ -41,6 +42,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
   open: controlledOpen,
   onOpenChange,
   hideClosedHandle = false,
+  newMediaUrls,
 }) => {
   // Closed by default — the drawer is a deliberate-reach tool, not a panel
   // that's always present. The handle at the bottom is what's persistent.
@@ -196,6 +198,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
                 versions={historyByShot[shot.id]}
                 loading={loadingShots.has(shot.id)}
                 onHideVersion={handleHideVersion}
+                newMediaUrls={newMediaUrls}
               />
             ))}
           </div>
@@ -222,9 +225,10 @@ interface ShotColumnProps {
   versions?: VersionEntry[];
   loading: boolean;
   onHideVersion: (shotId: string, assetId: string) => Promise<void>;
+  newMediaUrls?: Set<string>;
 }
 
-const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loading, onHideVersion }) => {
+const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loading, onHideVersion, newMediaUrls }) => {
   // Loading / no-rendered-video state — explicit empty card so the column
   // layout stays consistent (don't shift other columns left).
   if (loading && !versions) {
@@ -272,6 +276,7 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
         isActive
         posterFallback={shot.storyboardUrl || shot.imageUrl}
         onHide={active.isCurrent ? undefined : () => onHideVersion(shot.id, active.assetId)}
+        isNew={newMediaUrls?.has(active.url)}
       />
 
       {/* Older versions — compact chips. Skipped entirely if only one version
@@ -286,6 +291,7 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
               compact
               posterFallback={shot.storyboardUrl || shot.imageUrl}
               onHide={v.isCurrent ? undefined : () => onHideVersion(shot.id, v.assetId)}
+              isNew={newMediaUrls?.has(v.url)}
             />
           ))}
         </div>
@@ -303,7 +309,8 @@ const VersionCard: React.FC<{
   compact?: boolean;
   posterFallback?: string;
   onHide?: () => Promise<void>;
-}> = ({ version, label, isActive, compact, posterFallback, onHide }) => {
+  isNew?: boolean;
+}> = ({ version, label, isActive, compact, posterFallback, onHide, isNew }) => {
   const [hiding, setHiding] = useState(false);
   const handleAdd = () => {
     // Cloning intent: the canonical shot stays untouched; we just append a
@@ -344,7 +351,9 @@ const VersionCard: React.FC<{
 
   if (compact) {
     return (
-      <div className={`relative aspect-video w-12 rounded overflow-hidden bg-black/30 border border-white/[0.06] hover:border-white/[0.2] transition-colors group ${hiding ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`relative aspect-video w-12 rounded overflow-hidden bg-black/30 border transition-colors group ${
+        isNew ? 'border-amber-300/70 ring-1 ring-amber-300/50' : 'border-white/[0.06] hover:border-white/[0.2]'
+      } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}>
         <button
           type="button"
           onClick={handleAdd}
@@ -375,6 +384,11 @@ const VersionCard: React.FC<{
             ×
           </button>
         )}
+        {isNew && (
+          <span className="absolute bottom-0.5 left-0.5 rounded bg-amber-300 px-1 py-px text-[8px] font-bold uppercase tracking-wide text-black">
+            New
+          </span>
+        )}
       </div>
     );
   }
@@ -382,7 +396,11 @@ const VersionCard: React.FC<{
   return (
     <div
       className={`relative aspect-video w-full rounded overflow-hidden bg-black/30 border transition-colors group ${
-        isActive ? 'border-white/[0.3] ring-1 ring-white/40' : 'border-white/[0.06] hover:border-white/[0.2]'
+        isNew
+          ? 'border-amber-300/70 ring-1 ring-amber-300/50'
+          : isActive
+            ? 'border-white/[0.3] ring-1 ring-white/40'
+            : 'border-white/[0.06] hover:border-white/[0.2]'
       } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}
     >
       <button
@@ -405,8 +423,15 @@ const VersionCard: React.FC<{
         )}
       </button>
       {isActive && (
-        <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-black/60 text-white px-1 py-0.5 rounded font-mono">
+        <span className={`absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 rounded font-mono ${
+          isNew ? 'bg-amber-300 text-black' : 'bg-black/60 text-white'
+        }`}>
           on timeline
+        </span>
+      )}
+      {isNew && !isActive && (
+        <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-amber-300 text-black px-1.5 py-0.5 rounded font-mono">
+          New
         </span>
       )}
       {onHide && (

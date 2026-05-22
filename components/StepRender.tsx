@@ -100,6 +100,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [renderMeta, setRenderMeta] = useState<RenderStatusResponse | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
+  const [mediaNoticeDismissedFor, setMediaNoticeDismissedFor] = useState('');
   const [history, setHistory] = useState<RenderHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const timelineItems = useStore((s) => s.trackItemsMap);
@@ -171,15 +172,26 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     [project.audioPath],
   );
 
-  const newMediaCount = useMemo(() => {
-    if (!lastSavedAt || timelineItemIds.length === 0) return 0;
+  const newMediaUrls = useMemo(() => {
+    if (!lastSavedAt || timelineItemIds.length === 0) return new Set<string>();
     const timelineVideoSrcs = new Set(
       Object.values(timelineItems)
         .filter((item: any) => item?.type === 'video' && typeof item?.details?.src === 'string')
         .map((item: any) => item.details.src as string),
     );
-    return previewClips.filter((clip) => !timelineVideoSrcs.has(clip.src)).length;
+    return new Set(previewClips.filter((clip) => !timelineVideoSrcs.has(clip.src)).map((clip) => clip.src));
   }, [lastSavedAt, previewClips, timelineItemIds.length, timelineItems]);
+  const newMediaSignature = useMemo(
+    () => Array.from(newMediaUrls).sort().join('|'),
+    [newMediaUrls],
+  );
+  const newMediaCount = newMediaUrls.size;
+  const showNewMediaNotice = newMediaCount > 0 && mediaNoticeDismissedFor !== newMediaSignature;
+
+  const openMediaLibrary = useCallback(() => {
+    setMediaLibraryOpen(true);
+    if (newMediaSignature) setMediaNoticeDismissedFor(newMediaSignature);
+  }, [newMediaSignature]);
 
   // Poll render-status while a job is running. Cleared on unmount or when the
   // job finishes. Declared at the component scope so both the initial
@@ -382,7 +394,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             initialClips={previewClips}
             initialAudioClips={previewAudioClips}
             projectId={project.id}
-            onOpenMediaLibrary={() => setMediaLibraryOpen(true)}
+            onOpenMediaLibrary={openMediaLibrary}
             mediaLibraryBadgeCount={newMediaCount}
           />
         ) : (
@@ -399,17 +411,21 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         <MediaLibraryDrawer
           project={project}
           open={mediaLibraryOpen}
-          onOpenChange={setMediaLibraryOpen}
+          onOpenChange={(next) => {
+            setMediaLibraryOpen(next);
+            if (next && newMediaSignature) setMediaNoticeDismissedFor(newMediaSignature);
+          }}
+          newMediaUrls={newMediaUrls}
         />
 
-        {newMediaCount > 0 && !mediaLibraryOpen && (
+        {showNewMediaNotice && !mediaLibraryOpen && (
           <div className="absolute left-20 top-3 z-10 rounded-md border border-amber-400/20 bg-amber-950/70 px-3 py-2 text-[11px] text-amber-100 shadow-lg backdrop-blur-sm flex items-center gap-3">
             <span>
               {newMediaCount} new media {newMediaCount === 1 ? 'clip is' : 'clips are'} available. Timeline kept unchanged.
             </span>
             <button
               type="button"
-              onClick={() => setMediaLibraryOpen(true)}
+              onClick={openMediaLibrary}
               className="text-amber-50 underline underline-offset-2 hover:text-white"
             >
               Open library
