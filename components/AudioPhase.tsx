@@ -260,9 +260,9 @@ export const AudioPhase: React.FC<Props> = ({
 
   return (
     <motion.div key="audio" {...phaseTransition} className="space-y-4">
-      {/* Header: compact one-line summary + bulk action.
+      {/* Header: compact one-line summary + actions.
           Generation always targets the AVAILABLE subset — UI is never stricter
-          than the engine. Missing voices appear as a nudge below, not a gate. */}
+          than the engine. */}
       <div className="surface rounded-xl px-5 py-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <p className="text-sm text-zinc-300">
@@ -272,33 +272,29 @@ export const AudioPhase: React.FC<Props> = ({
             {summary.waitingOnVoice > 0 && <> · <span className="text-amber-300/80">{summary.waitingOnVoice} waiting on voices</span></>}
             {staleShotIds.length > 0 && <> · <span className="text-amber-300/80">{staleShotIds.length} stale shot{staleShotIds.length === 1 ? '' : 's'}</span></>}
           </p>
-          <button
-            onClick={openBulkRun}
-            disabled={summary.available === 0 || generatingIds.size > 0 || isLoading}
-            className="bg-white text-black px-4 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 disabled:opacity-30 transition-colors inline-flex items-center gap-2"
-          >
-            {generatingIds.size > 0 && <span className="w-3 h-3 border-2 border-zinc-500 border-t-black rounded-full animate-spin" />}
-            {generatingIds.size > 0
-              ? `Generating ${generatingIds.size}…`
-              : summary.available > 0
-                ? `Generate ${summary.available} available`
-                : 'Generate audio'}
-          </button>
-        </div>
-
-        {summary.missingVoiceMembers.length > 0 && (
-          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-400">
-            <span>
-              {summary.missingVoiceMembers.map(c => c.name).join(', ')} {summary.missingVoiceMembers.length === 1 ? 'needs' : 'need'} voice IDs for generated TTS. You can still make video now; overlay audio can be generated later.
-            </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {summary.missingVoiceMembers.length > 0 && (
+              <button
+                onClick={() => onSetViewPhase('characters')}
+                className="surface-inset text-zinc-200 px-3.5 py-2 rounded-md font-semibold text-xs hover:bg-white/[0.08] transition-colors"
+              >
+                Assign voices
+              </button>
+            )}
             <button
-              onClick={() => onSetViewPhase('characters')}
-              className="text-zinc-300 hover:text-white transition-colors flex-shrink-0"
+              onClick={openBulkRun}
+              disabled={summary.available === 0 || generatingIds.size > 0 || isLoading}
+              className="bg-white text-black px-4 py-2 rounded-md font-semibold text-xs hover:bg-zinc-200 disabled:opacity-30 transition-colors inline-flex items-center gap-2"
             >
-              Assign voices →
+              {generatingIds.size > 0 && <span className="w-3 h-3 border-2 border-zinc-500 border-t-black rounded-full animate-spin" />}
+              {generatingIds.size > 0
+                ? `Generating ${generatingIds.size}…`
+                : summary.available > 0
+                  ? `Generate ${summary.available} available`
+                  : 'Generate audio'}
             </button>
           </div>
-        )}
+        </div>
 
         <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between gap-4 flex-wrap">
           <div>
@@ -321,7 +317,7 @@ export const AudioPhase: React.FC<Props> = ({
                   : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
               }`}
             >
-              Lipsync with TTS
+              Lipsync
             </button>
             <button
               onClick={() => setProjectMode('overlay')}
@@ -334,7 +330,7 @@ export const AudioPhase: React.FC<Props> = ({
                   : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
               }`}
             >
-              Native voice + overlay
+              Overlay
             </button>
           </div>
         </div>
@@ -359,9 +355,6 @@ export const AudioPhase: React.FC<Props> = ({
                 <div className="px-5 py-3 flex items-center gap-3 border-b border-white/[0.06]">
                   <span className="text-xs font-mono text-zinc-500">S{bucket.shotIndex}</span>
                   <span className="text-sm text-zinc-300">{bucket.sceneLabel}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-zinc-400 bg-white/[0.04] rounded px-1.5 py-0.5">
-                    {mode === 'lipsync' ? 'lipsync' : 'overlay'}
-                  </span>
                   {lipsyncTtsMissing && (
                     <span
                       className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"
