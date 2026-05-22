@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import type { ApiProject } from '../types';
 
 type PromptUsage = {
   callCount: number;
@@ -24,20 +25,9 @@ type PromptMeta = {
 
 type StageMeta = { label: string; description: string; order: number };
 
-type ToolRecipe = {
-  key: string;
-  label: string;
-  description: string;
-  enabledFor?: string[];
-  requires: string[];
-  contextInputs: string[];
-  produces: string[];
-  surface: string;
-  hasPromptBuilder: boolean;
-};
-
 interface Props {
   onBack: () => void;
+  project?: ApiProject | null;
 }
 
 const MODEL_FILTERS = [
@@ -56,46 +46,6 @@ const formatDuration = (ms: number | null): string => {
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
 };
 
-const ASSET_LABELS: Record<string, string> = {
-  audio: 'audio',
-  scriptText: 'script',
-  directorBrief: 'director brief',
-  targetRuntime: 'target runtime',
-  lyrics: 'lyrics',
-  musicalStructure: 'musical structure',
-  meaning: 'meaning',
-  concept: 'locked concept',
-  styleDirections: 'style directions',
-  styleAsset: 'locked style',
-  cast: 'cast',
-  environments: 'environments',
-  scenes: 'scenes',
-  shots: 'shots',
-  shotPrompts: 'shot prompts',
-  storyboardPrompts: 'storyboard prompts',
-  castLooks: 'character looks',
-  envLooks: 'environment looks',
-  audioPlan: 'audio plan',
-  castVoices: 'cast voices',
-  ttsAssets: 'dialogue audio',
-  storyboards: 'storyboards',
-  keyframes: 'keyframes',
-  videos: 'videos',
-  render: 'final render',
-};
-
-const SURFACE_LABELS: Record<string, string> = {
-  'asset:concept': 'Concept',
-  'asset:script': 'Script',
-  'asset:style': 'Style',
-  'asset:characters': 'Characters',
-  'asset:environments': 'Environments',
-  'asset:audio': 'Audio',
-  'asset:studio': 'Studio',
-  'asset:render': 'Render',
-  'agent-only': 'Agent only',
-};
-
 // Humanize workflow enum keys for display. Per D26 these are the
 // canonical archetype names; legacy aliases collapse to the canonical
 // label so old rows don't show two variants.
@@ -109,23 +59,8 @@ const WORKFLOW_LABELS: Record<string, string> = {
 const formatWorkflowList = (keys?: string[]): string =>
   (keys || []).map((key) => WORKFLOW_LABELS[key] || key).join(' · ');
 
-const WORKFLOW_FILTERS: Array<{ key: string; label: string; match: (tool: ToolRecipe) => boolean }> = [
-  { key: 'all', label: 'All workflows', match: () => true },
-  { key: 'music_led', label: 'Music-led', match: (tool) => !tool.enabledFor || tool.enabledFor.some((k) => WORKFLOW_LABELS[k] === 'Music-led') },
-  { key: 'scripted_narrative', label: 'Scripted narrative', match: (tool) => !tool.enabledFor || tool.enabledFor.some((k) => WORKFLOW_LABELS[k] === 'Scripted narrative') },
-];
-
-const formatAssetList = (keys: string[], fallback: string): string =>
-  keys.length ? keys.map((key) => ASSET_LABELS[key] || key).join(', ') : fallback;
-
-const COMPOSER_SECTIONS = [
-  { label: 'Core task', note: 'what this tool is trying to do' },
-  { label: 'Workflow context', note: 'music-led or scripted narrative framing' },
-  { label: 'Project inputs', note: 'script, style, cast, shots, or audio' },
-  { label: 'Preset taste', note: 'medium guard and taste rules' },
-  { label: 'User note policy', note: 'how strongly your note should steer it' },
-  { label: 'Output contract', note: 'the exact shape the model must return' },
-];
+const humanizeKey = (key?: string | null): string =>
+  key ? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Not set';
 
 // Inline visual for {{variables}} — renders them as subtle chips so the
 // template remains scannable. Falls back to plain text otherwise.
@@ -150,15 +85,12 @@ const TemplateBody: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
+export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
   const [prompts, setPrompts] = useState<PromptMeta[]>([]);
-  const [tools, setTools] = useState<ToolRecipe[]>([]);
   const [stages, setStages] = useState<Record<string, StageMeta>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modelFilter, setModelFilter] = useState<string>('all');
-  const [workflowFilter, setWorkflowFilter] = useState<string>('all');
-  const [showReferences, setShowReferences] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -174,7 +106,6 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
         const data = await res.json();
         if (!aborted) {
           setPrompts(data.prompts || []);
-          setTools(data.tools || []);
           setStages(data.stages || {});
         }
       } finally {
@@ -227,38 +158,6 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
 
   const totalCalls = prompts.reduce((acc, p) => acc + (p.usage?.callCount || 0), 0);
   const totalSpend = prompts.reduce((acc, p) => acc + (p.usage?.totalCost || 0), 0);
-  const visibleTools = useMemo(() => {
-    const matcher = WORKFLOW_FILTERS.find((f) => f.key === workflowFilter) || WORKFLOW_FILTERS[0];
-    const q = search.trim().toLowerCase();
-    return tools.filter((tool) => {
-      if (!matcher.match(tool)) return false;
-      if (!q) return true;
-      // Search hits the artist-facing fields (label, description, surface,
-      // produced/required asset labels) AND the registry key for debugging.
-      // Per Codex review on 5ad7c29: search box must filter the primary
-      // Tool Recipes grid, not only the legacy template list.
-      const assetSearchText = [...tool.requires, ...tool.contextInputs, ...tool.produces]
-        .map((key) => ASSET_LABELS[key] || key)
-        .join(' ')
-        .toLowerCase();
-      const surfaceLabel = (SURFACE_LABELS[tool.surface] || tool.surface).toLowerCase();
-      return (
-        tool.label.toLowerCase().includes(q) ||
-        tool.description.toLowerCase().includes(q) ||
-        tool.key.toLowerCase().includes(q) ||
-        surfaceLabel.includes(q) ||
-        assetSearchText.includes(q)
-      );
-    });
-  }, [tools, workflowFilter, search]);
-  const toolsBySurface = useMemo(() => {
-    const map: Record<string, ToolRecipe[]> = {};
-    for (const tool of visibleTools) {
-      if (!map[tool.surface]) map[tool.surface] = [];
-      map[tool.surface].push(tool);
-    }
-    return Object.entries(map);
-  }, [visibleTools]);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -274,41 +173,34 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             </svg>
             Back
           </button>
-          <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Prompt System</h1>
+          <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Prompts</h1>
           <p className="text-sm text-zinc-400 mt-1.5 max-w-xl">
-            The buttons Mirage and the agent can run, plus the prompt recipe each model call is assembled from.
+            Every model-facing prompt in the pipeline, grouped by where it runs. Open one to see what it is made from.
           </p>
         </div>
         {!loading && (
           <div className="text-right">
-            <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Tools + calls</div>
+            <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Usage</div>
             <div className="text-sm text-zinc-300 tabular-nums mt-1">
-              {tools.length.toLocaleString()} tools · {totalCalls.toLocaleString()} prompt calls · ${totalSpend.toFixed(2)}
+              {prompts.length.toLocaleString()} prompts · {totalCalls.toLocaleString()} calls · ${totalSpend.toFixed(2)}
             </div>
           </div>
         )}
       </div>
 
-      <div className="surface rounded-xl p-4 mb-4">
-        <div className="flex items-start justify-between gap-4 mb-3">
-          <div>
-            <h2 className="text-sm font-medium text-white">How a composed prompt is built</h2>
-            <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
-              Most v1 tools do not use one hidden wall of text. They stack these sections, then X-Ray records the exact stack for each call.
-            </p>
+      {project && (
+        <div className="surface rounded-xl p-4 mb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono">Current project</span>
+            <span className="text-xs text-zinc-200 bg-white/[0.06] rounded-md px-2 py-1">{formatWorkflowList([project.workflowKey])}</span>
+            <span className="text-xs text-zinc-200 bg-white/[0.06] rounded-md px-2 py-1">{humanizeKey(project.presetKey)}</span>
+            <span className="text-xs text-zinc-400 bg-white/[0.035] rounded-md px-2 py-1">{humanizeKey(project.seedKind)} seed</span>
           </div>
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono flex-shrink-0">Composer</span>
+          <p className="text-xs text-zinc-400 mt-2 max-w-3xl">
+            Preset taste and project context are inserted when a prompt runs. Changing the preset changes those inserted sections; the rows below show the prompt shape and source.
+          </p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-          {COMPOSER_SECTIONS.map((section, idx) => (
-            <div key={section.label} className="rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2">
-              <div className="text-[10px] text-zinc-500 font-mono mb-1">{idx + 1}</div>
-              <div className="text-xs text-white font-medium">{section.label}</div>
-              <div className="text-[11px] text-zinc-400 leading-snug mt-1">{section.note}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Filter bar — matches Blueprint phase bar pattern */}
       <div className="surface rounded-xl p-3 mb-8 flex items-center gap-3">
@@ -320,19 +212,18 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, summary, recipe, template…"
+            placeholder="Search prompts, variables, source…"
             className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 pl-9 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-white/20 rounded-md"
           />
         </div>
         <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
-          {WORKFLOW_FILTERS.map((f) => (
+          {MODEL_FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => setWorkflowFilter(f.key)}
+              onClick={() => setModelFilter(f.key)}
               className={`text-xs px-2.5 py-1.5 transition-colors ${
-                workflowFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
+                modelFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
               }`}
-              title="Filter Tool Recipes by workflow. Prompt templates below are not filtered."
             >
               {f.label}
             </button>
@@ -348,102 +239,13 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
         </div>
       ) : (
         <div className="space-y-10">
-          {toolsBySurface.length > 0 && (
-            <section>
-              <div className="flex items-baseline gap-4 mb-3 pb-2 border-b border-white/[0.06]">
-                <h2 className="text-lg font-display font-medium text-white tracking-tight">Production buttons</h2>
-                <p className="text-xs text-zinc-400 flex-1 truncate">
-                  These are the actions surfaced in Blueprint, Studio, Render, and the agent harness.
-                </p>
-                <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
-                  {visibleTools.length === tools.length ? tools.length : `${visibleTools.length} / ${tools.length}`}
-                </span>
-              </div>
-
-              <div className="space-y-4">
-                {toolsBySurface.map(([surface, surfaceTools]) => (
-                  <div key={surface}>
-                    <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-2">{SURFACE_LABELS[surface] || surface}</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {surfaceTools.map((tool) => (
-                        <div key={tool.key} className="group rounded-lg border border-white/[0.06] px-4 py-3 bg-white/[0.015]" title={`Registry key: ${tool.key}`}>
-                          <div className="flex items-start gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="text-sm font-medium text-white truncate">{tool.label}</h3>
-                                <span className="text-[10px] text-zinc-500 font-mono truncate opacity-0 group-hover:opacity-100 transition-opacity">{tool.key}</span>
-                              </div>
-                              <p className="text-xs text-zinc-400 leading-relaxed">{tool.description}</p>
-                            </div>
-                            <span className={`text-[10px] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap ${tool.hasPromptBuilder ? 'text-cyan-200 bg-cyan-400/[0.08]' : 'text-zinc-400 bg-white/[0.04]'}`}>
-                              {tool.hasPromptBuilder ? 'Prompted' : 'Action'}
-                            </span>
-                            {tool.enabledFor && tool.enabledFor.length > 0 && (
-                              <span className="text-[10px] text-zinc-300 bg-white/[0.04] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">
-                                {formatWorkflowList(tool.enabledFor)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-3 grid grid-cols-3 gap-2 text-[10px]">
-                            <div>
-                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Can run after</div>
-                              <div className="text-zinc-400">{formatAssetList(tool.requires, 'nothing')}</div>
-                            </div>
-                            <div>
-                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Also reads</div>
-                              <div className="text-zinc-400">{formatAssetList(tool.contextInputs, 'minimal context')}</div>
-                            </div>
-                            <div>
-                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Creates / updates</div>
-                              <div className="text-zinc-300">{formatAssetList(tool.produces, 'nothing')}</div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section>
-            <div className="flex items-center gap-4 mb-3 pb-2 border-b border-white/[0.06]">
-              <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-display font-medium text-white tracking-tight">Prompt references and usage</h2>
-                <p className="text-xs text-zinc-400 mt-1">
-                  Debug view for old template references and aggregate call history. X-Ray is the better place to inspect one real call.
-                </p>
-              </div>
-              <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
-                {MODEL_FILTERS.map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() => setModelFilter(f.key)}
-                    className={`text-xs px-2.5 py-1.5 transition-colors ${
-                      modelFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                onClick={() => setShowReferences((v) => !v)}
-                className="text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-md px-3 py-1.5 transition-colors"
-              >
-                {showReferences ? 'Hide references' : `Show ${filtered.length} references`}
-              </button>
-            </div>
-          </section>
-
-          {showReferences && filtered.length === 0 ? (
-            <div className="text-center py-12 text-sm text-zinc-400">
-              No prompt references match your filter.
+          {filtered.length === 0 ? (
+            <div className="text-center py-16 text-sm text-zinc-400">
+              No prompts match your filter.
             </div>
           ) : null}
 
-          {showReferences && grouped.map(([stageKey, stagePrompts]) => {
+          {grouped.map(([stageKey, stagePrompts]) => {
             const meta = stages[stageKey];
             return (
               <section key={stageKey}>
@@ -452,7 +254,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                     {meta?.label || stageKey}
                   </h2>
                   <p className="text-xs text-zinc-400 flex-1 truncate">
-                    {meta?.description || 'Legacy/template reference. Runtime recipes above are the primary contract.'}
+                    {meta?.description || 'Prompt references for this part of the pipeline.'}
                   </p>
                   <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
                     {stagePrompts.length}
@@ -560,7 +362,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                                 {/* Variables */}
                                 {p.variables.length > 0 && (
                                   <div>
-                                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono mb-2">Variables</div>
+                                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono mb-2">Made from</div>
                                     <div className="flex flex-wrap gap-2">
                                       {p.variables.map(v => (
                                         <div
@@ -580,7 +382,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                                 {/* Template */}
                                 <div>
                                   <div className="flex items-center justify-between mb-2">
-                                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Prompt text / composed sections</div>
+                                    <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Prompt text</div>
                                     <button
                                       onClick={() => copy(p.id, p.template)}
                                       className="text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1"
@@ -624,7 +426,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
       {/* Footer note */}
       {!loading && (
         <div className="mt-12 pt-6 border-t border-white/[0.06] text-[11px] text-zinc-400 font-mono text-center">
-          {visibleTools.length} of {tools.length} buttons shown · {filtered.length} of {prompts.length} debug references match — project overrides apply to recipe sections, not whole hidden templates
+          {filtered.length} of {prompts.length} prompts shown · project overrides apply inside the prompt recipe when the call runs
         </div>
       )}
     </div>

@@ -1355,7 +1355,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.25, ease: 'easeOut' }}
                 >
-                  <PromptsLibrary onBack={() => setPromptsOpen(false)} />
+                  <PromptsLibrary project={project} onBack={() => setPromptsOpen(false)} />
                 </motion.div>
               )}
             </AnimatePresence>
