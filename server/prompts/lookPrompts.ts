@@ -12,6 +12,12 @@ type LookPromptInput = {
 
 const SHARED_OUTPUT_CONTRACT = `One single image. No collage, no grid, no multiple panels. No text, no watermark.`;
 
+export const isLegacyLookPrompt = (prompt?: string | null): boolean => {
+  const text = typeof prompt === 'string' ? prompt : '';
+  return text.includes('Generate ONE character reference portrait. Match the visual style EXACTLY from Image')
+    || text.includes('Generate ONE environment shot. Match the visual style EXACTLY from Image');
+};
+
 const formatStyleReference = (input: LookPromptInput): string => {
   if (!input.styleIdx) return '';
 

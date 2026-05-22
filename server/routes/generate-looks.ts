@@ -19,6 +19,7 @@ import { getProjectRuntimePreset } from '../presets.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { getProjectPromptOverride } from '../services/projectConfig.js';
+import { isLegacyLookPrompt } from '../prompts/lookPrompts.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -79,14 +80,15 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   // subsequent gens use the saved (possibly artist-edited) prompt.
   // When prompts_stale is set (style/description changed upstream), force a rebuild.
   let genPrompt = member.generation_prompt as string | null;
-  if (!genPrompt || member.prompts_stale) {
+  const shouldRebuildPrompt = !genPrompt || member.prompts_stale || isLegacyLookPrompt(genPrompt);
+  if (shouldRebuildPrompt) {
     const styleIdx = styleImagePath ? 1 : undefined;
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
       { name: member.name, description: member.description || '' },
       { styleIdx, userRefIdx, preset, styleDescription: project.style_description }
     );
-    if (member.prompts_stale) {
+    if (member.prompts_stale || isLegacyLookPrompt(member.generation_prompt)) {
       await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
     }
   }
@@ -383,14 +385,15 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
   // Build or reuse generation prompt.
   // When prompts_stale is set (style/description changed upstream), force a rebuild.
   let genPrompt = env.generation_prompt as string | null;
-  if (!genPrompt || env.prompts_stale) {
+  const shouldRebuildPrompt = !genPrompt || env.prompts_stale || isLegacyLookPrompt(genPrompt);
+  if (shouldRebuildPrompt) {
     const styleIdx = styleImagePath ? 1 : undefined;
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
       { name: env.name, description: env.description || '' },
       { styleIdx, userRefIdx, preset, styleDescription: project.style_description }
     );
-    if (env.prompts_stale) {
+    if (env.prompts_stale || isLegacyLookPrompt(env.generation_prompt)) {
       await updateRows('environments', { id: env.id }, { prompts_stale: 0 });
     }
   }
