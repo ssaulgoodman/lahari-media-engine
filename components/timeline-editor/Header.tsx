@@ -76,6 +76,8 @@ const Header: React.FC = () => {
   const performRedo = useStore((s) => s.performRedo);
   const lastSavedAt = useStore((s) => s.lastSavedAt);
   const projectId = useStore((s) => s.projectId);
+  const initialVideoSrcs = useStore((s) => s.initialVideoSrcs);
+  const initialAudioSrcs = useStore((s) => s.initialAudioSrcs);
   const bumpResetToken = useStore((s) => s.bumpResetToken);
   const setLastSavedAt = useStore((s) => s.setLastSavedAt);
   const deleteActiveItems = useStore((s) => s.deleteActiveItems);
@@ -137,6 +139,8 @@ const Header: React.FC = () => {
     const s = useStore.getState();
     if (s.trackItemIds.length === 0) return;
     const savedAt = saveSnapshot(projectId, {
+      initialVideoSrcs,
+      initialAudioSrcs,
       trackItemIds: s.trackItemIds,
       trackItemsMap: s.trackItemsMap,
       transitionIds: s.transitionIds,
