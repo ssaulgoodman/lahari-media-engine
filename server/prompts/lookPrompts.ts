@@ -10,7 +10,7 @@ type LookPromptInput = {
   preset: PipelinePreset;
 };
 
-const SHARED_OUTPUT_CONTRACT = `One single image. No collage, no grid, no multiple panels. No text, no watermark.`;
+const SHARED_OUTPUT_CONTRACT = `One isolated reference image. No collage, grid, text, watermark, or multiple panels.`;
 
 export const isLegacyLookPrompt = (prompt?: string | null): boolean => {
   const text = typeof prompt === 'string' ? prompt : '';
@@ -33,13 +33,11 @@ const formatStyleReference = (input: LookPromptInput): string => {
 
   const lines = [
     `Style reference image: Image ${input.styleIdx}`,
-    'The style image is the visual authority for medium, rendering, line treatment, palette, texture, lighting, and finish.',
-    'Do not copy Image 1 as the composition, background, layout, or subject. Extract the style only.',
+    'Extract medium, line, palette, texture, lighting, and finish. Do not copy its subject, layout, background, or crop.',
   ];
-  const styleIntent = clip(input.styleDescription, 900);
+  const styleIntent = clip(input.styleDescription, 360);
   if (styleIntent) {
     lines.push(`Style intent note: ${styleIntent}`);
-    lines.push('Use the style intent note only to clarify what to extract from the style image. If the text and image disagree, follow the image.');
   }
   return lines.join('\n');
 };
@@ -49,11 +47,11 @@ const formatUserReference = (input: LookPromptInput, kind: 'character' | 'enviro
 
   if (kind === 'character') {
     return `Director character reference: Image ${input.userRefIdx}
-Match its identity cues: face, costume, silhouette, key iconography. The style reference remains the source of truth for how to render them.`;
+Match identity cues. Style still comes from Image ${input.styleIdx || 1}.`;
   }
 
   return `Director environment reference: Image ${input.userRefIdx}
-Match its geography, architecture, layout, and mood. The style reference remains the source of truth for how to render it.`;
+Match geography, architecture, layout, and mood. Style still comes from Image ${input.styleIdx || 1}.`;
 };
 
 export const buildCharacterLookPrompt = (input: LookPromptInput): string => {
@@ -65,9 +63,7 @@ export const buildCharacterLookPrompt = (input: LookPromptInput): string => {
   ].filter(Boolean).join('\n\n');
 
   return composePrompt({
-    coreTask: `Generate one reusable character reference portrait.
-
-This image becomes the character's visual reference across many shots. Design the character clearly enough that future images can preserve identity, silhouette, wardrobe, proportions, and facial structure.`,
+    coreTask: `Generate one reusable character or object reference for production continuity.`,
     workflowContext: workflowContextFor(input.preset),
     inputs,
     presetTaste: [
@@ -76,12 +72,8 @@ This image becomes the character's visual reference across many shots. Design th
       input.preset.looks.qualityRules,
     ].filter(Boolean).join('\n\n'),
     outputContract: `${SHARED_OUTPUT_CONTRACT}
-
-Mid-shot portrait: upper body and face clearly visible.
-Neutral pose: hands relaxed at sides or naturally resting.
-Do not show the character holding anything, performing an action, or interacting with objects.
-Plain or softly blurred background; no scene-specific props.
-Focus on face, expression baseline, costume, hairstyle, silhouette, proportions, and distinguishing details.`,
+Neutral pose or neutral object presentation. Plain/soft background. No action or scene-specific props.
+Preserve identity: face/body/costume for people; shape/material/status details for objects.`,
   });
 };
 
@@ -94,9 +86,7 @@ export const buildEnvironmentLookPrompt = (input: LookPromptInput): string => {
   ].filter(Boolean).join('\n\n');
 
   return composePrompt({
-    coreTask: `Generate one reusable environment reference image.
-
-This image becomes the location's visual reference across many shots. Design the space clearly enough that future images can preserve layout, architecture, materials, lighting, atmosphere, and geography.`,
+    coreTask: `Generate one reusable environment reference for production continuity.`,
     workflowContext: workflowContextFor(input.preset),
     inputs,
     presetTaste: [
@@ -105,9 +95,7 @@ This image becomes the location's visual reference across many shots. Design the
       input.preset.looks.qualityRules,
     ].filter(Boolean).join('\n\n'),
     outputContract: `${SHARED_OUTPUT_CONTRACT}
-
-Full reusable environment reference: the whole space is visible and readable.
-No characters or figures unless scale absolutely requires tiny neutral figures.
-Avoid scene-specific action. Show the location as a production reference, not a storyboard frame.`,
+Whole space visible and readable. No scene-specific action.
+No characters unless tiny neutral figures are needed for scale.`,
   });
 };
