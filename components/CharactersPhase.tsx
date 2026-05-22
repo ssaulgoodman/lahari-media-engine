@@ -20,9 +20,9 @@ interface Props {
   onDiscardLookCandidates?: (castMemberId: string) => void;
   onGenerateLooks: (castMemberId: string, feedback?: string, refImage?: File) => void | Promise<void>;
   onLockCharacter: (castMemberId: string, assetId: string) => void;
-  onAddCast: (name: string, description: string) => void;
+  onAddCast: (name: string, description: string) => void | Promise<void>;
   onUpdateCast: (memberId: string, updates: { name?: string; description?: string; generationPrompt?: string }) => void;
-  onDeleteCast: (memberId: string) => void;
+  onDeleteCast: (memberId: string) => void | Promise<void>;
   onUnlockCharacters?: () => void;
   onAdvanceCharacters: () => void;
   onSetProject?: (project: ApiProject) => void;
@@ -48,6 +48,30 @@ export const CharactersPhase: React.FC<Props> = ({
   // being locked. Per-look pending state so the artist sees immediate
   // feedback on the Lock button and other Lock buttons disable during.
   const [lockingLookId, setLockingLookId] = useState<string | null>(null);
+  // Slice E of button-feedback-audit (A1, D1): cast Add/Delete pending state.
+  // `adding` is a single boolean — only one Add row exists. `deletingIds` is
+  // keyed by memberId so a slow delete dims its own row while siblings stay
+  // responsive. Destructive dialog rule: deletingIds flips only AFTER the
+  // artist confirms the modal — the spinner means "backend in flight", not
+  // "modal open".
+  const [addingCast, setAddingCast] = useState(false);
+  const [deletingCastIds, setDeletingCastIds] = useState<Set<string>>(new Set());
+  const handleAddCastClick = async () => {
+    if (addingCast) return;
+    setAddingCast(true);
+    try { await Promise.resolve(onAddCast('New Character', 'Description...')); }
+    finally { setAddingCast(false); }
+  };
+  const runCastDelete = async (memberId: string) => {
+    if (deletingCastIds.has(memberId)) return;
+    setDeletingCastIds(prev => new Set(prev).add(memberId));
+    try {
+      await Promise.resolve(onDeleteCast(memberId));
+      if (activeCastId === memberId) setActiveCastId(project.cast.find(c => c.id !== memberId)?.id || null);
+    } finally {
+      setDeletingCastIds(prev => { const next = new Set(prev); next.delete(memberId); return next; });
+    }
+  };
   const castGuideUploadRef = useRef<HTMLInputElement>(null);
   const castAsIsUploadRef = useRef<HTMLInputElement>(null);
 
@@ -136,21 +160,26 @@ export const CharactersPhase: React.FC<Props> = ({
           <div className="surface rounded-xl p-4 space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide">Cast</h3>
-              <button onClick={() => onAddCast('New Character', 'Description...')} className="text-xs text-zinc-400 hover:text-white hover:bg-white/[0.04] px-2 py-1 rounded-md transition-colors flex items-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add
+              <button onClick={handleAddCastClick} disabled={addingCast} className="text-xs text-zinc-400 hover:text-white hover:bg-white/[0.04] px-2 py-1 rounded-md transition-colors flex items-center gap-1 disabled:opacity-50">
+                {addingCast ? (
+                  <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                )}
+                {addingCast ? 'Adding…' : 'Add'}
               </button>
             </div>
             <div className="space-y-1 overflow-y-auto max-h-[500px] pr-1">
               {project.cast.map(member => {
                 const isActive = activeCastId === member.id;
                 const hasLook = !!member.referenceImageUrl;
+                const isDeleting = deletingCastIds.has(member.id);
                 return (
                   <div
                     key={member.id}
                     className={`group relative rounded-lg transition-colors ${
                       isActive ? 'bg-white/[0.08] border-l-2 border-l-white/70' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
-                    }`}
+                    } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
                   >
                     <button
                       onClick={() => setActiveCastId(member.id)}
@@ -181,26 +210,31 @@ export const CharactersPhase: React.FC<Props> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const runDelete = () => {
-                          onDeleteCast(member.id);
-                          if (activeCastId === member.id) setActiveCastId(project.cast.find(c => c.id !== member.id)?.id || null);
-                        };
+                        // Destructive-dialog rule: pending state is set only
+                        // AFTER the user confirms the modal. The spinner means
+                        // "backend in flight", not "modal open".
+                        const triggerDelete = () => { void runCastDelete(member.id); };
                         if (onConfirmDestructive) {
                           onConfirmDestructive({
                             title: `Delete "${member.name}"?`,
                             description: 'Removes this cast member. Shots that reference them will lose that character ref until you re-add one.',
                             confirmLabel: 'Delete',
-                            run: runDelete,
+                            run: triggerDelete,
                           });
                         } else {
-                          runDelete();
+                          triggerDelete();
                         }
                       }}
-                      className="absolute top-1/2 right-2 -translate-y-1/2 text-zinc-400 hover:text-red-400 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      disabled={isDeleting}
+                      className="absolute top-1/2 right-2 -translate-y-1/2 text-zinc-400 hover:text-red-400 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-100"
                       aria-label={`Delete ${member.name}`}
-                      title="Delete"
+                      title={isDeleting ? 'Deleting…' : 'Delete'}
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                      {isDeleting ? (
+                        <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                      )}
                     </button>
                   </div>
                 );

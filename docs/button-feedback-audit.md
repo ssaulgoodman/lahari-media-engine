@@ -57,10 +57,10 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 
 | # | File:line | Button | Action | Current feedback | Status |
 |---|---|---|---|---|---|
-| A1 | `CharactersPhase.tsx:135` | "+ Add" cast row | `onAddCast(...)` | Plain text-link button. No busy. | ⏳ |
-| A2 | `EnvironmentsPhase.tsx` | "+ Add" env row | `onAddEnv(...)` (verify line) | Plain. No busy. | ⏳ |
-| D1 | `CharactersPhase.tsx:185` | Cast row delete X | `onDeleteCast(memberId)` (after confirm dialog) | Confirm dialog handles its own state, but the sidebar row stays present until refresh — no "Deleting…" or row dim. | ⏳ |
-| D2 | `EnvironmentsPhase.tsx:174` | Env row delete X | `onDeleteEnv` (verify) | Same. | ⏳ |
+| A1 | `CharactersPhase.tsx:135` | "+ Add" cast row | `onAddCast(...)` | Plain text-link button. No busy. | ✅ Slice E · `addingCast` boolean, spinner + "Adding…" label |
+| A2 | `EnvironmentsPhase.tsx` | "+ Add" env row | n/a | No separate Add button exists — env creation flows through AssetShelf. | ✅ n/a |
+| D1 | `CharactersPhase.tsx:185` | Cast row delete X | `onDeleteCast(memberId)` (after confirm dialog) | Confirm dialog handles its own state, but the sidebar row stays present until refresh — no "Deleting…" or row dim. | ✅ Slice E · `deletingCastIds` keyed; row dims + spinner replaces X; dialog rule observed |
+| D2 | `EnvironmentsPhase.tsx:174` | Env row delete X | inline `api.deleteEnvironment` | Same. | ✅ Slice E · `deletingEnvIds` keyed; row dims + spinner replaces X; dialog rule observed |
 | U1 | `CharactersPhase.tsx:310` | "Use as-is" upload (cast) | `handleCastUploadAsIs` | Already wired: `castUploading` Set + spinner. ✅ keep | ✅ keep |
 | U2 | `CharactersPhase.tsx:302` | "Generate with reference" upload | stages a ref then fires generate | Verify whether spinner runs while staging. | 🔍 |
 | U3 | `EnvironmentsPhase.tsx:302` | Env "Use as-is" upload | `handleEnvUploadAsIs` | Already wired: `envUploading` + spinner. ✅ keep | ✅ keep |

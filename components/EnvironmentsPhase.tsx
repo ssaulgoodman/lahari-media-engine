@@ -37,6 +37,23 @@ export const EnvironmentsPhase: React.FC<Props> = ({
   // Slice B of button-feedback-audit: which env look candidate is being
   // locked. Per-look pending state for immediate Lock button feedback.
   const [lockingLookId, setLockingLookId] = useState<string | null>(null);
+  // Slice E of button-feedback-audit (D2): which env row is currently being
+  // deleted. Keyed by envId so siblings stay responsive. Spinner means
+  // "backend in flight" — set only AFTER the destructive dialog confirms.
+  const [deletingEnvIds, setDeletingEnvIds] = useState<Set<string>>(new Set());
+  const runEnvDelete = async (envId: string) => {
+    if (deletingEnvIds.has(envId)) return;
+    setDeletingEnvIds(prev => new Set(prev).add(envId));
+    try {
+      await api.deleteEnvironment(project.id, envId);
+      if (activeEnvId === envId) setActiveEnvId(project.environments.find(x => x.id !== envId)?.id || null);
+      onSetProject?.({ ...project, environments: project.environments.filter(x => x.id !== envId) });
+    } catch (err: any) {
+      showActionError(`Delete failed: ${err.message}`);
+    } finally {
+      setDeletingEnvIds(prev => { const next = new Set(prev); next.delete(envId); return next; });
+    }
+  };
   const envGuideUploadRef = useRef<HTMLInputElement>(null);
   const envAsIsUploadRef = useRef<HTMLInputElement>(null);
 
@@ -128,12 +145,13 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                 {project.environments.map(env => {
                   const isActive = activeEnvId === env.id;
                   const hasLook = !!env.referenceImageUrl;
+                  const isDeleting = deletingEnvIds.has(env.id);
                   return (
                     <div
                       key={env.id}
                       className={`group relative rounded-lg transition-colors ${
                         isActive ? 'bg-white/[0.08] border-l-2 border-l-white/70' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
-                      }`}
+                      } ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`}
                     >
                       <button
                         onClick={() => setActiveEnvId(env.id)}
@@ -162,31 +180,33 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                         </div>
                       </button>
                       <button
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
-                          const runDelete = async () => {
-                            try {
-                              await api.deleteEnvironment(project.id, env.id);
-                              if (activeEnvId === env.id) setActiveEnvId(project.environments.find(x => x.id !== env.id)?.id || null);
-                              onSetProject?.({ ...project, environments: project.environments.filter(x => x.id !== env.id) });
-                            } catch (err: any) { showActionError(`Delete failed: ${err.message}`); }
-                          };
+                          // Destructive-dialog rule: pending state flips only
+                          // after the user confirms the modal — spinner means
+                          // "backend in flight", not "modal open".
+                          const triggerDelete = () => { void runEnvDelete(env.id); };
                           if (onConfirmDestructive) {
                             onConfirmDestructive({
                               title: `Delete "${env.name}"?`,
                               description: 'Removes this environment. Shots that reference it will lose that environment ref until you re-add one.',
                               confirmLabel: 'Delete',
-                              run: runDelete,
+                              run: triggerDelete,
                             });
                           } else {
-                            runDelete();
+                            triggerDelete();
                           }
                         }}
-                        className="absolute top-1/2 right-2 -translate-y-1/2 text-zinc-400 hover:text-red-400 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                        disabled={isDeleting}
+                        className="absolute top-1/2 right-2 -translate-y-1/2 text-zinc-400 hover:text-red-400 p-1 rounded transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-100"
                         aria-label={`Delete ${env.name}`}
-                        title="Delete"
+                        title={isDeleting ? 'Deleting…' : 'Delete'}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        {isDeleting ? (
+                          <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        )}
                       </button>
                     </div>
                   );
