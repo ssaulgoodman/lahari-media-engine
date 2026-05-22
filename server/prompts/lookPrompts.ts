@@ -15,7 +15,17 @@ const SHARED_OUTPUT_CONTRACT = `One single image. No collage, no grid, no multip
 export const isLegacyLookPrompt = (prompt?: string | null): boolean => {
   const text = typeof prompt === 'string' ? prompt : '';
   return text.includes('Generate ONE character reference portrait. Match the visual style EXACTLY from Image')
-    || text.includes('Generate ONE environment shot. Match the visual style EXACTLY from Image');
+    || text.includes('Generate ONE environment shot. Match the visual style EXACTLY from Image')
+    || (
+      text.length > 0
+      && !text.includes('\nCONTEXT\n')
+      && (
+        /character reference portrait/i.test(text)
+        || /reusable character reference/i.test(text)
+        || /environment (shot|reference)/i.test(text)
+        || /reusable environment reference/i.test(text)
+      )
+    );
 };
 
 const formatStyleReference = (input: LookPromptInput): string => {
@@ -24,6 +34,7 @@ const formatStyleReference = (input: LookPromptInput): string => {
   const lines = [
     `Style reference image: Image ${input.styleIdx}`,
     'The style image is the visual authority for medium, rendering, line treatment, palette, texture, lighting, and finish.',
+    'Do not copy Image 1 as the composition, background, layout, or subject. Extract the style only.',
   ];
   const styleIntent = clip(input.styleDescription, 900);
   if (styleIntent) {

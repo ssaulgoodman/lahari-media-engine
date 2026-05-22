@@ -294,7 +294,7 @@ export const generateCharacterLooks = async (
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
   let prompt = generationPrompt || buildCharacterPrompt(character, { styleIdx, userRefIdx, preset });
   if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
-  prompt += `\n\nImportant: create a NEW isolated character portrait. Do not use the style reference as a background or layout.`;
+  prompt += `\n\nImportant: Image 1 is a style reference only. Do not use Image 1 as the background, crop, pose, layout, subject, or composition. Create a new isolated character reference for ${character.name}.`;
 
   return generateMany(prompt, aspectRatio, refs, 3, model);
 };
@@ -317,6 +317,9 @@ export const generateEnvironmentLooks = async (
   const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
   let prompt = generationPrompt || buildEnvironmentPrompt(environment, { styleIdx, userRefIdx, preset });
   if (userNote) prompt += `\n\nDirector note: ${userNote}`;
+  if (styleImagePath) {
+    prompt += `\n\nImportant: Image 1 is a style reference only. Do not use Image 1 as the crop, layout, subject, or composition. Create a new clean environment reference for ${environment.name}.`;
+  }
 
   return generateMany(prompt, aspectRatio, refs, 3, model);
 };

@@ -269,6 +269,9 @@ export const generateCharacterLooks = async (
     prompt = buildCharacterPrompt(character, { styleIdx, userRefIdx, preset });
     if (userFeedback) prompt += `\n\nDirector note: ${userFeedback}`;
   }
+  if (styleImagePath) {
+    prompt += `\n\nImportant: Image 1 is a style reference only. Do not use Image 1 as the background, crop, pose, layout, subject, or composition. Create a new isolated character reference for ${character.name}.`;
+  }
 
   parts.push({ text: prompt });
 
@@ -358,6 +361,9 @@ export const generateEnvironmentLooks = async (
   } else {
     prompt = buildEnvironmentPrompt(environment, { styleIdx, userRefIdx, preset });
     if (userNote) prompt += `\n\nDirector note: ${userNote}`;
+  }
+  if (styleImagePath) {
+    prompt += `\n\nImportant: Image 1 is a style reference only. Do not use Image 1 as the crop, layout, subject, or composition. Create a new clean environment reference for ${environment.name}.`;
   }
 
   parts.push({ text: prompt });
