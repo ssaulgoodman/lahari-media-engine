@@ -14,9 +14,9 @@ type VisualizeStylePromptInput = {
 
 const CORE_TASK = `Generate one reusable visual style reference frame for this project.
 
-The frame should demonstrate the style system clearly — lighting behavior, color palette, texture or medium, rendering approach, atmosphere — using a motif, prop, environment detail, or production-design element that belongs to the project. Keep the composition clean enough that the visual treatment is easy to read and reuse downstream.
+The frame should demonstrate the style system clearly — lighting behavior, color palette, texture or medium, rendering approach, atmosphere — using a simple motif, anonymous figure, prop vignette, environment detail, or production-design element that belongs to the project. Keep the composition concrete and readable enough that the visual treatment is easy to reuse downstream.
 
-Do not produce a character portrait, storyboard frame, poster, collage, or narrative scene. The output is a style swatch, not a story beat.`;
+This is not a character design sheet, storyboard panel, poster, collage, or title card. It can feel like a clean production still, anonymous character-style frame, or background-detail frame, but it should not depict a specific plot beat.`;
 
 const OUTPUT_CONTRACT = `Output the final reference image. High production value. No text. No watermark. No captions.`;
 
@@ -26,7 +26,7 @@ const OUTPUT_CONTRACT = `Output the final reference image. High production value
 
 const formatInputs = (input: VisualizeStylePromptInput): string => {
   const lines = [
-    `Subject: ${input.preset.style.subjectPrompt(input.subject)}`,
+    `Project world: ${input.preset.style.subjectPrompt(input.subject)}`,
     `\nStyle direction to render:\n${clip(input.styleDescription, 1500)}`,
   ];
   return lines.join('\n');

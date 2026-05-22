@@ -214,7 +214,7 @@ Do not let directions, descriptions, or generated frames drift into live-action 
       brainstormTaste: `Cover a real range across legitimate anime aesthetics. Each of the four directions should sit in a clearly different corner of the anime production space: modern flat-color digital, retro cel-painted television, soft watercolor or pastel illustration, harsh high-contrast graphic, photoreal-leaning painted backgrounds with anime characters, ink-and-wash or sketch-forward, stylized limited-animation looks. These are starting points, not a fixed menu; pick four that actually contrast with each other given this project.
 
 Each direction must be distinct in palette, line treatment, rendering, lighting, and mood. Avoid restating the same look with different adjectives.`,
-      subjectPrompt: (subject) => `an anime scene production bible for ${subject}`,
+      subjectPrompt: (subject) => `the scripted anime project "${subject}"`,
       presetBible: 'Default anime look: clean 2D animation key art, expressive but consistent faces, readable silhouettes, detailed painted backgrounds, restrained camera motion, strong acting poses, no live-action photorealism.',
     },
     looks: {
