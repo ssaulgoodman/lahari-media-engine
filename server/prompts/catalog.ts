@@ -18,15 +18,11 @@
  * Phase 1 = display only. Phase 2 moves to server/prompts/<name>.ts templates
  * with runtime interpolation + per-project overrides.
  *
- * Text-provider routing (2026-05-12): every entry below whose `model` column
- * says "Claude Opus" or "Claude Sonnet" for a text stage is actually routed
- * through `project.text_provider`. Three options: `claude-opus` (default,
- * Opus 4.7 primary / Sonnet 4.6 refine), `gpt-5.5`, `gemini-3-pro` (Gemini
- * 3 Pro primary / Gemini 3.1 Flash refine). The only text stages NOT routed
- * are the script writer trio: planScenes, refineScript, writeShotPrompts —
- * they stay on Claude Opus because the extended-thinking + validation-loop
- * retry semantics don't port cleanly to OpenAI / Gemini. The storyboard
- * planner IS routed (uses `useRefineModel: true` to keep cost low).
+ * Text-provider routing (2026-05-22): v1 exposes only providers that can cover
+ * the full artist-facing text path, including script planning / rewrite /
+ * shot prompts. Options: `claude-opus` (Opus 4.7 primary / Sonnet 4.6 refine)
+ * and `gpt-5.5`. Gemini text support exists in the dispatcher, but stays
+ * hidden until the script planner has a real Gemini retry loop.
  */
 
 export type PromptStage =
@@ -606,7 +602,7 @@ OUTPUT CONTRACT
     name: 'Write Seedance storyboard prompt',
     stage: 'studio',
     model: 'per-project text_provider (refine sibling)',
-    modelLabel: 'Claude Sonnet / GPT-5.5 / Gemini 3.1 Flash (refine tier)',
+    modelLabel: 'Claude Sonnet / GPT-5.5 (refine tier)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
     summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. Panel actions appear in both outputs; locked refs and preset taste decide the medium.',
     variables: [
@@ -682,7 +678,7 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
     name: 'Refine Seedance storyboard',
     stage: 'studio',
     model: 'project.text_provider (refine tier) OR storyboard image provider',
-    modelLabel: 'Redo = text-provider refine model (Sonnet/GPT-5.5/Gemini Flash); Edit = project storyboard_provider',
+    modelLabel: 'Redo = text-provider refine model (Sonnet/GPT-5.5); Edit = project storyboard_provider',
     triggeredBy: "Fires when you enter a natural-language note and click 'Refine' in storyboard mode.",
     summary: 'Refine has two modes. Redo (replan) routes through project.text_provider (cheap refine sibling) to rewrite saved storyboardPrompt + cutPlanText; the artist must click Generate after to render a new image. Edit (edit_image) calls the project storyboard_provider directly with the previous storyboard image + the saved prompt + the artist note — text fields untouched. Edit prompt does NOT include the cut plan (image renderer does not use it).',
     variables: [

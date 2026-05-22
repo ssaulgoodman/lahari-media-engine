@@ -353,8 +353,8 @@ The prompt now stays intentionally lean:
 
 | | |
 |---|---|
-| **Planner model** | Routes through `project.text_provider` (refine tier) — Claude Sonnet 4.6 (default), GPT-5.5, or Gemini 3.1 Flash. Was hardcoded to OpenAI Responses + `gpt-5.5` before the text-provider picker shipped (2026-05-12). |
-| **Renderer model** | Project `storyboard_provider`: `nano-banana-2` (Segmind, default), `nano-banana-pro` (Google `gemini-3-pro-image-preview`), or `gpt-image-2` (OpenAI). |
+| **Planner model** | Routes through `project.text_provider` refine tier — Claude Sonnet 4.6 (default) or GPT-5.5. Was hardcoded to OpenAI Responses + `gpt-5.5` before the text-provider picker shipped (2026-05-12). |
+| **Renderer model** | Project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, or `gpt-image-2`; all route through Segmind BYOK in Mirage. |
 | **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs. **Per-shot continuity (opt-in):** when `shot.use_prev_storyboard_ref` is true the prev shot's locked storyboard is attached as vision input to the planner AND as `@imageN` to the renderer. Separate `shot.include_prev_cut_plan` checkbox (nullable; smart-default checked when `continuity_from === 'prev_shot'`) prepends prev shot's cut plan as text context to the planner. |
 | **Saved outputs before image** | `shot.storyboard_prompt` (image-render prompt with per-panel actions baked INLINE — the image model knows what to draw per panel from this field alone) + `shot.storyboard_cut_plan` (text motion/cut guide for Seedance) + `storyboard_prompt_status` |
 | **Rendered output** | Ordered storyboard image/version in `lahari_storyboard_versions`, with provider/model metadata |
@@ -539,21 +539,18 @@ Auto-scores generated frames against the prompt + style + character refs. Not cu
 
 ## Cross-cutting Issues
 
-### Text provider routing (2026-05-12)
+### Text provider routing (2026-05-22)
 
-One project-level setting (`project.text_provider`) controls every text-generation stage **except the script writer**. Three options:
+One project-level setting (`project.text_provider`) controls the artist-facing text path, including concept/style, script planning/refine, shot prompts, storyboard prompt writing, and audio-plan writing where applicable. v1 only exposes providers that can cover that full path.
 
 | Key | Label | Primary model | Refine model |
 |---|---|---|---|
 | `claude-opus` (default) | Claude Opus 4.7 | `claude-opus-4-7` | `claude-sonnet-4-6` |
 | `gpt-5.5` | GPT-5.5 | `gpt-5.5` | `gpt-5.5` |
-| `gemini-3-pro` | Gemini 3 Pro | `gemini-3-pro-preview` | `gemini-3.1-flash-preview` |
 
-**Routed (responds to picker):** concept gen + refine, style brainstorm + refine, meaning summary, image-style analyzer, frame/motion/chained-shot refines, character + environment look refines, storyboard prompt writer.
+Gemini text remains implemented in `server/services/text-provider.ts`, but is hidden from the Blueprint picker until script planning has a real Gemini retry/validation loop. Do not expose a provider that silently falls back for script work.
 
-**Not routed (always Claude Opus):** `planScenes`, `refineScript`, `writeShotPrompts`. The script writer stack uses Anthropic extended thinking + a validation loop with retry semantics that doesn't port cleanly to OpenAI / Gemini. The UI surfaces this as a "Script writer always uses Claude Opus" sub-label under the Text model dropdown.
-
-**Implementation:** `server/services/text-provider.ts` is the unified dispatcher. One `generateText(providerKey, req)` API. Each provider's branch handles native conventions: Anthropic tool_use, OpenAI `response_format: json_schema` (non-strict — schemas have optional fields), Gemini `responseSchema` + `responseMimeType`. Vision inputs accept HTTPS URL (fetched + base64'd for Gemini; native for Anthropic/OpenAI) or inline base64 (artist uploads). Refines use the cheap sibling via `useRefineModel: true` on the request, keeping the cost-tier discipline from the old Sonnet-vs-Opus split.
+**Implementation:** `server/services/text-provider.ts` is the unified dispatcher for concept/style/refine/storyboard/audio text calls. Script planning has provider-specific entrypoints (`claude.ts`, `openai-script.ts`) because validation/retry mechanics differ by vendor. Refines use the cheap sibling via `useRefineModel: true` where supported.
 
 ### Hardcoded "devotional" framing
 Present in: concept prompt ([claude.ts:66](../server/services/claude.ts#L66)), script prompt ([claude.ts:162](../server/services/claude.ts#L162)), style brainstorm ([claude.ts:397](../server/services/claude.ts#L397)), critique ([gemini.ts:161](../server/services/gemini.ts#L161)).

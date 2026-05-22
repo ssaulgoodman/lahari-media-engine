@@ -15,6 +15,7 @@ import { paramStr, parseTimestamp } from './scope-helpers.js';
 import { getProjectRuntimePreset } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
+import { getTextProvider } from '../../constants/textProviders.js';
 
 const allowedShotDurations = (videoModel?: string | null): number[] => {
   const model = String(videoModel || '');
@@ -54,7 +55,7 @@ router.post('/:id/generate-script', async (req, res) => {
   // rebuild-prompt). Validation function is shared via script-validation.ts.
   const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();
   const envProvider = String(process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
-  const projectProvider = String(project.text_provider || '').toLowerCase();
+  const projectProvider = getTextProvider(project.text_provider).key;
   const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
   const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
   // Gemini script writer not yet implemented — fall through to Claude with a
@@ -268,7 +269,7 @@ router.post('/:id/refine-script', async (req, res) => {
   // legacy body/env override → default Claude).
   const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();
   const envProvider = String(process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
-  const projectProvider = String(project.text_provider || '').toLowerCase();
+  const projectProvider = getTextProvider(project.text_provider).key;
   const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
   const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
   if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {
@@ -476,7 +477,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
   // Provider resolution matches generate-script / refine-script.
   const bodyProvider = String(req.body?.scriptProvider || '').toLowerCase();
   const envProvider = String(process.env.SCRIPT_WRITER_PROVIDER || '').toLowerCase();
-  const projectProvider = String(project.text_provider || '').toLowerCase();
+  const projectProvider = getTextProvider(project.text_provider).key;
   const resolvedProvider = bodyProvider || projectProvider || envProvider || 'claude-opus';
   const useOpenAIScriptWriter = resolvedProvider === 'openai' || resolvedProvider === 'gpt-5.5';
   if (resolvedProvider === 'gemini-3-pro' || resolvedProvider === 'gemini') {

@@ -1,7 +1,8 @@
-// Provider registry for ALL TEXT generation stages — concept writer, style
-// brainstorm, script writer, storyboard prompt writer. One project-level
-// setting (`project.text_provider`) controls which model handles every
-// text-generation step in the pipeline.
+// Provider registry for v1 text-generation stages surfaced in Blueprint.
+// The picker must only expose providers that can cover the full artist-facing
+// text path, including script planning / rewrite / shot prompts. Gemini text
+// support exists in the dispatcher, but the script planner does not have a
+// Gemini retry loop yet, so it stays hidden until that path is real.
 //
 // First entry is the default for new projects (mirrors how IMAGE_MODELS and
 // VIDEO_MODELS first-entry-is-default works). Existing projects with null
@@ -12,7 +13,7 @@
 // flow through this picker because per-stage cost trumps per-stage choice
 // at the refine level.
 
-export type TextProviderKey = 'claude-opus' | 'gpt-5.5' | 'gemini-3-pro';
+export type TextProviderKey = 'claude-opus' | 'gpt-5.5';
 
 export interface TextProviderSpec {
   key: TextProviderKey;
@@ -42,14 +43,6 @@ export const TEXT_PROVIDERS: TextProviderSpec[] = [
     runtimeModel: 'gpt-5.5',
     refineModel: 'gpt-5.5',
     note: 'Practical, direct prose. Less flowery scripts.',
-  },
-  {
-    key: 'gemini-3-pro',
-    label: 'Gemini 3 Pro',
-    provider: 'google',
-    runtimeModel: 'gemini-3-pro-preview',
-    refineModel: 'gemini-3.1-flash-preview',
-    note: 'Strong vision context handling. Good when continuity refs are heavy.',
   },
 ];
 
