@@ -265,7 +265,6 @@ router.patch('/:id/shots/:shotId/audio-plan', async (req, res) => {
     };
     await updateRows('shots', { id: shotId }, {
       audio_plan: updatedPlan,
-      updated_at: new Date().toISOString(),
     });
     await updateRows('projects', { id: projectId }, { updated_at: new Date().toISOString() });
     await recordDirectorEvent({
