@@ -118,6 +118,15 @@ const WORKFLOW_FILTERS: Array<{ key: string; label: string; match: (tool: ToolRe
 const formatAssetList = (keys: string[], fallback: string): string =>
   keys.length ? keys.map((key) => ASSET_LABELS[key] || key).join(', ') : fallback;
 
+const COMPOSER_SECTIONS = [
+  { label: 'Core task', note: 'what this tool is trying to do' },
+  { label: 'Workflow context', note: 'music-led or scripted narrative framing' },
+  { label: 'Project inputs', note: 'script, style, cast, shots, or audio' },
+  { label: 'Preset taste', note: 'medium guard and taste rules' },
+  { label: 'User note policy', note: 'how strongly your note should steer it' },
+  { label: 'Output contract', note: 'the exact shape the model must return' },
+];
+
 // Inline visual for {{variables}} — renders them as subtle chips so the
 // template remains scannable. Falls back to plain text otherwise.
 const TemplateBody: React.FC<{ text: string }> = ({ text }) => {
@@ -149,6 +158,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
   const [search, setSearch] = useState('');
   const [modelFilter, setModelFilter] = useState<string>('all');
   const [workflowFilter, setWorkflowFilter] = useState<string>('all');
+  const [showReferences, setShowReferences] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -264,19 +274,40 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             </svg>
             Back
           </button>
-          <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Tool Recipes</h1>
+          <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Prompt System</h1>
           <p className="text-sm text-zinc-400 mt-1.5 max-w-xl">
-            What each production tool reads, changes, and produces. Advanced drawers show the prompt text behind older and composed calls.
+            The buttons Mirage and the agent can run, plus the prompt recipe each model call is assembled from.
           </p>
         </div>
         {!loading && (
           <div className="text-right">
-            <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Registry + usage</div>
+            <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono">Tools + calls</div>
             <div className="text-sm text-zinc-300 tabular-nums mt-1">
-              {tools.length.toLocaleString()} tools · {totalCalls.toLocaleString()} calls · ${totalSpend.toFixed(2)}
+              {tools.length.toLocaleString()} tools · {totalCalls.toLocaleString()} prompt calls · ${totalSpend.toFixed(2)}
             </div>
           </div>
         )}
+      </div>
+
+      <div className="surface rounded-xl p-4 mb-4">
+        <div className="flex items-start justify-between gap-4 mb-3">
+          <div>
+            <h2 className="text-sm font-medium text-white">How a composed prompt is built</h2>
+            <p className="text-xs text-zinc-400 mt-1 max-w-2xl">
+              Most v1 tools do not use one hidden wall of text. They stack these sections, then X-Ray records the exact stack for each call.
+            </p>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono flex-shrink-0">Composer</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+          {COMPOSER_SECTIONS.map((section, idx) => (
+            <div key={section.label} className="rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2">
+              <div className="text-[10px] text-zinc-500 font-mono mb-1">{idx + 1}</div>
+              <div className="text-xs text-white font-medium">{section.label}</div>
+              <div className="text-[11px] text-zinc-400 leading-snug mt-1">{section.note}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Filter bar — matches Blueprint phase bar pattern */}
@@ -307,19 +338,6 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             </button>
           ))}
         </div>
-        <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
-          {MODEL_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setModelFilter(f.key)}
-              className={`text-xs px-2.5 py-1.5 transition-colors ${
-                modelFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {loading ? (
@@ -333,9 +351,9 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
           {toolsBySurface.length > 0 && (
             <section>
               <div className="flex items-baseline gap-4 mb-3 pb-2 border-b border-white/[0.06]">
-                <h2 className="text-lg font-display font-medium text-white tracking-tight">Production Tools</h2>
+                <h2 className="text-lg font-display font-medium text-white tracking-tight">Production buttons</h2>
                 <p className="text-xs text-zinc-400 flex-1 truncate">
-                  Registry-owned actions shared by the web UI and agent harness.
+                  These are the actions surfaced in Blueprint, Studio, Render, and the agent harness.
                 </p>
                 <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-mono tabular-nums flex-shrink-0">
                   {visibleTools.length === tools.length ? tools.length : `${visibleTools.length} / ${tools.length}`}
@@ -357,6 +375,9 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                               </div>
                               <p className="text-xs text-zinc-400 leading-relaxed">{tool.description}</p>
                             </div>
+                            <span className={`text-[10px] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap ${tool.hasPromptBuilder ? 'text-cyan-200 bg-cyan-400/[0.08]' : 'text-zinc-400 bg-white/[0.04]'}`}>
+                              {tool.hasPromptBuilder ? 'Prompted' : 'Action'}
+                            </span>
                             {tool.enabledFor && tool.enabledFor.length > 0 && (
                               <span className="text-[10px] text-zinc-300 bg-white/[0.04] rounded px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">
                                 {formatWorkflowList(tool.enabledFor)}
@@ -365,15 +386,15 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
                           </div>
                           <div className="mt-3 grid grid-cols-3 gap-2 text-[10px]">
                             <div>
-                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Needs</div>
+                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Can run after</div>
                               <div className="text-zinc-400">{formatAssetList(tool.requires, 'nothing')}</div>
                             </div>
                             <div>
-                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Reads</div>
+                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Also reads</div>
                               <div className="text-zinc-400">{formatAssetList(tool.contextInputs, 'minimal context')}</div>
                             </div>
                             <div>
-                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Produces</div>
+                              <div className="uppercase tracking-wide text-zinc-500 mb-1">Creates / updates</div>
                               <div className="text-zinc-300">{formatAssetList(tool.produces, 'nothing')}</div>
                             </div>
                           </div>
@@ -386,13 +407,43 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
             </section>
           )}
 
-          {filtered.length === 0 ? (
-            <div className="text-center py-16 text-sm text-zinc-400">
-              No prompt templates match your filter.
+          <section>
+            <div className="flex items-center gap-4 mb-3 pb-2 border-b border-white/[0.06]">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-display font-medium text-white tracking-tight">Prompt references and usage</h2>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Debug view for old template references and aggregate call history. X-Ray is the better place to inspect one real call.
+                </p>
+              </div>
+              <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
+                {MODEL_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setModelFilter(f.key)}
+                    className={`text-xs px-2.5 py-1.5 transition-colors ${
+                      modelFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setShowReferences((v) => !v)}
+                className="text-xs text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] rounded-md px-3 py-1.5 transition-colors"
+              >
+                {showReferences ? 'Hide references' : `Show ${filtered.length} references`}
+              </button>
+            </div>
+          </section>
+
+          {showReferences && filtered.length === 0 ? (
+            <div className="text-center py-12 text-sm text-zinc-400">
+              No prompt references match your filter.
             </div>
           ) : null}
 
-          {grouped.map(([stageKey, stagePrompts]) => {
+          {showReferences && grouped.map(([stageKey, stagePrompts]) => {
             const meta = stages[stageKey];
             return (
               <section key={stageKey}>
@@ -571,9 +622,9 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack }) => {
       )}
 
       {/* Footer note */}
-      {!loading && filtered.length > 0 && (
+      {!loading && (
         <div className="mt-12 pt-6 border-t border-white/[0.06] text-[11px] text-zinc-400 font-mono text-center">
-          {visibleTools.length} of {tools.length} tools · {filtered.length} of {prompts.length} prompt references shown — overrides happen by composer section, not by replacing a whole hidden template
+          {visibleTools.length} of {tools.length} buttons shown · {filtered.length} of {prompts.length} debug references match — project overrides apply to recipe sections, not whole hidden templates
         </div>
       )}
     </div>
