@@ -1,6 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import { ApiProject } from '../types';
+import { InlineAudioPlayer } from './InlineAudioPlayer';
 
 interface Props {
   project: ApiProject | null;
@@ -51,8 +52,8 @@ export const StepUpload: React.FC<Props> = ({ project, onFileSelect, onGenerateC
 
         {/* Audio player */}
         {project.audioPath && (
-          <div className="surface rounded-xl p-4 flex items-center gap-4">
-            <audio controls src={project.audioPath} className="flex-1 h-10" />
+          <div className="surface rounded-xl px-4 py-3 flex items-center gap-4">
+            <InlineAudioPlayer src={project.audioPath} size="md" trackWidth={320} />
           </div>
         )}
 

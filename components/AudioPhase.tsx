@@ -4,6 +4,7 @@ import { ApiProject, DialogueLine, DialogueVideoMode, TtsStatus, VideoShot, Vide
 import * as api from '../services/api';
 import { Phase } from './BlueprintContextBar';
 import { TtsGenerateModal, TtsRunScope } from './TtsGenerateModal';
+import { InlineAudioPlayer } from './InlineAudioPlayer';
 
 interface Props {
   project: ApiProject;
@@ -438,21 +439,25 @@ interface DialogueRowProps {
 const DialogueRow: React.FC<DialogueRowProps> = ({ line, castName, castVoiceSet, generating, onRegenerate }) => {
   const status: TtsStatus = generating ? 'generating' : line.ttsStatus;
   const canRegenerate = castVoiceSet && !generating && (status === 'pending' || status === 'success' || status === 'error');
+  // When audio exists and we're not in an error/generating state, the
+  // presence of the play button IS the "ready" signal — don't double up
+  // with a status pill. Pill still shows for pending / generating / error.
+  const hasReadyAudio = status === 'success' && !!line.ttsAssetUrl;
 
   return (
-    <div className="px-5 py-3 flex items-start gap-3">
-      <span className="text-xs text-zinc-400 font-medium w-20 flex-shrink-0 truncate" title={castName}>{castName}</span>
-      <div className="flex-1 min-w-0 space-y-1">
+    <div className="px-5 py-3 flex items-start gap-2">
+      <span className="text-xs text-zinc-400 font-medium flex-shrink-0 truncate max-w-[120px]" title={castName}>{castName}</span>
+      <div className="flex-1 min-w-0 space-y-1.5">
         <p className="text-sm text-zinc-200 italic leading-snug">"{line.text}"</p>
         {line.ttsError && status === 'error' && (
           <div className="text-[11px] text-red-400">{line.ttsError}</div>
         )}
-        {line.ttsAssetUrl && status === 'success' && (
-          <audio controls src={line.ttsAssetUrl} className="w-full max-w-md mt-2 h-8" preload="none" />
+        {hasReadyAudio && (
+          <InlineAudioPlayer src={line.ttsAssetUrl!} />
         )}
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <TtsStatusPill status={status} />
+        {!hasReadyAudio && <TtsStatusPill status={status} />}
         {canRegenerate && (
           <button
             onClick={onRegenerate}
