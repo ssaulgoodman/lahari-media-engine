@@ -186,6 +186,7 @@ const server = new McpServer({
 const toolAnnotations = (name) => {
   const readOnlyPrefixes = [
     'list_',
+    'query_',
     'search_',
     'get_',
     'plan_',
@@ -272,6 +273,41 @@ registerTool('resolve_project', {
     query: z.string().min(1).max(120).describe('Project ID, project title, song title, transliteration, deity, or queue label.'),
   },
 }, ({ query }) => directorGet(`/api/director/resolve?query=${encodeURIComponent(query)}`));
+
+registerTool('query_artist_memory', {
+  title: 'Query artist memory',
+  description: 'Read-only. Broad, safe memory query over the authenticated artist-owned Lahari slice. Use for prior styles, reusable references, older boards, taste patterns, and cross-project evidence. Returns curated evidence, not raw SQL.',
+  inputSchema: {
+    question: z.string().min(1).max(500).describe('Natural-language question about the authenticated artist-owned Lahari work.'),
+    projectId: projectId.optional().describe('Optional current project ID for local context/scoping.'),
+    includeAssets: z.boolean().optional().describe('Whether to include relevant asset URLs/thumbnails when available.'),
+    limit: z.number().int().min(1).max(30).optional(),
+  },
+}, ({ question, projectId, includeAssets, limit }) => {
+  const params = new URLSearchParams({ question });
+  if (projectId) params.set('projectId', projectId);
+  if (includeAssets !== undefined) params.set('includeAssets', includeAssets ? 'true' : 'false');
+  if (limit) params.set('limit', String(limit));
+  return directorGet(`/api/director/memory/query?${params.toString()}`);
+});
+
+registerTool('search_artist_assets', {
+  title: 'Search artist assets',
+  description: 'Read-only. Searches authenticated artist-owned assets by kind/query and returns compact asset evidence with public URLs.',
+  inputSchema: {
+    kind: z.enum(['all', 'style', 'storyboard', 'shot_image', 'keyframe', 'look', 'character', 'environment', 'video']).optional(),
+    query: z.string().min(1).max(200).optional(),
+    projectId: projectId.optional().describe('Optional project ID to restrict the search.'),
+    limit: z.number().int().min(1).max(80).optional(),
+  },
+}, ({ kind, query, projectId, limit }) => {
+  const params = new URLSearchParams();
+  if (kind) params.set('kind', kind);
+  if (query) params.set('query', query);
+  if (projectId) params.set('projectId', projectId);
+  if (limit) params.set('limit', String(limit));
+  return directorGet(`/api/director/assets/search${params.toString() ? `?${params.toString()}` : ''}`);
+});
 
 registerTool('get_project_packet', {
   title: 'Get project packet',

@@ -79,6 +79,10 @@ export {
   searchCatalogForDirector,
 } from './codexStudio/discovery.js';
 export {
+  queryArtistMemory,
+  searchArtistAssets,
+} from './codexStudio/memory.js';
+export {
   applyGenerateStoryboard,
   applyGenerateVideo,
   applyProjectPreferencesConfig,
