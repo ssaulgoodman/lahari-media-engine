@@ -21,11 +21,15 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { ApiProject, VideoScene, VideoShot } from '../types';
-import { getShotHistory, VersionEntry } from '../services/api';
+import { getShotHistory, hideShotVideoFromMediaLibrary, VersionEntry } from '../services/api';
 import { addVideoClip } from './timeline-editor/TimelineEditor';
 
 interface Props {
   project: ApiProject;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideClosedHandle?: boolean;
+  newMediaUrls?: Set<string>;
 }
 
 // Cache history per shot in component state so switching scenes doesn't
@@ -33,13 +37,24 @@ interface Props {
 // the version[] array from getShotHistory.
 type HistoryCache = Record<string, VersionEntry[]>;
 
-export const MediaLibraryDrawer: React.FC<Props> = ({ project }) => {
+export const MediaLibraryDrawer: React.FC<Props> = ({
+  project,
+  open: controlledOpen,
+  onOpenChange,
+  hideClosedHandle = false,
+  newMediaUrls,
+}) => {
   // Closed by default — the drawer is a deliberate-reach tool, not a panel
   // that's always present. The handle at the bottom is what's persistent.
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   const [historyByShot, setHistoryByShot] = useState<HistoryCache>({});
   const [loadingShots, setLoadingShots] = useState<Set<string>>(new Set());
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
 
   // Hide entirely when the project has no rendered material. Removes a dead
   // affordance from the artist's view during early render-phase entry.
@@ -88,10 +103,23 @@ export const MediaLibraryDrawer: React.FC<Props> = ({ project }) => {
     return () => { cancelled = true; };
   }, [open, activeScene?.id, project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleHideVersion = async (shotId: string, assetId: string) => {
+    await hideShotVideoFromMediaLibrary(project.id, shotId, assetId);
+    setHistoryByShot((prev) => {
+      const versions = prev[shotId];
+      if (!versions) return prev;
+      return {
+        ...prev,
+        [shotId]: versions.filter((version) => version.assetId !== assetId),
+      };
+    });
+  };
+
   if (!hasAnyRendered) return null;
 
   // ─── Closed state: just the handle ──────────────────────────────────────
   if (!open) {
+    if (hideClosedHandle) return null;
     return (
       <button
         type="button"
@@ -169,6 +197,8 @@ export const MediaLibraryDrawer: React.FC<Props> = ({ project }) => {
                 shotNumber={idx + 1}
                 versions={historyByShot[shot.id]}
                 loading={loadingShots.has(shot.id)}
+                onHideVersion={handleHideVersion}
+                newMediaUrls={newMediaUrls}
               />
             ))}
           </div>
@@ -194,9 +224,11 @@ interface ShotColumnProps {
   shotNumber: number;
   versions?: VersionEntry[];
   loading: boolean;
+  onHideVersion: (shotId: string, assetId: string) => Promise<void>;
+  newMediaUrls?: Set<string>;
 }
 
-const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loading }) => {
+const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loading, onHideVersion, newMediaUrls }) => {
   // Loading / no-rendered-video state — explicit empty card so the column
   // layout stays consistent (don't shift other columns left).
   if (loading && !versions) {
@@ -243,6 +275,8 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
         label={`Shot ${shotNumber}`}
         isActive
         posterFallback={shot.storyboardUrl || shot.imageUrl}
+        onHide={active.isCurrent ? undefined : () => onHideVersion(shot.id, active.assetId)}
+        isNew={newMediaUrls?.has(active.url)}
       />
 
       {/* Older versions — compact chips. Skipped entirely if only one version
@@ -256,6 +290,8 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
               label={`Shot ${shotNumber} · v${list.length - 1 - i}`}
               compact
               posterFallback={shot.storyboardUrl || shot.imageUrl}
+              onHide={v.isCurrent ? undefined : () => onHideVersion(shot.id, v.assetId)}
+              isNew={newMediaUrls?.has(v.url)}
             />
           ))}
         </div>
@@ -272,12 +308,27 @@ const VersionCard: React.FC<{
   isActive?: boolean;
   compact?: boolean;
   posterFallback?: string;
-}> = ({ version, label, isActive, compact, posterFallback }) => {
+  onHide?: () => Promise<void>;
+  isNew?: boolean;
+}> = ({ version, label, isActive, compact, posterFallback, onHide, isNew }) => {
+  const [hiding, setHiding] = useState(false);
   const handleAdd = () => {
     // Cloning intent: the canonical shot stays untouched; we just append a
     // copy of this version's video URL to the timeline. The artist can then
     // trim, split, or move it independently.
     addVideoClip(version.url, label);
+  };
+
+  const handleHide = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!onHide || hiding) return;
+    setHiding(true);
+    try {
+      await onHide();
+    } catch (err: any) {
+      alert(err?.message || 'Hide failed');
+      setHiding(false);
+    }
   };
 
   // Thumbnail strategy, in order of preference:
@@ -300,10 +351,62 @@ const VersionCard: React.FC<{
 
   if (compact) {
     return (
+      <div className={`relative aspect-video w-12 rounded overflow-hidden bg-black/30 border transition-colors group ${
+        isNew ? 'border-amber-300/70 ring-1 ring-amber-300/50' : 'border-white/[0.06] hover:border-white/[0.2]'
+      } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="absolute inset-0"
+          title={`Append ${label} to timeline`}
+        >
+          {showAsImage ? (
+            <img src={explicitThumb!} alt="" className="w-full h-full object-cover" onError={() => setExplicitThumbFailed(true)} />
+          ) : (
+            <video
+              src={`${version.url}#t=0.1`}
+              poster={posterUrl}
+              className="w-full h-full object-cover"
+              muted
+              playsInline
+              preload="metadata"
+            />
+          )}
+        </button>
+        {onHide && (
+          <button
+            type="button"
+            onClick={handleHide}
+            disabled={hiding}
+            className="absolute top-0.5 right-0.5 z-10 w-4 h-4 rounded-full bg-black/70 text-zinc-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none flex items-center justify-center"
+            title="Hide from library"
+          >
+            ×
+          </button>
+        )}
+        {isNew && (
+          <span className="absolute bottom-0.5 left-0.5 rounded bg-amber-300 px-1 py-px text-[8px] font-bold uppercase tracking-wide text-black">
+            New
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`relative aspect-video w-full rounded overflow-hidden bg-black/30 border transition-colors group ${
+        isNew
+          ? 'border-amber-300/70 ring-1 ring-amber-300/50'
+          : isActive
+            ? 'border-white/[0.3] ring-1 ring-white/40'
+            : 'border-white/[0.06] hover:border-white/[0.2]'
+      } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}
+    >
       <button
         type="button"
         onClick={handleAdd}
-        className="relative aspect-video w-12 rounded overflow-hidden bg-black/30 border border-white/[0.06] hover:border-white/[0.2] transition-colors group"
+        className="absolute inset-0"
         title={`Append ${label} to timeline`}
       >
         {showAsImage ? (
@@ -315,43 +418,37 @@ const VersionCard: React.FC<{
             className="w-full h-full object-cover"
             muted
             playsInline
-            preload="metadata"
+            preload="auto"
           />
         )}
       </button>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={handleAdd}
-      className={`relative aspect-video w-full rounded overflow-hidden bg-black/30 border transition-colors group ${
-        isActive ? 'border-white/[0.3] ring-1 ring-white/40' : 'border-white/[0.06] hover:border-white/[0.2]'
-      }`}
-      title={`Append ${label} to timeline`}
-    >
-      {showAsImage ? (
-        <img src={explicitThumb!} alt="" className="w-full h-full object-cover" onError={() => setExplicitThumbFailed(true)} />
-      ) : (
-        <video
-          src={`${version.url}#t=0.1`}
-          poster={posterUrl}
-          className="w-full h-full object-cover"
-          muted
-          playsInline
-          preload="auto"
-        />
-      )}
       {isActive && (
-        <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-black/60 text-white px-1 py-0.5 rounded font-mono">
+        <span className={`absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 rounded font-mono ${
+          isNew ? 'bg-amber-300 text-black' : 'bg-black/60 text-white'
+        }`}>
           on timeline
         </span>
       )}
+      {isNew && !isActive && (
+        <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-amber-300 text-black px-1.5 py-0.5 rounded font-mono">
+          New
+        </span>
+      )}
+      {onHide && (
+        <button
+          type="button"
+          onClick={handleHide}
+          disabled={hiding}
+          className="absolute top-1 right-1 z-10 text-[9px] uppercase tracking-wider bg-black/70 text-zinc-300 hover:text-white px-1.5 py-0.5 rounded font-mono opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Hide from library"
+        >
+          Hide
+        </button>
+      )}
       {/* Hover overlay — subtle "+ Add" hint without crowding the resting state. */}
-      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] text-white font-medium">
+      <div className="pointer-events-none absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] text-white font-medium">
         + Add
       </div>
-    </button>
+    </div>
   );
 };

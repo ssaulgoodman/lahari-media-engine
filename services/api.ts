@@ -854,6 +854,13 @@ export const getShotHistory = async (projectId: string, shotId: string) => {
   return handleResponse(res) as Promise<{ firstFrame: VersionEntry[]; lastFrame: VersionEntry[]; video: VersionEntry[] }>;
 };
 
+export const hideShotVideoFromMediaLibrary = async (projectId: string, shotId: string, assetId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/assets/${assetId}/hide-from-media-library`, {
+    method: 'POST',
+  });
+  return handleResponse(res) as Promise<{ ok: true }>;
+};
+
 export const revertShotFrame = async (projectId: string, shotId: string, assetId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/revert-frame`, {
     method: 'POST',

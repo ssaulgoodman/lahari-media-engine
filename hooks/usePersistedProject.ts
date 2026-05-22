@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ApiProject, AppStep } from '../types';
 import * as api from '../services/api';
 
@@ -15,10 +15,33 @@ type UsePersistedProjectOptions = {
 
 const stepFromParam = (value: string | null): AppStep | null => {
   if (value === 'queue') return AppStep.UPLOAD;
+  if (value === 'start') return AppStep.UPLOAD;
   if (value === 'blueprint') return AppStep.BLUEPRINT;
   if (value === 'studio') return AppStep.STUDIO;
   if (value === 'render') return AppStep.RENDER;
   return null;
+};
+
+const stepToParam = (step: AppStep): string => {
+  if (step === AppStep.UPLOAD) return 'start';
+  if (step === AppStep.BLUEPRINT) return 'blueprint';
+  if (step === AppStep.STUDIO) return 'studio';
+  if (step === AppStep.RENDER) return 'render';
+  return 'start';
+};
+
+const TAB_PROJECT_KEY = 'mirage:tab:projectId';
+const TAB_STEP_KEY = 'mirage:tab:step';
+const GLOBAL_PROJECT_KEY = 'mirage:projectId';
+const GLOBAL_STEP_KEY = 'mirage:step';
+
+const LEGACY_PROJECT_KEY = 'lahari:projectId';
+const LEGACY_STEP_KEY = 'lahari:step';
+
+const validStoredStep = (value: string | null): AppStep | null => {
+  if (value === null) return null;
+  const step = Number(value) as AppStep;
+  return step >= AppStep.UPLOAD && step <= AppStep.RENDER ? step : null;
 };
 
 export const usePersistedProject = ({
@@ -29,64 +52,128 @@ export const usePersistedProject = ({
   setProject,
   navigateToPhase,
 }: UsePersistedProjectOptions) => {
-  const persistState = useCallback((id: string | null, step: AppStep) => {
-    if (id) localStorage.setItem('lahari:projectId', id);
-    else localStorage.removeItem('lahari:projectId');
-    localStorage.setItem('lahari:step', String(step));
+  const [restoring, setRestoring] = useState(true);
+
+  const writeUrl = useCallback((id: string | null, step: AppStep) => {
+    const url = new URL(window.location.href);
+    if (id) {
+      url.searchParams.set('project', id);
+      url.searchParams.delete('projectId');
+      url.searchParams.set('step', stepToParam(step));
+    } else {
+      url.searchParams.delete('project');
+      url.searchParams.delete('projectId');
+      url.searchParams.delete('shot');
+      url.searchParams.delete('shotId');
+      if (step === AppStep.UPLOAD) url.searchParams.delete('step');
+      else url.searchParams.set('step', stepToParam(step));
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (next !== current) window.history.replaceState(null, '', next);
   }, []);
 
+  const persistState = useCallback((id: string | null, step: AppStep) => {
+    if (id) {
+      sessionStorage.setItem(TAB_PROJECT_KEY, id);
+      localStorage.setItem(GLOBAL_PROJECT_KEY, id);
+    } else {
+      sessionStorage.removeItem(TAB_PROJECT_KEY);
+    }
+    sessionStorage.setItem(TAB_STEP_KEY, String(step));
+    localStorage.setItem(GLOBAL_STEP_KEY, String(step));
+    writeUrl(id, step);
+  }, [writeUrl]);
+
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const linkedId = params.get('project') || params.get('projectId');
-    const linkedStep = params.get('step');
-    const linkedShot = params.get('shot') || params.get('shotId');
-    const savedId = localStorage.getItem('lahari:projectId');
-    const savedStepRaw = localStorage.getItem('lahari:step');
-    const savedStep = savedStepRaw !== null ? Number(savedStepRaw) as AppStep : null;
+    let cancelled = false;
 
-    const focusLinkedShot = (project: ApiProject) => {
-      if (!linkedShot) return;
-      const sceneIndex = project.scenes.findIndex(scene => scene.shots.some(shot => shot.id === linkedShot));
-      if (sceneIndex >= 0) setActiveSceneIdx(sceneIndex);
-    };
+    const restore = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const linkedId = params.get('project') || params.get('projectId');
+      const linkedStepValue = stepFromParam(params.get('step'));
+      const linkedShot = params.get('shot') || params.get('shotId');
+      const tabId = sessionStorage.getItem(TAB_PROJECT_KEY);
+      const tabStep = validStoredStep(sessionStorage.getItem(TAB_STEP_KEY));
+      const globalId = localStorage.getItem(GLOBAL_PROJECT_KEY) || localStorage.getItem(LEGACY_PROJECT_KEY);
+      const globalStep = validStoredStep(localStorage.getItem(GLOBAL_STEP_KEY) || localStorage.getItem(LEGACY_STEP_KEY));
 
-    const load = async () => {
+      const focusLinkedShot = (project: ApiProject) => {
+        if (!linkedShot) return;
+        const sceneIndex = project.scenes.findIndex(scene => scene.shots.some(shot => shot.id === linkedShot));
+        if (sceneIndex >= 0) setActiveSceneIdx(sceneIndex);
+      };
+
+      const stepForProject = (id: string, project: ApiProject): AppStep | null => {
+        if (linkedStepValue !== null) return linkedStepValue;
+        if (id === tabId && tabStep !== null) return tabStep;
+        if (!linkedId && id === globalId && globalStep !== null) return globalStep;
+        return null;
+      };
+
+      const loadProject = async (id: string): Promise<boolean> => {
+        const project = await api.getProject(id);
+        if (!project || cancelled) return false;
+        setProject(project);
+        focusLinkedShot(project);
+        const restoredStep = stepForProject(id, project);
+        if (restoredStep !== null) setCurrentStep(restoredStep);
+        else navigateToPhase(project);
+        return true;
+      };
+
       try {
-        const preferredId = linkedId || savedId;
-        if (preferredId) {
-          const project = await api.getProject(preferredId);
-          if (project) {
-            setProject(project);
-            focusLinkedShot(project);
-            const linkedStepValue = stepFromParam(linkedStep);
-            if (linkedStepValue !== null) {
-              setCurrentStep(linkedStepValue);
-            } else if (!linkedId && savedStep !== null && savedStep >= AppStep.UPLOAD && savedStep <= AppStep.RENDER) {
-              setCurrentStep(savedStep);
-            } else {
-              navigateToPhase(project);
-            }
-            return;
-          }
-        }
+        const preferredId = linkedId || tabId || globalId;
+        if (preferredId && await loadProject(preferredId)) return;
 
         const projects = await api.listProjects();
-        if (projects.length > 0) {
-          const project = await api.getProject(projects[0].id);
-          if (project) {
-            setProject(project);
-            navigateToPhase(project);
-          }
-        }
+        if (projects.length > 0) await loadProject(projects[0].id);
       } catch {
-        // No projects yet, stay on upload.
+        // No projects yet, stay on Start.
+      } finally {
+        if (!cancelled) setRestoring(false);
       }
     };
 
-    load();
+    restore();
+
+    return () => { cancelled = true; };
   }, [navigateToPhase, setActiveSceneIdx, setCurrentStep, setProject]);
 
   useEffect(() => {
+    if (restoring) return;
     persistState(projectId || null, currentStep);
-  }, [currentStep, persistState, projectId]);
+  }, [currentStep, persistState, projectId, restoring]);
+
+  useEffect(() => {
+    const onPopState = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const linkedId = params.get('project') || params.get('projectId');
+      const linkedStepValue = stepFromParam(params.get('step'));
+      const linkedShot = params.get('shot') || params.get('shotId');
+      if (!linkedId) {
+        setProject(null);
+        setCurrentStep(linkedStepValue ?? AppStep.UPLOAD);
+        return;
+      }
+      try {
+        setRestoring(true);
+        const project = await api.getProject(linkedId);
+        setProject(project);
+        if (linkedShot) {
+          const sceneIndex = project.scenes.findIndex(scene => scene.shots.some(shot => shot.id === linkedShot));
+          if (sceneIndex >= 0) setActiveSceneIdx(sceneIndex);
+        }
+        if (linkedStepValue !== null) setCurrentStep(linkedStepValue);
+        else navigateToPhase(project);
+      } finally {
+        setRestoring(false);
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [navigateToPhase, setActiveSceneIdx, setCurrentStep, setProject]);
+
+  return { restoring };
 };

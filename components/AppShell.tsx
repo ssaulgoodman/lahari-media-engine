@@ -117,7 +117,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   const { agentOperations, realtimeNotice } = useRealtimePresence(project?.id, activeProjectId, setProject);
 
-  usePersistedProject({
+  const { restoring } = usePersistedProject({
     currentStep,
     projectId: project?.id,
     setActiveSceneIdx,
@@ -1331,9 +1331,11 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
       <div className="flex flex-1 overflow-hidden">
         <main id="main-content" className="flex-1 overflow-y-auto relative">
           {/* Loading overlay — visible during project switch */}
-          {loading && !project && (
+          {(loading || restoring) && !project && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#141418]/80 backdrop-blur-sm">
-              <div className="text-sm text-zinc-400 animate-pulse">Loading…</div>
+              <div className="text-sm text-zinc-400 animate-pulse">
+                {restoring ? 'Opening workspace…' : 'Loading…'}
+              </div>
             </div>
           )}
           {loading && project && (

@@ -1088,10 +1088,19 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
     selectAll('assets', { shot_id: shotId, category: 'shot_video' }, { orderBy: 'created_at', ascending: false }),
   ]);
 
-  const videoThumbIds = videos
-    .map((a: any) => {
-      try { return JSON.parse(a.metadata || '{}').extracted_last_frame_asset_id || null; } catch { return null; }
-    })
+  const parseMetadata = (metadata: any) => {
+    if (!metadata) return {};
+    if (typeof metadata === 'object') return metadata;
+    try { return JSON.parse(metadata); } catch { return {}; }
+  };
+  const isHiddenFromMediaLibrary = (asset: any) => {
+    const metadata = parseMetadata(asset.metadata);
+    return metadata.hiddenFromMediaLibrary === true || metadata.hidden_from_media_library === true;
+  };
+  const visibleVideos = (videos as any[]).filter((asset) => !isHiddenFromMediaLibrary(asset));
+
+  const videoThumbIds = visibleVideos
+    .map((a: any) => parseMetadata(a.metadata).extracted_last_frame_asset_id || null)
     .filter(Boolean);
   const thumbAssets = videoThumbIds.length > 0
     ? await selectAll('assets', { id: videoThumbIds })
@@ -1108,9 +1117,9 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
   res.json({
     firstFrame: frames.map(a => mapAsset(a, shot.image_asset_id)),
     lastFrame: endFrames.map(a => mapAsset(a, shot.end_image_asset_id)),
-    video: videos.map(a => {
+    video: visibleVideos.map(a => {
       let thumbId: string | null = null;
-      try { thumbId = JSON.parse(a.metadata || '{}').extracted_last_frame_asset_id || null; } catch {}
+      thumbId = parseMetadata(a.metadata).extracted_last_frame_asset_id || null;
       const thumbAsset = thumbId ? thumbById.get(thumbId) : null;
       return {
         ...mapAsset(a, shot.video_asset_id),
@@ -1118,6 +1127,48 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
       };
     }),
   });
+});
+
+router.post('/:id/shots/:shotId/assets/:assetId/hide-from-media-library', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  const assetId = paramStr(req.params.assetId);
+  const shot = await selectOne('shots', { id: shotId });
+  const asset: any = await selectOne('assets', { id: assetId });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+  if (!asset || asset.shot_id !== shotId || asset.category !== 'shot_video') {
+    return res.status(404).json({ error: 'Video asset not found for this shot' });
+  }
+  if (asset.id === shot.video_asset_id) {
+    return res.status(400).json({ error: 'Cannot hide the current shot video. Revert or generate another take first.' });
+  }
+
+  let metadata: Record<string, any> = {};
+  if (asset.metadata) {
+    if (typeof asset.metadata === 'object') metadata = asset.metadata;
+    else {
+      try { metadata = JSON.parse(asset.metadata); } catch { metadata = {}; }
+    }
+  }
+  await updateRows('assets', { id: assetId }, {
+    metadata: JSON.stringify({
+      ...metadata,
+      hiddenFromMediaLibrary: true,
+      hiddenFromMediaLibraryAt: new Date().toISOString(),
+    }),
+  });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'media_library_asset_hidden',
+    entityType: 'asset',
+    entityId: assetId,
+    summary: 'Artist hid a shot video take from the render media library.',
+    payload: { shotId, assetId },
+  });
+
+  res.json({ ok: true });
 });
 
 router.post('/:id/shots/:shotId/revert-frame', async (req, res) => {
