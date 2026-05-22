@@ -222,6 +222,7 @@ export const StylePhase: React.FC<Props> = ({
 
   // Locked-state is data-driven: presence of a locked style asset URL.
   const hasLockedStyle = !!project.styleAssetUrl;
+  const styleLockBusy = lockingSlotIndex !== null || lockingUserSlot || uploadingReference || !!presetLockingKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -232,7 +233,7 @@ export const StylePhase: React.FC<Props> = ({
   }, [project.id]);
 
   const handleLockPreset = async (preset: StylePreset) => {
-    if (presetLockingKey) return;
+    if (styleLockBusy) return;
     setPresetLockingKey(preset.key);
     try {
       const updated = await api.lockStylePreset(project.id, preset.key);
@@ -333,7 +334,7 @@ export const StylePhase: React.FC<Props> = ({
   // Locks an AI brainstorm slot by index. Caller passes index so the
   // matching StyleRow's button can flip to "Locking…" while others dim.
   const handleLockAiSlot = async (slot: StyleSlot, index: number) => {
-    if (!slot.assetId) return;
+    if (!slot.assetId || styleLockBusy) return;
     setLockingSlotIndex(index);
     try {
       await onLockStyle(slot.assetId, slot.description);
@@ -345,7 +346,7 @@ export const StylePhase: React.FC<Props> = ({
   };
 
   const handleLockUserSlot = async (slot: StyleSlot) => {
-    if (!slot.assetId) return;
+    if (!slot.assetId || styleLockBusy) return;
     setLockingUserSlot(true);
     try {
       await onLockStyle(slot.assetId, slot.description);
@@ -374,7 +375,7 @@ export const StylePhase: React.FC<Props> = ({
   };
 
   const handleLockUploadedDirect = async () => {
-    if (!uploadedStyleFile) return;
+    if (!uploadedStyleFile || styleLockBusy) return;
     setUploadingReference(true);
     try {
       const updated = await api.uploadAndLockStyle(project.id, uploadedStyleFile);
@@ -400,7 +401,6 @@ export const StylePhase: React.FC<Props> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {presets.map(preset => {
           const isLockingPreset = presetLockingKey === preset.key;
-          const anyBusy = !!presetLockingKey || isLockingPreset;
           return (
             <div
               key={preset.key}
@@ -438,7 +438,7 @@ export const StylePhase: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => handleLockPreset(preset)}
-                  disabled={anyBusy}
+                  disabled={styleLockBusy}
                   className="w-full px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                   {isLockingPreset && <div className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
@@ -587,7 +587,7 @@ export const StylePhase: React.FC<Props> = ({
             />
             <button
               onClick={() => styleDirectUploadRef.current?.click()}
-              disabled={uploadingReference}
+              disabled={styleLockBusy}
               className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-[11px] whitespace-nowrap transition-colors disabled:opacity-50 flex items-center gap-1.5"
               title="Upload your own reference image and lock it as the style directly — skips brainstorm + visualize."
             >
@@ -619,7 +619,7 @@ export const StylePhase: React.FC<Props> = ({
               onRefine={(text) => handleRefine(idx, text)}
               onOpenModal={onOpenModal}
               isLocking={lockingSlotIndex === idx}
-              isLockingOther={lockingSlotIndex !== null && lockingSlotIndex !== idx}
+              isLockingOther={styleLockBusy && lockingSlotIndex !== idx}
             />
           ))}
 
@@ -677,7 +677,7 @@ export const StylePhase: React.FC<Props> = ({
                   {uploadedStyleFile && (
                     <button
                       onClick={handleLockUploadedDirect}
-                      disabled={uploadingReference}
+                      disabled={styleLockBusy}
                       className="px-5 py-2 bg-white/[0.06] border border-white/[0.08] text-zinc-300 hover:text-white hover:bg-white/[0.1] rounded-md text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
                       title="Skip visualization — lock the uploaded image as the style ref directly"
                     >
@@ -709,7 +709,7 @@ export const StylePhase: React.FC<Props> = ({
                       {userSlot.assetId && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleLockUserSlot(userSlot); }}
-                          disabled={lockingUserSlot}
+                          disabled={styleLockBusy}
                           className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-sm text-black px-3.5 py-1.5 rounded-md text-xs font-semibold hover:bg-white transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-black/30"
                         >
                           {lockingUserSlot ? (
