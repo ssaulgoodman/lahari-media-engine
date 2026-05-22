@@ -117,7 +117,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   const { agentOperations, realtimeNotice } = useRealtimePresence(project?.id, activeProjectId, setProject);
 
-  usePersistedProject({
+  const { restoring: projectRestoring } = usePersistedProject({
     currentStep,
     projectId: project?.id,
     setActiveSceneIdx,
@@ -1344,6 +1344,14 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const realtimeBadge = activeAgentOperationList[0]
     ? { tone: 'working' as const, message: activeAgentOperationList[0].label || 'Codex is working' }
     : realtimeNotice;
+
+  if (projectRestoring) {
+    return (
+      <div className="min-h-screen bg-obsidian-950 text-zinc-400 flex items-center justify-center">
+        <div className="text-sm animate-pulse">Opening workspace…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-obsidian-950 text-zinc-100 font-sans flex flex-col h-screen overflow-hidden">
