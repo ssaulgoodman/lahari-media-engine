@@ -44,8 +44,8 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 | L4 | `CharactersPhase.tsx:120` | "Unlock characters" pill | `onUnlockCharacters` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L5 | `EnvironmentsPhase.tsx:381` | Env look candidate "Lock" | `handleEnvLock(envId, assetId)` (local async) | Plain button. No busy / disabled. | ✅ Slice B · `lockingLookId` keyed per-look |
 | L6 | `EnvironmentsPhase.tsx:109` | "Unlock environments" pill | `onUnlockEnvironments` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
-| L7 | `StylePhase.tsx` StyleRow Lock button (per slot) | "Lock style" (over image) | `onLock` → `handleLockSlot` (async) | Single shared `isLocking` flag — clicking one slot dims that button but NOT other slots' lock buttons. Multi-slot race possible. | ⏳ |
-| L8 | `StylePhase.tsx:679` | Custom-slot "Lock style" (user vision pane) | `handleLockSlot(userSlot)` | Same `isLocking` shared flag. | ⏳ |
+| L7 | `StylePhase.tsx` StyleRow Lock button (per slot) | "Lock style" (over image) | `onLock` → `handleLockAiSlot` (async) | Single shared `isLocking` flag — clicking one slot dims that button but NOT other slots' lock buttons. Multi-slot race possible. | ✅ Slice C · `lockingSlotIndex` keyed per slot, siblings dim |
+| L8 | `StylePhase.tsx:679` | Custom-slot "Lock style" (user vision pane) | `handleLockUserSlot(userSlot)` | Same `isLocking` shared flag. | ✅ Slice C · `lockingUserSlot` boolean, independent of AI slots |
 | L9 | `StylePhase.tsx:648` | "Use uploaded image as style" | `handleLockUploadedDirect` | Has `isLocking` + spinner + "Locking…" label. ✅ Already correct — verify. | ✅ keep |
 | L10 | `StylePhase.tsx:413` | Curated preset "Use this style" | `handleLockPreset(preset)` | Per-preset `presetLockingKey` + spinner + label. ✅ Already correct. | ✅ keep |
 | L11 | `StylePhase.tsx:445` | Style phase "Unlock" pill | `onUnlockStyle` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |

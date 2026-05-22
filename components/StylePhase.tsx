@@ -34,9 +34,13 @@ interface StyleRowProps {
   onLock: () => void;
   onRefine: (text: string) => void;
   onOpenModal: (url: string) => void;
+  /** This row's lock is currently in flight. Spinner + "Locking…" label. */
   isLocking: boolean;
+  /** A different row is currently locking. Disable this row's Lock so the
+   *  artist can't fire two parallel locks. No spinner on this row. */
+  isLockingOther?: boolean;
 }
-const StyleRow: React.FC<StyleRowProps> = React.memo(({ slot, index, expanded, onToggle, onVisualize, onLock, onRefine, onOpenModal, isLocking }) => {
+const StyleRow: React.FC<StyleRowProps> = React.memo(({ slot, index, expanded, onToggle, onVisualize, onLock, onRefine, onOpenModal, isLocking, isLockingOther }) => {
   const [refineInput, setRefineInput] = useState('');
 
   return (
@@ -92,12 +96,16 @@ const StyleRow: React.FC<StyleRowProps> = React.memo(({ slot, index, expanded, o
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onLock(); }}
-                    disabled={isLocking}
-                    className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-sm text-black px-3.5 py-1.5 rounded-md text-xs font-semibold hover:bg-white transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-black/30"
+                    disabled={isLocking || isLockingOther}
+                    className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-sm text-black px-3.5 py-1.5 rounded-md text-xs font-semibold hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-lg shadow-black/30"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                    </svg>
+                    {isLocking ? (
+                      <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                      </svg>
+                    )}
                     {isLocking ? 'Locking…' : 'Lock style'}
                   </button>
                 </div>
@@ -184,7 +192,16 @@ export const StylePhase: React.FC<Props> = ({
   });
   const [brainstormNotes, setBrainstormNotes] = useState('');
   const [isBrainstorming, setIsBrainstorming] = useState(false);
-  const [isLocking, setIsLocking] = useState(false);
+  // Slice C of button-feedback-audit: split the old single isLocking flag
+  // into per-affordance state so multi-slot locks don't all say "Locking…"
+  // when only one is actually in flight.
+  //   lockingSlotIndex  → AI brainstorm slot N is being locked (index keyed)
+  //   lockingUserSlot   → custom user-slot Lock buttons (inline + overlay)
+  //   uploadingReference→ upload-and-lock-direct flow (separate from above
+  //                       because the work is upload, not just lock)
+  const [lockingSlotIndex, setLockingSlotIndex] = useState<number | null>(null);
+  const [lockingUserSlot, setLockingUserSlot] = useState(false);
+  const [uploadingReference, setUploadingReference] = useState(false);
   const [showExploredStyles, setShowExploredStyles] = useState(false);
   const [expandedStyleIdxs, setExpandedStyleIdxs] = useState<Set<number>>(new Set());
   const toggleStyleIdx = (idx: number) => {
@@ -313,15 +330,29 @@ export const StylePhase: React.FC<Props> = ({
     }
   };
 
-  const handleLockSlot = async (slot: StyleSlot) => {
+  // Locks an AI brainstorm slot by index. Caller passes index so the
+  // matching StyleRow's button can flip to "Locking…" while others dim.
+  const handleLockAiSlot = async (slot: StyleSlot, index: number) => {
     if (!slot.assetId) return;
-    setIsLocking(true);
+    setLockingSlotIndex(index);
     try {
       await onLockStyle(slot.assetId, slot.description);
     } catch (err: any) {
       showActionError(`Style lock failed: ${err.message}`);
     } finally {
-      setIsLocking(false);
+      setLockingSlotIndex(null);
+    }
+  };
+
+  const handleLockUserSlot = async (slot: StyleSlot) => {
+    if (!slot.assetId) return;
+    setLockingUserSlot(true);
+    try {
+      await onLockStyle(slot.assetId, slot.description);
+    } catch (err: any) {
+      showActionError(`Style lock failed: ${err.message}`);
+    } finally {
+      setLockingUserSlot(false);
     }
   };
 
@@ -344,14 +375,14 @@ export const StylePhase: React.FC<Props> = ({
 
   const handleLockUploadedDirect = async () => {
     if (!uploadedStyleFile) return;
-    setIsLocking(true);
+    setUploadingReference(true);
     try {
       const updated = await api.uploadAndLockStyle(project.id, uploadedStyleFile);
       onSetProject?.(updated);
     } catch (err: any) {
       showActionError(`Style lock failed: ${err.message}`);
     } finally {
-      setIsLocking(false);
+      setUploadingReference(false);
     }
   };
 
@@ -542,26 +573,26 @@ export const StylePhase: React.FC<Props> = ({
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                setIsLocking(true);
+                setUploadingReference(true);
                 try {
                   const updated = await api.uploadAndLockStyle(project.id, file);
                   onSetProject?.(updated);
                 } catch (err: any) {
                   showActionError(`Upload-and-lock style failed: ${err.message}`);
                 } finally {
-                  setIsLocking(false);
+                  setUploadingReference(false);
                   if (e.target) e.target.value = '';
                 }
               }}
             />
             <button
               onClick={() => styleDirectUploadRef.current?.click()}
-              disabled={isLocking}
+              disabled={uploadingReference}
               className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-[11px] whitespace-nowrap transition-colors disabled:opacity-50 flex items-center gap-1.5"
               title="Upload your own reference image and lock it as the style directly — skips brainstorm + visualize."
             >
-              {isLocking && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
-              {isLocking ? 'Uploading…' : 'Upload reference'}
+              {uploadingReference && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+              {uploadingReference ? 'Uploading…' : 'Upload reference'}
             </button>
           </div>
         </div>
@@ -584,10 +615,11 @@ export const StylePhase: React.FC<Props> = ({
               expanded={expandedStyleIdxs.has(idx)}
               onToggle={() => toggleStyleIdx(idx)}
               onVisualize={() => handleVisualize(idx)}
-              onLock={() => handleLockSlot(slot)}
+              onLock={() => handleLockAiSlot(slot, idx)}
               onRefine={(text) => handleRefine(idx, text)}
               onOpenModal={onOpenModal}
-              isLocking={isLocking}
+              isLocking={lockingSlotIndex === idx}
+              isLockingOther={lockingSlotIndex !== null && lockingSlotIndex !== idx}
             />
           ))}
 
@@ -645,11 +677,12 @@ export const StylePhase: React.FC<Props> = ({
                   {uploadedStyleFile && (
                     <button
                       onClick={handleLockUploadedDirect}
-                      disabled={isLocking}
-                      className="px-5 py-2 bg-white/[0.06] border border-white/[0.08] text-zinc-300 hover:text-white hover:bg-white/[0.1] rounded-md text-xs font-semibold transition-colors disabled:opacity-50"
+                      disabled={uploadingReference}
+                      className="px-5 py-2 bg-white/[0.06] border border-white/[0.08] text-zinc-300 hover:text-white hover:bg-white/[0.1] rounded-md text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-1.5"
                       title="Skip visualization — lock the uploaded image as the style ref directly"
                     >
-                      {isLocking ? 'Locking…' : 'Use uploaded image as style'}
+                      {uploadingReference && <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+                      {uploadingReference ? 'Locking…' : 'Use uploaded image as style'}
                     </button>
                   )}
                 </div>
@@ -675,14 +708,18 @@ export const StylePhase: React.FC<Props> = ({
                       </button>
                       {userSlot.assetId && (
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleLockSlot(userSlot); }}
-                          disabled={isLocking}
+                          onClick={(e) => { e.stopPropagation(); handleLockUserSlot(userSlot); }}
+                          disabled={lockingUserSlot}
                           className="absolute bottom-3 right-3 bg-white/95 backdrop-blur-sm text-black px-3.5 py-1.5 rounded-md text-xs font-semibold hover:bg-white transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-lg shadow-black/30"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                          </svg>
-                          {isLocking ? 'Locking…' : 'Lock style'}
+                          {lockingUserSlot ? (
+                            <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                          )}
+                          {lockingUserSlot ? 'Locking…' : 'Lock style'}
                         </button>
                       )}
                     </div>
