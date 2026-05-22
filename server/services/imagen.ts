@@ -11,6 +11,7 @@ import { saveBase64, readAsBase64 } from '../storage.js';
 import { getRuntimePreset, PipelinePreset } from '../presets.js';
 import { requireProviderApiKey } from './byok/providerKeys.js';
 import { buildVisualizeStylePrompt } from '../prompts/visualizeStyle.js';
+import { buildCharacterLookPrompt, buildEnvironmentLookPrompt } from '../prompts/lookPrompts.js';
 
 const getAI = async () => new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
 
@@ -216,32 +217,16 @@ export const generateSingleStyleImage = async (
  */
 export const buildCharacterPrompt = (
   character: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null }
 ): string => {
   const preset = opts?.preset || getRuntimePreset();
-  // Medium-neutral prompt: the locked style image (Image styleIdx) is the
-  // ground truth for medium and rendering approach. Hard-coding "cinematic"
-  // / "natural cinematic lighting" / "real film still" here was leaking
-  // realism into stylized projects (miniature, painterly, illustrated). See
-  // docs/cinematic-leak-audit-2026-05-12.md.
-  let prompt = opts?.styleIdx
-    ? `Generate ONE character reference portrait. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach.`
-    : `Generate ONE character reference portrait.`;
-  prompt += `\n\n${character.name} — ${character.description}`;
-  if (opts?.userRefIdx) {
-    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this character — match its identity (face, costume, silhouette, key iconography). The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW to render them.`;
-  }
-  prompt += `\n\nThis is a REUSABLE CHARACTER REFERENCE — it will be used across many different shots and scenes.
-- Mid-shot portrait: upper body and face clearly visible
-- NEUTRAL POSE: hands relaxed at sides or in a natural resting position
-- Do NOT show the character holding anything, performing any action, or interacting with objects
-- Do NOT include props or scene-specific objects in hand
-- Focus on: face, expression baseline, costume/wardrobe, hairstyle, silhouette, proportions, and distinguishing details
-- Plain or softly blurred background — the character should be isolated for reuse
-- Eye-level framing; lighting follows the style image`;
-  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-${preset.looks.qualityRules}`;
-  return prompt;
+  return buildCharacterLookPrompt({
+    entity: character,
+    styleIdx: opts?.styleIdx,
+    userRefIdx: opts?.userRefIdx,
+    styleDescription: opts?.styleDescription,
+    preset,
+  });
 };
 
 export const generateCharacterLooks = async (
@@ -324,22 +309,16 @@ export const generateCharacterLooks = async (
  */
 export const buildEnvironmentPrompt = (
   environment: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null }
 ): string => {
   const preset = opts?.preset || getRuntimePreset();
-  // Medium-neutral. Style image is the visual ground truth — don't fight it
-  // in text. See docs/cinematic-leak-audit-2026-05-12.md.
-  let prompt = opts?.styleIdx
-    ? `Generate ONE environment shot. Match the visual style EXACTLY from Image ${opts.styleIdx} — same lighting, color palette, texture, and rendering approach. No characters or figures.`
-    : `Generate ONE environment shot. No characters or figures.`;
-  prompt += `\n\n${environment.name} — ${environment.description}`;
-  if (opts?.userRefIdx) {
-    prompt += `\n\nImage ${opts.userRefIdx} is a reference the director provided for this environment — match its geography, architecture, and mood. The style image (Image ${opts.styleIdx || 1}) is the source of truth for HOW it's rendered.`;
-  }
-  prompt += `\n\nFull reusable environment reference: the whole space is visible and readable, empty scene unless scale absolutely requires tiny neutral figures.`;
-  prompt += `\n\nOne single image. No collage, no grid, no multiple panels. No text, no watermark.
-${preset.looks.qualityRules}`;
-  return prompt;
+  return buildEnvironmentLookPrompt({
+    entity: environment,
+    styleIdx: opts?.styleIdx,
+    userRefIdx: opts?.userRefIdx,
+    styleDescription: opts?.styleDescription,
+    preset,
+  });
 };
 
 export const generateEnvironmentLooks = async (

@@ -479,26 +479,33 @@ USER NOTE
       { name: 'character.name', description: 'Character name' },
       { name: 'character.description', description: 'Physical + cultural description' },
       { name: 'styleImage', description: 'Locked style reference (Image N)' },
+      { name: 'styleDescription', description: 'Optional style intent note stored on the locked style' },
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userFeedback', description: 'Optional director note' },
     ],
-    template: `Generate ONE character REFERENCE portrait. Match the visual style EXACTLY from Image 1.
+    template: `Generate one reusable character reference portrait.
 
-{{character.name}} — {{character.description}}
+CONTEXT
+{{workflowContext}}
 
-{{userRefImage ? "Image 2 is a reference the director provided — match its identity. The style image (Image 1) is HOW to render them." : ""}}
+INPUTS
+Style reference image: Image 1
+The style image is the visual authority for medium, rendering, line treatment, palette, texture, lighting, and finish.
+{{styleDescription ? "Style intent note: " + styleDescription + "\nUse the style intent note only to clarify what to extract from the style image. If the text and image disagree, follow the image." : ""}}
+{{userRefImage ? "Director character reference: Image 2\nMatch its identity cues. The style reference remains the source of truth for how to render them." : ""}}
 
-This is a REUSABLE CHARACTER REFERENCE — used across many different shots and scenes.
-- Mid-shot portrait: upper body and face clearly visible
-- NEUTRAL POSE: hands relaxed, no props/weapons/lamps/offerings in hand
-- Focus on: face, skin, expression, costume, ornaments, jewelry, crown, hair
-- Plain or softly blurred background — character isolated for reuse
+Character: {{character.name}}
+Character description: {{character.description}}
 
-(Style DNA text REMOVED — Gemini matches the style image directly.)
+TASTE
+{{preset.style.rules}}
+{{preset.looks.characterRules}}
+{{preset.looks.qualityRules}}
 
+OUTPUT CONTRACT
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
-    source: { file: 'server/services/imagen.ts', lines: '177-194' },
+Mid-shot portrait, neutral pose, plain or softly blurred background, no props or scene-specific action.`,
+    source: { file: 'server/prompts/lookPrompts.ts', lines: 'buildCharacterLookPrompt' },
   },
   {
     id: 'environment-look',
@@ -512,22 +519,33 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
       { name: 'environment.name', description: 'Environment name' },
       { name: 'environment.description', description: 'Spatial description' },
       { name: 'styleImage', description: 'Locked style reference (Image N)' },
+      { name: 'styleDescription', description: 'Optional style intent note stored on the locked style' },
       { name: 'userRefImage', description: 'Optional director-supplied reference' },
       { name: 'userNote', description: 'Optional director note' },
     ],
-    template: `Generate ONE environment shot. Match the visual style EXACTLY from Image 1. No characters or figures.
+    template: `Generate one reusable environment reference image.
 
-{{environment.name}} — {{environment.description}}
+CONTEXT
+{{workflowContext}}
 
-{{userRefImage ? "Image 2 is a reference — match its geography, architecture, mood. Style image (Image 1) is HOW it's rendered." : ""}}
+INPUTS
+Style reference image: Image 1
+The style image is the visual authority for medium, rendering, line treatment, palette, texture, lighting, and finish.
+{{styleDescription ? "Style intent note: " + styleDescription + "\nUse the style intent note only to clarify what to extract from the style image. If the text and image disagree, follow the image." : ""}}
+{{userRefImage ? "Director environment reference: Image 2\nMatch its geography, architecture, layout, and mood. The style reference remains the source of truth for how to render it." : ""}}
 
-Wide establishing shot, full environment visible, empty scene.
+Environment: {{environment.name}}
+Environment description: {{environment.description}}
 
-(Style DNA text REMOVED — Gemini matches the style image directly.)
+TASTE
+{{preset.style.rules}}
+{{preset.looks.environmentRules}}
+{{preset.looks.qualityRules}}
 
+OUTPUT CONTRACT
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
-    source: { file: 'server/services/imagen.ts', lines: '272-288' },
+Full reusable environment reference, whole space visible, no characters unless scale absolutely requires tiny neutral figures.`,
+    source: { file: 'server/prompts/lookPrompts.ts', lines: 'buildEnvironmentLookPrompt' },
   },
 
   // ─── Studio ───────────────────────────────────────────────────────

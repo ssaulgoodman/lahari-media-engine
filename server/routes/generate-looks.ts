@@ -84,7 +84,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
       { name: member.name, description: member.description || '' },
-      { styleIdx, userRefIdx, preset }
+      { styleIdx, userRefIdx, preset, styleDescription: project.style_description }
     );
     if (member.prompts_stale) {
       await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
@@ -388,7 +388,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
       { name: env.name, description: env.description || '' },
-      { styleIdx, userRefIdx, preset }
+      { styleIdx, userRefIdx, preset, styleDescription: project.style_description }
     );
     if (env.prompts_stale) {
       await updateRows('environments', { id: env.id }, { prompts_stale: 0 });
