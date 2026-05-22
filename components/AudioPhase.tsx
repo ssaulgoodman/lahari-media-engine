@@ -282,14 +282,14 @@ export const AudioPhase: React.FC<Props> = ({
               ? `Generating ${generatingIds.size}…`
               : summary.available > 0
                 ? `Generate ${summary.available} available`
-                : summary.waitingOnVoice > 0 ? 'Assign voices to enable' : 'Nothing to generate'}
+                : 'Generate audio'}
           </button>
         </div>
 
         {summary.missingVoiceMembers.length > 0 && (
           <div className="mt-3 flex items-center justify-between gap-3 text-xs text-zinc-400">
             <span>
-              {summary.missingVoiceMembers.map(c => c.name).join(', ')} {summary.missingVoiceMembers.length === 1 ? 'is' : 'are'} waiting on voice IDs — their lines will be skipped.
+              {summary.missingVoiceMembers.map(c => c.name).join(', ')} {summary.missingVoiceMembers.length === 1 ? 'needs' : 'need'} voice IDs for generated TTS. You can still make video now; overlay audio can be generated later.
             </span>
             <button
               onClick={() => onSetViewPhase('characters')}
