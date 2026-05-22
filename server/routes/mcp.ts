@@ -14,13 +14,13 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.6';
+const HOSTED_MCP_VERSION = '0.1.7';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. Use query_artist_memory and search_artist_assets when they ask about prior work, styles used before, reusable visual references, older storyboards, or taste patterns across their owned projects. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -167,6 +167,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   const toolAnnotations = (name: string): ToolAnnotations => {
     const readOnlyPrefixes = [
       'list_',
+      'query_',
       'search_',
       'get_',
       'read_',
@@ -319,6 +320,28 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       query: z.string().min(1).max(120).describe('Project ID, project title, song title, transliteration, deity, or queue label.'),
     },
   }, async ({ query }) => studio.resolveProjectForDirector(auth.userId, query));
+
+  registerTool('query_artist_memory', {
+    title: 'Query artist memory',
+    description: 'Read-only. Broad, safe memory query over the authenticated artist-owned Lahari slice. Use for prior styles, reusable references, older boards, taste patterns, and cross-project evidence. Returns curated evidence, not raw SQL.',
+    inputSchema: {
+      question: z.string().min(1).max(500).describe('Natural-language question about the authenticated artist-owned Lahari work.'),
+      projectId: projectId.optional().describe('Optional current project ID for local context/scoping.'),
+      includeAssets: z.boolean().optional().describe('Whether to include relevant asset URLs/thumbnails when available.'),
+      limit: z.number().int().min(1).max(30).optional(),
+    },
+  }, async ({ question, projectId, includeAssets, limit }) => studio.queryArtistMemory(auth.userId, question, { projectId, includeAssets, limit }));
+
+  registerTool('search_artist_assets', {
+    title: 'Search artist assets',
+    description: 'Read-only. Searches authenticated artist-owned assets by kind/query and returns compact asset evidence with public URLs.',
+    inputSchema: {
+      kind: z.enum(['all', 'style', 'storyboard', 'shot_image', 'keyframe', 'look', 'character', 'environment', 'video']).optional(),
+      query: z.string().min(1).max(200).optional(),
+      projectId: projectId.optional().describe('Optional project ID to restrict the search.'),
+      limit: z.number().int().min(1).max(80).optional(),
+    },
+  }, async ({ kind, query, projectId, limit }) => studio.searchArtistAssets(auth.userId, { kind, query, projectId, limit }));
 
   registerTool('get_project_packet', {
     title: 'Get project packet',

@@ -37,6 +37,7 @@ Current notebook contract:
 - `config/prompts/*.md` and `config/preferences.json` are project-level runtime overrides. Prompt kinds are `concept`, `script`, `shot_prompts`, `storyboard`, `video`, `character_looks`, and `environment_looks`. Edit locally, then persist with `apply_project_prompt_override` or `apply_project_preferences`.
 - `apply_style_direction` lets director agents write style text natively and persist it before visualization. `apply_shot_workflow_modes` lets agents set per-shot `auto | storyboard | keyframe` mode without changing whole-project defaults.
 - `journal.md` is local operator memory. Append concise decisions; do not treat it as canonical project state.
+- Remote MCP exposes read-only artist memory tools: `query_artist_memory` for broad prior-work questions and `search_artist_assets` for style/storyboard/look/video assets. They are scoped to the authenticated artist and return curated evidence, not raw SQL.
 
 Director-session work in *this engine repo* is a developer-only path — used for debugging, testing internal MCP changes, or operating against the canonical engine without going through Railway. Identical tool surface to remote, identical apply discipline.
 

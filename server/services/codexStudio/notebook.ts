@@ -36,7 +36,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-17.agency-pass-v1';
+const NOTEBOOK_VERSION = '2026-05-22.artist-memory-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -65,6 +65,7 @@ Use journal.md for your own concise operator notes: what changed, why, and what 
 
 Default ritual:
 1. resolve_project when the artist names a song or project; use list_queue/search_catalog when browsing availability
+1b. query_artist_memory/search_artist_assets when the artist asks about prior styles, older boards, reusable references, or taste patterns
 2. attach_director_session once you have a projectId
 3. mint_cli_token, then npx @ssaulgoodman420/lahari-cli sync; if blocked, use get_project_notebook_manifest + read_project_notebook_file
 4. read relevant mirrors before proposing changes
