@@ -34,6 +34,9 @@ export const EnvironmentsPhase: React.FC<Props> = ({
   const [pendingEnvRef, setPendingEnvRef] = useState<{ envId: string; file: File; previewUrl: string; note: string } | null>(null);
   const [envRefineImage, setEnvRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  // Slice B of button-feedback-audit: which env look candidate is being
+  // locked. Per-look pending state for immediate Lock button feedback.
+  const [lockingLookId, setLockingLookId] = useState<string | null>(null);
   const envGuideUploadRef = useRef<HTMLInputElement>(null);
   const envAsIsUploadRef = useRef<HTMLInputElement>(null);
 
@@ -373,21 +376,39 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                       </div>
                     )}
                     <div className="grid grid-cols-3 gap-px bg-black/20">
-                      {activeEnvLooks.map(look => (
+                      {activeEnvLooks.map(look => {
+                        const isLocking = lockingLookId === look.id;
+                        const lockingOther = lockingLookId !== null && !isLocking;
+                        const handleLock = async () => {
+                          if (lockingOther || isLocking) return;
+                          setLockingLookId(look.id);
+                          try {
+                            await Promise.resolve(handleEnvLock(activeEnv.id, look.id));
+                          } finally {
+                            setLockingLookId(null);
+                          }
+                        };
+                        return (
                         <div key={look.id} className="relative group cursor-pointer bg-black/10">
                           <img src={look.url} alt={activeEnv.name} onClick={() => onOpenModal(look.url)} className="w-full h-auto object-contain" />
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                          <div className={`absolute inset-0 bg-black/60 flex items-center justify-center transition-opacity pointer-events-none ${isLocking ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                             <button
-                              onClick={() => handleEnvLock(activeEnv.id, look.id)}
-                              className="pointer-events-auto bg-white/95 backdrop-blur text-black px-3 py-1.5 rounded-md text-xs font-medium hover:bg-white transition-colors flex items-center gap-1.5"
+                              onClick={handleLock}
+                              disabled={lockingOther || isLocking}
+                              className="pointer-events-auto bg-white/95 backdrop-blur text-black px-3 py-1.5 rounded-md text-xs font-medium hover:bg-white transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                               aria-label="Lock this look"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                              Lock
+                              {isLocking ? (
+                                <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                              )}
+                              {isLocking ? 'Locking…' : 'Lock'}
                             </button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : envGenerating.has(activeEnv.id) ? (

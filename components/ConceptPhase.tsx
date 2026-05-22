@@ -36,6 +36,14 @@ export const ConceptPhase: React.FC<Props> = ({
   const [refineFeedback, setRefineFeedback] = useState('');
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  // Slice B of button-feedback-audit: which concept card is currently
+  // being locked. Per-card pending state — clicking one shows immediate
+  // spinner on that Choose button, and the other Choose buttons disable.
+  // If handleLockConcept opens a destructive confirm dialog, it returns
+  // immediately (no backend call yet), so pending clears fast — modal
+  // owns the visual state from there. Spinner only burns while real
+  // backend work is in flight.
+  const [lockingIndex, setLockingIndex] = useState<number | null>(null);
 
   const handleRunTool = async (toolKey: string) => {
     if (toolKey === 'generate-concept' && onGenerateConcepts) {
@@ -196,31 +204,49 @@ export const ConceptPhase: React.FC<Props> = ({
                 <p className="text-zinc-300 text-sm">Locking concept...</p>
               </div>
             )}
-            {conceptOptions.map((concept, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                whileHover={{ y: -2 }}
-                className="surface rounded-xl p-5 flex flex-col gap-4 cursor-pointer group hover:shadow-lg hover:shadow-black/20"
-                onClick={() => !isLoading && onLockConcept(idx)}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-white font-medium text-sm">{concept.conceptDirection}</span>
-                  <span className="text-[11px] text-zinc-400 font-mono">{idx + 1}</span>
-                </div>
-                <div className="space-y-2 text-sm flex-1">
-                  <div><span className="text-white font-medium">Subject:</span> <span className="text-zinc-300">{(concept as any).subject || (concept as any).primarySubject}</span></div>
-                  <div><span className="text-white font-medium">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
-                  <p className="text-zinc-300 leading-relaxed">{concept.theme}</p>
-                  {concept.description && <p className="text-zinc-400 text-xs leading-relaxed">{concept.description}</p>}
-                </div>
-                <button disabled={isLoading} className="w-full py-2 rounded-md text-xs font-medium transition-colors disabled:opacity-50 mt-auto bg-white/[0.06] text-zinc-300 group-hover:bg-white group-hover:text-black">
-                  Choose
-                </button>
-              </motion.div>
-            ))}
+            {conceptOptions.map((concept, idx) => {
+              const isLocking = lockingIndex === idx;
+              const lockingOther = lockingIndex !== null && !isLocking;
+              const cardDisabled = isLoading || lockingOther;
+              const handleChoose = async () => {
+                if (cardDisabled || isLocking) return;
+                setLockingIndex(idx);
+                try {
+                  await Promise.resolve(onLockConcept(idx));
+                } finally {
+                  setLockingIndex(null);
+                }
+              };
+              return (
+                <motion.div
+                  key={idx}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  whileHover={cardDisabled ? undefined : { y: -2 }}
+                  className={`surface rounded-xl p-5 flex flex-col gap-4 group hover:shadow-lg hover:shadow-black/20 ${cardDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                  onClick={handleChoose}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-white font-medium text-sm">{concept.conceptDirection}</span>
+                    <span className="text-[11px] text-zinc-400 font-mono">{idx + 1}</span>
+                  </div>
+                  <div className="space-y-2 text-sm flex-1">
+                    <div><span className="text-white font-medium">Subject:</span> <span className="text-zinc-300">{(concept as any).subject || (concept as any).primarySubject}</span></div>
+                    <div><span className="text-white font-medium">Mood:</span> <span className="text-zinc-300">{concept.mood}</span></div>
+                    <p className="text-zinc-300 leading-relaxed">{concept.theme}</p>
+                    {concept.description && <p className="text-zinc-400 text-xs leading-relaxed">{concept.description}</p>}
+                  </div>
+                  <button
+                    disabled={cardDisabled || isLocking}
+                    className="w-full py-2 rounded-md text-xs font-medium transition-colors disabled:opacity-50 mt-auto bg-white/[0.06] text-zinc-300 group-hover:bg-white group-hover:text-black flex items-center justify-center gap-1.5"
+                  >
+                    {isLocking && <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />}
+                    {isLocking ? 'Locking…' : 'Choose'}
+                  </button>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       )}
