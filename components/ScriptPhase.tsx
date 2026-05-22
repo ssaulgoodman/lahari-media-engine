@@ -117,6 +117,14 @@ export const ScriptPhase: React.FC<Props> = ({
   };
 
   const totalShots = project.scenes.reduce((acc, s) => acc + s.shots.length, 0);
+  const audioPlannedShots = project.scenes.reduce((acc, s) => acc + s.shots.filter(shot => !!shot.audioPlan).length, 0);
+  const staleAudioPlans = project.scenes.reduce((acc, s) => acc + s.shots.filter(shot => !!shot.audioPlanStale).length, 0);
+  const hasAnyAudioPlan = audioPlannedShots > 0;
+  const writeAllDialogueLabel = staleAudioPlans > 0
+    ? `Rewrite stale dialogue (${staleAudioPlans})`
+    : hasAnyAudioPlan
+      ? 'Rewrite all dialogue'
+      : 'Write all dialogue';
 
   return (
     <motion.div key="script" {...phaseTransition} className="space-y-6">
@@ -224,6 +232,16 @@ export const ScriptPhase: React.FC<Props> = ({
           <div className="p-5 flex justify-between items-center border-b border-white/[0.06]">
             <h3 className="text-sm font-medium text-white">Script Breakdown</h3>
             <div className="flex items-center gap-3">
+              {audioPhaseVisible && (
+                <button
+                  onClick={writeAllDialogue}
+                  disabled={isLoading || writingDialogue.size > 0}
+                  className="bg-white text-black px-3 py-1.5 rounded-md text-[11px] font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+                  title="Write or refresh audio plans for every shot in one backend call."
+                >
+                  {writingDialogue.has('__all__') ? 'Writing…' : writeAllDialogueLabel}
+                </button>
+              )}
               {onUnlockScript && canReopenBlueprintPhase(project, 'script') && (
                 <UnlockPill onClick={onUnlockScript} disabled={isLoading} />
               )}
@@ -450,9 +468,9 @@ const DialogueBlock: React.FC<DialogueBlockProps> = ({
 }) => {
   const lines = audioPlan?.dialogue || [];
   const hasLines = lines.length > 0;
-  const soundNotes = audioPlan?.soundNotes;
+  const hasPlan = !!audioPlan;
 
-  if (!hasLines && !writing) {
+  if (!hasPlan && !writing) {
     return (
       <div className="mt-2 pt-2 border-t border-white/[0.04] flex items-center gap-3">
         <span className="text-[10px] uppercase tracking-wider text-zinc-500">Dialogue</span>
@@ -491,24 +509,28 @@ const DialogueBlock: React.FC<DialogueBlockProps> = ({
           </button>
         )}
       </div>
-      {[...lines].sort((a, b) => a.order - b.order).map(line => (
-        <div key={line.id} className="flex items-start gap-2 text-xs leading-snug">
-          <span className="text-zinc-400 font-medium min-w-[60px] flex-shrink-0">
-            {characterName(line.characterId)}
-          </span>
-          <span className="text-zinc-300 flex-1 italic">"{line.text}"</span>
-          <span className="flex-shrink-0 flex items-center gap-1.5">
-            {line.delivery && (
-              <span className="text-[10px] text-zinc-500">{line.delivery}</span>
-            )}
-            <TtsStatusPill status={line.ttsStatus} />
-          </span>
+      {!hasLines && hasPlan && !writing ? (
+        <div className="flex items-center justify-between gap-3 text-xs leading-snug">
+          <span className="text-zinc-500 italic">No dialogue planned for this shot.</span>
+          <button
+            onClick={onWrite}
+            className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Rewrite
+          </button>
         </div>
-      ))}
-      {soundNotes && (
-        <div className="text-[11px] text-zinc-500 italic leading-snug pt-1">
-          <span className="not-italic text-zinc-600">SFX:</span> {soundNotes}
-        </div>
+      ) : (
+        [...lines].sort((a, b) => a.order - b.order).map(line => (
+          <div key={line.id} className="flex items-start gap-2 text-xs leading-snug">
+            <span className="text-zinc-400 font-medium min-w-[60px] flex-shrink-0">
+              {characterName(line.characterId)}
+            </span>
+            <span className="text-zinc-300 flex-1 italic">"{line.text}"</span>
+            <span className="flex-shrink-0">
+              <TtsStatusPill status={line.ttsStatus} />
+            </span>
+          </div>
+        ))
       )}
     </div>
   );
