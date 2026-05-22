@@ -146,12 +146,19 @@ export const usePersistedProject = ({
   }, [currentStep, persistState, projectId, restoring]);
 
   useEffect(() => {
+    let cancelled = false;
+    let requestSeq = 0;
+
     const onPopState = async () => {
+      const seq = ++requestSeq;
+      const stillCurrent = () => !cancelled && seq === requestSeq;
       const params = new URLSearchParams(window.location.search);
       const linkedId = params.get('project') || params.get('projectId');
       const linkedStepValue = stepFromParam(params.get('step'));
       const linkedShot = params.get('shot') || params.get('shotId');
       if (!linkedId) {
+        if (!stillCurrent()) return;
+        setRestoring(false);
         setProject(null);
         setCurrentStep(linkedStepValue ?? AppStep.UPLOAD);
         return;
@@ -159,6 +166,7 @@ export const usePersistedProject = ({
       try {
         setRestoring(true);
         const project = await api.getProject(linkedId);
+        if (!stillCurrent()) return;
         setProject(project);
         if (linkedShot) {
           const sceneIndex = project.scenes.findIndex(scene => scene.shots.some(shot => shot.id === linkedShot));
@@ -167,12 +175,15 @@ export const usePersistedProject = ({
         if (linkedStepValue !== null) setCurrentStep(linkedStepValue);
         else navigateToPhase(project);
       } finally {
-        setRestoring(false);
+        if (stillCurrent()) setRestoring(false);
       }
     };
 
     window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('popstate', onPopState);
+    };
   }, [navigateToPhase, setActiveSceneIdx, setCurrentStep, setProject]);
 
   return { restoring };

@@ -1130,6 +1130,7 @@ router.get('/:id/shots/:shotId/history', async (req, res) => {
 });
 
 router.post('/:id/shots/:shotId/assets/:assetId/hide-from-media-library', async (req, res) => {
+  // Ownership is enforced by generate.ts router.param('id') and router.param('shotId') before this handler runs.
   const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const assetId = paramStr(req.params.assetId);

@@ -152,8 +152,11 @@ export const BlueprintContextBar: React.FC<Props> = ({
   const logline = typeof project.projectBrief?.logline === 'string' && project.projectBrief.logline.trim()
     ? project.projectBrief.logline.trim()
     : (isScriptSeed && project.meaning && project.meaning !== directorBrief ? project.meaning : '');
+  const sourceScriptText = typeof project.sourcePayload?.scriptText === 'string'
+    ? project.sourcePayload.scriptText.trim()
+    : '';
   const sourceLabel = isScriptSeed ? 'Script seed' : 'Lyrics';
-  const structureLabel = isMusicVideo ? 'Musical structure' : 'Structure';
+  const hasSourceSeed = isScriptSeed ? !!(sourceScriptText || project.lyrics) : !!project.lyrics;
   const analysisItems = isMusicVideo
     ? [
       { label: 'Lyrics', present: !!project.lyrics },
@@ -162,12 +165,13 @@ export const BlueprintContextBar: React.FC<Props> = ({
       ...(songTypeLabel ? [{ label: songTypeLabel, present: true }] : []),
     ]
     : [
-      { label: sourceLabel, present: !!project.lyrics },
-      { label: structureLabel, present: project.musicalStructure?.length > 0 },
+      { label: sourceLabel, present: hasSourceSeed },
       ...(directorBrief ? [{ label: 'Brief', present: true }] : []),
       ...(logline ? [{ label: 'Logline', present: true }] : []),
     ];
-  const hasAnalysis = !!(directorBrief || logline || project.musicalStructure?.length > 0 || project.lyrics || (isMusicVideo && project.meaning));
+  const hasAnalysis = isMusicVideo
+    ? !!(project.lyrics || project.meaning || project.musicalStructure?.length > 0 || songTypeLabel)
+    : !!(hasSourceSeed || directorBrief || logline);
   const missingAnalysisItems = analysisItems.filter(i => !i.present);
   const needsAnalysis = isMusicVideo
     ? (!project.lyrics || !project.meaning || !(project.musicalStructure?.length > 0))
@@ -440,9 +444,9 @@ export const BlueprintContextBar: React.FC<Props> = ({
                       <Markdown>{project.meaning}</Markdown>
                     </div>
                   )}
-                  {project.musicalStructure?.length > 0 && (
+                  {isMusicVideo && project.musicalStructure?.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">{structureLabel}</h4>
+                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Musical structure</h4>
                       <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                         {project.musicalStructure.map((section, idx) => (
                           <div key={idx} className="surface-inset rounded-md px-3 py-2 text-sm">
