@@ -47,6 +47,11 @@ interface ITimelineStore {
   // Project id published by TimelineEditor on mount so the Header (which is
   // several layers down) can save/clear snapshots without prop-drilling.
   projectId: string | null;
+  // Source sets from the current project state. Persisted with a snapshot so
+  // later generated shot videos can be appended without mistaking a deliberate
+  // artist delete for a stale snapshot.
+  initialVideoSrcs: string[];
+  initialAudioSrcs: string[];
   // Monotonic counter — bumping it re-runs the seed effect and re-seeds from
   // initialClips. Reset button in Header bumps this after clearSnapshot.
   resetToken: number;
@@ -58,6 +63,7 @@ interface ITimelineStore {
   setHistory: (canUndo: boolean, canRedo: boolean) => void;
   setLastSavedAt: (ts: number | null) => void;
   setProjectId: (id: string | null) => void;
+  setInitialSources: (videoSrcs: string[], audioSrcs: string[]) => void;
   bumpResetToken: () => void;
   // Set by TimelineEditor's main effect when the StateManager is wired up.
   // Header buttons + keyboard shortcuts call these. Null when the editor is
@@ -105,6 +111,8 @@ const useStore = create<ITimelineStore>((set, get) => ({
   canRedo: false,
   lastSavedAt: null,
   projectId: null,
+  initialVideoSrcs: [],
+  initialAudioSrcs: [],
   resetToken: 0,
   setStateManager: (stateManager) => set({ stateManager }),
   setTimeline: (timeline) => set({ timeline }),
@@ -114,6 +122,8 @@ const useStore = create<ITimelineStore>((set, get) => ({
   setHistory: (canUndo, canRedo) => set({ canUndo, canRedo }),
   setLastSavedAt: (lastSavedAt) => set({ lastSavedAt }),
   setProjectId: (projectId) => set({ projectId }),
+  setInitialSources: (initialVideoSrcs, initialAudioSrcs) =>
+    set({ initialVideoSrcs, initialAudioSrcs }),
   bumpResetToken: () => set((s) => ({ resetToken: s.resetToken + 1 })),
   performUndo: null,
   performRedo: null,
