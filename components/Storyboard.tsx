@@ -26,7 +26,7 @@ interface Props {
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
-  onLockShot: (sceneId: string, shotId: string) => void;
+  onLockShot: (sceneId: string, shotId: string) => void | Promise<void>;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
   onUpdateProject?: (updates: Record<string, any>) => void;
   onRewriteShotPrompts?: (userNote?: string) => void;
@@ -71,6 +71,18 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
   const [refiningShots, setRefiningShots] = useState<Set<string>>(new Set());
   const [shotRefs, setShotRefs] = useState<Record<string, ShotRefInput[]>>({});
   const [activeShotId, setActiveShotId] = useState<string | null>(null);
+  // Slice D of button-feedback-audit (L13): per-shot lock-in-flight indicator.
+  // The lock icon already swaps optimistically in AppShell.handleLockShot, but
+  // there's no signal that the network request itself is still working. This
+  // keyed pending lets ShotCard overlay a small spinner on the row whose
+  // lock/unlock is currently in flight — separate from isGenerating.
+  const [lockingShotId, setLockingShotId] = useState<string | null>(null);
+  const handleLockShotWithPending = React.useCallback(async (sceneId: string, shotId: string) => {
+    if (lockingShotId === shotId) return;
+    setLockingShotId(shotId);
+    try { await Promise.resolve(onLockShot(sceneId, shotId)); }
+    finally { setLockingShotId(prev => prev === shotId ? null : prev); }
+  }, [lockingShotId, onLockShot]);
 
   const modelSpec = getVideoModel(project?.videoModel);
   const modelSupportsLastFrame = modelSpec.supportsLastFrame;
@@ -316,7 +328,8 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   onLockStoryboard={onLockStoryboard}
                   onUnlockStoryboard={onUnlockStoryboard}
                   onUpdateStoryboardPlan={onUpdateStoryboardPlan}
-                  onLockShot={onLockShot}
+                  onLockShot={handleLockShotWithPending}
+                  isLockingShot={lockingShotId === shot.id}
                   onRefinePrompt={onRefinePrompt}
                   onGenerateEndFrame={onGenerateEndFrame}
                   onRefineEndFramePrompt={onRefineEndFramePrompt}

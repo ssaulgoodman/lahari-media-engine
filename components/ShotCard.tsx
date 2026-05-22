@@ -76,7 +76,12 @@ interface ShotCardProps {
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
   onUpdateStoryboardPlan: (shotId: string, cutPlanText: string, storyboardPrompt?: string) => Promise<void>;
-  onLockShot: (sceneId: string, shotId: string) => void;
+  onLockShot: (sceneId: string, shotId: string) => void | Promise<void>;
+  /** Slice D of button-feedback-audit (L13): true while this shot's
+   *  lock/unlock network request is in flight. The icon already swaps
+   *  optimistically; this prop lets the row show a small spinner overlay so
+   *  the artist knows the backend is still working. */
+  isLockingShot?: boolean;
   onRefinePrompt: (sceneId: string, shotId: string, feedback: string) => void | Promise<void>;
   onGenerateEndFrame?: (shotId: string, refs?: ShotRefInput[]) => void | Promise<void>;
   onRefineEndFramePrompt?: (shotId: string, feedback: string, referenceImage?: File) => void | Promise<void>;
@@ -107,7 +112,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   getActiveRefs, setActiveRefs, resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
   frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue,
-  onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt,
+  onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, isLockingShot, onRefinePrompt,
   onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
@@ -326,8 +331,10 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo && !shot.locked || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
           </button>
-          <button onClick={() => onLockShot(scene.id, shot.id)} disabled={isGenerating || (!shot.locked && !canLock)} className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${shot.locked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : canLock ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-30`} title={shot.locked ? 'Unlock shot' : canLock ? 'Lock shot' : isStoryboardMode ? 'Lock storyboard + generate video first to lock' : 'Generate start frame + video first to lock'} aria-label={shot.locked ? 'Unlock shot' : 'Lock shot'}>
-            {shot.locked ? (
+          <button onClick={() => onLockShot(scene.id, shot.id)} disabled={isLockingShot || isGenerating || (!shot.locked && !canLock)} className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${shot.locked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : canLock ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-50`} title={isLockingShot ? (shot.locked ? 'Locking…' : 'Unlocking…') : shot.locked ? 'Unlock shot' : canLock ? 'Lock shot' : isStoryboardMode ? 'Lock storyboard + generate video first to lock' : 'Generate start frame + video first to lock'} aria-label={shot.locked ? 'Unlock shot' : 'Lock shot'}>
+            {isLockingShot ? (
+              <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+            ) : shot.locked ? (
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>

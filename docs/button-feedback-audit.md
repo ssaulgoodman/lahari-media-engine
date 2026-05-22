@@ -50,7 +50,7 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 | L10 | `StylePhase.tsx:413` | Curated preset "Use this style" | `handleLockPreset(preset)` | Per-preset `presetLockingKey` + spinner + label. ✅ Already correct. | ✅ keep |
 | L11 | `StylePhase.tsx:445` | Style phase "Unlock" pill | `onUnlockStyle` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L12 | `ScriptPhase.tsx:241` | Script "Unlock" pill | `onUnlockScript` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
-| L13 | `ShotCard.tsx:329` | Per-shot lock button (icon) | `onLockShot(scene.id, shot.id)` | `disabled={isGenerating || ...}` — uses generation flag, not a dedicated lock-in-flight flag. Click while another shot is generating disables; click during its own lock — no feedback. | ⏳ |
+| L13 | `ShotCard.tsx:329` | Per-shot lock button (icon) | `onLockShot(scene.id, shot.id)` | `disabled={isGenerating || ...}` — uses generation flag, not a dedicated lock-in-flight flag. Click while another shot is generating disables; click during its own lock — no feedback. | ✅ Slice D · `lockingShotId` keyed; icon → spinner while network in flight; optimistic lock-state swap retained |
 | L14 | `ShotCard.tsx` storyboard | Storyboard lock / unlock (in StoryboardPanel) | `onLockStoryboard` / `onUnlockStoryboard` | Need to verify — flagged for inspection. | 🔍 |
 
 ## P1 — Add / Delete / Upload
