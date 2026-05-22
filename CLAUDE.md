@@ -182,10 +182,10 @@ Forks deep-copy project DB rows while sharing asset file paths. `forkProject()` 
 Railway project: `lahari-media-engine` (`a2ef8e79-f9ae-4dce-80e0-114d80e0a575`).
 
 ```bash
-railway up --detach
+~/.local/bin/lahari-deploy
 ```
 
-Migrations are additive. Apply migrations before deploying code that reads new columns. Railway CLI auth may expire; use `railway login` in a TTY if needed.
+Migrations are additive. Apply migrations before deploying code that reads new columns. The deploy wrapper uses `RAILWAY_TOKEN_LAHARI` from `~/.zshrc`, so do not use raw `railway up` unless you intentionally want interactive Railway OAuth.
 
 ## UI System
 

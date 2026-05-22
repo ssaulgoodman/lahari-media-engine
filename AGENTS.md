@@ -362,10 +362,10 @@ Admin diagnostics behind `x-admin-secret`:
 Railway project: `lahari-media-engine` (`a2ef8e79-f9ae-4dce-80e0-114d80e0a575`). Deploy with:
 
 ```bash
-railway up --detach
+~/.local/bin/lahari-deploy
 ```
 
-If Railway CLI auth is stale, run `railway login` in a TTY and use the activation code. Before render-service deploys, check active renders via `/api/admin/active-renders` if possible.
+This wrapper deploys from the main worktree with the project-scoped `RAILWAY_TOKEN_LAHARI` from `~/.zshrc`, so it does not depend on Railway's interactive OAuth session. If the wrapper is missing, run `source ~/.zshrc && lahari-deploy`. Before render-service deploys, check active renders via `/api/admin/active-renders` if possible.
 
 Migrations are additive. Apply new migrations before deploying code that reads new columns (`text_provider`, storyboard prompt fields, render progress fields, etc.).
 
