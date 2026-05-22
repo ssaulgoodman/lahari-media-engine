@@ -99,8 +99,12 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
   const [renderMeta, setRenderMeta] = useState<RenderStatusResponse | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
   const [history, setHistory] = useState<RenderHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const timelineItems = useStore((s) => s.trackItemsMap);
+  const timelineItemIds = useStore((s) => s.trackItemIds);
+  const lastSavedAt = useStore((s) => s.lastSavedAt);
 
   // Seed lastSavedAt from disk on mount so the Header's "Saved" pill appears
   // immediately after page reload (TimelineEditor's seed effect sets it too
@@ -166,6 +170,16 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     () => (project.audioPath ? [{ src: project.audioPath, name: 'song' }] : []),
     [project.audioPath],
   );
+
+  const newMediaCount = useMemo(() => {
+    if (!lastSavedAt || timelineItemIds.length === 0) return 0;
+    const timelineVideoSrcs = new Set(
+      Object.values(timelineItems)
+        .filter((item: any) => item?.type === 'video' && typeof item?.details?.src === 'string')
+        .map((item: any) => item.details.src as string),
+    );
+    return previewClips.filter((clip) => !timelineVideoSrcs.has(clip.src)).length;
+  }, [lastSavedAt, previewClips, timelineItemIds.length, timelineItems]);
 
   // Poll render-status while a job is running. Cleared on unmount or when the
   // job finishes. Declared at the component scope so both the initial
@@ -368,6 +382,8 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             initialClips={previewClips}
             initialAudioClips={previewAudioClips}
             projectId={project.id}
+            onOpenMediaLibrary={() => setMediaLibraryOpen(true)}
+            mediaLibraryBadgeCount={newMediaCount}
           />
         ) : (
           <div className="h-full flex items-center justify-center">
@@ -380,7 +396,26 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         {/* Media library — bottom drawer over the timeline. Self-hides when
             the project has no rendered shots yet. Click the handle at the
             bottom to expand; click any version card to append to timeline. */}
-        <MediaLibraryDrawer project={project} />
+        <MediaLibraryDrawer
+          project={project}
+          open={mediaLibraryOpen}
+          onOpenChange={setMediaLibraryOpen}
+        />
+
+        {newMediaCount > 0 && !mediaLibraryOpen && (
+          <div className="absolute left-20 top-3 z-10 rounded-md border border-amber-400/20 bg-amber-950/70 px-3 py-2 text-[11px] text-amber-100 shadow-lg backdrop-blur-sm flex items-center gap-3">
+            <span>
+              {newMediaCount} new media {newMediaCount === 1 ? 'clip is' : 'clips are'} available. Timeline kept unchanged.
+            </span>
+            <button
+              type="button"
+              onClick={() => setMediaLibraryOpen(true)}
+              className="text-amber-50 underline underline-offset-2 hover:text-white"
+            >
+              Open library
+            </button>
+          </div>
+        )}
 
         {historyOpen && (
           <div className="absolute top-3 right-3 w-80 max-h-[calc(100%-1.5rem)] bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl backdrop-blur-sm flex flex-col overflow-hidden z-10">

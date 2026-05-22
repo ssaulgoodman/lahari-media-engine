@@ -26,6 +26,9 @@ import { addVideoClip } from './timeline-editor/TimelineEditor';
 
 interface Props {
   project: ApiProject;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideClosedHandle?: boolean;
 }
 
 // Cache history per shot in component state so switching scenes doesn't
@@ -33,13 +36,23 @@ interface Props {
 // the version[] array from getShotHistory.
 type HistoryCache = Record<string, VersionEntry[]>;
 
-export const MediaLibraryDrawer: React.FC<Props> = ({ project }) => {
+export const MediaLibraryDrawer: React.FC<Props> = ({
+  project,
+  open: controlledOpen,
+  onOpenChange,
+  hideClosedHandle = false,
+}) => {
   // Closed by default — the drawer is a deliberate-reach tool, not a panel
   // that's always present. The handle at the bottom is what's persistent.
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   const [historyByShot, setHistoryByShot] = useState<HistoryCache>({});
   const [loadingShots, setLoadingShots] = useState<Set<string>>(new Set());
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
 
   // Hide entirely when the project has no rendered material. Removes a dead
   // affordance from the artist's view during early render-phase entry.
@@ -92,6 +105,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({ project }) => {
 
   // ─── Closed state: just the handle ──────────────────────────────────────
   if (!open) {
+    if (hideClosedHandle) return null;
     return (
       <button
         type="button"
