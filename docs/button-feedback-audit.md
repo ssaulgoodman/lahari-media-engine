@@ -51,7 +51,7 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 | L11 | `StylePhase.tsx:445` | Style phase "Unlock" pill | `onUnlockStyle` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L12 | `ScriptPhase.tsx:241` | Script "Unlock" pill | `onUnlockScript` | `disabled={isLoading}` only. | ✅ Slice A · UnlockPill internal pending |
 | L13 | `ShotCard.tsx:329` | Per-shot lock button (icon) | `onLockShot(scene.id, shot.id)` | `disabled={isGenerating || ...}` — uses generation flag, not a dedicated lock-in-flight flag. Click while another shot is generating disables; click during its own lock — no feedback. | ✅ Slice D · `lockingShotId` keyed; icon → spinner while network in flight; optimistic lock-state swap retained |
-| L14 | `ShotCard.tsx` storyboard | Storyboard lock / unlock (in StoryboardPanel) | `onLockStoryboard` / `onUnlockStoryboard` | Need to verify — flagged for inspection. | 🔍 |
+| L14 | `StoryboardPanel.tsx` storyboard | Storyboard lock / unlock | `onLockStoryboard` / `onUnlockStoryboard` | Lock showed "Locking…" only during plan-save, not during the actual lock backend call. Unlock had no feedback at all. | ✅ Slice F · local `locking`/`unlocking` keyed inside StoryboardTabBody; spinner + label swap on both |
 
 ## P1 — Add / Delete / Upload
 
@@ -62,7 +62,7 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 | D1 | `CharactersPhase.tsx:185` | Cast row delete X | `onDeleteCast(memberId)` (after confirm dialog) | Confirm dialog handles its own state, but the sidebar row stays present until refresh — no "Deleting…" or row dim. | ✅ Slice E · `deletingCastIds` keyed; row dims + spinner replaces X; dialog rule observed |
 | D2 | `EnvironmentsPhase.tsx:174` | Env row delete X | inline `api.deleteEnvironment` | Same. | ✅ Slice E · `deletingEnvIds` keyed; row dims + spinner replaces X; dialog rule observed |
 | U1 | `CharactersPhase.tsx:310` | "Use as-is" upload (cast) | `handleCastUploadAsIs` | Already wired: `castUploading` Set + spinner. ✅ keep | ✅ keep |
-| U2 | `CharactersPhase.tsx:302` | "Generate with reference" upload | stages a ref then fires generate | Verify whether spinner runs while staging. | 🔍 |
+| U2 | `CharactersPhase.tsx:302` | "Generate with reference" upload | stages a ref then fires generate | Verify whether spinner runs while staging. | ✅ verified · "Generate 3 looks" clears the staging panel synchronously; `setLooksLoading` is the first line of `AppShell.handleGenerateLooks`, so the sidebar flips to "Generating…" before the network call. Feedback is instant — no fix needed. |
 | U3 | `EnvironmentsPhase.tsx:302` | Env "Use as-is" upload | `handleEnvUploadAsIs` | Already wired: `envUploading` + spinner. ✅ keep | ✅ keep |
 | U4 | `StylePhase.tsx:559` | "Upload reference" (direct-lock) | `uploadAndLockStyle` | Has `isLocking` + spinner. ✅ keep | ✅ keep |
 
@@ -78,10 +78,10 @@ Project-standard inline spinner is `w-3 h-3 border-2 border-zinc-500 border-t-wh
 | G6 | `AssetShelf.tsx` tool buttons | Any tool fired through shelf | parent `handleRunTool` | Per-tool `busyKey` + spinner + label swap. ✅ Already correct after T10.1. | ✅ keep |
 | G7 | `ScriptPhase.tsx:235` | Header "Write all dialogue" | `writeAllDialogue` | `writingDialogue.has('__all__')` + "Writing…" label. ✅ | ✅ keep |
 | G8 | `ScriptPhase.tsx` per-shot DialogueBlock | "Write dialogue" / "Rewrite" / "Regenerate" | `onWrite` → `writeDialogueForShot(id)` | `writingDialogue.has(shotId)` + "Writing…" label. ✅ | ✅ keep |
-| G9 | `ShotCard.tsx:326` | "Generate video" / "Regenerate video" | `onGenerateVideo` | `disabled={isGenerating}` — needs verification that label swaps too. | 🔍 |
+| G9 | `ShotCard.tsx:326` | "Generate video" / "Regenerate video" | `onGenerateVideo` | `disabled={isGenerating}` — needs verification that label swaps too. | ✅ verified · `AppShell.handleGenerateVideo` flips `videoStatus → LOADING` via `setProject` BEFORE the network call. The card's full Loading overlay covers the shot with spinner + "Generating video" — feedback is instant. No fix needed. |
 | G10 | `ShotCard.tsx:482` | "Generate end frame" | `onGenerateEndFrame(shotId)` | `disabled={shot.endImageStatus === 'loading'}` + spinner. ✅ | ✅ keep |
 | R1 | `ConceptPhase.tsx` AssetShelf | "Generate concept" / "Refine concept" tool buttons | through AssetShelf | ✅ via AssetShelf busy state | ✅ keep |
-| R2 | `AudioPhase.tsx` per-line | "Regenerate" per dialogue line | `regenerateLine(lineId)` | Verify. | 🔍 |
+| R2 | `AudioPhase.tsx:457` per-line | "Regen" / "Gen" per dialogue line | `generateForLines([line.id])` | DialogueRow's `canRegenerate` is `false` when `generating` is true, so the button is replaced by the `TtsStatusPill` showing "gen…" with a blue background as soon as the line enters generation state. Feedback is instant. No fix needed. | ✅ verified |
 
 ## P3 — Edit / Save (contentEditable blur saves)
 

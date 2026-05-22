@@ -651,6 +651,24 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
 }) => {
   const saving = saveState === 'saving';
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
+  // Slice F of button-feedback-audit (L14): storyboard lock/unlock pending.
+  // Lock already showed "Locking…" while the *plan save* was in flight, but
+  // not while the actual lock backend call was running. Unlock had no
+  // feedback at all.
+  const [locking, setLocking] = React.useState(false);
+  const [unlocking, setUnlocking] = React.useState(false);
+  const handleLockClick = async () => {
+    if (locking) return;
+    setLocking(true);
+    try { await Promise.resolve(onLock()); }
+    finally { setLocking(false); }
+  };
+  const handleUnlockClick = async () => {
+    if (unlocking) return;
+    setUnlocking(true);
+    try { await Promise.resolve(onUnlockStoryboard(shot.id)); }
+    finally { setUnlocking(false); }
+  };
   // Cast / environment changed in Script since this storyboard was planned.
   // Only meaningful once a prompt actually exists — otherwise "stale" is
   // unintuitive. Cleared server-side by writeStoryboardPrompt.
@@ -798,13 +816,13 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               the artist knows the field is empty by choice. */}
           {hasStoryboard && (
             <button
-              onClick={onLock}
-              disabled={isGenerating || saving}
+              onClick={handleLockClick}
+              disabled={isGenerating || saving || locking}
               className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              title={saving ? 'Saving first…' : 'Lock this storyboard so video generation can use it.'}
+              title={saving ? 'Saving first…' : locking ? 'Locking…' : 'Lock this storyboard so video generation can use it.'}
             >
-              {saving && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
-              {saving ? 'Locking…' : 'Lock'}
+              {(saving || locking) && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+              {saving ? 'Locking…' : locking ? 'Locking…' : 'Lock'}
             </button>
           )}
         </div>
@@ -813,15 +831,20 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
       {isLocked && (
         <div className="flex items-center gap-2">
           <button
-            onClick={() => onUnlockStoryboard(shot.id)}
-            className="text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5"
-            title="Unlock to refine or regenerate this storyboard."
+            onClick={handleUnlockClick}
+            disabled={unlocking}
+            className="text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-60"
+            title={unlocking ? 'Unlocking…' : 'Unlock to refine or regenerate this storyboard.'}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
-            </svg>
-            Unlock storyboard
+            {unlocking ? (
+              <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+              </svg>
+            )}
+            {unlocking ? 'Unlocking storyboard…' : 'Unlock storyboard'}
           </button>
         </div>
       )}
