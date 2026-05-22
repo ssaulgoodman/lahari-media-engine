@@ -1331,7 +1331,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
       <div className="flex flex-1 overflow-hidden">
         <main id="main-content" className="flex-1 overflow-y-auto relative">
           {/* Loading overlay — visible during project switch */}
-          {(loading || restoring) && !project && (
+          {(restoring || (loading && !project)) && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#141418]/80 backdrop-blur-sm">
               <div className="text-sm text-zinc-400 animate-pulse">
                 {restoring ? 'Opening workspace…' : 'Loading…'}
@@ -1347,7 +1347,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
           <div className="relative z-10 w-full p-8">
             {/* Prompts library — full-page overlay over the current pipeline state. */}
             <AnimatePresence>
-              {promptsOpen && (
+              {!restoring && promptsOpen && (
                 <motion.div
                   key="prompts-library"
                   initial={{ opacity: 0, y: 8 }}
@@ -1363,7 +1363,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
             {/* Page transitions — hidden while Prompts library is open to
                 preserve pipeline state underneath without double-rendering. */}
             <AnimatePresence mode="wait">
-              {!promptsOpen && currentStep === AppStep.UPLOAD && (
+              {!restoring && !promptsOpen && currentStep === AppStep.UPLOAD && (
                 <motion.div key="start" {...pageTransition}>
                   <StartProject
                     onCreate={handleCreateFromIntake}
@@ -1373,7 +1373,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                 </motion.div>
               )}
 
-              {!promptsOpen && currentStep === AppStep.BLUEPRINT && project && (
+              {!restoring && !promptsOpen && currentStep === AppStep.BLUEPRINT && project && (
                 <motion.div key="blueprint" {...pageTransition}>
                   <AnalysisEditor
                     project={project}
@@ -1419,7 +1419,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                 </motion.div>
               )}
 
-              {!promptsOpen && currentStep === AppStep.STUDIO && project && (
+              {!restoring && !promptsOpen && currentStep === AppStep.STUDIO && project && (
                 <motion.div key="studio" {...pageTransition}>
                   <Storyboard
                     scenes={project.scenes}
@@ -1479,7 +1479,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                 </motion.div>
               )}
 
-              {!promptsOpen && currentStep === AppStep.RENDER && project && (
+              {!restoring && !promptsOpen && currentStep === AppStep.RENDER && project && (
                 <motion.div key="render" {...pageTransition}>
                   <StepRender
                     project={project}
