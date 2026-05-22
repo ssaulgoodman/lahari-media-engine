@@ -6,13 +6,13 @@ import StateManager, {
 } from '@designcombo/state';
 import { generateId } from '@designcombo/timeline';
 import { getFitZoomLevel } from './utils';
-import { Upload, Sparkles } from 'lucide-react';
+import { Library, Upload, Sparkles } from 'lucide-react';
 import Player from './Player';
 import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
 import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
-import { loadSnapshot, saveSnapshot, clearSnapshot } from './persistence';
+import { loadSnapshot, saveSnapshot } from './persistence';
 
 export type InitialClip = { src: string; name?: string };
 
@@ -35,6 +35,8 @@ interface Props {
   // mirrored into the store so the Header's Reset/Save buttons can act on
   // it without prop-drilling.
   projectId?: string;
+  onOpenMediaLibrary?: () => void;
+  mediaLibraryBadgeCount?: number;
 }
 
 const toolbarBtn: React.CSSProperties = {
@@ -125,6 +127,8 @@ const TimelineEditor: React.FC<Props> = ({
   initialAudioClips,
   embedded,
   projectId,
+  onOpenMediaLibrary,
+  mediaLibraryBadgeCount = 0,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -481,25 +485,6 @@ const TimelineEditor: React.FC<Props> = ({
       // through to the fresh-clips path below.
       if (projectId) {
         const snap = loadSnapshot(projectId);
-        // Filter stale srcs out of the snapshot rather than wiping the whole
-        // thing. The legitimate timeline can hold srcs that aren't in the
-        // current shot.videoUrl set — media library appends pull from older
-        // shot versions, and regenerating one shot leaves its old url dead.
-        // Dropping the affected items preserves every cut/trim the artist
-        // made on still-valid clips. `blob:` srcs (manual uploads from the
-        // Upload button) are ephemeral to the page session but we accept
-        // them — they'll fail to load silently which is no worse than the
-        // current non-persistent behavior.
-        const freshSrcs = new Set([
-          ...(initialClips ?? []).map((c) => c.src),
-          ...(initialAudioClips ?? []).map((c) => c.src),
-        ]);
-        const isStaleItem = (it: any) => {
-          const src = it?.details?.src;
-          if (typeof src !== 'string') return false;
-          if (src.startsWith('blob:')) return false;
-          return !freshSrcs.has(src);
-        };
         let restored: {
           tracks: any[];
           trackItemIds: string[];
@@ -510,120 +495,9 @@ const TimelineEditor: React.FC<Props> = ({
           savedAt: number;
         } | null = null;
         if (snap && snap.trackItemIds.length > 0) {
-          const staleIds = new Set(
-            Object.entries(snap.trackItemsMap)
-              .filter(([, it]) => isStaleItem(it))
-              .map(([id]) => id),
-          );
-          if (staleIds.size === 0) {
-            restored = { ...snap };
-          } else if (staleIds.size < snap.trackItemIds.length) {
-            const trackItemIds = snap.trackItemIds.filter((id) => !staleIds.has(id));
-            const trackItemsMap = Object.fromEntries(
-              Object.entries(snap.trackItemsMap).filter(([id]) => !staleIds.has(id)),
-            );
-            // Drop transitions touching dropped items. Empty tracks stay —
-            // an empty audio track on a video-only project is harmless and
-            // keeps the artist's track layout intact.
-            const transitionIds = snap.transitionIds.filter((tid) => {
-              const t = snap.transitionsMap[tid] as any;
-              return t && !staleIds.has(t.fromId) && !staleIds.has(t.toId);
-            });
-            const transitionsMap = Object.fromEntries(
-              transitionIds.map((tid) => [tid, snap.transitionsMap[tid]]),
-            );
-            const tracks = snap.tracks.map((t: any) => ({
-              ...t,
-              items: (t.items as string[]).filter((id) => !staleIds.has(id)),
-            }));
-            // Trim duration to the latest remaining display.to so the
-            // playhead doesn't sit past the end of content.
-            const duration = trackItemIds.reduce((max, id) => {
-              const to = (trackItemsMap[id] as any)?.display?.to ?? 0;
-              return to > max ? to : max;
-            }, 0);
-            restored = {
-              tracks,
-              trackItemIds,
-              trackItemsMap,
-              transitionIds,
-              transitionsMap,
-              duration,
-              savedAt: snap.savedAt,
-            };
-          } else {
-            // Every item was stale — fall through to fresh seeding.
-            clearSnapshot(projectId);
-          }
+          restored = { ...snap };
         }
         if (restored) {
-          // If the artist opened/saved Render before all shot videos existed,
-          // localStorage can contain a valid audio-only or partial timeline.
-          // Restoring it verbatim would hide newly generated shot clips forever.
-          // Snapshots saved after this patch carry the initial video source set,
-          // so deliberate deletes stay deleted; legacy snapshots infer from
-          // what's present and append any newly available generated clips.
-          const restoredVideoSrcs = new Set(
-            Object.values(restored.trackItemsMap)
-              .filter((it: any) => it?.type === 'video' && typeof it?.details?.src === 'string')
-              .map((it: any) => it.details.src as string),
-          );
-          const savedInitialVideoSrcs = Array.isArray((snap as any)?.initialVideoSrcs)
-            ? new Set((snap as any).initialVideoSrcs as string[])
-            : restoredVideoSrcs;
-          const missingInitialClips = (initialClips ?? []).filter(
-            (clip) => !savedInitialVideoSrcs.has(clip.src) && !restoredVideoSrcs.has(clip.src),
-          );
-          if (missingInitialClips.length) {
-            const durations = await Promise.all(
-              missingInitialClips.map((clip) => probeMediaDurationMs(clip.src, 'video')),
-            );
-            if (cancelled) return;
-            if (useStore.getState().stateManager !== stateManager) return;
-
-            const tracks = restored.tracks.map((track: any) => ({
-              ...track,
-              items: [...(track.items as string[])],
-            }));
-            let videoTrack = tracks.find((track: any) => track.type === 'video');
-            if (!videoTrack) {
-              videoTrack = { id: generateId(), type: 'video', items: [], accepts: ['video'] };
-              tracks.unshift(videoTrack);
-            }
-            const trackItemIds = [...restored.trackItemIds];
-            const trackItemsMap = { ...restored.trackItemsMap };
-            let cursor = Object.values(trackItemsMap).reduce((max, it: any) => {
-              if (it?.type !== 'video') return max;
-              const to = it?.display?.to ?? 0;
-              return to > max ? to : max;
-            }, 0);
-            missingInitialClips.forEach((clip, i) => {
-              const dur = durations[i] || 5000;
-              const itemId = generateId();
-              videoTrack.items.push(itemId);
-              trackItemIds.push(itemId);
-              trackItemsMap[itemId] = {
-                id: itemId,
-                type: 'video',
-                display: { from: cursor, to: cursor + dur },
-                details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
-                metadata: { resourceId: itemId, ...(clip.name ? { displayName: clip.name } : {}) },
-                trackId: videoTrack.id,
-                isMain: true,
-                duration: dur,
-                playbackRate: 1,
-                trim: { from: 0, to: dur },
-              };
-              cursor += dur;
-            });
-            restored = {
-              ...restored,
-              tracks,
-              trackItemIds,
-              trackItemsMap,
-              duration: Math.max(restored.duration, cursor),
-            };
-          }
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
           (stateManager as any).updateState(
@@ -944,6 +818,38 @@ const TimelineEditor: React.FC<Props> = ({
           >
             <Upload size={16} />
           </button>
+          {onOpenMediaLibrary && (
+            <button
+              style={sidebarBtn(false)}
+              onClick={onOpenMediaLibrary}
+              title={mediaLibraryBadgeCount > 0 ? `${mediaLibraryBadgeCount} new media item${mediaLibraryBadgeCount === 1 ? '' : 's'}` : 'Media library'}
+            >
+              <span style={{ position: 'relative', display: 'flex' }}>
+                <Library size={16} />
+                {mediaLibraryBadgeCount > 0 && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: -7,
+                      right: -7,
+                      minWidth: 15,
+                      height: 15,
+                      padding: '0 4px',
+                      borderRadius: 999,
+                      background: '#f59e0b',
+                      color: '#111',
+                      fontSize: 9,
+                      lineHeight: '15px',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                    }}
+                  >
+                    {mediaLibraryBadgeCount > 9 ? '9+' : mediaLibraryBadgeCount}
+                  </span>
+                )}
+              </span>
+            </button>
+          )}
           <button
             style={sidebarBtn(sidePanel === 'effects')}
             onClick={() => setSidePanel((cur) => (cur === 'effects' ? null : 'effects'))}
