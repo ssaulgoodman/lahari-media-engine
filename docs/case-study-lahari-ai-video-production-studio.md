@@ -4,13 +4,27 @@
 
 Mothership built Lahari into an AI-assisted video production studio for devotional music videos: a system that turns a song catalog into concepts, scripts, style references, character and environment looks, storyboards, generated clips, editable timelines, and final renders.
 
-The work happened in two layers.
+The work happened in three connected layers.
 
 First, we built the production machine: a real visual studio with queueing, song analysis, prompt transparency, model selection, reference management, storyboard/video generation, and a render timeline.
 
-Then we made that machine agent-native: operable through Codex and Claude, with remote MCP tools, local notebooks, editable drafts, validation, audit trails, realtime activity, and approval-safe apply flows.
+Then we made rendering browser-native but cloud-backed, so artists could edit timelines in the web app while long-running FFmpeg/Remotion work happened on Modal render infrastructure.
+
+Finally, we made the whole system agent-native and taste-native: operable through Codex and Claude, backed by battle-tested prompts, workflows, skills, editable notebooks, validation, audit trails, realtime activity, and approval-safe apply flows.
 
 The result is a studio where artists and AI agents can coordinate around the same project, see what changed, control models and workflows, manage budget-sensitive generations, preserve creative continuity, and move from song to finished video dramatically faster than a manual production loop.
+
+At production pace, the system supports multiple finished videos per day. The point is not just faster generation; it is a tighter operating loop where song analysis, creative direction, asset generation, review, edits, and final assembly all share one state.
+
+**Proof points from the build:**
+
+- Full-stack AI video studio across queue, blueprint, shot production, and render.
+- Supabase-backed project memory, asset history, prompt catalog, AI call logs, and render state.
+- Remote Codex/Claude MCP surface for artist-side operation without forcing a new proprietary agent UI.
+- Local project notebooks with editable script and storyboard drafts, config overrides, hashes, journals, and native skill files.
+- Browser-native timeline editing backed by Modal cloud render workers, so artists can assemble and render production videos without local GPU/desktop editing infrastructure.
+- Realtime agent presence, audit trails, artist-owned memory search, safe apply tools, and render media-library protections.
+- Continuous production deployment on Railway with long-running renderer infrastructure and Supabase Storage.
 
 ## The Problem
 
@@ -21,6 +35,14 @@ Artists need to choose the right song, understand the lyrics, map the structure,
 Before Lahari, that work lived across scattered tools, chats, spreadsheets, folders, prompts, and human memory. It was hard to coordinate, hard to reproduce, and slow to scale. Every new generation risked losing context from the previous step.
 
 The goal was not just "make AI videos." The goal was to build a repeatable production system for artists.
+
+## How Mothership Worked
+
+Mothership worked like a forward-deployed product engineering team, not an outside prototype shop.
+
+We stayed close to real artist workflows, shipped against live production friction, and converted repeated manual coordination into product surfaces. When artists hit rough edges — lost context, weak storyboard prompts, stale outputs, timeline edits disappearing after regeneration, difficulty finding older styles, Windows notebook-sync failures — those were treated as product signals, not one-off support tickets.
+
+The work combined product design, AI workflow design, full-stack engineering, prompt systems, database modeling, deployment, and operational debugging. The studio evolved by watching actual projects move through the pipeline and then hardening the parts that slowed production down.
 
 ## Phase 1: The Visual Studio
 
@@ -43,6 +65,16 @@ In product terms, Phase 1 created four core surfaces:
 - **Studio:** produce shot-level media with visible prompts, references, generation history, storyboard mode, video mode, locks, and stale-state warnings.
 - **Render:** assemble generated clips into a final timeline, render asynchronously, track progress, and publish the output.
 
+## Cloud-Native Rendering
+
+Lahari also needed to make rendering feel native without forcing artists into heavy desktop software.
+
+Mothership architected a browser timeline editor on top of Modal-backed rendering. Artists arrange clips, trims, media versions, and audio inside the web app. The app stores the render-authoritative timeline state, then delegates the heavy work to Modal render workers that can run FFmpeg fast paths or Remotion compositions, upload the finished MP4 to Supabase Storage, and report progress back to the studio.
+
+That matters because Lahari is not just a prompt generator. It is a system artists can use on the go: start multiple projects, generate assets in batches, keep versions in a media library, assemble timelines when ready, and render final outputs without managing local GPU machines or video-editing installations. The renderer is isolated from the main API and can scale independently: Modal keeps the HTTP front door warm, fans out long-running render jobs into dedicated containers, and gives Lahari room to move heavier CPU/GPU rendering work into cloud workers as the product grows.
+
+The render architecture also protects creative work. New generations do not automatically destroy an edited timeline. They arrive as new takes in the media library, and the artist intentionally pulls them into the edit. This turns regeneration from a risky overwrite into normal production iteration.
+
 ## Engineering Highlights
 
 Lahari was built as production software, not a thin prompt wrapper.
@@ -59,7 +91,7 @@ It includes:
 - Character, environment, and style reference systems that preserve identity and visual continuity across shots.
 - Seedance storyboard mode for multi-panel shot planning, cut plans, storyboard boards, and storyboard-driven video generation.
 - A render timeline editor with media library, trims, version append, render history, and final publish flow.
-- Separate render infrastructure for long-running Remotion/FFmpeg jobs, with progress, watchdogs, fallback, and Supabase upload.
+- Separate Modal render infrastructure for long-running Remotion/FFmpeg jobs, with progress, watchdogs, fallback, function-call IDs, and Supabase upload.
 
 ## Phase 2: Agent-Native Operations
 
@@ -92,6 +124,50 @@ Phase 2 added:
 - Security and audit hardening: rate limits, body limits, redacted logs, ownership checks, and issue capture.
 - Render media-library hardening so regenerated clips appear as new takes and never destroy a saved timeline.
 
+The agent-native approach was deliberately not a new chatbot bolted onto Lahari.
+
+Instead of building and billing a separate in-house agent, Mothership brought Lahari to the places artists and technical operators already work: Codex, Claude Code, local workspaces, files, and familiar review loops. Lahari exposes the production system as typed tools, notebooks, drafts, and skills. The agent harness provides the model, memory, editing ability, terminal access, and conversation surface.
+
+That choice matters. Codex and Claude keep improving: better models, better UI, better file editing, better computer use, better long-context behavior. Lahari stays in lockstep with that curve instead of competing with it. The studio becomes agent-compatible infrastructure rather than another isolated AI app.
+
+The local notebook was a key design move. Each project can materialize as a workspace with readable mirrors, editable drafts, config overrides, local journal, and native skills. Agents can use file diffs and surgical edits for scripts and storyboard prompts, while Lahari keeps Supabase as canonical truth. The hybrid MCP + CLI sync path keeps large file bodies out of chat, preserves context across sessions, and gives both artists and agents a tangible production folder.
+
+This lays the foundation for more advanced loops: continual learning from artist decisions, benchmarking prompt changes, comparing generations over time, capturing friction as issues, and improving future projects from prior project memory.
+
+## Taste, Prompts, And Agency
+
+The other major design move was turning Lahari's accumulated production taste into reusable infrastructure.
+
+Mothership did not leave every artist or agent to reinvent the production workflow from scratch. Lahari carries a battle-tested prompt catalog, context recipes, storyboard mode, Seedance cut-plan structure, model routing, render rules, and production-specific skills. The system knows how scripts should pace, how storyboard prompts should be written, how visual references should be reused, how continuity should be checked, and when a generation should be refined versus regenerated.
+
+That taste library lives at multiple levels:
+
+- Engine prompts and workflow recipes provide stable defaults.
+- Native skills teach Codex and Claude how to act like a Lahari director, script doctor, storyboard prompt writer, continuity auditor, style critic, and render triage partner.
+- Project config lets artists override prompts, model preferences, look-generation instructions, and workflow choices for a specific song or client.
+- Draft files let agents and artists edit production text directly before applying it back to the canonical database.
+
+This created a tiered system of agency. The engine holds the proven defaults. The project layer holds artist-specific taste. The agent can edit, propose, override, and apply changes within clear boundaries. Artists can choose how much control to take: use the default workflow, tune a project, rewrite prompts by hand, or ask Codex to reshape the project while Lahari validates and persists the result.
+
+Over time, that makes Lahari more autonomous without making it opaque. The catalog can improve globally, project overrides can preserve local taste, and agents can build on prior decisions instead of starting from zero. Agency comes from giving the model the right editable surfaces, not from handing it an unbounded backend.
+
+## What Made This Hard
+
+AI video production is not one model call. It is state management.
+
+A single song touches lyrics, meaning, structure, concept, script, style, characters, environments, shot prompts, storyboards, generated media, final timeline edits, and publish state. Each upstream decision can make downstream work stale. Each regeneration can produce a better asset while risking damage to an edit that was already in progress.
+
+That meant Lahari needed more than prompt quality. It needed:
+
+- Context chaining so every generation knows what has already been decided.
+- Staleness signals instead of silent overwrites.
+- Reference management for style, character, and environment continuity.
+- Visible prompt and AI-call history so artists can inspect what happened.
+- Typed apply tools so agents can change production state safely.
+- Explicit approval boundaries for paid or destructive operations.
+- Render timeline protection so generation feeds the media library, while editing pulls from the library intentionally.
+- Artist-owned memory search so prior styles and assets remain reusable without exposing raw database access.
+
 ## What Changed
 
 Before, producing a polished AI music video required coordinating many fragile steps manually: gather assets, understand the song, write prompts, generate candidates, track references, manage revisions, assemble clips, and remember which decisions mattered.
@@ -120,9 +196,11 @@ It lets artists:
 
 The deeper impact is operational. Lahari turns AI video from a series of experiments into a supervised production line.
 
+It also gives teams parallelism. Multiple projects can be in flight, agents can prepare scripts or storyboard prompts while artists review visuals, media can be generated in batches, and final renders can be launched when the timeline is ready. The production bottleneck moves away from "who has the right local machine and editing setup" and toward creative judgment.
+
 ## Positioning Line
 
-Mothership built Lahari as a production operating system for AI video: first the visual studio, then the agent-native layer that lets artists and AI collaborators run it together.
+Mothership built Lahari as a production operating system for AI video: a visual studio, cloud-native render pipeline, and agent-native taste layer that let artists and AI collaborators run the same creative workflow together.
 
 ## Short Copy Options
 
@@ -146,7 +224,7 @@ Start with a song in the queue. Show Lahari analyzing lyrics and structure, gene
 
 **Engineering angle**
 
-Show the hidden machinery: Supabase project state, prompt catalog, context chaining, staleness flags, AI call logs, storyboard cut plans, render worker, FFmpeg/Remotion path, and final Supabase Storage output.
+Show the hidden machinery: Supabase project state, prompt catalog, context chaining, staleness flags, AI call logs, storyboard cut plans, Modal render worker, FFmpeg/Remotion path, cloud render progress, and final Supabase Storage output.
 
 **Agent-native angle**
 
@@ -218,3 +296,5 @@ For the case study and future video, capture the product in the same order the w
 Lahari proves the Mothership pattern: build the real operating system around a client workflow, then make it agent-operable.
 
 The win is not just better prompts or faster generation. It is a coordinated machine where software, artists, models, media assets, approvals, and agents all share the same production state.
+
+The deeper pattern is portable: do not force teams into a new AI silo. Build the operating system around their real workflow, expose it through durable tools and state, and let the best available agents operate it safely from the environments where people already work.
