@@ -10,11 +10,11 @@ First, we built the production machine: a real visual studio with queueing, song
 
 Then we made rendering browser-native but cloud-backed, so artists could edit timelines in the web app while long-running FFmpeg/Remotion work happened on Modal render infrastructure.
 
-Finally, we made the whole system agent-native and taste-native: operable through Codex and Claude, backed by battle-tested prompts, workflows, skills, editable notebooks, validation, audit trails, realtime activity, and approval-safe apply flows.
+Finally, we made the whole system agent-native and taste-native: operable through Codex and Claude, backed by proven prompts, workflows, skills, editable notebooks, validation, audit trails, realtime activity, and approval-safe apply flows.
 
-The result is a studio where artists and AI agents can coordinate around the same project, see what changed, control models and workflows, manage budget-sensitive generations, preserve creative continuity, and move from song to finished video dramatically faster than a manual production loop.
+The result is a studio where artists and AI agents coordinate around the same project, see what changed, control models and workflows, manage budget-sensitive generations, preserve creative continuity, and move from song to finished video on a fundamentally different production curve.
 
-At production pace, the system supports multiple finished videos per day. The point is not just faster generation; it is a tighter operating loop where song analysis, creative direction, asset generation, review, edits, and final assembly all share one state.
+The numbers tell that story directly. A polished AI music video used to take **~2 weeks** of fragmented coordination and **$5K–$10K** in production costs. Inside Lahari, the same finished output now lands in **~1 day** for **under $50**, and a single artist can ship **roughly 10 videos per week**. The point is not just faster generation — it's a tighter operating loop where song analysis, creative direction, asset generation, review, edits, and final assembly all share one state.
 
 **Proof points from the build:**
 
@@ -25,6 +25,10 @@ At production pace, the system supports multiple finished videos per day. The po
 - Browser-native timeline editing backed by Modal cloud render workers, so artists can assemble and render production videos without local GPU/desktop editing infrastructure.
 - Realtime agent presence, audit trails, artist-owned memory search, safe apply tools, and render media-library protections.
 - Continuous production deployment on Railway with long-running renderer infrastructure and Supabase Storage.
+
+![Lahari model and workflow controls](./assets/case-study/04-model-and-style-controls.png)
+
+*Project-level controls keep the production loop explicit: aspect ratio, resolution, image model, storyboard provider, text model, video model, locked style, and generation state all live in the same surface.*
 
 ## The Problem
 
@@ -54,9 +58,33 @@ That audio analysis becomes the context chain for the rest of the pipeline.
 
 The Blueprint stage turns the song into a production plan: concept directions, script, scenes, shots, style, character references, and environment references. The system does not treat each model call as isolated. Lyrics, meaning, musical sections, song type, locked concept, style reference, cast, environment, and shot direction flow forward through the pipeline so downstream generations stay grounded.
 
+![Lahari script breakdown](./assets/case-study/03-script-breakdown.png)
+
+*The script stage converts a song into scenes, shot counts, durations, pacing controls, and editable production structure.*
+
+![Lahari environment reference generation](./assets/case-study/01-blueprint-environment-looks.png)
+
+*Environment references are generated, reviewed, locked, and reused downstream so shots stay grounded in the same visual world.*
+
+![Lahari character reference generation](./assets/case-study/02-character-look-reference.png)
+
+*Character references preserve identity across generated boards, frames, and clips instead of relying on prompt memory alone.*
+
 The Studio stage turns the plan into media. Artists can work shot by shot, choose model/workflow settings, generate frames, generate videos, use storyboard mode for Seedance, inspect histories, refine prompts, lock good outputs, and keep stale work visible instead of silently overwriting it.
 
+![Lahari storyboard shot workflow](./assets/case-study/05-storyboard-shot-workflow.png)
+
+*Storyboard mode gives each shot a board, references, prompt text, cut-plan context, generation history, and explicit lock/regenerate controls.*
+
+![Lahari shot production map](./assets/case-study/06-shot-production-map.png)
+
+*The shot map makes project progress visible at a glance: scenes, shot durations, storyboard/video status, and lock state stay inspectable while production moves forward.*
+
 The Render stage gives artists a real timeline editor. Generated clips become editable media. Artists can trim, sequence, assemble, render, publish, and keep version history. Final renders are uploaded to Supabase Storage and written back to the production queue.
+
+![Lahari render timeline](./assets/case-study/07-render-timeline.png)
+
+*The browser timeline lets artists assemble generated clips into a final video while rendering is delegated to cloud infrastructure.*
 
 In product terms, Phase 1 created four core surfaces:
 
@@ -71,7 +99,7 @@ Lahari also needed to make rendering feel native without forcing artists into he
 
 Mothership architected a browser timeline editor on top of Modal-backed rendering. Artists arrange clips, trims, media versions, and audio inside the web app. The app stores the render-authoritative timeline state, then delegates the heavy work to Modal render workers that can run FFmpeg fast paths or Remotion compositions, upload the finished MP4 to Supabase Storage, and report progress back to the studio.
 
-That matters because Lahari is not just a prompt generator. It is a system artists can use on the go: start multiple projects, generate assets in batches, keep versions in a media library, assemble timelines when ready, and render final outputs without managing local GPU machines or video-editing installations. The renderer is isolated from the main API and can scale independently: Modal keeps the HTTP front door warm, fans out long-running render jobs into dedicated containers, and gives Lahari room to move heavier CPU/GPU rendering work into cloud workers as the product grows.
+That matters because Lahari isn't just a prompt generator. It's a system artists can run from a laptop anywhere in the world — start multiple projects, generate assets in batches, keep versions in a media library, assemble timelines when ready, and render final outputs without owning GPU or editing hardware. Tooling, compute, and source material are all hosted; everything is one tap away. In practice the render layer sustains **~20 finished videos per day** on dedicated Modal cloud render infrastructure, with no local-machine dependency at any point. The renderer is isolated from the main API and scales independently: Modal keeps the HTTP front door warm, fans out long-running render jobs into dedicated containers, and gives Lahari room to absorb heavier CPU/GPU work as production volume grows.
 
 The render architecture also protects creative work. New generations do not automatically destroy an edited timeline. They arrive as new takes in the media library, and the artist intentionally pulls them into the edit. This turns regeneration from a risky overwrite into normal production iteration.
 
@@ -105,9 +133,9 @@ This changed the operating model. The web app remains the visual studio. Codex o
 
 Agents can inspect the project, reason over the song and production state, write or revise scripts and storyboard prompts locally, then persist changes through typed apply tools. Apply tools validate structure, check drift, update Supabase, write events, and return refreshed artifacts. Costly generation and destructive mutations remain explicit approval moments.
 
-The same studio can now be run by artists, agents, or both.
+The same studio is now operable by artists, agents, or both at once.
 
-The important nuance: agents do not replace the studio. They operate it. Lahari keeps canonical project truth in Supabase, the web app keeps visual review and approval, and the agent works through a constrained tool surface that preserves state, cost awareness, and rollback discipline.
+The deeper move: agents don't replace the studio, they operate it on the same terms an artist does. Lahari stays canonical in Supabase, the web app stays the visual review surface, and the agent works through a constrained tool surface where state, cost, and rollback discipline hold regardless of who pulled the trigger. The same workflow gets better when either side improves — a better artist sees more in less time, a better agent operates more capably on the same surface.
 
 ## Agent-Native Highlights
 
@@ -176,13 +204,20 @@ With Lahari, those steps became a production system.
 
 An artist can move through a guided workflow, but still keep control. The system knows the project state, the model choices, the references, the prompt history, the render state, and the next useful action. Agents can assist without becoming a black box because every mutation flows through typed tools, visible drafts, logs, and approval boundaries.
 
-For suitable projects, this compresses work that used to take weeks of fragmented coordination into a focused production cycle that can happen in roughly a day, with better traceability and fewer lost decisions.
+Concretely: production cycles compressed from ~2 weeks to ~1 day. Per-video budgets compressed from $5K–$10K to under $50. Per-artist throughput moved from one video every few weeks to roughly 10 per week. With better traceability and fewer lost decisions along the way.
 
 ## Impact
 
-Lahari gives teams a repeatable way to produce AI video at scale.
+Lahari gives teams a repeatable way to produce AI video at scale. The shift is measurable on four axes:
 
-It lets artists:
+- **Time:** ~2 weeks → ~1 day per finished video.
+- **Cost:** $5K–$10K → under $50 per finished video.
+- **Artist throughput:** one artist now ships roughly 10 videos per week.
+- **Render capacity:** ~20 finished videos per day on dedicated Modal cloud render infrastructure, with zero reliance on local hardware.
+
+That's not a faster prompt box. It's a different economics curve. Production output grows by adding artists, not by adding budget — and the whole stack is portable, so an artist can run a full production day from a laptop anywhere in the world.
+
+In practical terms, it lets artists:
 
 - Start from a real song catalog instead of an empty prompt box.
 - Reuse accurate song analysis across projects.
@@ -206,7 +241,7 @@ Mothership built Lahari as a production operating system for AI video: a visual 
 
 **One-liner**
 
-Mothership built Lahari, an AI video production studio that turns a song catalog into coordinated, storyboarded, rendered music videos with artists and agents working in the same production loop.
+Mothership built Lahari, an AI video production studio that took music-video production from ~2 weeks at $5K–$10K to ~1 day at under $50 — with artists and AI agents operating the same workflow.
 
 **Website short**
 
@@ -293,8 +328,8 @@ For the case study and future video, capture the product in the same order the w
 
 ## Core Takeaway
 
-Lahari proves the Mothership pattern: build the real operating system around a client workflow, then make it agent-operable.
+Lahari proves the Mothership pattern: build the operating system around a client's real workflow, then make it agent-operable.
 
-The win is not just better prompts or faster generation. It is a coordinated machine where software, artists, models, media assets, approvals, and agents all share the same production state.
+The win isn't better prompts or faster generation. It's a coordinated machine where software, artists, models, media, approvals, and agents share the same production state — and improvements at any layer compound for every other layer.
 
-The deeper pattern is portable: do not force teams into a new AI silo. Build the operating system around their real workflow, expose it through durable tools and state, and let the best available agents operate it safely from the environments where people already work.
+The pattern is portable. Don't force teams into a new AI silo or build them another isolated chatbot. Build the operating system around the work they already do, expose it through durable tools and state, and let the best available agents operate it from the environments where people already work.
