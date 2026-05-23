@@ -221,7 +221,7 @@ Generate router modules:
 
 `project.text_provider` controls concept generation/refine, style brainstorm/refine, meaning summary, image-style analysis, frame/motion/chained refines, character/env look refines, and storyboard prompt writing.
 
-It does **not** control script writing. The UI says "Script writer always uses Claude Opus." Keep that true unless the script stack is explicitly ported.
+It does **not** control script writing. Keep that as implementation knowledge, not persistent helper text under the Text model dropdown, unless the script stack is explicitly ported.
 
 Implementation notes:
 - `server/services/text-provider.ts` is the unified dispatcher.
