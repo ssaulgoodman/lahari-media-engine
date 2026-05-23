@@ -551,7 +551,7 @@ One project-level setting (`project.text_provider`) controls every text-generati
 
 **Routed (responds to picker):** concept gen + refine, style brainstorm + refine, meaning summary, image-style analyzer, frame/motion/chained-shot refines, character + environment look refines, storyboard prompt writer.
 
-**Not routed (always Claude Opus):** `planScenes`, `refineScript`, `writeShotPrompts`. The script writer stack uses Anthropic extended thinking + a validation loop with retry semantics that doesn't port cleanly to OpenAI / Gemini. The UI surfaces this as a "Script writer always uses Claude Opus" sub-label under the Text model dropdown.
+**Not routed (always Claude Opus):** `planScenes`, `refineScript`, `writeShotPrompts`. The script writer stack uses Anthropic extended thinking + a validation loop with retry semantics that doesn't port cleanly to OpenAI / Gemini. Keep this as implementation knowledge, not visible helper text under the Text model dropdown.
 
 **Implementation:** `server/services/text-provider.ts` is the unified dispatcher. One `generateText(providerKey, req)` API. Each provider's branch handles native conventions: Anthropic tool_use, OpenAI `response_format: json_schema` (non-strict — schemas have optional fields), Gemini `responseSchema` + `responseMimeType`. Vision inputs accept HTTPS URL (fetched + base64'd for Gemini; native for Anthropic/OpenAI) or inline base64 (artist uploads). Refines use the cheap sibling via `useRefineModel: true` on the request, keeping the cost-tier discipline from the old Sonnet-vs-Opus split.
 

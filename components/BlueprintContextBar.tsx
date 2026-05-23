@@ -321,8 +321,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 meaning summary, image-style analyzer, and storyboard prompt
                 writer. Script writer is intentionally NOT routed here — it
                 uses Claude Opus's extended thinking + a validation loop
-                that doesn't port cleanly to other vendors yet. The label
-                makes that gap explicit so the artist isn't surprised. */}
+                that doesn't port cleanly to other vendors yet. */}
             <div className="flex-1 px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Text model</div>
               <Dropdown
@@ -330,7 +329,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
                 onChange={v => onUpdateProject({ textProvider: v })}
                 options={TEXT_PROVIDERS.map(p => ({ value: p.key, label: p.label }))}
               />
-              <div className="text-[10px] text-zinc-500 leading-tight">Used for concept, style, refines, storyboard. Script writer: Claude + GPT-5.5 only — picking Gemini falls back to Claude for script.</div>
             </div>
             <div className="flex-[1.4] px-5 py-3 space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-zinc-400">Video model</div>
