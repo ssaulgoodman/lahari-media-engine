@@ -309,7 +309,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
               />
             </div>
             <div className="flex-1 px-5 py-3 space-y-1">
-              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Storyboard image</div>
+              <div className="text-[11px] uppercase tracking-wide text-zinc-400">Storyboard</div>
               <Dropdown
                 value={project.storyboardProvider || STORYBOARD_PROVIDERS[0].key}
                 onChange={v => onUpdateProject({ storyboardProvider: v })}
