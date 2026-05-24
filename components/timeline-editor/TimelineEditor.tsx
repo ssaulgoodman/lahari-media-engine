@@ -14,7 +14,7 @@ import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot } from './persistence';
 
-export type InitialClip = { src: string; name?: string; shotId?: string };
+export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean };
 
 interface Props {
   onExit?: () => void;
@@ -177,13 +177,18 @@ const reconcileSnapshotWithInitialClips = <T extends {
   for (const clip of initialClips) {
     const existing = clip.shotId ? byShotId.get(clip.shotId) : undefined;
     if (existing) {
-      if (existing.details?.src !== clip.src || existing.details?.name !== clip.name) {
+      if (
+        existing.details?.src !== clip.src
+        || existing.details?.name !== clip.name
+        || existing.details?.muted !== clip.muted
+      ) {
         trackItemsMap[existing.id] = {
           ...existing,
           details: {
             ...(existing.details || {}),
             src: clip.src,
             ...(clip.name ? { name: clip.name } : {}),
+            muted: clip.muted,
           },
           metadata: {
             ...(existing.metadata || {}),
@@ -206,7 +211,7 @@ const reconcileSnapshotWithInitialClips = <T extends {
       id: itemId,
       type: 'video',
       display: { from: cursor, to: cursor + dur },
-      details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
+      details: { src: clip.src, volume: 100, muted: clip.muted, ...(clip.name ? { name: clip.name } : {}) },
       metadata: {
         resourceId: itemId,
         ...(clip.name ? { displayName: clip.name } : {}),
@@ -667,7 +672,7 @@ const TimelineEditor: React.FC<Props> = ({
           id: itemId,
           type: 'video',
           display: { from: videoEnd, to: videoEnd + dur },
-          details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
+          details: { src: clip.src, volume: 100, muted: clip.muted, ...(clip.name ? { name: clip.name } : {}) },
           metadata: {
             resourceId: itemId,
             ...(clip.name ? { displayName: clip.name } : {}),

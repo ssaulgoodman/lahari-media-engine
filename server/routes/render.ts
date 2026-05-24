@@ -134,6 +134,7 @@ const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: an
     if (!videoAsset?.file_path) continue;
     const shotItem = visualItemsBySrc.get(storageUrl(videoAsset.file_path))?.[0];
     if (!shotItem?.display) continue;
+    if (shotItem.details?.muted === false) continue;
 
     const shotStartMs = numberMs(shotItem.display.from, 0);
     const shotEndMs = numberMs(shotItem.display.to, shotStartMs + numberMs(shot.duration, 5) * 1000);

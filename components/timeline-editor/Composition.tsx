@@ -99,8 +99,9 @@ const renderers: Record<ItemType, (item: ITrackItem, fps: number) => React.JSX.E
     // its actual start so the browser can prebuffer the video element. Without
     // this the preview stutters every hard cut as the next clip's mp4 loads.
     //
-    // muted — in the music-video pipeline the song track is the authoritative
-    // audio; the per-clip video audio is just ambient noise baked in by Veo.
+    // Music-led clips stay muted because the song bed is authoritative.
+    // Scripted clips may carry native generated sound/dialogue, so honor the
+    // timeline item's muted flag instead of hard-muting every video.
     return (
       <Sequence
         key={item.id}
@@ -113,7 +114,7 @@ const renderers: Record<ItemType, (item: ITrackItem, fps: number) => React.JSX.E
             trimBefore={(trim.from / 1000) * fps}
             trimAfter={(trim.to / 1000) * fps || 1 / fps}
             src={d.src}
-            muted
+            muted={d.muted !== false}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </AbsoluteFill>

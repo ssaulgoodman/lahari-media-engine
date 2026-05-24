@@ -20,10 +20,10 @@ export interface TimelineSnapshot {
 
 export type SnapshotPayload = Omit<TimelineSnapshot, 'version' | 'savedAt'>;
 
-// v2 invalidates pre-shotId timelines. Those snapshots could restore old
-// canonical shot clips after a shot was regenerated/locked, making Render look
-// stale even though Supabase had the current video_asset_id.
-const VERSION = 2;
+// v3 invalidates pre-muted-flag timelines. Older snapshots restored scripted
+// video items as effectively muted, even when the source clip carried native
+// generated sound/dialogue.
+const VERSION = 3;
 const key = (projectId: string) => `lahari-timeline-${projectId}`;
 
 export function saveSnapshot(projectId: string, data: SnapshotPayload): number | null {

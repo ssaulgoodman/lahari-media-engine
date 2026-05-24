@@ -158,10 +158,15 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       project.scenes
         .flatMap((s) => s.shots)
         .filter((s) => !!s.videoUrl)
-        .map((s, i) => ({ src: s.videoUrl!, name: `v_${i + 1}`, shotId: s.id })),
+        .map((s, i) => ({
+          src: s.videoUrl!,
+          name: `v_${i + 1}`,
+          shotId: s.id,
+          muted: project.workflowKey === 'music_led' || !!project.audioPath,
+        })),
     // Only re-seed if the set of video URLs actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],
+    [project.workflowKey, project.audioPath, project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],
   );
 
   // Song audio lives on the editor's audio track. The renderer used to inject
