@@ -22,10 +22,11 @@ export const createProjectForDirector = async (userId: string, opts: {
   targetRuntime?: number | null;
   targetShotDuration?: number | null;
 }) => {
+  const requestedSeedKind = opts.seedKind || (opts.scriptText ? 'script' : 'brief');
   const { workflow, seedKind, preset } = resolveProjectIntake({
     workflowKey: opts.workflowKey,
     presetKey: opts.presetKey,
-    seedKind: opts.seedKind,
+    seedKind: requestedSeedKind,
   });
   if (seedKind === 'audio') {
     const err = new Error('MCP project creation does not upload audio. Create audio-seed projects in the web studio, or create a brief/idea project here.');

@@ -113,7 +113,7 @@ export const applyStoryboardPromptsBulk = async (
     : project;
 
   return {
-    kind: input.single ? 'lahari.apply.storyboard_prompt' : 'lahari.apply.storyboard_prompts_bulk',
+    kind: input.single ? 'mirage.apply.storyboard_prompt' : 'mirage.apply.storyboard_prompts_bulk',
     projectId: project.id,
     applied,
     skipped,
