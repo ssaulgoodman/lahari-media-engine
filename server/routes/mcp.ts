@@ -17,13 +17,13 @@ import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.6';
+const HOSTED_MCP_VERSION = '0.1.7';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then attach_director_session. After resolving or creating a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then attach_director_session. After resolving or creating a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. If the artist asks to reuse an existing project asset as a character or environment reference, use apply_cast_reference or apply_environment_reference instead of inventing a direct database write. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -843,6 +843,36 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     voiceName,
     baseHash,
   }, { force }));
+
+  registerTool('apply_cast_reference', {
+    title: 'Apply cast reference',
+    description: 'Mutating. Sets a cast member reference from an existing project asset, such as the locked style asset. Marks dependent shot prompts stale.',
+    inputSchema: {
+      projectId,
+      castMemberId: idString,
+      assetId: idString.optional(),
+      useProjectStyleAsset: z.boolean().optional(),
+    },
+  }, async ({ projectId, castMemberId, assetId, useProjectStyleAsset }) => studio.applyCastReference(await fullProjectForUser(projectId, auth.userId), {
+    castMemberId,
+    assetId,
+    useProjectStyleAsset,
+  }));
+
+  registerTool('apply_environment_reference', {
+    title: 'Apply environment reference',
+    description: 'Mutating. Sets an environment reference from an existing project asset, such as the locked style asset. Marks dependent shot prompts stale.',
+    inputSchema: {
+      projectId,
+      environmentId: idString,
+      assetId: idString.optional(),
+      useProjectStyleAsset: z.boolean().optional(),
+    },
+  }, async ({ projectId, environmentId, assetId, useProjectStyleAsset }) => studio.applyEnvironmentReference(await fullProjectForUser(projectId, auth.userId), {
+    environmentId,
+    assetId,
+    useProjectStyleAsset,
+  }));
 
   registerTool('get_audio_plan_cost', {
     title: 'Get audio plan cost',

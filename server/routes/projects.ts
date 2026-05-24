@@ -565,7 +565,8 @@ const _getFullProjectCore = async (projectId: string) => {
   for (const env of environments) {
     env.referenceImageUrl = resolveUrl(env.reference_asset_id);
   }
-  const styleAssetUrl = resolveUrl(project.style_asset_id);
+  const styleAssetId = project.style_asset_id || null;
+  const styleAssetUrl = resolveUrl(styleAssetId);
 
   const fullProject = {
     id: project.id,
@@ -587,6 +588,7 @@ const _getFullProjectCore = async (projectId: string) => {
     conceptOptions: project.concept_options ? JSON.parse(project.concept_options) : [],
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
     styleDescription: project.style_description,
+    styleAssetId,
     styleAssetUrl,
     styleGenerationPrompt: project.style_generation_prompt || undefined,
     styleExploration: (() => {

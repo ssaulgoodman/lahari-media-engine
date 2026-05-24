@@ -158,6 +158,7 @@ export const buildProjectPacket = async (project: Project) => {
     },
     style: {
       description: compactText(project.styleDescription, 700),
+      assetId: project.styleAssetId || null,
       assetUrl: project.styleAssetUrl,
       explorationSlots: project.styleExploration?.slots?.map((slot: any) => ({
         id: slot.id,
@@ -178,6 +179,8 @@ export const buildProjectPacket = async (project: Project) => {
           assigned: !!member.voiceId,
         },
         hasReference: !!member.referenceImageUrl,
+        referenceAssetId: member.referenceAssetId || null,
+        referenceImageUrl: member.referenceImageUrl || null,
         promptsStale: member.promptsStale,
       })),
       environments: project.environments.map((environment) => ({
@@ -185,6 +188,8 @@ export const buildProjectPacket = async (project: Project) => {
         name: environment.name,
         description: compactText(environment.description, 350),
         hasReference: !!environment.referenceImageUrl,
+        referenceAssetId: environment.referenceAssetId || null,
+        referenceImageUrl: environment.referenceImageUrl || null,
         promptsStale: environment.promptsStale,
       })),
     },

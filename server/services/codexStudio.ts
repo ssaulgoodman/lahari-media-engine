@@ -66,6 +66,7 @@ export { applyShotWorkflowModes } from './codexStudio/applies/shotWorkflow.js';
 export { applyStoryboardPrompt, applyStoryboardPromptsBulk, applyStoryboardSceneMarkdown } from './codexStudio/applies/storyboardPrompt.js';
 export { applyConcept } from './codexStudio/applies/concept.js';
 export { applyStyleDirection } from './codexStudio/applies/style.js';
+export { applyCastReference, applyEnvironmentReference } from './codexStudio/applies/references.js';
 export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
 export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';
 export { applyAudioPlan, applyAudioPlanMarkdown, applyCastVoice, generateDialogueAudio, getAudioPlanCost } from './codexStudio/audioPlan.js';
