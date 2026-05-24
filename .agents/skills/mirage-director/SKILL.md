@@ -95,7 +95,7 @@ For character and environment references, do not scrape storage or write DB rows
 
 - Recover generated candidates with `list_character_look_candidates` / `list_environment_look_candidates`, or the generic `list_reference_candidates`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
 - Lock an existing candidate or uploaded asset with `apply_cast_reference` / `apply_environment_reference`.
-- If you create or edit a reference image locally/native outside Mirage, convert it to base64 and use `upload_cast_reference` / `upload_environment_reference` to upload it as the locked reference. These tools create the asset row, update the cast/environment reference, mark dependent shot prompts stale, and record the director event.
+- If you create or edit a reference image as a local file outside Mirage, prefer `mint_cli_token` and run the returned `mirage upload-cast-reference` / `mirage upload-environment-reference` CLI command. The local CLI reads the file bytes and uploads them without moving base64 through chat. Use `upload_cast_reference` / `upload_environment_reference` base64 only as fallback when shell/CLI is blocked. Both paths create the asset row, update the cast/environment reference, mark dependent shot prompts stale, and record the director event.
 
 ## Friction Capture
 

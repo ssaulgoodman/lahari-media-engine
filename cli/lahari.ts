@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import fs from 'fs';
+import path from 'path';
 import { prepareCodexReadEnv, prepareCodexWriteEnv } from '../server/services/codexReadEnv.js';
 import { formatAuditTail, recordCliAudit } from '../server/services/mirageAudit.js';
 import { runLahariSetup } from '../server/services/lahariSetup.js';
@@ -57,6 +58,8 @@ Usage:
   npm run lahari -- apply unlock-storyboard <projectId> <shotId>
   npm run lahari -- apply project-preferences <projectId> <preferences.json> [baseHash]
   npm run lahari -- apply project-prompt-override <projectId> <concept|script|shot_prompts|storyboard|video|character_looks|environment_looks> <body.md> [baseHash]
+  npm run lahari -- apply upload-cast-reference <projectId> <castMemberId> <imagePath> [note...]
+  npm run lahari -- apply upload-environment-reference <projectId> <environmentId> <imagePath> [note...]
   npm run lahari -- apply shot-workflow-modes <projectId> <shots.json>
   npm run lahari -- apply shot-prompts <projectId> <shots.json> [force]
   npm run lahari -- apply storyboard-prompt <projectId> <shotId> <prompt.md> [cut-plan.md] [baseHash]
@@ -89,6 +92,14 @@ const loadStudio = async (mode: 'read' | 'write' = 'read') => {
   ]);
 
   return { getFullProject, ...studio };
+};
+
+const mimeFromPath = (filePath: string) => {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  return 'image/png';
 };
 
 const providerDoctor = async (projectId?: string) => {
@@ -220,7 +231,7 @@ const main = async () => {
     return;
   }
 
-  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'shot-prompts' || action === 'shot-workflow-modes' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'storyboard-scene-markdown' || action === 'concept' || action === 'style-direction' || action === 'video-prompt' || action === 'script' || action === 'script-markdown'))
+  const wantsWrite = (domain === 'apply' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'generate-storyboard' || action === 'generate-video' || action === 'lock-storyboard' || action === 'unlock-storyboard' || action === 'write-storyboard-prompt' || action === 'bulk-write-storyboard-prompts' || action === 'refine-storyboard-image' || action === 'bulk-generate-storyboards' || action === 'project-preferences' || action === 'project-prompt-override' || action === 'upload-cast-reference' || action === 'upload-environment-reference' || action === 'shot-prompts' || action === 'shot-workflow-modes' || action === 'storyboard-prompt' || action === 'storyboard-prompts-bulk' || action === 'storyboard-scene-markdown' || action === 'concept' || action === 'style-direction' || action === 'video-prompt' || action === 'script' || action === 'script-markdown'))
     || (domain === 'rollback' && (action === 'rewrite-shot-prompts' || action === 'rewrite-storyboard-prompt' || action === 'rewrite-script' || action === 'project-prompt-override'));
   const studio = await loadStudio(wantsWrite ? 'write' : 'read');
 
@@ -476,6 +487,36 @@ const main = async () => {
     const baseHash = rest[1];
     const body = fs.readFileSync(bodyPath, 'utf8');
     console.log(JSON.stringify(await studio.applyProjectPromptOverrideConfig(project, kind as any, body, baseHash), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'upload-cast-reference' && projectId && arg4 && rest[0]) {
+    const project = await studio.getFullProject(projectId);
+    const filePath = rest[0];
+    const note = rest.slice(1).filter(Boolean).join(' ') || undefined;
+    const buffer = fs.readFileSync(filePath);
+    console.log(JSON.stringify(await studio.uploadCastReference(project, {
+      castMemberId: arg4,
+      filename: path.basename(filePath),
+      mimeType: mimeFromPath(filePath),
+      base64: buffer.toString('base64'),
+      note,
+    }), null, 2));
+    return;
+  }
+
+  if (domain === 'apply' && action === 'upload-environment-reference' && projectId && arg4 && rest[0]) {
+    const project = await studio.getFullProject(projectId);
+    const filePath = rest[0];
+    const note = rest.slice(1).filter(Boolean).join(' ') || undefined;
+    const buffer = fs.readFileSync(filePath);
+    console.log(JSON.stringify(await studio.uploadEnvironmentReference(project, {
+      environmentId: arg4,
+      filename: path.basename(filePath),
+      mimeType: mimeFromPath(filePath),
+      base64: buffer.toString('base64'),
+      note,
+    }), null, 2));
     return;
   }
 

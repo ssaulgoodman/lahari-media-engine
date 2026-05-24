@@ -21,17 +21,27 @@ const fail = (code, message, details = undefined, exitCode = 1) => {
 };
 
 const parseArgs = (argv) => {
-  const [command, projectId, ...rest] = argv;
+  const [command, projectId, maybeEntityId, maybeFilePath, ...rest] = argv;
+  const optionArgs = (command === 'upload-cast-reference' || command === 'upload-environment-reference')
+    ? rest
+    : argv.slice(2);
   const opts = { command, projectId, cwd: process.cwd(), force: false };
-  for (let i = 0; i < rest.length; i += 1) {
-    const arg = rest[i];
+  if (command === 'upload-cast-reference' || command === 'upload-environment-reference') {
+    opts.entityId = maybeEntityId;
+    opts.filePath = maybeFilePath ? path.resolve(maybeFilePath) : undefined;
+  }
+  for (let i = 0; i < optionArgs.length; i += 1) {
+    const arg = optionArgs[i];
     if (arg === '--cwd') {
-      opts.cwd = path.resolve(rest[i + 1] || '');
+      opts.cwd = path.resolve(optionArgs[i + 1] || '');
       i += 1;
     } else if (arg === '--force') {
       opts.force = true;
     } else if (arg === '--api-url') {
-      opts.apiUrl = rest[i + 1];
+      opts.apiUrl = optionArgs[i + 1];
+      i += 1;
+    } else if (arg === '--note') {
+      opts.note = optionArgs[i + 1] || '';
       i += 1;
     } else if (arg === '--help' || arg === '-h') {
       opts.help = true;
@@ -46,6 +56,8 @@ const help = () => `Mirage CLI ${pkg.version}
 
 Usage:
   mirage sync <projectId> [--cwd <dir>] [--force] [--api-url <url>]
+  mirage upload-cast-reference <projectId> <castMemberId> <imagePath> [--note <text>] [--api-url <url>]
+  mirage upload-environment-reference <projectId> <environmentId> <imagePath> [--note <text>] [--api-url <url>]
 
 Environment:
   MIRAGE_CLI_TOKEN  Short-lived token from Mirage MCP mint_cli_token
@@ -108,6 +120,14 @@ const acquireLock = (lockPath) => {
 
 const token = () => process.env.MIRAGE_CLI_TOKEN || process.env.MIRAGE_TOKEN || process.env.MIRAGE_MCP_TOKEN || '';
 const apiUrl = (opts) => (opts.apiUrl || process.env.MIRAGE_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
+
+const mimeFromPath = (filePath) => {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  return 'image/png';
+};
 
 const postNotebookSync = async (opts, knownHashes) => {
   const bearer = token();
@@ -250,12 +270,66 @@ const sync = async (opts) => {
   }
 };
 
+const uploadReference = async (opts) => {
+  if (!opts.projectId || !opts.entityId || !opts.filePath) {
+    const usage = opts.command === 'upload-environment-reference'
+      ? 'Usage: mirage upload-environment-reference <projectId> <environmentId> <imagePath>'
+      : 'Usage: mirage upload-cast-reference <projectId> <castMemberId> <imagePath>';
+    fail('missing_args', usage);
+  }
+  const bearer = token();
+  if (!bearer) {
+    fail('auth_missing', 'Set MIRAGE_CLI_TOKEN from the Mirage MCP mint_cli_token tool before running uploads.');
+  }
+  if (!fs.existsSync(opts.filePath)) fail('file_not_found', `Image file not found: ${opts.filePath}`);
+  const stat = fs.statSync(opts.filePath);
+  if (!stat.isFile()) fail('not_a_file', `Path is not a file: ${opts.filePath}`);
+  const maxBytes = Number(process.env.MIRAGE_UPLOAD_MAX_BYTES || 18 * 1024 * 1024);
+  if (stat.size > maxBytes) {
+    fail('file_too_large', `Image file is ${stat.size} bytes; max is ${maxBytes}. Compress it or set MIRAGE_UPLOAD_MAX_BYTES.`);
+  }
+
+  const entityPath = opts.command === 'upload-environment-reference'
+    ? `environments/${encodeURIComponent(opts.entityId)}`
+    : `cast/${encodeURIComponent(opts.entityId)}`;
+  const response = await fetch(`${apiUrl(opts)}/api/notebook-sync/projects/${encodeURIComponent(opts.projectId)}/references/${entityPath}/upload`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${bearer}`,
+      'content-type': 'application/json',
+      'x-mirage-cli-version': pkg.version,
+    },
+    body: JSON.stringify({
+      filename: path.basename(opts.filePath),
+      mimeType: mimeFromPath(opts.filePath),
+      base64: fs.readFileSync(opts.filePath).toString('base64'),
+      note: opts.note || undefined,
+    }),
+  });
+  const json = await response.json().catch(() => null);
+  if (!response.ok || json?.ok === false) {
+    const err = json?.error || json?.data || { code: 'reference_upload_failed', message: `Reference upload failed with HTTP ${response.status}`, details: json };
+    fail(err.code || err.error || 'reference_upload_failed', err.message || 'Reference upload failed', err.details || err, response.status === 401 ? 2 : 1);
+  }
+  output({
+    ok: true,
+    kind: `mirage.cli.${opts.command}`,
+    projectId: opts.projectId,
+    filePath: opts.filePath,
+    uploadedAt: new Date().toISOString(),
+    result: json.data,
+  });
+};
+
 const opts = parseArgs(process.argv.slice(2));
-if (!opts.command || opts.help) {
+if (!opts.command || opts.help || opts.command === '--help' || opts.command === '-h') {
   process.stdout.write(help());
   process.exit(0);
 }
-if (opts.command !== 'sync') {
+if (opts.command === 'sync') {
+  await sync(opts);
+} else if (opts.command === 'upload-cast-reference' || opts.command === 'upload-environment-reference') {
+  await uploadReference(opts);
+} else {
   fail('unknown_command', `Unknown command: ${opts.command}`, { help: help() });
 }
-await sync(opts);
