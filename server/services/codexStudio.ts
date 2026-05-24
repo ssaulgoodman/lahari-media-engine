@@ -76,6 +76,7 @@ import { buildProjectActionList, buildStoryboardPromptReview } from './codexStud
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectNotebook, type NotebookFile } from './codexStudio/notebook.js';
 export { createProjectForDirector } from './codexStudio/projectIntake.js';
+export { generateCharacterLooksForDirector, generateEnvironmentLooksForDirector } from './codexStudio/lookGeneration.js';
 export {
   listQueueForDirector,
   resolveProjectForDirector,

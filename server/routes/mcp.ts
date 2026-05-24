@@ -17,7 +17,7 @@ import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.7';
+const HOSTED_MCP_VERSION = '0.1.8';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
@@ -97,6 +97,10 @@ const PAID_TOOLS = new Set([
   'generate_storyboard',
   'bulk_generate_storyboards',
   'refine_storyboard_image',
+  'apply_generate_character_looks',
+  'generate_character_looks',
+  'apply_generate_environment_looks',
+  'generate_environment_looks',
   'apply_generate_video',
   'generate_dialogue_audio',
 ]);
@@ -843,6 +847,58 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     voiceName,
     baseHash,
   }, { force }));
+
+  const generateCharacterLooksHandler = async ({ projectId, castMemberIds, note }: {
+    projectId: string;
+    castMemberIds?: string[];
+    note?: string;
+  }) => studio.generateCharacterLooksForDirector(await fullProjectForUser(projectId, auth.userId), castMemberIds || [], { note });
+
+  registerTool('apply_generate_character_looks', {
+    title: 'Generate character looks',
+    description: 'Mutating and paid. Generates candidate reusable character reference images for one or more cast members using the locked style asset and current image provider.',
+    inputSchema: {
+      projectId,
+      castMemberIds: maxArray(idString, 30).optional(),
+      note: mediumText.optional(),
+    },
+  }, generateCharacterLooksHandler);
+
+  registerTool('generate_character_looks', {
+    title: 'Generate character looks',
+    description: 'Alias for apply_generate_character_looks. Mutating and paid. Generates candidate reusable character reference images for one or more cast members.',
+    inputSchema: {
+      projectId,
+      castMemberIds: maxArray(idString, 30).optional(),
+      note: mediumText.optional(),
+    },
+  }, generateCharacterLooksHandler);
+
+  const generateEnvironmentLooksHandler = async ({ projectId, environmentIds, note }: {
+    projectId: string;
+    environmentIds?: string[];
+    note?: string;
+  }) => studio.generateEnvironmentLooksForDirector(await fullProjectForUser(projectId, auth.userId), environmentIds || [], { note });
+
+  registerTool('apply_generate_environment_looks', {
+    title: 'Generate environment looks',
+    description: 'Mutating and paid. Generates candidate reusable environment/reference images for one or more environments using the locked style asset and current image provider.',
+    inputSchema: {
+      projectId,
+      environmentIds: maxArray(idString, 30).optional(),
+      note: mediumText.optional(),
+    },
+  }, generateEnvironmentLooksHandler);
+
+  registerTool('generate_environment_looks', {
+    title: 'Generate environment looks',
+    description: 'Alias for apply_generate_environment_looks. Mutating and paid. Generates candidate reusable environment/reference images for one or more environments.',
+    inputSchema: {
+      projectId,
+      environmentIds: maxArray(idString, 30).optional(),
+      note: mediumText.optional(),
+    },
+  }, generateEnvironmentLooksHandler);
 
   registerTool('apply_cast_reference', {
     title: 'Apply cast reference',
