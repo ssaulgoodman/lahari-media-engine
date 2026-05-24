@@ -24,6 +24,7 @@ Secrets: create once via
     SUPABASE_URL=... SUPABASE_SERVICE_KEY=... \\
     POSTHOG_API_KEY=... POSTHOG_HOST=...
 """
+import os
 import json
 import subprocess
 
@@ -45,12 +46,12 @@ image = (
     .pip_install("fastapi")
 )
 
-app = modal.App("lahari-remotion-renderer", image=image)
+app = modal.App(os.environ.get("MODAL_APP_NAME", "lahari-remotion-renderer"), image=image)
 
 # One named secret covers everything the Node subprocess needs. Modal mounts
 # it as environment variables inside the container, so process.env.SUPABASE_URL
 # etc. in the Node code resolve without any code change.
-secrets = [modal.Secret.from_name("lahari-renderer-secrets")]
+secrets = [modal.Secret.from_name(os.environ.get("MODAL_SECRET_NAME", "lahari-renderer-secrets"))]
 
 
 @app.function(

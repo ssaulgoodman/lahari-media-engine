@@ -5,6 +5,8 @@ import path from 'node:path';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const BUCKET = process.env.SUPABASE_BUCKET ?? 'lahari-assets';
+const TABLE_PREFIX = process.env.DB_TABLE_PREFIX || process.env.TABLE_PREFIX || 'lahari';
+const table = (name: string) => `${TABLE_PREFIX}_${name}`;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY must be set');
@@ -47,7 +49,7 @@ export const uploadRender = async (
 
 export const projectExists = async (projectId: string): Promise<boolean> => {
   const { data, error } = await supabase
-    .from('lahari_projects')
+    .from(table('projects'))
     .select('id')
     .eq('id', projectId)
     .maybeSingle();
@@ -81,7 +83,7 @@ export const writeTerminalFallback = async (
   if (!isError) updates.progress = 1;
 
   const { error } = await supabase
-    .from('lahari_renders')
+    .from(table('renders'))
     .update(updates)
     .eq('id', renderId)
     .in('status', ['rendering', 'pending_finalize']);

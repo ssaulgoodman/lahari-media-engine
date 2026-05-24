@@ -65,12 +65,33 @@ To update a value later, re-run with the same name — Modal overwrites:
 uv run modal secret create lahari-renderer-secrets FOO=bar --force
 ```
 
+Mirage uses the same renderer code but deploys as a separate Modal app with a
+separate secret so Lahari production settings are not overwritten:
+
+```bash
+uv run modal secret create mirage-renderer-secrets \
+  RENDERER_SHARED_SECRET=<same value as Mirage backend> \
+  MAIN_BACKEND_URL=https://mirage-platform-production-05ca.up.railway.app \
+  SUPABASE_URL=<Mirage Supabase project url> \
+  SUPABASE_SERVICE_KEY=<Mirage Supabase service role key> \
+  SUPABASE_BUCKET=mirage-assets \
+  DB_TABLE_PREFIX=studio
+```
+
 ## Deploy
 
 ### Production
 
 ```bash
 cd remotion-renderer
+uv run modal deploy modal_app.py
+```
+
+For Mirage:
+
+```bash
+MODAL_APP_NAME=mirage-remotion-renderer \
+MODAL_SECRET_NAME=mirage-renderer-secrets \
 uv run modal deploy modal_app.py
 ```
 
