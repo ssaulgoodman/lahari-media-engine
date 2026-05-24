@@ -1,5 +1,7 @@
-import { selectAll, selectOne, updateRows } from '../../../database.js';
-import { storageUrl } from '../../../storage.js';
+import { v4 as uuidv4 } from 'uuid';
+import { insertRow, selectAll, selectOne, updateRows } from '../../../database.js';
+import { saveBase64, storageUrl } from '../../../storage.js';
+import { buildContextChain, logCall } from '../../../xray.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import { webStudioUrl, type Project } from '../core.js';
 import { buildNotebookMirrorArtifacts } from '../notebook.js';
@@ -9,6 +11,23 @@ type ReferenceSource = {
   assetId?: string;
   useProjectStyleAsset?: boolean;
 };
+
+type UploadReferenceInput = {
+  filename?: string;
+  mimeType?: string;
+  base64: string;
+  note?: string;
+};
+
+const imageExtFromMime = (mimeType?: string, filename?: string) => {
+  const lowerMime = String(mimeType || '').toLowerCase();
+  const lowerName = String(filename || '').toLowerCase();
+  if (lowerMime.includes('webp') || lowerName.endsWith('.webp')) return 'webp';
+  if (lowerMime.includes('jpeg') || lowerMime.includes('jpg') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'jpg';
+  return 'png';
+};
+
+const stripDataUrl = (input: string) => input.replace(/^data:[^;]+;base64,/i, '').trim();
 
 const candidateMetadata = (asset: any) => {
   try {
@@ -174,6 +193,90 @@ export const applyCastReference = async (
   };
 };
 
+export const uploadCastReference = async (
+  project: Project,
+  input: { castMemberId: string } & UploadReferenceInput,
+) => {
+  const member = project.cast.find((item) => item.id === input.castMemberId);
+  if (!member) {
+    return applyError('validation_failed', 'Cast member was not found in this project.', { field: 'castMemberId' });
+  }
+  if (!input.base64?.trim()) {
+    return applyError('validation_failed', 'base64 image data is required.', { field: 'base64' });
+  }
+
+  const ext = imageExtFromMime(input.mimeType, input.filename);
+  const filePath = await saveBase64(stripDataUrl(input.base64), 'images', ext);
+  const assetId = uuidv4();
+  await insertRow('assets', {
+    id: assetId,
+    project_id: project.id,
+    category: 'character',
+    file_path: filePath,
+    prompt: input.note || `Uploaded locked reference for ${member.name}`,
+    metadata: JSON.stringify({
+      castMemberId: member.id,
+      filename: input.filename || null,
+      mimeType: input.mimeType || null,
+      source: 'mcp_upload',
+      lockedReference: true,
+    }),
+  });
+
+  await updateRows('cast_members', { id: member.id }, { reference_asset_id: assetId });
+  const staleShotCount = await markDependentShotsStale(project.id, 'cast', member.id);
+
+  await logCall({
+    projectId: project.id,
+    stage: 'upload-cast-reference',
+    model: 'upload',
+    prompt: input.note || `MCP uploaded locked character reference for "${member.name}"`,
+    referenceInputs: [{ type: 'image', label: `${member.name} uploaded reference`, url: storageUrl(filePath) }],
+    contextChain: await buildContextChain(project.id),
+    responseSummary: `Locked uploaded image as ${member.name}'s reference`,
+    outputAssetIds: [assetId],
+    durationMs: 0,
+    costEstimate: 0,
+  });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'character_reference_uploaded',
+    entityType: 'cast_member',
+    entityId: member.id,
+    summary: `Codex uploaded and locked a reference for character "${member.name}".`,
+    payload: { castMemberId: member.id, assetId, assetUrl: storageUrl(filePath), staleShotCount, note: input.note || null },
+  });
+
+  const nextProject = {
+    ...project,
+    cast: project.cast.map((item) => item.id === member.id
+      ? { ...item, referenceAssetId: assetId, referenceImageUrl: storageUrl(filePath) }
+      : item),
+    scenes: project.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => (shot.castIds || []).includes(member.id)
+        ? { ...shot, promptsStale: true }
+        : shot),
+    })),
+  };
+
+  appendApplyJournal(project, 'uploaded cast reference', `Character: ${member.name}\nAsset: ${assetId}\nMarked stale shots: ${staleShotCount}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+
+  return {
+    kind: 'mirage.upload.cast_reference',
+    projectId: project.id,
+    castMemberId: member.id,
+    castMemberName: member.name,
+    assetId,
+    assetUrl: storageUrl(filePath),
+    staleShotCount,
+    changedArtifacts: buildNotebookMirrorArtifacts(nextProject, { cast: true, shotPrompts: staleShotCount > 0 }),
+    webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+    note: 'Uploaded and locked character reference.',
+  };
+};
+
 export const applyEnvironmentReference = async (
   project: Project,
   input: { environmentId: string } & ReferenceSource,
@@ -231,5 +334,89 @@ export const applyEnvironmentReference = async (
     changedArtifacts: buildNotebookMirrorArtifacts(nextProject, { environments: true, shotPrompts: staleShotCount > 0 }),
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
     note: 'Applied environment reference from an existing project asset.',
+  };
+};
+
+export const uploadEnvironmentReference = async (
+  project: Project,
+  input: { environmentId: string } & UploadReferenceInput,
+) => {
+  const environment = project.environments.find((item) => item.id === input.environmentId);
+  if (!environment) {
+    return applyError('validation_failed', 'Environment was not found in this project.', { field: 'environmentId' });
+  }
+  if (!input.base64?.trim()) {
+    return applyError('validation_failed', 'base64 image data is required.', { field: 'base64' });
+  }
+
+  const ext = imageExtFromMime(input.mimeType, input.filename);
+  const filePath = await saveBase64(stripDataUrl(input.base64), 'images', ext);
+  const assetId = uuidv4();
+  await insertRow('assets', {
+    id: assetId,
+    project_id: project.id,
+    category: 'environment',
+    file_path: filePath,
+    prompt: input.note || `Uploaded locked reference for ${environment.name}`,
+    metadata: JSON.stringify({
+      environmentId: environment.id,
+      filename: input.filename || null,
+      mimeType: input.mimeType || null,
+      source: 'mcp_upload',
+      lockedReference: true,
+    }),
+  });
+
+  await updateRows('environments', { id: environment.id }, { reference_asset_id: assetId });
+  const staleShotCount = await markDependentShotsStale(project.id, 'env', environment.id);
+
+  await logCall({
+    projectId: project.id,
+    stage: 'upload-environment-reference',
+    model: 'upload',
+    prompt: input.note || `MCP uploaded locked environment reference for "${environment.name}"`,
+    referenceInputs: [{ type: 'image', label: `${environment.name} uploaded reference`, url: storageUrl(filePath) }],
+    contextChain: await buildContextChain(project.id),
+    responseSummary: `Locked uploaded image as ${environment.name}'s reference`,
+    outputAssetIds: [assetId],
+    durationMs: 0,
+    costEstimate: 0,
+  });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'environment_reference_uploaded',
+    entityType: 'environment',
+    entityId: environment.id,
+    summary: `Codex uploaded and locked a reference for environment "${environment.name}".`,
+    payload: { environmentId: environment.id, assetId, assetUrl: storageUrl(filePath), staleShotCount, note: input.note || null },
+  });
+
+  const nextProject = {
+    ...project,
+    environments: project.environments.map((item) => item.id === environment.id
+      ? { ...item, referenceAssetId: assetId, referenceImageUrl: storageUrl(filePath) }
+      : item),
+    scenes: project.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => shot.environmentId === environment.id
+        ? { ...shot, promptsStale: true }
+        : shot),
+    })),
+  };
+
+  appendApplyJournal(project, 'uploaded environment reference', `Environment: ${environment.name}\nAsset: ${assetId}\nMarked stale shots: ${staleShotCount}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+
+  return {
+    kind: 'mirage.upload.environment_reference',
+    projectId: project.id,
+    environmentId: environment.id,
+    environmentName: environment.name,
+    assetId,
+    assetUrl: storageUrl(filePath),
+    staleShotCount,
+    changedArtifacts: buildNotebookMirrorArtifacts(nextProject, { environments: true, shotPrompts: staleShotCount > 0 }),
+    webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+    note: 'Uploaded and locked environment reference.',
   };
 };
