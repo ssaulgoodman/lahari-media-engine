@@ -30,6 +30,24 @@ const withRecipe = (prompt: string, label: string, recipe?: string | null) => {
 
 const shouldUseSavedPrompt = (prompt?: string | null, stale?: boolean) => Boolean(prompt && !stale && !isLegacyLookPrompt(prompt));
 
+const candidateMetadata = (base: Record<string, unknown>, opts: {
+  model: string;
+  imageModel: string;
+  promptSource: string;
+  generatedBy: string;
+  promptOverride?: string;
+  note?: string;
+}) => JSON.stringify({
+  ...base,
+  model: opts.model,
+  imageModel: opts.imageModel,
+  provider: opts.imageModel,
+  promptSource: opts.promptSource,
+  generatedBy: opts.generatedBy,
+  hasPromptOverride: !!opts.promptOverride,
+  note: opts.note || null,
+});
+
 export const generateCharacterLooksForDirector = async (
   project: Project,
   castMemberIds: string[],
@@ -123,7 +141,14 @@ export const generateCharacterLooksForDirector = async (
         category: 'character_candidate',
         file_path: imagePaths[i],
         prompt: `Look ${i + 1} for ${member.name}`,
-        metadata: JSON.stringify({ castMemberId: member.id }),
+        metadata: candidateMetadata({ castMemberId: member.id }, {
+          model,
+          imageModel,
+          promptSource,
+          generatedBy: 'mcp',
+          promptOverride: opts.promptOverride,
+          note: opts.note,
+        }),
       });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
     }
@@ -257,7 +282,14 @@ export const generateEnvironmentLooksForDirector = async (
         category: 'environment_candidate',
         file_path: imagePaths[i],
         prompt: `Environment look ${i + 1} for ${environment.name}`,
-        metadata: JSON.stringify({ environmentId: environment.id }),
+        metadata: candidateMetadata({ environmentId: environment.id }, {
+          model,
+          imageModel,
+          promptSource,
+          generatedBy: 'mcp',
+          promptOverride: opts.promptOverride,
+          note: opts.note,
+        }),
       });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
     }

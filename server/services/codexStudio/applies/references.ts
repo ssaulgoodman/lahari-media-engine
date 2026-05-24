@@ -42,14 +42,23 @@ export const listReferenceCandidates = async (
   const candidates = assets
     .filter((asset: any) => candidateMetadata(asset)[metaKey] === input.entityId)
     .sort((a: any, b: any) => createdTime(b) - createdTime(a))
-    .map((asset: any) => ({
-      id: asset.id,
-      assetId: asset.id,
-      url: storageUrl(asset.file_path),
-      createdAt: asset.created_at || asset.createdAt || null,
-      prompt: asset.prompt || null,
-      metadata: candidateMetadata(asset),
-    }));
+    .map((asset: any) => {
+      const metadata = candidateMetadata(asset);
+      return {
+        id: asset.id,
+        assetId: asset.id,
+        url: storageUrl(asset.file_path),
+        createdAt: asset.created_at || asset.createdAt || null,
+        prompt: asset.prompt || null,
+        model: metadata.model || null,
+        imageModel: metadata.imageModel || null,
+        provider: metadata.provider || metadata.imageModel || null,
+        promptSource: metadata.promptSource || null,
+        generatedBy: metadata.generatedBy || null,
+        hasPromptOverride: !!metadata.hasPromptOverride,
+        metadata,
+      };
+    });
 
   return {
     kind: 'mirage.reference.candidates',
