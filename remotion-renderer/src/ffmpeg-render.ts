@@ -180,7 +180,10 @@ const buildVisualInputs = (inputProps: TimelineRenderProps): FfmpegInput[] => {
 
 const buildAudioInputs = (inputProps: TimelineRenderProps): AudioInput[] =>
   orderedItems(inputProps)
-    .filter((item) => item.type === 'audio')
+    .filter((item) => {
+      const details = (item as any).details || {};
+      return item.type === 'audio' || (item.type === 'video' && details.muted === false);
+    })
     .map((item) => {
       const durationMs = itemDurationMs(item);
       const trim = item.trim || { from: 0, to: durationMs };

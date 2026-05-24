@@ -42,10 +42,55 @@ const itemSrc = (item: any) => {
   return typeof src === 'string' && src.trim() ? src.trim() : null;
 };
 
+const enableNativeVideoAudio = async (projectId: string, timeline: any) => {
+  const scenes = await selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' });
+  const sceneIds = scenes.map((scene: any) => scene.id);
+  if (sceneIds.length === 0) return timeline;
+  const projectShots = await selectAll('shots', { scene_id: sceneIds }, { orderBy: 'sort_order' });
+  const videoAssetIds = projectShots.map((shot: any) => shot.video_asset_id).filter(Boolean);
+  if (videoAssetIds.length === 0) return timeline;
+  const assets = await selectAll('assets', { id: videoAssetIds });
+  const nativeAudioUrls = new Set<string>();
+  for (const asset of assets) {
+    const metadata = parseJson<Record<string, any>>(asset.metadata, {});
+    if (metadata.native_audio_generated && asset.file_path) {
+      nativeAudioUrls.add(storageUrl(asset.file_path));
+    }
+  }
+  if (nativeAudioUrls.size === 0) return timeline;
+
+  const trackItemsMap = timeline.trackItemsMap && typeof timeline.trackItemsMap === 'object'
+    ? { ...timeline.trackItemsMap }
+    : {};
+  let changed = false;
+  for (const [id, item] of Object.entries(trackItemsMap) as [string, any][]) {
+    if (item?.type !== 'video') continue;
+    const src = itemSrc(item);
+    if (!src || !nativeAudioUrls.has(src)) continue;
+    trackItemsMap[id] = {
+      ...item,
+      details: {
+        ...(item.details || {}),
+        muted: false,
+      },
+    };
+    changed = true;
+  }
+  if (!changed) return timeline;
+  return {
+    ...timeline,
+    trackItemsMap,
+    metadata: {
+      ...(timeline.metadata || {}),
+      nativeVideoAudioEnabled: true,
+    },
+  };
+};
+
 const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: any) => {
   const project = await selectOne('projects', { id: projectId });
   const brief = parseJson<Record<string, any>>(project?.project_brief, {});
-  if (brief.dialogueVideoMode === 'lipsync') return timeline;
+  if (brief.dialogueVideoMode === 'lipsync') return enableNativeVideoAudio(projectId, timeline);
 
   const trackItemIds = Array.isArray(timeline.trackItemIds) ? [...timeline.trackItemIds] : [];
   const trackItemsMap = timeline.trackItemsMap && typeof timeline.trackItemsMap === 'object'

@@ -171,7 +171,7 @@ The generated Seedance prompt says:
 - use the saved cut plan text as the motion/cut guide
 - do not replace storyboard composition with a composition from reference images
 - do not invent a different devotional object or character blocking than the storyboard
-- do not generate audio, panel numbers, subtitles, text, logos, watermarks, or storyboard borders
+- generate native audio only when Mirage passes explicit dialogue/sound cues and enables `generate_audio`; otherwise do not generate audio, panel numbers, subtitles, text, logos, watermarks, or storyboard borders
 
 Seedance is called with `startImagePath = undefined` in storyboard mode, so `reference_images` carries storyboard plus refs. This avoids the Segmind Seedance mutual-exclusion rule between `first_frame_url` and `reference_images`.
 

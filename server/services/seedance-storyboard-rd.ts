@@ -278,6 +278,7 @@ export const buildSeedanceStoryboardVideoPrompt = (
     cutPlanText?: string | null;
     refs?: { label: string }[];
     lipsyncEnabled?: boolean;
+    nativeAudioEnabled?: boolean;
   }
 ): string => {
   const preset = input.preset || getRuntimePreset();
@@ -285,7 +286,7 @@ export const buildSeedanceStoryboardVideoPrompt = (
 
   if (variant === 'follow_board_only') {
     return `Here is the ordered storyboard for a ${input.clipDuration}s ${preset.toolName} clip: @image1.
-Follow the panels left-to-right across each row, then continue to the next row if present. If @image1 contains panel numbers, labels, borders, gutters, or guide marks, treat them only as sequencing guides and do not render them into the video. Use all other reference images only to preserve style, character identity, costume, and environment. No generated audio, no subtitles, no readable text.`;
+Follow the panels left-to-right across each row, then continue to the next row if present. If @image1 contains panel numbers, labels, borders, gutters, or guide marks, treat them only as sequencing guides and do not render them into the video. Use all other reference images only to preserve style, character identity, costume, and environment. ${opts?.nativeAudioEnabled ? 'Generate synchronized native audio when the prompt includes spoken dialogue or sound.' : 'No generated audio.'} No subtitles, no readable text.`;
   }
 
   if (variant === 'shot_timing_only') {
@@ -295,7 +296,7 @@ ${clipContext(input)}
 
 ${seedanceShotList(input)}
 
-No generated audio, no subtitles, no readable text. Preserve all provided reference identities and style.`;
+${opts?.nativeAudioEnabled ? 'Generate synchronized native audio when the prompt includes spoken dialogue or sound.' : 'No generated audio.'} No subtitles, no readable text. Preserve all provided reference identities and style.`;
   }
 
   const refs = opts?.refs || [];
@@ -305,6 +306,9 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
   const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
   const lipsyncInstruction = opts?.lipsyncEnabled
     ? `\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural.`
+    : '';
+  const nativeAudioInstruction = opts?.nativeAudioEnabled
+    ? '\nNative audio: generate audible synchronized speech, sound effects, and ambience only for dialogue/sound cues explicitly named in the prompt. Keep voices natural and matched to the visible acting. Do not add subtitles or readable text.'
     : '';
 
   // Trimmed video prompt. The image model handles composition; this prompt
@@ -318,7 +322,7 @@ No generated audio, no subtitles, no readable text. Preserve all provided refere
 Shot: ${input.clipDirection}
 
 ${refBindings ? `Identity refs (do not redesign):\n${refBindings}` : ''}
-${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}
+${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}${nativeAudioInstruction}
 
 Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
 

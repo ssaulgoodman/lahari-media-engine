@@ -213,15 +213,18 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const audioPlan = parseJson<AudioPlan | null>(shot.audio_plan, null);
     const projectDialogueMode = dialogueVideoMode(project);
     const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
+    const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+    const hasDialogue = dialogueLines.length > 0;
+    const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
+    const seedanceNativeAudio = modelSpec.family === 'seedance' && (hasDialogue || !!soundNotes);
     const visibleSoundCue = soundNotes
-      ? `Visible sound cue to imply through action only, not generated audio: ${soundNotes}`
+      ? seedanceNativeAudio
+        ? `Native audio cue: generate synchronized sound only for this explicit cue: ${soundNotes}`
+        : `Visible sound cue to imply through action only, not generated audio: ${soundNotes}`
       : '';
     if (visibleSoundCue) {
       veoPromptParts.push(visibleSoundCue);
     }
-    const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
-    const hasDialogue = dialogueLines.length > 0;
-    const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
     let dialoguePerformanceCue = '';
     if (planWantsLipsync && !useStoryboardMode) {
       const castNameById = new Map(activeCast.map((c: any) => [c.id, c.name || 'Speaker']));
@@ -233,7 +236,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         .filter(Boolean)
         .join(' ');
       if (dialogueBrief) {
-        dialoguePerformanceCue = `Native lip-sync performance: visible speakers should naturally speak these lines with believable mouth movement and acting timed to the shot. Do not add subtitles or readable text. ${dialogueBrief}`;
+        dialoguePerformanceCue = seedanceNativeAudio
+          ? `Native audio + lip-sync performance: generate audible synchronized speech for these exact lines, with visible speakers naturally speaking them using believable mouth movement and acting timed to the shot. Do not add subtitles or readable text. ${dialogueBrief}`
+          : `Native lip-sync performance: visible speakers should naturally speak these lines with believable mouth movement and acting timed to the shot. Do not add subtitles or readable text. ${dialogueBrief}`;
         veoPromptParts.push(dialoguePerformanceCue);
       }
     }
@@ -247,7 +252,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         .filter(Boolean)
         .join(' ');
       if (dialogueBrief) {
-        dialoguePerformanceCue = `Dialogue performance: visible speakers should naturally say these lines with mouth movement and acting timed to the shot. The final edit may overlay generated TTS, so do not add subtitles or readable text. ${dialogueBrief}`;
+        dialoguePerformanceCue = seedanceNativeAudio
+          ? `Native audio performance: generate audible synchronized speech for these exact lines, with visible speakers naturally saying them using believable mouth movement and acting timed to the shot. The final edit may overlay generated TTS, so keep the native voice clean and natural. Do not add subtitles or readable text. ${dialogueBrief}`
+          : `Dialogue performance: visible speakers should naturally say these lines with mouth movement and acting timed to the shot. The final edit may overlay generated TTS, so do not add subtitles or readable text. ${dialogueBrief}`;
         veoPromptParts.push(dialoguePerformanceCue);
       }
     }
@@ -256,7 +263,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
         cutPlanText: storyboardCutPlanText,
         refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
-        lipsyncEnabled: !!shot.lipsync_enabled || planWantsLipsync,
+        lipsyncEnabled: !!shot.lipsync_enabled && !planWantsLipsync,
+        nativeAudioEnabled: seedanceNativeAudio,
       })
       : '';
     const projectVideoOverride = useStoryboardMode
@@ -324,6 +332,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       endImagePath: useStoryboardMode ? undefined : endImagePath,
       referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
       referenceAudioPaths: modelSpec.family === 'seedance' ? referenceAudioPaths : undefined,
+      generateAudio: seedanceNativeAudio,
       aspectRatio: aspect,
       resolution,
       durationSec: shot.duration,
@@ -352,6 +361,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       reference_audio_asset_id: referenceAudioAssetId,
       reference_audio_mode: referenceAudioMode,
       dialogue_strategy: projectDialogueMode,
+      native_audio_generated: seedanceNativeAudio,
     });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
 

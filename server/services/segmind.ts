@@ -72,6 +72,7 @@ export const generateSegmindVideo = async (
     referenceImagePaths?: string[];
     resolution?: SegmindResolution;
     referenceAudioPaths?: string[];
+    generateAudio?: boolean;
     aspectRatio?: '16:9' | '9:16';
     durationSec?: number;
     modelKey?: SegmindModelKey;
@@ -130,7 +131,7 @@ export const generateSegmindVideo = async (
       duration: durationSec,
       resolution,
       aspect_ratio: opts?.aspectRatio || '16:9',
-      generate_audio: false,
+      generate_audio: !!opts?.generateAudio,
       seed: Math.floor(Math.random() * 1000000),
     };
     if (useFrameMode) {
@@ -148,7 +149,7 @@ export const generateSegmindVideo = async (
   }
 
   const bodyKeys = Object.keys(body).sort().join(',');
-  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, audioRefs=${refAudioUrls.length}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+  console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, audioRefs=${refAudioUrls.length}, generateAudio=${!!opts?.generateAudio}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   const res = await fetch(model.endpoint, {
     method: 'POST',

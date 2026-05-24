@@ -909,6 +909,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-25 Codex: Corrected dialogue video mode doctrine after live test friction. `lipsync` no longer means "generate TTS first and pass it as reference audio." It now means the video model is prompted to perform speech/lip movement natively from the dialogue text; no TTS prerequisite, no `lipsync_tts_missing` blocker, and no Studio/Audio `tts needed` badges. `overlay` remains the TTS path: generate dialogue audio when desired, then render mixes successful TTS assets over the timeline. Legacy song-lipsync via `shot.lipsync_enabled` still uses source audio for music-led storyboard shots. Historical T5/T6 notes above describe the old implementation, not current doctrine.
 
+2026-05-25 Codex: Fixed the silent Seedance seam. Studio video generation now enables Segmind `generate_audio` for Seedance shots that have dialogue lines or soundNotes, and the prompt explicitly asks for audible synchronized speech/sound instead of only visible mouth movement. Storyboard-mode prompts no longer say "No generated audio" when native audio is enabled. Final renders in project-level `lipsync` mode preserve native video audio; old music-led renders and overlay-mode final renders keep video clips muted so song/TTS tracks remain authoritative.
+
 ---
 
 ## 10. References

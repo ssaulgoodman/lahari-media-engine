@@ -115,7 +115,7 @@ const renderers: Record<ItemType, (item: ITrackItem, fps: number) => React.JSX.E
             trimBefore={(trim.from / 1000) * fps}
             trimAfter={(trim.to / 1000) * fps || 1 / fps}
             src={d.src}
-            muted
+            muted={d.muted !== false}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </AbsoluteFill>
@@ -190,7 +190,7 @@ const transitionRenderers: Record<ItemType, (item: ITrackItem, fps: number) => R
             trimBefore={(trim.from / 1000) * fps}
             trimAfter={(trim.to / 1000) * fps || 1 / fps}
             src={d.src}
-            muted
+            muted={d.muted !== false}
             style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           />
         </AbsoluteFill>
