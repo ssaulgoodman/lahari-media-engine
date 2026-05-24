@@ -17,7 +17,7 @@ import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.8';
+const HOSTED_MCP_VERSION = '0.1.9';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
@@ -848,6 +848,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     baseHash,
   }, { force }));
 
+  const applyGenerateCharacterLooksHandler = async ({ projectId, castMemberIds, note, promptOverride }: {
+    projectId: string;
+    castMemberIds?: string[];
+    note?: string;
+    promptOverride?: string;
+  }) => studio.generateCharacterLooksForDirector(await fullProjectForUser(projectId, auth.userId), castMemberIds || [], { note, promptOverride });
+
   const generateCharacterLooksHandler = async ({ projectId, castMemberIds, note }: {
     projectId: string;
     castMemberIds?: string[];
@@ -856,7 +863,18 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('apply_generate_character_looks', {
     title: 'Generate character looks',
-    description: 'Mutating and paid. Generates candidate reusable character reference images for one or more cast members using the locked style asset and current image provider.',
+    description: 'Mutating and paid. Generates candidate reusable character reference images. Optional promptOverride is an exact final prompt for one cast member; note softly rewrites the saved prompt before generation.',
+    inputSchema: {
+      projectId,
+      castMemberIds: maxArray(idString, 30).optional(),
+      note: mediumText.optional(),
+      promptOverride: optionalPromptText,
+    },
+  }, applyGenerateCharacterLooksHandler);
+
+  registerTool('generate_character_looks', {
+    title: 'Generate character looks',
+    description: 'Mutating and paid. Generates candidate reusable character reference images using the current saved/global character look prompt state. Use apply_generate_character_looks for exact promptOverride control.',
     inputSchema: {
       projectId,
       castMemberIds: maxArray(idString, 30).optional(),
@@ -864,15 +882,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     },
   }, generateCharacterLooksHandler);
 
-  registerTool('generate_character_looks', {
-    title: 'Generate character looks',
-    description: 'Alias for apply_generate_character_looks. Mutating and paid. Generates candidate reusable character reference images for one or more cast members.',
-    inputSchema: {
-      projectId,
-      castMemberIds: maxArray(idString, 30).optional(),
-      note: mediumText.optional(),
-    },
-  }, generateCharacterLooksHandler);
+  const applyGenerateEnvironmentLooksHandler = async ({ projectId, environmentIds, note, promptOverride }: {
+    projectId: string;
+    environmentIds?: string[];
+    note?: string;
+    promptOverride?: string;
+  }) => studio.generateEnvironmentLooksForDirector(await fullProjectForUser(projectId, auth.userId), environmentIds || [], { note, promptOverride });
 
   const generateEnvironmentLooksHandler = async ({ projectId, environmentIds, note }: {
     projectId: string;
@@ -882,17 +897,18 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('apply_generate_environment_looks', {
     title: 'Generate environment looks',
-    description: 'Mutating and paid. Generates candidate reusable environment/reference images for one or more environments using the locked style asset and current image provider.',
+    description: 'Mutating and paid. Generates candidate reusable environment/reference images. Optional promptOverride is an exact final prompt for one environment; note softly rewrites the saved prompt before generation.',
     inputSchema: {
       projectId,
       environmentIds: maxArray(idString, 30).optional(),
       note: mediumText.optional(),
+      promptOverride: optionalPromptText,
     },
-  }, generateEnvironmentLooksHandler);
+  }, applyGenerateEnvironmentLooksHandler);
 
   registerTool('generate_environment_looks', {
     title: 'Generate environment looks',
-    description: 'Alias for apply_generate_environment_looks. Mutating and paid. Generates candidate reusable environment/reference images for one or more environments.',
+    description: 'Mutating and paid. Generates candidate reusable environment/reference images using the current saved/global environment look prompt state. Use apply_generate_environment_looks for exact promptOverride control.',
     inputSchema: {
       projectId,
       environmentIds: maxArray(idString, 30).optional(),

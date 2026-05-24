@@ -14,6 +14,7 @@ import { buildNotebookMirrorArtifacts } from './notebook.js';
 
 type GenerateLooksOptions = {
   note?: string;
+  promptOverride?: string;
 };
 
 const styleImagePathForProject = async (project: Project): Promise<string | undefined> => {
@@ -26,6 +27,8 @@ const withRecipe = (prompt: string, label: string, recipe?: string | null) => {
   if (!recipe || prompt.includes(label)) return prompt;
   return `${prompt}\n\n${label}\n${recipe}`;
 };
+
+const shouldUseSavedPrompt = (prompt?: string | null, stale?: boolean) => Boolean(prompt && !stale && !isLegacyLookPrompt(prompt));
 
 export const generateCharacterLooksForDirector = async (
   project: Project,
@@ -43,6 +46,9 @@ export const generateCharacterLooksForDirector = async (
       note: 'No target cast members. Pass castMemberIds or add cast without references.',
     };
   }
+  if (opts.promptOverride && ids.length !== 1) {
+    throw new Error('promptOverride can only target one cast member. Pass exactly one castMemberId.');
+  }
 
   const styleImagePath = await styleImagePathForProject(project);
   const preset = getPipelinePreset(project.presetKey);
@@ -55,8 +61,9 @@ export const generateCharacterLooksForDirector = async (
     const member = project.cast.find((item) => item.id === castMemberId);
     if (!member) throw new Error(`Cast member not found in project: ${castMemberId}`);
 
-    let genPrompt = member.generationPrompt || null;
-    const shouldRebuildPrompt = !genPrompt || member.promptsStale || isLegacyLookPrompt(genPrompt);
+    let genPrompt = opts.promptOverride?.trim() || member.generationPrompt || null;
+    const promptSource = opts.promptOverride?.trim() ? 'override' : opts.note ? 'note' : shouldUseSavedPrompt(member.generationPrompt, member.promptsStale) ? 'saved' : 'rebuilt';
+    const shouldRebuildPrompt = !opts.promptOverride && (!genPrompt || member.promptsStale || isLegacyLookPrompt(genPrompt));
     if (shouldRebuildPrompt) {
       genPrompt = buildCharacterPrompt(
         { name: member.name, description: member.description || '' },
@@ -64,7 +71,7 @@ export const generateCharacterLooksForDirector = async (
       );
     }
 
-    if (opts.note) {
+    if (opts.note && !opts.promptOverride) {
       try {
         let refBase64 = '';
         let refMime = 'image/png';
@@ -91,7 +98,7 @@ export const generateCharacterLooksForDirector = async (
 
     await updateRows('cast_members', { id: member.id }, { generation_prompt: genPrompt, prompts_stale: false });
 
-    const renderPrompt = withRecipe(genPrompt, 'Project character-look recipe:', characterLooksRecipe);
+    const renderPrompt = opts.promptOverride ? genPrompt : withRecipe(genPrompt, 'Project character-look recipe:', characterLooksRecipe);
     const t0 = Date.now();
     const imagePaths = await imageService.generateCharacterLooks(
       { name: member.name, description: member.description || '' },
@@ -138,10 +145,10 @@ export const generateCharacterLooksForDirector = async (
       entityType: 'cast_member',
       entityId: member.id,
       summary: `Codex generated ${looks.length} looks for character "${member.name}".`,
-      payload: { castMemberId: member.id, assetIds: looks.map((look) => look.id), note: opts.note || null },
+      payload: { castMemberId: member.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource },
     });
 
-    results.push({ castMemberId: member.id, castMemberName: member.name, prompt: genPrompt, looks });
+    results.push({ castMemberId: member.id, castMemberName: member.name, prompt: genPrompt, promptSource, looks });
   }
 
   return {
@@ -171,6 +178,9 @@ export const generateEnvironmentLooksForDirector = async (
       note: 'No target environments. Pass environmentIds or add environments without references.',
     };
   }
+  if (opts.promptOverride && ids.length !== 1) {
+    throw new Error('promptOverride can only target one environment. Pass exactly one environmentId.');
+  }
 
   const styleImagePath = await styleImagePathForProject(project);
   const preset = getPipelinePreset(project.presetKey);
@@ -183,8 +193,9 @@ export const generateEnvironmentLooksForDirector = async (
     const environment = project.environments.find((item) => item.id === environmentId);
     if (!environment) throw new Error(`Environment not found in project: ${environmentId}`);
 
-    let genPrompt = environment.generationPrompt || null;
-    const shouldRebuildPrompt = !genPrompt || environment.promptsStale || isLegacyLookPrompt(genPrompt);
+    let genPrompt = opts.promptOverride?.trim() || environment.generationPrompt || null;
+    const promptSource = opts.promptOverride?.trim() ? 'override' : opts.note ? 'note' : shouldUseSavedPrompt(environment.generationPrompt, environment.promptsStale) ? 'saved' : 'rebuilt';
+    const shouldRebuildPrompt = !opts.promptOverride && (!genPrompt || environment.promptsStale || isLegacyLookPrompt(genPrompt));
     if (shouldRebuildPrompt) {
       genPrompt = buildEnvironmentPrompt(
         { name: environment.name, description: environment.description || '' },
@@ -192,7 +203,7 @@ export const generateEnvironmentLooksForDirector = async (
       );
     }
 
-    if (opts.note) {
+    if (opts.note && !opts.promptOverride) {
       try {
         let refBase64 = '';
         let refMime = 'image/png';
@@ -219,7 +230,7 @@ export const generateEnvironmentLooksForDirector = async (
 
     await updateRows('environments', { id: environment.id }, { generation_prompt: genPrompt, prompts_stale: false });
 
-    const renderPrompt = withRecipe(genPrompt, 'Project environment-look recipe:', environmentLooksRecipe);
+    const renderPrompt = opts.promptOverride ? genPrompt : withRecipe(genPrompt, 'Project environment-look recipe:', environmentLooksRecipe);
     const t0 = Date.now();
     const imagePaths = await imageService.generateEnvironmentLooks(
       { name: environment.name, description: environment.description || '' },
@@ -266,10 +277,10 @@ export const generateEnvironmentLooksForDirector = async (
       entityType: 'environment',
       entityId: environment.id,
       summary: `Codex generated ${looks.length} looks for environment "${environment.name}".`,
-      payload: { environmentId: environment.id, assetIds: looks.map((look) => look.id), note: opts.note || null },
+      payload: { environmentId: environment.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource },
     });
 
-    results.push({ environmentId: environment.id, environmentName: environment.name, prompt: genPrompt, looks });
+    results.push({ environmentId: environment.id, environmentName: environment.name, prompt: genPrompt, promptSource, looks });
   }
 
   return {
