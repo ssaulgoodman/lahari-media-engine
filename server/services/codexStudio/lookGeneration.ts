@@ -7,7 +7,7 @@ import { buildCharacterPrompt, buildEnvironmentPrompt } from '../imagen.js';
 import { refineFramePrompt } from '../claude.js';
 import { getImageGenerationModelName, getImageService } from '../image-provider.js';
 import { recordDirectorEvent } from '../directorEvents.js';
-import { getProjectPromptOverride } from '../projectConfig.js';
+import { getProjectPreferencesState, getProjectPromptOverride } from '../projectConfig.js';
 import { isLegacyLookPrompt } from '../../prompts/lookPrompts.js';
 import { compactText, webStudioUrl, type Project } from './core.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
@@ -52,9 +52,11 @@ export const generateCharacterLooksForDirector = async (
 
   const styleImagePath = await styleImagePathForProject(project);
   const preset = getPipelinePreset(project.presetKey);
+  const projectPreferences = await getProjectPreferencesState(project as any);
+  const imageModel = projectPreferences.preferences.imageModel;
   const characterLooksRecipe = await getProjectPromptOverride(project.id, 'character_looks');
-  const imageService = getImageService(project.imageModel);
-  const model = getImageGenerationModelName(project.imageModel);
+  const imageService = getImageService(imageModel);
+  const model = getImageGenerationModelName(imageModel);
   const results: any[] = [];
 
   for (const castMemberId of ids) {
@@ -184,9 +186,11 @@ export const generateEnvironmentLooksForDirector = async (
 
   const styleImagePath = await styleImagePathForProject(project);
   const preset = getPipelinePreset(project.presetKey);
+  const projectPreferences = await getProjectPreferencesState(project as any);
+  const imageModel = projectPreferences.preferences.imageModel;
   const environmentLooksRecipe = await getProjectPromptOverride(project.id, 'environment_looks');
-  const imageService = getImageService(project.imageModel);
-  const model = getImageGenerationModelName(project.imageModel);
+  const imageService = getImageService(imageModel);
+  const model = getImageGenerationModelName(imageModel);
   const results: any[] = [];
 
   for (const environmentId of ids) {

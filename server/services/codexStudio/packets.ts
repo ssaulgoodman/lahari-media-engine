@@ -98,6 +98,7 @@ export const buildProjectPacket = async (project: Project) => {
   const counts = statusCounts(project);
   const renders = await listProjectRenders(project.id);
   const projectConfig = await getProjectConfigState(project);
+  const preferences = projectConfig.preferences.preferences;
   const preset = getPipelinePreset(project.presetKey);
   const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
   const audioPhase = buildAudioPhasePacket(project);
@@ -116,10 +117,10 @@ export const buildProjectPacket = async (project: Project) => {
       workflowKey: workflow.key,
       workflowLabel: workflow.label,
       seedKind: project.seedKind || workflow.primarySeed,
-      imageModel: project.imageModel,
-      storyboardProvider: project.storyboardProvider,
-      videoModel: project.videoModel,
-      textProvider: project.textProvider,
+      imageModel: preferences.imageModel,
+      storyboardProvider: preferences.storyboardProvider,
+      videoModel: preferences.videoModel,
+      textProvider: preferences.textProvider,
       aspectRatio: project.aspectRatio,
       videoResolution: project.videoResolution,
       targetDuration: project.targetDuration,
