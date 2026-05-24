@@ -74,6 +74,7 @@ export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 import { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectNotebook, type NotebookFile } from './codexStudio/notebook.js';
+export { createProjectForDirector } from './codexStudio/projectIntake.js';
 export {
   listQueueForDirector,
   resolveProjectForDirector,

@@ -119,6 +119,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   const { restoring } = usePersistedProject({
     currentStep,
+    project,
     projectId: project?.id,
     setActiveSceneIdx,
     setCurrentStep,

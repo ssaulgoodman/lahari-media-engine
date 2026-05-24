@@ -36,7 +36,9 @@ export type PromptMeta = {
   id: string;
   name: string;
   stage: PromptStage;
+  /** Routing slot, not necessarily a fixed vendor model. */
   model: string;
+  /** Fallback label when no project is in view. */
   modelLabel: string;
   /** The UI action that fires this prompt. */
   triggeredBy: string;
@@ -54,8 +56,8 @@ export const PROMPT_CATALOG: PromptMeta[] = [
     id: 'transcribe-lyrics',
     name: 'Transcribe lyrics',
     stage: 'audio',
-    model: 'gemini-3-pro-preview',
-    modelLabel: 'Gemini 3 Pro',
+    model: 'audio.analysis',
+    modelLabel: 'Audio analysis model',
     triggeredBy: 'Queue start (fallback when no SRT and no cached analysis), direct upload, or "Fill missing" button.',
     summary: 'Extracts timestamped lyrics ([M:SS] format) from audio. Queue checks cached analysis on songs table first, then SRT, then this fallback.',
     variables: [
@@ -79,8 +81,8 @@ Return ONLY the transcription.`,
     id: 'detect-structure',
     name: 'Detect musical structure + classify song',
     stage: 'audio',
-    model: 'gemini-3-pro-preview',
-    modelLabel: 'Gemini 3 Pro',
+    model: 'audio.analysis',
+    modelLabel: 'Audio analysis model',
     triggeredBy: 'Fires in parallel with transcription at project creation.',
     summary: 'Identifies musical sections + classifies the song type from audio. Returns sections array, songType enum (stotra/chant/bhajan/kirtan/song/unknown), isNarrative boolean, isMeditative boolean. Classification flows to concept generation.',
     variables: [],
@@ -99,8 +101,8 @@ Return ONLY the transcription.`,
     id: 'summarize-meaning',
     name: 'Summarize meaning',
     stage: 'audio',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6',
+    model: 'project.text_provider',
+    modelLabel: 'Project text provider',
     triggeredBy: 'Chains after lyrics are available (never in parallel with transcription).',
     summary: 'Writes a 150-word interpretive summary: theme, addressee, emotional arc, cultural context.',
     variables: [
@@ -128,12 +130,12 @@ Under 150 words. Write in English.`,
   },
   {
     id: 'write-audio-plan',
-    name: 'Write per-shot dialogue/audio plan',
-    stage: 'blueprint',
+    name: 'Write dialogue / narration audio plan',
+    stage: 'audio',
     model: 'project.text_provider',
     modelLabel: 'Project text provider',
     triggeredBy: 'Script phase "Write dialogue", Audio phase rewrites, or Codex audio-director apply flow.',
-    summary: 'Writes structured per-shot dialogue, restrained sound notes, and server-inferred lipsync/overlay strategy for anime/dialogue workflows. Music-video workflow skips this by default.',
+    summary: 'Writes structured per-shot spoken lines for dialogue or narrator-style cast voices, plus restrained sound notes for the Audio phase. Music-led projects skip this by default.',
     variables: [
       { name: 'project', description: 'Project title, workflow, preset, and source_payload' },
       { name: 'scene', description: 'Scene label, narrative description, and any source/lyrics text' },
@@ -180,8 +182,8 @@ OUTPUT CONTRACT
     id: 'generate-concepts',
     name: 'Generate concept directions',
     stage: 'blueprint',
-    model: 'claude-opus-4-7',
-    modelLabel: 'Claude Opus 4.7',
+    model: 'project.text_provider',
+    modelLabel: 'Project text provider',
     triggeredBy: "Fires when you click 'Generate concept' on the Concept phase.",
     summary: 'Proposes 3 creative narrative directions for the project (or 1 if a director brief is set). Composed via composePrompt; concept stays story/brief-level — style and medium are decided in later phases. User note is a hard creative constraint inside the tool contract.',
     variables: [
@@ -229,8 +231,8 @@ USER NOTE
     id: 'plan-scenes',
     name: 'Plan script (cast, environments, scenes, shots)',
     stage: 'blueprint',
-    model: 'claude-opus-4-7',
-    modelLabel: 'Claude Opus 4.7',
+    model: 'project.script_writer',
+    modelLabel: 'Project script writer',
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
     summary: 'Plans the full music-led video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Composed via composePrompt; user note is a hard structural constraint inside source timing and preset rules.',
     variables: [
@@ -282,8 +284,8 @@ USER NOTE
     id: 'parse-script-intake',
     name: 'Parse script seed',
     stage: 'blueprint',
-    model: 'claude-opus-4-7',
-    modelLabel: 'Claude Opus 4.7',
+    model: 'project.script_writer',
+    modelLabel: 'Project script writer',
     triggeredBy: 'Fires when a script-first project is created from direct intake.',
     summary: 'Converts an uploaded script/treatment into cast, environments, scenes, and shots. Composed via composePrompt; preserves story intent and uses preset rules for extraction/planning.',
     variables: [
@@ -370,8 +372,8 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
     id: 'brainstorm-style-directions',
     name: 'Brainstorm style directions',
     stage: 'blueprint',
-    model: 'claude-opus-4-7',
-    modelLabel: 'Claude Opus 4.7',
+    model: 'project.text_provider',
+    modelLabel: 'Project text provider',
     triggeredBy: "Fires when you click 'Brainstorm styles' on the Style phase.",
     summary: 'Proposes 4 distinct visual style directions — lighting, palette, texture, cultural references.',
     variables: [
@@ -421,8 +423,8 @@ USER NOTE
     id: 'refine-style-direction',
     name: 'Refine style direction',
     stage: 'blueprint',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you add feedback on a style direction and click 'Refine'.",
     summary: 'Revises one style direction using director feedback. Composed via composePrompt; user note (the feedback) is applied surgically — preserve identity, do not regenerate. If feedback conflicts with medium guard, translate to medium-safe analogue.',
     variables: [
@@ -456,6 +458,44 @@ USER NOTE
 {{feedback}}`,
     source: { file: 'server/prompts/refineStyle.ts', lines: 'buildRefineStylePrompt' },
   },
+  {
+    id: 'visualize-style',
+    name: 'Visualize style',
+    stage: 'blueprint',
+    model: 'project.image_model',
+    modelLabel: 'Project image model',
+    triggeredBy: "Fires when you click 'Visualize' or 'Re-visualize' on one brainstormed style direction.",
+    summary: 'Turns one selected text style direction into a reusable style reference image. Uses the project image model and the preset style/quality rules; the selected direction is the main input.',
+    variables: [
+      { name: 'styleDescription', description: 'The selected style direction text from the brainstorm/refine step' },
+      { name: 'subject', description: 'Project subject from the locked concept or title' },
+      { name: 'workflowContext', description: 'Human-readable production-spine context' },
+      { name: 'presetTaste', description: 'preset.style.rules + preset.looks.qualityRules' },
+      { name: 'imageModel', description: 'Project image model routing slot' },
+    ],
+    template: `Generate one reusable visual style reference frame for this project.
+
+The frame should demonstrate the style system clearly — lighting behavior, color palette, texture or medium, rendering approach, atmosphere — using a simple motif, anonymous figure, prop vignette, environment detail, or production-design element that belongs to the project. Keep the composition concrete and readable enough that the visual treatment is easy to reuse downstream.
+
+This is not a character design sheet, storyboard panel, poster, collage, or title card. It can feel like a clean production still, anonymous character-style frame, or background-detail frame, but it should not depict a specific plot beat.
+
+CONTEXT
+{{workflowContext}}
+
+INPUTS
+Project world: {{preset.style.subjectPrompt(subject)}}
+
+Style direction to render:
+{{styleDescription}}
+
+TASTE
+{{preset.style.rules}}
+{{preset.looks.qualityRules}}
+
+OUTPUT CONTRACT
+Output the final reference image. High production value. No text. No watermark.`,
+    source: { file: 'server/prompts/visualizeStyle.ts', lines: 'buildVisualizeStylePrompt' },
+  },
   // Note: curated style presets no longer involve any AI prompt. The /lock-
   // style-preset endpoint points a new project-scoped asset row at the
   // preset's shared curated file_path and writes style_asset_id directly —
@@ -467,8 +507,8 @@ USER NOTE
     id: 'character-look',
     name: 'Character look',
     stage: 'looks',
-    model: 'gemini-3-pro-image-preview',
-    modelLabel: 'Gemini 3 Pro Image',
+    model: 'project.image_model',
+    modelLabel: 'Project image model',
     triggeredBy: "Fires 3× in parallel when you click 'Generate look' on a character.",
     summary: 'Generates 3 reusable neutral character reference portraits — no props, no actions, plain background for reuse across shots.',
     variables: [
@@ -507,8 +547,8 @@ Mid-shot portrait, neutral pose, plain or softly blurred background, no props or
     id: 'environment-look',
     name: 'Environment look',
     stage: 'looks',
-    model: 'gemini-3-pro-image-preview',
-    modelLabel: 'Gemini 3 Pro Image',
+    model: 'project.image_model',
+    modelLabel: 'Project image model',
     triggeredBy: "Fires 3× in parallel when you click 'Generate look' on an environment.",
     summary: 'Generates 3 wide establishing shots of the environment — empty, no characters.',
     variables: [
@@ -549,8 +589,8 @@ Full reusable environment reference, whole space visible, no characters unless s
     id: 'write-shot-prompts',
     name: 'Write shot prompts (bulk)',
     stage: 'studio',
-    model: 'claude-opus-4-7',
-    modelLabel: 'Claude Opus 4.7',
+    model: 'project.script_writer',
+    modelLabel: 'Project script writer',
     triggeredBy: "Auto-fires once at the end of Blueprint, or when you click 'Rewrite all' in Studio.",
     summary: 'Composed via composePrompt. Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot). User note is a hard creative constraint applied across every shot; conflicts with the locked style reference or preset rules translate to closest valid intent. "Cinematic but renderable" — functional for AI models without being literary or schematic.',
     variables: [
@@ -601,8 +641,8 @@ OUTPUT CONTRACT
     id: 'seedance-storyboard-image',
     name: 'Write Seedance storyboard prompt',
     stage: 'studio',
-    model: 'per-project text_provider (refine sibling)',
-    modelLabel: 'Claude Sonnet / GPT-5.5 (refine tier)',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
     summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. Panel actions appear in both outputs; locked refs and preset taste decide the medium.',
     variables: [
@@ -658,8 +698,8 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
     id: 'render-seedance-storyboard-image',
     name: 'Render Seedance storyboard image',
     stage: 'studio',
-    model: 'nano-banana-2 / nano-banana-pro / gpt-image-2',
-    modelLabel: 'Storyboard image provider (project storyboard_provider)',
+    model: 'project.storyboard_provider',
+    modelLabel: 'Project storyboard provider',
     triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
     summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Three provider options, all routed through Segmind BYOK: nano-banana-2 (default), nano-banana-pro, and gpt-image-2.',
     variables: [
@@ -677,8 +717,8 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
     id: 'seedance-storyboard-refine',
     name: 'Refine Seedance storyboard',
     stage: 'studio',
-    model: 'project.text_provider (refine tier) OR storyboard image provider',
-    modelLabel: 'Redo = text-provider refine model (Sonnet/GPT-5.5); Edit = project storyboard_provider',
+    model: 'project.text_provider.refine OR project.storyboard_provider',
+    modelLabel: 'Project text provider / storyboard provider',
     triggeredBy: "Fires when you enter a natural-language note and click 'Refine' in storyboard mode.",
     summary: 'Refine has two modes. Redo (replan) routes through project.text_provider (cheap refine sibling) to rewrite saved storyboardPrompt + cutPlanText; the artist must click Generate after to render a new image. Edit (edit_image) calls the project storyboard_provider directly with the previous storyboard image + the saved prompt + the artist note — text fields untouched. Edit prompt does NOT include the cut plan (image renderer does not use it).',
     variables: [
@@ -719,8 +759,8 @@ Artist image edit note:
     id: 'shot-start-frame',
     name: 'Shot start frame',
     stage: 'studio',
-    model: 'gemini-3-pro-image-preview',
-    modelLabel: 'Gemini 3 Pro Image',
+    model: 'project.image_model',
+    modelLabel: 'Project image model',
     triggeredBy: "Fires when you click the frame icon on a shot or 'Generate all frames'.",
     summary: "Generates the shot's start frame using the full reference chain: characters → style → environment → continuity.",
     variables: [
@@ -750,13 +790,13 @@ Priority: character identity > continuity > environment > style.`,
     source: { file: 'server/services/imagen.ts', lines: '366-435' },
   },
   {
-    id: 'refine-frame-prompt',
-    name: 'Refine frame prompt (first frame, end frame, character look, env look)',
+    id: 'refine-shot-prompt',
+    name: 'Refine shot visual prompt',
     stage: 'studio',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6 (vision)',
-    triggeredBy: 'Fires when you click Refine on First frame or Last frame tab, or refine a character/env look.',
-    summary: 'Director says what to change, Claude applies it to the current prompt. No scene/style/character context — just feedback + current prompt + optional images.',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
+    triggeredBy: 'Fires when you click Refine on a shot first-frame/visual prompt.',
+    summary: 'Director says what to change about the generated frame or visual prompt; the refine-tier text route rewrites only the shot visual prompt.',
     variables: [
       { name: 'feedback', description: 'What the director wants changed' },
       { name: 'currentPrompt', description: 'The prompt being rewritten' },
@@ -777,11 +817,65 @@ Output via rewrite_frame_prompt tool: { visualPrompt }`,
     source: { file: 'server/services/claude.ts', lines: 'refineFramePrompt' },
   },
   {
+    id: 'refine-end-frame-prompt',
+    name: 'Refine end-frame prompt',
+    stage: 'studio',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
+    triggeredBy: 'Fires when you click Refine on the Last frame / end-frame prompt.',
+    summary: 'Rewrites the prompt for what the shot should land on. Used when the end-frame constraint needs a surgical text fix before regenerating.',
+    variables: [
+      { name: 'feedback', description: 'What the director wants changed about the end frame' },
+      { name: 'currentPrompt', description: 'The current end-frame prompt, falling back to the shot visual prompt' },
+      { name: 'failedImage', description: 'Current end frame, if one exists' },
+      { name: 'referenceImage', description: 'Director reference image, optional' },
+    ],
+    template: `WHAT THE DIRECTOR WANTS CHANGED:
+{{feedback}}
+
+Image 1: current end frame if one exists. Image 2: director's reference (if attached).
+
+CURRENT END-FRAME PROMPT:
+{{currentPrompt}}
+
+Apply the feedback to the end-frame prompt only. Keep the shot's underlying intent. 1-3 sentences.
+
+Output via rewrite_frame_prompt tool: { visualPrompt }`,
+    source: { file: 'server/routes/generate-shots.ts + server/services/claude.ts', lines: 'refine-end-frame-prompt / refineFramePrompt' },
+  },
+  {
+    id: 'refine-look-prompt',
+    name: 'Refine character/environment look prompt',
+    stage: 'looks',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
+    triggeredBy: 'Fires when you enter a refine note before regenerating character or environment looks.',
+    summary: 'Rewrites the reusable look prompt for one cast member or environment, then the image route generates fresh candidates from that rewritten prompt.',
+    variables: [
+      { name: 'feedback', description: 'Director note for the character or environment look' },
+      { name: 'currentPrompt', description: 'Existing cast/environment generation prompt' },
+      { name: 'lockedLook', description: 'Current locked look image, if one exists' },
+      { name: 'referenceImage', description: 'Optional director-supplied reference image' },
+    ],
+    template: `WHAT THE DIRECTOR WANTS CHANGED:
+{{feedback}}
+
+Image 1: current locked character/environment reference if one exists. Image 2: director's reference (if attached).
+
+CURRENT LOOK PROMPT:
+{{currentPrompt}}
+
+Apply the feedback to the reusable look prompt. Preserve identity and production usefulness. 1-3 sentences.
+
+Output via rewrite_frame_prompt tool: { visualPrompt }`,
+    source: { file: 'server/routes/generate-looks.ts + server/services/claude.ts', lines: 'generate-looks refine path / refineFramePrompt' },
+  },
+  {
     id: 'refine-video-prompt',
     name: 'Refine video/motion prompt',
     stage: 'studio',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6 (vision)',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you click 'Refine' on the Video tab.",
     summary: 'Director says what to change about the animation. Claude rewrites the motion prompt. Sees start frame + end frame + shot description — no style/scene/character context.',
     variables: [
@@ -812,8 +906,8 @@ Output via rewrite_motion_prompt tool: { motionPrompt }`,
     id: 'refine-concept',
     name: 'Refine locked concept',
     stage: 'blueprint',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you click 'Refine' on the locked concept.",
     summary: 'Revises the locked concept using director feedback. Composed via composePrompt; user note (the feedback) is applied surgically — preserve locked fields, touch only what the note addresses. Concept stays story/brief-level; style and medium are decided later.',
     variables: [
@@ -851,8 +945,8 @@ USER NOTE
     id: 'refine-script',
     name: 'Refine script (surgical edit)',
     stage: 'blueprint',
-    model: 'claude-opus-4-7',
-    modelLabel: 'Claude Opus 4.7',
+    model: 'project.script_writer',
+    modelLabel: 'Project script writer',
     triggeredBy: "Fires when you click 'Refine script' and enter feedback.",
     summary: 'Composed via composePrompt. Surgically refines the existing script using director feedback (user note). Preserve scenes/shots not addressed, do not rename existing cast/environments (their names are IDs downstream), keep source structure. Extended thinking + validation loop reruns on shot-count/duration violations. Standard mode: ceil(scene_duration / pacing) shots per scene. Seedance storyboard mode: 4-15s clips that sum to scene duration.',
     variables: [
@@ -895,8 +989,8 @@ USER NOTE
     id: 'chained-shot-refresh',
     name: 'Chained-shot refresh (prev-frame grounded)',
     stage: 'studio',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6 (vision)',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
     triggeredBy: 'Fires automatically after a shot\'s video lands, when the next shot is tagged "prev_shot".',
     summary: "Claude sees the extracted last frame and rewrites the next shot's prompts so continuity flows from what actually happened while preserving the shot's intended beat. Skipped in Seedance storyboard mode, where shots do not wait on previous frames.",
     variables: [
@@ -927,8 +1021,8 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     id: 'shot-video-assembly',
     name: 'Shot video prompt (keyframe mode)',
     stage: 'studio',
-    model: 'veo-3.1-* / seedance-2.0-*',
-    modelLabel: 'Video model (Veo or Seedance)',
+    model: 'project.video_model',
+    modelLabel: 'Project video model',
     triggeredBy: "Fires when you click the play icon on a shot or 'Generate all videos'.",
     summary: "Keyframe path: motionPrompt is the video instruction. Ref labels are appended only when character/env reference images are actually attached. Artist can override via the Video prompt tab. Storyboard mode uses the separate Seedance storyboard video prompt.",
     variables: [
@@ -942,8 +1036,8 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     id: 'seedance-storyboard-video',
     name: 'Seedance video from locked storyboard',
     stage: 'studio',
-    model: 'seedance-2.0-*',
-    modelLabel: 'Seedance 2.0 via Segmind',
+    model: 'project.video_model',
+    modelLabel: 'Project video model',
     triggeredBy: "Fires when you click 'Generate video' in the Storyboard panel's Video sub-tab.",
     summary: 'Builds the Seedance prompt around @image1 as the locked ordered storyboard, @image2+ as locked consistency refs, and the saved cut plan as the motion/edit guide.',
     variables: [
@@ -979,8 +1073,8 @@ Do not render text, panel borders, numbers, gutters, or split-screen artifacts f
     id: 'critique-shot-image',
     name: 'Critique shot image',
     stage: 'utilities',
-    model: 'gemini-3-pro-preview',
-    modelLabel: 'Gemini 3 Pro (vision)',
+    model: 'utility.vision',
+    modelLabel: 'Utility vision model',
     triggeredBy: 'Fires automatically after a shot frame lands — scores + suggests fixes.',
     summary: 'Scores the image 0-10 on style adherence, prompt fidelity, character consistency, technical quality; returns specific actionable suggestions.',
     variables: [
@@ -1012,8 +1106,8 @@ Return JSON with score, reasoning, isConsistent, suggestions. "suggestions" must
     id: 'describe-frame',
     name: 'Describe frame (continuity)',
     stage: 'utilities',
-    model: 'gemini-3-pro-preview',
-    modelLabel: 'Gemini 3 Pro (vision)',
+    model: 'utility.vision',
+    modelLabel: 'Utility vision model',
     triggeredBy: "Fires when building continuity description for a chained shot.",
     summary: 'Short factual description of a video frame — subject pose, framing, lighting, action mid-beat — like a script supervisor note.',
     variables: [
@@ -1028,8 +1122,8 @@ Do NOT speculate about narrative or use flowery language. Write like a script su
     id: 'analyze-image-style',
     name: 'Analyze uploaded style image',
     stage: 'utilities',
-    model: 'claude-sonnet-4-6',
-    modelLabel: 'Claude Sonnet 4.6 (vision)',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine)',
     triggeredBy: 'Fires when you upload a reference image in the Style phase.',
     summary: 'Extracts a 2-3 sentence style fragment from a user-supplied reference image for downstream image gen.',
     variables: [
@@ -1044,8 +1138,8 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.`,
     id: 'chat-with-director',
     name: 'Chat with director',
     stage: 'utilities',
-    model: 'gemini-3-pro-preview',
-    modelLabel: 'Gemini 3 Pro',
+    model: 'utility.text',
+    modelLabel: 'Utility text model',
     triggeredBy: 'Fires when you send a message in the Chat panel.',
     summary: 'Answers questions about prompts and pipeline with the project analysis context in view.',
     variables: [

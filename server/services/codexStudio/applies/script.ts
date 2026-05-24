@@ -1,4 +1,4 @@
-import { rpcVoid } from '../../../database.js';
+import { deleteRows, insertMany, selectColumns, updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import { scriptContentHash, usesStoryboardWorkflow, webStudioUrl, type Project } from '../core.js';
 import { buildNotebookMirrorArtifacts } from '../notebook.js';
@@ -50,6 +50,71 @@ const projectWithScript = (project: Project, normalized: ReturnType<typeof norma
   })),
 } as Project);
 
+const replaceScriptRows = async (projectId: string, normalized: ReturnType<typeof normalizeScriptForApply>) => {
+  const existingScenes = await selectColumns('scenes', 'id', { project_id: projectId });
+  for (const scene of existingScenes) {
+    await deleteRows('shots', { scene_id: scene.id });
+  }
+  await deleteRows('scenes', { project_id: projectId });
+  await deleteRows('cast_members', { project_id: projectId });
+  await deleteRows('environments', { project_id: projectId });
+
+  await insertMany('cast_members', normalized.cast.map((member, index) => ({
+    id: member.id,
+    project_id: projectId,
+    name: member.name,
+    description: member.description || '',
+    sort_order: index,
+    prompts_stale: false,
+  })));
+
+  await insertMany('environments', normalized.environments.map((environment, index) => ({
+    id: environment.id,
+    project_id: projectId,
+    name: environment.name,
+    description: environment.description || '',
+    sort_order: index,
+    prompts_stale: false,
+  })));
+
+  await insertMany('scenes', normalized.scenes.map((scene, index) => ({
+    id: scene.id,
+    project_id: projectId,
+    section_label: scene.sectionLabel || `Scene ${index + 1}`,
+    start_time: scene.startTime || '',
+    end_time: scene.endTime || '',
+    lyrics: scene.lyrics || '',
+    narrative_description: scene.narrativeDescription || '',
+    sort_order: index,
+  })));
+
+  await insertMany('shots', normalized.scenes.flatMap((scene) => scene.shots.map((shot, index) => ({
+    id: shot.id,
+    scene_id: scene.id,
+    direction: shot.direction || '',
+    visual_prompt: '',
+    motion_prompt: '',
+    duration: Number(shot.duration || 15),
+    cast_ids: JSON.stringify(shot.castIds || []),
+    environment_id: shot.environmentId || null,
+    continuity_from: shot.continuityFrom || 'cut',
+    prompts_stale: false,
+    use_next_as_end_frame: 0,
+    lipsync_enabled: false,
+    use_prev_storyboard_ref: false,
+    include_prev_cut_plan: null,
+    excluded_refs: { storyboard: [], video: [] },
+    sort_order: index,
+    image_status: 'idle',
+    video_status: 'idle',
+  }))));
+
+  await updateRows('projects', { id: projectId }, {
+    status: 'scripted',
+    updated_at: new Date().toISOString(),
+  });
+};
+
 export const applyScript = async (
   project: Project,
   script: unknown,
@@ -83,10 +148,7 @@ export const applyScript = async (
     });
   }
 
-  await rpcVoid('lahari_apply_script', {
-    p_project_id: project.id,
-    p_script: normalized,
-  });
+  await replaceScriptRows(project.id, normalized);
 
   const newFingerprint = scriptDraftHash(normalized);
   const notebookProject = projectWithScript(project, normalized);
@@ -125,7 +187,7 @@ export const applyScript = async (
       reason: 'Script apply replaces the shot topology; rerun the notebook tool if old per-shot mirror files may still exist.',
     },
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
-    note: 'Applied full script atomically via Postgres RPC. Cast, environments, scenes, and shots were replaced.',
+    note: 'Applied full script through Mirage table mapping. Cast, environments, scenes, and shots were replaced.',
   };
 };
 

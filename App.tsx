@@ -6,8 +6,11 @@ import { SignIn } from './components/SignIn';
 import { useAuth } from './contexts/AuthContext';
 
 const LoadingScreen: React.FC = () => (
-  <div className="min-h-screen bg-[#141418] flex items-center justify-center">
-    <div className="text-zinc-400 text-sm">Loading...</div>
+  <div
+    className="min-h-screen bg-[#141418] flex items-center justify-center"
+    style={{ minHeight: '100vh', background: '#141418', color: '#a1a1aa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+  >
+    <div className="text-zinc-400 text-sm" style={{ color: '#a1a1aa', fontSize: 14 }}>Loading...</div>
   </div>
 );
 

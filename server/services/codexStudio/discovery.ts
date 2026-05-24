@@ -139,7 +139,21 @@ export const listQueueForDirector = async (userId: string, opts: { status?: stri
     };
   }
   const query = normalize(opts.query);
-  const rows = await listQueue({ status: opts.status || 'all', currentUserId: userId });
+  let rows: QueueItem[] = [];
+  try {
+    rows = await listQueue({ status: opts.status || 'all', currentUserId: userId });
+  } catch (error) {
+    console.warn('[mirage] legacy queue lookup unavailable', error);
+    return {
+      kind: 'mirage.queue.list',
+      generatedAt: new Date().toISOString(),
+      limit,
+      query: opts.query || null,
+      status: opts.status || 'all',
+      message: 'Legacy music queue lookup is unavailable in this workspace. Use direct project intake or search projects by title.',
+      items: [],
+    };
+  }
   const filtered = query
     ? rows.filter((item) => includesQuery(item.song_name, query)
       || includesQuery(item.user_note, query)

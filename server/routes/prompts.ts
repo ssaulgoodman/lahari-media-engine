@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { getSB, T } from '../database.js';
 import { PROMPT_CATALOG, STAGE_META } from '../prompts/catalog.js';
 import { TOOL_REGISTRY } from '../tools/registry.js';
+import { PIPELINE_PRESETS, WORKFLOW_RECIPES } from '../presets.js';
 
 const router = Router();
 
@@ -12,6 +13,7 @@ const STAGE_AI_CALL_MAP: Record<string, string[]> = {
   'generate-concepts':       ['concept', 'generate-concepts'],
   'plan-scenes':             ['script', 'generate-script'],
   'brainstorm-style-directions': ['style-brainstorm', 'brainstorm-styles'],
+  'visualize-style':        ['visualize-style'],
   'refine-style-direction':  ['style-refine'],
   'character-look':          ['character-look', 'generate-looks'],
   'environment-look':        ['environment-look', 'generate-environment-look'],
@@ -84,7 +86,35 @@ router.get('/', async (_req, res) => {
       hasPromptBuilder: Boolean(tool.buildPrompt),
     }));
 
-    res.json({ prompts, stages: STAGE_META, tools });
+    const workflows = Object.values(WORKFLOW_RECIPES).map((workflow) => ({
+      key: workflow.key,
+      label: workflow.label,
+      primarySeed: workflow.primarySeed,
+      acceptedSeeds: workflow.acceptedSeeds,
+      summary: workflow.summary,
+      projectBriefRules: workflow.projectBriefRules,
+      shotPlanRules: workflow.shotPlanRules,
+    }));
+
+    const presets = Object.values(PIPELINE_PRESETS).map((preset) => ({
+      key: preset.key,
+      label: preset.label,
+      workflowKey: preset.workflowKey,
+      sourceKind: preset.source.kind,
+      sourceRules: preset.source.rules,
+      conceptRules: preset.concept.rules,
+      styleRules: preset.style.rules,
+      styleBrainstormTaste: preset.style.brainstormTaste || '',
+      characterRules: preset.looks.characterRules,
+      environmentRules: preset.looks.environmentRules,
+      qualityRules: preset.looks.qualityRules,
+      shotPromptRules: preset.studio.shotPromptRules,
+      storyboardRules: preset.studio.storyboardRules,
+      audioRules: [preset.audio.dialogueRules, preset.audio.soundRules, preset.audio.strategyRules].filter(Boolean),
+      defaults: preset.defaults,
+    }));
+
+    res.json({ prompts, stages: STAGE_META, tools, workflows, presets });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

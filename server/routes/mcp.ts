@@ -23,7 +23,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then attach_director_session. After resolving or creating a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -62,6 +62,9 @@ const modelOverrideSchema = z.object({
   storyboardProvider: idString.optional(),
   videoModel: idString.optional(),
 }).optional();
+const workflowKeySchema = z.enum(['music_led', 'scripted_narrative', 'music_video', 'anime_scripted']);
+const presetKeySchema = z.enum(['music_video_default', 'anime_default']);
+const seedKindSchema = z.enum(['script', 'brief', 'document', 'idea']);
 const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 const dialogueStrategySchema = z.enum(['lipsync', 'overlay']);
 const ttsStatusSchema = z.enum(['pending', 'generating', 'success', 'error']);
@@ -320,6 +323,36 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       })),
+    };
+  });
+
+  registerTool('create_project', {
+    title: 'Create Mirage project',
+    description: 'Creates a new non-audio Mirage project shell for the authenticated artist. No paid model call runs here; use apply_script/apply_script_markdown afterward to persist scenes, shots, cast, and environments.',
+    inputSchema: {
+      title: z.string().min(1).max(160),
+      workflowKey: workflowKeySchema.optional().describe('Defaults from preset; use scripted_narrative for anime/script projects or music_led for music-video briefs.'),
+      presetKey: presetKeySchema.optional().describe('Defaults to the workflow preset. anime_default creates scripted_narrative projects.'),
+      seedKind: seedKindSchema.optional().describe('Non-audio seed kind. Audio upload is web-studio only.'),
+      directorBrief: z.string().max(8000).optional(),
+      scriptText: z.string().max(120000).optional().describe('Optional raw script/treatment seed. This is saved as source material; apply_script persists the production topology.'),
+      targetRuntime: z.number().positive().max(7200).optional(),
+      targetShotDuration: z.number().positive().max(60).optional(),
+    },
+  }, async ({ title, workflowKey, presetKey, seedKind, directorBrief, scriptText, targetRuntime, targetShotDuration }) => {
+    const created = await studio.createProjectForDirector(auth.userId, {
+      title,
+      workflowKey,
+      presetKey,
+      seedKind,
+      directorBrief,
+      scriptText,
+      targetRuntime,
+      targetShotDuration,
+    });
+    return {
+      ...created,
+      project: await fullProjectForUser(created.projectId, auth.userId),
     };
   });
 

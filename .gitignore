@@ -38,6 +38,7 @@ storage/*.db
 .claude/
 .agents/
 .lahari/
+.mirage/
 skills/
 !server/resources/skills/
 !server/resources/skills/*/

@@ -6,6 +6,7 @@ type SetProject = (update: ApiProject | ((prev: ApiProject | null) => ApiProject
 
 type UsePersistedProjectOptions = {
   currentStep: AppStep;
+  project: ApiProject | null;
   projectId: string | undefined;
   setActiveSceneIdx: (idx: number) => void;
   setCurrentStep: (step: AppStep) => void;
@@ -31,6 +32,7 @@ const stepToParam = (step: AppStep): string => {
 };
 
 const TAB_PROJECT_KEY = 'mirage:tab:projectId';
+const TAB_PROJECT_SNAPSHOT_KEY = 'mirage:tab:projectSnapshot';
 const TAB_STEP_KEY = 'mirage:tab:step';
 const GLOBAL_PROJECT_KEY = 'mirage:projectId';
 const GLOBAL_STEP_KEY = 'mirage:step';
@@ -44,8 +46,31 @@ const validStoredStep = (value: string | null): AppStep | null => {
   return step >= AppStep.UPLOAD && step <= AppStep.RENDER ? step : null;
 };
 
+const readCachedProject = (id: string | null): ApiProject | null => {
+  if (!id) return null;
+  try {
+    const raw = sessionStorage.getItem(TAB_PROJECT_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string; project?: ApiProject };
+    if (parsed?.id !== id || parsed?.project?.id !== id) return null;
+    return parsed.project;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedProject = (project: ApiProject | null) => {
+  if (!project) return;
+  try {
+    sessionStorage.setItem(TAB_PROJECT_SNAPSHOT_KEY, JSON.stringify({ id: project.id, project }));
+  } catch {
+    // Browser storage can be full or disabled. Restore still works via network.
+  }
+};
+
 export const usePersistedProject = ({
   currentStep,
+  project,
   projectId,
   setActiveSceneIdx,
   setCurrentStep,
@@ -111,19 +136,33 @@ export const usePersistedProject = ({
         return null;
       };
 
-      const loadProject = async (id: string): Promise<boolean> => {
-        const project = await api.getProject(id);
-        if (!project || cancelled) return false;
-        setProject(project);
-        focusLinkedShot(project);
+      const applyProject = (id: string, project: ApiProject) => {
         const restoredStep = stepForProject(id, project);
         if (restoredStep !== null) setCurrentStep(restoredStep);
         else navigateToPhase(project);
+        focusLinkedShot(project);
+        setProject(project);
+      };
+
+      const loadProject = async (id: string): Promise<boolean> => {
+        const project = await api.getProject(id);
+        if (!project || cancelled) return false;
+        applyProject(id, project);
         return true;
       };
 
       try {
         const preferredId = linkedId || tabId || globalId;
+        const cachedProject = readCachedProject(preferredId);
+        if (cachedProject) {
+          applyProject(cachedProject.id, cachedProject);
+          setRestoring(false);
+          void loadProject(cachedProject.id).catch(() => {
+            // The cached workspace is already usable. If the refresh fails,
+            // the next explicit action will surface auth/network errors.
+          });
+          return;
+        }
         if (preferredId && await loadProject(preferredId)) return;
 
         const projects = await api.listProjects();
@@ -144,6 +183,10 @@ export const usePersistedProject = ({
     if (restoring) return;
     persistState(projectId || null, currentStep);
   }, [currentStep, persistState, projectId, restoring]);
+
+  useEffect(() => {
+    if (project) writeCachedProject(project);
+  }, [project]);
 
   useEffect(() => {
     let cancelled = false;

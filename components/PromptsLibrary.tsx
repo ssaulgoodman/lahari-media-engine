@@ -24,18 +24,46 @@ type PromptMeta = {
 };
 
 type StageMeta = { label: string; description: string; order: number };
+type WorkflowMeta = {
+  key: string;
+  label: string;
+  primarySeed: string;
+  acceptedSeeds: string[];
+  summary: string;
+  projectBriefRules: string;
+  shotPlanRules: string;
+};
+type PresetMeta = {
+  key: string;
+  label: string;
+  workflowKey: string;
+  sourceKind: string;
+  sourceRules: string;
+  conceptRules: string;
+  styleRules: string;
+  styleBrainstormTaste: string;
+  characterRules: string;
+  environmentRules: string;
+  qualityRules: string;
+  shotPromptRules: string;
+  storyboardRules: string;
+  audioRules: string[];
+  defaults: Record<string, any>;
+};
 
 interface Props {
   onBack: () => void;
   project?: ApiProject | null;
 }
 
-const MODEL_FILTERS = [
-  { key: 'all', label: 'All models' },
-  { key: 'claude', label: 'Claude', match: (m: string) => m.startsWith('claude') },
-  { key: 'gemini', label: 'Gemini', match: (m: string) => m.startsWith('gemini') && !m.includes('image') },
-  { key: 'gemini-image', label: 'Gemini Image', match: (m: string) => m.includes('gemini') && m.includes('image') },
-  { key: 'video', label: 'Video', match: (m: string) => m.includes('veo') || m.includes('seedance') },
+const ROUTING_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'llm', label: 'LLM', match: (p: PromptMeta) => p.model.includes('text_provider') || p.model === 'project.script_writer' || p.model === 'gpt-5.5' || p.model === 'utility.text' },
+  { key: 'refine', label: 'Refine', match: (p: PromptMeta) => p.id.includes('refine') || p.name.toLowerCase().includes('refine') || p.model.includes('refine') },
+  { key: 'script-writer', label: 'Script writer', match: (p: PromptMeta) => p.model === 'project.script_writer' || p.model === 'gpt-5.5' },
+  { key: 'image', label: 'Image', match: (p: PromptMeta) => p.model === 'project.image_model' || p.model === 'project.storyboard_provider' || p.model === 'utility.vision' },
+  { key: 'video', label: 'Video', match: (p: PromptMeta) => p.model === 'project.video_model' },
+  { key: 'fixed', label: 'Fixed', match: (p: PromptMeta) => p.model.startsWith('audio.') || p.model.startsWith('utility.') },
 ];
 
 const formatDuration = (ms: number | null): string => {
@@ -56,11 +84,45 @@ const WORKFLOW_LABELS: Record<string, string> = {
   anime_scripted: 'Scripted narrative',
 };
 
-const formatWorkflowList = (keys?: string[]): string =>
-  (keys || []).map((key) => WORKFLOW_LABELS[key] || key).join(' · ');
-
 const humanizeKey = (key?: string | null): string =>
   key ? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Not set';
+
+const MUSIC_ONLY_PROMPTS = new Set(['transcribe-lyrics', 'detect-structure', 'summarize-meaning', 'plan-scenes']);
+const SCRIPTED_ONLY_PROMPTS = new Set(['parse-script-intake', 'write-audio-plan']);
+
+const appliesToWorkflow = (prompt: PromptMeta, workflowKey: string): boolean => {
+  if (workflowKey === 'all') return true;
+  if (workflowKey === 'music_led') return !SCRIPTED_ONLY_PROMPTS.has(prompt.id);
+  if (workflowKey === 'scripted_narrative') return !MUSIC_ONLY_PROMPTS.has(prompt.id);
+  return true;
+};
+
+const resolveRouteLabel = (prompt: PromptMeta): string => {
+  switch (prompt.model) {
+    case 'project.text_provider':
+      return 'LLM route · project text provider';
+    case 'project.text_provider.refine':
+      return 'LLM route · refine tier';
+    case 'project.script_writer':
+      return 'LLM route · script writer';
+    case 'project.image_model':
+      return 'Image route · project image model';
+    case 'project.storyboard_provider':
+      return 'Image route · storyboard provider';
+    case 'project.text_provider.refine OR project.storyboard_provider':
+      return 'Hybrid route · text refine or storyboard image';
+    case 'project.video_model':
+      return 'Video route · project video model';
+    case 'audio.analysis':
+      return 'Fixed · audio analysis';
+    case 'utility.vision':
+      return 'Fixed · utility vision';
+    case 'utility.text':
+      return 'Fixed · utility text';
+    default:
+      return prompt.modelLabel;
+  }
+};
 
 // Inline visual for {{variables}} — renders them as subtle chips so the
 // template remains scannable. Falls back to plain text otherwise.
@@ -88,9 +150,13 @@ const TemplateBody: React.FC<{ text: string }> = ({ text }) => {
 export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
   const [prompts, setPrompts] = useState<PromptMeta[]>([]);
   const [stages, setStages] = useState<Record<string, StageMeta>>({});
+  const [workflows, setWorkflows] = useState<WorkflowMeta[]>([]);
+  const [presets, setPresets] = useState<PresetMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [modelFilter, setModelFilter] = useState<string>('all');
+  const [routeFilter, setRouteFilter] = useState<string>('all');
+  const [workflowFilter, setWorkflowFilter] = useState<string>('all');
+  const [presetFilter, setPresetFilter] = useState<string>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -107,6 +173,8 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
         if (!aborted) {
           setPrompts(data.prompts || []);
           setStages(data.stages || {});
+          setWorkflows(data.workflows || []);
+          setPresets(data.presets || []);
         }
       } finally {
         if (!aborted) setLoading(false);
@@ -133,19 +201,24 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const mf = MODEL_FILTERS.find(f => f.key === modelFilter);
+    const rf = ROUTING_FILTERS.find(f => f.key === routeFilter);
+    const preset = presets.find(p => p.key === presetFilter);
+    const selectedWorkflow = workflowFilter !== 'all' ? workflowFilter : preset?.workflowKey || 'all';
     return prompts.filter(p => {
-      if (mf?.match && !mf.match(p.model)) return false;
+      if (rf?.match && !rf.match(p)) return false;
+      if (!appliesToWorkflow(p, selectedWorkflow)) return false;
+      const routeLabel = resolveRouteLabel(p);
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
         p.summary.toLowerCase().includes(q) ||
         p.triggeredBy.toLowerCase().includes(q) ||
         p.template.toLowerCase().includes(q) ||
-        p.modelLabel.toLowerCase().includes(q)
+        p.modelLabel.toLowerCase().includes(q) ||
+        routeLabel.toLowerCase().includes(q)
       );
     });
-  }, [prompts, search, modelFilter]);
+  }, [prompts, search, presets, routeFilter, presetFilter, workflowFilter]);
 
   const grouped = useMemo(() => {
     const map: Record<string, PromptMeta[]> = {};
@@ -175,7 +248,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
           </button>
           <h1 className="text-2xl font-display font-semibold text-white tracking-tight">Prompts</h1>
           <p className="text-sm text-zinc-400 mt-1.5 max-w-xl">
-            Every model-facing prompt in the pipeline, grouped by where it runs. Open one to see what it is made from.
+            A guide to the model-facing prompts, workflow context, and preset taste blocks that make Mirage run.
           </p>
         </div>
         {!loading && (
@@ -188,22 +261,48 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
         )}
       </div>
 
-      {project && (
-        <div className="surface rounded-xl p-4 mb-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono">Current project</span>
-            <span className="text-xs text-zinc-200 bg-white/[0.06] rounded-md px-2 py-1">{formatWorkflowList([project.workflowKey])}</span>
-            <span className="text-xs text-zinc-200 bg-white/[0.06] rounded-md px-2 py-1">{humanizeKey(project.presetKey)}</span>
-            <span className="text-xs text-zinc-400 bg-white/[0.035] rounded-md px-2 py-1">{humanizeKey(project.seedKind)} seed</span>
+      <div className="grid md:grid-cols-2 gap-3 mb-4">
+        <div className="surface rounded-xl p-4">
+          <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-3">Workflows</div>
+          <div className="space-y-3">
+            {workflows.map((workflow) => (
+              <div key={workflow.key} className="border-l border-white/[0.08] pl-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-white">{workflow.label}</h3>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">{workflow.primarySeed} seed</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">{workflow.summary}</p>
+              </div>
+            ))}
           </div>
-          <p className="text-xs text-zinc-400 mt-2 max-w-3xl">
-            Preset taste and project context are inserted when a prompt runs. Changing the preset changes those inserted sections; the rows below show the prompt shape and source.
-          </p>
         </div>
-      )}
+        <div className="surface rounded-xl p-4">
+          <div className="text-[11px] uppercase tracking-wider text-zinc-500 font-mono mb-3">Presets</div>
+          <div className="space-y-3">
+            {presets
+              .filter((preset) => presetFilter === 'all' || preset.key === presetFilter)
+              .map((preset) => (
+              <div key={preset.key} className="border-l border-white/[0.08] pl-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium text-white">{preset.label}</h3>
+                  <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-mono">{WORKFLOW_LABELS[preset.workflowKey] || preset.workflowKey}</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">{preset.sourceRules}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {['concept', 'script', 'style', 'looks', 'studio', 'audio'].map((part) => (
+                    <span key={part} className="text-[10px] uppercase tracking-wider text-zinc-500 bg-white/[0.035] rounded px-1.5 py-0.5 font-mono">
+                      {part}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Filter bar — matches Blueprint phase bar pattern */}
-      <div className="surface rounded-xl p-3 mb-8 flex items-center gap-3">
+      <div className="surface rounded-xl p-3 mb-8 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-0">
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" aria-hidden="true">
             <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
@@ -216,13 +315,29 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
             className="w-full bg-transparent text-sm text-white placeholder:text-zinc-400 pl-9 pr-3 py-1.5 outline-none focus:ring-1 focus:ring-white/20 rounded-md"
           />
         </div>
+        <select
+          value={workflowFilter}
+          onChange={(e) => setWorkflowFilter(e.target.value)}
+          className="bg-white/[0.04] text-xs text-zinc-300 rounded-md px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-white/20"
+        >
+          <option value="all">All workflows</option>
+          {workflows.map((workflow) => <option key={workflow.key} value={workflow.key}>{workflow.label}</option>)}
+        </select>
+        <select
+          value={presetFilter}
+          onChange={(e) => setPresetFilter(e.target.value)}
+          className="bg-white/[0.04] text-xs text-zinc-300 rounded-md px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-white/20"
+        >
+          <option value="all">All presets</option>
+          {presets.map((preset) => <option key={preset.key} value={preset.key}>{preset.label}</option>)}
+        </select>
         <div className="flex gap-px bg-white/[0.04] rounded-md overflow-hidden flex-shrink-0">
-          {MODEL_FILTERS.map((f) => (
+          {ROUTING_FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => setModelFilter(f.key)}
+              onClick={() => setRouteFilter(f.key)}
               className={`text-xs px-2.5 py-1.5 transition-colors ${
-                modelFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
+                routeFilter === f.key ? 'bg-white/[0.1] text-white' : 'text-zinc-400 hover:text-zinc-300'
               }`}
             >
               {f.label}
@@ -278,7 +393,7 @@ export const PromptsLibrary: React.FC<Props> = ({ onBack, project }) => {
                             <div className="flex items-center gap-3 mb-1">
                               <h3 className="text-sm font-medium text-white truncate">{p.name}</h3>
                               <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-mono flex-shrink-0">
-                                {p.modelLabel}
+                                {resolveRouteLabel(p)}
                               </span>
                             </div>
                             <p className="text-xs text-zinc-400 line-clamp-1">{p.summary}</p>

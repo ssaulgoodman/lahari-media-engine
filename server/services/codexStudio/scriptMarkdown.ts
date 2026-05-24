@@ -5,6 +5,7 @@ import {
 import { applyError, type ApplyError } from './applies/helpers.js';
 
 export const SCRIPT_MARKDOWN_FORMAT = 'mirage-script-v1';
+const LEGACY_SCRIPT_MARKDOWN_FORMAT = 'lahari-script-v1';
 
 type ParsedScriptMarkdown = {
   baseFingerprint: string | null;
@@ -93,6 +94,39 @@ const parseFieldBlock = (body: string, label: string, nextLabels: string[]): str
   return cleanBlock(body.slice(contentStart, contentEnd));
 };
 
+const scriptFromJsonPayload = (value: any): ParsedScriptMarkdown['script'] | null => {
+  const candidate = value?.script && typeof value.script === 'object' ? value.script : value;
+  if (!candidate || typeof candidate !== 'object') return null;
+  if (!Array.isArray(candidate.scenes)) return null;
+  return {
+    cast: Array.isArray(candidate.cast) ? candidate.cast : [],
+    environments: Array.isArray(candidate.environments) ? candidate.environments : [],
+    scenes: candidate.scenes,
+  };
+};
+
+const parseJsonScriptBlock = (body: string): ParsedScriptMarkdown['script'] | null => {
+  const direct = body.trim();
+  const directScript = direct.startsWith('{') ? (() => {
+    try {
+      return scriptFromJsonPayload(JSON.parse(direct));
+    } catch {
+      return null;
+    }
+  })() : null;
+  if (directScript) return directScript;
+
+  for (const match of body.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    try {
+      const script = scriptFromJsonPayload(JSON.parse(match[1]));
+      if (script) return script;
+    } catch {
+      // Keep looking; agents may include non-script examples elsewhere.
+    }
+  }
+  return null;
+};
+
 export const buildScriptMarkdownDraft = (project: Project): string => {
   const frontmatter = `---
 format: ${SCRIPT_MARKDOWN_FORMAT}
@@ -139,8 +173,17 @@ ${cleanBlock(shot.direction || '')}`).join('\n\n')}`).join('\n\n') : 'No scenes 
 
 export const parseScriptMarkdownDraft = (body: string): ParsedScriptMarkdown | ApplyError => {
   const { meta, rest } = parseFrontmatter(body);
-  if (meta.format !== SCRIPT_MARKDOWN_FORMAT) {
+  if (meta.format !== SCRIPT_MARKDOWN_FORMAT && meta.format !== LEGACY_SCRIPT_MARKDOWN_FORMAT) {
     return applyError('schema_invalid', `Script draft format must be ${SCRIPT_MARKDOWN_FORMAT}.`, { field: 'format' });
+  }
+
+  const jsonScript = parseJsonScriptBlock(rest);
+  if (jsonScript) {
+    return {
+      baseFingerprint: meta.scriptFingerprint || null,
+      projectId: meta.projectId || null,
+      script: jsonScript,
+    };
   }
 
   const castBody = sectionBetween(rest, '## Cast', ['\n## Environments', '\n## Scenes']);
