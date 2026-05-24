@@ -3,7 +3,7 @@ import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn 
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { SEGMIND_MODELS, SegmindModelKey } from './segmind.js';
 import { generateVideoWithFallback } from './video-provider.js';
-import { concatenateAudioFiles, extractAudioSegment, extractLastFrame } from './ffmpeg.js';
+import { extractAudioSegment, extractLastFrame } from './ffmpeg.js';
 import { refreshChainedShotPrompt } from './claude.js';
 import { buildSeedanceStoryboardVideoPrompt } from './seedance-storyboard-rd.js';
 import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
@@ -224,7 +224,18 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
     let dialoguePerformanceCue = '';
     if (planWantsLipsync && !useStoryboardMode) {
-      veoPromptParts.push('Use the provided reference audio only for natural mouth movement on the visible speaker. Do not add subtitles or readable text.');
+      const castNameById = new Map(activeCast.map((c: any) => [c.id, c.name || 'Speaker']));
+      const dialogueBrief = dialogueLines
+        .map((line) => {
+          const speaker = castNameById.get(line.characterId || '') || 'Speaker';
+          return `${speaker}: "${String(line.text || '').trim()}"`;
+        })
+        .filter(Boolean)
+        .join(' ');
+      if (dialogueBrief) {
+        dialoguePerformanceCue = `Native lip-sync performance: visible speakers should naturally speak these lines with believable mouth movement and acting timed to the shot. Do not add subtitles or readable text. ${dialogueBrief}`;
+        veoPromptParts.push(dialoguePerformanceCue);
+      }
     }
     if (projectDialogueMode === 'overlay' && hasDialogue) {
       const castNameById = new Map(activeCast.map((c: any) => [c.id, c.name || 'Speaker']));
@@ -265,7 +276,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const legacySongLipsync = useStoryboardMode && shot.lipsync_enabled && !planWantsLipsync;
     const referenceAudioPaths: string[] = [];
     let referenceAudioAssetId: string | null = null;
-    let referenceAudioMode: 'audio_plan_lipsync' | 'source_audio_lipsync' | null = null;
+    let referenceAudioMode: 'source_audio_lipsync' | null = null;
 
     if (planWantsLipsync) {
       if (modelSpec.family !== 'seedance') {
@@ -275,58 +286,6 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
           { shotId: shot.id, model: videoModelKey },
         );
       }
-      const missingDialogueIds = dialogueLines
-        .filter((line) => !line.ttsAssetId || line.ttsStatus !== 'success')
-        .map((line) => line.id)
-        .filter(Boolean);
-      if (missingDialogueIds.length > 0) {
-        throw structuredVideoError(
-          'lipsync_tts_missing',
-          'Generate TTS for every dialogue line before creating a lip-sync video.',
-          { shotId: shot.id, missingDialogueIds },
-        );
-      }
-
-      const ttsAssets = await Promise.all(dialogueLines.map(async (line) => ({
-        line,
-        asset: line.ttsAssetId ? await selectOne('assets', { id: line.ttsAssetId }) : null,
-      })));
-      const unresolvedDialogueIds = ttsAssets
-        .filter(({ asset }) => !asset?.file_path)
-        .map(({ line }) => line.id)
-        .filter(Boolean);
-      if (unresolvedDialogueIds.length > 0) {
-        throw structuredVideoError(
-          'lipsync_tts_missing',
-          'One or more TTS assets could not be resolved for lip-sync video generation.',
-          { shotId: shot.id, missingDialogueIds: unresolvedDialogueIds },
-        );
-      }
-
-      const audioPaths = ttsAssets.map(({ asset }) => asset!.file_path);
-      const audioPath = await concatenateAudioFiles(audioPaths);
-      referenceAudioPaths.push(audioPath);
-      referenceAudioAssetId = audioPaths.length === 1 ? ttsAssets[0].asset!.id : uuidv4();
-      referenceAudioMode = 'audio_plan_lipsync';
-      if (audioPaths.length > 1) {
-        await insertRow('assets', {
-          id: referenceAudioAssetId,
-          project_id: project.id,
-          shot_id: shot.id,
-          category: 'shot_audio_ref',
-          file_path: audioPath,
-          metadata: JSON.stringify({
-            purpose: 'seedance_dialogue_lipsync_reference',
-            dialogueIds: dialogueLines.map((line) => line.id).filter(Boolean),
-            ttsAssetIds: ttsAssets.map(({ asset }) => asset!.id),
-          }),
-        });
-      }
-      storyboardAudioRefs.push({
-        type: 'audio',
-        label: `Dialogue lip-sync reference (${dialogueLines.length} line${dialogueLines.length === 1 ? '' : 's'})`,
-        url: storageUrl(audioPath),
-      });
     } else if (legacySongLipsync) {
       if (!project.audio_path) {
         throw new Error('Lip-sync is enabled for this shot, but the project has no source audio.');

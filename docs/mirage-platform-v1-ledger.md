@@ -911,6 +911,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-22 Codex: Audio-plan shape trimmed after local UI review. Removed delivery/pace/emotion as generated audio-plan categories; new audio plans write only spoken dialogue, order, optional target timing, and restrained soundNotes. Audio phase no longer displays hidden delivery/pace metadata, TTS generation no longer passes delivery hints, MCP/notebook packets omit those fields, and the audio-director skill now says exact acting belongs in visible script/shot direction rather than hidden audio metadata. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
 
+2026-05-25 Codex: Corrected dialogue video mode doctrine after live test friction. `lipsync` no longer means "generate TTS first and pass it as reference audio." It now means the video model is prompted to perform speech/lip movement natively from the dialogue text; no TTS prerequisite, no `lipsync_tts_missing` blocker, and no Studio/Audio `tts needed` badges. `overlay` remains the TTS path: generate dialogue audio when desired, then render mixes successful TTS assets over the timeline. Legacy song-lipsync via `shot.lipsync_enabled` still uses source audio for music-led storyboard shots. Historical T5/T6 notes above describe the old implementation, not current doctrine.
+
 ---
 
 ## 10. References

@@ -302,7 +302,7 @@ export const AudioPhase: React.FC<Props> = ({
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Dialogue video mode</div>
             <p className="mt-1 text-xs text-zinc-400">
               {mode === 'lipsync'
-                ? 'TTS is passed into video generation for baked lip-sync.'
+                ? 'Video is prompted to perform dialogue with native mouth movement.'
                 : 'Video is prompted to perform the dialogue; generated TTS is overlaid in the render.'}
             </p>
           </div>
@@ -311,7 +311,7 @@ export const AudioPhase: React.FC<Props> = ({
               onClick={() => setProjectMode('lipsync')}
               disabled={isLoading}
               aria-pressed={mode === 'lipsync'}
-              title="Pass generated TTS into Seedance during video generation. Requires successful TTS for every line in the shot."
+              title="Ask the video model to perform speech and lip movement natively. TTS is not required for video generation."
               className={`px-3 py-2 transition-colors disabled:opacity-40 ${
                 mode === 'lipsync'
                   ? 'bg-blue-500/[0.15] text-blue-100'
@@ -349,21 +349,11 @@ export const AudioPhase: React.FC<Props> = ({
             // Matches the harness invariant: never block one line because
             // another in the same shot is waiting on a voice.
             const shotAvailable = bucket.lines.filter(lineIsAvailable).map(l => l.id);
-            const lipsyncTtsMissing = mode === 'lipsync'
-              && bucket.lines.some(l => l.ttsStatus !== 'success');
             return (
               <div key={shotId} className="surface rounded-xl">
                 <div className="px-5 py-3 flex items-center gap-3 border-b border-white/[0.06]">
                   <span className="text-xs font-mono text-zinc-500">S{bucket.shotIndex}</span>
                   <span className="text-sm text-zinc-300">{bucket.sceneLabel}</span>
-                  {lipsyncTtsMissing && (
-                    <span
-                      className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"
-                      title="Lipsync bakes TTS audio into the video. Generate TTS for every line before running video gen."
-                    >
-                      tts needed
-                    </span>
-                  )}
                   {bucket.audioPlanStale && (
                     <span
                       className="text-[10px] uppercase tracking-wider text-amber-300/90 bg-amber-500/[0.08] rounded px-1.5 py-0.5"

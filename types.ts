@@ -55,7 +55,7 @@ export interface ShotCritique {
 /** Legacy per-shot audio-plan hint. Runtime uses projectBrief.dialogueVideoMode. */
 export type DialogueStrategy = 'lipsync' | 'overlay';
 /** Project-level dialogue video path.
- *  'lipsync' = generated TTS is passed into video generation.
+ *  'lipsync' = video is prompted to perform native speech/lip movement.
  *  'overlay' = video is prompted to perform dialogue; render mixes generated TTS over the timeline. */
 export type DialogueVideoMode = 'lipsync' | 'overlay';
 

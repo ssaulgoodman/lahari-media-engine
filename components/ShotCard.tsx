@@ -150,12 +150,6 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   // show it as soon as it exists, alongside any video that gets generated.
   const showMediaSection = isStoryboardMode ? (hasStoryboard || hasVideo || shot.storyboardStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING) : true;
 
-  // Project-level lipsync mode bakes TTS into video generation. Surface missing
-  // TTS before the artist hits Generate; click jumps to Audio phase.
-  const projectWantsLipsync = project.projectBrief?.dialogueVideoMode === 'lipsync';
-  const lipsyncTtsMissing = projectWantsLipsync
-    && (shot.audioPlan?.dialogue?.some(line => line.ttsStatus !== 'success') ?? false);
-
   // Build auto video prompt for display (mirrors server-side generate-video.ts logic)
   const buildAutoVeoPrompt = () => {
     const shotCast = project.cast.filter(c => shot.castIds?.includes(c.id)) || [];
@@ -220,25 +214,6 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           )}
           {shot.videoStatus === GenerationStatus.STALE && (
             <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 flex-shrink-0" title="The previous video is out of sync with the end keyframe set by the next shot.">stale</span>
-          )}
-          {lipsyncTtsMissing && (
-            onJumpToAudioPhase ? (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onJumpToAudioPhase(); }}
-                className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 hover:text-amber-200 transition-colors flex-shrink-0"
-                title="Lipsync bakes TTS audio into the video. Generate TTS for every dialogue line before running video gen. Click to open Audio phase."
-              >
-                tts needed
-              </button>
-            ) : (
-              <span
-                className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 flex-shrink-0"
-                title="Lipsync bakes TTS audio into the video. Generate TTS for every dialogue line in Audio phase before running video gen."
-              >
-                tts needed
-              </span>
-            )
           )}
           {shot.refinedFromPrevFrame && (
             <span className="text-[11px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 flex-shrink-0" title="Prompt was auto-rewritten by Claude after seeing the previous shot's actual last frame.">refined</span>
