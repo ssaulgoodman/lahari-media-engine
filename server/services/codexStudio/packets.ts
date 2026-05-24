@@ -44,9 +44,11 @@ const summarizeAudioPlan = (audioPlan: any) => {
 
 const buildAudioPhasePacket = (project: Project) => {
   const hasAudioTools = allToolsForProject(project).some((tool) => tool.surface === 'asset:audio');
+  const dialogueVideoMode = project.projectBrief?.dialogueVideoMode === 'lipsync' ? 'lipsync' : 'overlay';
   if (!hasAudioTools) {
     return {
       state: 'skipped',
+      dialogueVideoMode,
       totalDialogueLines: 0,
       pendingTtsLineCount: 0,
       missingVoices: [],
@@ -79,12 +81,13 @@ const buildAudioPhasePacket = (project: Project) => {
     ? 'not_started'
     : audioPlanStaleShotIds.length > 0
       ? 'stale'
-      : missingVoices.length > 0 || pendingTtsLineCount > 0
+      : dialogueVideoMode === 'overlay' && (missingVoices.length > 0 || pendingTtsLineCount > 0)
         ? 'needs_tts'
         : 'ready';
 
   return {
     state,
+    dialogueVideoMode,
     totalDialogueLines,
     pendingTtsLineCount,
     missingVoices,

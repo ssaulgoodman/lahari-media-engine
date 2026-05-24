@@ -98,9 +98,10 @@ export const sanitizeAudioPlan = (
   dialogue.forEach((line, idx) => { line.order = idx + 1; });
 
   const inferredStrategy = inferDialogueStrategy(dialogue, castById);
-  const dialogueStrategy = opts.dialogueStrategy === 'lipsync' && inferredStrategy !== 'lipsync'
-    ? inferredStrategy
-    : opts.dialogueStrategy || inferredStrategy;
+  // Legacy field: runtime now uses projectBrief.dialogueVideoMode. Keep this
+  // value aligned with the project-level mode when a caller provides it, but
+  // preserve inference for old rows/tools that still omit the option.
+  const dialogueStrategy = opts.dialogueStrategy || inferredStrategy;
 
   return {
     dialogueStrategy,

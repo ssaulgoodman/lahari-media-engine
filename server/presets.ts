@@ -230,7 +230,7 @@ Each direction must be distinct in palette, line treatment, rendering, lighting,
     audio: {
       dialogueRules: 'Preserve uploaded script dialogue whenever present. If the seed only has action beats, write concise production dialogue only when the shot clearly calls for speech. Never put delivery labels, camera notes, or speaker names inside spoken text.',
       soundRules: 'Use soundNotes for restrained ambient/SFX guidance that helps video generation. Do not build a full Foley timeline in v1.',
-      strategyRules: 'Use lipsync when the speaking character is visible and has a locked look reference. Use overlay for narration, off-screen speech, or any speaker without a usable look reference.',
+      strategyRules: 'Dialogue video mode is project-level: lipsync asks the video model to perform speech and lip movement natively from dialogue text; overlay uses generated TTS in the final render. Do not choose strategy per shot.',
     },
     defaults: {
       imageModel: 'nano-banana-2',

@@ -145,7 +145,7 @@ Under 150 words. Write in English.`,
     ],
     template: `CORE TASK
 Write spoken dialogue lines and restrained sound notes for one shot only.
-This is structured production data that drives TTS, lipsync, overlay audio, and video-generation context. It is not prose and it is not a script rewrite.
+This is structured production data that drives dialogue context for video generation and optional TTS for overlay renders. It is not prose and it is not a script rewrite.
 
 CONTEXT
 {{workflowContextFor(preset)}}

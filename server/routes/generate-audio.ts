@@ -175,8 +175,12 @@ router.post('/:id/write-audio-plan', async (req, res) => {
         maxTokens: 1800,
       });
       const existingPlan = parseAudioPlan(shot.audio_plan);
+      const projectBrief = project.project_brief && typeof project.project_brief === 'object'
+        ? project.project_brief as Record<string, any>
+        : {};
+      const projectDialogueMode = projectBrief.dialogueVideoMode === 'lipsync' ? 'lipsync' : 'overlay';
       const audioPlan = sanitizeAudioPlan(response.parsedJson || JSON.parse(response.text), cast, {
-        dialogueStrategy: existingPlan?.dialogueStrategy,
+        dialogueStrategy: projectDialogueMode || existingPlan?.dialogueStrategy,
       });
       await updateRows('shots', { id: shot.id }, {
         audio_plan: audioPlan,

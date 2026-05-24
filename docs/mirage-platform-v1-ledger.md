@@ -55,7 +55,7 @@ Every one of these has been debated and settled in conversation. Don't re-litiga
 |---|---|---|
 | D1 | Three-axis decomposition: `SeedKind` + workflow profile + `PipelinePreset` | Implemented in `server/presets.ts`. Workflow profile identifies the planner/source spine; seed kind picks intake adapter; preset injects taste/prompt-rules/model-defaults. Tool availability now comes from `server/tools/registry.ts`, not workflow stages. |
 | D2 | `audio_plan` is the only home for dialogue text. Script schema has no dialogue field | Single source of truth; protects TTS investment from script edits; independent staleness per layer |
-| D3 | `dialogueStrategy` is per-shot, two values: `lipsync` and `overlay`. `lipsync` passes TTS audio to Seedance with `lipsync: true` + character target so the video renders with the character lipsynced. `overlay` doesn't pass TTS to Seedance; the TTS asset is mixed over silent video at render time | Both paths exist because: visible characters speaking want lipsync (proper performance), narrators / off-screen voices / inner monologue want overlay (no speaker visible to sync to). Default per line: `lipsync` if speaker has a look reference, `overlay` if not (e.g. narrator) |
+| D3 | `dialogueVideoMode` is project-level, two values: `lipsync` and `overlay`. `lipsync` prompts the video model to perform speech and mouth movement natively from dialogue text; TTS is not required for video generation. `overlay` uses generated TTS as a render-time audio layer | The artist picks one delivery strategy for the project. Per-shot `audio_plan.dialogueStrategy` is legacy data only and must not block generation or drive UI. Legacy music-led `lipsync_enabled` remains separate song-lipsync behavior |
 | D4 | `soundNotes` is free text on `audio_plan`, not a structured SFX array. Video gen produces ambient | Aligns with Saul's "manage SFX via video gen" call; zero new render plumbing for v1 |
 | D5 | BYOK across ALL providers for every Mirage tenant including Saul. No platform env fallback in Mirage app code | Dogfood the real path; one code path; one mental model; simpler |
 | D6 | BYOK requirement scope split into "required at /connect" vs "optional, prompted at feature use". **Required at /connect per workflow:** `music_led` = segmind + gemini (video + image via Segmind; audio analysis via Gemini); `scripted_narrative` = segmind + elevenlabs (video + image via Segmind; TTS via ElevenLabs). **Optional (only needed for pure web-studio users who never use a harness):** anthropic (web-studio AI buttons like Generate Concept / Script / Refine / Write Audio Plan); openai (gpt-image-2 storyboard, GPT script-writer option). Account Keys UI surfaces these as optional with copy like "Only needed if you generate via the web studio without using Codex Desktop or Claude Code." Google AI Studio key is required for `music_led` (audio analysis) and optional for `scripted_narrative` (only if switching image gen back to Google directly) | Both supported harnesses bring their own LLM subscription: Codex Desktop uses its Claude/OpenAI; Claude Code uses Anthropic. Harness users do all text gen harness-native and never hit backend Anthropic/OpenAI endpoints. So those keys are pure-web-studio concerns and shouldn't block /connect onboarding for harness users |
@@ -598,15 +598,11 @@ After Wave 2: resume v1 path — Mirage infra provisioning (T1), E2E golden path
 ```ts
 type AudioPlan = {
   /**
-   * Per-shot dialogue delivery path.
-   *   'lipsync' = TTS passed to Seedance with lipsync params + character target;
-   *               video gen produces a lipsynced shot. Requires TTS to exist
-   *               before video gen runs.
-   *   'overlay' = TTS not passed to Seedance; video gen produces normal silent
-   *               video; render mixes TTS over the video timeline.
-   * Default per line is derived in write-audio-plan based on whether the
-   * speaker has a look reference (has_look=true → lipsync, false → overlay).
-   * Artist can override per shot in the Audio phase UI.
+   * Legacy mirror only. Runtime delivery mode is projectBrief.dialogueVideoMode:
+   *   'lipsync' = video model is prompted to perform speech/mouth movement
+   *               natively from dialogue text; no TTS prerequisite.
+   *   'overlay' = generated TTS is mixed over the final render when available.
+   * Do not use this field as a per-shot control surface.
    */
   dialogueStrategy: 'lipsync' | 'overlay';
 
@@ -629,7 +625,7 @@ type AudioPlan = {
 };
 ```
 
-**Lipsync ordering constraint:** for any shot with `dialogueStrategy: 'lipsync'`, all dialogue lines must have a successful `ttsAssetId` before video gen for that shot can run. Video gen route validates this and returns a structured `{ code: 'lipsync_tts_missing', shotId, missingDialogueIds }` error if not. UI and Codex packet surface this dependency clearly (Audio phase shows "Generate TTS before Studio gen for these shots").
+**Dialogue-video mode constraint:** `projectBrief.dialogueVideoMode === 'lipsync'` must not require TTS, voices, or `ttsAssetId`s before video generation. `overlay` is the TTS path; missing TTS only affects render-time overlay audio, not video generation.
 
 ### Cast voice fields
 
