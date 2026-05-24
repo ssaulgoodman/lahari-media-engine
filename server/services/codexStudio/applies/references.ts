@@ -10,6 +10,61 @@ type ReferenceSource = {
   useProjectStyleAsset?: boolean;
 };
 
+const candidateMetadata = (asset: any) => {
+  try {
+    return JSON.parse(asset.metadata || '{}');
+  } catch {
+    return {};
+  }
+};
+
+const createdTime = (asset: any) => {
+  const raw = asset.created_at || asset.createdAt || asset.updated_at || asset.updatedAt || '';
+  const time = Date.parse(raw);
+  return Number.isFinite(time) ? time : 0;
+};
+
+export const listReferenceCandidates = async (
+  project: Project,
+  input: { entityType: 'character' | 'environment'; entityId: string },
+) => {
+  const isCharacter = input.entityType === 'character';
+  const entity = isCharacter
+    ? project.cast.find((item) => item.id === input.entityId)
+    : project.environments.find((item) => item.id === input.entityId);
+  if (!entity) {
+    return applyError('validation_failed', `${isCharacter ? 'Cast member' : 'Environment'} was not found in this project.`, { field: 'entityId' });
+  }
+
+  const category = isCharacter ? 'character_candidate' : 'environment_candidate';
+  const metaKey = isCharacter ? 'castMemberId' : 'environmentId';
+  const assets = await selectAll('assets', { project_id: project.id, category });
+  const candidates = assets
+    .filter((asset: any) => candidateMetadata(asset)[metaKey] === input.entityId)
+    .sort((a: any, b: any) => createdTime(b) - createdTime(a))
+    .map((asset: any) => ({
+      id: asset.id,
+      assetId: asset.id,
+      url: storageUrl(asset.file_path),
+      createdAt: asset.created_at || asset.createdAt || null,
+      prompt: asset.prompt || null,
+      metadata: candidateMetadata(asset),
+    }));
+
+  return {
+    kind: 'mirage.reference.candidates',
+    projectId: project.id,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    entityName: entity.name,
+    candidates,
+    count: candidates.length,
+    note: candidates.length
+      ? `Lock one with ${isCharacter ? 'apply_cast_reference' : 'apply_environment_reference'} using assetId.`
+      : 'No generated candidates found for this entity yet.',
+  };
+};
+
 const resolveReferenceAsset = async (project: Project, source: ReferenceSource) => {
   const assetId = source.useProjectStyleAsset ? project.styleAssetId : source.assetId;
   if (!assetId) {

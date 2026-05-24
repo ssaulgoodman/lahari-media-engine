@@ -947,6 +947,16 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     useProjectStyleAsset,
   }));
 
+  registerTool('list_reference_candidates', {
+    title: 'List reference candidates',
+    description: 'Read-only. Lists generated character or environment candidate images for one cast member/environment, including asset IDs and URLs. Use after look generation times out or before locking a reference.',
+    inputSchema: {
+      projectId,
+      entityType: z.enum(['character', 'environment']),
+      entityId: idString,
+    },
+  }, async ({ projectId, entityType, entityId }) => studio.listReferenceCandidates(await fullProjectForUser(projectId, auth.userId), { entityType, entityId }));
+
   registerTool('get_audio_plan_cost', {
     title: 'Get audio plan cost',
     description: 'Read-only. Estimates pending TTS character count/cost and missing voices for selected dialogue.',
