@@ -89,6 +89,14 @@ Load the right shard before writing:
 
 When a read result includes `baseHashes`, pass the relevant hash into the apply tool. If an apply tool returns `error: validation_failed`, the tool's `field` and `message` tell you what to fix; revise the content and retry. Do not pass `force: true` to skip validation or drift checks unless you have explicitly told the artist what will be overwritten and received approval.
 
+### Reference Image Tools
+
+For character and environment references, do not scrape storage or write DB rows directly.
+
+- Recover generated candidates with `list_character_look_candidates` / `list_environment_look_candidates`, or the generic `list_reference_candidates`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
+- Lock an existing candidate or uploaded asset with `apply_cast_reference` / `apply_environment_reference`.
+- If you create or edit a reference image locally/native outside Mirage, convert it to base64 and use `upload_cast_reference` / `upload_environment_reference` to upload it as the locked reference. These tools create the asset row, update the cast/environment reference, mark dependent shot prompts stale, and record the director event.
+
 ## Friction Capture
 
 When you notice friction, capture it immediately. This includes a Mirage tool returning unexpected output, project state not making sense, a deep link/action plan feeling wrong, the web studio disagreeing with tool output, a promised harness action not actually being available, or repeated confusion in your own flow. Call `mirage_capture_issue` when available, or `lahari_capture_issue` only as a backward-compatible alias, with severity, project ID when known, a short summary, and suspected fix if obvious. Then continue with the safest read-only path.
