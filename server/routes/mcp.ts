@@ -645,6 +645,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       projectId,
       preferences: z.object({
         textProvider: idString.optional(),
+        imageModel: idString.optional(),
         storyboardProvider: idString.optional(),
         videoModel: idString.optional(),
       }),
