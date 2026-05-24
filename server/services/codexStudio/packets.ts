@@ -121,6 +121,12 @@ export const buildProjectPacket = async (project: Project) => {
       storyboardProvider: preferences.storyboardProvider,
       videoModel: preferences.videoModel,
       textProvider: preferences.textProvider,
+      effectivePreferences: {
+        textProvider: preferences.textProvider,
+        imageModel: preferences.imageModel,
+        storyboardProvider: preferences.storyboardProvider,
+        videoModel: preferences.videoModel,
+      },
       aspectRatio: project.aspectRatio,
       videoResolution: project.videoResolution,
       targetDuration: project.targetDuration,
@@ -242,6 +248,12 @@ export const buildProjectPacket = async (project: Project) => {
     },
     projectConfig: {
       preferences: projectConfig.preferences.preferences,
+      effectivePreferences: {
+        textProvider: preferences.textProvider,
+        imageModel: preferences.imageModel,
+        storyboardProvider: preferences.storyboardProvider,
+        videoModel: preferences.videoModel,
+      },
       preferencesHash: projectConfig.preferences.hash,
       warnings: projectConfig.preferences.warnings,
       promptOverrides: Object.values(projectConfig.prompts).map((prompt) => ({

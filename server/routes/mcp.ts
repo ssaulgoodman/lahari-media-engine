@@ -184,6 +184,7 @@ const remoteSessionState = async (projectId: string, userId: string, opts: { sin
         entityType: event.entity_type,
         entityId: event.entity_id,
         summary: event.summary,
+        payload: event.payload || {},
       })),
     },
     sourceOfTruth: 'Supabase is canonical. Remote MCP clients should keep local files as desk copies only.',
@@ -956,6 +957,24 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       entityId: idString,
     },
   }, async ({ projectId, entityType, entityId }) => studio.listReferenceCandidates(await fullProjectForUser(projectId, auth.userId), { entityType, entityId }));
+
+  registerTool('list_character_look_candidates', {
+    title: 'List character look candidates',
+    description: 'Read-only. Lists generated character look candidates for one cast member, including asset IDs and URLs. Use after character look generation times out or before locking a reference.',
+    inputSchema: {
+      projectId,
+      castMemberId: idString,
+    },
+  }, async ({ projectId, castMemberId }) => studio.listReferenceCandidates(await fullProjectForUser(projectId, auth.userId), { entityType: 'character', entityId: castMemberId }));
+
+  registerTool('list_environment_look_candidates', {
+    title: 'List environment look candidates',
+    description: 'Read-only. Lists generated environment look candidates for one environment, including asset IDs and URLs. Use after environment look generation times out or before locking a reference.',
+    inputSchema: {
+      projectId,
+      environmentId: idString,
+    },
+  }, async ({ projectId, environmentId }) => studio.listReferenceCandidates(await fullProjectForUser(projectId, auth.userId), { entityType: 'environment', entityId: environmentId }));
 
   registerTool('get_audio_plan_cost', {
     title: 'Get audio plan cost',
