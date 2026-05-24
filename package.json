@@ -8,6 +8,7 @@
     "dev:client": "vite --port 3002",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
+    "check:notebook": "node scripts/check-notebook-resources.mjs",
     "lahari": "tsx cli/lahari.ts",
     "lahari:mcp": "tsx mcp/lahari.ts",
     "start": "NODE_ENV=production tsx server/index.ts",

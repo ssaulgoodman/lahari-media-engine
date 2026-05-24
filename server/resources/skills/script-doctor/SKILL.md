@@ -10,16 +10,16 @@ A studio script is a production plan: reusable cast, reusable environments, scen
 Before writing or critiquing, read the project mode from the packet or notebook:
 
 - `seed_kind` — what the artist started with (`audio`, `script`, `brief`, `document`, `idea`)
-- `workflow_key` — what process the project follows (`music_video`, `anime_scripted`, later ads/reels)
+- `workflow_key` — what production spine the project follows (`music_led`, `scripted_narrative`; later `campaign` / `short_form`)
 - `preset_key` — taste/model/default prompt rules (`music_video_default`, `anime_default`, later more)
 
 Do not assume lyrics, audio analysis, deity, temple, devotional context, or a queue unless the project mode says so.
 
 ## Source Contract
 
-**Music video workflow.** Scenes usually follow musical structure. Use lyrics, audio sections, rhythm, and meaning to decide scene boundaries and beat timing. If the song is meditative, let shots breathe. If it is narrative or performance-heavy, allow stronger progression and movement.
+**Music-led workflow.** Scenes usually follow musical structure. Use lyrics, audio sections, rhythm, and meaning to decide scene boundaries and beat timing. If the song is meditative, let shots breathe. If it is narrative or performance-heavy, allow stronger progression and movement.
 
-**Anime/scripted workflow.** Scenes follow the uploaded script, treatment, or episode brief. Preserve dialogue/action order unless the director asks for adaptation. Shots should clarify acting beats, reactions, reveals, action choreography, screen direction, and continuity.
+**Scripted narrative workflow.** Scenes follow the uploaded script, treatment, or episode brief. The anime preset is one taste/medium layer inside this workflow, not a separate planner. Preserve dialogue/action order unless the director asks for adaptation. Shots should clarify acting beats, reactions, reveals, action choreography, screen direction, and continuity.
 
 **Brief/document/idea seeds.** First normalize the source into a production brief: premise, runtime target, scene list if available, cast, environments, constraints, and unanswered questions. Do not invent a full story change when the source only needs structuring.
 
@@ -39,7 +39,7 @@ Do not assume lyrics, audio analysis, deity, temple, devotional context, or a qu
 
 When the artist asks to fix durations, pacing, or overly long scenes, treat it as pacing surgery, not a script rewrite. Preserve cast, environments, scene labels, timestamps, source excerpts, narrative descriptions, shot IDs, cast assignments, environment assignments, and shot meanings unless the artist explicitly asks to change story content.
 
-Preferred workflow: edit `lahari/projects/<projectId>/drafts/script.md` with the harness file editor, then apply with `apply_script_markdown`. Read `mirrors/script.md` as the canonical DB snapshot, but do not edit mirrors. The draft frontmatter carries `scriptFingerprint`; if apply returns `drift_detected`, refresh the notebook and reconcile before retrying.
+Preferred workflow: edit `mirage/projects/<projectId>/drafts/script.md` with the harness file editor, then apply with `apply_script_markdown`. Read `mirrors/script.md` as the canonical DB snapshot, but do not edit mirrors. The draft frontmatter carries `scriptFingerprint`; if apply returns `drift_detected`, refresh the notebook and reconcile before retrying.
 
 Default Seedance/storyboard pacing:
 
@@ -53,9 +53,9 @@ If a duration fix requires changing shot count, say that plainly before applying
 
 ## Workflow Calibration
 
-For `music_video`, ask: does this beat follow the track, lyric, performance, rhythm, or emotional arc? Avoid unrelated plot that fights the song.
+For `music_led`, ask: does this beat follow the track, lyric, performance, rhythm, or emotional arc? Avoid unrelated plot that fights the song.
 
-For `anime_scripted`, ask: does this beat preserve the script's intent, character continuity, screen direction, and acting clarity? Avoid adding new plot turns, characters, or locations just because the scene feels sparse.
+For `scripted_narrative`, ask: does this beat preserve the script's intent, character continuity, screen direction, and acting clarity? Avoid adding new plot turns, characters, or locations just because the scene feels sparse.
 
 For future ad/reel workflows, ask: does this beat serve the offer, product promise, audience, and delivery format? Avoid cinematic filler that does not move the message.
 
