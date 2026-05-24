@@ -158,7 +158,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       project.scenes
         .flatMap((s) => s.shots)
         .filter((s) => !!s.videoUrl)
-        .map((s, i) => ({ src: s.videoUrl!, name: `v_${i + 1}` })),
+        .map((s, i) => ({ src: s.videoUrl!, name: `v_${i + 1}`, shotId: s.id })),
     // Only re-seed if the set of video URLs actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],

@@ -14,7 +14,7 @@ import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot } from './persistence';
 
-export type InitialClip = { src: string; name?: string };
+export type InitialClip = { src: string; name?: string; shotId?: string };
 
 interface Props {
   onExit?: () => void;
@@ -119,6 +119,112 @@ export const addVideoClip = (src: string, name?: string) => {
       : {},
   });
   return id;
+};
+
+const reconcileSnapshotWithInitialClips = <T extends {
+  tracks: any[];
+  trackItemIds: string[];
+  trackItemsMap: Record<string, any>;
+  duration: number;
+}>(
+  restored: T,
+  initialClips: InitialClip[],
+) => {
+  if (initialClips.length === 0) return restored;
+
+  const trackItemIds = [...restored.trackItemIds];
+  const trackItemsMap: Record<string, any> = { ...restored.trackItemsMap };
+  let tracks = restored.tracks.map((track) => ({
+    ...track,
+    items: [...((track.items as string[] | undefined) || [])],
+  }));
+  let duration = restored.duration;
+  let changed = false;
+
+  const videoTrackIds = tracks.filter((track) => track.type === 'video').flatMap((track) => track.items as string[]);
+  const videoItems = videoTrackIds
+    .map((id) => trackItemsMap[id])
+    .filter(Boolean)
+    .sort((a, b) => (a.display?.from ?? 0) - (b.display?.from ?? 0));
+  const byShotId = new Map<string, any>();
+  videoItems.forEach((item, index) => {
+    const existingShotId = item.metadata?.shotId;
+    const fallbackShotId = initialClips[index]?.shotId;
+    const shotId = existingShotId || fallbackShotId;
+    if (!shotId) return;
+    byShotId.set(shotId, item);
+    if (!existingShotId) {
+      trackItemsMap[item.id] = {
+        ...item,
+        metadata: {
+          ...(item.metadata || {}),
+          shotId,
+        },
+      };
+      changed = true;
+    }
+  });
+
+  let videoTrack = tracks.find((track) => track.type === 'video');
+  if (!videoTrack) {
+    const id = generateId();
+    videoTrack = { id, type: 'video', items: [], accepts: ['video'] };
+    tracks = [videoTrack, ...tracks];
+    changed = true;
+  }
+
+  let cursor = videoItems.reduce((max, item) => Math.max(max, item.display?.to ?? 0), 0);
+  for (const clip of initialClips) {
+    const existing = clip.shotId ? byShotId.get(clip.shotId) : undefined;
+    if (existing) {
+      if (existing.details?.src !== clip.src || existing.details?.name !== clip.name) {
+        trackItemsMap[existing.id] = {
+          ...existing,
+          details: {
+            ...(existing.details || {}),
+            src: clip.src,
+            ...(clip.name ? { name: clip.name } : {}),
+          },
+          metadata: {
+            ...(existing.metadata || {}),
+            ...(clip.name ? { displayName: clip.name } : {}),
+            ...(clip.shotId ? { shotId: clip.shotId } : {}),
+          },
+        };
+        changed = true;
+      }
+      continue;
+    }
+
+    if (videoItems.some((item) => item.details?.src === clip.src)) continue;
+
+    const itemId = generateId();
+    const dur = 5000;
+    trackItemIds.push(itemId);
+    videoTrack.items.push(itemId);
+    trackItemsMap[itemId] = {
+      id: itemId,
+      type: 'video',
+      display: { from: cursor, to: cursor + dur },
+      details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
+      metadata: {
+        resourceId: itemId,
+        ...(clip.name ? { displayName: clip.name } : {}),
+        ...(clip.shotId ? { shotId: clip.shotId } : {}),
+      },
+      trackId: videoTrack.id,
+      isMain: true,
+      duration: dur,
+      playbackRate: 1,
+      trim: { from: 0, to: dur },
+    };
+    cursor += dur;
+    duration = Math.max(duration, cursor);
+    changed = true;
+  }
+
+  if (!changed) return restored;
+  return { ...restored, tracks, trackItemIds, trackItemsMap, duration };
 };
 
 const TimelineEditor: React.FC<Props> = ({
@@ -489,6 +595,7 @@ const TimelineEditor: React.FC<Props> = ({
           restored = { ...snap };
         }
         if (restored) {
+          restored = reconcileSnapshotWithInitialClips(restored, initialClips ?? []);
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
           (stateManager as any).updateState(
@@ -561,7 +668,11 @@ const TimelineEditor: React.FC<Props> = ({
           type: 'video',
           display: { from: videoEnd, to: videoEnd + dur },
           details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
-          metadata: { resourceId: itemId, ...(clip.name ? { displayName: clip.name } : {}) },
+          metadata: {
+            resourceId: itemId,
+            ...(clip.name ? { displayName: clip.name } : {}),
+            ...(clip.shotId ? { shotId: clip.shotId } : {}),
+          },
           trackId: videoTrackId,
           isMain: true,
           duration: dur,
