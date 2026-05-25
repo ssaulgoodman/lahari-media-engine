@@ -36,7 +36,7 @@ const LAHARI_SKILL_NAMES = [
   'style-ref-critic',
   'render-triage',
 ] as const;
-const NOTEBOOK_VERSION = '2026-05-22.artist-memory-v1';
+const NOTEBOOK_VERSION = '2026-05-24.visual-parity-v1';
 
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
@@ -58,6 +58,8 @@ Files under mirrors/ are read-only desk copies written from Lahari state. Do not
 Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
+
+Visual generation is also available through Lahari MCP. After approved style text, call generate_style_reference and lock_style_reference after visual approval. For cast/environment refs, call generate_character_look or generate_environment_look, then lock_character_look or lock_environment_look after the artist chooses a candidate. These are paid visual operations; ask before generation.
 
 Project-local Lahari skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
 

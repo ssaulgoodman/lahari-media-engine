@@ -17,6 +17,9 @@ const modelOverrideSchema = z.object({
   storyboardProvider: z.string().optional(),
   videoModel: z.string().optional(),
 }).optional();
+const imageModelOverrideSchema = z.object({
+  imageModel: z.string().optional(),
+}).optional();
 
 const textResult = (value) => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
@@ -633,6 +636,54 @@ registerTool('apply_style_direction', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, style, baseHash, force }) => directorPost('/api/director/apply/style-direction', { projectId, style, baseHash, force }));
+
+registerTool('generate_style_reference', {
+  title: 'Generate style reference',
+  description: 'Mutating and paid. Generates a style reference image from a Codex-written style prompt. Does not lock it; call lock_style_reference after visual approval.',
+  inputSchema: { projectId, prompt: z.string().min(1), modelOverride: imageModelOverrideSchema },
+}, ({ projectId, prompt, modelOverride }) => directorPost('/api/director/generate/style-reference', { projectId, prompt, modelOverride }));
+
+registerTool('lock_style_reference', {
+  title: 'Lock style reference',
+  description: 'Mutating. Locks a generated or existing style asset as the project style reference and marks downstream refs/prompts stale.',
+  inputSchema: { projectId, assetId: z.string().min(1), styleDescription: z.string().optional() },
+}, ({ projectId, assetId, styleDescription }) => directorPost('/api/director/style/lock', { projectId, assetId, styleDescription }));
+
+registerTool('generate_character_look', {
+  title: 'Generate character look',
+  description: 'Mutating and paid. Generates candidate look/reference images for one cast member using the project style reference and character-look override recipe.',
+  inputSchema: { projectId, castMemberId: z.string().min(1), feedback: z.string().optional(), modelOverride: imageModelOverrideSchema },
+}, ({ projectId, castMemberId, feedback, modelOverride }) => directorPost('/api/director/generate/character-look', { projectId, castMemberId, feedback, modelOverride }));
+
+registerTool('lock_character_look', {
+  title: 'Lock character look',
+  description: 'Mutating. Locks a generated/existing asset as one cast member reference and marks dependent shots stale.',
+  inputSchema: { projectId, castMemberId: z.string().min(1), assetId: z.string().min(1) },
+}, ({ projectId, castMemberId, assetId }) => directorPost('/api/director/character/lock', { projectId, castMemberId, assetId }));
+
+registerTool('unlock_character_look', {
+  title: 'Unlock character look',
+  description: 'Mutating. Clears one cast member reference and marks dependent shots stale.',
+  inputSchema: { projectId, castMemberId: z.string().min(1) },
+}, ({ projectId, castMemberId }) => directorPost('/api/director/character/unlock', { projectId, castMemberId }));
+
+registerTool('generate_environment_look', {
+  title: 'Generate environment look',
+  description: 'Mutating and paid. Generates candidate look/reference images for one environment using the project style reference and environment-look override recipe.',
+  inputSchema: { projectId, environmentId: z.string().min(1), note: z.string().optional(), modelOverride: imageModelOverrideSchema },
+}, ({ projectId, environmentId, note, modelOverride }) => directorPost('/api/director/generate/environment-look', { projectId, environmentId, note, modelOverride }));
+
+registerTool('lock_environment_look', {
+  title: 'Lock environment look',
+  description: 'Mutating. Locks a generated/existing asset as one environment reference and marks dependent shots stale.',
+  inputSchema: { projectId, environmentId: z.string().min(1), assetId: z.string().min(1) },
+}, ({ projectId, environmentId, assetId }) => directorPost('/api/director/environment/lock', { projectId, environmentId, assetId }));
+
+registerTool('unlock_environment_look', {
+  title: 'Unlock environment look',
+  description: 'Mutating. Clears one environment reference and marks dependent shots stale.',
+  inputSchema: { projectId, environmentId: z.string().min(1) },
+}, ({ projectId, environmentId }) => directorPost('/api/director/environment/unlock', { projectId, environmentId }));
 
 registerTool('apply_video_prompt', {
   title: 'Apply video prompt',

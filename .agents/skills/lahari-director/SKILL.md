@@ -72,13 +72,17 @@ Load the right shard before writing:
 |---|---|
 | `apply_concept` | this skill's concept taste checks |
 | `apply_style_direction` | `style-ref-critic` |
+| `generate_style_reference`, `lock_style_reference` | `style-ref-critic` |
+| `generate_character_look`, `lock_character_look`, `generate_environment_look`, `lock_environment_look` | `style-ref-critic` + `render-triage` when judging results |
 | `apply_script`, `apply_script_markdown` | `script-doctor` |
 | `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
 | `apply_shot_workflow_modes` | `script-doctor` + `storyboard-prompt-craft` |
 | `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_storyboard_scene_markdown` | `storyboard-prompt-craft` |
 | `apply_video_prompt` | `storyboard-prompt-craft` |
 
-For concept/style ideation, do not call backend brainstorm/refine wrappers as the director default. Read the song, script, culture, audience, and project notes; write one or two directions yourself; apply text with `apply_concept` or `apply_style_direction`; then visualize only after text approval.
+For concept/style ideation, do not call backend brainstorm/refine wrappers as the director default. Read the song, script, culture, audience, and project notes; write one or two directions yourself; apply text with `apply_concept` or `apply_style_direction`; then call `generate_style_reference` only after text approval. Do not lock the style silently; show/describe the generated asset and call `lock_style_reference` only after approval.
+
+For character and environment looks, use the project cast/environment IDs from the notebook or packet. If the artist asks you to create or improve a look, call `generate_character_look` or `generate_environment_look`; then lock the chosen candidate with `lock_character_look` or `lock_environment_look`. These are paid visual operations, so ask before generation. Use `config/prompts/character_looks.md` and `config/prompts/environment_looks.md` only for reusable recipe overrides, not for one-off candidate selection.
 
 For storyboard-mode projects, prefer scene drafts: edit `lahari/projects/<projectId>/drafts/storyboards/<scene>.md` so you can write adjacent shots as one continuous visual sequence, then persist with `apply_storyboard_scene_markdown`. Use `apply_storyboard_prompt` for one-shot surgical fixes and `apply_storyboard_prompts_bulk` only for automation/import payloads, not as the normal artist-facing writing ritual.
 

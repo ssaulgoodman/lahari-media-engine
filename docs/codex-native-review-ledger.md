@@ -39,7 +39,7 @@ All migrations applied and `@ssaulgoodman420/lahari-cli@0.1.0` published. Latest
 2. **R37** — Per-shot/scene presence indicators on ShotCard (backend supports it; UI hasn't surfaced it yet). Half day. Codex.
 3. **R32** — Per-call model override shipped for storyboard/video plan + generation tools. Project defaults stay stable; one-off experiments travel in the call payload.
 4. **R39** — Codex-native concept/style ideation shipped for director sessions: `apply_concept` plus new `apply_style_direction`; Studio's backend idea generators remain for civilian UI.
-5. **R40** — Character/environment look-generation recipe overrides shipped as project prompt kinds (`character_looks`, `environment_looks`) and consumed by Studio look generation at runtime.
+5. **R40** — Character/environment look-generation recipe overrides shipped as project prompt kinds (`character_looks`, `environment_looks`) and consumed by Studio look generation at runtime. Remote MCP now also exposes style/character/environment visual generation + lock tools so director agents have parity with Studio for reference creation.
 6. **R41** — Per-shot workflow mode shipped (`auto | storyboard | keyframe`) so Codex can force exceptions without changing whole-project defaults.
 7. **R42** — Agent-run notebook sync CLI shipped first pass. Migration applied and `@ssaulgoodman420/lahari-cli@0.1.0` published; Railway deploy pending outage recovery.
 8. **R33 / R34** — Model-bias correction and apply-only harness-native media remain filed for later. Post-abstraction or post-next-artist-feedback.
@@ -824,7 +824,7 @@ Full design at `docs/abstraction-platform-plan.md`. Work proceeds on the `abstra
 
 ### R39 — Codex-native concept + style ideation
 
-Status: **shipped first pass** · Raised: 2026-05-17 · Updated: 2026-05-17
+Status: **shipped first pass** · Raised: 2026-05-17 · Updated: 2026-05-25
 
 The current Studio path still routes concept/style ideation through backend LLM endpoints: generate multiple ideas, optionally refine, then visualize a selected style. That remains useful for civilian UI users, but it is the wrong default for director-agent sessions. Concept and style direction writing are text work; Codex already has the model, the conversation, the song/script context, the culture/taste rubric, and the ability to edit outputs surgically.
 
@@ -853,6 +853,8 @@ R29 phase 2 made `concept`, `script`, `shot_prompts`, `storyboard`, and `video` 
 - `environment_looks`
 
 These control the runtime text recipe used when generating/refining cast and environment looks, while the actual image rendering remains a tool call. The recipe is applied at generation time and does not permanently bake itself into each cast/env saved prompt, so reverting the project override cleanly returns to the engine default. Codex can adapt look-generation taste per project — cultural specificity, costume/material discipline, face/body consistency rules, architecture vocabulary, "avoid generic devotional gloss," etc. — without editing tier-3 engine prompts.
+
+**MCP parity follow-up:** added hosted/director/fallback MCP tools for the paid visual reference lane: `generate_style_reference`, `lock_style_reference`, `generate_character_look`, `lock_character_look`, `unlock_character_look`, `generate_environment_look`, `lock_environment_look`, and `unlock_environment_look`. Director agents can now write style text natively, ask before paid visualization, generate candidates, and lock the chosen reference without falling back to the web UI.
 
 **Why it matters:** character and environment looks set the visual DNA for every downstream frame, board, and video. If the director cannot tune the look-generation recipe, the system keeps pulling them back into generic defaults. This is the same freedom R29 gave storyboard/video prompts, applied earlier in the pipeline where taste compounds.
 

@@ -15,6 +15,9 @@ const DIRECTOR_LIMITS = {
   issuesPerHour: envInt('LAHARI_DIRECTOR_API_ISSUES_PER_HOUR', 20),
 };
 const PAID_TOOLS = new Set([
+  'director.generate.style_reference',
+  'director.generate.character_look',
+  'director.generate.environment_look',
   'director.generate.storyboard',
   'director.generate.storyboards_bulk',
   'director.generate.video',
@@ -327,6 +330,52 @@ router.post('/apply/style-direction', audited('director.apply.style_direction', 
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.style,
   { baseHash: req.body.baseHash, force: !!req.body.force },
+)));
+
+router.post('/generate/style-reference', audited('director.generate.style_reference', async (req) => studio.generateStyleReference(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.prompt,
+  req.body.modelOverride || {},
+)));
+
+router.post('/style/lock', audited('director.style.lock', async (req) => studio.lockStyleReference(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.assetId,
+  req.body.styleDescription,
+)));
+
+router.post('/generate/character-look', audited('director.generate.character_look', async (req) => studio.generateCharacterLook(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.castMemberId,
+  { feedback: req.body.feedback, modelOverride: req.body.modelOverride || {} },
+)));
+
+router.post('/character/lock', audited('director.character.lock', async (req) => studio.lockCharacterLook(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.castMemberId,
+  req.body.assetId,
+)));
+
+router.post('/character/unlock', audited('director.character.unlock', async (req) => studio.unlockCharacterLook(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.castMemberId,
+)));
+
+router.post('/generate/environment-look', audited('director.generate.environment_look', async (req) => studio.generateEnvironmentLook(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.environmentId,
+  { note: req.body.note, modelOverride: req.body.modelOverride || {} },
+)));
+
+router.post('/environment/lock', audited('director.environment.lock', async (req) => studio.lockEnvironmentLook(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.environmentId,
+  req.body.assetId,
+)));
+
+router.post('/environment/unlock', audited('director.environment.unlock', async (req) => studio.unlockEnvironmentLook(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  req.body.environmentId,
 )));
 
 router.post('/apply/video-prompt', audited('director.apply.video_prompt', async (req) => studio.applyVideoPrompt(

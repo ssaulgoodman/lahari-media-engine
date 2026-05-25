@@ -30,6 +30,9 @@ const modelOverrideSchema = z.object({
   storyboardProvider: z.string().optional(),
   videoModel: z.string().optional(),
 }).optional();
+const imageModelOverrideSchema = z.object({
+  imageModel: z.string().optional(),
+}).optional();
 
 const toolAnnotations = (name: string): ToolAnnotations => {
   const readOnlyPrefixes = [
@@ -823,6 +826,150 @@ registerAuditedTool('apply_style_direction', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyStyleDirection(project, style, { baseHash, force }));
+});
+
+registerAuditedTool('generate_style_reference', {
+  title: 'Generate style reference',
+  description: 'Mutating and paid. Generates a style reference image from a Codex-written style prompt. Does not lock it; call lock_style_reference after visual approval.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    prompt: z.string().min(1).describe('Codex-written style image prompt.'),
+    modelOverride: imageModelOverrideSchema.describe('Optional per-call image model override. Does not change project defaults.'),
+  },
+}, async ({ projectId, prompt, modelOverride }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for generate_style_reference.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.generateStyleReference(project, prompt, modelOverride || {}));
+});
+
+registerAuditedTool('lock_style_reference', {
+  title: 'Lock style reference',
+  description: 'Mutating. Locks a generated or existing style asset as the project style reference and marks downstream refs/prompts stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    assetId: z.string().min(1).describe('Style asset ID to lock.'),
+    styleDescription: z.string().optional().describe('Optional style description to persist with the locked asset.'),
+  },
+}, async ({ projectId, assetId, styleDescription }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for lock_style_reference.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.lockStyleReference(project, assetId, styleDescription));
+});
+
+registerAuditedTool('generate_character_look', {
+  title: 'Generate character look',
+  description: 'Mutating and paid. Generates candidate look/reference images for one cast member using the project style reference and character-look override recipe.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    castMemberId: z.string().min(1).describe('Cast member ID.'),
+    feedback: z.string().optional().describe('Optional director note for refining the current character look prompt before generation.'),
+    modelOverride: imageModelOverrideSchema.describe('Optional per-call image model override. Does not change project defaults.'),
+  },
+}, async ({ projectId, castMemberId, feedback, modelOverride }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for generate_character_look.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.generateCharacterLook(project, castMemberId, { feedback, modelOverride: modelOverride || {} }));
+});
+
+registerAuditedTool('lock_character_look', {
+  title: 'Lock character look',
+  description: 'Mutating. Locks a generated/existing asset as one cast member reference and marks dependent shots stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    castMemberId: z.string().min(1).describe('Cast member ID.'),
+    assetId: z.string().min(1).describe('Asset ID to lock as the cast member reference.'),
+  },
+}, async ({ projectId, castMemberId, assetId }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for lock_character_look.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.lockCharacterLook(project, castMemberId, assetId));
+});
+
+registerAuditedTool('unlock_character_look', {
+  title: 'Unlock character look',
+  description: 'Mutating. Clears one cast member reference and marks dependent shots stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    castMemberId: z.string().min(1).describe('Cast member ID.'),
+  },
+}, async ({ projectId, castMemberId }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for unlock_character_look.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.unlockCharacterLook(project, castMemberId));
+});
+
+registerAuditedTool('generate_environment_look', {
+  title: 'Generate environment look',
+  description: 'Mutating and paid. Generates candidate look/reference images for one environment using the project style reference and environment-look override recipe.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    environmentId: z.string().min(1).describe('Environment ID.'),
+    note: z.string().optional().describe('Optional director note for refining the current environment look prompt before generation.'),
+    modelOverride: imageModelOverrideSchema.describe('Optional per-call image model override. Does not change project defaults.'),
+  },
+}, async ({ projectId, environmentId, note, modelOverride }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for generate_environment_look.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.generateEnvironmentLook(project, environmentId, { note, modelOverride: modelOverride || {} }));
+});
+
+registerAuditedTool('lock_environment_look', {
+  title: 'Lock environment look',
+  description: 'Mutating. Locks a generated/existing asset as one environment reference and marks dependent shots stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    environmentId: z.string().min(1).describe('Environment ID.'),
+    assetId: z.string().min(1).describe('Asset ID to lock as the environment reference.'),
+  },
+}, async ({ projectId, environmentId, assetId }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for lock_environment_look.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.lockEnvironmentLook(project, environmentId, assetId));
+});
+
+registerAuditedTool('unlock_environment_look', {
+  title: 'Unlock environment look',
+  description: 'Mutating. Clears one environment reference and marks dependent shots stale.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    environmentId: z.string().min(1).describe('Environment ID.'),
+  },
+}, async ({ projectId, environmentId }) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for unlock_environment_look.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(projectId);
+  return textResult(await studio.unlockEnvironmentLook(project, environmentId));
 });
 
 registerAuditedTool('apply_video_prompt', {
