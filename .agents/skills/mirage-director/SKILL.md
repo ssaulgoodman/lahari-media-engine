@@ -98,6 +98,8 @@ For character and environment references, do not scrape storage or write DB rows
 - Recover generated candidates with `run_action({ actionKey: 'list_candidates', input: { entityType, entityId } })` or `list_results({ resultType: 'candidates', ... })`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
 - Lock an existing candidate or uploaded asset with `run_action({ actionKey: 'lock_reference', input: { entityType, entityId, sourceAssetId } })`.
 - If you create or edit a reference image as a local file outside Mirage, upload bytes outside MCP: `POST /api/agent/uploads` as multipart with the same Mirage bearer token, `projectId`, `purpose`, `entityId`, and `file`. Use the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy base64 upload tools remain fallback only when the HTTPS upload path is blocked.
+- For Storyboard work, prefer the action surface too: `generate_storyboard`, `bulk_generate_storyboards`, `apply_storyboard_prompts`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`.
+- Use `parallel_run` when starting several independent storyboard renders or locks. Keep the batch small and only include actions the artist has approved.
 
 ## Friction Capture
 

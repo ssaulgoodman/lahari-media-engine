@@ -23,7 +23,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks work, prefer list_actions -> describe_action -> run_action with generate_candidates/list_candidates/lock_reference. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks and Storyboard work, prefer list_actions -> describe_action -> run_action; use parallel_run when several independent storyboard actions should start together. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -71,8 +71,18 @@ const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 const dialogueStrategySchema = z.enum(['lipsync', 'overlay']);
 const ttsStatusSchema = z.enum(['pending', 'generating', 'success', 'error']);
 const lookEntityTypeSchema = z.enum(['cast', 'environment', 'env']);
-const actionKeySchema = z.enum(['generate_candidates', 'list_candidates', 'lock_reference']);
-const actionSurfaceSchema = z.enum(['looks']);
+const actionKeySchema = z.enum([
+  'generate_candidates',
+  'list_candidates',
+  'lock_reference',
+  'generate_storyboard',
+  'bulk_generate_storyboards',
+  'apply_storyboard_prompts',
+  'refine_storyboard_image',
+  'lock_storyboard',
+  'unlock_storyboard',
+]);
+const actionSurfaceSchema = z.enum(['looks', 'storyboard']);
 const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const audioPlanSchema = z.object({
@@ -175,7 +185,96 @@ const LOOK_ACTION_SPECS = {
   },
 } as const;
 
-const ALL_ACTION_SPECS = LOOK_ACTION_SPECS;
+const STORYBOARD_ACTION_SPECS = {
+  generate_storyboard: {
+    key: 'generate_storyboard',
+    title: 'Generate storyboard',
+    surface: 'storyboard',
+    mutates: true,
+    paid: true,
+    description: 'Render a storyboard board for one shot from its saved storyboard prompt. dryRun returns the plan without spending.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      dryRun: 'optional boolean',
+      artistNote: 'optional soft direction for image generation',
+      modelOverride: 'optional storyboardProvider override',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
+  },
+  bulk_generate_storyboards: {
+    key: 'bulk_generate_storyboards',
+    title: 'Bulk generate storyboards',
+    surface: 'storyboard',
+    mutates: true,
+    paid: true,
+    description: 'Generate missing/stale/error storyboard boards for selected shots. Use parallel_run for custom parallel batches.',
+    input: {
+      projectId: 'string',
+      shotIds: 'optional string[]',
+      force: 'optional boolean',
+      artistNote: 'optional soft direction',
+      modelOverride: 'optional storyboardProvider override',
+    },
+    examples: [{ projectId: 'project_uuid', shotIds: ['shot_a', 'shot_b'], force: true }],
+  },
+  apply_storyboard_prompts: {
+    key: 'apply_storyboard_prompts',
+    title: 'Apply storyboard prompts',
+    surface: 'storyboard',
+    mutates: true,
+    paid: false,
+    description: 'Persist storyboard prompt/cut-plan text. Accepts either structured shots[] or one scene markdown draft.',
+    input: {
+      projectId: 'string',
+      shots: 'optional array of {shotId, storyboardPrompt, storyboardCutPlan?, baseHash?}',
+      markdown: 'optional mirage-storyboard-scene-v1 markdown',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', shots: [{ shotId: 'shot_uuid', storyboardPrompt: '...', storyboardCutPlan: '...' }] }],
+  },
+  refine_storyboard_image: {
+    key: 'refine_storyboard_image',
+    title: 'Refine storyboard image',
+    surface: 'storyboard',
+    mutates: true,
+    paid: true,
+    description: 'Edit the current storyboard image using artist feedback. This is image-edit mode, not prompt text persistence.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      feedback: 'string',
+      previousVersionId: 'optional string',
+      modelOverride: 'optional storyboardProvider override',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', feedback: 'make the pose less dramatic' }],
+  },
+  lock_storyboard: {
+    key: 'lock_storyboard',
+    title: 'Lock storyboard',
+    surface: 'storyboard',
+    mutates: true,
+    paid: false,
+    description: 'Mark one storyboard version as approved so current video generation can use it.',
+    input: { projectId: 'string', shotId: 'string', versionId: 'optional string' },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid' }],
+  },
+  unlock_storyboard: {
+    key: 'unlock_storyboard',
+    title: 'Unlock storyboard',
+    surface: 'storyboard',
+    mutates: true,
+    paid: false,
+    description: 'Clear storyboard approval so the board can be regenerated or replaced.',
+    input: { projectId: 'string', shotId: 'string' },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid' }],
+  },
+} as const;
+
+const ALL_ACTION_SPECS = {
+  ...LOOK_ACTION_SPECS,
+  ...STORYBOARD_ACTION_SPECS,
+} as const;
 
 const normalizeLookEntityType = (value: string) => value === 'env' ? 'environment' : value;
 const actionSpec = (actionKey?: string | null) => actionKey ? ALL_ACTION_SPECS[actionKey as keyof typeof ALL_ACTION_SPECS] : undefined;
@@ -198,6 +297,43 @@ const lockReferenceInputSchema = z.object({
   entityType: lookEntityTypeSchema,
   entityId: idString,
   sourceAssetId: idString,
+});
+const generateStoryboardInputSchema = z.object({
+  projectId,
+  shotId,
+  dryRun: z.boolean().optional(),
+  artistNote: mediumText.optional(),
+  modelOverride: modelOverrideSchema,
+});
+const bulkGenerateStoryboardsInputSchema = z.object({
+  projectId,
+  shotIds: maxArray(idString, 100).optional(),
+  force: z.boolean().optional(),
+  artistNote: mediumText.optional(),
+  modelOverride: modelOverrideSchema,
+});
+const applyStoryboardPromptsInputSchema = z.object({
+  projectId,
+  shots: maxArray(z.object({
+    shotId: idString,
+    storyboardPrompt: promptText,
+    storyboardCutPlan: optionalPromptText,
+    baseHash: idString.optional(),
+  }), 100).optional(),
+  markdown: storyboardSceneMarkdownText.optional(),
+  force: z.boolean().optional(),
+});
+const refineStoryboardImageInputSchema = z.object({
+  projectId,
+  shotId,
+  feedback: mediumText.min(1),
+  previousVersionId: idString.optional(),
+  modelOverride: modelOverrideSchema,
+});
+const storyboardLockInputSchema = z.object({
+  projectId,
+  shotId,
+  versionId: idString.optional(),
 });
 
 const structuredToolError = (error: unknown) => {
@@ -341,7 +477,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool: name, args, startedAt });
       let operationId: string | null = null;
       try {
-        const paidInvocation = PAID_TOOLS.has(name) || (name === 'run_action' && !!actionSpec(args?.actionKey)?.paid);
+        const paidInvocation = PAID_TOOLS.has(name)
+          || (name === 'run_action' && !!actionSpec(args?.actionKey)?.paid)
+          || (name === 'parallel_run' && Array.isArray(args?.actions) && args.actions.some((action: any) => actionSpec(action?.actionKey)?.paid));
         if (paidInvocation) {
           assertRateLimit({
             key: `mcp:paid:${auth.tokenId}`,
@@ -366,7 +504,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         }
         if (!annotations.readOnlyHint) {
           operationId = await startAgentOperation({
-            projectId: args?.projectId || args?.input?.projectId,
+            projectId: args?.projectId || args?.input?.projectId || args?.actions?.[0]?.input?.projectId,
             userId: auth.userId,
             source: 'mcp-remote',
             tool: name,
@@ -393,7 +531,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     }, null, 2));
   };
 
-  const runLookAction = async (actionKey: z.infer<typeof actionKeySchema>, rawInput: Record<string, unknown> = {}) => {
+  const runRegistryAction = async (actionKey: z.infer<typeof actionKeySchema>, rawInput: Record<string, unknown> = {}) => {
     if (actionKey === 'generate_candidates') {
       const input = generateCandidatesInputSchema.parse(rawInput);
       const entityType = normalizeLookEntityType(input.entityType);
@@ -425,6 +563,48 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       return entityType === 'cast'
         ? studio.applyCastReference(project, { castMemberId: input.entityId, assetId: input.sourceAssetId })
         : studio.applyEnvironmentReference(project, { environmentId: input.entityId, assetId: input.sourceAssetId });
+    }
+    if (actionKey === 'generate_storyboard') {
+      const input = generateStoryboardInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      return input.dryRun
+        ? studio.planGenerateStoryboard(project, input.shotId, input.modelOverride || {})
+        : studio.applyGenerateStoryboard(project, input.shotId, input.artistNote, input.modelOverride || {});
+    }
+    if (actionKey === 'bulk_generate_storyboards') {
+      const input = bulkGenerateStoryboardsInputSchema.parse(rawInput);
+      return studio.bulkGenerateStoryboards(await fullProjectForUser(input.projectId, auth.userId), {
+        shotIds: input.shotIds,
+        force: input.force,
+        artistNote: input.artistNote,
+        modelOverride: input.modelOverride || {},
+      });
+    }
+    if (actionKey === 'apply_storyboard_prompts') {
+      const input = applyStoryboardPromptsInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      if (input.markdown) return studio.applyStoryboardSceneMarkdown(project, input.markdown, { force: input.force });
+      if (!input.shots?.length) throw new Error('apply_storyboard_prompts requires either shots[] or markdown.');
+      return studio.applyStoryboardPromptsBulk(project, {
+        shots: input.shots.map((shot) => ({ ...shot, storyboardCutPlan: shot.storyboardCutPlan || '' })),
+        force: input.force,
+      });
+    }
+    if (actionKey === 'refine_storyboard_image') {
+      const input = refineStoryboardImageInputSchema.parse(rawInput);
+      return studio.refineStoryboardImage(await fullProjectForUser(input.projectId, auth.userId), input.shotId, {
+        feedback: input.feedback,
+        previousVersionId: input.previousVersionId,
+        modelOverride: input.modelOverride || {},
+      });
+    }
+    if (actionKey === 'lock_storyboard') {
+      const input = storyboardLockInputSchema.parse(rawInput);
+      return studio.lockStoryboardBoard(await fullProjectForUser(input.projectId, auth.userId), input.shotId, input.versionId);
+    }
+    if (actionKey === 'unlock_storyboard') {
+      const input = storyboardLockInputSchema.parse(rawInput);
+      return studio.unlockStoryboardBoard(await fullProjectForUser(input.projectId, auth.userId), input.shotId);
     }
     throw new Error(`Unknown action: ${actionKey}`);
   };
@@ -533,7 +713,52 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       actionKey: actionKeySchema,
       input: actionInputSchema,
     },
-  }, async ({ actionKey, input }) => runLookAction(actionKey, input || {}));
+  }, async ({ actionKey, input }) => runRegistryAction(actionKey, input || {}));
+
+  registerTool('parallel_run', {
+    title: 'Run Mirage actions in parallel',
+    description: 'Mutating cockpit tool. Runs up to 8 registry actions concurrently and returns one combined receipt. Use for bulk storyboard batches when separate action calls would serialize.',
+    inputSchema: {
+      actions: maxArray(z.object({
+        actionKey: actionKeySchema,
+        input: actionInputSchema,
+      }), 8).min(1),
+    },
+  }, async ({ actions }) => {
+    const startedAt = new Date().toISOString();
+    const results = await Promise.all(actions.map(async (action: any, index: number) => {
+      const t0 = Date.now();
+      try {
+        const result = await runRegistryAction(action.actionKey, action.input || {});
+        return {
+          index,
+          actionKey: action.actionKey,
+          ok: true,
+          durationMs: Date.now() - t0,
+          result,
+        };
+      } catch (error: any) {
+        return {
+          index,
+          actionKey: action.actionKey,
+          ok: false,
+          durationMs: Date.now() - t0,
+          error: error?.message || String(error),
+        };
+      }
+    }));
+    return {
+      kind: 'mirage.actions.parallel_result',
+      generatedAt: new Date().toISOString(),
+      startedAt,
+      counts: {
+        total: results.length,
+        succeeded: results.filter((row) => row.ok).length,
+        failed: results.filter((row) => !row.ok).length,
+      },
+      results,
+    };
+  });
 
   registerTool('list_results', {
     title: 'List Mirage results',
@@ -546,7 +771,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     },
   }, async ({ resultType, projectId, entityType, entityId }) => {
     if (resultType !== 'candidates') throw new Error(`Unsupported resultType: ${resultType}`);
-    return runLookAction('list_candidates', { projectId, entityType, entityId });
+    return runRegistryAction('list_candidates', { projectId, entityType, entityId });
   });
 
   registerTool('create_project', {

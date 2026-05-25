@@ -122,6 +122,12 @@ export const deriveAuditProjectId = (value: unknown): string | null => {
   if (input.input && typeof input.input === 'object') {
     return deriveAuditProjectId(input.input);
   }
+  if (Array.isArray(input.actions)) {
+    for (const action of input.actions) {
+      const projectId = deriveAuditProjectId(action);
+      if (projectId) return projectId;
+    }
+  }
   return null;
 };
 
