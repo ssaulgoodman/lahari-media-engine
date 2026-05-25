@@ -166,6 +166,8 @@ Trimming the surface is necessary but not sufficient. Codex acts clunky-linear a
 
 **`parallel_run({actions: [...]})`** — explicit license to fire N actions concurrently. The server dispatches them in parallel against the backend and returns one combined receipt. Without this, even if Codex *wants* to bulk-regenerate 6 storyboards, it has to call `generate_storyboard` six times sequentially because MCP gives it no permission/affordance for parallelism. Skill instructions should teach this primitive explicitly with examples — models do what they're taught.
 
+Current implementation note: `parallel_run` reduces round-trips, but it still waits for every action to finish before returning. It is not the same as "fire and continue." Long paid generations remain blocking until `start_job` / `get_job` lands, so baseline analysis should separate "round-trip overhead improved" from "agent loop no longer blocked."
+
 **MCP progress notifications for paid jobs.** When a `start_job` is running, the server emits progress notifications. Codex doesn't block; doesn't poll. Gets told. This is in the MCP spec but we don't use it. Cheap to add server-side; Codex client already understands it.
 
 **`wait_for_jobs({jobIds, timeoutMs})`** — the explicit synchronization point. The agent fires N jobs, then optionally waits for any/all/first-N. Without this, the agent has to manually poll `get_job` in a loop, which burns inference budget per iteration.

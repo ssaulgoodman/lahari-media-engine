@@ -99,7 +99,9 @@ For character and environment references, do not scrape storage or write DB rows
 - Lock an existing candidate or uploaded asset with `run_action({ actionKey: 'lock_reference', input: { entityType, entityId, sourceAssetId } })`.
 - If you create or edit a reference image as a local file outside Mirage, upload bytes outside MCP: `POST /api/agent/uploads` as multipart with the same Mirage bearer token, `projectId`, `purpose`, `entityId`, and `file`. Use the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy base64 upload tools remain fallback only when the HTTPS upload path is blocked.
 - For Storyboard work, prefer the action surface too: `generate_storyboard`, `bulk_generate_storyboards`, `apply_storyboard_prompts`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`.
-- Use `parallel_run` when starting several independent storyboard renders or locks. Keep the batch small and only include actions the artist has approved.
+- Use `bulk_generate_storyboards` when the server should pick missing/stale/error boards for a project or selected shot list. Use `parallel_run` when you have already chosen specific independent shot actions and want to reduce round-trips.
+- `parallel_run` waits for every action to finish before returning. It reduces sequential tool-call overhead, but it is not a background job system. Long paid generations can still block the agent until the slowest action completes.
+- Keep `parallel_run` batches small and only include actions the artist has approved. Current cap is 8 actions; split larger scene batches.
 
 ## Friction Capture
 
