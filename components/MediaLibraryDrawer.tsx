@@ -1,12 +1,9 @@
 /**
  * MediaLibraryDrawer — bottom drawer in the render step that lets the artist
- * pull existing shot video versions onto the timeline. Critical for the
+ * pull existing video takes onto the timeline. Critical for the
  * "I trimmed and now I'm short" case: instead of regenerating a whole shot,
- * the artist drops an older version or alternate take into the gap.
- *
- * v1 scope: SHOT VIDEO VERSIONS ONLY. No pickups, no stills, no style refs.
- * The Pickups tab is intentionally deferred to when we build the pickup
- * generator — the upload affordance without a generator is half a feature.
+ * the artist drops an older version, alternate take, or uploaded clip into
+ * the gap.
  *
  * Layout:
  *   Top bar          : closed-state handle + open-state header (Scenes + ×)
@@ -19,10 +16,19 @@
  * existing video track. No drag/drop in v1; click is good enough for the
  * dominant workflow ("place playhead, pick clip, click").
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiProject, VideoScene, VideoShot } from '../types';
-import { getShotHistory, hideShotVideoFromMediaLibrary, VersionEntry } from '../services/api';
+import {
+  getShotHistory,
+  hideMediaLibraryUpload,
+  hideShotVideoFromMediaLibrary,
+  listMediaLibraryUploads,
+  MediaLibraryUpload,
+  uploadMediaLibraryVideo,
+  VersionEntry,
+} from '../services/api';
 import { addVideoClip } from './timeline-editor/TimelineEditor';
+import useStore from './timeline-editor/store';
 
 interface Props {
   project: ApiProject;
@@ -50,14 +56,27 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
   const [activeSceneIdx, setActiveSceneIdx] = useState(0);
   const [historyByShot, setHistoryByShot] = useState<HistoryCache>({});
   const [loadingShots, setLoadingShots] = useState<Set<string>>(new Set());
+  const [uploadedItems, setUploadedItems] = useState<MediaLibraryUpload[]>([]);
+  const [uploadsLoading, setUploadsLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [lastAddedUrl, setLastAddedUrl] = useState<string | null>(null);
+  const [notice, setNotice] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const timelineItems = useStore((s) => s.trackItemsMap);
+  const timelineVideoUrls = useMemo(
+    () => new Set(
+      Object.values(timelineItems)
+        .filter((item: any) => item?.type === 'video' && typeof item?.details?.src === 'string')
+        .map((item: any) => item.details.src as string),
+    ),
+    [timelineItems],
+  );
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = (next: boolean) => {
     if (controlledOpen === undefined) setUncontrolledOpen(next);
     onOpenChange?.(next);
   };
 
-  // Hide entirely when the project has no rendered material. Removes a dead
-  // affordance from the artist's view during early render-phase entry.
   const hasAnyRendered = useMemo(
     () => project.scenes.some((s) => s.shots.some((sh) => !!sh.videoUrl)),
     [project.scenes],
@@ -103,6 +122,23 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
     return () => { cancelled = true; };
   }, [open, activeScene?.id, project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setUploadsLoading(true);
+    listMediaLibraryUploads(project.id)
+      .then(({ uploads }) => {
+        if (!cancelled) setUploadedItems(uploads);
+      })
+      .catch((err) => {
+        console.error('[media-library uploads]', err);
+      })
+      .finally(() => {
+        if (!cancelled) setUploadsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, project.id]);
+
   const handleHideVersion = async (shotId: string, assetId: string) => {
     await hideShotVideoFromMediaLibrary(project.id, shotId, assetId);
     setHistoryByShot((prev) => {
@@ -115,7 +151,35 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
     });
   };
 
-  if (!hasAnyRendered) return null;
+  const handleAdded = (url: string, label: string) => {
+    setLastAddedUrl(url);
+    setNotice(`${label} added to timeline`);
+    window.setTimeout(() => {
+      setLastAddedUrl((cur) => (cur === url ? null : cur));
+    }, 1600);
+    window.setTimeout(() => setNotice(''), 2400);
+  };
+
+  const handleUpload = async (file: File | undefined) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    setNotice('');
+    try {
+      const { upload } = await uploadMediaLibraryVideo(project.id, file);
+      setUploadedItems((cur) => [upload, ...cur]);
+      setNotice(`${upload.name} uploaded`);
+    } catch (err: any) {
+      alert(err?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleHideUpload = async (assetId: string) => {
+    await hideMediaLibraryUpload(project.id, assetId);
+    setUploadedItems((cur) => cur.filter((item) => item.assetId !== assetId));
+  };
 
   // ─── Closed state: just the handle ──────────────────────────────────────
   if (!open) {
@@ -144,18 +208,59 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium text-white">Media Library</span>
           <span className="text-[10px] text-zinc-500">
-            Versions of every rendered shot — click to append to the timeline.
+            Generated takes and uploaded clips — click to append to the timeline.
           </span>
+          {notice && (
+            <span className="text-[10px] text-emerald-300 font-mono">{notice}</span>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="text-zinc-500 hover:text-white text-xs leading-none"
-          title="Close"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={(event) => handleUpload(event.target.files?.[0])}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="text-[11px] px-2 py-1 rounded bg-white/[0.08] text-zinc-200 hover:bg-white/[0.14] disabled:opacity-40 transition-colors"
+          >
+            {uploading ? 'Uploading…' : 'Upload clip'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-zinc-500 hover:text-white text-xs leading-none"
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
       </div>
+
+      {(uploadedItems.length > 0 || uploadsLoading) && (
+        <div className="px-4 py-2 border-b border-white/[0.04] flex-none">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wide flex-none">Uploads</span>
+            {uploadsLoading && uploadedItems.length === 0 && (
+              <span className="text-[10px] text-zinc-600">loading…</span>
+            )}
+            {uploadedItems.map((item) => (
+              <UploadedClipCard
+                key={item.assetId}
+                item={item}
+                isInTimeline={timelineVideoUrls.has(item.url)}
+                justAdded={lastAddedUrl === item.url}
+                onAdded={handleAdded}
+                onHide={handleHideUpload}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Scene picker — horizontal chip row. Click a chip → only that scene's
           shots show below. Cuts vertical clutter for projects with many
@@ -188,7 +293,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
       {/* Active scene's shot grid — horizontal row, vertical scroll if needed.
           Each shot column = active version (large) + older versions (small chips). */}
       <div className="flex-1 overflow-auto px-4 py-3">
-        {activeScene ? (
+        {activeScene && hasAnyRendered ? (
           <div className="flex items-start gap-4">
             {activeScene.shots.map((shot, idx) => (
               <ShotColumn
@@ -199,11 +304,16 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
                 loading={loadingShots.has(shot.id)}
                 onHideVersion={handleHideVersion}
                 newMediaUrls={newMediaUrls}
+                timelineVideoUrls={timelineVideoUrls}
+                lastAddedUrl={lastAddedUrl}
+                onAdded={handleAdded}
               />
             ))}
           </div>
         ) : (
-          <div className="text-[11px] text-zinc-500 text-center py-8">No scenes.</div>
+          <div className="text-[11px] text-zinc-500 text-center py-8">
+            No generated shot videos yet. Upload a clip above, or generate videos in Studio.
+          </div>
         )}
       </div>
     </div>
@@ -226,9 +336,22 @@ interface ShotColumnProps {
   loading: boolean;
   onHideVersion: (shotId: string, assetId: string) => Promise<void>;
   newMediaUrls?: Set<string>;
+  timelineVideoUrls: Set<string>;
+  lastAddedUrl: string | null;
+  onAdded: (url: string, label: string) => void;
 }
 
-const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loading, onHideVersion, newMediaUrls }) => {
+const ShotColumn: React.FC<ShotColumnProps> = ({
+  shot,
+  shotNumber,
+  versions,
+  loading,
+  onHideVersion,
+  newMediaUrls,
+  timelineVideoUrls,
+  lastAddedUrl,
+  onAdded,
+}) => {
   // Loading / no-rendered-video state — explicit empty card so the column
   // layout stays consistent (don't shift other columns left).
   if (loading && !versions) {
@@ -277,6 +400,9 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
         posterFallback={shot.storyboardUrl || shot.imageUrl}
         onHide={active.isCurrent ? undefined : () => onHideVersion(shot.id, active.assetId)}
         isNew={newMediaUrls?.has(active.url)}
+        isInTimeline={timelineVideoUrls.has(active.url)}
+        justAdded={lastAddedUrl === active.url}
+        onAdded={onAdded}
       />
 
       {/* Older versions — compact chips. Skipped entirely if only one version
@@ -292,6 +418,9 @@ const ShotColumn: React.FC<ShotColumnProps> = ({ shot, shotNumber, versions, loa
               posterFallback={shot.storyboardUrl || shot.imageUrl}
               onHide={v.isCurrent ? undefined : () => onHideVersion(shot.id, v.assetId)}
               isNew={newMediaUrls?.has(v.url)}
+              isInTimeline={timelineVideoUrls.has(v.url)}
+              justAdded={lastAddedUrl === v.url}
+              onAdded={onAdded}
             />
           ))}
         </div>
@@ -310,13 +439,17 @@ const VersionCard: React.FC<{
   posterFallback?: string;
   onHide?: () => Promise<void>;
   isNew?: boolean;
-}> = ({ version, label, isActive, compact, posterFallback, onHide, isNew }) => {
+  isInTimeline?: boolean;
+  justAdded?: boolean;
+  onAdded?: (url: string, label: string) => void;
+}> = ({ version, label, isActive, compact, posterFallback, onHide, isNew, isInTimeline, justAdded, onAdded }) => {
   const [hiding, setHiding] = useState(false);
   const handleAdd = () => {
     // Cloning intent: the canonical shot stays untouched; we just append a
     // copy of this version's video URL to the timeline. The artist can then
     // trim, split, or move it independently.
     addVideoClip(version.url, label);
+    onAdded?.(version.url, label);
   };
 
   const handleHide = async (event: React.MouseEvent) => {
@@ -352,7 +485,11 @@ const VersionCard: React.FC<{
   if (compact) {
     return (
       <div className={`relative aspect-video w-12 rounded overflow-hidden bg-black/30 border transition-colors group ${
-        isNew ? 'border-amber-300/70 ring-1 ring-amber-300/50' : 'border-white/[0.06] hover:border-white/[0.2]'
+        justAdded || isInTimeline
+          ? 'border-emerald-300/70 ring-1 ring-emerald-300/40'
+          : isNew
+            ? 'border-amber-300/70 ring-1 ring-amber-300/50'
+            : 'border-white/[0.06] hover:border-white/[0.2]'
       } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}>
         <button
           type="button"
@@ -384,9 +521,11 @@ const VersionCard: React.FC<{
             ×
           </button>
         )}
-        {isNew && (
-          <span className="absolute bottom-0.5 left-0.5 rounded bg-amber-300 px-1 py-px text-[8px] font-bold uppercase tracking-wide text-black">
-            New
+        {(justAdded || isInTimeline || isNew) && (
+          <span className={`absolute bottom-0.5 left-0.5 rounded px-1 py-px text-[8px] font-bold uppercase tracking-wide ${
+            justAdded || isInTimeline ? 'bg-emerald-300 text-black' : 'bg-amber-300 text-black'
+          }`}>
+            {justAdded ? 'Added' : isInTimeline ? 'In' : 'New'}
           </span>
         )}
       </div>
@@ -396,11 +535,13 @@ const VersionCard: React.FC<{
   return (
     <div
       className={`relative aspect-video w-full rounded overflow-hidden bg-black/30 border transition-colors group ${
-        isNew
-          ? 'border-amber-300/70 ring-1 ring-amber-300/50'
-          : isActive
-            ? 'border-white/[0.3] ring-1 ring-white/40'
-            : 'border-white/[0.06] hover:border-white/[0.2]'
+        justAdded || isInTimeline
+          ? 'border-emerald-300/70 ring-1 ring-emerald-300/40'
+          : isNew
+            ? 'border-amber-300/70 ring-1 ring-amber-300/50'
+            : isActive
+              ? 'border-white/[0.3] ring-1 ring-white/40'
+              : 'border-white/[0.06] hover:border-white/[0.2]'
       } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}
     >
       <button
@@ -422,16 +563,11 @@ const VersionCard: React.FC<{
           />
         )}
       </button>
-      {isActive && (
+      {(justAdded || isInTimeline || isActive || isNew) && (
         <span className={`absolute top-1 left-1 text-[9px] uppercase tracking-wider px-1 py-0.5 rounded font-mono ${
-          isNew ? 'bg-amber-300 text-black' : 'bg-black/60 text-white'
+          justAdded || isInTimeline ? 'bg-emerald-300 text-black' : isNew ? 'bg-amber-300 text-black' : 'bg-black/60 text-white'
         }`}>
-          on timeline
-        </span>
-      )}
-      {isNew && !isActive && (
-        <span className="absolute top-1 left-1 text-[9px] uppercase tracking-wider bg-amber-300 text-black px-1.5 py-0.5 rounded font-mono">
-          New
+          {justAdded ? 'added' : isInTimeline ? 'in timeline' : isActive ? 'current' : 'new'}
         </span>
       )}
       {onHide && (
@@ -446,6 +582,69 @@ const VersionCard: React.FC<{
         </button>
       )}
       {/* Hover overlay — subtle "+ Add" hint without crowding the resting state. */}
+      <div className="pointer-events-none absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] text-white font-medium">
+        + Add
+      </div>
+    </div>
+  );
+};
+
+const UploadedClipCard: React.FC<{
+  item: MediaLibraryUpload;
+  isInTimeline: boolean;
+  justAdded: boolean;
+  onAdded: (url: string, label: string) => void;
+  onHide: (assetId: string) => Promise<void>;
+}> = ({ item, isInTimeline, justAdded, onAdded, onHide }) => {
+  const [hiding, setHiding] = useState(false);
+  const handleAdd = () => {
+    addVideoClip(item.url, item.name);
+    onAdded(item.url, item.name);
+  };
+  const handleHide = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (hiding) return;
+    setHiding(true);
+    try {
+      await onHide(item.assetId);
+    } catch (err: any) {
+      alert(err?.message || 'Hide failed');
+      setHiding(false);
+    }
+  };
+
+  return (
+    <div className={`relative w-24 aspect-video rounded overflow-hidden bg-black/30 border flex-none group ${
+      justAdded || isInTimeline ? 'border-emerald-300/70 ring-1 ring-emerald-300/40' : 'border-white/[0.08] hover:border-white/[0.22]'
+    } ${hiding ? 'opacity-50 pointer-events-none' : ''}`}>
+      <button
+        type="button"
+        onClick={handleAdd}
+        className="absolute inset-0"
+        title={`Append ${item.name} to timeline`}
+      >
+        <video
+          src={`${item.url}#t=0.1`}
+          className="w-full h-full object-cover"
+          muted
+          playsInline
+          preload="metadata"
+        />
+      </button>
+      <span className={`absolute bottom-1 left-1 right-1 truncate rounded px-1 py-0.5 text-[8px] font-mono ${
+        justAdded || isInTimeline ? 'bg-emerald-300 text-black' : 'bg-black/65 text-white'
+      }`}>
+        {justAdded ? 'Added' : isInTimeline ? 'In timeline' : item.name}
+      </span>
+      <button
+        type="button"
+        onClick={handleHide}
+        disabled={hiding}
+        className="absolute top-1 right-1 z-10 text-[9px] uppercase tracking-wider bg-black/70 text-zinc-300 hover:text-white px-1.5 py-0.5 rounded font-mono opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Hide from library"
+      >
+        Hide
+      </button>
       <div className="pointer-events-none absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[11px] text-white font-medium">
         + Add
       </div>

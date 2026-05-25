@@ -125,7 +125,7 @@ FFmpeg output: `libx264`, preset `veryfast`, CRF `23`, yuv420p, faststart, AAC a
 
 Render rows move through `lahari_renders` (`rendering`, `pending_finalize`, `completed`, `failed`) with progress/stage/error metadata. Use `/api/admin/active-renders` before renderer deploys when possible.
 
-Timeline editor features currently include media library, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. Timeline drafts are sacred: regenerated shot clips feed the Media Library as new takes instead of rebuilding the artist's saved edit. The render Media Library has a sidebar entry point, badges/new markers for clips not yet in the timeline, soft-hide for unwanted takes, and version append into the timeline. If timeline composition code changes, sync renderer copies with:
+Timeline editor features currently include media library, video uploads, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. Timeline drafts are sacred: regenerated shot clips feed the Media Library as new takes instead of rebuilding the artist's saved edit. The render Media Library has a sidebar entry point, badges/new markers for clips not yet in the timeline, upload-to-library for external video clips, soft-hide for unwanted takes, and version append into the timeline. If timeline composition code changes, sync renderer copies with:
 
 ```bash
 cd remotion-renderer && npm run sync-timeline
