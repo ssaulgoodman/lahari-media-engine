@@ -79,10 +79,13 @@ Load the right shard before writing:
 | `apply_shot_workflow_modes` | `script-doctor` + `storyboard-prompt-craft` |
 | `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_storyboard_scene_markdown` | `storyboard-prompt-craft` |
 | `apply_video_prompt` | `storyboard-prompt-craft` |
+| `create_media_clip` | `script-doctor` for intent + `render-triage` after generation |
 
 For concept/style ideation, do not call backend brainstorm/refine wrappers as the director default. Read the song, script, culture, audience, and project notes; write one or two directions yourself; apply text with `apply_concept` or `apply_style_direction`; then call `generate_style_reference` only after text approval. Do not lock the style silently; show/describe the generated asset and call `lock_style_reference` only after approval.
 
 For character and environment looks, use the project cast/environment IDs from the notebook or packet. If the artist asks you to create or improve a look, call `generate_character_look` or `generate_environment_look`; then lock the chosen candidate with `lock_character_look` or `lock_environment_look`. These are paid visual operations, so ask before generation. Use `config/prompts/character_looks.md` and `config/prompts/environment_looks.md` only for reusable recipe overrides, not for one-off candidate selection.
+
+For extra shots, B-roll, montage inserts, or cutaway ideas that are not meant to restructure the canonical song script, use `create_media_clip`. It saves a clip to the render Media Library for timeline placement and must not rewrite scenes/shots or mark prompt stale. Set `useProjectRefs=false` when the artist asks for abstract, no-character, or totally fresh material.
 
 For storyboard-mode projects, prefer scene drafts: edit `lahari/projects/<projectId>/drafts/storyboards/<scene>.md` so you can write adjacent shots as one continuous visual sequence, then persist with `apply_storyboard_scene_markdown`. Use `apply_storyboard_prompt` for one-shot surgical fixes and `apply_storyboard_prompts_bulk` only for automation/import payloads, not as the normal artist-facing writing ritual.
 

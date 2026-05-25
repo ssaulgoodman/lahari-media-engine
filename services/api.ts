@@ -745,8 +745,12 @@ export type MediaLibraryUpload = {
   url: string;
   createdAt: string;
   name: string;
+  source?: 'upload' | 'generated' | string;
   mimeType?: string | null;
   bytes?: number | null;
+  brief?: string | null;
+  durationSec?: number | null;
+  model?: string | null;
 };
 
 export const getShotHistory = async (projectId: string, shotId: string) => {
@@ -774,6 +778,28 @@ export const uploadMediaLibraryVideo = async (projectId: string, file: File) => 
     body: form,
   });
   return handleResponse(res) as Promise<{ upload: MediaLibraryUpload }>;
+};
+
+export const generateMediaLibraryClip = async (
+  projectId: string,
+  input: {
+    title?: string;
+    brief: string;
+    durationSec?: number;
+    useProjectRefs?: boolean;
+    modelOverride?: { videoModel?: string };
+  },
+) => {
+  const res = await authFetch(`${API}/projects/${projectId}/media-library/clips/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return handleResponse(res) as Promise<{
+    clip: MediaLibraryUpload;
+    estimatedCost: number;
+    note: string;
+  }>;
 };
 
 export const hideMediaLibraryUpload = async (projectId: string, assetId: string) => {
