@@ -24,7 +24,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks, Storyboard, and Video work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. For video, use generate_video with dryRun=true for requirements/cost, then generate_video without dryRun when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks, Storyboard, Video, and Audio work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. For video, use generate_video with dryRun=true for requirements/cost, then generate_video without dryRun when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -84,8 +84,8 @@ const audioPlanSchema = z.object({
     text: z.string().min(1).max(500),
     order: z.number().positive().max(200),
     targetSec: z.number().positive().max(30).optional(),
-    ttsAssetId: idString.nullable().optional(),
-    ttsStatus: ttsStatusSchema.optional(),
+    ttsAssetId: idString.nullable(),
+    ttsStatus: ttsStatusSchema,
     ttsError: z.string().max(500).optional(),
     ttsCharCount: z.number().int().nonnegative().optional(),
     ttsDurationSec: z.number().nonnegative().optional(),
@@ -182,6 +182,32 @@ const applyVideoPromptInputSchema = z.object({
   projectId,
   shotId,
   motionPrompt: promptText,
+  baseHash: idString.optional(),
+  force: z.boolean().optional(),
+});
+const dialogueAudioInputSchema = z.object({
+  projectId,
+  dryRun: z.boolean().optional(),
+  shotIds: maxArray(idString, 100).optional(),
+  dialogueIds: maxArray(idString, 200).optional(),
+  characterIds: maxArray(idString, 100).optional(),
+});
+const applyAudioPlanInputSchema = z.object({
+  projectId,
+  shots: maxArray(z.object({
+    shotId,
+    audioPlan: audioPlanSchema,
+    baseHash: idString.optional(),
+  }), 100).optional(),
+  markdown: audioPlanMarkdownText.optional(),
+  force: z.boolean().optional(),
+});
+const applyCastVoiceInputSchema = z.object({
+  projectId,
+  castMemberId: idString,
+  voiceProvider: z.literal('elevenlabs'),
+  voiceId: idString,
+  voiceName: mediumText.optional(),
   baseHash: idString.optional(),
   force: z.boolean().optional(),
 });
@@ -470,6 +496,45 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         force: input.force,
       });
     }
+    if (actionKey === 'generate_dialogue_audio') {
+      const input = dialogueAudioInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      const selection = {
+        shotIds: input.shotIds,
+        dialogueIds: input.dialogueIds,
+        characterIds: input.characterIds,
+      };
+      return input.dryRun
+        ? studio.getAudioPlanCost(project, selection)
+        : studio.generateDialogueAudio(project, auth.userId, selection);
+    }
+    if (actionKey === 'apply_audio_plan') {
+      const input = applyAudioPlanInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      if (input.markdown) return studio.applyAudioPlanMarkdown(project, input.markdown, { force: input.force });
+      if (!input.shots?.length) throw new Error('apply_audio_plan requires either shots[] or markdown.');
+      return studio.applyAudioPlan(project, input.shots.map((shot) => ({
+        ...shot,
+        audioPlan: {
+          ...shot.audioPlan,
+          dialogue: shot.audioPlan.dialogue.map((line) => ({
+            ...line,
+            ttsAssetId: line.ttsAssetId ?? null,
+            ttsStatus: line.ttsStatus || 'pending',
+          })),
+        },
+      })), { force: input.force });
+    }
+    if (actionKey === 'apply_cast_voice') {
+      const input = applyCastVoiceInputSchema.parse(rawInput);
+      return studio.applyCastVoice(await fullProjectForUser(input.projectId, auth.userId), {
+        castMemberId: input.castMemberId,
+        voiceProvider: input.voiceProvider,
+        voiceId: input.voiceId,
+        voiceName: input.voiceName,
+        baseHash: input.baseHash,
+      }, { force: input.force });
+    }
     throw new Error(`Unknown action: ${actionKey}`);
   };
 
@@ -542,7 +607,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('list_actions', {
     title: 'List Mirage actions',
-    description: 'Read-only cockpit tool. Lists contextual registry actions for Looks, Storyboard, and Video.',
+    description: 'Read-only cockpit tool. Lists contextual registry actions for Looks, Storyboard, Video, and Audio.',
     inputSchema: {
       projectId,
       surface: actionSurfaceSchema.optional(),

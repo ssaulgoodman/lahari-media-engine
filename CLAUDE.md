@@ -190,6 +190,8 @@ Storyboard action bridge: prefer `run_action` for `generate_storyboard`, `bulk_g
 
 Video action bridge: prefer `run_action` for `generate_video` and `apply_video_prompt`. Use `generate_video` with `dryRun: true` for requirements/cost, then rerun without `dryRun` after artist approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.
 
+Audio action bridge: prefer `run_action` for `generate_dialogue_audio`, `apply_audio_plan`, and `apply_cast_voice`. Use `generate_dialogue_audio` with `dryRun: true` for TTS cost/missing voices before spending. `apply_audio_plan` accepts either structured `shots[]` or markdown from `drafts/audio-plan.md`.
+
 Destructive events happen on active mutation:
 - `lock-concept` with changed concept and existing scenes can wipe downstream data or fork.
 - `generate-script` rerun can wipe cast/scenes/prompts or fork.

@@ -182,10 +182,63 @@ export const VIDEO_ACTION_SPECS = {
   },
 } as const;
 
+export const AUDIO_ACTION_SPECS = {
+  generate_dialogue_audio: {
+    key: 'generate_dialogue_audio',
+    title: 'Generate dialogue audio',
+    surface: 'audio',
+    mutates: true,
+    paid: true,
+    description: 'Generate ElevenLabs TTS for selected pending/error dialogue lines. dryRun returns cost and missing voices without spending.',
+    input: {
+      projectId: 'string',
+      dryRun: 'optional boolean',
+      shotIds: 'optional string[]',
+      dialogueIds: 'optional string[]',
+      characterIds: 'optional string[]',
+    },
+    examples: [{ projectId: 'project_uuid', dryRun: true, shotIds: ['shot_uuid'] }],
+  },
+  apply_audio_plan: {
+    key: 'apply_audio_plan',
+    title: 'Apply audio plan',
+    surface: 'audio',
+    mutates: true,
+    paid: false,
+    description: 'Persist per-shot dialogue, sound notes, and lipsync/overlay strategy. Accepts structured shots[] or one audio-plan markdown draft.',
+    input: {
+      projectId: 'string',
+      shots: 'optional array of {shotId, audioPlan, baseHash?}',
+      markdown: 'optional Mirage audio-plan markdown',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', markdown: '# Audio Plan Draft\\n...' }],
+  },
+  apply_cast_voice: {
+    key: 'apply_cast_voice',
+    title: 'Apply cast voice',
+    surface: 'audio',
+    mutates: true,
+    paid: false,
+    description: 'Assign an ElevenLabs voice ID to one cast member for overlay TTS generation.',
+    input: {
+      projectId: 'string',
+      castMemberId: 'string',
+      voiceProvider: '"elevenlabs"',
+      voiceId: 'string',
+      voiceName: 'optional string',
+      baseHash: 'optional string',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', castMemberId: 'cast_member_uuid', voiceProvider: 'elevenlabs', voiceId: 'eleven_voice_id' }],
+  },
+} as const;
+
 export const ALL_ACTION_SPECS = {
   ...LOOK_ACTION_SPECS,
   ...STORYBOARD_ACTION_SPECS,
   ...VIDEO_ACTION_SPECS,
+  ...AUDIO_ACTION_SPECS,
 } as const;
 
 export type ActionKey = keyof typeof ALL_ACTION_SPECS;
