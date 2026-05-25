@@ -22,7 +22,7 @@ Supabase is canonical project truth. Use MCP tools for reads, applies, generatio
 
 Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. Use query_artist_memory and search_artist_assets when they ask about prior work, styles used before, reusable visual references, older storyboards, or taste patterns across their owned projects. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
-Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use generate_style_reference, generate_character_look, and generate_environment_look for approved visual reference generation; lock the chosen assets only after visual approval. Use per-call modelOverride for experiments instead of changing project defaults.
+Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use generate_style_reference, generate_character_look, and generate_environment_look for approved visual reference generation; lock the chosen assets only after visual approval. Use create_media_clip for extra B-roll/insert clips that should land in the render Media Library without changing script shots. Use per-call modelOverride for experiments instead of changing project defaults.
 
 Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
 
@@ -61,6 +61,10 @@ const modelOverrideSchema = z.object({
 const imageModelOverrideSchema = z.object({
   imageModel: idString.optional(),
 }).optional();
+const mediaLibraryRefSchema = z.object({
+  type: z.enum(['style', 'cast', 'env', 'uploaded']),
+  id: idString.optional(),
+});
 const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 
 const MCP_LIMITS = {
@@ -79,6 +83,7 @@ const PAID_TOOLS = new Set([
   'bulk_generate_storyboards',
   'refine_storyboard_image',
   'apply_generate_video',
+  'create_media_clip',
 ]);
 
 const structuredToolError = (error: unknown) => {
@@ -832,6 +837,30 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     description: 'Mutating and paid. Generates a new video for one shot.',
     inputSchema: { projectId, shotId, promptOverride: optionalPromptText, modelOverride: modelOverrideSchema },
   }, async ({ projectId, shotId, promptOverride, modelOverride }) => studio.applyGenerateVideo(await fullProjectForUser(projectId, auth.userId), shotId, promptOverride, modelOverride || {}));
+
+  registerTool('create_media_clip', {
+    title: 'Create extra media clip',
+    description: 'Mutating and paid. Generates an extra B-roll / insert video clip into the render Media Library without changing canonical script scenes, shots, or stale flags. Ask before calling.',
+    inputSchema: {
+      projectId,
+      title: shortText.optional(),
+      brief: mediumText.min(1).describe('Director-written prompt/brief for the extra clip.'),
+      durationSec: z.number().min(4).max(15).optional(),
+      refs: maxArray(mediaLibraryRefSchema, 9).optional().describe('Optional explicit references. Omit to use project style/cast/env refs; pass [] with useProjectRefs=false for no refs.'),
+      useProjectRefs: z.boolean().optional().describe('Default true. Set false for abstract/B-roll/no-character insert clips.'),
+      modelOverride: modelOverrideSchema,
+    },
+  }, async ({ projectId, title, brief, durationSec, refs, useProjectRefs, modelOverride }) => studio.generateMediaLibraryClip({
+    projectId,
+    userId: auth.userId,
+    source: 'codex',
+    title,
+    brief,
+    durationSec,
+    refs,
+    useProjectRefs,
+    modelOverride: modelOverride || {},
+  }));
 
   registerTool('lahari_capture_issue', {
     title: 'Capture Lahari director issue',
