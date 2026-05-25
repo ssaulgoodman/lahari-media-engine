@@ -184,7 +184,7 @@ Phase unlocks are pure navigation. They rewind status and do not delete data.
 
 Individual look unlocks clear one cast/env reference, expose persisted candidates, and mark dependent shots stale.
 
-Reference-image bridge tools: use `list_character_look_candidates` / `list_environment_look_candidates` (or `list_reference_candidates`) to recover candidate asset IDs/URLs after generation or timeouts; lock existing assets with `apply_cast_reference` / `apply_environment_reference`. For local files, prefer `mint_cli_token` plus `mirage upload-cast-reference` / `mirage upload-environment-reference`; use `upload_cast_reference` / `upload_environment_reference` base64 only when shell/CLI is blocked.
+Reference-image bridge tools: prefer the Slice 1 action surface: `list_actions` / `describe_action` / `run_action` with `generate_candidates`, `list_candidates`, and `lock_reference`. For local/native images, POST multipart to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy tools (`list_character_look_candidates`, `apply_cast_reference`, `upload_cast_reference`, etc.) remain as compatibility aliases for now.
 
 Destructive events happen on active mutation:
 - `lock-concept` with changed concept and existing scenes can wipe downstream data or fork.

@@ -119,6 +119,9 @@ export const deriveAuditProjectId = (value: unknown): string | null => {
   }
   if (typeof input.previewJsonPath === 'string') return projectIdFromPath(input.previewJsonPath);
   if (typeof input.project_id === 'string' && input.project_id.trim()) return input.project_id.trim();
+  if (input.input && typeof input.input === 'object') {
+    return deriveAuditProjectId(input.input);
+  }
   return null;
 };
 
@@ -396,6 +399,11 @@ const paidToolLike = (tool: string) => (
   )
 );
 
+const paidRowLike = (row: any) => (
+  paidToolLike(row.tool)
+  || (row.tool === 'run_action' && row.args?.actionKey === 'generate_candidates')
+);
+
 export const summarizeAgentTiming = async (opts: {
   projectId?: string | null;
   sinceHours?: number;
@@ -521,7 +529,7 @@ export const summarizeAgentTiming = async (opts: {
         errorMessage: row.errorMessage,
       })),
     paidLikeCalls: finishes
-      .filter((row) => paidToolLike(row.tool))
+      .filter((row) => paidRowLike(row))
       .map((row) => ({
         tool: row.tool,
         projectId: row.projectId || (row.scope === '_unscoped' ? null : row.scope),

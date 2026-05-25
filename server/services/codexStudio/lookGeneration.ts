@@ -15,12 +15,20 @@ import { buildNotebookMirrorArtifacts } from './notebook.js';
 type GenerateLooksOptions = {
   note?: string;
   promptOverride?: string;
+  guideAssetId?: string;
 };
 
 const styleImagePathForProject = async (project: Project): Promise<string | undefined> => {
   if (!project.styleAssetId) return undefined;
   const asset = await selectOne('assets', { id: project.styleAssetId });
   return asset?.project_id === project.id ? asset.file_path : undefined;
+};
+
+const guideImagePathForProject = async (project: Project, guideAssetId?: string): Promise<string | undefined> => {
+  if (!guideAssetId) return undefined;
+  const asset = await selectOne('assets', { id: guideAssetId });
+  if (!asset || asset.project_id !== project.id) throw new Error('guideAssetId was not found in this project.');
+  return asset.file_path;
 };
 
 const withRecipe = (prompt: string, label: string, recipe?: string | null) => {
@@ -37,6 +45,7 @@ const candidateMetadata = (base: Record<string, unknown>, opts: {
   generatedBy: string;
   promptOverride?: string;
   note?: string;
+  guideAssetId?: string;
 }) => JSON.stringify({
   ...base,
   model: opts.model,
@@ -46,6 +55,7 @@ const candidateMetadata = (base: Record<string, unknown>, opts: {
   generatedBy: opts.generatedBy,
   hasPromptOverride: !!opts.promptOverride,
   note: opts.note || null,
+  guideAssetId: opts.guideAssetId || null,
 });
 
 export const generateCharacterLooksForDirector = async (
@@ -69,6 +79,7 @@ export const generateCharacterLooksForDirector = async (
   }
 
   const styleImagePath = await styleImagePathForProject(project);
+  const guideImagePath = await guideImagePathForProject(project, opts.guideAssetId);
   const preset = getPipelinePreset(project.presetKey);
   const projectPreferences = await getProjectPreferencesState(project as any);
   const imageModel = projectPreferences.preferences.imageModel;
@@ -125,7 +136,7 @@ export const generateCharacterLooksForDirector = async (
       styleImagePath,
       undefined,
       project.aspectRatio || '16:9',
-      undefined,
+      guideImagePath,
       renderPrompt,
       model,
       preset,
@@ -148,6 +159,7 @@ export const generateCharacterLooksForDirector = async (
           generatedBy: 'mcp',
           promptOverride: opts.promptOverride,
           note: opts.note,
+          guideAssetId: opts.guideAssetId,
         }),
       });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
@@ -158,7 +170,10 @@ export const generateCharacterLooksForDirector = async (
       stage: 'generate-looks',
       model,
       prompt: `MCP generate ${looks.length} character looks for "${member.name}" | ${compactText(renderPrompt, 500)}`,
-      referenceInputs: styleImagePath ? [{ type: 'image', label: 'Style reference', url: storageUrl(styleImagePath) }] : [],
+      referenceInputs: [
+        ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
+        ...(guideImagePath ? [{ type: 'image' as const, label: `${member.name} guide`, url: storageUrl(guideImagePath) }] : []),
+      ],
       contextChain: await buildContextChain(project.id),
       responseSummary: `Generated ${looks.length} looks for ${member.name} via MCP`,
       outputAssetIds: looks.map((look) => look.id),
@@ -172,7 +187,7 @@ export const generateCharacterLooksForDirector = async (
       entityType: 'cast_member',
       entityId: member.id,
       summary: `Codex generated ${looks.length} looks for character "${member.name}".`,
-      payload: { castMemberId: member.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource },
+      payload: { castMemberId: member.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource, guideAssetId: opts.guideAssetId || null },
     });
 
     results.push({ castMemberId: member.id, castMemberName: member.name, prompt: genPrompt, promptSource, looks });
@@ -210,6 +225,7 @@ export const generateEnvironmentLooksForDirector = async (
   }
 
   const styleImagePath = await styleImagePathForProject(project);
+  const guideImagePath = await guideImagePathForProject(project, opts.guideAssetId);
   const preset = getPipelinePreset(project.presetKey);
   const projectPreferences = await getProjectPreferencesState(project as any);
   const imageModel = projectPreferences.preferences.imageModel;
@@ -265,7 +281,7 @@ export const generateEnvironmentLooksForDirector = async (
       { name: environment.name, description: environment.description || '' },
       styleImagePath,
       project.aspectRatio || '16:9',
-      undefined,
+      guideImagePath,
       undefined,
       renderPrompt,
       model,
@@ -289,6 +305,7 @@ export const generateEnvironmentLooksForDirector = async (
           generatedBy: 'mcp',
           promptOverride: opts.promptOverride,
           note: opts.note,
+          guideAssetId: opts.guideAssetId,
         }),
       });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
@@ -299,7 +316,10 @@ export const generateEnvironmentLooksForDirector = async (
       stage: 'generate-environment-look',
       model,
       prompt: `MCP generate ${looks.length} environment looks for "${environment.name}" | ${compactText(renderPrompt, 500)}`,
-      referenceInputs: styleImagePath ? [{ type: 'image', label: 'Style reference', url: storageUrl(styleImagePath) }] : [],
+      referenceInputs: [
+        ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
+        ...(guideImagePath ? [{ type: 'image' as const, label: `${environment.name} guide`, url: storageUrl(guideImagePath) }] : []),
+      ],
       contextChain: await buildContextChain(project.id),
       responseSummary: `Generated ${looks.length} environment looks for ${environment.name} via MCP`,
       outputAssetIds: looks.map((look) => look.id),
@@ -313,7 +333,7 @@ export const generateEnvironmentLooksForDirector = async (
       entityType: 'environment',
       entityId: environment.id,
       summary: `Codex generated ${looks.length} looks for environment "${environment.name}".`,
-      payload: { environmentId: environment.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource },
+      payload: { environmentId: environment.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource, guideAssetId: opts.guideAssetId || null },
     });
 
     results.push({ environmentId: environment.id, environmentName: environment.name, prompt: genPrompt, promptSource, looks });

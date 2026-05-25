@@ -17,13 +17,13 @@ import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.11';
+const HOSTED_MCP_VERSION = '0.1.12';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then attach_director_session. After resolving or creating a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. If the artist asks to reuse an existing project asset as a character or environment reference, use apply_cast_reference or apply_environment_reference instead of inventing a direct database write. If you create or edit a reference image as a local file outside Mirage, prefer mint_cli_token and the returned upload-cast-reference/upload-environment-reference CLI command so file bytes travel through the local CLI, not chat. Use upload_cast_reference/upload_environment_reference base64 only as fallback when shell/CLI is blocked. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks work, prefer list_actions -> describe_action -> run_action with generate_candidates/list_candidates/lock_reference. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -70,6 +70,9 @@ const seedKindSchema = z.enum(['script', 'brief', 'document', 'idea']);
 const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 const dialogueStrategySchema = z.enum(['lipsync', 'overlay']);
 const ttsStatusSchema = z.enum(['pending', 'generating', 'success', 'error']);
+const lookEntityTypeSchema = z.enum(['cast', 'environment', 'env']);
+const actionKeySchema = z.enum(['generate_candidates', 'list_candidates', 'lock_reference']);
+const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const audioPlanSchema = z.object({
   dialogueStrategy: dialogueStrategySchema,
   dialogue: maxArray(z.object({
@@ -106,6 +109,91 @@ const PAID_TOOLS = new Set([
   'apply_generate_video',
   'generate_dialogue_audio',
 ]);
+
+const LOOK_ACTION_SPECS = {
+  generate_candidates: {
+    key: 'generate_candidates',
+    title: 'Generate reference candidates',
+    surface: 'looks',
+    mutates: true,
+    paid: true,
+    description: 'Generate reusable character or environment reference candidates. Use note for soft direction, promptOverride for an exact final prompt, and guideAssetId after uploading an image as a visual guide.',
+    input: {
+      projectId: 'string',
+      entityType: '"cast" | "environment"',
+      entityIds: 'string[]',
+      note: 'optional string',
+      promptOverride: 'optional string; only one entityId may be used',
+      guideAssetId: 'optional existing Mirage asset id',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      entityType: 'cast',
+      entityIds: ['cast_member_uuid'],
+      note: 'make the outfit simpler and closer to the locked style reference',
+    }],
+  },
+  list_candidates: {
+    key: 'list_candidates',
+    title: 'List reference candidates',
+    surface: 'looks',
+    mutates: false,
+    paid: false,
+    description: 'List generated candidate image URLs and asset IDs for one cast member or environment.',
+    input: {
+      projectId: 'string',
+      entityType: '"cast" | "environment"',
+      entityId: 'string',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      entityType: 'environment',
+      entityId: 'environment_uuid',
+    }],
+  },
+  lock_reference: {
+    key: 'lock_reference',
+    title: 'Lock reference',
+    surface: 'looks',
+    mutates: true,
+    paid: false,
+    description: 'Set an existing Mirage asset as the canonical character or environment reference. Use after list_candidates or /api/agent/uploads.',
+    input: {
+      projectId: 'string',
+      entityType: '"cast" | "environment"',
+      entityId: 'string',
+      sourceAssetId: 'string',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      entityType: 'cast',
+      entityId: 'cast_member_uuid',
+      sourceAssetId: 'asset_uuid',
+    }],
+  },
+} as const;
+
+const normalizeLookEntityType = (value: string) => value === 'env' ? 'environment' : value;
+
+const generateCandidatesInputSchema = z.object({
+  projectId,
+  entityType: lookEntityTypeSchema,
+  entityIds: maxArray(idString, 30).min(1),
+  note: mediumText.optional(),
+  promptOverride: optionalPromptText,
+  guideAssetId: idString.optional(),
+});
+const listCandidatesInputSchema = z.object({
+  projectId,
+  entityType: lookEntityTypeSchema,
+  entityId: idString,
+});
+const lockReferenceInputSchema = z.object({
+  projectId,
+  entityType: lookEntityTypeSchema,
+  entityId: idString,
+  sourceAssetId: idString,
+});
 
 const structuredToolError = (error: unknown) => {
   if (error instanceof RateLimitError) {
@@ -215,7 +303,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'write_project_sheets',
       'hydrate_project_workbench',
     ];
-    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project') {
+    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project' || name === 'open_project' || name === 'describe_action') {
       return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     }
     if (name === 'add_director_note' || name === 'lahari_capture_issue' || name === 'mirage_capture_issue') {
@@ -248,7 +336,8 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool: name, args, startedAt });
       let operationId: string | null = null;
       try {
-        if (PAID_TOOLS.has(name)) {
+        const paidInvocation = PAID_TOOLS.has(name) || (name === 'run_action' && args?.actionKey === 'generate_candidates');
+        if (paidInvocation) {
           assertRateLimit({
             key: `mcp:paid:${auth.tokenId}`,
             limit: MCP_LIMITS.paidPerDay,
@@ -272,7 +361,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         }
         if (!annotations.readOnlyHint) {
           operationId = await startAgentOperation({
-            projectId: args?.projectId,
+            projectId: args?.projectId || args?.input?.projectId,
             userId: auth.userId,
             source: 'mcp-remote',
             tool: name,
@@ -297,6 +386,42 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       message: `${tool} is not available in the hosted Mirage MCP server yet.`,
       details: { tool, reason },
     }, null, 2));
+  };
+
+  const runLookAction = async (actionKey: z.infer<typeof actionKeySchema>, rawInput: Record<string, unknown> = {}) => {
+    if (actionKey === 'generate_candidates') {
+      const input = generateCandidatesInputSchema.parse(rawInput);
+      const entityType = normalizeLookEntityType(input.entityType);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      return entityType === 'cast'
+        ? studio.generateCharacterLooksForDirector(project, input.entityIds, {
+          note: input.note,
+          promptOverride: input.promptOverride,
+          guideAssetId: input.guideAssetId,
+        })
+        : studio.generateEnvironmentLooksForDirector(project, input.entityIds, {
+          note: input.note,
+          promptOverride: input.promptOverride,
+          guideAssetId: input.guideAssetId,
+        });
+    }
+    if (actionKey === 'list_candidates') {
+      const input = listCandidatesInputSchema.parse(rawInput);
+      const entityType = normalizeLookEntityType(input.entityType);
+      return studio.listReferenceCandidates(await fullProjectForUser(input.projectId, auth.userId), {
+        entityType: entityType === 'cast' ? 'character' : 'environment',
+        entityId: input.entityId,
+      });
+    }
+    if (actionKey === 'lock_reference') {
+      const input = lockReferenceInputSchema.parse(rawInput);
+      const entityType = normalizeLookEntityType(input.entityType);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      return entityType === 'cast'
+        ? studio.applyCastReference(project, { castMemberId: input.entityId, assetId: input.sourceAssetId })
+        : studio.applyEnvironmentReference(project, { environmentId: input.entityId, assetId: input.sourceAssetId });
+    }
+    throw new Error(`Unknown action: ${actionKey}`);
   };
 
   registerTool('list_projects', {
@@ -345,6 +470,75 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   }, async ({ projectId, sinceHours, source, limit }) => {
     await assertProjectAccess(projectId, auth.userId);
     return summarizeAgentTiming({ projectId, sinceHours, source, limit });
+  });
+
+  registerTool('open_project', {
+    title: 'Open Mirage project',
+    description: 'Read-only cockpit tool. Opens a project session and returns the current packet, actions, recent events, and web studio URL.',
+    inputSchema: {
+      projectId,
+      sinceSeq: z.number().int().nonnegative().optional(),
+      note: mediumText.optional(),
+    },
+  }, async ({ projectId, sinceSeq, note }) => remoteSessionState(projectId, auth.userId, { sinceSeq: sinceSeq ?? null, note }));
+
+  registerTool('get_project_state', {
+    title: 'Get project state',
+    description: 'Read-only cockpit tool. Returns the current Mirage project packet. Prefer this over broad notebook sync when local files are not needed.',
+    inputSchema: { projectId },
+  }, async ({ projectId }) => studio.buildProjectPacket(await fullProjectForUser(projectId, auth.userId)));
+
+  registerTool('list_actions', {
+    title: 'List Mirage actions',
+    description: 'Read-only cockpit tool. Lists contextual registry actions. Slice 1 exposes the Looks actions: generate_candidates, list_candidates, lock_reference.',
+    inputSchema: {
+      projectId,
+      surface: z.enum(['looks']).optional(),
+    },
+  }, async ({ projectId, surface }) => {
+    await assertProjectAccess(projectId, auth.userId);
+    const actions = Object.values(LOOK_ACTION_SPECS).filter((action) => !surface || action.surface === surface);
+    return {
+      kind: 'mirage.actions.list',
+      projectId,
+      surface: surface || null,
+      actions,
+      count: actions.length,
+    };
+  });
+
+  registerTool('describe_action', {
+    title: 'Describe Mirage action',
+    description: 'Read-only cockpit tool. Returns the input contract, examples, and semantics for one registry action.',
+    inputSchema: {
+      actionKey: actionKeySchema,
+    },
+  }, async ({ actionKey }) => ({
+    kind: 'mirage.action.description',
+    action: LOOK_ACTION_SPECS[actionKey as keyof typeof LOOK_ACTION_SPECS],
+  }));
+
+  registerTool('run_action', {
+    title: 'Run Mirage action',
+    description: 'Mutating cockpit tool. Runs a registry action by key. Slice 1 supports Looks actions only.',
+    inputSchema: {
+      actionKey: actionKeySchema,
+      input: actionInputSchema,
+    },
+  }, async ({ actionKey, input }) => runLookAction(actionKey, input || {}));
+
+  registerTool('list_results', {
+    title: 'List Mirage results',
+    description: 'Read-only cockpit tool. Lists recoverable results for an entity. Slice 1 supports looks candidates.',
+    inputSchema: {
+      resultType: z.enum(['candidates']),
+      projectId,
+      entityType: lookEntityTypeSchema,
+      entityId: idString,
+    },
+  }, async ({ resultType, projectId, entityType, entityId }) => {
+    if (resultType !== 'candidates') throw new Error(`Unsupported resultType: ${resultType}`);
+    return runLookAction('list_candidates', { projectId, entityType, entityId });
   });
 
   registerTool('create_project', {

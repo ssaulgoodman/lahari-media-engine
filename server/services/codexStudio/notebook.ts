@@ -74,7 +74,9 @@ Files under drafts/ are editable working copies. For script changes, edit drafts
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
-For local image files that should become locked character or environment references, call mint_cli_token and use the Mirage CLI upload commands (mirage upload-cast-reference / mirage upload-environment-reference). Use MCP base64 upload tools only when shell/CLI access is blocked.
+For Looks work, prefer list_actions / describe_action / run_action. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
+
+For local image files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. Use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
 
 Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
 
@@ -83,7 +85,7 @@ Use journal.md for your own concise operator notes: what changed, why, and what 
 Default ritual:
 1. resolve_project when the artist names a project; use list_queue/search_catalog only for catalog/queue-backed music-video work
 2. attach_director_session once you have a projectId
-3. mint_cli_token, then npx @ssaulgoodman420/mirage-cli sync; for local reference images use the same token with mirage upload-cast-reference / upload-environment-reference; if blocked, use get_project_notebook_manifest + read_project_notebook_file
+3. mint_cli_token, then npx @ssaulgoodman420/mirage-cli sync; for local reference images use /api/agent/uploads with the Mirage bearer token, then run_action(lock_reference) or run_action(generate_candidates with guideAssetId); if blocked, use get_project_notebook_manifest + read_project_notebook_file
 4. read relevant mirrors and project mode before proposing changes
 5. apply approved changes through typed MCP tools
 6. refresh affected notebook files

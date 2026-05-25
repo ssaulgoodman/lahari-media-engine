@@ -93,9 +93,11 @@ When a read result includes `baseHashes`, pass the relevant hash into the apply 
 
 For character and environment references, do not scrape storage or write DB rows directly.
 
-- Recover generated candidates with `list_character_look_candidates` / `list_environment_look_candidates`, or the generic `list_reference_candidates`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
-- Lock an existing candidate or uploaded asset with `apply_cast_reference` / `apply_environment_reference`.
-- If you create or edit a reference image as a local file outside Mirage, prefer `mint_cli_token` and run the returned `mirage upload-cast-reference` / `mirage upload-environment-reference` CLI command. The local CLI reads the file bytes and uploads them without moving base64 through chat. Use `upload_cast_reference` / `upload_environment_reference` base64 only as fallback when shell/CLI is blocked. Both paths create the asset row, update the cast/environment reference, mark dependent shot prompts stale, and record the director event.
+- For Looks work, prefer the Slice 1 action surface: `list_actions` / `describe_action` / `run_action`.
+- Generate reusable character/environment candidates with `run_action({ actionKey: 'generate_candidates', input: { entityType, entityIds, note?, promptOverride?, guideAssetId? } })`.
+- Recover generated candidates with `run_action({ actionKey: 'list_candidates', input: { entityType, entityId } })` or `list_results({ resultType: 'candidates', ... })`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
+- Lock an existing candidate or uploaded asset with `run_action({ actionKey: 'lock_reference', input: { entityType, entityId, sourceAssetId } })`.
+- If you create or edit a reference image as a local file outside Mirage, upload bytes outside MCP: `POST /api/agent/uploads` as multipart with the same Mirage bearer token, `projectId`, `purpose`, `entityId`, and `file`. Use the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy base64 upload tools remain fallback only when the HTTPS upload path is blocked.
 
 ## Friction Capture
 
