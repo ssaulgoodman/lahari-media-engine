@@ -261,6 +261,186 @@ export const formatAuditTail = (projectId?: string | null, limit = 20) => {
   }).join('\n');
 };
 
+const percentile = (values: number[], pct: number) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((pct / 100) * sorted.length) - 1));
+  return sorted[index];
+};
+
+const mean = (values: number[]) => {
+  if (!values.length) return null;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+};
+
+const readAuditRows = (opts: {
+  projectId?: string | null;
+  sinceHours?: number;
+  source?: string | null;
+}) => {
+  const sinceMs = Date.now() - Math.max(1, Math.min(24 * 14, opts.sinceHours || 24)) * 60 * 60 * 1000;
+  const scopes = opts.projectId
+    ? [safeProjectScope(opts.projectId)]
+    : fs.existsSync(auditBaseDir())
+      ? fs.readdirSync(auditBaseDir()).filter((entry) => fs.statSync(path.join(auditBaseDir(), entry)).isDirectory())
+      : [];
+  const rows: any[] = [];
+  for (const scope of scopes) {
+    const dir = path.join(auditBaseDir(), scope);
+    if (!fs.existsSync(dir)) continue;
+    const files = fs.readdirSync(dir)
+      .filter((file) => file.endsWith('-calls.jsonl'))
+      .sort();
+    for (const file of files) {
+      for (const row of readJsonlFile(path.join(dir, file))) {
+        const ts = Date.parse(row.ts || '');
+        if (!Number.isFinite(ts) || ts < sinceMs) continue;
+        if (opts.source && row.source !== opts.source) continue;
+        rows.push({ ...row, scope });
+      }
+    }
+  }
+  return rows.sort((a, b) => Date.parse(a.ts || '') - Date.parse(b.ts || ''));
+};
+
+const paidToolLike = (tool: string) => (
+  tool.includes('generate')
+  || tool.includes('refine_storyboard')
+  || tool.includes('dialogue_audio')
+);
+
+export const summarizeAgentTiming = (opts: {
+  projectId?: string | null;
+  sinceHours?: number;
+  source?: string | null;
+  limit?: number;
+}) => {
+  const rows = readAuditRows(opts);
+  const finishes = rows
+    .filter((row) => row.phase === 'finish')
+    .map((row) => ({
+      ...row,
+      startedMs: Date.parse(row.startedAt || row.ts || ''),
+      finishedMs: Date.parse(row.ts || ''),
+      durationMs: Number(row.durationMs || 0),
+      resultSize: Number(row.resultSize || 0),
+      ok: row.ok !== false,
+      errorMessage: row.errorMessage || null,
+    }))
+    .filter((row) => Number.isFinite(row.startedMs) && Number.isFinite(row.finishedMs));
+
+  const byTool = new Map<string, any[]>();
+  for (const row of finishes) {
+    if (!byTool.has(row.tool)) byTool.set(row.tool, []);
+    byTool.get(row.tool)!.push(row);
+  }
+
+  const tools = [...byTool.entries()]
+    .map(([tool, toolRows]) => {
+      const durations = toolRows.map((row) => row.durationMs).filter(Number.isFinite);
+      const sizes = toolRows.map((row) => row.resultSize).filter(Number.isFinite);
+      const errorMessages: Record<string, number> = {};
+      for (const row of toolRows) {
+        if (!row.errorMessage) continue;
+        const key = String(row.errorMessage).slice(0, 220);
+        errorMessages[key] = (errorMessages[key] || 0) + 1;
+      }
+      return {
+        tool,
+        count: toolRows.length,
+        success: toolRows.filter((row) => row.ok).length,
+        errors: toolRows.filter((row) => !row.ok).length,
+        durationMs: {
+          mean: mean(durations),
+          p50: percentile(durations, 50),
+          p90: percentile(durations, 90),
+          max: durations.length ? Math.max(...durations) : null,
+        },
+        resultSize: {
+          mean: mean(sizes),
+          p50: percentile(sizes, 50),
+          p90: percentile(sizes, 90),
+          max: sizes.length ? Math.max(...sizes) : null,
+        },
+        errorMessages,
+      };
+    })
+    .sort((a, b) => (b.durationMs.p90 || 0) - (a.durationMs.p90 || 0));
+
+  const gaps = [];
+  for (let i = 1; i < finishes.length; i += 1) {
+    const previous = finishes[i - 1];
+    const current = finishes[i];
+    if (previous.scope !== current.scope) continue;
+    const gapMs = current.startedMs - previous.finishedMs;
+    if (!Number.isFinite(gapMs) || gapMs < 0) continue;
+    gaps.push({
+      gapMs,
+      afterTool: previous.tool,
+      beforeTool: current.tool,
+      startedAt: new Date(current.startedMs).toISOString(),
+      projectId: current.projectId || (current.scope === '_unscoped' ? null : current.scope),
+    });
+  }
+  const gapValues = gaps.map((gap) => gap.gapMs);
+  const durations = finishes.map((row) => row.durationMs).filter(Number.isFinite);
+  const firstStart = finishes.length ? Math.min(...finishes.map((row) => row.startedMs)) : null;
+  const lastFinish = finishes.length ? Math.max(...finishes.map((row) => row.finishedMs)) : null;
+  const limit = Math.max(1, Math.min(100, opts.limit || 20));
+
+  return {
+    kind: 'mirage.agent_timing_summary',
+    generatedAt: new Date().toISOString(),
+    filters: {
+      projectId: opts.projectId || null,
+      sinceHours: Math.max(1, Math.min(24 * 14, opts.sinceHours || 24)),
+      source: opts.source || null,
+    },
+    totals: {
+      rows: rows.length,
+      finishEvents: finishes.length,
+      tools: tools.length,
+      successes: finishes.filter((row) => row.ok).length,
+      errors: finishes.filter((row) => !row.ok).length,
+      wallClockMs: firstStart != null && lastFinish != null ? lastFinish - firstStart : null,
+      totalToolMs: durations.reduce((sum, value) => sum + value, 0),
+      totalInterToolGapMs: gapValues.reduce((sum, value) => sum + value, 0),
+    },
+    interToolGaps: {
+      count: gaps.length,
+      mean: mean(gapValues),
+      p50: percentile(gapValues, 50),
+      p90: percentile(gapValues, 90),
+      max: gapValues.length ? Math.max(...gapValues) : null,
+      top: [...gaps].sort((a, b) => b.gapMs - a.gapMs).slice(0, limit),
+    },
+    tools,
+    topSlowCalls: [...finishes]
+      .sort((a, b) => b.durationMs - a.durationMs)
+      .slice(0, limit)
+      .map((row) => ({
+        tool: row.tool,
+        projectId: row.projectId || (row.scope === '_unscoped' ? null : row.scope),
+        startedAt: new Date(row.startedMs).toISOString(),
+        finishedAt: new Date(row.finishedMs).toISOString(),
+        durationMs: row.durationMs,
+        resultSize: row.resultSize,
+        ok: row.ok,
+        errorMessage: row.errorMessage,
+      })),
+    paidLikeCalls: finishes
+      .filter((row) => paidToolLike(row.tool))
+      .map((row) => ({
+        tool: row.tool,
+        projectId: row.projectId || (row.scope === '_unscoped' ? null : row.scope),
+        startedAt: new Date(row.startedMs).toISOString(),
+        durationMs: row.durationMs,
+        ok: row.ok,
+        errorMessage: row.errorMessage,
+      })),
+  };
+};
+
 export const captureMirageIssue = (input: {
   projectId?: string | null;
   severity: IssueSeverity;

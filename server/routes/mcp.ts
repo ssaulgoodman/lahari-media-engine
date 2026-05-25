@@ -7,7 +7,7 @@ import * as z from 'zod/v4';
 import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
-import { captureMirageIssue, recordMcpAudit } from '../services/mirageAudit.js';
+import { captureMirageIssue, recordMcpAudit, summarizeAgentTiming } from '../services/mirageAudit.js';
 import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
@@ -17,7 +17,7 @@ import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.10';
+const HOSTED_MCP_VERSION = '0.1.11';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
@@ -331,6 +331,20 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         updatedAt: row.updated_at,
       })),
     };
+  });
+
+  registerTool('get_agent_timing_summary', {
+    title: 'Get agent timing summary',
+    description: 'Read-only. Summarizes recent Mirage MCP audit timings for one project: tool duration, result size, inter-tool gaps, slow calls, and timeout/error counts. Use before agent-surface refactors to capture a baseline.',
+    inputSchema: {
+      projectId,
+      sinceHours: z.number().int().min(1).max(24 * 14).optional(),
+      source: z.enum(['mcp-remote', 'director-api', 'mcp', 'cli']).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+  }, async ({ projectId, sinceHours, source, limit }) => {
+    await assertProjectAccess(projectId, auth.userId);
+    return summarizeAgentTiming({ projectId, sinceHours, source, limit });
   });
 
   registerTool('create_project', {
