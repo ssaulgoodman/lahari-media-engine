@@ -279,7 +279,7 @@ Renderer engines:
 - FFmpeg output: `libx264`, preset `veryfast`, CRF `23`, yuv420p, faststart, audio mixed with AAC.
 - Ineligible timelines fall back to Remotion. Keep Remotion for future text effects, transitions, and richer layout work.
 
-Timeline editor features include media library, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. Sync renderer timeline copies with `cd remotion-renderer && npm run sync-timeline` after changing upstream timeline composition code.
+Timeline editor features include media library, video uploads, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. Treat timeline drafts as sacred: regenerated shot clips should appear as new media-library takes, not overwrite the artist's saved timeline. The render Media Library has a sidebar entry point, badges/new markers for clips not yet in the timeline, upload-to-library for external video clips, soft-hide for unwanted takes, and version append into the timeline. Sync renderer timeline copies with `cd remotion-renderer && npm run sync-timeline` after changing upstream timeline composition code.
 
 ## Staleness
 
