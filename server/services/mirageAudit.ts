@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getSB, insertRow, T } from '../database.js';
+import { isPaidActionKey } from './actionRegistry.js';
 
 type AuditPhase = 'start' | 'finish';
 type IssueSeverity = 'low' | 'mid' | 'high';
@@ -405,18 +406,10 @@ const paidToolLike = (tool: string) => (
   )
 );
 
-const PAID_ACTION_KEYS = new Set([
-  'generate_candidates',
-  'generate_storyboard',
-  'bulk_generate_storyboards',
-  'refine_storyboard_image',
-  'generate_video',
-]);
-
 const rowHasPaidAction = (value: unknown): boolean => {
   if (!value || typeof value !== 'object') return false;
   const input = value as Record<string, unknown>;
-  if (typeof input.actionKey === 'string' && PAID_ACTION_KEYS.has(input.actionKey)) return true;
+  if (typeof input.actionKey === 'string' && isPaidActionKey(input.actionKey)) return true;
   if (Array.isArray(input.actions)) return input.actions.some(rowHasPaidAction);
   return false;
 };
