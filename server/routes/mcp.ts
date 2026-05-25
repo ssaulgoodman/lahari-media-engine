@@ -84,8 +84,8 @@ const audioPlanSchema = z.object({
     text: z.string().min(1).max(500),
     order: z.number().positive().max(200),
     targetSec: z.number().positive().max(30).optional(),
-    ttsAssetId: idString.nullable(),
-    ttsStatus: ttsStatusSchema,
+    ttsAssetId: idString.nullable().default(null),
+    ttsStatus: ttsStatusSchema.default('pending'),
     ttsError: z.string().max(500).optional(),
     ttsCharCount: z.number().int().nonnegative().optional(),
     ttsDurationSec: z.number().nonnegative().optional(),
@@ -513,17 +513,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       const project = await fullProjectForUser(input.projectId, auth.userId);
       if (input.markdown) return studio.applyAudioPlanMarkdown(project, input.markdown, { force: input.force });
       if (!input.shots?.length) throw new Error('apply_audio_plan requires either shots[] or markdown.');
-      return studio.applyAudioPlan(project, input.shots.map((shot) => ({
-        ...shot,
-        audioPlan: {
-          ...shot.audioPlan,
-          dialogue: shot.audioPlan.dialogue.map((line) => ({
-            ...line,
-            ttsAssetId: line.ttsAssetId ?? null,
-            ttsStatus: line.ttsStatus || 'pending',
-          })),
-        },
-      })), { force: input.force });
+      return studio.applyAudioPlan(project, input.shots, { force: input.force });
     }
     if (actionKey === 'apply_cast_voice') {
       const input = applyCastVoiceInputSchema.parse(rawInput);
