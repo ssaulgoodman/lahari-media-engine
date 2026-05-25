@@ -144,7 +144,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
         if (!cancelled) setUploadsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [open, project.id]);
+  }, [open, project.id, project]);
 
   const handleHideVersion = async (shotId: string, assetId: string) => {
     await hideShotVideoFromMediaLibrary(project.id, shotId, assetId);
@@ -203,6 +203,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
       setUploadedItems((cur) => [clip, ...cur]);
       setClipTitle('');
       setClipBrief('');
+      setCreateOpen(false);
       setNotice(`${clip.name} generated`);
     } catch (err: any) {
       alert(err?.message || 'Generate clip failed');
@@ -332,7 +333,7 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
       {(uploadedItems.length > 0 || uploadsLoading) && (
         <div className="px-4 py-2 border-b border-white/[0.04] flex-none">
           <div className="flex items-center gap-2 overflow-x-auto">
-            <span className="text-[10px] text-zinc-500 uppercase tracking-wide flex-none">Clips</span>
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wide flex-none">Extra clips</span>
             {uploadsLoading && uploadedItems.length === 0 && (
               <span className="text-[10px] text-zinc-600">loading…</span>
             )}
