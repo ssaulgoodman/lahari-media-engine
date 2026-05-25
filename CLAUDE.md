@@ -186,6 +186,8 @@ Individual look unlocks clear one cast/env reference, expose persisted candidate
 
 Reference-image bridge tools: prefer the Slice 1 action surface: `list_actions` / `describe_action` / `run_action` with `generate_candidates`, `list_candidates`, and `lock_reference`. For local/native images, POST multipart to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy tools (`list_character_look_candidates`, `apply_cast_reference`, `upload_cast_reference`, etc.) remain as compatibility aliases for now.
 
+Concept/script/style action bridge: prefer `run_action` for `apply_concept`, `apply_script`, `apply_shot_prompts`, `apply_shot_workflow_modes`, and `apply_style_direction`. `apply_script` accepts either structured `script` JSON or markdown from `drafts/script.md`.
+
 Storyboard action bridge: prefer `run_action` for `generate_storyboard`, `bulk_generate_storyboards`, `apply_storyboard_prompts`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. Use `bulk_generate_storyboards` when the server should pick missing/stale/error boards; use `parallel_run` only when the agent has already chosen specific independent shot actions. `parallel_run` reduces round-trips but still waits for the slowest action; true fire-and-continue needs future `start_job`.
 
 Video action bridge: prefer `run_action` for `generate_video` and `apply_video_prompt`. Use `generate_video` with `dryRun: true` for requirements/cost, then rerun without `dryRun` after artist approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.

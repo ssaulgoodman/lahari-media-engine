@@ -93,6 +93,7 @@ When a read result includes `baseHashes`, pass the relevant hash into the apply 
 
 For character and environment references, do not scrape storage or write DB rows directly.
 
+- For Concept, Script, and Style text work, prefer registry actions through `run_action`: `apply_concept`, `apply_script`, `apply_shot_prompts`, `apply_shot_workflow_modes`, and `apply_style_direction`. `apply_script` accepts either structured JSON or markdown from `drafts/script.md`.
 - For Looks work, prefer the Slice 1 action surface: `list_actions` / `describe_action` / `run_action`.
 - Generate reusable character/environment candidates with `run_action({ actionKey: 'generate_candidates', input: { entityType, entityIds, note?, promptOverride?, guideAssetId? } })`.
 - Recover generated candidates with `run_action({ actionKey: 'list_candidates', input: { entityType, entityId } })` or `list_results({ resultType: 'candidates', ... })`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.

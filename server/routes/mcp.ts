@@ -24,7 +24,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks, Storyboard, Video, and Audio work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. For video, use generate_video with dryRun=true for requirements/cost, then generate_video without dryRun when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Concept, Script, Style, Looks, Storyboard, Video, and Audio work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. For video, use generate_video with dryRun=true for requirements/cost, then generate_video without dryRun when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -208,6 +208,73 @@ const applyCastVoiceInputSchema = z.object({
   voiceProvider: z.literal('elevenlabs'),
   voiceId: idString,
   voiceName: mediumText.optional(),
+  baseHash: idString.optional(),
+  force: z.boolean().optional(),
+});
+const conceptInputSchema = z.object({
+  projectId,
+  concept: z.object({
+    title: mediumText.min(1),
+    direction: promptText,
+    description: promptText,
+    mood: mediumText.optional(),
+  }),
+  baseHash: idString.optional(),
+  force: z.boolean().optional(),
+});
+const scriptInputSchema = z.object({
+  projectId,
+  script: z.object({
+    cast: maxArray(z.object({ id: idString.optional(), name: mediumText.min(1), description: promptText.optional() }), 60),
+    environments: maxArray(z.object({ id: idString.optional(), name: mediumText.min(1), description: promptText.optional() }), 60),
+    scenes: maxArray(z.object({
+      id: idString.optional(),
+      sectionLabel: mediumText.optional(),
+      startTime: idString.optional(),
+      endTime: idString.optional(),
+      lyrics: promptText.optional(),
+      narrativeDescription: promptText.optional(),
+      shots: maxArray(z.object({
+        id: idString.optional(),
+        direction: promptText,
+        duration: z.number().positive().max(120),
+        castIds: maxArray(idString, 20).optional(),
+        environmentId: idString.nullable().optional(),
+        continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+      }), 80).min(1),
+    }), 80).min(1),
+  }).optional(),
+  markdown: scriptMarkdownText.optional(),
+  baseFingerprint: idString.optional(),
+  force: z.boolean().optional(),
+});
+const shotPromptsInputSchema = z.object({
+  projectId,
+  shots: maxArray(z.object({
+    shotId: idString,
+    visualPrompt: optionalPromptText,
+    motionPrompt: optionalPromptText,
+    direction: mediumText.optional(),
+    continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+    baseHash: idString.optional(),
+  }), 100).min(1),
+  force: z.boolean().optional(),
+});
+const shotWorkflowModesInputSchema = z.object({
+  projectId,
+  shots: maxArray(z.object({
+    shotId,
+    workflowMode: workflowModeSchema,
+    note: mediumText.optional(),
+  }), 100).min(1),
+});
+const styleDirectionInputSchema = z.object({
+  projectId,
+  style: z.object({
+    styleDescription: promptText,
+    styleGenerationPrompt: optionalPromptText,
+    colorPalette: mediumText.optional(),
+  }),
   baseHash: idString.optional(),
   force: z.boolean().optional(),
 });
@@ -408,6 +475,41 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   };
 
   const runRegistryAction = async (actionKey: ActionKey, rawInput: Record<string, unknown> = {}) => {
+    if (actionKey === 'apply_concept') {
+      const input = conceptInputSchema.parse(rawInput);
+      return studio.applyConcept(await fullProjectForUser(input.projectId, auth.userId), input.concept, {
+        baseHash: input.baseHash,
+        force: input.force,
+      });
+    }
+    if (actionKey === 'apply_script') {
+      const input = scriptInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      if (input.markdown) return studio.applyScriptMarkdown(project, input.markdown, {
+        baseFingerprint: input.baseFingerprint,
+        force: input.force,
+      });
+      if (!input.script) throw new Error('apply_script requires either script or markdown.');
+      return studio.applyScript(project, input.script, {
+        baseFingerprint: input.baseFingerprint,
+        force: input.force,
+      });
+    }
+    if (actionKey === 'apply_shot_prompts') {
+      const input = shotPromptsInputSchema.parse(rawInput);
+      return studio.applyShotPrompts(await fullProjectForUser(input.projectId, auth.userId), input.shots, { force: input.force });
+    }
+    if (actionKey === 'apply_shot_workflow_modes') {
+      const input = shotWorkflowModesInputSchema.parse(rawInput);
+      return studio.applyShotWorkflowModes(await fullProjectForUser(input.projectId, auth.userId), input.shots);
+    }
+    if (actionKey === 'apply_style_direction') {
+      const input = styleDirectionInputSchema.parse(rawInput);
+      return studio.applyStyleDirection(await fullProjectForUser(input.projectId, auth.userId), input.style, {
+        baseHash: input.baseHash,
+        force: input.force,
+      });
+    }
     if (actionKey === 'generate_candidates') {
       const input = generateCandidatesInputSchema.parse(rawInput);
       const entityType = normalizeLookEntityType(input.entityType);

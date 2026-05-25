@@ -234,7 +234,92 @@ export const AUDIO_ACTION_SPECS = {
   },
 } as const;
 
+export const CONCEPT_ACTION_SPECS = {
+  apply_concept: {
+    key: 'apply_concept',
+    title: 'Apply concept',
+    surface: 'concept',
+    mutates: true,
+    paid: false,
+    description: 'Persist a Codex-written locked concept object. Reapplying is the edit path.',
+    input: {
+      projectId: 'string',
+      concept: '{ title, direction, description, mood? }',
+      baseHash: 'optional string',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', concept: { title: 'Quiet Signal', direction: '...', description: '...' } }],
+  },
+} as const;
+
+export const SCRIPT_ACTION_SPECS = {
+  apply_script: {
+    key: 'apply_script',
+    title: 'Apply script',
+    surface: 'script',
+    mutates: true,
+    paid: false,
+    description: 'Persist project cast, environments, scenes, and shots. Accepts structured script JSON or one Mirage script markdown draft.',
+    input: {
+      projectId: 'string',
+      script: 'optional structured script object',
+      markdown: 'optional mirage-script-v1 markdown',
+      baseFingerprint: 'optional string',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', markdown: '---\\nformat: mirage-script-v1\\n...' }],
+  },
+  apply_shot_prompts: {
+    key: 'apply_shot_prompts',
+    title: 'Apply shot prompts',
+    surface: 'script',
+    mutates: true,
+    paid: false,
+    description: 'Persist visual, motion, direction, or continuity updates for one or more shots.',
+    input: {
+      projectId: 'string',
+      shots: 'array of {shotId, visualPrompt?, motionPrompt?, direction?, continuityFrom?, baseHash?}',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', shots: [{ shotId: 'shot_uuid', motionPrompt: 'Slow push-in.' }] }],
+  },
+  apply_shot_workflow_modes: {
+    key: 'apply_shot_workflow_modes',
+    title: 'Apply shot workflow modes',
+    surface: 'script',
+    mutates: true,
+    paid: false,
+    description: 'Persist per-shot workflow path overrides: auto, storyboard, or keyframe.',
+    input: {
+      projectId: 'string',
+      shots: 'array of {shotId, workflowMode, note?}',
+    },
+    examples: [{ projectId: 'project_uuid', shots: [{ shotId: 'shot_uuid', workflowMode: 'storyboard' }] }],
+  },
+} as const;
+
+export const STYLE_ACTION_SPECS = {
+  apply_style_direction: {
+    key: 'apply_style_direction',
+    title: 'Apply style direction',
+    surface: 'style',
+    mutates: true,
+    paid: false,
+    description: 'Persist style direction text. This action does not generate or lock a style image yet.',
+    input: {
+      projectId: 'string',
+      style: '{ styleDescription, styleGenerationPrompt?, colorPalette? }',
+      baseHash: 'optional string',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', style: { styleDescription: 'soft luminous anime portrait style' } }],
+  },
+} as const;
+
 export const ALL_ACTION_SPECS = {
+  ...CONCEPT_ACTION_SPECS,
+  ...SCRIPT_ACTION_SPECS,
+  ...STYLE_ACTION_SPECS,
   ...LOOK_ACTION_SPECS,
   ...STORYBOARD_ACTION_SPECS,
   ...VIDEO_ACTION_SPECS,
