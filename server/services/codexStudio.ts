@@ -83,6 +83,16 @@ export {
   searchArtistAssets,
 } from './codexStudio/memory.js';
 export {
+  generateCharacterLook,
+  generateEnvironmentLook,
+  generateStyleReference,
+  lockCharacterLook,
+  lockEnvironmentLook,
+  lockStyleReference,
+  unlockCharacterLook,
+  unlockEnvironmentLook,
+} from './codexStudio/visualOps.js';
+export {
   applyGenerateStoryboard,
   applyGenerateVideo,
   applyProjectPreferencesConfig,

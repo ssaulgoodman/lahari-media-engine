@@ -14,7 +14,7 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.7';
+const HOSTED_MCP_VERSION = '0.1.8';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
@@ -22,7 +22,7 @@ Supabase is canonical project truth. Use MCP tools for reads, applies, generatio
 
 Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. Use query_artist_memory and search_artist_assets when they ask about prior work, styles used before, reusable visual references, older storyboards, or taste patterns across their owned projects. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
-Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
+Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use generate_style_reference, generate_character_look, and generate_environment_look for approved visual reference generation; lock the chosen assets only after visual approval. Use per-call modelOverride for experiments instead of changing project defaults.
 
 Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
 
@@ -58,6 +58,9 @@ const modelOverrideSchema = z.object({
   storyboardProvider: idString.optional(),
   videoModel: idString.optional(),
 }).optional();
+const imageModelOverrideSchema = z.object({
+  imageModel: idString.optional(),
+}).optional();
 const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
 
 const MCP_LIMITS = {
@@ -68,6 +71,9 @@ const MCP_LIMITS = {
 };
 
 const PAID_TOOLS = new Set([
+  'generate_style_reference',
+  'generate_character_look',
+  'generate_environment_look',
   'apply_generate_storyboard',
   'generate_storyboard',
   'bulk_generate_storyboards',
@@ -713,6 +719,54 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       force: z.boolean().optional(),
     },
   }, async ({ projectId, style, baseHash, force }) => studio.applyStyleDirection(await fullProjectForUser(projectId, auth.userId), style, { baseHash, force }));
+
+  registerTool('generate_style_reference', {
+    title: 'Generate style reference',
+    description: 'Mutating and paid. Generates a style reference image from a Codex-written style prompt. Does not lock it; call lock_style_reference after visual approval.',
+    inputSchema: { projectId, prompt: promptText, modelOverride: imageModelOverrideSchema },
+  }, async ({ projectId, prompt, modelOverride }) => studio.generateStyleReference(await fullProjectForUser(projectId, auth.userId), prompt, modelOverride || {}));
+
+  registerTool('lock_style_reference', {
+    title: 'Lock style reference',
+    description: 'Mutating. Locks a generated or existing style asset as the project style reference and marks downstream refs/prompts stale.',
+    inputSchema: { projectId, assetId: idString, styleDescription: optionalPromptText },
+  }, async ({ projectId, assetId, styleDescription }) => studio.lockStyleReference(await fullProjectForUser(projectId, auth.userId), assetId, styleDescription));
+
+  registerTool('generate_character_look', {
+    title: 'Generate character look',
+    description: 'Mutating and paid. Generates candidate look/reference images for one cast member using the project style reference and character-look override recipe.',
+    inputSchema: { projectId, castMemberId: idString, feedback: mediumText.optional(), modelOverride: imageModelOverrideSchema },
+  }, async ({ projectId, castMemberId, feedback, modelOverride }) => studio.generateCharacterLook(await fullProjectForUser(projectId, auth.userId), castMemberId, { feedback, modelOverride: modelOverride || {} }));
+
+  registerTool('lock_character_look', {
+    title: 'Lock character look',
+    description: 'Mutating. Locks a generated/existing asset as one cast member reference and marks dependent shots stale.',
+    inputSchema: { projectId, castMemberId: idString, assetId: idString },
+  }, async ({ projectId, castMemberId, assetId }) => studio.lockCharacterLook(await fullProjectForUser(projectId, auth.userId), castMemberId, assetId));
+
+  registerTool('unlock_character_look', {
+    title: 'Unlock character look',
+    description: 'Mutating. Clears one cast member reference and marks dependent shots stale.',
+    inputSchema: { projectId, castMemberId: idString },
+  }, async ({ projectId, castMemberId }) => studio.unlockCharacterLook(await fullProjectForUser(projectId, auth.userId), castMemberId));
+
+  registerTool('generate_environment_look', {
+    title: 'Generate environment look',
+    description: 'Mutating and paid. Generates candidate look/reference images for one environment using the project style reference and environment-look override recipe.',
+    inputSchema: { projectId, environmentId: idString, note: mediumText.optional(), modelOverride: imageModelOverrideSchema },
+  }, async ({ projectId, environmentId, note, modelOverride }) => studio.generateEnvironmentLook(await fullProjectForUser(projectId, auth.userId), environmentId, { note, modelOverride: modelOverride || {} }));
+
+  registerTool('lock_environment_look', {
+    title: 'Lock environment look',
+    description: 'Mutating. Locks a generated/existing asset as one environment reference and marks dependent shots stale.',
+    inputSchema: { projectId, environmentId: idString, assetId: idString },
+  }, async ({ projectId, environmentId, assetId }) => studio.lockEnvironmentLook(await fullProjectForUser(projectId, auth.userId), environmentId, assetId));
+
+  registerTool('unlock_environment_look', {
+    title: 'Unlock environment look',
+    description: 'Mutating. Clears one environment reference and marks dependent shots stale.',
+    inputSchema: { projectId, environmentId: idString },
+  }, async ({ projectId, environmentId }) => studio.unlockEnvironmentLook(await fullProjectForUser(projectId, auth.userId), environmentId));
 
   registerTool('apply_video_prompt', {
     title: 'Apply video prompt',
