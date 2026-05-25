@@ -72,6 +72,8 @@ const dialogueStrategySchema = z.enum(['lipsync', 'overlay']);
 const ttsStatusSchema = z.enum(['pending', 'generating', 'success', 'error']);
 const lookEntityTypeSchema = z.enum(['cast', 'environment', 'env']);
 const actionKeySchema = z.enum(['generate_candidates', 'list_candidates', 'lock_reference']);
+const actionSurfaceSchema = z.enum(['looks']);
+const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const audioPlanSchema = z.object({
   dialogueStrategy: dialogueStrategySchema,
@@ -173,7 +175,10 @@ const LOOK_ACTION_SPECS = {
   },
 } as const;
 
+const ALL_ACTION_SPECS = LOOK_ACTION_SPECS;
+
 const normalizeLookEntityType = (value: string) => value === 'env' ? 'environment' : value;
+const actionSpec = (actionKey?: string | null) => actionKey ? ALL_ACTION_SPECS[actionKey as keyof typeof ALL_ACTION_SPECS] : undefined;
 
 const generateCandidatesInputSchema = z.object({
   projectId,
@@ -336,7 +341,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool: name, args, startedAt });
       let operationId: string | null = null;
       try {
-        const paidInvocation = PAID_TOOLS.has(name) || (name === 'run_action' && args?.actionKey === 'generate_candidates');
+        const paidInvocation = PAID_TOOLS.has(name) || (name === 'run_action' && !!actionSpec(args?.actionKey)?.paid);
         if (paidInvocation) {
           assertRateLimit({
             key: `mcp:paid:${auth.tokenId}`,
@@ -484,20 +489,23 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('get_project_state', {
     title: 'Get project state',
-    description: 'Read-only cockpit tool. Returns the current Mirage project packet. Prefer this over broad notebook sync when local files are not needed.',
-    inputSchema: { projectId },
-  }, async ({ projectId }) => studio.buildProjectPacket(await fullProjectForUser(projectId, auth.userId)));
+    description: 'Read-only cockpit tool. Returns a compact project state by default. Use detail=production for shot/look summaries or detail=full only when the complete legacy packet is required.',
+    inputSchema: {
+      projectId,
+      detail: projectStateDetailSchema.optional(),
+    },
+  }, async ({ projectId, detail }) => studio.buildProjectState(await fullProjectForUser(projectId, auth.userId), detail || 'summary'));
 
   registerTool('list_actions', {
     title: 'List Mirage actions',
     description: 'Read-only cockpit tool. Lists contextual registry actions. Slice 1 exposes the Looks actions: generate_candidates, list_candidates, lock_reference.',
     inputSchema: {
       projectId,
-      surface: z.enum(['looks']).optional(),
+      surface: actionSurfaceSchema.optional(),
     },
   }, async ({ projectId, surface }) => {
     await assertProjectAccess(projectId, auth.userId);
-    const actions = Object.values(LOOK_ACTION_SPECS).filter((action) => !surface || action.surface === surface);
+    const actions = Object.values(ALL_ACTION_SPECS).filter((action) => !surface || action.surface === surface);
     return {
       kind: 'mirage.actions.list',
       projectId,
@@ -515,7 +523,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     },
   }, async ({ actionKey }) => ({
     kind: 'mirage.action.description',
-    action: LOOK_ACTION_SPECS[actionKey as keyof typeof LOOK_ACTION_SPECS],
+    action: actionSpec(actionKey),
   }));
 
   registerTool('run_action', {

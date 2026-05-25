@@ -514,6 +514,7 @@ export const summarizeAgentTiming = async (opts: {
       max: gapValues.length ? Math.max(...gapValues) : null,
       top: [...gaps].sort((a, b) => b.gapMs - a.gapMs).slice(0, limit),
     },
+    measurementNote: 'For attribution, run the same task once through legacy get_project_packet/list_reference_candidates/apply_* tools and once through open_project/get_project_state/list_actions/run_action/list_results before comparing.',
     tools,
     topSlowCalls: [...finishes]
       .sort((a, b) => b.durationMs - a.durationMs)

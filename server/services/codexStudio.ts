@@ -78,6 +78,7 @@ export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.j
 export { applyAudioPlan, applyAudioPlanMarkdown, applyCastVoice, generateDialogueAudio, getAudioPlanCost } from './codexStudio/audioPlan.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
+export { buildProjectState } from './codexStudio/statePacket.js';
 import { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectActionList, buildStoryboardPromptReview } from './codexStudio/plans.js';
 export { buildProjectNotebook, type NotebookFile } from './codexStudio/notebook.js';
