@@ -17,13 +17,13 @@ import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.12';
+const HOSTED_MCP_VERSION = '0.1.13';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks and Storyboard work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Looks, Storyboard, and Video work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. For video, use generate_video with dryRun=true for requirements/cost, then generate_video without dryRun when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with apply_audio_plan_markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -81,8 +81,10 @@ const actionKeySchema = z.enum([
   'refine_storyboard_image',
   'lock_storyboard',
   'unlock_storyboard',
+  'generate_video',
+  'apply_video_prompt',
 ]);
-const actionSurfaceSchema = z.enum(['looks', 'storyboard']);
+const actionSurfaceSchema = z.enum(['looks', 'storyboard', 'video']);
 const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const audioPlanSchema = z.object({
@@ -271,9 +273,45 @@ const STORYBOARD_ACTION_SPECS = {
   },
 } as const;
 
+const VIDEO_ACTION_SPECS = {
+  generate_video: {
+    key: 'generate_video',
+    title: 'Generate video',
+    surface: 'video',
+    mutates: true,
+    paid: true,
+    description: 'Generate the video clip for one shot. dryRun returns requirements, provider, and cost without spending.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      dryRun: 'optional boolean',
+      promptOverride: 'optional exact final video prompt',
+      modelOverride: 'optional videoModel override',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
+  },
+  apply_video_prompt: {
+    key: 'apply_video_prompt',
+    title: 'Apply video prompt',
+    surface: 'video',
+    mutates: true,
+    paid: false,
+    description: 'Persist a Codex-written keyframe-mode motion prompt. This does not generate video.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      motionPrompt: 'string',
+      baseHash: 'optional string',
+      force: 'optional boolean',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', motionPrompt: 'Slow push-in; Ren barely breathes.' }],
+  },
+} as const;
+
 const ALL_ACTION_SPECS = {
   ...LOOK_ACTION_SPECS,
   ...STORYBOARD_ACTION_SPECS,
+  ...VIDEO_ACTION_SPECS,
 } as const;
 
 const normalizeLookEntityType = (value: string) => value === 'env' ? 'environment' : value;
@@ -334,6 +372,20 @@ const storyboardLockInputSchema = z.object({
   projectId,
   shotId,
   versionId: idString.optional(),
+});
+const generateVideoInputSchema = z.object({
+  projectId,
+  shotId,
+  dryRun: z.boolean().optional(),
+  promptOverride: optionalPromptText,
+  modelOverride: modelOverrideSchema,
+});
+const applyVideoPromptInputSchema = z.object({
+  projectId,
+  shotId,
+  motionPrompt: promptText,
+  baseHash: idString.optional(),
+  force: z.boolean().optional(),
 });
 
 const structuredToolError = (error: unknown) => {
@@ -606,6 +658,20 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       const input = storyboardLockInputSchema.parse(rawInput);
       return studio.unlockStoryboardBoard(await fullProjectForUser(input.projectId, auth.userId), input.shotId);
     }
+    if (actionKey === 'generate_video') {
+      const input = generateVideoInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      return input.dryRun
+        ? studio.planGenerateVideo(project, input.shotId, input.modelOverride || {})
+        : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {});
+    }
+    if (actionKey === 'apply_video_prompt') {
+      const input = applyVideoPromptInputSchema.parse(rawInput);
+      return studio.applyVideoPrompt(await fullProjectForUser(input.projectId, auth.userId), input.shotId, input.motionPrompt, {
+        baseHash: input.baseHash,
+        force: input.force,
+      });
+    }
     throw new Error(`Unknown action: ${actionKey}`);
   };
 
@@ -678,7 +744,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('list_actions', {
     title: 'List Mirage actions',
-    description: 'Read-only cockpit tool. Lists contextual registry actions. Slice 1 exposes the Looks actions: generate_candidates, list_candidates, lock_reference.',
+    description: 'Read-only cockpit tool. Lists contextual registry actions for Looks, Storyboard, and Video.',
     inputSchema: {
       projectId,
       surface: actionSurfaceSchema.optional(),
@@ -708,7 +774,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('run_action', {
     title: 'Run Mirage action',
-    description: 'Mutating cockpit tool. Runs a registry action by key. Slice 1 supports Looks actions only.',
+    description: 'Mutating cockpit tool. Runs a registry action by key.',
     inputSchema: {
       actionKey: actionKeySchema,
       input: actionInputSchema,

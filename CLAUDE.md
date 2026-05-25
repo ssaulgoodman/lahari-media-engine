@@ -188,6 +188,8 @@ Reference-image bridge tools: prefer the Slice 1 action surface: `list_actions` 
 
 Storyboard action bridge: prefer `run_action` for `generate_storyboard`, `bulk_generate_storyboards`, `apply_storyboard_prompts`, `refine_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. Use `bulk_generate_storyboards` when the server should pick missing/stale/error boards; use `parallel_run` only when the agent has already chosen specific independent shot actions. `parallel_run` reduces round-trips but still waits for the slowest action; true fire-and-continue needs future `start_job`.
 
+Video action bridge: prefer `run_action` for `generate_video` and `apply_video_prompt`. Use `generate_video` with `dryRun: true` for requirements/cost, then rerun without `dryRun` after artist approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.
+
 Destructive events happen on active mutation:
 - `lock-concept` with changed concept and existing scenes can wipe downstream data or fork.
 - `generate-script` rerun can wipe cast/scenes/prompts or fork.

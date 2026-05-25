@@ -102,6 +102,7 @@ For character and environment references, do not scrape storage or write DB rows
 - Use `bulk_generate_storyboards` when the server should pick missing/stale/error boards for a project or selected shot list. Use `parallel_run` when you have already chosen specific independent shot actions and want to reduce round-trips.
 - `parallel_run` waits for every action to finish before returning. It reduces sequential tool-call overhead, but it is not a background job system. Long paid generations can still block the agent until the slowest action completes.
 - Keep `parallel_run` batches small and only include actions the artist has approved. Current cap is 8 actions; split larger scene batches.
+- For Video work, prefer `run_action({ actionKey: 'generate_video', input: { projectId, shotId, dryRun: true } })` for requirements/cost, then rerun without `dryRun` after approval. Use `apply_video_prompt` only to persist keyframe-mode motion prompt text; it does not generate media.
 
 ## Friction Capture
 

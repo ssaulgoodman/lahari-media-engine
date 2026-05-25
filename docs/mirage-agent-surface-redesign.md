@@ -391,7 +391,7 @@ Real capabilities, invoked through `run_action` or `start_job`. Surface-tagged s
 - `unlock_storyboard`
 - `apply_storyboard_prompt` — collapse with `apply_storyboard_prompts_bulk` + `apply_storyboard_scene_markdown` into one tool with array input + format param (3 → 1).
 
-**Video (surface: 'studio', entityType: 'shot')**
+**Video (surface: 'video', entityType: 'shot')**
 - `generate_video` — replaces `apply_generate_video` + `plan_generate_video` (2 → 1 with `dryRun`).
 - `apply_video_prompt`
 

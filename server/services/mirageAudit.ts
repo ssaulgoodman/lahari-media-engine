@@ -405,9 +405,25 @@ const paidToolLike = (tool: string) => (
   )
 );
 
+const PAID_ACTION_KEYS = new Set([
+  'generate_candidates',
+  'generate_storyboard',
+  'bulk_generate_storyboards',
+  'refine_storyboard_image',
+  'generate_video',
+]);
+
+const rowHasPaidAction = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') return false;
+  const input = value as Record<string, unknown>;
+  if (typeof input.actionKey === 'string' && PAID_ACTION_KEYS.has(input.actionKey)) return true;
+  if (Array.isArray(input.actions)) return input.actions.some(rowHasPaidAction);
+  return false;
+};
+
 const paidRowLike = (row: any) => (
   paidToolLike(row.tool)
-  || (row.tool === 'run_action' && row.args?.actionKey === 'generate_candidates')
+  || rowHasPaidAction(row.args)
 );
 
 export const summarizeAgentTiming = async (opts: {
