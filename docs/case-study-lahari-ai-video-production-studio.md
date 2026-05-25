@@ -269,6 +269,62 @@ Show an artist asking Codex to open a project. Codex syncs the notebook, edits a
 
 Frame it as production compression: weeks of fragmented creative coordination becoming a guided, inspectable workflow where artists and agents can move fast without losing control.
 
+## Video Treatment
+
+The case-study video should feel forward, fast, and crisp. Not a client testimonial, not an agency hype reel. The tone is: here is the work, here is the machine, here is what changed.
+
+**Opening: production is messy**
+
+Start with motion graphics and quick text fragments showing the chaos of AI video production: lyrics, prompts, references, clips, timelines, approvals, model choices, retries, folders, and chat threads. The point is not "AI clips are hard." The point is that production is stateful.
+
+Possible line:
+
+> AI video is not hard because one clip is hard. It is hard because production has memory.
+
+**Context: Lahari needed a production system**
+
+Keep Lahari's setup short and factual. Lahari had a large devotional music catalog, an active production need, and the ambition to produce videos at scale. Mothership built the operating system around that workflow.
+
+Avoid making this sound like "they came to us and we saved them." Lahari is the proof surface, not the pitch.
+
+**Bird's-eye system map**
+
+Show the whole machine once before going deep:
+
+Song catalog -> audio analysis -> concept/script/style/cast/env -> storyboard/video -> render timeline -> final video -> agent workspace.
+
+This gives the viewer a mental model before the UI footage starts.
+
+**Visual Studio walkthrough**
+
+Move through the app in production order: Queue, Blueprint, script, style, characters, environments, storyboard mode, model controls, prompt visibility, shot status, media history. Narration should be concrete:
+
+> Every step writes back to the same project state. Prompts are visible. References are locked. Stale work is flagged. Artists can steer without losing continuity.
+
+**Render machine hero beat**
+
+Show the render timeline as the "machine room." Then zoom into the embedded player and let the rendered video play for a few seconds. This should be the moment where the viewer feels the product becoming real, not just UI.
+
+After that, cut into a short montage of the best generated clips across projects. The montage proves output quality faster than any claim can.
+
+**Agent-native layer**
+
+Once the viewer understands the studio, reveal the agent layer:
+
+> Then we exposed the same production system to Codex and Claude.
+
+Show an artist/operator asking Codex to open a project, the local notebook/drafts, a script or storyboard edit, an apply tool result, and the web studio updating. The important line:
+
+> We did not build a separate chatbot. We brought Lahari to the tools artists and operators already use.
+
+**Close**
+
+End on the pattern:
+
+> Lahari went from fragmented AI-video experiments to a production operating system: visual, traceable, cloud-rendered, and agent-operable.
+
+Then close with Mothership.
+
 ## Snapshot Checklist
 
 For the case study and future video, capture the product in the same order the work flows.
