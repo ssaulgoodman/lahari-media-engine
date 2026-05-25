@@ -39,7 +39,7 @@ We already have a useful spine:
 - `server/routes/mcp.ts` records per-tool `durationMs`, result size, and success/error through `recordMcpAudit`.
 - `server/routes/director.ts` does the same for the director API.
 - `server/services/agentOperations.ts` records mutating tool operations in Supabase.
-- `server/services/mirageAudit.ts` writes local JSONL audit rows under `.mirage/audit/`.
+- `server/services/mirageAudit.ts` writes local JSONL audit rows under `.mirage/audit/` and shadows the same rows into `*_mcp_audit_events` for hosted durability.
 
 Add a read-only timing surface:
 

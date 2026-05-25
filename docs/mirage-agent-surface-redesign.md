@@ -440,7 +440,7 @@ This is my suggested first slice, not final.
 Bundle the cockpit, the registry surface for looks, the timing instrumentation, and the skill update as one slice. Splitting them risks measuring half the architecture.
 
 1. **Timing instrumentation first.** Add `get_agent_timing_summary` BEFORE any architectural change.
-   - Use existing MCP audit JSONL + Supabase `agent_operations` rows.
+   - Use existing MCP audit JSONL locally and durable `*_mcp_audit_events` rows on hosted Mirage. `agent_operations` remains the realtime/presence table for mutating calls only.
    - Report end-to-end task duration: first tool call → final visible result (resource read or UI realtime confirmation).
    - Decompose: agent-thinking gaps (time between tool calls when no MCP work is happening — proxy for inference), tool-execution time, paid-generation time, polling time.
    - Run Task A against the *current* 60-tool system. This is the baseline. Without it, "the new shape feels faster" is vibes.

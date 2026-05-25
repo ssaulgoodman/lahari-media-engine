@@ -37,6 +37,7 @@ const T = {
   storyboard_versions: `${TABLE_PREFIX}_storyboard_versions`,
   director_events: `${TABLE_PREFIX}_director_events`,
   agent_operations: `${TABLE_PREFIX}_agent_operations`,
+  mcp_audit_events: `${TABLE_PREFIX}_mcp_audit_events`,
   mcp_tokens: `${TABLE_PREFIX}_mcp_tokens`,
   project_config: `${TABLE_PREFIX}_project_config`,
   project_prompt_overrides: `${TABLE_PREFIX}_project_prompt_overrides`,

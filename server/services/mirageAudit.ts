@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getSB, insertRow, T } from '../database.js';
 
 type AuditPhase = 'start' | 'finish';
 type IssueSeverity = 'low' | 'mid' | 'high';
@@ -165,6 +166,40 @@ const appendJsonl = (filePath: string, value: Record<string, unknown>) => {
   fs.appendFileSync(filePath, `${JSON.stringify(value)}\n`);
 };
 
+const isMissingAuditTableError = (error: any) => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return code === '42P01'
+    || code === 'PGRST205'
+    || message.includes('mcp_audit_events');
+};
+
+const durableAuditConfigured = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+
+const persistAuditEvent = async (event: Record<string, unknown>) => {
+  if (!durableAuditConfigured()) return;
+  try {
+    await insertRow('mcp_audit_events', {
+      project_id: event.projectId || null,
+      source: event.source,
+      phase: event.phase,
+      tool: event.tool,
+      ts: event.ts,
+      started_at: event.startedAt || null,
+      duration_ms: event.durationMs ?? null,
+      ok: event.ok ?? null,
+      error_message: event.errorMessage || null,
+      result_size: event.resultSize ?? null,
+      args: event.args || {},
+      result_summary: event.resultSummary || {},
+    });
+  } catch (error: any) {
+    if (!isMissingAuditTableError(error)) {
+      console.warn(`[mcp-audit] durable persist failed for ${event.tool}: ${error?.message || error}`);
+    }
+  }
+};
+
 export const recordMcpAudit = (entry: {
   phase: AuditPhase;
   tool: string;
@@ -192,6 +227,7 @@ export const recordMcpAudit = (entry: {
     startedAt: entry.startedAt,
   };
   appendJsonl(auditLogPath(projectId), event);
+  void persistAuditEvent(event);
   return event;
 };
 
@@ -217,6 +253,7 @@ export const recordCliAudit = (entry: {
     startedAt: entry.startedAt,
   };
   appendJsonl(auditLogPath(projectId), event);
+  void persistAuditEvent(event);
   return event;
 };
 
@@ -303,19 +340,70 @@ const readAuditRows = (opts: {
   return rows.sort((a, b) => Date.parse(a.ts || '') - Date.parse(b.ts || ''));
 };
 
+const readDurableAuditRows = async (opts: {
+  projectId?: string | null;
+  sinceHours?: number;
+  source?: string | null;
+}) => {
+  if (!durableAuditConfigured()) return null;
+  const sinceIso = new Date(
+    Date.now() - Math.max(1, Math.min(24 * 14, opts.sinceHours || 24)) * 60 * 60 * 1000,
+  ).toISOString();
+  try {
+    let q = getSB()
+      .from(T.mcp_audit_events)
+      .select('*')
+      .gte('ts', sinceIso)
+      .order('ts', { ascending: true })
+      .limit(5000);
+    if (opts.projectId) q = q.eq('project_id', opts.projectId);
+    if (opts.source) q = q.eq('source', opts.source);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data || []).map((row: any) => ({
+      ts: row.ts,
+      source: row.source,
+      phase: row.phase,
+      tool: row.tool,
+      projectId: row.project_id,
+      args: row.args,
+      durationMs: row.duration_ms,
+      ok: row.ok,
+      errorMessage: row.error_message,
+      resultSize: row.result_size,
+      resultSummary: row.result_summary,
+      startedAt: row.started_at,
+      scope: row.project_id ? safeProjectScope(row.project_id) : '_unscoped',
+      storage: 'db',
+    }));
+  } catch (error: any) {
+    if (!isMissingAuditTableError(error)) {
+      console.warn(`[mcp-audit] durable read failed: ${error?.message || error}`);
+    }
+    return null;
+  }
+};
+
 const paidToolLike = (tool: string) => (
-  tool.includes('generate')
-  || tool.includes('refine_storyboard')
-  || tool.includes('dialogue_audio')
+  !tool.startsWith('plan_')
+  && !tool.startsWith('apply_plan_')
+  && (
+    tool.startsWith('generate_')
+    || tool.startsWith('bulk_generate_')
+    || tool.startsWith('apply_generate_')
+    || tool.includes('refine_storyboard')
+    || tool.includes('dialogue_audio')
+  )
 );
 
-export const summarizeAgentTiming = (opts: {
+export const summarizeAgentTiming = async (opts: {
   projectId?: string | null;
   sinceHours?: number;
   source?: string | null;
   limit?: number;
 }) => {
-  const rows = readAuditRows(opts);
+  const durableRows = await readDurableAuditRows(opts);
+  const rows = durableRows || readAuditRows(opts).map((row) => ({ ...row, storage: 'filesystem' }));
   const finishes = rows
     .filter((row) => row.phase === 'finish')
     .map((row) => ({
@@ -396,6 +484,10 @@ export const summarizeAgentTiming = (opts: {
       sinceHours: Math.max(1, Math.min(24 * 14, opts.sinceHours || 24)),
       source: opts.source || null,
     },
+    storage: durableRows ? 'database' : 'filesystem',
+    caveats: durableRows
+      ? ['wallClockMs spans the selected window; use a tight sinceHours immediately after a baseline run for session-like numbers.']
+      : ['filesystem audit is ephemeral on hosted deployments; apply the mcp_audit_events migration for durable baseline data.'],
     totals: {
       rows: rows.length,
       finishEvents: finishes.length,
