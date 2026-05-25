@@ -225,7 +225,54 @@ Avoid it when:
 
 The skill should teach "packet/state first, notebook only when editing files."
 
-### 8. Plan/Apply As A Mode, Not Tool Multiplication
+### 8. Template Vs Output — Two Prompt Layers
+
+The system has two kinds of prompts. Confusing them produces both surface bloat and confused agent behavior. Naming this distinction explicitly so the cockpit + skill stay coherent.
+
+**TEMPLATE** — the instructions the engine uses *when it generates something*. Looks like:
+> "Write a concept for this song. Be cinematic. Include sections for premise, palette, tone..."
+
+Lives in code under `server/prompts/*.ts`. The default template for every project unless explicitly overridden.
+
+**OUTPUT** — the actual content the template produces. Looks like:
+> "A solarpunk love story set in a Mumbai monsoon. Premise: ..."
+
+Lives in project DB rows. Different per project. Written by the apply path.
+
+**The agent's two verbs map cleanly onto these two layers:**
+
+| Agent verb | What it writes | Scope | When to use |
+|---|---|---|---|
+| `apply_*` (concept, script, storyboard_prompts, video_prompt, audio_plan, etc.) | OUTPUT (the actual content) | Project-scoped data row | Default for almost everything. Agent composes the final text and saves it. |
+| `apply_project_prompt_override({kind, body})` | TEMPLATE (the engine's instructions) | Project-scoped template override | Power-user. Only when the artist wants a template change to stick across many future UI-driven generations. |
+
+**The discipline:** for agent-led work writing CONTENT, `apply_*` is the dominant verb. The agent composes content natively and writes it via `apply_*`. Per-call experiments use `generate_*({promptOverride})` for one-shot template variation that doesn't stick.
+
+**Why override is a first-class feature (not power-user, not debug):**
+
+Override is how the **artist's taste shapes the engine over time.** The default templates in `server/prompts/*` are written by engineers months or years before any specific artist starts using them. Over weeks of real work, an artist learns that their preferred storyboard prompt phrasing is different. Or that the default concept template misses something their projects always need. Without persistent override, the artist's only escape is to ship the same `promptOverride` on every single generate call, forever — losing all cumulative learning.
+
+The hierarchy of overrides:
+
+| Need | Tool | Persistence |
+|---|---|---|
+| Try a prompt change once | `generate_*({promptOverride})` | Saved template unchanged. One-shot experiment. |
+| Make a prompt change permanent for this project | `apply_project_prompt_override({kind, body})` | Project-wide template change. Sticks. |
+| Revert to system default | `revert_project_prompt_override({kind})` | Override removed; engine falls back to `server/prompts/*` global. |
+
+So override is the **graduation path** from per-call experimentation to project-wide preference. It's how the engine learns the artist's evolving aesthetic.
+
+**What the skill must teach.** The `mirage-director` skill needs an explicit "two prompt layers" section so Codex picks the right verb. Short version of the instruction:
+
+> "Two layers of prompts exist. CONTENT (a specific concept, script, storyboard prompt for one shot) → use `apply_*`. TEMPLATE (the engine's instructions used every time this kind of generation runs) → use `apply_project_prompt_override`. When the artist says 'fix this prompt,' figure out which they mean: if it's the output for one shot, that's `apply_*`. If it's 'the way the engine writes prompts in general,' that's an override.
+>
+> An additional pattern: if you've shipped the same `promptOverride` on `generate_*` multiple times in a session, surface the option of promoting it to a project-wide override so the artist doesn't have to remember it on future generations."
+
+That last paragraph is genuine value-add — the agent observes repetition and suggests promotion. Override becomes the artifact of accumulated learning rather than a power-user toggle.
+
+**Surface placement:** `apply_project_prompt_override` and `revert_project_prompt_override` live in the **default registry surface** (not debug), discoverable via `list_actions({surface: 'system'})` or whatever the relevant surface tag becomes. The agent should know about them and reach for them when warranted. The discipline is in WHEN to reach, not in hiding them.
+
+### 9. Plan/Apply As A Mode, Not Tool Multiplication
 
 I do not want to delete plan/apply as a concept. It is still useful when an action is expensive, destructive, or needs review before spend.
 
@@ -246,7 +293,7 @@ generate_storyboard({ mode: 'preview' | 'start', ... })
 
 Same safety, fewer tool names.
 
-### 9. Clean Names, Legacy Aliases Hidden
+### 10. Clean Names, Legacy Aliases Hidden
 
 Tool/action names should be imperative and predictable.
 
