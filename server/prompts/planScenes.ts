@@ -1,7 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
-import { getPresetWorkflow } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 type PlanScenesPromptInput = {
   concept: any;
@@ -80,9 +79,9 @@ const CORE_TASK = `Plan the production structure for a music-led video.
 
 Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.`;
 
-const USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract, source material, and TASTE rules.
-
-All returned structure should satisfy the note. If the note conflicts with timing, source meaning, or production constraints, preserve the source/contract and translate the note into the closest valid structural intent.`;
+// User-note policy is shared (_shared.ts). Plan-scenes has no domain-specific
+// tail — the shared GENERATE policy already covers "all returned structure
+// should satisfy the note + translate conflicts."
 
 const OUTPUT_CONTRACT = `Return the plan using the plan_music_video tool.
 
@@ -97,27 +96,21 @@ Hard rules:
 - Build progression across the scene. Each shot advances the emotional, narrative, performance, or musical movement.`;
 
 export const buildPlanScenesPrompt = (input: PlanScenesPromptInput): string => {
-  const presetTaste = [
-    input.preset.source.rules,
-    getPresetWorkflow(input.preset).shotPlanRules,
-    pacingGuidance(input),
-    `Cast rules:\n${input.preset.script.castRules}`,
-    `Environment rules:\n${input.preset.script.environmentRules}`,
-    `Scene rules:\n${input.preset.script.sceneRules}`,
-    `Shot examples:\n${formatShotExamples(input.preset)}`,
-  ].filter(Boolean).join('\n\n');
-
+  // Pacing config + shot examples stay because they're concrete project
+  // hints, not preset doctrine. Folded into inputs so they read as task
+  // data, not preset taste.
   const inputs = [
     `Concept:\n${formatConcept(input.concept)}`,
     formatSourceSignals(input),
+    pacingGuidance(input),
+    `Shot examples:\n${formatShotExamples(input.preset)}`,
   ].filter(Boolean).join('\n\n');
 
   return composePrompt({
     coreTask: CORE_TASK,
     workflowContext: workflowContextFor(input.preset),
     inputs,
-    presetTaste,
-    userNotePolicy: USER_NOTE_POLICY,
+    userNotePolicy: GENERATE_USER_NOTE_POLICY,
     outputContract: OUTPUT_CONTRACT,
     userNote: input.userNote,
   });

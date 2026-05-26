@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, workflowContextFor } from './_shared.js';
+import { REFINE_USER_NOTE_POLICY, clip, workflowContextFor } from './_shared.js';
 
 type BuildStoryboardPlannerPromptInput = {
   sourceBrief: string;
@@ -22,10 +22,9 @@ const REFINE_CORE_TASK = `Refine one saved storyboard render prompt and cut plan
 
 This is a surgical rewrite of storyboard production text, not a new shot. Preserve the shot intent, locked references, panel count/layout where still valid, and continuity unless the director note explicitly changes them.`;
 
-const USER_NOTE_POLICY = `USER NOTE contains the director's storyboard feedback. Apply it surgically:
-- Touch only the panel actions, layout, emphasis, or continuity details the note addresses.
-- Preserve the shot's source brief, locked style, cast identity, environment, and current cut-plan logic unless the note directly changes them.
-- If the note conflicts with locked references, preset rules, or the no-text-in-panels rule, refuse the conflicting part and translate the valid intent into the closest storyboard-safe change.`;
+// User-note policy is shared (_shared.ts). Storyboard-specific tail:
+// addressable fields are panel-level; preserve locked refs and cut-plan logic.
+const USER_NOTE_TAIL = `Addressable fields: panel actions, layout, emphasis, continuity details. Preserve the shot's source brief, locked style, cast identity, environment, and current cut-plan logic unless the note directly changes them. Never violate the no-text-in-panels rule.`;
 
 const formatInputs = (input: BuildStoryboardPlannerPromptInput): string => {
   const parts: string[] = [];
@@ -75,7 +74,7 @@ export const buildStoryboardPlannerPrompt = (input: BuildStoryboardPlannerPrompt
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   presetTaste: presetTasteFor(input),
-  userNotePolicy: input.artistNote?.trim() ? USER_NOTE_POLICY : undefined,
+  userNotePolicy: input.artistNote?.trim() ? `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}` : undefined,
   outputContract: OUTPUT_CONTRACT,
   userNote: input.artistNote,
 });

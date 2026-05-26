@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, REFINE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 // ─── Generate Concept Options ─────────────────────────────────────────
 
@@ -35,11 +35,9 @@ Each direction is one coherent idea — what the viewer follows, what visibly ha
 
 Visual style, palette, and cinematography are decided in later phases. Do not include art-style language, camera directions, or color palette in any field — those belong to the style phase, not the concept phase.`;
 
-const GENERATE_USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract and TASTE rules. All returned directions must satisfy it.
-
-If the note conflicts with the source material, preset rules, or tool contract (e.g. asks for visual style/palette/cinematography at this layer, or asks the concept to abandon the source's intent), refuse the conflicting part and translate the rest into the closest valid concept-layer intent. Concept stays story/brief-level — style and medium are decided in later phases.
-
-Variety means distinct directions inside the noted constraint, not in spite of it. With no user note, propose maximally distinct directions inside TASTE.`;
+// Generate-flavor user-note policy is shared (_shared.ts). One concept-specific
+// addition: variety inside the constraint, not in spite of it.
+const GENERATE_USER_NOTE_TAIL = `Variety means distinct directions inside the noted constraint, not in spite of it. With no user note, propose maximally distinct directions inside TASTE.`;
 
 const outputContractForGenerate = (hasDirectorBrief: boolean): string => hasDirectorBrief
   ? `Return EXACTLY 1 concept in the concepts array — one that fleshes out the director's brief into a complete, production-ready concept. Do not override the director's intent; expand it.
@@ -120,8 +118,7 @@ export const buildGenerateConceptPrompt = (input: GenerateConceptPromptInput): s
     coreTask: GENERATE_CORE_TASK,
     workflowContext: workflowContextFor(input.preset),
     inputs: formatGenerateInputs(input),
-    presetTaste: input.preset.concept.rules,
-    userNotePolicy: GENERATE_USER_NOTE_POLICY,
+    userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${GENERATE_USER_NOTE_TAIL}`,
     outputContract,
     userNote: input.userNote,
   });
@@ -141,11 +138,9 @@ This is a refinement, not a replacement — preserve the core identity. Update o
 
 Visual style, palette, and cinematography belong to later phases. Do not introduce art-style language, camera directions, or color palette here.`;
 
-const REFINE_USER_NOTE_POLICY = `USER NOTE contains the director's feedback. Apply it surgically:
-- Touch only the fields the note addresses (mood, theme, subject, direction, description).
-- Preserve all locked fields the note does not mention.
-- Do not regenerate the concept from scratch.
-- If the note conflicts with the source material, preset rules, or tool contract (e.g. asks for visual style/palette/cinematography at this layer), refuse the conflicting part and translate the rest into the closest valid concept-layer intent. Concept stays story/brief-level — style and medium are decided in later phases.`;
+// Refine-flavor user-note policy is shared (_shared.ts). Concept-specific tail:
+// addressable fields, and concept-layer constraint.
+const REFINE_USER_NOTE_TAIL = `Addressable fields: mood, theme, subject, direction, description. Concept stays story/brief-level — style and medium are decided in later phases.`;
 
 const REFINE_OUTPUT_CONTRACT = `Return the refined concept as JSON with all fields populated:
 - title
@@ -171,8 +166,7 @@ export const buildRefineConceptPrompt = (input: RefineConceptPromptInput): strin
   coreTask: REFINE_CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatRefineInputs(input.currentConcept),
-  presetTaste: input.preset.concept.rules,
-  userNotePolicy: REFINE_USER_NOTE_POLICY,
+  userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${REFINE_USER_NOTE_TAIL}`,
   outputContract: REFINE_OUTPUT_CONTRACT,
   userNote: input.feedback,
 });

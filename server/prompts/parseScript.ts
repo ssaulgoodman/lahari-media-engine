@@ -1,5 +1,4 @@
 import type { PipelinePreset } from '../presets.js';
-import { getPresetWorkflow } from '../presets.js';
 import { composePrompt } from './_composer.js';
 import { clip, workflowContextFor } from './_shared.js';
 
@@ -20,16 +19,8 @@ const formatInputs = (input: ParseScriptPromptInput): string => [
   `Source title: ${clip(input.title, 200) || 'Untitled'}`,
   input.directorBrief ? `Director brief:\n${clip(input.directorBrief, 1500)}` : '',
   input.targetDuration ? `Target runtime: about ${input.targetDuration} seconds` : '',
-  `Script:\n${clip(input.scriptText, 12000)}`,
-].filter(Boolean).join('\n\n');
-
-const presetTasteFor = (input: ParseScriptPromptInput): string => [
-  input.preset.source.rules,
-  getPresetWorkflow(input.preset).shotPlanRules,
   `Default shot pacing when no timing is supplied: about ${input.pacing}s per shot; longer for dialogue or action beats.`,
-  `Cast extraction rules:\n${input.preset.script.castRules}`,
-  `Environment extraction rules:\n${input.preset.script.environmentRules}`,
-  `Scene planning rules:\n${input.preset.script.sceneRules}`,
+  `Script:\n${clip(input.scriptText, 12000)}`,
 ].filter(Boolean).join('\n\n');
 
 const OUTPUT_CONTRACT = `Return the plan using the parse_scripted_narrative tool.
@@ -49,6 +40,5 @@ export const buildParseScriptPrompt = (input: ParseScriptPromptInput): string =>
   coreTask: CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
-  presetTaste: presetTasteFor(input),
   outputContract: OUTPUT_CONTRACT,
 });

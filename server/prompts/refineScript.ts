@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { REFINE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 type RefineScriptPromptInput = {
   currentScript: {
@@ -30,12 +30,11 @@ This is SURGICAL refinement, not rewriting from scratch. Think editor, not new w
 
 The visual medium is decided separately via the locked style reference. Do not add cinematography, camera, or color-palette directions to the script.`;
 
-const USER_NOTE_POLICY = `USER NOTE contains the director's feedback. Apply it surgically:
-- Preserve scenes/shots not addressed by the feedback EXACTLY (same narratives, same shots, same cast assignments, same environments).
-- Touch only what the note asks to change. "Fix scene 4" means scenes 1-3 and 5+ come back identical.
-- Do NOT rename existing cast or environments — their names are IDs in the downstream system. You may add new ones if the feedback requires new characters or locations.
-- Every shot MUST have castNames (characters visible) and environmentName (location).
-- If the note conflicts with the source structure (section labels, timestamps), preset rules, or tool contract (e.g. asks to change visual style/cinematography/color palette at this layer), refuse the conflicting part and translate the rest into the closest valid script-layer intent.`;
+// User-note policy is shared (_shared.ts). Script-refine-specific tail:
+// section labels and entity names are IDs in the downstream system —
+// never rename existing cast/environments and never modify section labels
+// or timestamps.
+const USER_NOTE_TAIL = `Section labels and timestamps are fixed source structure — do not modify them. Existing cast and environment names are IDs downstream — never rename them; you may add new ones if the feedback requires new characters or locations. Every shot MUST have castNames and environmentName.`;
 
 const formatConcept = (concept: any): string => {
   const lines = [
@@ -124,29 +123,19 @@ Hard rules:
 - Every shot MUST have castNames AND environmentName.${seedanceLine}
 
 CAST rules:
-- ${input.preset.script.castRules}
 - Description = physical appearance for image generation. 2-3 sentences.
 - No art-style language in descriptions.
 
 ENVIRONMENT rules:
-- ${input.preset.script.environmentRules}
 - Description = physical space. 2 sentences.
 - No art-style language.`;
-};
-
-const buildPresetTaste = (input: RefineScriptPromptInput): string => {
-  return [
-    input.preset.script.sceneRules,
-    `Planner identity: ${input.preset.script.plannerIdentity}.`,
-  ].filter(Boolean).join('\n\n');
 };
 
 export const buildRefineScriptPrompt = (input: RefineScriptPromptInput): string => composePrompt({
   coreTask: CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
-  presetTaste: buildPresetTaste(input),
-  userNotePolicy: USER_NOTE_POLICY,
+  userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
   outputContract: buildOutputContract(input),
   userNote: input.feedback,
 });

@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 type StyleBrainstormPromptInput = {
   sourceText?: string;
@@ -47,11 +47,10 @@ Each direction is one coherent visual world the project could live inside.
 Do not write story, scenes, characters, camera shot lists, or plot beats.
 Cover a real range across legitimate aesthetics for the medium described in TASTE.`;
 
-const USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract and TASTE rules. All 4 directions must satisfy it.
-
-If the note conflicts with the medium guard in TASTE (e.g. asking for a photographic or live-action medium when the project is anime), translate the intent into the closest medium-safe analogue rather than leaving the medium. For anime, that means treating a "Polaroid" request as a printed-photo-inspired color/texture treatment still rendered as a drawn anime frame, not as an actual photograph.
-
-Range means variety inside the user note when one is provided, not in spite of it. With no user note, cover the full legitimate range described in TASTE.`;
+// User-note policy is shared (_shared.ts). Style-brainstorm-specific tail:
+// medium-guard conflicts get translated to safe analogues rather than
+// leaving the medium, and range = variety inside the note (not in spite of it).
+const USER_NOTE_TAIL = `Specifically: if the note asks for a medium that conflicts with TASTE (e.g. live-action when the project is anime), translate the intent into the closest medium-safe analogue rather than leaving the medium. Range means variety inside the noted constraint, not in spite of it.`;
 
 const OUTPUT_CONTRACT = `Return exactly 4 directions as JSON.
 
@@ -79,7 +78,7 @@ export const buildStyleBrainstormPrompt = (input: StyleBrainstormPromptInput): s
     workflowContext: workflowContextFor(input.preset),
     inputs: formatInputs(input),
     presetTaste,
-    userNotePolicy: USER_NOTE_POLICY,
+    userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
     outputContract: OUTPUT_CONTRACT,
     userNote: input.userNote,
   });

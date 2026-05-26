@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { REFINE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
 
 type RefineStylePromptInput = {
   currentDescription: string;
@@ -15,11 +15,10 @@ const CORE_TASK = `Revise the current style direction text using the director's 
 
 This is a surgical refinement, not a replacement. Preserve the direction's core identity. Update only the aspects the feedback addresses; leave the rest of the description intact.`;
 
-const USER_NOTE_POLICY = `USER NOTE contains the director's feedback. Apply it surgically:
-- Touch only the fields and qualities the note addresses.
-- Preserve identity-defining elements not mentioned in the note.
-- Do not propose a different direction. Do not regenerate from scratch.
-- If the note conflicts with the medium guard in TASTE (e.g. asks for a photographic or live-action medium when the project is anime), refuse the conflicting part and translate the intent to the closest medium-safe analogue. For anime, that means treating a "Polaroid" or "live-action" request as a printed-photo-inspired color/texture treatment still rendered as a drawn anime frame.`;
+// User-note policy is shared (_shared.ts). Style-refine-specific tail:
+// medium-guard conflicts get translated to safe analogues; don't propose
+// a different direction.
+const USER_NOTE_TAIL = `Do not propose a different direction. If the note asks for a medium that conflicts with TASTE (e.g. live-action when the project is anime), refuse the conflicting part and translate the intent to the closest medium-safe analogue.`;
 
 const OUTPUT_CONTRACT = `Return the revised direction as JSON:
 - title: short evocative label, 2-5 words (revise only if the feedback addresses the title or shifts the direction's identity)
@@ -49,7 +48,7 @@ export const buildRefineStylePrompt = (input: RefineStylePromptInput): string =>
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   presetTaste: input.preset.style.rules,
-  userNotePolicy: USER_NOTE_POLICY,
+  userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
   outputContract: OUTPUT_CONTRACT,
   userNote: input.feedback,
 });

@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, clip, workflowContextFor } from './_shared.js';
 
 type ShotInput = {
   id: string;
@@ -46,9 +46,9 @@ BAD visualPrompt: "Mina understands the weight of her destiny." — emotional in
 
 BAD motionPrompt: "The camera slowly dollies in to heighten the emotional atmosphere." — generic movement and non-visual rationale.`;
 
-const USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract and TASTE rules. Apply it consistently across every shot's visualPrompt and motionPrompt.
-
-If the note conflicts with the preset's shot-prompt rules, the locked style reference (no art-style dictation in words), or the source shot direction itself, refuse the conflicting part and translate the rest into the closest valid shot-prompt-layer intent.`;
+// User-note policy is shared (_shared.ts). Shot-prompts-specific tail:
+// apply consistently across every shot's visualPrompt and motionPrompt.
+const USER_NOTE_TAIL = `Apply consistently across every shot's visualPrompt and motionPrompt.`;
 
 const formatShots = (shots: ShotInput[], preset: PipelinePreset): string => {
   const isMusicLed = preset.workflowKey === 'music_led';
@@ -151,8 +151,7 @@ export const buildWriteShotPromptsPrompt = (input: WriteShotPromptsPromptInput):
   coreTask: CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
-  presetTaste: input.preset.studio.shotPromptRules,
-  userNotePolicy: USER_NOTE_POLICY,
+  userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
   outputContract: buildOutputContract(input),
   userNote: input.userNote,
 });

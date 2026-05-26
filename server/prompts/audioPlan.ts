@@ -84,13 +84,6 @@ ${formatCast(allowedCast)}
 Raw source material:
 ${formatSourcePayload(project)}`;
 
-  const presetTaste = [
-    preset.source.rules,
-    preset.audio?.dialogueRules,
-    preset.audio?.soundRules,
-    preset.audio?.strategyRules,
-  ].filter(Boolean).join('\n');
-
   const outputContract = `Hard rules:
 - Use only the listed cast IDs. Do not invent characters.
 - Preserve uploaded script intent. If source material includes dialogue for this beat, extract it as close to verbatim as possible.
@@ -104,5 +97,5 @@ Return only structured audio-plan JSON with:
 - dialogue: array of { characterId, text, order, targetSec? }
 - soundNotes?: string`;
 
-  return composePrompt({ coreTask, workflowContext, inputs, presetTaste, outputContract });
+  return composePrompt({ coreTask, workflowContext, inputs, outputContract });
 };
