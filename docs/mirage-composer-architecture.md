@@ -1,286 +1,271 @@
-# Mirage Composer Architecture — Revised Vision
+# Mirage Composer Architecture
 
-Status: draft for Saul/Codex/Claude review.
-Sibling to: `docs/mirage-composer-audit.md` (which is the tactical trim work).
-Companion: `docs/mirage-agent-surface-redesign.md` §8 covers the apply vs override distinction.
+Status: working direction for Saul/Codex/Claude review.
+Sibling: `docs/mirage-composer-audit.md` keeps the tactical prompt-bloat evidence.
 
-This doc proposes the destination shape for the composer + presets + override architecture, after the tactical audit trims are done. It is the strategic answer to "what should the composer be FOR."
+This doc replaces the longer debate draft. The point is simple: Mirage should be graph-first, not workflow-first. The composer should not be a hidden director. Codex, the artist, and the UI advance the project graph; the composer only assembles the exact context needed for one action.
 
-## How We Got Here
+## Core Intent
 
-This doc is the destination, but Codex should see the reasoning path that led to it. The thinking unfolded across a conversation, not in one shot. Each step changed what we thought the architecture had to be.
+An artist should be able to start with any useful material:
 
-**Step 1 — The trigger question.** Saul asked: `workflowContext` is one sentence shared across 12 prompt builders. If it's not doing work, why is it a category? That cracked open a bigger question: what's the composer actually FOR? Categories should be where genuinely different inputs flow. A category that always renders the same one-sentence string isn't a category — it's a vestigial constant. From there the question became: which other "categories" in the composer are vestigial?
+- a rough concept
+- a finished script
+- an audio track
+- a mood board or style image
+- character references
+- nothing but a sentence of intent
 
-**Step 2 — The image-model vs text-model distinction.** When we looked at where presetTaste rules actually flow, two downstream consumers showed up:
+Mirage should not force that into a preset/workflow doctrine. It should populate the graph, then ask what is missing or stale:
 
-- **Image models** (Nano Banana, Gemini-image, Seedance) — context-blind. Each call is independent. They have no project state, no conversation history. If the prompt doesn't say "anime, no photoreal," they might render photoreal.
-- **Text models** (Claude, Gemini-3-pro, GPT-5.5) doing concept/script/shot-prompt writing — fully capable LLMs. They know what anime is, what music videos are, what scripted narrative pacing looks like.
+- concept
+- script/scenes/shots
+- style description and style asset
+- cast and character references
+- environments and environment references
+- audio plan, soundtrack, dialogue/TTS
+- storyboard boards
+- videos
+- render timeline
 
-The current composer treats both consumers the same — pumps presetTaste, userNotePolicy, workflowContext into every prompt. That's belt-and-braces. For text models, it's mostly **redundant common knowledge being explained back to a model that already knows it**. For image models, it's genuinely needed.
+Once graph fields exist, the next move follows naturally. If there is a script but no cast/env/shot graph, normalize the script. If there is audio and the user wants a music-led structure, analyze it. If the user only wants the audio as a soundtrack, attach it to render and skip analysis. If there is concept and style but no characters, generate or define characters. This is product state, not prompt doctrine.
 
-This distinction is what unlocks the rest of the architecture. It says: presets earn their tokens for image generation; they don't earn them for text generation.
+## What The Composer Is For
 
-**Step 3 — The Codex-as-third-consumer realization.** Then we layered in a third consumer: **Codex itself**, when it's the agent driving the project. Codex IS an LLM, with conversation context, project state access, and tool dispatch. When Codex is writing the storyboard prompt to ship as `promptOverride`, the composer doesn't need to lecture Codex about user-note policy — Codex has already read the user note from chat. The composer talking back to Codex is the model talking to itself through the composer.
+The composer is an action-scoped context assembler.
 
-This forces a three-way split: composer-as-plumbing for Codex (who handles taste himself), composer-with-minimal-taste for image models (who need explicit guards), composer-as-it-is-today for the legacy web-button path (where neither Codex nor anyone else translates artist intent).
+For a specific action, it answers:
 
-**Step 4 — Where Claude was wrong, and the correction.** Initial draft: "userNote stays, userNotePolicy goes." Saul caught it: user note is for Codex to consume, not for Nano Banana. When the artist says "make it darker," Codex's job is to TRANSLATE that into concrete visual instructions ("low-key lighting, shadows dominate, single backlit subject") and ship the concrete prompt to the image model. The image model should never see "make it darker" — it should see the translated final prompt.
+1. What model or service is being called?
+2. What project data does that call need?
+3. What references/assets should be attached by default?
+4. What saved project override applies?
+5. Did the agent or UI explicitly include, exclude, or replace any context for this call?
 
-This changed the model: user note doesn't belong in image prompts at all. It might still flow into legacy text-gen prompts where there's no Codex translator, but in the agentic flow Codex handles it directly. **The correction matters as much as the conclusion.** It's why the architecture splits user-note handling by path (agentic / legacy / image), not by section.
+That is it.
 
-**Step 5 — Saul's dream-flow as the framing test.** Saul described what the artist experience should be:
+The composer should not decide taste. It should not carry workflow philosophy. It should not explain anime, music videos, education videos, or cinematic taste unless that language is actual project data supplied by the artist/agent.
 
-> "I come in and say I want to produce anime, I want it in the style of Ilya Pushkin. Then Codex asks 'do you have a concept or script or something?' I say I want to make an episode about an AI companion of a 12-year-old boy suddenly getting conscious — wakes up for the first time in human recorded history. Then it knows the workflow from the usual pipeline. Brainstorm the script, then consolidate style — maybe I provide images and it adds them, then offers to write the style description, I confirm and move on. Characters and looks visualized. So on and so forth."
+## Roles
 
-This is the architecture's test case. The composer needs to support:
-- Codex orchestrating without preset enum selection at intake
-- Style emerging from artist's stated intent + (optional) reference images, captured as project.styleDescription text + style asset
-- Special-vocabulary asks ("Ilya Pushkin style") served by skill files that load contextually
-- Codex composing prompts itself when it has specific intent, using `promptOverride`
-- Composer assembling defaults otherwise — but the defaults are leaner because Codex doesn't need preachy rules
+**Project graph:** canonical truth. If "anime" matters, it should be in the concept, style description, script tone, or explicit project notes. Not hidden in a workflow enum that keeps injecting rules forever.
 
-If the architecture supports this flow cleanly, it's right. If parts of it require workflow enum selection or preset-driven taste rules that contradict the artist's stated direction, it's wrong.
+**Codex:** director/orchestrator. It reads the graph, talks to the artist, decides the next useful move, and can write final prompts itself when it has strong intent.
 
-**Step 6 — Why not just patch the current composer.** A reasonable pushback is: do an aggressive trim of the current prompts (the audit's C1-C5) and call it done. But that path keeps the composer doing three jobs (assemble state, dispense taste, enforce meta-policy) when only one of them — assembling state — is irreducible. Trim-only leaves us with a smaller version of the same confused architecture. The doc proposes that the destination is fewer responsibilities, not the same responsibilities with less prose. The trim work in the audit is sequenced steps toward this destination, not an alternative to it.
+**Web UI:** graph editor and visual studio. It should let artists add/edit/lock the same canonical objects. Later, UI buttons can use the same action/context machinery as Codex.
 
-**What landed.** The roles separation (composer = plumbing, Codex = director, skills = vocabulary, downstream models = workers) plus the template/DB layer map are the doc's two structural contributions. Everything else flows from "what's each consumer's actual need" once we stop treating image models, text models, and Codex as one undifferentiated audience.
+**Composer:** default context bundle for one action. It can build a reasonable call from the graph, but the bundle must be editable per call.
 
-## Diagnosis (brief)
+**Action handlers:** hard technical contracts for the worker model. Example: a character reference action can require a reusable neutral reference; a storyboard image action can ban text/captions. These are action contracts, not workflow taste.
 
-The composer today is confused about who its audience is.
+**Skills:** optional vocabulary/context loaded by Codex when relevant. Specific taste like "Ilya Kuvshinov", "Y2K anime", "educational explainer graphics", or "ambient music-video pacing" belongs here or in project style notes, not always-on composer text.
 
-It pumps `presetTaste`, `userNotePolicy`, `workflowContext`, and meta-instructions into every prompt as if every consumer is a context-blind image model needing belt-and-braces guidance. But the actual consumers are mixed:
+## Workflows And Presets
 
-- **Image models** (Nano Banana, Gemini-image, Seedance) — context-blind. Need explicit medium guards and concrete visual instructions.
-- **Text models in the legacy web path** (Claude/Gemini called server-side when the artist clicks "generate" in the UI) — capable of interpreting nuance, but no agent in the loop, so they need some rules and the user note.
-- **Codex in the agentic path** — fully capable LLM with conversation context, project state, and tool access. Doesn't need to be lectured at via composer.
+Workflows should not be the runtime brain.
 
-Today we treat all three the same. That's the bloat source.
+At most, a workflow/preset is an intake shortcut:
 
-## The revised model
+- "anime" seeds a starting style description and maybe default models.
+- "music video" suggests audio analysis and beat/section planning.
+- "education video" suggests narration, diagrams, and clearer explanatory structure.
 
-### Roles, clearly separated
+After intake, the graph is the truth. The composer should not keep injecting `anime_default` or `music_led` doctrine into every call. If that taste matters, it should have been written into graph data: concept, script, style description, references, or explicit project override.
 
-**Composer = context-bundler.** Takes project state (style ref, character refs, env refs, scene/shot data, audio plan) and assembles the right slice per action. Knows the SHAPE of what each downstream consumer needs. **No rules. No taste lectures. No meta-policy.**
+Very specific taste presets can come back later, but they should be explicit project data or skill packs, not hidden global prompt sludge.
 
-**Codex = director.** Reads project state via cockpit (`open_project`, `get_project_state`). Decides what to do. Either lets the composer assemble defaults OR composes prompts itself and ships via `promptOverride`. Reads artist's chat directly — never needs the user note pasted back to it through the composer.
+## Context Must Be Editable Per Call
 
-**Skills = special-case knowledge loaders.** "Ilya Kuvshinov style", "vintage anime cels", "solarpunk lighting", "music-video pacing for ambient tracks" — load contextually when relevant. Not always-on overhead in every prompt.
+Default context is suggested, not mandatory.
 
-**Downstream models:**
-- Image models receive only final concrete prompts. No raw user notes — Codex translates intent into concrete visual language before the image model sees anything.
-- Text models in the legacy web path receive prompts with minimal taste anchoring + user note (because there's no Codex translator). This path shrinks as the agentic path takes over.
+Today many builders auto-attach locked style, cast refs, env refs, source script, audio data, or preset rules. Codex can often override prompt text, but cannot always unplug the context bundle.
 
-### Presets shrink to a clearer purpose
+The new shape should allow:
 
-Today `PIPELINE_PRESETS` is a fat config carrying source.rules, concept.rules, script.rules, style.rules, looks.rules, studio.rules, audio.rules — all of which get injected into prompts as taste.
-
-In the revised model, presets are just:
-
-1. **Defaults**: `image_model`, `video_model`, `aspect_ratio`, `pacing`, `text_provider`. These are config, never injected into prompt text.
-2. **Intake starter**: when artist picks "anime" at project creation, `project.styleDescription` gets seeded with anime starter text. After intake, the preset enum stops mattering. `project.styleDescription` is the runtime anchor.
-
-That's it. Presets are no longer a runtime prompt-rendering thing. They're a one-time intake convenience plus model defaults.
-
-### Image-gen invariants move from preset to action handler
-
-"No text in panels" / "no captions/speech bubbles" / "thin borders OK" are not anime-specific or music-video-specific — they're storyboard invariants. They belong in the `generate_storyboard` handler's constant string, not in `preset.studio.storyboardRules`.
-
-Same for character look generation: "neutral pose, no scene-specific action" is a `generate_character_candidates` invariant, not a preset rule.
-
-This makes the action handlers honest carriers of their own irreducible image-model guidance. Presets get out of the way.
-
-### How the user note flows
-
-| Path | User note destination | Why |
-|---|---|---|
-| Agentic (Codex driving) | Codex reads it from chat context | Codex IS the LLM; doesn't need it pasted back |
-| Codex calling an image action | Codex translates intent to concrete prompt, ships via `promptOverride` | Image model sees only the final concrete prompt, never the raw nudge |
-| Legacy web button | Composer includes it in the prompt to Claude/Gemini | No agent in the loop; text model needs the raw note + minimal taste |
-
-The "userNotePolicy" 5-line meta-instruction (in 6 prompt files) goes away entirely. Text models can interpret "user said X, treat as constraint" without ceremony.
-
-## Template vs DB Layer Map
-
-What lives where, and how each thing gets modified. This is the "get down to the weeds" view.
-
-### Three layers, four modification paths
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  LAYER 1: CODE TEMPLATES                                    │
-│  (server/prompts/*.ts, action handler constants, skill .md) │
-│  Modified via: code commits                                 │
-└─────────────────────────────────────────────────────────────┘
-                            ↓ (composer reads + assembles)
-┌─────────────────────────────────────────────────────────────┐
-│  LAYER 2: PROJECT-SCOPED OVERRIDES                          │
-│  (project_prompt_overrides table)                           │
-│  Modified via: apply_project_prompt_override                │
-└─────────────────────────────────────────────────────────────┘
-                            ↓ (composer reads + injects)
-┌─────────────────────────────────────────────────────────────┐
-│  LAYER 3: PROJECT DATA                                      │
-│  (concept text, script JSON, style description, refs, etc.) │
-│  Modified via: apply_concept, apply_script, ...             │
-└─────────────────────────────────────────────────────────────┘
-                            ↓ (composer reads + injects)
-┌─────────────────────────────────────────────────────────────┐
-│  LAYER 4: PER-CALL INPUT                                    │
-│  (user note, promptOverride, modelOverride)                 │
-│  Modified via: run_action / start_job input fields          │
-└─────────────────────────────────────────────────────────────┘
-                            ↓ (composer reads OR Codex overrides)
-
-                       FINAL PROMPT
-                            ↓
-                   DOWNSTREAM MODEL
+```ts
+contextOverrides: {
+  includeStyleImage?: boolean;
+  styleAssetId?: string | null;
+  includeCastRefs?: boolean | string[];
+  excludeCastRefs?: string[];
+  includeEnvironmentRefs?: boolean | string[];
+  excludeEnvironmentRefs?: string[];
+  includeAudioAnalysis?: boolean;
+  includeSoundtrack?: boolean;
+  includeSourceScript?: boolean;
+  includeProjectStyleDescription?: boolean;
+}
 ```
 
-### Concrete per-concept mapping
+Examples:
 
-For "concept":
+- Generate a character without the locked style image for one experiment.
+- Use one uploaded guide image but skip existing cast refs.
+- Treat uploaded audio as soundtrack only, not as music-structure input.
+- Generate an alternate storyboard that ignores the previous board.
+- Ask for a style image from text only, without current style asset feedback.
 
-| Thing | Layer | Where stored | Modified via | Example |
-|---|---|---|---|---|
-| Core task template for generate-concept | Layer 1 (code) | `server/prompts/concept.ts` `GENERATE_CORE_TASK` | code commit | "Propose creative narrative directions for this project. Each direction is one coherent idea..." |
-| Concept project override | Layer 2 (DB) | `project_prompt_overrides` table, kind='concept' | `apply_project_prompt_override({kind:'concept'})` | (currently dead — Pattern 7 in audit) |
-| The actual locked concept | Layer 3 (DB) | `projects.locked_concept` column | `apply_concept({concept})` | "A solarpunk love story set in Mumbai monsoon. Premise..." |
-| Per-call user note | Layer 4 (call) | not stored; in the request | `run_action({input: {userNote: "..."}})` | "make it more grounded, less metaphysical" |
+This is the key missing piece: not just `promptOverride`, but context override.
 
-For "style":
+## Prompt Override Levels
 
-| Thing | Layer | Where stored | Modified via | Example |
-|---|---|---|---|---|
-| Style brainstorm core task | Layer 1 | `server/prompts/styleBrainstorm.ts` | code commit | "Generate 4 distinct style directions..." |
-| Style image-gen invariants | Layer 1 (after migration) | `generate_style_candidates` handler constants | code commit | "No text or watermarks. No collage. One coherent style frame per candidate." |
-| Style project override | Layer 2 | `project_prompt_overrides`, kind='style' (not declared today; would be added with C5) | `apply_project_prompt_override({kind:'style'})` | "for this project, prefer harsh high-contrast graphic looks" |
-| Style description text | Layer 3 | `projects.style_description` column | `apply_style_direction({description})` | "Vintage anime cels, soft watercolor textures, pastel palette" |
-| Style reference asset | Layer 3 | `assets` table, locked via `projects.style_asset_id` | `apply_style_direction({sourceAssetId})` OR upload+lock | (image URL) |
-| Per-call style override | Layer 4 | not stored | `run_action({input: {promptOverride: "..."}})` | "for this one generation, ignore the locked style and try noir" |
+We need three clear levels, not one overloaded idea.
 
-For "shot prompts":
+**Final prompt override:** per-call exact text sent to a worker model. Codex uses this when it knows exactly what the image/video/prompt should say.
 
-| Thing | Layer | Where stored | Modified via | Example |
-|---|---|---|---|---|
-| Shot prompts core task + GOOD/BAD examples | Layer 1 | `server/prompts/shotPrompts.ts` | code commit | "You are an art director / shot writer..." + examples |
-| Shot prompts project override | Layer 2 | `project_prompt_overrides`, kind='shot_prompts' | `apply_project_prompt_override({kind:'shot_prompts'})` | (currently dead — Pattern 7) |
-| Saved visualPrompt / motionPrompt per shot | Layer 3 | `shots.visual_prompt`, `shots.motion_prompt` columns | `apply_shot_prompts({shots: [{shotId, visualPrompt, motionPrompt}]})` | "Medium side shot: Mina stops at the classroom doorway..." |
-| Per-call shot generation override | Layer 4 | not stored | `run_action({input: {promptOverride: "..."}})` | (one-shot experiment with a different motion phrasing) |
+**Context override:** per-call include/exclude/swap of graph data and attachments. Codex uses this when the default bundle is mostly right but one source should be unplugged.
 
-### What the composer does given these layers
+**Project prompt override:** persistent project-level instruction for a surface. Example: "For all storyboard prompts in this project, favor flat graphic compositions and deadpan blocking." This should be wired for every declared kind or removed where unsupported.
 
-For a given action (say `generate_storyboard` for shotId X):
+Current state: final prompt override exists in several places; project overrides are half-wired; context overrides are not first-class enough.
 
-1. **Code template (Layer 1):** composer pulls the slim core-task constant for storyboard generation.
-2. **Project override (Layer 2):** composer reads `getProjectPromptOverride(projectId, 'storyboard')`. If present, injects it as a new `PROJECT OVERRIDE` section (the C5 fix from the audit).
-3. **Project data (Layer 3):** composer reads `project.style_asset_id`, char ref URLs for cast in this shot, env ref URL, the storyboard prompt text saved on the shot, the cut plan. Assembles them as `INPUTS`.
-4. **Per-call input (Layer 4):** if Codex shipped `promptOverride`, composer is bypassed entirely. If Codex shipped just a `note`, server-side handler appends it. If Codex shipped nothing extra, just the default.
+## Composer Sections, Reframed
 
-The composer never injects taste rules, never injects userNotePolicy, never injects workflowContext. It assembles state + (optional) project override + (optional) per-call input. Codex (or the legacy web caller) decides whether to trust the default or override.
+The old section list was too abstract. The new sections should map to real sources:
 
-## Migration: how to get from here to there
+- `TASK`: the smallest action contract.
+- `PROJECT DATA`: selected graph fields.
+- `REFERENCES`: selected asset/image/audio attachments and labels.
+- `PROJECT OVERRIDE`: persistent override for this action kind, if present.
+- `CALL OVERRIDE`: final prompt override or call note, if this is a legacy web path.
+- `OUTPUT CONTRACT`: schema/format only.
 
-This is sequenced. Each step is independently shippable.
+Remove or aggressively shrink:
 
-### Step 1: Drop the dead sections from the composer (tactical, low risk)
+- `workflowContext`
+- `presetTaste`
+- `userNotePolicy`
+- long doctrine blocks
+- repeated examples in every runtime prompt
 
-- `workflowContext` → removed entirely. `workflowContextFor()` deleted.
-- `userNotePolicy` → removed entirely. The 6 per-file restatements deleted.
-- All `composePromptParts` consumers updated to stop passing these.
+If a line is useful only because the model "might forget what anime is", it probably belongs in project style description, not in the composer.
 
-Cost: ~10 files touched. Token savings: ~50-100 tokens per call.
+## Agentic Path Vs Legacy Web Path
 
-Risk: low. We're removing redundant restatements; the rules are already implicit in inputs + presetTaste.
+Agentic path:
 
-### Step 2: Move image-gen invariants from preset to action handler
+1. Artist says intent in chat.
+2. Codex reads graph state.
+3. Codex decides next action.
+4. Codex either trusts default composer context or sends `promptOverride` / `contextOverrides`.
+5. Worker model receives concrete final context.
 
-- Take `preset.studio.storyboardRules` ("no text in panels...") and inline it as a constant in the storyboard action handler that gets appended to the image prompt server-side, post-composer.
-- Same for `preset.looks.qualityRules`, `preset.style.rules` image-side bits.
-- Presets shrink: `style.rules`, `looks.qualityRules`, `studio.*Rules` removed.
+Legacy web path:
 
-Cost: action handlers grow slightly; presets shrink significantly.
-Token savings: prompts no longer carry full anime doctrine when not needed.
+1. Artist presses a button.
+2. Backend may still need to send a small user note and minimal taste anchor because no agent translated intent.
 
-### Step 3: Drop presetTaste from text-gen prompts (the bigger architectural call)
+Do not design the agentic path around limitations of the legacy web-button path. Keep the legacy path working, but do not let it force composer bloat forever.
 
-- `concept.ts`, `planScenes.ts`, `refineScript.ts`, `shotPrompts.ts`, `styleBrainstorm.ts`, `audioPlan.ts` stop passing `presetTaste`.
-- The text model receives: core task + inputs + (optional override) + (optional user note in legacy path).
-- Project's own `style_description` text becomes the runtime taste anchor (it's already in inputs).
+## Migration Plan
 
-Cost: meaningful shift. Need to verify that text models still produce good output without preset rules.
-Risk: medium. Could cause drift over long projects. Mitigation: ensure project.styleDescription is the anchor and Codex always includes it in inputs.
+### 1. Establish the new contract in code
 
-### Step 4: Wire project overrides as first-class composer section (Pattern 7 C5 from audit)
+Add a shared `ContextOverride` type and support it in action specs for looks, style, storyboard, video, audio, and script actions where relevant.
 
-- Composer gets new `projectOverride?: string` field. New `PROJECT OVERRIDE` section header.
-- All prompt builders call `getProjectPromptOverride(projectId, kind)` and pass through.
-- All 8 declared override kinds now actually flow.
+Add trace/X-Ray output that shows:
 
-Cost: 6 prompt builders gain one new read call.
-Risk: low.
+- included graph fields
+- excluded graph fields
+- attached refs/assets
+- promptOverride used or not
+- projectOverride used or not
 
-### Step 5: Skill mechanism for special-case vocabulary
+This makes the composer debuggable as plumbing.
 
-- Define how Codex loads a skill like "ilya-kuvshinov-style" or "vintage-anime-cels".
-- Skills carry domain-specific vocabulary that Codex uses when composing prompts.
-- Not part of the composer — they're Codex-side context.
+### 2. Fix project overrides
 
-Cost: depends on whether the Codex harness already supports skill loading at action-call time, or whether we need a new mechanism.
+Either wire every declared override kind or delete unsupported kinds. Preferred: wire them.
 
-### Step 6: Reduce preset enum to defaults + intake starter only
+Add a real `PROJECT OVERRIDE` section in the composer instead of ad-hoc injection in storyboard/video only.
 
-- `PIPELINE_PRESETS` shrinks dramatically. Only `defaults` (model/aspect/pacing) and an optional `intakeStarter.styleDescription` text remain.
-- All `rules` fields removed (they've been moved to action handlers or made the artist's `project.styleDescription` responsibility).
+### 3. Cut `writeShotPrompts`
 
-Cost: presets.ts shrinks from ~300 lines to ~50 lines.
-Risk: low if steps 1-5 are done first.
+Use the tactical audit. It is the worst offender and should be the first prompt trim.
 
-## Open questions for Saul and Codex
+Target: less doctrine, more shot data. Keep one useful example if needed; delete the rest from runtime.
 
-The questions that need verdicts before any of these steps land:
+### 4. Remove workflow/preset doctrine from text prompts
 
-1. **Is the role separation (composer = plumbing, Codex = director, skills = vocabulary) actually right?** Or does Codex disagree on where some responsibility should land?
+Start with text-model prompts where Codex or project data should carry taste:
 
-2. **Step 3 (drop presetTaste from text-gen) — too aggressive?** This is the architectural bet. Codex's audit didn't go this far; my analysis suggests it's the right destination. Need Codex's read on whether text models drift without the preset anchor.
+- concept
+- script/parse/refine
+- shot prompts
+- audio plan
+- style brainstorm
 
-3. **What is the legacy web path's actual use today?** If the artist still uses "Generate concepts" / "Generate style" buttons in Visual Studio, those go through the composer with no Codex translator. We need to decide:
-   - Keep the legacy path with minimal taste (so artists can still drive without an agent)
-   - OR fully deprecate it, requiring agentic flow for generation
-   - OR something in between (UI still has buttons, but they invoke the agent under the hood)
+Keep only action contracts and selected graph context.
 
-4. **Skill loading mechanism** — does the Codex harness support per-session skill loading we can trigger from an action? If not, we'd need a thinner version (Codex reads a project notes file that points to relevant skill keywords).
+### 5. Move worker-model invariants to actions
 
-5. **How does Codex know when to use `promptOverride` vs accept the default?** Today the default does a lot of work and Codex needs to override often to escape ceremony. After steps 1-3 the default does less, so Codex can trust the default more often. Worth a skill-instruction update.
+For image/video/audio workers, keep short hard constraints at the action level:
 
-6. **Pattern 7 — Option A still right?** Wire all 8 override kinds vs narrow to 2. After this architecture lands, Option A clearly wins because the override mechanism is the artist's per-project taste shaping path that the architecture relies on.
+- reusable character ref
+- no text/watermark/collage
+- storyboard board constraints
+- video continuity/ref preservation
+- TTS output requirements
 
-7. **`project.styleDescription` as the anchor** — does it carry enough? Today it's a short paragraph. If it becomes the canonical taste text after preset.rules go away, it might need to grow. Does that mean we add a richer style notes field? Or are we trusting Codex + the style image + the description text together?
+These are not workflows. They are the worker contract.
 
-## How to review this doc
+### 6. Shrink presets
 
-Same flow as the agent surface redesign and tool audit:
+Reduce presets/workflows to:
 
-1. **Saul reads top-to-bottom.** Marks calls inline. Sends back hot takes on the questions.
-2. **Codex annotates.** Adds disagreements as italicized `> _Codex: ..._` notes under the section they apply to. Doesn't rewrite Claude's sections.
-3. **Claude folds in disagreements, drafts the migration plan in more detail** once direction is clear.
-4. **Then** the audit's C1-C5 tactical work executes against the agreed direction.
+- intake suggestions
+- default model/provider preferences
+- optional starter style description
 
-The audit doc (`docs/mirage-composer-audit.md`) is for the trim execution. This doc is for the direction.
+No recurring runtime doctrine by default.
 
----
+### 7. Update skills and AGENTS/CLAUDE
 
-## Claude's summary opinion
+Teach agents:
 
-The current composer is doing three jobs and most of them aren't actually working:
+- Mirage is graph-first.
+- Workflow/preset names are hints, not truth.
+- Use `contextOverrides` before fighting the prompt template.
+- Use `promptOverride` for final concrete worker prompts.
+- Promote repeated successful call overrides to project overrides.
+- Backfill style/character/env descriptions when artists upload images as-is.
 
-- It assembles state ✅ (real value, keep)
-- It dispenses taste rules ⚠️ (mostly redundant for capable LLMs, real value for context-blind image models — split)
-- It enforces meta-policy ❌ (lectures the model about how to handle conflicts; downstream models can interpret without)
+## What This Lets Us Build
 
-The destination is: composer-as-plumbing, taste-as-project-data (style description + style image), skills-as-special-vocabulary, Codex-as-director-with-promptOverride-when-needed.
+The artist can say:
 
-Presets stop being a runtime prompt thing and become a thin intake + defaults config.
+"I want to make an anime about a 12-year-old boy's AI companion becoming conscious."
 
-This is the architecture that makes Mirage a real general-purpose agent-driven video maker, the way you described: artist gives intent → Codex orchestrates → tools execute → result.
+Codex can:
+
+1. create/save concept
+2. normalize or write script
+3. ask for or generate style
+4. backfill style description from uploaded images
+5. generate characters/envs
+6. create shot prompts/storyboards/videos
+7. render
+
+No preset doctrine required. If the artist says anime, that becomes project data. If later they say "actually make it like a sterile corporate training video," the graph changes and future actions follow the graph.
+
+The artist can also say:
+
+"Here is a song, but don't analyze it; just use it as background audio."
+
+The graph can represent that too. Audio exists; analysis is optional; render can still use the soundtrack.
+
+## Open Calls
+
+1. Should `workflow_key` remain as a DB field for UI filtering/back-compat, while no longer driving prompt text?
+2. What exact `ContextOverride` shape should land first? Looks/style/storyboard are probably enough for v1.
+3. Should legacy web buttons keep minimal taste/user-note prompts until UI becomes agent-backed?
+4. Should project overrides be freeform text only, or structured by action surface?
+5. How much should the Prompt Library show composer internals versus graph/action contracts?
+
+## Summary
+
+Mirage should not be "workflow prompt plus tools." It should be a graph of production objects with an agent/UI that knows how to move the graph forward.
+
+The composer is not the director. It is editable plumbing.
+
+Taste belongs in project data, references, skills, and Codex's reasoning. Presets are intake hints and defaults. Worker actions keep only the small hard contracts needed to make media generation behave.
