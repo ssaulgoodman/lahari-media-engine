@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-26 — extra-shot workflow replaces direct generated extra clips.
+**Last touched:** 2026-05-26 — MCP/Director trace observability added.
 
 ---
 
@@ -25,6 +25,7 @@ R17 + R28 + R29 are all shipped to production and validated by the first artist.
 - **R36** — Realtime agent operation presence. `lahari_agent_operations` table, per-tool start/finish tracking, Supabase realtime subscription in web studio, "Codex is working" pill in header. Migration applied.
 - **R43** — Artist memory query surface. Hosted MCP + Director API expose `query_artist_memory` and `search_artist_assets`: broad, read-only, user-scoped evidence tools for prior styles, reusable references, older boards, and cross-project taste patterns. This replaces the temptation to expose raw SQL while avoiding one-off tool sprawl.
 - **R44** — Extra shots / inserts v1. Direct "generate random extra clip" was reverted. New path is `add_extra_shot`: Codex writes a context-aware insert beat from the current concept/script/style, appends it as an out-of-band `is_extra` shot under `Extra Shots`, then the normal storyboard/video workflow creates media-library takes. `StepRender` does not auto-seed extra-shot videos into the timeline; editors place them manually.
+- **R45** — MCP/Director trace observability. Every remote MCP and Director API call, including read-only calls, writes a best-effort `lahari_mcp_call_traces` row with duration, request/response byte estimates, status, tool category, and between-call gap support via `/api/admin/mcp-traces`. This lets engine sessions separate Lahari/tool latency from Codex/harness/file-editing time without asking artists to send logs.
 - **Render editor hardening** — Timeline drafts are protected from generated-media refreshes. Regenerated shot clips land as new Media Library takes with sidebar badges, in-library `New` markers, soft-hide for unwanted takes, and explicit version append into the timeline. The artist's saved cut is not rebuilt unless they choose to reset/append/replace manually.
 - **Security hardening** — In-memory rate limiting (per user, per tool category), body size limits, Zod max sizes on payloads, audit redaction of prompt/script/concept content, `lahari_capture_issue` requires project ownership.
 - **Skills** — Six shards (lahari-director orchestrator + storyboard-prompt-craft / script-doctor / continuity-auditor / style-ref-critic / render-triage) bundled at `server/resources/skills/`, ship in deploy artifact, materialized into artist workspace by notebook sync or `write_project_notebook` fallback.
@@ -70,6 +71,16 @@ The first direct "create extra clip" path was wrong: it bypassed story context, 
 Render rule: extra-shot videos appear in the Media Library, but `StepRender` does not auto-seed them into the timeline. The editor manually places them where they belong.
 
 Migration: `2026-05-26_add_extra_shots.sql`.
+
+### R45 — MCP and Director API call traces
+
+Status: **shipped** · Raised: 2026-05-26
+
+Artist reports of "Codex took 3-5 minutes" need a trace that separates server/tool latency from agent reasoning and file-editing gaps. Add `lahari_mcp_call_traces` as a server-side-only table. The MCP and Director API wrappers record every call, including read-only calls, with `tool`, `source`, `project_id`, `user_id`, `token_id`, `read_only`, `paid`, `duration_ms`, request/response byte estimates, result kind, and error fields.
+
+Admin endpoint: `/api/admin/mcp-traces?projectId=<id>&hours=24&limit=100`. The response includes `gap_since_previous_ms`; big gaps mean the delay happened between Lahari calls in the harness/agent/notebook/file-editing layer, not inside Lahari.
+
+Migration: `2026-05-26_add_mcp_call_traces.sql`.
 
 ### R1 — Bidirectional journal seam *(highest leverage)*
 

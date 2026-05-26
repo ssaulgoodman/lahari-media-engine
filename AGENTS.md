@@ -358,6 +358,7 @@ Admin diagnostics behind `x-admin-secret`:
 - `/api/admin/usage`
 - `/api/admin/errors`
 - `/api/admin/active-renders`
+- `/api/admin/mcp-traces` — server-side MCP/Director API call trace with durations, response sizes, and between-call gaps. Use when artist agents feel slow; large `duration_ms` means Lahari/tool latency, large `gap_since_previous_ms` means agent/harness/file-editing time between calls.
 
 ## Deployment
 

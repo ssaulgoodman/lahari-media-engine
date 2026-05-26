@@ -37,6 +37,7 @@ const T = {
   chat_messages: 'lahari_chat_messages',
   ai_calls: 'lahari_ai_calls',
   renders: 'lahari_renders',
+  mcp_call_traces: 'lahari_mcp_call_traces',
 } as const;
 
 type TableKey = keyof typeof T;

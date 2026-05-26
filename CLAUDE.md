@@ -125,6 +125,8 @@ FFmpeg output: `libx264`, preset `veryfast`, CRF `23`, yuv420p, faststart, AAC a
 
 Render rows move through `lahari_renders` (`rendering`, `pending_finalize`, `completed`, `failed`) with progress/stage/error metadata. Use `/api/admin/active-renders` before renderer deploys when possible.
 
+MCP/Director API calls write best-effort rows to `lahari_mcp_call_traces`. Use `/api/admin/mcp-traces?projectId=<id>&hours=24` when artist agents feel slow. Large `duration_ms` points to Lahari/tool/model latency; large `gap_since_previous_ms` points to Codex/Claude reasoning, file editing, notebook sync, or harness time between calls.
+
 Timeline editor features currently include media library, video uploads, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. Timeline drafts are sacred: regenerated shot clips and extra-shot videos feed the Media Library as new takes instead of rebuilding the artist's saved edit. Extra inserts/B-roll are created as out-of-band `is_extra` shots through `add_extra_shot`, then moved through the normal storyboard/video workflow; their videos are not auto-seeded into the render timeline. The render Media Library has a sidebar entry point, badges/new markers for clips not yet in the timeline, upload-to-library for external video clips, soft-hide for unwanted takes, and version append into the timeline. If timeline composition code changes, sync renderer copies with:
 
 ```bash
