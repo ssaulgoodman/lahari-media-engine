@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, updateRows } from '../database.js';
+import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
 
 type AgentOperationSource = 'mcp-remote' | 'director-api' | 'web' | 'system';
 type AgentOperationStatus = 'running' | 'success' | 'error';
@@ -59,6 +59,24 @@ const compactResult = (value: unknown) => {
     status: row?.status,
     error: row?.error,
   }));
+  if (Array.isArray(result.candidates)) compact.candidates = result.candidates.map((row: any) => ({
+    assetId: row?.assetId,
+    url: row?.url,
+    description: row?.description,
+    model: row?.model,
+    provider: row?.provider,
+    locked: row?.locked,
+    createdAt: row?.createdAt,
+  }));
+  if (Array.isArray(result.assets)) compact.assets = result.assets.map((row: any) => ({
+    assetId: row?.assetId || row?.id,
+    url: row?.url,
+    category: row?.category,
+    createdAt: row?.createdAt,
+  }));
+  for (const key of ['url', 'assetUrl', 'videoUrl', 'storyboardUrl']) {
+    if (result[key] !== undefined) compact[key] = result[key];
+  }
   return compact;
 };
 
@@ -73,6 +91,11 @@ const isMissingTableError = (error: any) => {
 
 const labelTool = (tool: string, args: Record<string, any>) => {
   const shot = args.shotId ? ` ${args.shotId}` : '';
+  const action = String(args.actionKey || tool).replace(/^job:/, '');
+  if (action === 'generate_candidates') return `Generating ${args.entityType === 'environment' || args.entityType === 'env' ? 'environment' : 'character'} candidates`;
+  if (action === 'generate_style_candidates') return 'Generating style candidates';
+  if (action === 'generate_dialogue_audio') return 'Generating dialogue audio';
+  if (action === 'bulk_generate_storyboards') return 'Generating storyboards';
   if (tool.includes('generate_storyboard') || tool.includes('generate.storyboard')) return `Generating storyboard${shot}`;
   if (tool.includes('refine_storyboard') || tool.includes('refine.storyboard')) return `Refining storyboard${shot}`;
   if (tool.includes('generate_video') || tool.includes('generate.video')) return `Generating video${shot}`;
@@ -121,6 +144,17 @@ export const startAgentOperation = async (input: StartAgentOperationInput): Prom
     return null;
   }
 };
+
+export const getAgentOperation = async (id: string) => selectOne('agent_operations', { id });
+
+export const listAgentOperations = async (
+  projectId: string,
+  opts: { status?: AgentOperationStatus | 'running' | 'success' | 'error'; limit?: number } = {},
+) => selectAll(
+  'agent_operations',
+  { project_id: projectId, ...(opts.status ? { status: opts.status } : {}) },
+  { orderBy: 'started_at', ascending: false, limit: Math.min(opts.limit || 20, 100) },
+);
 
 export const finishAgentOperation = async (
   id: string | null,

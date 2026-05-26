@@ -10,7 +10,7 @@ import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureMirageIssue, recordMcpAudit, summarizeAgentTiming } from '../services/mirageAudit.js';
 import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
-import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
+import { finishAgentOperation, getAgentOperation, listAgentOperations, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
 import { runWithRequestContext } from '../requestContext.js';
 import { structuredError } from '../services/structuredErrors.js';
@@ -18,13 +18,69 @@ import { normalizeWorkflowKey } from '../presets.js';
 import { ACTION_KEYS, ACTION_SURFACES, ALL_ACTION_SPECS, actionSpec, type ActionKey } from '../services/actionRegistry.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.14';
+const HOSTED_MCP_VERSION = '0.1.15';
+const SHOW_LEGACY_MCP_TOOLS = process.env.MIRAGE_MCP_INCLUDE_LEGACY_TOOLS === '1';
+const LEGACY_MCP_TOOLS = new Set([
+  'list_queue',
+  'search_catalog',
+  'resolve_project',
+  'get_project_packet',
+  'get_project_actions',
+  'hydrate_project_workbench',
+  'review_storyboard_prompts',
+  'get_storyboard_status',
+  'get_shot_packet',
+  'write_project_artifacts',
+  'write_project_sheets',
+  'attach_director_session',
+  'get_director_session',
+  'add_director_note',
+  'plan_generate_storyboard',
+  'plan_generate_video',
+  'apply_generate_storyboard',
+  'generate_storyboard',
+  'bulk_generate_storyboards',
+  'refine_storyboard_image',
+  'lock_storyboard',
+  'unlock_storyboard',
+  'apply_project_preferences',
+  'apply_shot_prompts',
+  'apply_shot_workflow_modes',
+  'apply_storyboard_prompt',
+  'apply_storyboard_prompts_bulk',
+  'apply_storyboard_scene_markdown',
+  'apply_concept',
+  'apply_style_direction',
+  'apply_video_prompt',
+  'apply_script',
+  'apply_script_markdown',
+  'apply_audio_plan',
+  'apply_audio_plan_markdown',
+  'apply_cast_voice',
+  'apply_generate_character_looks',
+  'generate_character_looks',
+  'apply_generate_environment_looks',
+  'generate_environment_looks',
+  'apply_cast_reference',
+  'upload_cast_reference',
+  'apply_environment_reference',
+  'upload_environment_reference',
+  'list_reference_candidates',
+  'list_character_look_candidates',
+  'list_environment_look_candidates',
+  'get_audio_plan_cost',
+  'generate_dialogue_audio',
+  'apply_project_prompt_override',
+  'revert_project_prompt_override',
+  'apply_generate_video',
+  'lahari_capture_issue',
+]);
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant director.
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects or resolve_project first. If the artist asks to start a new non-audio project, call create_project, then open_project. For Concept, Script, Style, Looks, Storyboard, Video, Audio, and System config work, prefer list_actions -> describe_action -> run_action. Use bulk_generate_storyboards when the server should pick missing/stale/error boards; use parallel_run only when you already chose specific independent shot actions. parallel_run reduces round-trips but still waits for the slowest action; true fire-and-continue requires future start_job. For style image work, use generate_style_candidates for guide/note/promptOverride candidates, identify_style to describe a locked or uploaded style image, and apply_style_direction with sourceAssetId to lock an existing style asset. For video, use generate_video with dryRun=true for requirements/cost, then generate_video without dryRun when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If the same per-call promptOverride keeps working, suggest promoting it with apply_project_prompt_override. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates/generate_style_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects first, then open_project. If the artist asks to start a new non-audio project, call create_project, then open_project. For Concept, Script, Style, Looks, Storyboard, Video, Audio, and System config work, prefer list_actions -> describe_action -> run_action. For paid media actions, prefer start_job so Mirage returns a jobId immediately and Visual Studio can show progress; use get_job only when the artist asks for status or you need the completed result. Use parallel_run only for short independent non-paid actions or when the artist explicitly wants a blocking batch. For style image work, use generate_style_candidates for guide/note/promptOverride candidates, identify_style to describe a locked or uploaded style image, and apply_style_direction with sourceAssetId to lock an existing style asset. For video, use generate_video with dryRun=true for requirements/cost, then start_job(generate_video) when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If the same per-call promptOverride keeps working, suggest promoting it with apply_project_prompt_override. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates/generate_style_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -76,6 +132,7 @@ const actionKeySchema = z.enum(ACTION_KEYS);
 const actionSurfaceSchema = z.enum(ACTION_SURFACES);
 const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
+const jobStatusSchema = z.enum(['running', 'success', 'error']);
 const audioPlanSchema = z.object({
   dialogueStrategy: dialogueStrategySchema,
   dialogue: maxArray(z.object({
@@ -420,7 +477,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'write_project_sheets',
       'hydrate_project_workbench',
     ];
-    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project' || name === 'open_project' || name === 'describe_action') {
+    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project' || name === 'open_project' || name === 'describe_action' || name === 'get_job' || name === 'list_jobs') {
       return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     }
     if (name === 'add_director_note' || name === 'lahari_capture_issue' || name === 'mirage_capture_issue') {
@@ -440,6 +497,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     config: Parameters<typeof server.registerTool>[1],
     handler: (args: any) => Promise<unknown>,
   ) => {
+    if (LEGACY_MCP_TOOLS.has(name) && !SHOW_LEGACY_MCP_TOOLS) return;
     server.registerTool(name, {
       ...config,
       annotations: {
@@ -455,6 +513,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       try {
         const paidInvocation = PAID_TOOLS.has(name)
           || (name === 'run_action' && !!actionSpec(args?.actionKey)?.paid)
+          || (name === 'start_job' && !!actionSpec(args?.actionKey)?.paid)
           || (name === 'parallel_run' && Array.isArray(args?.actions) && args.actions.some((action: any) => actionSpec(action?.actionKey)?.paid));
         if (paidInvocation) {
           assertRateLimit({
@@ -690,6 +749,47 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     throw new Error(`Unknown action: ${actionKey}`);
   };
 
+  const projectIdFromActionInput = (input: Record<string, unknown> = {}) => {
+    const value = input.projectId;
+    if (!value || typeof value !== 'string') throw new Error('start_job action input requires projectId.');
+    return value;
+  };
+
+  const startRegistryJob = async (actionKey: ActionKey, rawInput: Record<string, unknown> = {}) => {
+    const spec = actionSpec(actionKey);
+    if (!spec) throw new Error(`Unsupported actionKey: ${actionKey}`);
+    if (!spec.paid) throw new Error(`start_job is only for paid actions. Use run_action for ${actionKey}.`);
+    const actionProjectId = projectIdFromActionInput(rawInput);
+    await assertProjectAccess(actionProjectId, auth.userId);
+    const jobId = await startAgentOperation({
+      projectId: actionProjectId,
+      userId: auth.userId,
+      source: 'mcp-remote',
+      tool: `job:${actionKey}`,
+      args: { actionKey, ...rawInput },
+    });
+    if (!jobId) throw new Error('Could not create Mirage job row.');
+
+    void Promise.resolve()
+      .then(async () => {
+        const result = await runRegistryAction(actionKey, rawInput);
+        await finishAgentOperation(jobId, 'success', { result });
+      })
+      .catch(async (error) => {
+        await finishAgentOperation(jobId, 'error', { error });
+      });
+
+    return {
+      kind: 'mirage.job.started',
+      jobId,
+      projectId: actionProjectId,
+      actionKey,
+      status: 'running',
+      title: spec.title,
+      note: 'Job started. Visual Studio will update through realtime; call get_job only when you need status or results.',
+    };
+  };
+
   registerTool('list_projects', {
     title: 'List Mirage projects',
     description: 'Read-only. Lists recent Mirage projects for the authenticated artist.',
@@ -795,6 +895,69 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       input: actionInputSchema,
     },
   }, async ({ actionKey, input }) => runRegistryAction(actionKey, input || {}));
+
+  registerTool('start_job', {
+    title: 'Start Mirage job',
+    description: 'Mutating cockpit tool. Starts one paid registry action in the background and returns a jobId immediately. Prefer this for paid image, storyboard, video, and audio generation after artist approval.',
+    inputSchema: {
+      actionKey: actionKeySchema,
+      input: actionInputSchema,
+    },
+  }, async ({ actionKey, input }) => startRegistryJob(actionKey, input || {}));
+
+  registerTool('get_job', {
+    title: 'Get Mirage job',
+    description: 'Read-only cockpit tool. Returns durable status/result/error for a job started with start_job.',
+    inputSchema: {
+      projectId,
+      jobId: idString,
+    },
+  }, async ({ projectId, jobId }) => {
+    await assertProjectAccess(projectId, auth.userId);
+    const row = await getAgentOperation(jobId);
+    if (!row || row.project_id !== projectId) throw new Error(`Job not found: ${jobId}`);
+    return {
+      kind: 'mirage.job',
+      jobId: row.id,
+      projectId: row.project_id,
+      actionKey: String(row.tool || '').startsWith('job:') ? String(row.tool).slice(4) : row.payload?.actionKey || null,
+      label: row.label,
+      status: row.status,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      result: row.result || null,
+      error: row.error || null,
+      webUrl: `/?project=${encodeURIComponent(projectId)}`,
+    };
+  });
+
+  registerTool('list_jobs', {
+    title: 'List Mirage jobs',
+    description: 'Read-only cockpit tool. Lists recent agent jobs/operations for a project.',
+    inputSchema: {
+      projectId,
+      status: jobStatusSchema.optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+  }, async ({ projectId, status, limit }) => {
+    await assertProjectAccess(projectId, auth.userId);
+    const rows = await listAgentOperations(projectId, { status, limit });
+    return {
+      kind: 'mirage.jobs.list',
+      projectId,
+      jobs: rows.map((row: any) => ({
+        jobId: row.id,
+        actionKey: String(row.tool || '').startsWith('job:') ? String(row.tool).slice(4) : row.payload?.actionKey || null,
+        tool: row.tool,
+        label: row.label,
+        status: row.status,
+        startedAt: row.started_at,
+        finishedAt: row.finished_at,
+        error: row.error || null,
+        result: row.result || null,
+      })),
+    };
+  });
 
   registerTool('parallel_run', {
     title: 'Run Mirage actions in parallel',
