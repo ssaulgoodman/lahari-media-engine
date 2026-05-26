@@ -6,6 +6,14 @@ import { analyzeImageStyle } from '../../claude.js';
 import { getImageGenerationModelName, getImageService, getStyleOptionsModelName } from '../../image-provider.js';
 import { getProjectRuntimePreset, presetSubject } from '../../../presets.js';
 import { buildContextChain, logCall } from '../../../xray.js';
+import {
+  contextTracePreview,
+  emptyContextTrace,
+  shouldIncludeConcept,
+  shouldIncludeGuideAsset,
+  shouldIncludeProjectStyleDescription,
+  type ContextOverrides,
+} from '../../contextOverrides.js';
 import { styleDirectionHash, webStudioUrl, type Project } from '../core.js';
 import { buildNotebookMirrorArtifacts } from '../notebook.js';
 import { appendApplyJournal, applyError, ensureLength, validateBaseHash } from './helpers.js';
@@ -175,26 +183,32 @@ export const identifyStyle = async (project: Project, input: { assetId?: string;
 
 export const generateStyleCandidates = async (
   project: Project,
-  input: { note?: string; promptOverride?: string; guideAssetId?: string; count?: number } = {},
+  input: { note?: string; promptOverride?: string; guideAssetId?: string; count?: number; contextOverrides?: ContextOverrides } = {},
 ) => {
-  const concept = project.lockedConcept || {};
+  const contextTrace = emptyContextTrace(input.contextOverrides);
+  const concept = shouldIncludeConcept(input.contextOverrides) ? project.lockedConcept || {} : {};
+  if (input.contextOverrides?.includeConcept === false) contextTrace.excluded.push('concept');
   const preset = getProjectRuntimePreset({
     preset_key: project.presetKey,
     workflow_key: project.workflowKey,
   } as any);
   const subject = presetSubject(concept, project.title, preset);
-  let styleNotes = input.promptOverride || input.note || project.styleDescription || undefined;
+  let styleNotes = input.promptOverride || input.note || (shouldIncludeProjectStyleDescription(input.contextOverrides) ? project.styleDescription : undefined) || undefined;
+  if (input.contextOverrides?.includeProjectStyleDescription === false) contextTrace.excluded.push('style:description');
   let guideAsset: any = null;
 
-  if (input.guideAssetId) {
+  if (input.guideAssetId && shouldIncludeGuideAsset(input.contextOverrides)) {
     guideAsset = await findProjectStyleAsset(project, input.guideAssetId);
     if (!guideAsset) return applyError('validation_failed', 'guideAssetId must be an image asset in this project.', { field: 'guideAssetId' });
+    contextTrace.included.push('guide:image');
     const guideDescription = await analyzeImageStyle(
       await readAsBase64(guideAsset.file_path),
       mimeFromExt(guideAsset.file_path),
       project.textProvider,
     );
     styleNotes = [input.note, guideDescription].filter(Boolean).join('\n\n');
+  } else if (input.guideAssetId) {
+    contextTrace.excluded.push('guide:image');
   }
 
   const t0 = Date.now();
@@ -232,6 +246,7 @@ export const generateStyleCandidates = async (
         generatedBy: 'generate_style_candidates',
         guideAssetId: guideAsset?.id || null,
         promptOverride: !!input.promptOverride,
+        contextOverrides: contextTrace,
       }),
     });
     candidates.push({
@@ -259,7 +274,10 @@ export const generateStyleCandidates = async (
     stage: 'generate-style-candidates',
     model: getStyleOptionsModelName(project.imageModel),
     prompt: styleNotes || input.promptOverride || 'Generate style candidates',
-    referenceInputs: guideAsset ? [{ type: 'image', label: 'Style guide', url: storageUrl(guideAsset.file_path) }] : [],
+    referenceInputs: [
+      ...(guideAsset ? [{ type: 'image' as const, label: 'Style guide', url: storageUrl(guideAsset.file_path) }] : []),
+      ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
+    ],
     contextChain: await buildContextChain(project.id),
     responseSummary: `Generated ${candidates.length} style candidates.`,
     outputAssetIds: candidates.map((candidate) => candidate.assetId),
@@ -273,7 +291,7 @@ export const generateStyleCandidates = async (
     entityType: 'project',
     entityId: project.id,
     summary: `Codex generated ${candidates.length} style candidates.`,
-    payload: { count: candidates.length, guideAssetId: guideAsset?.id || null, promptOverride: !!input.promptOverride },
+    payload: { count: candidates.length, guideAssetId: guideAsset?.id || null, promptOverride: !!input.promptOverride, contextOverrides: contextTrace },
   });
 
   return {

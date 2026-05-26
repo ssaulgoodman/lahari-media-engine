@@ -12,6 +12,13 @@ import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
 import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
 import { getProjectRuntimePreset } from '../presets.js';
 import { buildStoryboardPlannerPrompt } from '../prompts/storyboard.js';
+import {
+  contextTracePreview,
+  emptyContextTrace,
+  shouldIncludeStoryboardRefKey,
+  shouldIncludeStyleImage,
+  type ContextOverrides,
+} from './contextOverrides.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -491,6 +498,7 @@ export const generateStoryboardVersion = async (opts: {
   previousVersionId?: string;
   refineMode?: StoryboardRefineMode;
   artistReferenceImagePath?: string;
+  contextOverrides?: ContextOverrides;
   modelOverride?: {
     storyboardProvider?: string;
   };
@@ -527,7 +535,41 @@ export const generateStoryboardVersion = async (opts: {
   // (style/cast/env), not the edit-mode previous image or refine attachment
   // — those should always pass through if present.
   const excludedKeys = getShotExcludedRefs(ctx.shot).storyboard;
-  const { refs: filteredRefs, refMeta: filteredMeta } = applyRefExclusion(ctx.refs, ctx.refMeta, excludedKeys);
+  const contextTrace = emptyContextTrace(opts.contextOverrides);
+  let sourceRefs = ctx.refs;
+  let sourceRefMeta = ctx.refMeta;
+  if (opts.contextOverrides?.styleAssetId !== undefined) {
+    sourceRefs = [];
+    sourceRefMeta = [];
+    for (let i = 0; i < ctx.refs.length; i += 1) {
+      if (ctx.refMeta[i]?.excludableKey === 'style') continue;
+      sourceRefs.push(ctx.refs[i]);
+      sourceRefMeta.push(ctx.refMeta[i]);
+    }
+    if (opts.contextOverrides.styleAssetId && shouldIncludeStyleImage(opts.contextOverrides)) {
+      const replacementStyleAsset = await selectOne('assets', { id: opts.contextOverrides.styleAssetId });
+      if (!replacementStyleAsset || replacementStyleAsset.project_id !== opts.projectId || !replacementStyleAsset.file_path) {
+        throw new Error('contextOverrides.styleAssetId was not found in this project.');
+      }
+      addRef(sourceRefs, sourceRefMeta, 'Context override style reference', replacementStyleAsset, 'style');
+      contextTrace.replaced.push('style:image');
+    } else {
+      contextTrace.excluded.push('style:image');
+    }
+  }
+  const { refs: perShotRefs, refMeta: perShotMeta } = applyRefExclusion(sourceRefs, sourceRefMeta, excludedKeys);
+  const filteredRefs: OpenAIRefImage[] = [];
+  const filteredMeta: StoryboardRefMeta[] = [];
+  for (let i = 0; i < perShotRefs.length; i += 1) {
+    const meta = perShotMeta[i];
+    if (!shouldIncludeStoryboardRefKey(meta?.excludableKey, opts.contextOverrides)) {
+      if (meta?.excludableKey) contextTrace.excluded.push(meta.excludableKey);
+      continue;
+    }
+    if (meta?.excludableKey) contextTrace.included.push(meta.excludableKey);
+    filteredRefs.push(perShotRefs[i]);
+    filteredMeta.push(meta);
+  }
   const baseRefs = previousAsset?.file_path && refineMode === 'edit_image'
     ? [{ label: 'Previous storyboard image to edit', imagePath: previousAsset.file_path }, ...filteredRefs]
     : filteredRefs;
@@ -573,6 +615,7 @@ ${artistRefNote}`
         rendererModel: rendered.model,
         imageRenderOnly: true,
         size: rendered.size,
+        contextOverrides: contextTrace,
       }),
     });
 
@@ -598,6 +641,7 @@ ${artistRefNote}`
         provider: rendered.provider,
         rendererModel: rendered.model,
         imageRenderOnly: true,
+        contextOverrides: contextTrace,
       },
       locked: false,
     });
@@ -617,7 +661,10 @@ ${artistRefNote}`
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
       model: rendered.model,
       prompt,
-      referenceInputs: refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      referenceInputs: [
+        ...refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+        ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
+      ],
       contextChain: await buildContextChain(opts.projectId),
       responseSummary: `${opts.artistNote?.trim() ? 'Edited' : 'Rendered'} storyboard ${versionId} via ${rendered.provider}`,
       outputAssetIds: [assetId],
@@ -642,7 +689,10 @@ ${artistRefNote}`
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
       model: getStoryboardProvider(preferences.preferences.storyboardProvider).runtimeModel,
       prompt,
-      referenceInputs: refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+      referenceInputs: [
+        ...refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
+        ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
+      ],
       contextChain: await buildContextChain(opts.projectId),
       durationMs,
       error: err.message,

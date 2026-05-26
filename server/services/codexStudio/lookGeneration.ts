@@ -9,6 +9,14 @@ import { getImageGenerationModelName, getImageService } from '../image-provider.
 import { recordDirectorEvent } from '../directorEvents.js';
 import { getProjectPreferencesState, getProjectPromptOverride } from '../projectConfig.js';
 import { isLegacyLookPrompt } from '../../prompts/lookPrompts.js';
+import {
+  contextTracePreview,
+  emptyContextTrace,
+  shouldIncludeGuideAsset,
+  shouldIncludeProjectStyleDescription,
+  shouldIncludeStyleImage,
+  type ContextOverrides,
+} from '../contextOverrides.js';
 import { compactText, webStudioUrl, type Project } from './core.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
 
@@ -16,12 +24,24 @@ type GenerateLooksOptions = {
   note?: string;
   promptOverride?: string;
   guideAssetId?: string;
+  contextOverrides?: ContextOverrides;
 };
 
-const styleImagePathForProject = async (project: Project): Promise<string | undefined> => {
-  if (!project.styleAssetId) return undefined;
-  const asset = await selectOne('assets', { id: project.styleAssetId });
-  return asset?.project_id === project.id ? asset.file_path : undefined;
+const styleImagePathForProject = async (project: Project, overrides?: ContextOverrides): Promise<{ path?: string; trace: ReturnType<typeof emptyContextTrace> }> => {
+  const trace = emptyContextTrace(overrides);
+  if (!shouldIncludeStyleImage(overrides)) {
+    trace.excluded.push('style:image');
+    return { trace };
+  }
+
+  const styleAssetId = overrides?.styleAssetId !== undefined ? overrides.styleAssetId : project.styleAssetId;
+  if (!styleAssetId) return { trace };
+
+  const asset = await selectOne('assets', { id: styleAssetId });
+  if (!asset || asset.project_id !== project.id) throw new Error('contextOverrides.styleAssetId was not found in this project.');
+  if (styleAssetId !== project.styleAssetId) trace.replaced.push('style:image');
+  trace.included.push('style:image');
+  return { path: asset.file_path, trace };
 };
 
 const guideImagePathForProject = async (project: Project, guideAssetId?: string): Promise<string | undefined> => {
@@ -46,6 +66,7 @@ const candidateMetadata = (base: Record<string, unknown>, opts: {
   promptOverride?: string;
   note?: string;
   guideAssetId?: string;
+  contextOverrides?: unknown;
 }) => JSON.stringify({
   ...base,
   model: opts.model,
@@ -56,6 +77,7 @@ const candidateMetadata = (base: Record<string, unknown>, opts: {
   hasPromptOverride: !!opts.promptOverride,
   note: opts.note || null,
   guideAssetId: opts.guideAssetId || null,
+  contextOverrides: opts.contextOverrides || null,
 });
 
 export const generateCharacterLooksForDirector = async (
@@ -78,8 +100,12 @@ export const generateCharacterLooksForDirector = async (
     throw new Error('promptOverride can only target one cast member. Pass exactly one castMemberId.');
   }
 
-  const styleImagePath = await styleImagePathForProject(project);
-  const guideImagePath = await guideImagePathForProject(project, opts.guideAssetId);
+  const { path: styleImagePath, trace: contextTrace } = await styleImagePathForProject(project, opts.contextOverrides);
+  const guideImagePath = shouldIncludeGuideAsset(opts.contextOverrides)
+    ? await guideImagePathForProject(project, opts.guideAssetId)
+    : undefined;
+  if (opts.guideAssetId && guideImagePath) contextTrace.included.push('guide:image');
+  if (opts.guideAssetId && !guideImagePath) contextTrace.excluded.push('guide:image');
   const preset = getPipelinePreset(project.presetKey);
   const projectPreferences = await getProjectPreferencesState(project as any);
   const imageModel = projectPreferences.preferences.imageModel;
@@ -98,7 +124,11 @@ export const generateCharacterLooksForDirector = async (
     if (shouldRebuildPrompt) {
       genPrompt = buildCharacterPrompt(
         { name: member.name, description: member.description || '' },
-        { styleIdx: styleImagePath ? 1 : undefined, preset, styleDescription: project.styleDescription },
+        {
+          styleIdx: styleImagePath ? 1 : undefined,
+          preset,
+          styleDescription: shouldIncludeProjectStyleDescription(opts.contextOverrides) ? project.styleDescription : undefined,
+        },
       );
     }
 
@@ -160,6 +190,7 @@ export const generateCharacterLooksForDirector = async (
           promptOverride: opts.promptOverride,
           note: opts.note,
           guideAssetId: opts.guideAssetId,
+          contextOverrides: contextTrace,
         }),
       });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
@@ -173,6 +204,7 @@ export const generateCharacterLooksForDirector = async (
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
         ...(guideImagePath ? [{ type: 'image' as const, label: `${member.name} guide`, url: storageUrl(guideImagePath) }] : []),
+        ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
       ],
       contextChain: await buildContextChain(project.id),
       responseSummary: `Generated ${looks.length} looks for ${member.name} via MCP`,
@@ -187,7 +219,7 @@ export const generateCharacterLooksForDirector = async (
       entityType: 'cast_member',
       entityId: member.id,
       summary: `Codex generated ${looks.length} looks for character "${member.name}".`,
-      payload: { castMemberId: member.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource, guideAssetId: opts.guideAssetId || null },
+      payload: { castMemberId: member.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource, guideAssetId: opts.guideAssetId || null, contextOverrides: contextTrace },
     });
 
     results.push({ castMemberId: member.id, castMemberName: member.name, prompt: genPrompt, promptSource, looks });
@@ -224,8 +256,12 @@ export const generateEnvironmentLooksForDirector = async (
     throw new Error('promptOverride can only target one environment. Pass exactly one environmentId.');
   }
 
-  const styleImagePath = await styleImagePathForProject(project);
-  const guideImagePath = await guideImagePathForProject(project, opts.guideAssetId);
+  const { path: styleImagePath, trace: contextTrace } = await styleImagePathForProject(project, opts.contextOverrides);
+  const guideImagePath = shouldIncludeGuideAsset(opts.contextOverrides)
+    ? await guideImagePathForProject(project, opts.guideAssetId)
+    : undefined;
+  if (opts.guideAssetId && guideImagePath) contextTrace.included.push('guide:image');
+  if (opts.guideAssetId && !guideImagePath) contextTrace.excluded.push('guide:image');
   const preset = getPipelinePreset(project.presetKey);
   const projectPreferences = await getProjectPreferencesState(project as any);
   const imageModel = projectPreferences.preferences.imageModel;
@@ -244,7 +280,11 @@ export const generateEnvironmentLooksForDirector = async (
     if (shouldRebuildPrompt) {
       genPrompt = buildEnvironmentPrompt(
         { name: environment.name, description: environment.description || '' },
-        { styleIdx: styleImagePath ? 1 : undefined, preset, styleDescription: project.styleDescription },
+        {
+          styleIdx: styleImagePath ? 1 : undefined,
+          preset,
+          styleDescription: shouldIncludeProjectStyleDescription(opts.contextOverrides) ? project.styleDescription : undefined,
+        },
       );
     }
 
@@ -306,6 +346,7 @@ export const generateEnvironmentLooksForDirector = async (
           promptOverride: opts.promptOverride,
           note: opts.note,
           guideAssetId: opts.guideAssetId,
+          contextOverrides: contextTrace,
         }),
       });
       looks.push({ id: assetId, url: storageUrl(imagePaths[i]) });
@@ -319,6 +360,7 @@ export const generateEnvironmentLooksForDirector = async (
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
         ...(guideImagePath ? [{ type: 'image' as const, label: `${environment.name} guide`, url: storageUrl(guideImagePath) }] : []),
+        ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
       ],
       contextChain: await buildContextChain(project.id),
       responseSummary: `Generated ${looks.length} environment looks for ${environment.name} via MCP`,
@@ -333,7 +375,7 @@ export const generateEnvironmentLooksForDirector = async (
       entityType: 'environment',
       entityId: environment.id,
       summary: `Codex generated ${looks.length} looks for environment "${environment.name}".`,
-      payload: { environmentId: environment.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource, guideAssetId: opts.guideAssetId || null },
+      payload: { environmentId: environment.id, assetIds: looks.map((look) => look.id), note: opts.note || null, promptSource, guideAssetId: opts.guideAssetId || null, contextOverrides: contextTrace },
     });
 
     results.push({ environmentId: environment.id, environmentName: environment.name, prompt: genPrompt, promptSource, looks });

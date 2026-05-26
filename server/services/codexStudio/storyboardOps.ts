@@ -1,4 +1,5 @@
 import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion, writeStoryboardPrompt } from '../storyboard.js';
+import type { ContextOverrides } from '../contextOverrides.js';
 import { generateShotVideo } from '../videoGeneration.js';
 import { eventResultPointers, recordDirectorEvent } from '../directorEvents.js';
 import { getModelMinDuration } from '../segmind.js';
@@ -471,7 +472,13 @@ export const planGenerateVideo = (project: Project, shotId: string, modelOverrid
   };
 };
 
-export const applyGenerateStoryboard = async (project: Project, shotId: string, artistNote?: string, modelOverride: ModelOverride = {}) => {
+export const applyGenerateStoryboard = async (
+  project: Project,
+  shotId: string,
+  artistNote?: string,
+  modelOverride: ModelOverride = {},
+  contextOverrides?: ContextOverrides,
+) => {
   const plan = planGenerateStoryboard(project, shotId, modelOverride);
   if (!plan.canRun) {
     throw new Error(`Cannot generate storyboard: ${plan.prerequisites.join(' ')}`);
@@ -481,6 +488,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
     projectId: project.id,
     shotId,
     artistNote,
+    contextOverrides,
     modelOverride: { storyboardProvider: modelOverride.storyboardProvider },
   });
   await recordDirectorEvent({
@@ -494,6 +502,7 @@ export const applyGenerateStoryboard = async (project: Project, shotId: string, 
       artistNote: artistNote || null,
       provider: plan.provider,
       modelOverride: modelOverride.storyboardProvider ? { storyboardProvider: modelOverride.storyboardProvider } : null,
+      contextOverrides: contextOverrides || null,
       estimatedCost: plan.estimatedCost,
       result: eventResultPointers(result),
     },
@@ -537,6 +546,7 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
   force?: boolean;
   artistNote?: string;
   modelOverride?: ModelOverride;
+  contextOverrides?: ContextOverrides;
 } = {}) => {
   const targets = filterShotTargets(project, opts.shotIds);
   const candidates = targets.map((target) => {
@@ -567,7 +577,7 @@ export const bulkGenerateStoryboards = async (project: Project, opts: {
 
   for (const target of selected) {
     try {
-      const result = await applyGenerateStoryboard(project, target.shot.id, opts.artistNote, opts.modelOverride || {});
+      const result = await applyGenerateStoryboard(project, target.shot.id, opts.artistNote, opts.modelOverride || {}, opts.contextOverrides);
       results.push({
         shotId: target.shot.id,
         label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
