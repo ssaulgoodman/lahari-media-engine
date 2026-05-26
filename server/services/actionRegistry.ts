@@ -316,10 +316,57 @@ export const STYLE_ACTION_SPECS = {
   },
 } as const;
 
+export const SYSTEM_ACTION_SPECS = {
+  apply_project_preferences: {
+    key: 'apply_project_preferences',
+    title: 'Apply project preferences',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Persist project-level model/provider preferences such as textProvider, imageModel, storyboardProvider, and videoModel.',
+    input: {
+      projectId: 'string',
+      preferences: '{ textProvider?, imageModel?, storyboardProvider?, videoModel? }',
+      baseHash: 'optional string',
+    },
+    examples: [{ projectId: 'project_uuid', preferences: { videoModel: 'seedance-2.0-fast' } }],
+  },
+  apply_project_prompt_override: {
+    key: 'apply_project_prompt_override',
+    title: 'Apply project prompt override',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Persist a project-scoped prompt recipe override. Use when repeated per-call promptOverride experiments should become the project default.',
+    input: {
+      projectId: 'string',
+      kind: 'prompt override kind',
+      body: 'string',
+      baseHash: 'optional string',
+    },
+    examples: [{ projectId: 'project_uuid', kind: 'character_looks', body: 'Keep character references compact and faithful to the locked style.' }],
+  },
+  revert_project_prompt_override: {
+    key: 'revert_project_prompt_override',
+    title: 'Revert project prompt override',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Remove or roll back a project-scoped prompt recipe override so the engine uses the previous active recipe or global default.',
+    input: {
+      projectId: 'string',
+      kind: 'prompt override kind',
+      baseHash: 'optional string',
+    },
+    examples: [{ projectId: 'project_uuid', kind: 'storyboard' }],
+  },
+} as const;
+
 export const ALL_ACTION_SPECS = {
   ...CONCEPT_ACTION_SPECS,
   ...SCRIPT_ACTION_SPECS,
   ...STYLE_ACTION_SPECS,
+  ...SYSTEM_ACTION_SPECS,
   ...LOOK_ACTION_SPECS,
   ...STORYBOARD_ACTION_SPECS,
   ...VIDEO_ACTION_SPECS,

@@ -194,6 +194,8 @@ Video action bridge: prefer `run_action` for `generate_video` and `apply_video_p
 
 Audio action bridge: prefer `run_action` for `generate_dialogue_audio`, `apply_audio_plan`, and `apply_cast_voice`. Use `generate_dialogue_audio` with `dryRun: true` for TTS cost/missing voices before spending. `apply_audio_plan` accepts either structured `shots[]` or markdown from `drafts/audio-plan.md`.
 
+System config action bridge: prefer `run_action` for `apply_project_preferences`, `apply_project_prompt_override`, and `revert_project_prompt_override`. If the same per-call `promptOverride` keeps working, suggest promoting it to a project prompt override.
+
 Destructive events happen on active mutation:
 - `lock-concept` with changed concept and existing scenes can wipe downstream data or fork.
 - `generate-script` rerun can wipe cast/scenes/prompts or fork.
