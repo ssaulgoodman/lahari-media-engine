@@ -3,16 +3,54 @@
 Date: 2026-05-26
 Branch: `mirage`
 Purpose: inspect the prompt composer, preset taste additives, and runtime prompt builders for vague or bloated instruction layers before the next deployed agent smoke test.
+Status: merged — Codex's table-structured analysis (`8fbf4a4`) + Claude's Pattern 7 finding and architectural proposal.
 
 ## Executive Read
 
 The composer shape is mostly right. The bloat is not coming from `composePrompt()` itself; it is coming from a few contributors using the composer as a dumping ground for doctrine, examples, model lore, and output schema all at once.
 
-Biggest finding: `writeShotPrompts` is the clear offender. A one-shot anime prompt renders at about **7,002 chars / ~1,751 tokens** before the model sees one real shot. It repeats the same anti-vagueness idea in core task, model guidance, preset taste, and output contract. This is the likely source of "vague but long" shot/video downstream behavior.
+**Four findings:**
 
-Second finding: preset taste is earning its place, but `anime_default.style.rules` and `anime_default.looks.qualityRules` are reused across style, character, environment, storyboard, and image prompts. That is useful for medium guard, but it should be compressed into smaller per-surface rules instead of carrying the full anti-photoreal doctrine everywhere.
+1. **`writeShotPrompts` is the clear offender.** A one-shot anime prompt renders at about **7,002 chars / ~1,751 tokens** before the model sees one real shot. It repeats the same anti-vagueness idea in core task, model guidance, preset taste, and output contract. This is the likely source of "vague but long" shot/video downstream behavior.
 
-Third finding: output contracts are doing too much prose. Several contracts explain the system rather than simply state the response shape and hard constraints. We should separate "what to return" from "why this layer exists."
+2. **Preset taste is earning its place, but** `anime_default.style.rules` and `anime_default.looks.qualityRules` are reused across style, character, environment, storyboard, and image prompts. Useful for medium guard, but should be compressed into smaller per-surface rules instead of carrying the full anti-photoreal doctrine everywhere.
+
+3. **Output contracts are doing too much prose.** Several contracts explain the system rather than simply state the response shape and hard constraints. We should separate "what to return" from "why this layer exists."
+
+4. **Project prompt overrides are half-wired.** The `apply_project_prompt_override` schema declares 8 override kinds but only 2 (`storyboard`, `video`) are actually consumed by any prompt builder. The other 6 are dead text in the database. The skill instruction we ship ("promote a repeated promptOverride") is currently truthful for only 2 of 8 surfaces. **See Pattern 7 / Cleanup C5.**
+
+## Pattern 7 — Half-Wired DB Overrides
+
+This is the finding that landed via grep of `getProjectPromptOverride` consumption sites. Surfaced after Codex's initial audit was committed.
+
+### What's declared vs what's consumed
+
+The `apply_project_prompt_override` schema accepts 8 kinds. Only 2 flow back into prompts:
+
+| Override kind | Schema accepts | Stored in DB | Consumed by prompt builder? |
+|---|---|---|---|
+| `storyboard` | ✅ | ✅ | ✅ (appended to presetTaste in storyboard.ts) |
+| `video` | ✅ | ✅ | ✅ (read in videoGeneration.ts) |
+| `concept` | ✅ | ✅ | ❌ never consumed |
+| `script` | ✅ | ✅ | ❌ never consumed |
+| `shot_prompts` | ✅ | ✅ | ❌ never consumed |
+| `character_looks` | ✅ | ✅ | ❌ never consumed |
+| `environment_looks` | ✅ | ✅ | ❌ never consumed |
+| `audio_plan` | ✅ | ✅ | ❌ never consumed |
+
+The skill we shipped ("if the same per-call promptOverride keeps working, suggest promoting it with apply_project_prompt_override") currently does nothing for the bottom six. Agent stores them. No prompt builder reads them.
+
+### What this changes about the composer
+
+Today, the composer has no concept of "project override." Each prompt builder ad-hoc decides where to fold the override string in. Storyboard appends to `presetTaste`. Video reads it elsewhere. The other six don't read it at all. This is inconsistent AND incomplete.
+
+### Two options
+
+**Option A: Wire all 8 properly.** Composer gets a new `projectOverride?: string` field (slots between presetTaste and userNotePolicy). Every prompt builder calls `getProjectPromptOverride(projectId, kind)` and passes it in. Honest version of the feature. Skill instruction becomes truthful for every surface.
+
+**Option B: Narrow the schema to what works.** Reduce `promptOverrideKindSchema` enum to just `storyboard` + `video`. Apply tool throws for the other six. Skill instruction qualified to "only for storyboard and video."
+
+**Claude's vote:** Option A. The skill already teaches the promotion pattern. If only 2 of 8 promotions persist, the agent learns a half-true rule. Either commit to the feature or shrink the API to honest size. | ☐ Saul's call
 
 ## Composer Sections
 
@@ -25,6 +63,7 @@ Third finding: output contracts are doing too much prose. Several contracts expl
 | `userNotePolicy` | How artist feedback interacts with contract/taste | Prevents "note as vague nudge" drift | Yes for generate/refine tools; verbose in repeated examples | Keep, replace repeated Polaroid/live-action examples with a shared short rule | ☐ |
 | `outputContract` | Required response shape and hard rules | Enforces JSON/tool shape | Yes, but too many contracts explain content philosophy | Keep, cut to schema + 5-8 hard rules | ☐ |
 | `userNote` | Raw artist note | Direction | Yes | Keep | ☐ |
+| **NEW: `projectOverride`** | DB-stored per-project override body for this kind | Lets artist taste persist across calls per Pattern 7 | Currently fictional for 6 of 8 surfaces | **Add as first-class composer section** (between presetTaste and userNotePolicy) | ☐ |
 | `inspectComposedPrompt` | Reverse parser for X-Ray | Debug transparency | Yes as debug-only | Keep; edge case noted: exact header lines inside user text can mis-split | ☐ |
 
 ## Preset Additives
@@ -57,20 +96,20 @@ Third finding: output contracts are doing too much prose. Several contracts expl
 |---|---:|---|---|---|---|
 | `_composer.ts` | tiny | Section order and rendering | Clean. The `OUTPUT CONTRACT` header is a prompt-body change but generally helpful | Keep | ☐ |
 | `_shared.ts` | tiny | `workflowContextFor`, `clip`, `conceptSubject` | Good. Context is small and human-readable | Keep | ☐ |
-| `concept.ts / buildGenerateConceptPrompt` | ~2.3k chars in sample | Concept task, source, preset concept rules, user-note policy, JSON contract | Healthy length. Some duplicate "no style/camera/palette" appears in core + preset + contract, but it protects layer separation | Keep, minor trim later | ☐ |
+| `concept.ts / buildGenerateConceptPrompt` | ~2.3k chars | Concept task, source, preset concept rules, user-note policy, JSON contract | Healthy length. Some duplicate "no style/camera/palette" appears in core + preset + contract, but it protects layer separation. Missing `projectOverride` consumption per Pattern 7 | Keep, minor trim later; add override read | ☐ |
 | `concept.ts / buildRefineConceptPrompt` | medium | Surgical refinement contract | Good. Could shorten user-note policy | Keep | ☐ |
 | `styleBrainstorm.ts` | medium | 4 directions, range, medium guard, user-note hard constraint | Good. Polaroid example is useful once, not in every style/refine prompt | Keep, compress repeated conflict example | ☐ |
 | `refineStyle.ts` | medium | Surgical style refine | Good but repeats same medium-conflict paragraph | Keep, share shorter policy | ☐ |
-| `visualizeStyle.ts` | ~image prompt | Style image generation, style direction, preset taste + quality rules | Mostly good. It may carry too much anime anti-photoreal doctrine for a simple style image | Keep, use short image taste | ☐ |
-| `lookPrompts.ts / buildCharacterLookPrompt` | ~1.8k chars in sample | Style ref extraction, entity description, preset style + character + quality rules | Good. This is much better than old long character prompt. Main risk is "Extract style" language still not strong enough for known artist-style references without a semantic note | Keep, improve style-intent note generation separately | ☐ |
-| `lookPrompts.ts / buildEnvironmentLookPrompt` | similar | Env ref generation | Good | Keep | ☐ |
+| `visualizeStyle.ts` | image prompt | Style image generation, style direction, preset taste + quality rules | Mostly good. May carry too much anime anti-photoreal doctrine for simple style image | Keep, use short image taste | ☐ |
+| `lookPrompts.ts / buildCharacterLookPrompt` | ~1.8k chars | Style ref extraction, entity description, preset style + character + quality rules | Much better than old long character prompt. Main risk: "Extract style" not strong enough for known artist-style references without semantic note. Missing `projectOverride` per Pattern 7 | Keep; improve style-intent note generation separately; add override read | ☐ |
+| `lookPrompts.ts / buildEnvironmentLookPrompt` | similar | Env ref generation | Good. Missing `projectOverride` per Pattern 7 | Keep; add override read | ☐ |
 | `parseScript.ts` | medium | Script extraction, preset script rules, JSON/tool contract | Good, practical | Keep | ☐ |
-| `planScenes.ts` | medium-large | Music-led planner, pacing, source signals, cast/env/shot rules | Only for music-led, so title/core are okay. Do not reuse for scripted narrative | Keep | ☐ |
-| `refineScript.ts` | large | Full current script JSON, surgical policy, pacing, rules | Large but expected because it must preserve full script. Risk: output contract says `plan_music_video` even when generic surfaces call it | Keep for now; rename tool text later | ☐ |
-| `shotPrompts.ts / buildWriteShotPromptsPrompt` | **~7.0k chars sample** | Art direction doctrine, examples, model guidance, cast, previous tail, all shots, output contract | Main bloat offender. Too much meta-instruction before the actual shots. Duplicates renderable guidance across core, examples, model guidance, contract | Cut hard. Target <3.5k for 1-3 shots | ☐ |
-| `storyboard.ts / buildStoryboardPlannerPrompt` | ~2.8k chars sample | Storyboard prompt + cut plan, source brief, preset style/storyboard rules, JSON contract | Reasonable. Output contract is long but earns tokens because storyboard prompt shape matters | Keep, minor trim | ☐ |
-| `audioPlan.ts / buildAudioPlanPrompt` | medium-large | One-shot dialogue/audio data, allowed cast, raw source payload, preset audio rules | Good conceptually. Risk: raw source payload capped at 6k even for one tiny shot | Keep, reduce raw source cap or only include relevant source slice | ☐ |
-| `seedance-storyboard-rd.ts / buildSeedanceStoryboardVideoPrompt` | outside composer | Final video prompt from storyboard + refs + cut plan | Already trimmed and specific. This is not the current bloat source | Keep | ☐ |
+| `planScenes.ts` | medium-large | Music-led planner, pacing, source signals, cast/env/shot rules | Only for music-led, so title/core okay. Do not reuse for scripted narrative. Missing `projectOverride` per Pattern 7 | Keep; add override read | ☐ |
+| `refineScript.ts` | large | Full current script JSON, surgical policy, pacing, rules | Large but expected. Risk: output contract says `plan_music_video` even when generic surfaces call it. Missing `projectOverride` per Pattern 7 | Keep for now; rename tool text later; add override read | ☐ |
+| `shotPrompts.ts / buildWriteShotPromptsPrompt` | **~7.0k chars** | Art direction doctrine, examples, model guidance, cast, previous tail, all shots, output contract | **Main bloat offender.** Too much meta-instruction before actual shots. Duplicates renderable guidance across core, examples, model guidance, contract. Missing `projectOverride` per Pattern 7 | **Cut hard. Target <3.5k for 1-3 shots.** Add override read | ☐ |
+| `storyboard.ts / buildStoryboardPlannerPrompt` | ~2.8k chars | Storyboard prompt + cut plan, source brief, preset style/storyboard rules, JSON contract | Reasonable. Output contract long but earns tokens because storyboard prompt shape matters. `projectOverride` consumption already in place ✅ | Keep, minor trim | ☐ |
+| `audioPlan.ts / buildAudioPlanPrompt` | medium-large | One-shot dialogue/audio data, allowed cast, raw source payload, preset audio rules | Good conceptually. Risk: raw source payload capped at 6k even for one tiny shot. Missing `projectOverride` per Pattern 7 | Keep, reduce raw source cap or include only relevant source slice; add override read | ☐ |
+| `seedance-storyboard-rd.ts / buildSeedanceStoryboardVideoPrompt` | outside composer | Final video prompt from storyboard + refs + cut plan | Already trimmed and specific. `projectOverride` consumption already in place ✅ | Keep | ☐ |
 | `catalog.ts` | UI/reference metadata | Prompt library docs, not runtime prompt body | Must stay truthful but does not affect LLM quality | Keep synced | ☐ |
 
 ## Worked Examples
@@ -178,6 +217,8 @@ Intent vs actual:
 | Verbose context dumps for tiny tasks | Yes | `audioPlan.ts`, `refineScript.ts` by necessity, `shotPrompts.ts` previous tail | Need relevance caps rather than global caps |
 | Output contracts describe shape more than content | Yes | `shotPrompts.ts`, `storyboard.ts` | Storyboard earns it more than shot prompts |
 | Preset taste blocks overused | Mild | anime image prompts | Need per-surface taste fragments |
+| User-note policy restated per-file | Yes | concept, shotPrompts, storyboard, refineScript, refineStyle | 80% same text; should be one shared constant in `_shared.ts` |
+| **Override mechanism half-wired (Pattern 7)** | **Yes** | **6 of 8 declared kinds never consumed** | **DB stores them; no builder reads them. Skill instruction is half-truth.** |
 
 ## Proposed Cleanup Slice
 
@@ -207,26 +248,70 @@ No schema migration needed; this can be helper-level first.
 
 ### C3 — Shorten repeated user-note conflict policy
 
-Replace repeated paragraphs like the Polaroid/live-action example with:
+Replace repeated paragraphs like the Polaroid/live-action example with one shared constant in `_shared.ts`:
 
 ```text
 If the note conflicts with TASTE or the tool layer, keep the valid intent and translate the invalid medium/layer request into the closest safe analogue.
 ```
 
-Keep concrete examples in tests/docs, not every runtime prompt.
+Per-file override only when there's a genuinely domain-specific tail. Keep concrete examples in tests/docs, not every runtime prompt.
 
 ### C4 — Backfill style semantics after upload-as-is
 
 Use the new `identify_style` action when locked style has an image but empty/weak `styleDescription`. This keeps character/environment prompts compact while giving image models a semantic style anchor.
 
+### C5 — Wire project overrides as a first-class composer section (Pattern 7 fix)
+
+**This is the architectural one.** Today each prompt builder ad-hoc decides where to inject the override. 6 of 8 declared kinds aren't injected anywhere. Fix:
+
+1. Add `projectOverride?: string` to `ComposePromptParts` in `_composer.ts`. New section title `PROJECT OVERRIDE`. Slots between `presetTaste` and `userNotePolicy`.
+2. Every prompt builder calls `getProjectPromptOverride(projectId, kind)` and passes the result in.
+3. Storyboard's current "append to presetTaste" pattern moves to the new section instead. Behavior unchanged for storyboard; new behavior available for the other 6.
+4. Skill instruction ("promote a repeated promptOverride") becomes truthful across all surfaces.
+
+Alternative (smaller scope, dishonest API): Option B — narrow schema to just `storyboard` + `video`. Saves implementation work; kills the agentic promotion pattern as a generalization. Codex's audit assumed the current ad-hoc shape; this audit revisits.
+
 ## Priority Verdict
 
-P0: `server/prompts/shotPrompts.ts`
+- **P0:** `server/prompts/shotPrompts.ts` (C1) — biggest single win, biggest source of vague output
+- **P1:** Compressed anime medium/taste helpers for image prompts (C2)
+- **P1:** Project overrides wired into composer (C5) — if we pick Option A
+- **P2:** Repeated user-note-policy copy → shared constant (C3)
+- **P3:** `audioPlan.ts` source payload cap (C4)
+- **P3:** `identify_style` backfill workflow (already an ActionSpec, just needs the surfaces to call it)
 
-P1: compressed anime medium/taste helpers for image prompts
+Everything else can wait until after the full deployed smoke test. The composer architecture is sound; the cleanup is token discipline + completing the override feature, not a ground-up redesign.
 
-P2: repeated user-note-policy copy
+## Open Questions for Saul
 
-P3: `audioPlan.ts` source payload cap
+The audit reaches conclusions on most rows. These are the calls that need your verdict:
 
-Everything else can wait until after the full deployed smoke test. The composer architecture is sound; the cleanup is token discipline, not a ground-up redesign.
+1. **Pattern 7 — Option A or Option B?**
+   - A: Wire all 8 override kinds properly (one slice; honest API; ~half-day of prompt-builder edits).
+   - B: Narrow schema to just `storyboard` + `video` (smaller scope; kill the agentic promotion pattern as a general capability).
+   - Claude vote: A. Codex's audit was pre-Pattern-7 so no opinion.
+
+2. **WorkflowContext — Codex says "keep but drop from image-gen prompts"; Claude initially voted kill entirely.** Real cost is ~30 tokens per call. Codex's middle ground is defensible. Acceptable to defer to Codex's call here.
+
+3. **Examples in CORE_TASK** — `shotPrompts.ts` has GOOD/BAD examples. C1 proposes moving them to docs/tests, not runtime prompt. Risk: GOOD/BAD examples may be the single most useful anchor for non-vague output. If we strip them, the cuts might over-correct toward terse and lose the show-don't-tell anchor.
+   - Claude vote: keep ONE GOOD/BAD pair in CORE_TASK. Move the others to docs.
+
+4. **One canonical USER_NOTE_POLICY** — C3 proposes one shared constant. Per-file override allowed for genuinely domain-specific tails. Agree?
+
+5. **Slice ordering** — C1 first (P0) is obvious. After that, the question is: C5 (override wiring, finishes a half-built feature) vs C2 (preset taste helpers, more mechanical). Claude leans C5 next because Pattern 7 affects the agentic skill we already shipped.
+
+6. **OUTPUT CONTRACT vs OUTPUT QUALITY split** — separating "JSON shape required" from "content quality rules"? Claude proposes splitting; Codex's analysis keeps them combined under OUTPUT CONTRACT. Worth deciding.
+
+7. **Trim aggressively now or conservative + iterate?** Codex's C1 target ("under 3,500 chars for 1-3 shots") is aggressive — 50% reduction. Safer would be a 25% first cut then re-measure. Aggressive saves a deploy cycle; conservative protects against tripping unknown dependencies.
+
+## Notes on this merge
+
+Codex's audit (`8fbf4a4`) was the table-structured backbone. Claude's draft added:
+- Pattern 7 (half-wired DB overrides) — only finding genuinely new
+- C5 cleanup slice (wire overrides into composer)
+- New row in Composer Sections table for `projectOverride`
+- New row in Failure Modes table for "Override mechanism half-wired"
+- Updated Prompt File Audit rows to flag where `projectOverride` consumption is missing
+- Open Questions block for Saul's verdict on contested decisions
+
+Where Codex and Claude differed, Codex's call took precedence by default since their analysis was more thorough on the per-row classification. Where Claude found something Codex didn't (Pattern 7), it was added as a new finding. The open-questions block is where the contested decisions live for Saul to arbitrate.
