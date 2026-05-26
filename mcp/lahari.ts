@@ -33,10 +33,6 @@ const modelOverrideSchema = z.object({
 const imageModelOverrideSchema = z.object({
   imageModel: z.string().optional(),
 }).optional();
-const mediaLibraryRefSchema = z.object({
-  type: z.enum(['style', 'cast', 'env', 'uploaded']),
-  id: z.string().optional(),
-});
 
 const toolAnnotations = (name: string): ToolAnnotations => {
   const readOnlyPrefixes = [
@@ -1106,36 +1102,6 @@ registerAuditedTool('apply_generate_video', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(projectId);
   return textResult(await studio.applyGenerateVideo(project, shotId, promptOverride, modelOverride || {}));
-});
-
-registerAuditedTool('create_media_clip', {
-  title: 'Create extra media clip',
-  description: 'Mutating and paid. Generates an extra B-roll / insert video clip into the render Media Library without changing canonical script scenes, shots, or stale flags.',
-  inputSchema: {
-    projectId: z.string().min(1).describe('Lahari project ID.'),
-    title: z.string().optional().describe('Short clip title.'),
-    brief: z.string().min(1).describe('Director-written prompt/brief for the extra clip.'),
-    durationSec: z.number().min(4).max(15).optional().describe('Requested clip duration in seconds.'),
-    refs: z.array(mediaLibraryRefSchema).max(9).optional().describe('Optional explicit references.'),
-    useProjectRefs: z.boolean().optional().describe('Default true. Set false for abstract/B-roll/no-character clips.'),
-    modelOverride: modelOverrideSchema.describe('Optional per-call video model override.'),
-  },
-}, async ({ projectId, title, brief, durationSec, refs, useProjectRefs, modelOverride }) => {
-  const env = await prepareCodexWriteEnv();
-  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
-  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for create_media_clip.');
-
-  const studio = await loadStudio();
-  return textResult(await studio.generateMediaLibraryClip({
-    projectId,
-    source: 'codex',
-    title,
-    brief,
-    durationSec,
-    refs,
-    useProjectRefs,
-    modelOverride: modelOverride || {},
-  }));
 });
 
 registerAuditedTool('lahari_capture_issue', {

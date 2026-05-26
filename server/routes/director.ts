@@ -445,18 +445,6 @@ router.post('/generate/video', audited('director.generate.video', async (req) =>
   req.body.modelOverride || {},
 )));
 
-router.post('/media-library/create-clip', audited('director.media_library.create_clip', async (req) => studio.generateMediaLibraryClip({
-  projectId: req.body.projectId,
-  userId: req.userId,
-  source: 'codex',
-  title: req.body.title,
-  brief: req.body.brief,
-  durationSec: req.body.durationSec,
-  refs: req.body.refs,
-  useProjectRefs: req.body.useProjectRefs,
-  modelOverride: req.body.modelOverride || {},
-})));
-
 router.post('/refine/storyboard-image', audited('director.refine.storyboard_image', async (req) => studio.refineStoryboardImage(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,

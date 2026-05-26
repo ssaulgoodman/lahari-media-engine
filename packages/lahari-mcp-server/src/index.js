@@ -180,10 +180,6 @@ const unsupported = (tool, reason) => async () => {
 const enumStoryboardVariant = z.enum(['adaptive_numbered_storyboard', 'four_panel_clean', 'six_panel_music_video', 'filmstrip_minimal_cuts']);
 const projectId = z.string().min(1).describe('Lahari project ID.');
 const shotId = z.string().min(1).describe('Shot ID within the project.');
-const mediaLibraryRefSchema = z.object({
-  type: z.enum(['style', 'cast', 'env', 'uploaded']),
-  id: z.string().optional(),
-});
 
 const server = new McpServer({
   name: 'lahari-remote',
@@ -753,28 +749,6 @@ registerTool('apply_generate_video', {
   description: 'Mutating and paid. Generates a new video for one shot.',
   inputSchema: { projectId, shotId, promptOverride: z.string().optional(), modelOverride: modelOverrideSchema },
 }, ({ projectId, shotId, promptOverride, modelOverride }) => directorPost('/api/director/generate/video', { projectId, shotId, promptOverride, modelOverride }));
-
-registerTool('create_media_clip', {
-  title: 'Create extra media clip',
-  description: 'Mutating and paid. Generates an extra B-roll / insert video clip into the render Media Library without changing canonical script scenes, shots, or stale flags.',
-  inputSchema: {
-    projectId,
-    title: z.string().optional(),
-    brief: z.string().min(1),
-    durationSec: z.number().min(4).max(15).optional(),
-    refs: z.array(mediaLibraryRefSchema).max(9).optional(),
-    useProjectRefs: z.boolean().optional(),
-    modelOverride: modelOverrideSchema,
-  },
-}, ({ projectId, title, brief, durationSec, refs, useProjectRefs, modelOverride }) => directorPost('/api/director/media-library/create-clip', {
-  projectId,
-  title,
-  brief,
-  durationSec,
-  refs,
-  useProjectRefs,
-  modelOverride,
-}));
 
 registerTool('lahari_capture_issue', {
   title: 'Capture Lahari director issue',

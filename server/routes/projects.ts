@@ -21,12 +21,6 @@ import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
-import {
-  generateMediaLibraryClip,
-  hideMediaLibraryItem,
-  listMediaLibraryItems,
-  uploadMediaLibraryVideo,
-} from '../services/mediaLibrary.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
@@ -84,6 +78,25 @@ router.param('sceneId', async (req, res, next, sceneId) => {
 
 // Multer config: save audio files to storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+const mediaLibraryUploadCategory = 'media_library_video';
+
+const parseAssetMetadata = (metadata: any): Record<string, any> => {
+  if (!metadata) return {};
+  if (typeof metadata === 'object') return metadata;
+  try { return JSON.parse(metadata); } catch { return {}; }
+};
+
+const mediaLibraryUploadResponse = (asset: any) => {
+  const metadata = parseAssetMetadata(asset.metadata);
+  return {
+    assetId: asset.id,
+    url: storageUrl(asset.file_path),
+    createdAt: asset.created_at,
+    name: metadata.name || asset.prompt || 'Uploaded clip',
+    mimeType: metadata.mimeType || null,
+    bytes: metadata.bytes || null,
+  };
+};
 
 // ─── Fork helper ─────────────────────────────────────────────────────
 // Deep-copies a project's DB rows under a new id. Asset file_paths are
@@ -1327,70 +1340,86 @@ router.delete('/:id/environments/:envId', async (req, res) => {
 
 router.get('/:id/media-library/uploads', async (req, res) => {
   const projectId = paramStr(req.params.id);
-  const uploads = await listMediaLibraryItems(projectId);
+  const rows = await selectAll(
+    'assets',
+    { project_id: projectId, category: mediaLibraryUploadCategory },
+    { orderBy: 'created_at', ascending: false },
+  );
+  const uploads = (rows as any[])
+    .filter((row) => parseAssetMetadata(row.metadata).hiddenFromMediaLibrary !== true)
+    .map(mediaLibraryUploadResponse);
   res.json({ uploads });
 });
 
 router.post('/:id/media-library/uploads', upload.single('file'), async (req, res) => {
-  try {
-    const projectId = paramStr(req.params.id);
-    const file = req.file;
-    if (!file) return res.status(400).json({ error: 'file required' });
-    const upload = await uploadMediaLibraryVideo(projectId, file);
-    await recordDirectorEvent({
-      projectId,
-      userId: req.userId,
-      source: 'web',
-      eventType: 'media_library_upload_added',
-      entityType: 'asset',
-      entityId: upload.assetId,
-      summary: `Artist uploaded "${upload.name}" to the render media library.`,
-      payload: { assetId: upload.assetId, mimeType: upload.mimeType, bytes: upload.bytes },
-    });
-    res.json({ upload });
-  } catch (err: any) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+  const projectId = paramStr(req.params.id);
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'file required' });
+  if (!file.mimetype?.startsWith('video/')) {
+    return res.status(400).json({ error: 'Media library upload currently supports video files only.' });
   }
-});
 
-router.post('/:id/media-library/clips/generate', async (req, res) => {
-  try {
-    const result = await generateMediaLibraryClip({
-      projectId: paramStr(req.params.id),
-      userId: req.userId,
-      source: 'web',
-      title: req.body?.title,
-      brief: req.body?.brief,
-      durationSec: req.body?.durationSec,
-      refs: req.body?.refs,
-      useProjectRefs: req.body?.useProjectRefs,
-      modelOverride: req.body?.modelOverride || {},
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(err.statusCode || 500).json({ error: err.message });
-  }
+  const rawExt = path.extname(file.originalname || '').replace('.', '').toLowerCase();
+  const ext = rawExt || (file.mimetype === 'video/webm' ? 'webm' : file.mimetype === 'video/quicktime' ? 'mov' : 'mp4');
+  const filePath = await saveBuffer(file.buffer, 'videos', ext);
+  const assetId = uuidv4();
+  const name = (req.body?.name || file.originalname || 'Uploaded clip').toString().slice(0, 160);
+  const metadata = {
+    mediaLibrary: true,
+    source: 'upload',
+    name,
+    mimeType: file.mimetype,
+    bytes: file.size,
+  };
+  const asset = {
+    id: assetId,
+    project_id: projectId,
+    category: mediaLibraryUploadCategory,
+    file_path: filePath,
+    prompt: name,
+    metadata: JSON.stringify(metadata),
+    created_at: new Date().toISOString(),
+  };
+  await insertRow('assets', asset);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'media_library_upload_added',
+    entityType: 'asset',
+    entityId: assetId,
+    summary: `Artist uploaded "${name}" to the render media library.`,
+    payload: { assetId, filePath, mimeType: file.mimetype, bytes: file.size },
+  });
+  res.json({ upload: mediaLibraryUploadResponse(asset) });
 });
 
 router.post('/:id/media-library/uploads/:assetId/hide', async (req, res) => {
-  try {
-    const projectId = paramStr(req.params.id);
-    const assetId = paramStr(req.params.assetId);
-    await hideMediaLibraryItem(projectId, assetId);
-    await recordDirectorEvent({
-      projectId,
-      userId: req.userId,
-      source: 'web',
-      eventType: 'media_library_upload_hidden',
-      entityType: 'asset',
-      entityId: assetId,
-      summary: 'Artist hid a clip from the render media library.',
-      payload: { assetId },
-    });
-    res.json({ ok: true });
-  } catch (err: any) {
-    res.status(err.statusCode || 500).json({ error: err.message });
+  const projectId = paramStr(req.params.id);
+  const assetId = paramStr(req.params.assetId);
+  const asset: any = await selectOne('assets', { id: assetId });
+  if (!asset || asset.project_id !== projectId || asset.category !== mediaLibraryUploadCategory) {
+    return res.status(404).json({ error: 'Uploaded media not found for this project' });
   }
+  const metadata = parseAssetMetadata(asset.metadata);
+  await updateRows('assets', { id: assetId }, {
+    metadata: JSON.stringify({
+      ...metadata,
+      hiddenFromMediaLibrary: true,
+      hiddenFromMediaLibraryAt: new Date().toISOString(),
+    }),
+  });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'media_library_upload_hidden',
+    entityType: 'asset',
+    entityId: assetId,
+    summary: 'Artist hid an uploaded clip from the render media library.',
+    payload: { assetId },
+  });
+  res.json({ ok: true });
 });
 
 // ─── Final-render history ───────────────────────────────────────────

@@ -20,7 +20,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiProject, VideoScene, VideoShot } from '../types';
 import {
   getShotHistory,
-  generateMediaLibraryClip,
   hideMediaLibraryUpload,
   hideShotVideoFromMediaLibrary,
   listMediaLibraryUploads,
@@ -60,12 +59,6 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
   const [uploadedItems, setUploadedItems] = useState<MediaLibraryUpload[]>([]);
   const [uploadsLoading, setUploadsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [generatingClip, setGeneratingClip] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [clipTitle, setClipTitle] = useState('');
-  const [clipBrief, setClipBrief] = useState('');
-  const [clipDuration, setClipDuration] = useState(8);
-  const [useProjectRefs, setUseProjectRefs] = useState(true);
   const [lastAddedUrl, setLastAddedUrl] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -188,29 +181,6 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
     setUploadedItems((cur) => cur.filter((item) => item.assetId !== assetId));
   };
 
-  const handleGenerateClip = async () => {
-    const brief = clipBrief.trim();
-    if (!brief || generatingClip) return;
-    setGeneratingClip(true);
-    setNotice('');
-    try {
-      const { clip } = await generateMediaLibraryClip(project.id, {
-        title: clipTitle.trim() || undefined,
-        brief,
-        durationSec: clipDuration,
-        useProjectRefs,
-      });
-      setUploadedItems((cur) => [clip, ...cur]);
-      setClipTitle('');
-      setClipBrief('');
-      setNotice(`${clip.name} generated`);
-    } catch (err: any) {
-      alert(err?.message || 'Generate clip failed');
-    } finally {
-      setGeneratingClip(false);
-    }
-  };
-
   // ─── Closed state: just the handle ──────────────────────────────────────
   if (!open) {
     if (hideClosedHandle) return null;
@@ -262,15 +232,6 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
           </button>
           <button
             type="button"
-            onClick={() => setCreateOpen((cur) => !cur)}
-            className={`text-[11px] px-2 py-1 rounded transition-colors ${
-              createOpen ? 'bg-white text-black' : 'bg-white/[0.08] text-zinc-200 hover:bg-white/[0.14]'
-            }`}
-          >
-            Create extra
-          </button>
-          <button
-            type="button"
             onClick={() => setOpen(false)}
             className="text-zinc-500 hover:text-white text-xs leading-none"
             title="Close"
@@ -280,59 +241,10 @@ export const MediaLibraryDrawer: React.FC<Props> = ({
         </div>
       </div>
 
-      {createOpen && (
-        <div className="px-4 py-2 border-b border-white/[0.04] bg-black/15 flex-none">
-          <div className="grid grid-cols-[150px_1fr_auto_auto_auto] gap-2 items-center">
-            <input
-              value={clipTitle}
-              onChange={(event) => setClipTitle(event.target.value)}
-              placeholder="Clip title"
-              className="h-8 rounded bg-black/30 border border-white/[0.08] px-2 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-white/[0.22]"
-            />
-            <input
-              value={clipBrief}
-              onChange={(event) => setClipBrief(event.target.value)}
-              placeholder="Describe the extra B-roll / insert shot"
-              className="h-8 rounded bg-black/30 border border-white/[0.08] px-2 text-xs text-white placeholder:text-zinc-600 outline-none focus:border-white/[0.22]"
-            />
-            <div className="h-8 rounded bg-black/30 border border-white/[0.08] p-0.5 flex items-center">
-              {[4, 6, 8, 10, 12, 15].map((duration) => (
-                <button
-                  key={duration}
-                  type="button"
-                  onClick={() => setClipDuration(duration)}
-                  className={`h-full px-1.5 rounded text-[10px] font-mono ${
-                    clipDuration === duration ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'
-                  }`}
-                >
-                  {duration}s
-                </button>
-              ))}
-            </div>
-            <label className="h-8 px-2 rounded bg-black/20 border border-white/[0.06] text-[11px] text-zinc-400 flex items-center gap-1.5 whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={useProjectRefs}
-                onChange={(event) => setUseProjectRefs(event.target.checked)}
-              />
-              refs
-            </label>
-            <button
-              type="button"
-              onClick={handleGenerateClip}
-              disabled={generatingClip || !clipBrief.trim()}
-              className="h-8 px-3 rounded bg-white text-black text-xs font-medium hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {generatingClip ? 'Generating…' : 'Generate'}
-            </button>
-          </div>
-        </div>
-      )}
-
       {(uploadedItems.length > 0 || uploadsLoading) && (
         <div className="px-4 py-2 border-b border-white/[0.04] flex-none">
           <div className="flex items-center gap-2 overflow-x-auto">
-            <span className="text-[10px] text-zinc-500 uppercase tracking-wide flex-none">Clips</span>
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wide flex-none">Uploads</span>
             {uploadsLoading && uploadedItems.length === 0 && (
               <span className="text-[10px] text-zinc-600">loading…</span>
             )}
