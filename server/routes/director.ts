@@ -5,6 +5,7 @@ import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
+import { recordMcpCallTrace } from '../services/mcpCallTraces.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
@@ -73,6 +74,18 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
     query: req.query,
     body: req.body,
   };
+  const isReadOnly = tool.includes('.version')
+    || tool.includes('.list')
+    || tool.includes('.search')
+    || tool.includes('.resolve')
+    || tool.includes('.memory')
+    || tool.includes('.assets')
+    || tool.includes('.packet')
+    || tool.includes('.status')
+    || tool.includes('.actions')
+    || tool.includes('.notebook')
+    || tool.includes('.session')
+    || tool.includes('.preview');
   recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool, args, startedAt });
   try {
     if (PAID_TOOLS.has(tool)) {
@@ -89,7 +102,7 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
         windowMs: 60 * 60 * 1000,
         label: 'Lahari issue capture',
       });
-    } else if (!tool.includes('.version') && !tool.includes('.list') && !tool.includes('.search') && !tool.includes('.resolve') && !tool.includes('.memory') && !tool.includes('.assets') && !tool.includes('.packet') && !tool.includes('.status') && !tool.includes('.actions') && !tool.includes('.notebook') && !tool.includes('.session') && !tool.includes('.preview')) {
+    } else if (!isReadOnly) {
       assertRateLimit({
         key: `director-api:mutating:${req.userId || req.ip}`,
         limit: DIRECTOR_LIMITS.mutatingPerHour,
@@ -97,18 +110,6 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
         label: 'Mutating Lahari Director API call',
       });
     }
-    const isReadOnly = tool.includes('.version')
-      || tool.includes('.list')
-      || tool.includes('.search')
-      || tool.includes('.resolve')
-      || tool.includes('.memory')
-      || tool.includes('.assets')
-      || tool.includes('.packet')
-      || tool.includes('.status')
-      || tool.includes('.actions')
-      || tool.includes('.notebook')
-      || tool.includes('.session')
-      || tool.includes('.preview');
     if (!isReadOnly) {
       operationId = await startAgentOperation({
         projectId: projectIdFromRequest(req),
@@ -122,14 +123,47 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
     if (isApplyErrorResult(data)) {
       await finishAgentOperation(operationId, 'error', { error: data });
       recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, error: data.message || data.error, durationMs: Date.now() - start, startedAt });
+      void recordMcpCallTrace({
+        source: 'director-api',
+        userId: req.userId,
+        tool,
+        args,
+        error: data,
+        startedAt,
+        durationMs: Date.now() - start,
+        readOnly: isReadOnly,
+        paid: PAID_TOOLS.has(tool),
+      });
       return fail(res, data);
     }
     await finishAgentOperation(operationId, 'success', { result: data });
     recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, result: data, durationMs: Date.now() - start, startedAt });
+    void recordMcpCallTrace({
+      source: 'director-api',
+      userId: req.userId,
+      tool,
+      args,
+      result: data,
+      startedAt,
+      durationMs: Date.now() - start,
+      readOnly: isReadOnly,
+      paid: PAID_TOOLS.has(tool),
+    });
     return ok(res, data);
   } catch (error) {
     await finishAgentOperation(operationId, 'error', { error });
     recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool, args, error, durationMs: Date.now() - start, startedAt });
+    void recordMcpCallTrace({
+      source: 'director-api',
+      userId: req.userId,
+      tool,
+      args,
+      error,
+      startedAt,
+      durationMs: Date.now() - start,
+      readOnly: isReadOnly,
+      paid: PAID_TOOLS.has(tool),
+    });
     return fail(res, error);
   }
 };

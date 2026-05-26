@@ -4,6 +4,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import { getSB, T } from '../database.js';
+import { listMcpCallTraces } from '../services/mcpCallTraces.js';
 
 const router = Router();
 
@@ -123,6 +124,35 @@ router.get('/active-renders', auth, async (_req, res) => {
       safe_to_redeploy: rows.length === 0,
       rows,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/mcp-traces?projectId=...&hours=24&limit=100
+// Shows every remote MCP / Director API call, including read-only calls.
+// The gap_since_previous_ms field is the important one: large gaps mean the
+// delay happened in the agent/harness between Lahari calls, not inside Lahari.
+router.get('/mcp-traces', auth, async (req, res) => {
+  try {
+    const rows = await listMcpCallTraces({
+      projectId: typeof req.query.projectId === 'string' ? req.query.projectId : undefined,
+      userId: typeof req.query.userId === 'string' ? req.query.userId : undefined,
+      tokenId: typeof req.query.tokenId === 'string' ? req.query.tokenId : undefined,
+      hours: Number(req.query.hours || 24),
+      limit: Number(req.query.limit || 100),
+    });
+    const totals = rows.reduce((acc, row: any) => {
+      acc.calls += 1;
+      acc.duration_ms += row.duration_ms || 0;
+      acc.request_bytes += row.request_bytes || 0;
+      acc.response_bytes += row.response_bytes || 0;
+      if (row.status === 'error') acc.errors += 1;
+      if (row.paid) acc.paid_calls += 1;
+      if (row.gap_since_previous_ms !== null) acc.gap_ms += row.gap_since_previous_ms || 0;
+      return acc;
+    }, { calls: 0, errors: 0, paid_calls: 0, duration_ms: 0, gap_ms: 0, request_bytes: 0, response_bytes: 0 });
+    res.json({ totals, rows });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

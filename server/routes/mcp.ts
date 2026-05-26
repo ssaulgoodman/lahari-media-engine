@@ -11,6 +11,7 @@ import { captureLahariIssue, recordMcpAudit } from '../services/lahariAudit.js';
 import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
+import { recordMcpCallTrace } from '../services/mcpCallTraces.js';
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
@@ -263,10 +264,34 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         const result = await handler(args || {});
         await finishAgentOperation(operationId, 'success', { result });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, result, durationMs: Date.now() - start, startedAt });
+        void recordMcpCallTrace({
+          source: 'mcp-remote',
+          userId: auth.userId,
+          tokenId: auth.tokenId,
+          tool: name,
+          args,
+          result,
+          startedAt,
+          durationMs: Date.now() - start,
+          readOnly: !!annotations.readOnlyHint,
+          paid: PAID_TOOLS.has(name),
+        });
         return textResult(result);
       } catch (error) {
         await finishAgentOperation(operationId, 'error', { error });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, error, durationMs: Date.now() - start, startedAt });
+        void recordMcpCallTrace({
+          source: 'mcp-remote',
+          userId: auth.userId,
+          tokenId: auth.tokenId,
+          tool: name,
+          args,
+          error,
+          startedAt,
+          durationMs: Date.now() - start,
+          readOnly: !!annotations.readOnlyHint,
+          paid: PAID_TOOLS.has(name),
+        });
         throw new Error(JSON.stringify(structuredToolError(error), null, 2));
       }
     });
