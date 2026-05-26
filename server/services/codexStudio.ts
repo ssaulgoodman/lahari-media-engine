@@ -92,7 +92,6 @@ export {
   unlockCharacterLook,
   unlockEnvironmentLook,
 } from './codexStudio/visualOps.js';
-export { generateMediaLibraryClip } from './mediaLibrary.js';
 export {
   applyGenerateStoryboard,
   applyGenerateVideo,
