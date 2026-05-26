@@ -611,4 +611,89 @@ The pipeline anatomy IS the agent's knowledge base. Every field mapping, every d
 
 ---
 
+## Data Layers — Where Things Live, How They're Modified
+
+Foundational reference for "where is this data, who can change it, how." Sister doc to `mirage-composer-architecture.md` (graph-first vision) — this section is the factual mechanics that vision builds on.
+
+### Four layers, four modification paths
+
+```
+LAYER 1: CODE TEMPLATES
+  server/prompts/*.ts, action handler constants, skill files
+  Modified via: code commits
+
+LAYER 2: PROJECT-SCOPED OVERRIDES
+  project_prompt_overrides table
+  Modified via: apply_project_prompt_override
+
+LAYER 3: PROJECT DATA (graph state)
+  concept text, script JSON, style description, refs, scenes, shots, etc.
+  Modified via: apply_concept, apply_script, apply_style_direction, ...
+
+LAYER 4: PER-CALL INPUT
+  user note, promptOverride, contextOverrides, modelOverride
+  Modified via: run_action / start_job input fields (transient)
+```
+
+The composer's job is to assemble the right slice from layers 1-3 for one action, optionally modified by layer 4. Each layer has its own modification path; mixing them is what created the override-confusion the composer architecture doc addresses.
+
+### Per-concept mapping — Concept
+
+| Thing | Layer | Where stored | Modified via | Example |
+|---|---|---|---|---|
+| Core task template for generate-concept | 1 | `server/prompts/concept.ts` `GENERATE_CORE_TASK` | code commit | "Propose creative narrative directions..." |
+| Concept project override | 2 | `project_prompt_overrides`, kind='concept' | `apply_project_prompt_override({kind:'concept'})` | (currently dead — declared but not consumed) |
+| The actual locked concept | 3 | `projects.locked_concept` column | `apply_concept({concept})` | "A solarpunk love story set in Mumbai monsoon..." |
+| Per-call user note | 4 | not stored | `run_action({input: {userNote: "..."}})` | "make it more grounded, less metaphysical" |
+
+### Per-concept mapping — Style
+
+| Thing | Layer | Where stored | Modified via | Example |
+|---|---|---|---|---|
+| Style brainstorm core task | 1 | `server/prompts/styleBrainstorm.ts` | code commit | "Generate 4 distinct style directions..." |
+| Style image-gen invariants | 1 (after migration) | `generate_style_candidates` handler constants | code commit | "No text or watermarks. No collage." |
+| Style project override | 2 | `project_prompt_overrides`, kind='style' (not declared today; would be added with composer C5) | `apply_project_prompt_override({kind:'style'})` | "for this project, prefer harsh high-contrast graphic looks" |
+| Style description text | 3 | `projects.style_description` column | `apply_style_direction({description})` | "Vintage anime cels, soft watercolor textures, pastel palette" |
+| Style reference asset | 3 | `assets` table, locked via `projects.style_asset_id` | `apply_style_direction({sourceAssetId})` OR upload+lock | (image URL) |
+| Per-call style override | 4 | not stored | `run_action({input: {promptOverride: "..."}})` | "for this one generation, ignore the locked style and try noir" |
+
+### Per-concept mapping — Shot prompts
+
+| Thing | Layer | Where stored | Modified via | Example |
+|---|---|---|---|---|
+| Shot prompts core task + examples | 1 | `server/prompts/shotPrompts.ts` | code commit | "You are an art director / shot writer..." + GOOD/BAD examples |
+| Shot prompts project override | 2 | `project_prompt_overrides`, kind='shot_prompts' | `apply_project_prompt_override({kind:'shot_prompts'})` | (currently dead — declared but not consumed) |
+| Saved visualPrompt / motionPrompt per shot | 3 | `shots.visual_prompt`, `shots.motion_prompt` columns | `apply_shot_prompts({shots: [{shotId, visualPrompt, motionPrompt}]})` | "Medium side shot: Mina stops at the classroom doorway..." |
+| Per-call shot generation override | 4 | not stored | `run_action({input: {promptOverride: "..."}})` | (one-shot experiment with different motion phrasing) |
+
+### What the composer does given these layers (per action)
+
+For a given action call (say `generate_storyboard` for `shotId X`):
+
+1. **Code template (Layer 1):** composer pulls the slim core-task constant for storyboard generation.
+2. **Project override (Layer 2):** composer reads `getProjectPromptOverride(projectId, 'storyboard')`. If present, injects as `PROJECT OVERRIDE` section.
+3. **Project data (Layer 3):** composer reads `project.style_asset_id`, char ref URLs for cast in this shot, env ref URL, the storyboard prompt text saved on the shot, the cut plan. Assembles as `PROJECT DATA` + `REFERENCES`.
+4. **Per-call input (Layer 4):** if Codex shipped `promptOverride`, composer is bypassed entirely. If Codex shipped `contextOverrides` (e.g. `includeStyleImage: false`), composer respects the include/exclude flags. If neither, default assembly.
+
+The composer should never inject taste rules from preset config at runtime. Those should live in graph data (project.style_description as the taste anchor) or in action handler constants (image-gen worker invariants), never as a layer-1 template that's re-read on every call.
+
+### Pattern 7 (from composer audit) — Half-wired overrides
+
+The `apply_project_prompt_override` schema declares 8 override kinds but only 2 are actually consumed by any prompt builder:
+
+| Override kind | Schema accepts | Stored in DB | Consumed by prompt builder? |
+|---|---|---|---|
+| `storyboard` | ✅ | ✅ | ✅ (appended to presetTaste in storyboard.ts) |
+| `video` | ✅ | ✅ | ✅ (read in videoGeneration.ts) |
+| `concept` | ✅ | ✅ | ❌ never consumed |
+| `script` | ✅ | ✅ | ❌ never consumed |
+| `shot_prompts` | ✅ | ✅ | ❌ never consumed |
+| `character_looks` | ✅ | ✅ | ❌ never consumed |
+| `environment_looks` | ✅ | ✅ | ❌ never consumed |
+| `audio_plan` | ✅ | ✅ | ❌ never consumed |
+
+Currently 6 of 8 declared override kinds are dead text in the database. Fix tracked in composer audit C5 + architecture doc.
+
+---
+
 *Last updated: 2026-05-12*
