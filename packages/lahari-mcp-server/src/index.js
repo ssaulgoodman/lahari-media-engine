@@ -713,6 +713,7 @@ registerTool('apply_script', {
           castIds: z.array(z.string()).optional(),
           environmentId: z.string().nullable().optional(),
           continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+          isExtra: z.boolean().optional(),
         })).min(1),
       })).min(1),
     }),
@@ -731,6 +732,22 @@ registerTool('apply_script_markdown', {
     force: z.boolean().optional(),
   },
 }, ({ projectId, markdown, baseFingerprint, force }) => directorPost('/api/director/apply/script-markdown', { projectId, markdown, baseFingerprint, force }));
+
+registerTool('add_extra_shot', {
+  title: 'Add extra shot',
+  description: 'Mutating. Appends one out-of-band insert/B-roll shot without rewriting the script or touching existing shots.',
+  inputSchema: {
+    projectId,
+    title: z.string().optional(),
+    direction: z.string().min(1),
+    durationSec: z.number().positive().max(15),
+    castIds: z.array(z.string()).optional(),
+    environmentId: z.string().nullable().optional(),
+    continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+    workflowMode: z.enum(['auto', 'storyboard', 'keyframe']).optional(),
+    placementNote: z.string().optional(),
+  },
+}, (input) => directorPost('/api/director/apply/extra-shot', input));
 
 registerTool('apply_project_prompt_override', {
   title: 'Apply project prompt override',

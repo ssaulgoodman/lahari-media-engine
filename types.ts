@@ -53,6 +53,7 @@ export interface ShotCritique {
 
 export interface VideoShot {
   id: string;
+  isExtra?: boolean;
   workflowMode?: 'auto' | 'storyboard' | 'keyframe';
   duration: number;
   direction?: string;

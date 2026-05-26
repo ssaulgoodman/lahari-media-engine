@@ -93,6 +93,7 @@ const normalizeScriptForHash = (script: any) => ({
       castIds: shot.castIds || [],
       environmentId: shot.environmentId || null,
       continuityFrom: shot.continuityFrom || 'cut',
+      isExtra: !!shot.isExtra,
     })),
   })),
 });
@@ -139,6 +140,7 @@ export const normalizeScriptForApply = (raw: any) => {
       castIds: Array.isArray(shot.castIds) ? shot.castIds.filter((id: string) => castIds.has(id)) : [],
       environmentId: shot.environmentId && environmentIds.has(shot.environmentId) ? shot.environmentId : null,
       continuityFrom: shot.continuityFrom === 'prev_shot' ? 'prev_shot' : 'cut',
+      isExtra: !!shot.isExtra,
     })),
   }));
   return { cast, environments, scenes };

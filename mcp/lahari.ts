@@ -715,6 +715,30 @@ registerAuditedTool('apply_shot_workflow_modes', {
   return textResult(await studio.applyShotWorkflowModes(project, shots));
 });
 
+registerAuditedTool('add_extra_shot', {
+  title: 'Add extra shot',
+  description: 'Mutating. Appends one out-of-band insert/B-roll shot without rewriting the script or touching existing shots.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    title: z.string().optional(),
+    direction: z.string().min(1).describe('Concrete visual beat grounded in the existing story/style.'),
+    durationSec: z.number().positive().max(15),
+    castIds: z.array(z.string()).optional(),
+    environmentId: z.string().nullable().optional(),
+    continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+    workflowMode: z.enum(['auto', 'storyboard', 'keyframe']).optional(),
+    placementNote: z.string().optional(),
+  },
+}, async (input) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for add_extra_shot.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(input.projectId);
+  return textResult(await studio.addExtraShot(project, input));
+});
+
 registerAuditedTool('apply_storyboard_prompt', {
   title: 'Apply storyboard prompt',
   description: 'Mutating. Persists a Codex-written storyboard_prompt and storyboard_cut_plan for one shot. No LLM call; validates drift and marks existing board/video stale.',
@@ -1014,6 +1038,7 @@ registerAuditedTool('apply_script', {
           castIds: z.array(z.string()).optional(),
           environmentId: z.string().nullable().optional(),
           continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+          isExtra: z.boolean().optional(),
         })).min(1),
       })).min(1),
     }),

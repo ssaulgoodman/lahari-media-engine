@@ -157,11 +157,21 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     () =>
       project.scenes
         .flatMap((s) => s.shots)
+        .filter((s) => !s.isExtra)
         .filter((s) => !!s.videoUrl)
         .map((s, i) => ({ src: s.videoUrl!, name: `v_${i + 1}` })),
     // Only re-seed if the set of video URLs actually changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [project.scenes.flatMap((s) => s.shots).map((s) => s.videoUrl).join('|')],
+  );
+
+  const libraryVideoClips = useMemo<InitialClip[]>(
+    () =>
+      project.scenes
+        .flatMap((s) => s.shots)
+        .filter((s) => !!s.videoUrl)
+        .map((s, i) => ({ src: s.videoUrl!, name: `${s.isExtra ? 'extra' : 'v'}_${i + 1}` })),
+    [project.scenes.flatMap((s) => s.shots).map((s) => `${s.videoUrl || ''}:${s.isExtra ? '1' : '0'}`).join('|')],
   );
 
   // Song audio lives on the editor's audio track. The renderer used to inject
@@ -179,8 +189,8 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         .filter((item: any) => item?.type === 'video' && typeof item?.details?.src === 'string')
         .map((item: any) => item.details.src as string),
     );
-    return new Set(previewClips.filter((clip) => !timelineVideoSrcs.has(clip.src)).map((clip) => clip.src));
-  }, [lastSavedAt, previewClips, timelineItemIds.length, timelineItems]);
+    return new Set(libraryVideoClips.filter((clip) => !timelineVideoSrcs.has(clip.src)).map((clip) => clip.src));
+  }, [lastSavedAt, libraryVideoClips, timelineItemIds.length, timelineItems]);
   const newMediaSignature = useMemo(
     () => Array.from(newMediaUrls).sort().join('|'),
     [newMediaUrls],

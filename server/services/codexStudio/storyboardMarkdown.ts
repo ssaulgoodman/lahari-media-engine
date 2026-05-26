@@ -88,6 +88,7 @@ ${cleanBlock(scene.narrativeDescription || scene.lyrics || '') || '(write the sc
   const shots = scene.shots.map((shot, shotIndex) => `## Shot: ${sceneIndex + 1}.${shotIndex + 1} [${shot.id}]
 Base hash: ${storyboardPromptHash(shot)}
 Workflow mode: ${shot.workflowMode || 'auto'}
+Extra shot: ${(shot as any).isExtra ? 'yes' : 'no'}
 Duration: ${Number(shot.duration || 0)}s
 Direction:
 ${cleanBlock(shot.direction || '')}

@@ -14,7 +14,7 @@ import { finishAgentOperation, startAgentOperation } from '../services/agentOper
 import * as studio from '../services/codexStudio.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.8';
+const HOSTED_MCP_VERSION = '0.1.9';
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks']);
 const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant director.
 
@@ -22,7 +22,7 @@ Supabase is canonical project truth. Use MCP tools for reads, applies, generatio
 
 Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. Use query_artist_memory and search_artist_assets when they ask about prior work, styles used before, reusable visual references, older storyboards, or taste patterns across their owned projects. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
-Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use generate_style_reference, generate_character_look, and generate_environment_look for approved visual reference generation; lock the chosen assets only after visual approval. Use per-call modelOverride for experiments instead of changing project defaults.
+Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. When the artist asks for extra inserts/B-roll, write a context-aware beat from the current concept/script/style, then use add_extra_shot; do not rewrite existing scenes just to make an insert. Media generation stays tool-based and paid; ask before generation. Use generate_style_reference, generate_character_look, and generate_environment_look for approved visual reference generation; lock the chosen assets only after visual approval. Use per-call modelOverride for experiments instead of changing project defaults.
 
 Use production language with artists. Say open/attach, not hydrate. The web app is the visual studio; use returned web links for visual review. If a tool behaves unexpectedly or the web studio disagrees with MCP state, call lahari_capture_issue before guessing.`;
 
@@ -62,6 +62,17 @@ const imageModelOverrideSchema = z.object({
   imageModel: idString.optional(),
 }).optional();
 const workflowModeSchema = z.enum(['auto', 'storyboard', 'keyframe']);
+const extraShotInputSchema = {
+  projectId,
+  title: shortText.optional(),
+  direction: promptText.describe('Concrete visual beat for the insert/B-roll shot. Write this in the same narrative/style world as the project.'),
+  durationSec: z.number().positive().max(15).describe('Short insert duration in seconds. Split ideas above 15s into multiple extra shots.'),
+  castIds: maxArray(idString, 12).optional().describe('Existing cast/entity IDs to reuse. Do not invent IDs.'),
+  environmentId: idString.nullable().optional().describe('Existing environment ID to reuse, or null for no locked environment.'),
+  continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+  workflowMode: workflowModeSchema.optional(),
+  placementNote: mediumText.optional().describe('Optional note about where this insert is intended to be placed in the final edit.'),
+};
 
 const MCP_LIMITS = {
   requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
@@ -644,6 +655,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     },
   }, async ({ projectId, shots }) => studio.applyShotWorkflowModes(await fullProjectForUser(projectId, auth.userId), shots));
 
+  registerTool('add_extra_shot', {
+    title: 'Add extra shot',
+    description: 'Mutating. Appends one out-of-band insert/B-roll shot to the project without rewriting the script or touching existing shots. Use when the artist wants an extra contextual shot for the media library/timeline.',
+    inputSchema: extraShotInputSchema,
+  }, async (input) => studio.addExtraShot(await fullProjectForUser(input.projectId, auth.userId), input));
+
   registerTool('apply_storyboard_prompt', {
     title: 'Apply storyboard prompt',
     description: 'Mutating. Persists a Codex-written storyboard prompt and cut plan.',
@@ -796,6 +813,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
             castIds: maxArray(idString, 20).optional(),
             environmentId: idString.nullable().optional(),
             continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+            isExtra: z.boolean().optional(),
           }), 80).min(1),
         }), 80).min(1),
       }),

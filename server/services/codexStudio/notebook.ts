@@ -57,6 +57,8 @@ Files under mirrors/ are read-only desk copies written from Lahari state. Do not
 
 Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
+For extra inserts/B-roll, do not rewrite existing scenes just to make room. Read mirrors and drafts, propose a short contextual beat using existing cast/environment IDs by default, then call add_extra_shot. It appends under Extra Shots for the normal storyboard/video workflow; resulting videos belong in the Render media library for manual timeline placement.
+
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 
 Visual generation is also available through Lahari MCP. After approved style text, call generate_style_reference and lock_style_reference after visual approval. For cast/environment refs, call generate_character_look or generate_environment_look, then lock_character_look or lock_environment_look after the artist chooses a candidate. These are paid visual operations; ask before generation.
@@ -192,7 +194,7 @@ ${md(project.lyrics)}
 const buildScript = (project: Project): string => {
   const scenes = project.scenes.length
     ? project.scenes.map((scene, sceneIndex) => {
-      const shots = scene.shots.map((shot, shotIndex) => `- ${shotLabel(sceneIndex, shotIndex)} (${shot.duration}s, ${shot.continuityFrom || 'cut'}): ${shot.direction || 'No direction.'}`).join('\n');
+      const shots = scene.shots.map((shot, shotIndex) => `- ${shotLabel(sceneIndex, shotIndex)}${(shot as any).isExtra ? ' [extra]' : ''} (${shot.duration}s, ${shot.continuityFrom || 'cut'}): ${shot.direction || 'No direction.'}`).join('\n');
       return `## Scene ${sceneIndex + 1}: ${scene.sectionLabel || 'Untitled'} (${scene.startTime || '?'}-${scene.endTime || '?'})
 
 ${md(scene.narrativeDescription)}
