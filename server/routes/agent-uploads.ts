@@ -80,6 +80,14 @@ router.post('/', upload.single('file'), async (req, res) => {
       }),
     });
 
+    const next = purpose === 'style_guide'
+      ? 'Use this assetId as guideAssetId in run_action(generate_style_candidates).'
+      : purpose === 'style_reference'
+        ? 'Use this assetId as sourceAssetId in run_action(apply_style_direction).'
+        : purpose.endsWith('_guide')
+          ? 'Use this assetId as guideAssetId in run_action(generate_candidates).'
+          : 'Use this assetId as sourceAssetId in run_action(lock_reference).';
+
     return res.json({
       kind: 'mirage.agent.upload',
       projectId,
@@ -87,9 +95,7 @@ router.post('/', upload.single('file'), async (req, res) => {
       url: storageUrl(filePath),
       purpose,
       entityId,
-      next: purpose.endsWith('_guide')
-        ? 'Use this assetId as guideAssetId in run_action(generate_candidates).'
-        : 'Use this assetId as sourceAssetId in run_action(lock_reference).',
+      next,
     });
   } catch (error: any) {
     return res.status(401).json({

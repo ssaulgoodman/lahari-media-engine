@@ -299,20 +299,49 @@ export const SCRIPT_ACTION_SPECS = {
 } as const;
 
 export const STYLE_ACTION_SPECS = {
+  generate_style_candidates: {
+    key: 'generate_style_candidates',
+    title: 'Generate style candidates',
+    surface: 'style',
+    mutates: true,
+    paid: true,
+    description: 'Generate reusable style reference candidates. Use guideAssetId after uploading an image as visual guidance, note for soft direction, or promptOverride for one exact candidate.',
+    input: {
+      projectId: 'string',
+      note: 'optional string',
+      promptOverride: 'optional exact final style prompt; returns one candidate',
+      guideAssetId: 'optional uploaded style guide asset id',
+      count: 'optional 1-4',
+    },
+    examples: [{ projectId: 'project_uuid', guideAssetId: 'asset_uuid', note: 'keep the crude flat cartoon look' }],
+  },
+  identify_style: {
+    key: 'identify_style',
+    title: 'Identify style',
+    surface: 'style',
+    mutates: false,
+    paid: true,
+    description: 'Analyze the locked or provided style asset and return a concise style description for artist confirmation.',
+    input: {
+      projectId: 'string',
+      assetId: 'optional style asset id; defaults to locked style',
+    },
+    examples: [{ projectId: 'project_uuid' }],
+  },
   apply_style_direction: {
     key: 'apply_style_direction',
     title: 'Apply style direction',
     surface: 'style',
     mutates: true,
     paid: false,
-    description: 'Persist style direction text. This action does not generate or lock a style image yet.',
+    description: 'Persist style direction text and/or lock an existing style asset as the project style.',
     input: {
       projectId: 'string',
-      style: '{ styleDescription, styleGenerationPrompt?, colorPalette? }',
+      style: '{ styleDescription?, styleGenerationPrompt?, colorPalette?, sourceAssetId? }',
       baseHash: 'optional string',
       force: 'optional boolean',
     },
-    examples: [{ projectId: 'project_uuid', style: { styleDescription: 'soft luminous anime portrait style' } }],
+    examples: [{ projectId: 'project_uuid', style: { sourceAssetId: 'asset_uuid', styleDescription: 'soft luminous anime portrait style' } }],
   },
 } as const;
 
