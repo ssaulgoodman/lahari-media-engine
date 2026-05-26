@@ -90,10 +90,10 @@ contextOverrides: {
   excludeCastRefs?: string[];
   includeEnvironmentRefs?: boolean | string[];
   excludeEnvironmentRefs?: string[];
-  includeAudioAnalysis?: boolean;
-  includeSoundtrack?: boolean;
-  includeSourceScript?: boolean;
+  includePreviousStoryboard?: boolean;
+  includeGuideAsset?: boolean;
   includeProjectStyleDescription?: boolean;
+  includeConcept?: boolean;
 }
 ```
 

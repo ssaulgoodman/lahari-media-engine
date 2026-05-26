@@ -145,9 +145,6 @@ const contextOverridesSchema = z.object({
   includeGuideAsset: z.boolean().optional(),
   includeProjectStyleDescription: z.boolean().optional(),
   includeConcept: z.boolean().optional(),
-  includeAudioAnalysis: z.boolean().optional(),
-  includeSoundtrack: z.boolean().optional(),
-  includeSourceScript: z.boolean().optional(),
 }).optional();
 const audioPlanSchema = z.object({
   dialogueStrategy: dialogueStrategySchema,

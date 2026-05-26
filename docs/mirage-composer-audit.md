@@ -240,8 +240,8 @@ Architecture-step crossrefs (per `mirage-composer-architecture.md` 7-step migrat
 
 The audit was framed before `contextOverrides` was identified as the missing primitive. It's a prerequisite for the rest:
 
-- Add a shared `ContextOverride` type. Fields: `includeStyleImage`, `styleAssetId`, `includeCastRefs`, `excludeCastRefs`, `includeEnvironmentRefs`, `excludeEnvironmentRefs`, `includeAudioAnalysis`, `includeSoundtrack`, `includeSourceScript`, `includeProjectStyleDescription`.
-- Action specs for looks, style, storyboard, video declare which fields apply to them.
+- Add a shared `ContextOverride` type. Current v1 fields: `includeStyleImage`, `styleAssetId`, `includeCastRefs`, `excludeCastRefs`, `includeEnvironmentRefs`, `excludeEnvironmentRefs`, `includePreviousStoryboard`, `includeGuideAsset`, `includeProjectStyleDescription`, `includeConcept`.
+- Action specs for looks, style, and storyboard declare which fields apply to them. Audio/source fields should be added only when those consumers exist.
 - Composer respects the include/exclude flags at assembly time.
 - X-Ray trace shows what was included/excluded per call so the composer is debuggable as plumbing.
 

@@ -2,6 +2,8 @@ export type ContextOverrideList = boolean | string[];
 
 export type ContextOverrides = {
   includeStyleImage?: boolean;
+  // undefined = use project default style asset; null = use no style asset;
+  // string = use this project asset instead of the default.
   styleAssetId?: string | null;
   includeCastRefs?: ContextOverrideList;
   excludeCastRefs?: string[];
@@ -11,9 +13,6 @@ export type ContextOverrides = {
   includeGuideAsset?: boolean;
   includeProjectStyleDescription?: boolean;
   includeConcept?: boolean;
-  includeAudioAnalysis?: boolean;
-  includeSoundtrack?: boolean;
-  includeSourceScript?: boolean;
 };
 
 export type ContextTrace = {
