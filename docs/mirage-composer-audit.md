@@ -5,6 +5,8 @@ Branch: `mirage`
 Purpose: inspect the prompt composer, preset taste additives, and runtime prompt builders for vague or bloated instruction layers before the next deployed agent smoke test.
 Status: merged — Codex's table-structured analysis (`8fbf4a4`) + Claude's Pattern 7 finding and architectural proposal.
 
+> **Read this audit through `docs/mirage-composer-architecture.md`.** The latest direction is graph-first: presets/workflows are intake hints, the composer is editable plumbing, and `contextOverrides` are a first-class missing primitive. Verdicts in this audit that pre-date that decision are marked **⚠️ provisional** below. A full row-by-row re-verdict happens after the open calls in the architecture doc settle.
+
 ## Executive Read
 
 The composer shape is mostly right. The bloat is not coming from `composePrompt()` itself; it is coming from a few contributors using the composer as a dumping ground for doctrine, examples, model lore, and output schema all at once.
@@ -67,6 +69,8 @@ Today, the composer has no concept of "project override." Each prompt builder ad
 | `inspectComposedPrompt` | Reverse parser for X-Ray | Debug transparency | Yes as debug-only | Keep; edge case noted: exact header lines inside user text can mis-split | ☐ |
 
 ## Preset Additives
+
+> **⚠️ All "Keep" verdicts below are provisional.** They were written under the old assumption that presets keep injecting taste into prompts at runtime. Under the graph-first architecture, most of these get **relocated**, not kept: text-prompt taste flows from `project.styleDescription`; image-prompt invariants move to action handler constants; the rest go away. Re-verdict pass scheduled after C0/C2 land.
 
 | Contributor | What it injects | Current use | Finding | Verdict | Saul's call |
 |---|---|---|---|---|---|
@@ -224,7 +228,26 @@ Intent vs actual:
 
 Do not rewrite every prompt at once. Start where the audit says the pain is.
 
-### C1 — Cut `writeShotPrompts` hard
+Architecture-step crossrefs (per `mirage-composer-architecture.md` 7-step migration):
+- **C0** = architecture step 1 (establish `ContextOverride` contract)
+- **C5** = architecture step 2 (fix project overrides)
+- **C1** = architecture step 3 (cut `writeShotPrompts`)
+- **C2** = architecture steps 4-6 (remove preset doctrine from text prompts, move invariants to actions, shrink presets)
+- **C3** = part of architecture step 4 (user-note policy goes with text-prompt doctrine cleanup)
+- **C4** = supports the graph-first taste anchor (project.styleDescription backfill)
+
+### C0 — Establish `ContextOverride` primitive (architecture step 1)
+
+The audit was framed before `contextOverrides` was identified as the missing primitive. It's a prerequisite for the rest:
+
+- Add a shared `ContextOverride` type. Fields: `includeStyleImage`, `styleAssetId`, `includeCastRefs`, `excludeCastRefs`, `includeEnvironmentRefs`, `excludeEnvironmentRefs`, `includeAudioAnalysis`, `includeSoundtrack`, `includeSourceScript`, `includeProjectStyleDescription`.
+- Action specs for looks, style, storyboard, video declare which fields apply to them.
+- Composer respects the include/exclude flags at assembly time.
+- X-Ray trace shows what was included/excluded per call so the composer is debuggable as plumbing.
+
+Without this, the trim work in C1-C5 can only remove text — not give Codex per-call control over which context attaches. C0 unlocks "make character without the locked style image for one experiment" and "use uploaded audio as soundtrack only, skip music-structure analysis."
+
+### C1 — Cut `writeShotPrompts` hard (architecture step 3)
 
 Target: reduce one-shot sample from ~7,000 chars to **under 3,500 chars** without losing correctness.
 
@@ -236,15 +259,19 @@ Specific cuts:
 - Compress output contract to schema + required content.
 - Keep `previousBatchTail`, but cap lower and include only last visual/motion when continuity is likely.
 
-### C2 — Split preset taste by surface
+### C2 — Relocate preset taste out of runtime prompts (architecture steps 4-6)
 
-Add helpers instead of stuffing entire preset fields into every prompt:
-- `styleMediumGuard(preset, 'short' | 'full')`
-- `lookQualityRules(preset)`
-- `storyboardTaste(preset)`
-- `shotPromptTaste(preset)`
+Original framing was "split by surface," but the graph-first architecture changes the answer: don't split, **relocate**.
 
-No schema migration needed; this can be helper-level first.
+Three destinations for what's in `preset.*.rules` today:
+
+- **Text-prompt taste** → moves to `project.styleDescription` (the runtime taste anchor). No injection of preset doctrine into concept/script/shot-prompt/audio-plan calls. Codex carries taste in its reasoning; the project carries taste as data.
+- **Image-prompt invariants** ("no text in panels", "neutral character pose", "no watermark") → moves to action handler constants. These are worker contracts, not workflow taste.
+- **Common-knowledge restatements** ("anime is hand-illustrated", "music videos can be mixed media") → dropped entirely. Text models already know.
+
+After C2, `PIPELINE_PRESETS` shrinks to intake suggestions + default model/provider config + optional starter style description text. No `*.rules` fields injected at runtime.
+
+Helper-level only first — no schema migration. Action handlers absorb their constants; preset .ts files shrink; composer stops reading `preset.*.rules`.
 
 ### C3 — Shorten repeated user-note conflict policy
 
@@ -260,7 +287,7 @@ Per-file override only when there's a genuinely domain-specific tail. Keep concr
 
 Use the new `identify_style` action when locked style has an image but empty/weak `styleDescription`. This keeps character/environment prompts compact while giving image models a semantic style anchor.
 
-### C5 — Wire project overrides as a first-class composer section (Pattern 7 fix)
+### C5 — Wire project overrides as a first-class composer section (architecture step 2 / Pattern 7 fix)
 
 **This is the architectural one.** Today each prompt builder ad-hoc decides where to inject the override. 6 of 8 declared kinds aren't injected anywhere. Fix:
 
@@ -273,14 +300,14 @@ Alternative (smaller scope, dishonest API): Option B — narrow schema to just `
 
 ## Priority Verdict
 
-- **P0:** `server/prompts/shotPrompts.ts` (C1) — biggest single win, biggest source of vague output
-- **P1:** Compressed anime medium/taste helpers for image prompts (C2)
-- **P1:** Project overrides wired into composer (C5) — if we pick Option A
-- **P2:** Repeated user-note-policy copy → shared constant (C3)
-- **P3:** `audioPlan.ts` source payload cap (C4)
-- **P3:** `identify_style` backfill workflow (already an ActionSpec, just needs the surfaces to call it)
+- **P0:** `ContextOverride` primitive (C0) — prerequisite for the rest; unlocks per-call context control
+- **P0:** `shotPrompts.ts` trim (C1) — biggest single win, biggest source of vague output
+- **P1:** Project overrides wired into composer (C5) — architecture step 2
+- **P1:** Preset taste relocation (C2) — architecture steps 4-6
+- **P2:** User-note policy collapse (C3)
+- **P3:** Style description backfill (C4)
 
-Everything else can wait until after the full deployed smoke test. The composer architecture is sound; the cleanup is token discipline + completing the override feature, not a ground-up redesign.
+Everything else can wait until after the full deployed smoke test.
 
 ## Open Questions for Saul
 
