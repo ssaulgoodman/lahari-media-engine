@@ -74,6 +74,7 @@ export const buildScriptDraft = (project: Project) => ({
     narrativeDescription: scene.narrativeDescription || '',
     shots: scene.shots.map((shot) => ({
       id: shot.id,
+      isExtra: !!(shot as any).isExtra,
       direction: shot.direction || '',
       duration: Number(shot.duration || 0),
       castIds: shot.castIds || [],

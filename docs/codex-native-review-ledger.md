@@ -6,7 +6,7 @@
 
 **How to use.** Each substantive change opens or updates an R# entry. When a recommendation moves from `proposed` to `shipped` to `validated`, that's a verification log append. Don't restate doctrine here — link to the relevant doctrine section.
 
-**Last touched:** 2026-05-23 — render-editor media-library/timeline boundary documented.
+**Last touched:** 2026-05-26 — extra-shot workflow replaces direct generated extra clips.
 
 ---
 
@@ -24,6 +24,7 @@ R17 + R28 + R29 are all shipped to production and validated by the first artist.
 - **R35/R42** — Notebook layout + sync. Preferred: MCP `mint_cli_token` then the returned shell-specific command writes notebooks directly with idempotent hash/conflict handling. On Windows, `commands.powershell` wraps `npx` through `cmd /c` to avoid `npx.ps1` execution-policy blocks. If Windows/PowerShell/npm still blocks sync, use `get_project_notebook_manifest` + `read_project_notebook_file` path-by-path. Final fallback: `write_project_notebook` returns all file payloads in one response for small notebooks. Layout: `mirrors/` read-only snapshots, `drafts/` editable working copies, `config/` project overrides, `journal.md` local memory. `drafts/script.md` applies through `apply_script_markdown`; `drafts/storyboards/<scene>.md` applies through `apply_storyboard_scene_markdown`. Skills served from `server/resources/skills/`. Package `@ssaulgoodman420/lahari-cli@0.1.0` is published to npm.
 - **R36** — Realtime agent operation presence. `lahari_agent_operations` table, per-tool start/finish tracking, Supabase realtime subscription in web studio, "Codex is working" pill in header. Migration applied.
 - **R43** — Artist memory query surface. Hosted MCP + Director API expose `query_artist_memory` and `search_artist_assets`: broad, read-only, user-scoped evidence tools for prior styles, reusable references, older boards, and cross-project taste patterns. This replaces the temptation to expose raw SQL while avoiding one-off tool sprawl.
+- **R44** — Extra shots / inserts v1. Direct "generate random extra clip" was reverted. New path is `add_extra_shot`: Codex writes a context-aware insert beat from the current concept/script/style, appends it as an out-of-band `is_extra` shot under `Extra Shots`, then the normal storyboard/video workflow creates media-library takes. `StepRender` does not auto-seed extra-shot videos into the timeline; editors place them manually.
 - **Render editor hardening** — Timeline drafts are protected from generated-media refreshes. Regenerated shot clips land as new Media Library takes with sidebar badges, in-library `New` markers, soft-hide for unwanted takes, and explicit version append into the timeline. The artist's saved cut is not rebuilt unless they choose to reset/append/replace manually.
 - **Security hardening** — In-memory rate limiting (per user, per tool category), body size limits, Zod max sizes on payloads, audit redaction of prompt/script/concept content, `lahari_capture_issue` requires project ownership.
 - **Skills** — Six shards (lahari-director orchestrator + storyboard-prompt-craft / script-doctor / continuity-auditor / style-ref-critic / render-triage) bundled at `server/resources/skills/`, ship in deploy artifact, materialized into artist workspace by notebook sync or `write_project_notebook` fallback.
@@ -59,6 +60,16 @@ All migrations applied and `@ssaulgoodman420/lahari-cli@0.1.0` published. Latest
 ## Open Recommendations
 
 Status legend: `proposed` (raised, not yet decided) · `agreed` (decided, not yet built) · `shipped` (in code) · `validated` (shipped and proven) · `invalidated` (tried or thought through, abandoned) · `deferred` (correct but not now).
+
+### R44 — Extra shots as normal production shots, not random media clips
+
+Status: **shipped** · Raised: 2026-05-26
+
+The first direct "create extra clip" path was wrong: it bypassed story context, attached references too broadly, and produced random media-library artifacts. The corrected v1 is a narrow apply tool: `add_extra_shot` appends one out-of-band `is_extra` shot under an `Extra Shots` scene. Codex still does the creative thinking from the current concept/script/style, but media generation goes through the normal storyboard/video pipeline.
+
+Render rule: extra-shot videos appear in the Media Library, but `StepRender` does not auto-seed them into the timeline. The editor manually places them where they belong.
+
+Migration: `2026-05-26_add_extra_shots.sql`.
 
 ### R1 — Bidirectional journal seam *(highest leverage)*
 

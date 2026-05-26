@@ -31,6 +31,7 @@ const projectWithScript = (project: Project, normalized: ReturnType<typeof norma
     ...scene,
     shots: scene.shots.map((shot) => ({
       ...shot,
+      isExtra: !!(shot as any).isExtra,
       visualPrompt: '',
       motionPrompt: '',
       storyboardPrompt: '',

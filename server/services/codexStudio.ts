@@ -63,6 +63,7 @@ import {
 } from './codexStudio/storyboardOps.js';
 export { applyShotPrompts } from './codexStudio/applies/shotPrompts.js';
 export { applyShotWorkflowModes } from './codexStudio/applies/shotWorkflow.js';
+export { addExtraShot } from './codexStudio/applies/extraShot.js';
 export { applyStoryboardPrompt, applyStoryboardPromptsBulk, applyStoryboardSceneMarkdown } from './codexStudio/applies/storyboardPrompt.js';
 export { applyConcept } from './codexStudio/applies/concept.js';
 export { applyStyleDirection } from './codexStudio/applies/style.js';

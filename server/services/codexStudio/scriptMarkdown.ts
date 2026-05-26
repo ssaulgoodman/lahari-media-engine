@@ -26,6 +26,7 @@ type ParsedScriptMarkdown = {
         castIds: string[];
         environmentId: string | null;
         continuityFrom: 'cut' | 'prev_shot';
+        isExtra: boolean;
       }[];
     }[];
   };
@@ -127,6 +128,7 @@ Narrative:
 ${cleanBlock(scene.narrativeDescription || '')}
 
 ${scene.shots.map((shot) => `### Shot: ${shot.id} (${Number(shot.duration || 0)}s)
+Extra: ${(shot as any).isExtra ? 'yes' : 'no'}
 Cast: ${(shot.castIds || []).join(', ') || 'none'}
 Environment: ${shot.environmentId || 'none'}
 Continuity: ${shot.continuityFrom || 'cut'}
@@ -164,12 +166,14 @@ export const parseScriptMarkdownDraft = (body: string): ParsedScriptMarkdown | A
       const castLine = shotBody.match(/^Cast:\s*(.*)$/m)?.[1]?.trim() || '';
       const envLine = shotBody.match(/^Environment:\s*(.*)$/m)?.[1]?.trim() || '';
       const continuity = shotBody.match(/^Continuity:\s*(.*)$/m)?.[1]?.trim() || 'cut';
+      const extra = shotBody.match(/^Extra:\s*(.*)$/m)?.[1]?.trim().toLowerCase() || 'no';
       return {
         id: shotMatch[1].trim(),
         duration: Number(shotMatch[2]),
         castIds: castLine && castLine !== 'none' ? castLine.split(',').map((id) => id.trim()).filter(Boolean) : [],
         environmentId: envLine && envLine !== 'none' ? envLine : null,
         continuityFrom: continuity === 'prev_shot' ? 'prev_shot' as const : 'cut' as const,
+        isExtra: extra === 'yes' || extra === 'true',
         direction: parseFieldBlock(shotBody, 'Direction', []),
       };
     });

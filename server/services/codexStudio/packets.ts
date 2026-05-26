@@ -111,6 +111,7 @@ export const buildProjectPacket = async (project: Project) => {
         shots: scene.shots.map((shot, shotIndex) => ({
           id: shot.id,
           index: shotIndex + 1,
+          isExtra: !!(shot as any).isExtra,
           duration: shot.duration,
           beat: compactText(shot.direction || shot.visualPrompt, 220),
           hasVisualPrompt: !!shot.visualPrompt,
@@ -191,6 +192,7 @@ export const buildShotPacket = (project: Project, shotId: string) => {
       shot: {
         id: shot.id,
         index: shotIndex + 1,
+        isExtra: !!(shot as any).isExtra,
         duration: shot.duration,
         beat: compactText(shot.direction || shot.visualPrompt, 500),
         visualPrompt: shot.visualPrompt,

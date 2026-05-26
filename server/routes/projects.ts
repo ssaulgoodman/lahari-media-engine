@@ -523,6 +523,7 @@ const getFullProject = async (projectId: string) => {
       narrativeDescription: s.narrative_description || '',
       shots: (s.shots || []).map((shot: any) => ({
         id: shot.id,
+        isExtra: !!shot.is_extra,
         workflowMode: shot.workflow_mode || 'auto',
         direction: shot.direction || '',
         visualPrompt: shot.visual_prompt || '',

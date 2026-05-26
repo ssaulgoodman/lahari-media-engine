@@ -320,6 +320,20 @@ router.post('/apply/script-markdown', audited('director.apply.script_markdown', 
   { baseFingerprint: req.body.baseFingerprint, force: !!req.body.force },
 )));
 
+router.post('/apply/extra-shot', audited('director.apply.extra_shot', async (req) => studio.addExtraShot(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  {
+    title: req.body.title,
+    direction: req.body.direction,
+    durationSec: req.body.durationSec,
+    castIds: req.body.castIds,
+    environmentId: req.body.environmentId,
+    continuityFrom: req.body.continuityFrom,
+    workflowMode: req.body.workflowMode,
+    placementNote: req.body.placementNote,
+  },
+)));
+
 router.post('/apply/concept', audited('director.apply.concept', async (req) => studio.applyConcept(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.concept,
