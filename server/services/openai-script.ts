@@ -22,6 +22,7 @@ type PlanScenesInput = {
   isNarrative?: boolean;
   isMeditative?: boolean;
   videoModel?: string;
+  projectOverride?: string | null;
   preset?: PipelinePreset;
 };
 
@@ -230,6 +231,7 @@ type RefineScriptInput = {
   basePacing: number;
   minShotDuration?: number;
   videoModel?: string;
+  projectOverride?: string | null;
   preset?: PipelinePreset;
 };
 
@@ -245,6 +247,7 @@ const buildRefinePrompt = (input: RefineScriptInput): string => {
     basePacing: input.basePacing,
     minShotDuration: input.minShotDuration,
     videoModel: input.videoModel,
+    projectOverride: input.projectOverride,
     preset,
   });
 };
@@ -347,6 +350,7 @@ type WriteShotPromptsInput = {
   videoModel?: string;
   preset?: PipelinePreset;
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[];
+  projectOverride?: string | null;
 };
 
 const WRITE_SHOT_PROMPTS_SCHEMA = {

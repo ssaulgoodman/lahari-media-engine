@@ -55,6 +55,7 @@ export const buildAudioPlanPrompt = (
   shot: ShotRow,
   cast: CastRow[],
   preset: PipelinePreset,
+  projectOverride?: string | null,
 ): string => {
   const shotCastIds = parseCastIds(shot.cast_ids);
   const shotCast = cast.filter((member) => shotCastIds.includes(member.id));
@@ -97,5 +98,11 @@ Return only structured audio-plan JSON with:
 - dialogue: array of { characterId, text, order, targetSec? }
 - soundNotes?: string`;
 
-  return composePrompt({ coreTask, workflowContext, inputs, outputContract });
+  return composePrompt({
+    coreTask,
+    workflowContext,
+    inputs,
+    projectOverride: projectOverride || undefined,
+    outputContract,
+  });
 };

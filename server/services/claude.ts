@@ -88,6 +88,7 @@ export const generateConceptOptions = async (
   /** Project's text provider — picks Claude / OpenAI / Gemini at the call site. */
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
+  projectOverride?: string | null,
 ): Promise<{ concepts: any[]; prompt: string }> => {
   const prompt = buildGenerateConceptPrompt({
     title,
@@ -101,6 +102,7 @@ export const generateConceptOptions = async (
     isMeditative,
     directorBrief,
     userNote,
+    projectOverride,
     preset,
   });
 
@@ -150,10 +152,12 @@ export const refineConceptDirection = async (
   feedback: string,
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
+  projectOverride?: string | null,
 ): Promise<any> => {
   const prompt = buildRefineConceptPrompt({
     currentConcept,
     feedback,
+    projectOverride,
     preset,
   });
 
@@ -308,6 +312,7 @@ export const parseAnimeScriptToPlan = async (input: {
   directorBrief?: string;
   targetDuration?: number;
   preset?: PipelinePreset;
+  projectOverride?: string | null;
 }): Promise<ScriptFirstPlan> => {
   const client = await getClient();
   const preset = input.preset || getRuntimePreset('anime_default');
@@ -322,6 +327,7 @@ export const parseAnimeScriptToPlan = async (input: {
     directorBrief: input.directorBrief,
     targetDuration,
     pacing,
+    projectOverride: input.projectOverride,
     preset,
   });
 
@@ -361,7 +367,7 @@ export const parseAnimeScriptToPlan = async (input: {
 };
 
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset }
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = await getClient();
   const preset = input.preset || getRuntimePreset();
@@ -449,7 +455,7 @@ export const planScenes = async (
 export const refineScript = async (
   currentScript: { cast: any[]; environments: any[]; scenes: any[] },
   feedback: string,
-  context: { concept: any; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string; preset?: PipelinePreset }
+  context: { concept: any; lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = await getClient();
   const preset = context.preset || getRuntimePreset();
@@ -467,6 +473,7 @@ export const refineScript = async (
     basePacing: context.basePacing,
     minShotDuration: context.minShotDuration,
     videoModel: context.videoModel,
+    projectOverride: context.projectOverride,
     preset,
   });
 
@@ -537,7 +544,7 @@ export const refineScript = async (
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset },
+  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = await getClient();
@@ -553,6 +560,7 @@ export const writeShotPrompts = async (
     isMeditative: context.isMeditative,
     videoModel: context.videoModel,
     previousBatchTail,
+    projectOverride: context.projectOverride,
     preset,
   });
 

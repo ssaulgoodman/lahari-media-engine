@@ -6,7 +6,7 @@ import { planScenes, refineScript, writeShotPrompts } from './claude.js';
 import { planStoryboardPrompt } from './storyboard.js';
 import { eventResultPointers, listDirectorEvents, recordDirectorEvent, type DirectorEvent } from './directorEvents.js';
 import { getModelMinDuration } from './segmind.js';
-import { getProjectConfigState, writeProjectConfigDeskCopy } from './projectConfig.js';
+import { getProjectConfigState, getProjectPromptOverride, writeProjectConfigDeskCopy } from './projectConfig.js';
 
 import {
   compactText,
@@ -483,6 +483,7 @@ export const previewRewriteShotPrompts = async (project: Project, userNote?: str
   });
 
   let previousBatchTail: { id: string; visualPrompt: string; motionPrompt: string }[] | undefined;
+  const projectOverride = await getProjectPromptOverride(project.id, 'shot_prompts');
 
   for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
     const batch = allShots.slice(i, i + BATCH_SIZE);
@@ -500,6 +501,7 @@ export const previewRewriteShotPrompts = async (project: Project, userNote?: str
       songType: project.songType || undefined,
       isNarrative: project.isNarrative ?? undefined,
       isMeditative: project.isMeditative ?? undefined,
+      projectOverride,
     }, previousBatchTail);
 
     batchPrompts.push(
@@ -1381,6 +1383,7 @@ export const previewRewriteScript = async (project: Project, userNote?: string) 
     basePacing: project.targetDuration || 15,
     minShotDuration: getModelMinDuration(project.videoModel),
     videoModel: project.videoModel || undefined,
+    projectOverride: await getProjectPromptOverride(project.id, 'script'),
   };
   const result = mode === 'refine'
     ? await refineScript(beforeScript, userNote || 'Improve the script for stronger narrative clarity, continuity, and production feasibility while preserving what works.', context)

@@ -26,6 +26,7 @@ type GenerateConceptPromptInput = {
   directorBrief?: string;
   /** Free-form artist nudge for this generation call. */
   userNote?: string;
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -118,6 +119,7 @@ export const buildGenerateConceptPrompt = (input: GenerateConceptPromptInput): s
     coreTask: GENERATE_CORE_TASK,
     workflowContext: workflowContextFor(input.preset),
     inputs: formatGenerateInputs(input),
+    projectOverride: input.projectOverride || undefined,
     userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${GENERATE_USER_NOTE_TAIL}`,
     outputContract,
     userNote: input.userNote,
@@ -129,6 +131,7 @@ export const buildGenerateConceptPrompt = (input: GenerateConceptPromptInput): s
 type RefineConceptPromptInput = {
   currentConcept: any;
   feedback: string;
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -166,6 +169,7 @@ export const buildRefineConceptPrompt = (input: RefineConceptPromptInput): strin
   coreTask: REFINE_CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatRefineInputs(input.currentConcept),
+  projectOverride: input.projectOverride || undefined,
   userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${REFINE_USER_NOTE_TAIL}`,
   outputContract: REFINE_OUTPUT_CONTRACT,
   userNote: input.feedback,

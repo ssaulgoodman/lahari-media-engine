@@ -52,7 +52,7 @@ const guideImagePathForProject = async (project: Project, guideAssetId?: string)
 };
 
 const withRecipe = (prompt: string, label: string, recipe?: string | null) => {
-  if (!recipe || prompt.includes(label)) return prompt;
+  if (!recipe || prompt.includes(label) || prompt.includes('\nPROJECT OVERRIDE\n')) return prompt;
   return `${prompt}\n\n${label}\n${recipe}`;
 };
 
@@ -128,6 +128,7 @@ export const generateCharacterLooksForDirector = async (
           styleIdx: styleImagePath ? 1 : undefined,
           preset,
           styleDescription: shouldIncludeProjectStyleDescription(opts.contextOverrides) ? project.styleDescription : undefined,
+          projectOverride: characterLooksRecipe,
         },
       );
     }
@@ -284,6 +285,7 @@ export const generateEnvironmentLooksForDirector = async (
           styleIdx: styleImagePath ? 1 : undefined,
           preset,
           styleDescription: shouldIncludeProjectStyleDescription(opts.contextOverrides) ? project.styleDescription : undefined,
+          projectOverride: environmentLooksRecipe,
         },
       );
     }

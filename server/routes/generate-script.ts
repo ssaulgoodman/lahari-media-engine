@@ -16,6 +16,7 @@ import { getProjectRuntimePreset } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 import { getTextProvider } from '../../constants/textProviders.js';
+import { getProjectPromptOverride } from '../services/projectConfig.js';
 
 const allowedShotDurations = (videoModel?: string | null): number[] => {
   const model = String(videoModel || '');
@@ -85,6 +86,7 @@ router.post('/:id/generate-script', async (req, res) => {
       songType: project.song_type || undefined,
       isNarrative: project.is_narrative ?? undefined,
       isMeditative: project.is_meditative ?? undefined,
+      projectOverride: await getProjectPromptOverride(project.id, 'script'),
       preset,
     };
     const data = useOpenAIScriptWriter
@@ -318,6 +320,7 @@ router.post('/:id/refine-script', async (req, res) => {
       musicalStructure: project.musical_structure || '',
       basePacing: safeBasePacing(project),
       minShotDuration: getModelMinDuration(project.video_model),
+      projectOverride: await getProjectPromptOverride(project.id, 'script'),
       preset: getProjectRuntimePreset(project, req.body?.presetKey),
       videoModel: project.video_model || undefined,
     };
@@ -514,6 +517,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
     const BATCH_SIZE = 15;
     let previousBatchTail: { id: string; visualPrompt: string; motionPrompt: string }[] | undefined;
     const batchPrompts: string[] = [];
+    const projectOverride = await getProjectPromptOverride(project.id, 'shot_prompts');
 
     for (let i = 0; i < allShots.length; i += BATCH_SIZE) {
       const batch = allShots.slice(i, i + BATCH_SIZE);
@@ -525,6 +529,7 @@ router.post('/:id/write-shot-prompts', async (req, res) => {
         isNarrative: project.is_narrative ?? undefined,
         isMeditative: project.is_meditative ?? undefined,
         videoModel: project.video_model || undefined,
+        projectOverride,
         preset,
       };
       const result = useOpenAIScriptWriter

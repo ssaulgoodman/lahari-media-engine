@@ -217,7 +217,7 @@ export const generateSingleStyleImage = async (
  */
 export const buildCharacterPrompt = (
   character: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null; projectOverride?: string | null }
 ): string => {
   const preset = opts?.preset || getRuntimePreset();
   return buildCharacterLookPrompt({
@@ -225,6 +225,7 @@ export const buildCharacterPrompt = (
     styleIdx: opts?.styleIdx,
     userRefIdx: opts?.userRefIdx,
     styleDescription: opts?.styleDescription,
+    projectOverride: opts?.projectOverride,
     preset,
   });
 };
@@ -312,7 +313,7 @@ export const generateCharacterLooks = async (
  */
 export const buildEnvironmentPrompt = (
   environment: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null; projectOverride?: string | null }
 ): string => {
   const preset = opts?.preset || getRuntimePreset();
   return buildEnvironmentLookPrompt({
@@ -320,6 +321,7 @@ export const buildEnvironmentPrompt = (
     styleIdx: opts?.styleIdx,
     userRefIdx: opts?.userRefIdx,
     styleDescription: opts?.styleDescription,
+    projectOverride: opts?.projectOverride,
     preset,
   });
 };

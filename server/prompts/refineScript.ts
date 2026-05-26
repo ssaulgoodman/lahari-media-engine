@@ -21,6 +21,7 @@ type RefineScriptPromptInput = {
   minShotDuration?: number;
   /** Project's selected video model. */
   videoModel?: string;
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -135,6 +136,7 @@ export const buildRefineScriptPrompt = (input: RefineScriptPromptInput): string 
   coreTask: CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
+  projectOverride: input.projectOverride || undefined,
   userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
   outputContract: buildOutputContract(input),
   userNote: input.feedback,

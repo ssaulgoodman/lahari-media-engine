@@ -79,6 +79,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   // Build or reuse the generation prompt. First gen auto-builds from template;
   // subsequent gens use the saved (possibly artist-edited) prompt.
   // When prompts_stale is set (style/description changed upstream), force a rebuild.
+  const characterLooksRecipe = await getProjectPromptOverride(project.id, 'character_looks');
   let genPrompt = member.generation_prompt as string | null;
   const shouldRebuildPrompt = !genPrompt || member.prompts_stale || isLegacyLookPrompt(genPrompt);
   if (shouldRebuildPrompt) {
@@ -86,15 +87,14 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildCharacterPrompt(
       { name: member.name, description: member.description || '' },
-      { styleIdx, userRefIdx, preset, styleDescription: project.style_description }
+      { styleIdx, userRefIdx, preset, styleDescription: project.style_description, projectOverride: characterLooksRecipe }
     );
     if (member.prompts_stale || isLegacyLookPrompt(member.generation_prompt)) {
       await updateRows('cast_members', { id: member.id }, { prompts_stale: 0 });
     }
   }
-  const characterLooksRecipe = await getProjectPromptOverride(project.id, 'character_looks');
   const withCharacterLooksRecipe = (prompt: string) => {
-    if (!characterLooksRecipe || prompt.includes('Project character-look recipe:')) return prompt;
+    if (!characterLooksRecipe || prompt.includes('Project character-look recipe:') || prompt.includes('\nPROJECT OVERRIDE\n')) return prompt;
     return `${prompt}\n\nProject character-look recipe:\n${characterLooksRecipe}`;
   };
 
@@ -384,6 +384,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
 
   // Build or reuse generation prompt.
   // When prompts_stale is set (style/description changed upstream), force a rebuild.
+  const environmentLooksRecipe = await getProjectPromptOverride(project.id, 'environment_looks');
   let genPrompt = env.generation_prompt as string | null;
   const shouldRebuildPrompt = !genPrompt || env.prompts_stale || isLegacyLookPrompt(genPrompt);
   if (shouldRebuildPrompt) {
@@ -391,15 +392,14 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
     const userRefIdx = userRefImagePath ? (styleImagePath ? 2 : 1) : undefined;
     genPrompt = buildEnvironmentPrompt(
       { name: env.name, description: env.description || '' },
-      { styleIdx, userRefIdx, preset, styleDescription: project.style_description }
+      { styleIdx, userRefIdx, preset, styleDescription: project.style_description, projectOverride: environmentLooksRecipe }
     );
     if (env.prompts_stale || isLegacyLookPrompt(env.generation_prompt)) {
       await updateRows('environments', { id: env.id }, { prompts_stale: 0 });
     }
   }
-  const environmentLooksRecipe = await getProjectPromptOverride(project.id, 'environment_looks');
   const withEnvironmentLooksRecipe = (prompt: string) => {
-    if (!environmentLooksRecipe || prompt.includes('Project environment-look recipe:')) return prompt;
+    if (!environmentLooksRecipe || prompt.includes('Project environment-look recipe:') || prompt.includes('\nPROJECT OVERRIDE\n')) return prompt;
     return `${prompt}\n\nProject environment-look recipe:\n${environmentLooksRecipe}`;
   };
 

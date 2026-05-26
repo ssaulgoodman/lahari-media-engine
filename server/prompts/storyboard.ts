@@ -46,7 +46,6 @@ const formatInputs = (input: BuildStoryboardPlannerPromptInput): string => {
 const presetTasteFor = (input: BuildStoryboardPlannerPromptInput): string => [
   input.preset.style.rules,
   input.preset.studio.storyboardRules,
-  input.projectOverride ? `Project storyboard recipe override:\n${clip(input.projectOverride, 2500)}` : '',
 ].filter(Boolean).join('\n\n');
 
 const OUTPUT_CONTRACT = `Return only JSON with keys:
@@ -74,6 +73,7 @@ export const buildStoryboardPlannerPrompt = (input: BuildStoryboardPlannerPrompt
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   presetTaste: presetTasteFor(input),
+  projectOverride: input.projectOverride || undefined,
   userNotePolicy: input.artistNote?.trim() ? `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}` : undefined,
   outputContract: OUTPUT_CONTRACT,
   userNote: input.artistNote,

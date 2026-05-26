@@ -3,6 +3,7 @@ export type ComposePromptParts = {
   workflowContext?: string;
   inputs?: string;
   presetTaste?: string;
+  projectOverride?: string;
   userNotePolicy?: string;
   outputContract: string;
   userNote?: string;
@@ -13,6 +14,7 @@ export type ComposePromptSectionKey =
   | 'workflowContext'
   | 'inputs'
   | 'presetTaste'
+  | 'projectOverride'
   | 'userNotePolicy'
   | 'outputContract'
   | 'userNote';
@@ -38,6 +40,7 @@ export const composePromptSections = (parts: ComposePromptParts): ComposePromptS
   maybeSection('workflowContext', 'CONTEXT', parts.workflowContext),
   maybeSection('inputs', 'INPUTS', parts.inputs),
   maybeSection('presetTaste', 'TASTE', parts.presetTaste),
+  maybeSection('projectOverride', 'PROJECT OVERRIDE', parts.projectOverride),
   maybeSection('userNotePolicy', 'USER NOTE POLICY', parts.userNotePolicy),
   maybeSection('outputContract', 'OUTPUT CONTRACT', parts.outputContract),
   maybeSection('userNote', 'USER NOTE', parts.userNote),
@@ -57,6 +60,7 @@ const SECTION_TITLES: Array<{ key: ComposePromptSectionKey; title: string }> = [
   { key: 'workflowContext', title: 'CONTEXT' },
   { key: 'inputs', title: 'INPUTS' },
   { key: 'presetTaste', title: 'TASTE' },
+  { key: 'projectOverride', title: 'PROJECT OVERRIDE' },
   { key: 'userNotePolicy', title: 'USER NOTE POLICY' },
   { key: 'outputContract', title: 'OUTPUT CONTRACT' },
   { key: 'userNote', title: 'USER NOTE' },

@@ -911,6 +911,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-25 Codex: Fixed the silent Seedance seam. Studio video generation now enables Segmind `generate_audio` for Seedance shots that have dialogue lines or soundNotes, and the prompt explicitly asks for audible synchronized speech/sound instead of only visible mouth movement. Storyboard-mode prompts no longer say "No generated audio" when native audio is enabled. Final renders in project-level `lipsync` mode preserve native video audio; old music-led renders and overlay-mode final renders keep video clips muted so song/TTS tracks remain authoritative.
 
+2026-05-26 Claude/Codex: Composer redesign cleanup advanced. Claude's C2/C3 slice relocated preset taste out of text prompts and collapsed repeated user-note policies into shared generate/refine constants. Codex's C5 slice added a first-class `PROJECT OVERRIDE` composer section and wired project prompt overrides into concept, script/parse/refine, shot-prompt, storyboard, character/environment look, and audio-plan prompt builders so `apply_project_prompt_override` is no longer dead text outside storyboard/video.
+
 ---
 
 ## 10. References

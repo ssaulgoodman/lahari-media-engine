@@ -27,6 +27,7 @@ type WriteShotPromptsPromptInput = {
   isMeditative?: boolean;
   videoModel?: string;
   previousBatchTail?: PreviousBatchTailItem[];
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -151,6 +152,7 @@ export const buildWriteShotPromptsPrompt = (input: WriteShotPromptsPromptInput):
   coreTask: CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
+  projectOverride: input.projectOverride || undefined,
   userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
   outputContract: buildOutputContract(input),
   userNote: input.userNote,

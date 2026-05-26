@@ -12,6 +12,7 @@ import { sendStructuredError } from '../services/structuredErrors.js';
 import { saveBuffer, storageUrl } from '../storage.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
+import { getProjectPromptOverride } from '../services/projectConfig.js';
 
 export const mountAudioRoutes = (router: Router) => {
 
@@ -157,11 +158,12 @@ router.post('/:id/write-audio-plan', async (req, res) => {
     const t0 = Date.now();
     const prompts: string[] = [];
     let written = 0;
+    const projectOverride = await getProjectPromptOverride(projectId, 'audio_plan');
 
     for (const shot of selected) {
       const scene = sceneById.get(shot.scene_id);
       if (!scene) continue;
-      const prompt = buildAudioPlanPrompt(project, scene, shot, cast, preset);
+      const prompt = buildAudioPlanPrompt(project, scene, shot, cast, preset, projectOverride);
       prompts.push(`=== ${shot.id} ===\n${prompt}`);
       const response = await generateText(project.text_provider, {
         systemPrompt: 'You write concise, production-ready dialogue/audio JSON for AI video shots.',

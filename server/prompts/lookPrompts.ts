@@ -7,6 +7,7 @@ type LookPromptInput = {
   styleIdx?: number;
   userRefIdx?: number;
   styleDescription?: string | null;
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -71,6 +72,7 @@ export const buildCharacterLookPrompt = (input: LookPromptInput): string => {
       input.preset.looks.characterRules,
       input.preset.looks.qualityRules,
     ].filter(Boolean).join('\n\n'),
+    projectOverride: input.projectOverride || undefined,
     outputContract: `${SHARED_OUTPUT_CONTRACT}
 Neutral pose or neutral object presentation. Plain/soft background. No action or scene-specific props.
 Preserve identity: face/body/costume for people; shape/material/status details for objects.`,
@@ -94,6 +96,7 @@ export const buildEnvironmentLookPrompt = (input: LookPromptInput): string => {
       input.preset.looks.environmentRules,
       input.preset.looks.qualityRules,
     ].filter(Boolean).join('\n\n'),
+    projectOverride: input.projectOverride || undefined,
     outputContract: `${SHARED_OUTPUT_CONTRACT}
 Whole space visible and readable. No scene-specific action.
 No characters unless tiny neutral figures are needed for scale.`,

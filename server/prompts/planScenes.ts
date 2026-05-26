@@ -14,6 +14,7 @@ type PlanScenesPromptInput = {
   isNarrative?: boolean;
   isMeditative?: boolean;
   videoModel?: string;
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -110,6 +111,7 @@ export const buildPlanScenesPrompt = (input: PlanScenesPromptInput): string => {
     coreTask: CORE_TASK,
     workflowContext: workflowContextFor(input.preset),
     inputs,
+    projectOverride: input.projectOverride || undefined,
     userNotePolicy: GENERATE_USER_NOTE_POLICY,
     outputContract: OUTPUT_CONTRACT,
     userNote: input.userNote,

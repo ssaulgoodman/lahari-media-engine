@@ -8,6 +8,7 @@ type ParseScriptPromptInput = {
   directorBrief?: string;
   targetDuration?: number;
   pacing: number;
+  projectOverride?: string | null;
   preset: PipelinePreset;
 };
 
@@ -40,5 +41,6 @@ export const buildParseScriptPrompt = (input: ParseScriptPromptInput): string =>
   coreTask: CORE_TASK,
   workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
+  projectOverride: input.projectOverride || undefined,
   outputContract: OUTPUT_CONTRACT,
 });

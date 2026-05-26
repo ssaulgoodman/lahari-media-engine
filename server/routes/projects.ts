@@ -16,6 +16,7 @@ import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } f
 import { availableTools, blockedTools } from '../tools/registry.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 import { isLegacyLookPrompt } from '../prompts/lookPrompts.js';
+import { getProjectPromptOverride } from '../services/projectConfig.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
 // (pre-queue.ts-default-fill) get the current default instead of a stale
@@ -1134,7 +1135,23 @@ router.post('/:id/generate-concepts', async (req, res) => {
     console.log(`[${project.id}] Generating concept${directorBrief ? ' from director brief' : ' options'}${userNote ? ` with note: ${userNote}` : ''}...`);
     const t0 = Date.now();
     const meaning = project.meaning || '';
-    const result = await generateConceptOptions(title, language || 'Unknown', lyrics, meaning, musicalStructure, context, userNote, directorBrief, project.song_type || undefined, project.is_narrative ?? undefined, project.is_meditative ?? undefined, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey));
+    const projectOverride = await getProjectPromptOverride(project.id, 'concept');
+    const result = await generateConceptOptions(
+      title,
+      language || 'Unknown',
+      lyrics,
+      meaning,
+      musicalStructure,
+      context,
+      userNote,
+      directorBrief,
+      project.song_type || undefined,
+      project.is_narrative ?? undefined,
+      project.is_meditative ?? undefined,
+      project.text_provider,
+      getProjectRuntimePreset(project, req.body?.presetKey),
+      projectOverride,
+    );
     const conceptOptions = result.concepts;
     const durationMs = Date.now() - t0;
 
@@ -1293,6 +1310,7 @@ router.post('/:id/parse-script', async (req, res) => {
       title,
       directorBrief,
       targetDuration: targetRuntime || undefined,
+      projectOverride: await getProjectPromptOverride(projectId, 'script'),
       preset,
     });
     const totalShots = await insertProductionPlan(projectId, data);
@@ -1370,7 +1388,8 @@ router.post('/:id/refine-concept', async (req, res) => {
 
   try {
     const projectId = paramStr(req.params.id);
-    const refined = await refineConceptDirection(current, feedback, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey));
+    const projectOverride = await getProjectPromptOverride(projectId, 'concept');
+    const refined = await refineConceptDirection(current, feedback, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey), projectOverride);
     await updateRows('projects', { id: projectId }, {
       locked_concept: JSON.stringify(refined),
       updated_at: new Date().toISOString(),
