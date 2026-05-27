@@ -839,7 +839,7 @@ export const applyProjectPreferencesConfig = async (
       preferences: configCopy.preferencesPath,
       hashes: configCopy.hashesPath,
     },
-    changedArtifacts: await buildNotebookConfigArtifacts(project, { preferences: true, hashes: true }),
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { preferences: true, hashes: true, actions: true }),
     note: 'Applied project preferences. Supabase is canonical; local config hashes were refreshed.',
   };
 };
@@ -882,7 +882,7 @@ export const applyProjectStyleNotesConfig = async (
       styleNotes: configCopy.styleNotesPath,
       hashes: configCopy.hashesPath,
     },
-    changedArtifacts: await buildNotebookConfigArtifacts(project, { styleNotes: true, hashes: true }),
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { styleNotes: true, hashes: true, actions: true }),
     note: 'Applied project style notes. Supabase is canonical; local config hashes were refreshed.',
   };
 };
@@ -925,7 +925,7 @@ export const applyProjectPromptOverrideConfig = async (
       prompt: configCopy.promptPaths[kind],
       hashes: configCopy.hashesPath,
     },
-    changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true }),
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true, actions: true }),
     note: 'Applied project prompt override. There is no preview tool by design: Codex writes the recipe, this tool validates drift and persists it.',
   };
 };
@@ -970,7 +970,7 @@ export const revertProjectPromptOverrideConfig = async (
       prompt: configCopy.promptPaths[kind],
       hashes: configCopy.hashesPath,
     },
-    changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true }),
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { promptKinds: [kind], hashes: true, actions: true }),
     note: result.active
       ? 'Reverted to the previous project override and refreshed local config hashes.'
       : 'No previous override remained active; reverted to the global default and refreshed local config hashes.',

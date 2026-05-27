@@ -437,3 +437,29 @@ export const actionSpec = (actionKey?: string | null) => (
 );
 
 export const isPaidActionKey = (actionKey?: string | null) => Boolean(actionSpec(actionKey)?.paid);
+
+export const actionSpecsForSurface = (surface?: ActionSurface | null) =>
+  Object.values(ALL_ACTION_SPECS).filter((spec) => !surface || spec.surface === surface);
+
+export type MirageActionSpec = typeof ALL_ACTION_SPECS[ActionKey];
+
+export const summarizeActionSpec = (spec: MirageActionSpec) => ({
+  key: spec.key,
+  title: spec.title,
+  surface: spec.surface,
+  paid: spec.paid,
+  mutates: spec.mutates,
+  summary: spec.description,
+  detailPath: `config/actions/${spec.surface}.json`,
+});
+
+export const buildActionSchemaPayload = (actions = actionSpecsForSurface()) => ({
+  actions,
+  count: actions.length,
+});
+
+export const buildActionSchemaIndex = (actions = actionSpecsForSurface()) => ({
+  actions: actions.map(summarizeActionSpec),
+  count: actions.length,
+  surfaces: ACTION_SURFACES,
+});

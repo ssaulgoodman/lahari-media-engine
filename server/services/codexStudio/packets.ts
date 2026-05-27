@@ -5,6 +5,7 @@ import {
   compactText,
   conceptHash,
   deriveDirectorDiagnosis,
+  hashJson,
   listProjectRenders,
   namesById,
   recommendedActions,
@@ -18,6 +19,9 @@ import {
   webStudioUrl,
   type Project,
 } from './core.js';
+import { buildActionSchemaPayload } from '../actionRegistry.js';
+
+const buildActionsHash = (): string => hashJson(buildActionSchemaPayload().actions);
 
 const summarizeAudioPlan = (audioPlan: any) => {
   if (!audioPlan) return null;
@@ -135,6 +139,7 @@ export const buildProjectPacket = async (project: Project) => {
       targetDuration: project.targetDuration,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
+      actionsHash: buildActionsHash(),
       webUrl: webStudioUrl(project.id, { step: 'studio' }),
     },
     baseHashes: {
@@ -253,6 +258,7 @@ export const buildProjectPacket = async (project: Project) => {
       preferences: projectConfig.preferences.preferences,
       styleNotes: projectConfig.styleNotes.styleNotes,
       styleNotesHash: projectConfig.styleNotes.hash,
+      actionsHash: buildActionsHash(),
       effectivePreferences: {
         textProvider: preferences.textProvider,
         imageModel: preferences.imageModel,

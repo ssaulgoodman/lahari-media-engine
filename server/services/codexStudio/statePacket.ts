@@ -3,6 +3,7 @@ import { availableTools, blockedTools } from '../../tools/registry.js';
 import { getProjectConfigState } from '../projectConfig.js';
 import {
   compactText,
+  hashJson,
   deriveDirectorDiagnosis,
   statusCounts,
   usesStoryboardWorkflow,
@@ -10,6 +11,9 @@ import {
   type Project,
 } from './core.js';
 import { buildProjectPacket } from './packets.js';
+import { buildActionSchemaPayload } from '../actionRegistry.js';
+
+export const buildActionsHash = (): string => hashJson(buildActionSchemaPayload().actions);
 
 export type ProjectStateDetail = 'summary' | 'production' | 'full';
 
@@ -35,6 +39,7 @@ const baseProject = async (project: Project) => {
     },
     styleNotes: projectConfig.styleNotes.styleNotes,
     styleNotesHash: projectConfig.styleNotes.hash,
+    actionsHash: buildActionsHash(),
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
   };
 };

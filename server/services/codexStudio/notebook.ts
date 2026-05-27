@@ -5,6 +5,7 @@ import {
   compactText,
   md,
   audioPlanHash,
+  hashJson,
   scriptContentHash,
   styleDirectionHash,
   shotPromptHash,
@@ -21,6 +22,12 @@ import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
 import { buildAudioPlanMarkdownDraft } from './audioPlanMarkdown.js';
 import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
 import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
+import {
+  ACTION_SURFACES,
+  actionSpecsForSurface,
+  buildActionSchemaIndex,
+  buildActionSchemaPayload,
+} from '../actionRegistry.js';
 
 export type NotebookFile = {
   path: string;
@@ -46,6 +53,8 @@ const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value
 
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+
+export const buildActionsHash = (): string => hashJson(buildActionSchemaPayload().actions);
 
 const buildWorkspaceInstructions = (project: Project): string => {
   const preset = getPipelinePreset(project.presetKey);
@@ -74,6 +83,7 @@ Files under drafts/ are editable working copies. For script changes, edit drafts
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 Use config/style-notes.json for project-learned visual, storyboard, motion, script, dialogue, and audio style notes; persist with apply_project_style_notes.
+Action schemas are materialized under config/actions/. Read config/actions/index.json first, then only the surface file you need (for example config/actions/looks.json). Use MCP list_actions only when these files are missing, stale, or you need live server truth.
 
 For Looks work, prefer list_actions / describe_action / run_action. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
 
@@ -440,6 +450,7 @@ const buildHashes = async (project: Project) => {
 const buildNotebookMeta = (project: Project, actions: ReturnType<typeof buildProjectActionList>) => ({
   notebookVersion: NOTEBOOK_VERSION,
   generatedAt: new Date().toISOString(),
+  actionsHash: buildActionsHash(),
   project: {
     id: project.id,
     title: project.title,
@@ -453,6 +464,44 @@ const buildNotebookMeta = (project: Project, actions: ReturnType<typeof buildPro
   },
   diagnosis: actions.diagnosis,
 });
+
+const buildActionsArtifacts = (project: Project): NotebookFile[] => {
+  const baseDir = normalizedProjectDir(project);
+  const actionsHash = buildActionsHash();
+  const generatedAt = new Date().toISOString();
+  const index = {
+    kind: 'mirage.actions.index',
+    projectId: project.id,
+    generatedAt,
+    version: actionsHash,
+    ...buildActionSchemaIndex(),
+  };
+  const files: NotebookFile[] = [{
+    path: `${baseDir}/config/actions/index.json`,
+    mode: 'config',
+    writePolicy: 'overwrite',
+    description: 'Scan-only action index. Read this first, then the surface-specific file you need.',
+    content: `${JSON.stringify(index, null, 2)}\n`,
+  }];
+  for (const surface of ACTION_SURFACES) {
+    const actions = actionSpecsForSurface(surface);
+    files.push({
+      path: `${baseDir}/config/actions/${surface}.json`,
+      mode: 'config',
+      writePolicy: 'overwrite',
+      description: `Full Mirage action specs for the ${surface} surface.`,
+      content: `${JSON.stringify({
+        kind: 'mirage.actions.surface',
+        projectId: project.id,
+        surface,
+        generatedAt,
+        version: actionsHash,
+        ...buildActionSchemaPayload(actions),
+      }, null, 2)}\n`,
+    });
+  }
+  return files;
+};
 
 export const buildNotebookMirrorArtifacts = (
   project: Project,
@@ -589,7 +638,7 @@ export const buildNotebookMirrorArtifacts = (
 
 export const buildNotebookConfigArtifacts = async (
   project: Project,
-  opts: { preferences?: boolean; styleNotes?: boolean; promptKinds?: ProjectPromptOverrideKind[]; hashes?: boolean } = {},
+  opts: { preferences?: boolean; styleNotes?: boolean; promptKinds?: ProjectPromptOverrideKind[]; hashes?: boolean; actions?: boolean } = {},
 ): Promise<NotebookFile[]> => {
   const baseDir = normalizedProjectDir(project);
   const config = await getProjectConfigState(project);
@@ -630,6 +679,7 @@ export const buildNotebookConfigArtifacts = async (
       content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
     });
   }
+  if (opts.actions) files.push(...buildActionsArtifacts(project));
   return files;
 };
 
@@ -746,6 +796,7 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Editable per-surface project style notes. Apply with apply_project_style_notes.',
       content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
     },
+    ...buildActionsArtifacts(project),
     ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
       path: `${baseDir}/config/prompts/${kind}.md`,
       mode: 'config' as const,

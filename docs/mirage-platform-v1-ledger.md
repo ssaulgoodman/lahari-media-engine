@@ -734,7 +734,7 @@ type ToolSurface =
 
 ### Composed prompt shape (D25, amended by D27)
 
-This is the **target contract**, not a claim that `_composer.ts` already matches it exactly. Current code has `projectOverride` from C5, but `callOverride`, selected project style notes, and the "userNote is legacy/web-direct only" split still land in the D27/D28 implementation slices. Until then, some legacy route/action schemas still expose `userNote` and `presetTaste` as normal first-class fields.
+This is the **target contract**, not a claim that `_composer.ts` already matches it exactly. Current code has `projectOverride` and selected project style notes from the D28 implementation slice; `callOverride` and the "userNote is legacy/web-direct only" split still land in later D27/D28 follow-up slices. Runtime `_composer.ts` no longer exposes `workflowContext` or `presetTaste`, though historical docs and some service-layer worker constants may still mention old preset-rule fields during the action-contract audit.
 
 ```ts
 type ComposePromptParts = {
@@ -924,6 +924,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 2026-05-27 Codex: Composer doctrine updated again after Saul/Claude preset discussion. Added D28: presets are not recurring runtime doctrine; generic action contracts live in handlers, learned taste/technique lives in editable per-surface project style notes, and reusable production bibles/presets are harvested from successful projects later. `docs/mirage-composer-architecture.md` now frames the next implementation around `actionContract + projectStyleNotes + contextSelection + optional harvestable preset`, with `presetTaste` explicitly targeted for removal from the composer concept.
 
 2026-05-27 Codex: D28 implementation slice landed. Added `project_config.style_notes` for Lahari/studio prefixes, `config/style-notes.json` in notebooks, `apply_project_style_notes` in the action registry, MCP `contextOverrides.styleNoteSections`, and style-note state in project packets. Runtime `composePrompt` no longer has `workflowContext` or `presetTaste`; touched builders now assemble `CORE TASK`, `INPUTS`, optional `STYLE NOTES`, optional `PROJECT OVERRIDE`, policy for legacy web-direct helpers, and `OUTPUT CONTRACT`. Looks, style, and storyboard planning read selected style-note buckets while hard worker rules stay in action contracts instead of preset blobs. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
+
+2026-05-27 Codex: Action-schema materialization slice landed from Saul/Claude audit feedback. Generated notebooks now include `config/actions/index.json` plus one full schema file per action surface under `config/actions/<surface>.json`; `notebook.json`, `open_project`, `get_project_state`, and full packets carry `actionsHash` for drift detection. Agent instructions now prefer local action files and reserve MCP `list_actions` for missing/stale/live-truth fallback, reducing registry context dumps during ordinary Codex work.
 
 ---
 
