@@ -5,7 +5,6 @@ import {
   compactText,
   conceptHash,
   deriveDirectorDiagnosis,
-  hashJson,
   listProjectRenders,
   namesById,
   recommendedActions,
@@ -19,9 +18,7 @@ import {
   webStudioUrl,
   type Project,
 } from './core.js';
-import { buildActionSchemaPayload } from '../actionRegistry.js';
-
-const buildActionsHash = (): string => hashJson(buildActionSchemaPayload().actions);
+import { buildActionsHash } from '../actionRegistry.js';
 
 const summarizeAudioPlan = (audioPlan: any) => {
   if (!audioPlan) return null;

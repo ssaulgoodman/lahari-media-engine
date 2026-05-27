@@ -5,7 +5,6 @@ import {
   compactText,
   md,
   audioPlanHash,
-  hashJson,
   scriptContentHash,
   styleDirectionHash,
   shotPromptHash,
@@ -27,6 +26,7 @@ import {
   actionSpecsForSurface,
   buildActionSchemaIndex,
   buildActionSchemaPayload,
+  buildActionsHash,
 } from '../actionRegistry.js';
 
 export type NotebookFile = {
@@ -53,8 +53,6 @@ const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value
 
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-
-export const buildActionsHash = (): string => hashJson(buildActionSchemaPayload().actions);
 
 const buildWorkspaceInstructions = (project: Project): string => {
   const preset = getPipelinePreset(project.presetKey);
@@ -469,6 +467,9 @@ const buildActionsArtifacts = (project: Project): NotebookFile[] => {
   const baseDir = normalizedProjectDir(project);
   const actionsHash = buildActionsHash();
   const generatedAt = new Date().toISOString();
+  // TODO: When availableTools/blockedTools become hard runtime gating for
+  // registry actions, filter these materialized specs by project before
+  // writing. Today they intentionally mirror the full action registry.
   const index = {
     kind: 'mirage.actions.index',
     projectId: project.id,

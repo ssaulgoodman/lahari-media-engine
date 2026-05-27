@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 export const LOOK_ACTION_SPECS = {
   generate_candidates: {
     key: 'generate_candidates',
@@ -463,3 +465,22 @@ export const buildActionSchemaIndex = (actions = actionSpecsForSurface()) => ({
   count: actions.length,
   surfaces: ACTION_SURFACES,
 });
+
+const stableJson = (value: unknown): string => {
+  const normalize = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(normalize);
+    if (item && typeof item === 'object') {
+      return Object.keys(item as Record<string, unknown>)
+        .sort()
+        .reduce((acc, key) => {
+          acc[key] = normalize((item as Record<string, unknown>)[key]);
+          return acc;
+        }, {} as Record<string, unknown>);
+    }
+    return item;
+  };
+  return JSON.stringify(normalize(value));
+};
+
+export const buildActionsHash = (): string =>
+  crypto.createHash('sha256').update(stableJson(buildActionSchemaPayload().actions)).digest('hex');
