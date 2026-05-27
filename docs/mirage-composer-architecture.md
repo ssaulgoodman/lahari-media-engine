@@ -50,29 +50,83 @@ The composer should not decide taste. It should not carry workflow philosophy. I
 
 **Project graph:** canonical truth. If "anime" matters, it should be in the concept, style description, script tone, or explicit project notes. Not hidden in a workflow enum that keeps injecting rules forever.
 
+**Project style notes:** small per-surface taste/technique buckets that Codex and artists can edit as the project earns its language. These are live project data, not hidden presets.
+
 **Codex:** director/orchestrator. It reads the graph, talks to the artist, decides the next useful move, and can write final prompts itself when it has strong intent.
 
 **Web UI:** graph editor and visual studio. It should let artists add/edit/lock the same canonical objects. Later, UI buttons can use the same action/context machinery as Codex.
 
 **Composer:** default context bundle for one action. It can build a reasonable call from the graph, but the bundle must be editable per call.
 
-**Action handlers:** hard technical contracts for the worker model. Example: a character reference action can require a reusable neutral reference; a storyboard image action can ban text/captions. These are action contracts, not workflow taste.
+**Action handlers:** hard technical contracts for the worker model. Example: a character reference action can require a reusable identity reference; a storyboard image action can ban readable labels/captions. These are action contracts, not workflow taste.
 
 **Skills:** optional vocabulary/context loaded by Codex when relevant. Specific taste like "Ilya Kuvshinov", "Y2K anime", "educational explainer graphics", or "ambient music-video pacing" belongs here or in project style notes, not always-on composer text.
 
-## Workflows And Presets
+## Workflows, Presets, And Harvesting
 
 Workflows should not be the runtime brain.
 
 At most, a workflow/preset is an intake shortcut:
 
-- "anime" seeds a starting style description and maybe default models.
+- "anime" seeds a starting project mode, maybe a starting style description, and default models.
 - "music video" suggests audio analysis and beat/section planning.
 - "education video" suggests narration, diagrams, and clearer explanatory structure.
 
 After intake, the graph is the truth. The composer should not keep injecting `anime_default` or `music_led` doctrine into every call. If that taste matters, it should have been written into graph data: concept, script, style description, references, or explicit project override.
 
-Very specific taste presets can come back later, but they should be explicit project data or skill packs, not hidden global prompt sludge.
+Reusable presets come later through harvesting, not upfront doctrine. When a project works and the artist wants episode 2, Codex can help codify the current project's style notes plus proven overrides into a reusable production bible. That bible seeds the next project, but the next project's notes remain editable and can diverge.
+
+This keeps simple facts simple. "Anime, not photoreal" does not need to become a giant reusable bible entry. Codex can infer that from the project mode and write positive image language when needed. The bible is for earned production knowledge: phrasing, techniques, rhythm, dialogue tone, model-specific wording, and override patterns that actually produced good outputs.
+
+## Project Style Notes
+
+Style is not one blob. Different calls need different taste.
+
+Start with small editable string buckets on the project:
+
+```ts
+projectStyleNotes: {
+  image?: string;       // line, palette, lighting, texture, visual medium
+  storyboard?: string;  // panel density, board language, framing habits
+  motion?: string;      // cutting rhythm, camera behavior, movement restraint
+  script?: string;      // story pacing, scene construction, narration stance
+  dialogue?: string;    // voice, humor, restraint, character speech style
+  audio?: string;       // ambience, TTS/narration tone, sound treatment
+  modelPhrases?: Record<string, string[]>; // optional later: per-model wording that works
+}
+```
+
+These are not injected wholesale. Each action has sensible default selections:
+
+- character/environment look: `image`
+- storyboard generation: `image` + `storyboard`
+- video generation: `motion` and, where useful, selected `image`
+- script/refine-script: `script` + `dialogue`
+- dialogue/audio plan: `dialogue` + `audio`
+
+Codex can include, exclude, or rewrite the selection per call. If only one technique from the project notes applies, use only that technique. If a note is hurting the output, unplug it with context selection rather than fighting the final prompt.
+
+## Action Contracts Vs Style Notes
+
+Do not put action contracts inside style notes or presets.
+
+Action contracts are owned by the tool and apply every time that tool runs:
+
+- character reference: reusable identity image, clean visibility, no accidental props unless requested
+- environment reference: reusable location/background plate, not a character-focused scene
+- storyboard: ordered panel board, no readable text/captions/arrows/labels
+- video: preserve selected refs, obey saved motion/cut-plan intent
+- style image: produce a reusable style anchor, not a finished scene illustration
+
+Project style notes are taste and technique:
+
+- flat deadpan anime lighting
+- clean gray bunker palette
+- fast cuts interrupted by still silent holds
+- dry clipped dialogue
+- phrase that works well with a specific image/video model
+
+The migration out of `presetTaste` is mostly sorting every old line into one of these two buckets: action contract or project style note. Anything else gets deleted.
 
 ## Context Must Be Editable Per Call
 
@@ -86,6 +140,10 @@ The new shape should allow:
 contextOverrides: {
   includeStyleImage?: boolean;
   styleAssetId?: string | null;
+  styleNoteSections?: {
+    include?: Array<'image' | 'storyboard' | 'motion' | 'script' | 'dialogue' | 'audio'>;
+    exclude?: Array<'image' | 'storyboard' | 'motion' | 'script' | 'dialogue' | 'audio'>;
+  };
   includeCastRefs?: boolean | string[];
   excludeCastRefs?: string[];
   includeEnvironmentRefs?: boolean | string[];
@@ -104,6 +162,7 @@ Examples:
 - Treat uploaded audio as soundtrack only, not as music-structure input.
 - Generate an alternate storyboard that ignores the previous board.
 - Ask for a style image from text only, without current style asset feedback.
+- Generate a storyboard using the project's image style note but excluding the motion style note.
 
 This is the key missing piece: not just `promptOverride`, but context override.
 
@@ -125,6 +184,7 @@ The old section list was too abstract. The new sections should map to real sourc
 
 - `TASK`: the smallest action contract.
 - `PROJECT DATA`: selected graph fields.
+- `STYLE NOTES`: selected project style-note buckets.
 - `REFERENCES`: selected asset/image/audio attachments and labels.
 - `PROJECT OVERRIDE`: persistent override for this action kind, if present.
 - `CALL OVERRIDE`: final prompt override or call note, if this is a legacy web path.
@@ -138,7 +198,7 @@ Remove or aggressively shrink:
 - long doctrine blocks
 - repeated examples in every runtime prompt
 
-If a line is useful only because the model "might forget what anime is", it probably belongs in project style description, not in the composer.
+If a line is useful only because the model "might forget what anime is", it probably belongs in Codex's interpretation of the project mode or in a small image style note, not in an always-on preset block.
 
 ## Agentic Path Vs Legacy Web Path
 
@@ -239,17 +299,31 @@ For image/video/audio workers, keep short hard constraints at the action level:
 
 These are not workflows. They are the worker contract.
 
-### 6. Shrink presets
+### 6. Add project style-note buckets
+
+Add the small per-surface note layer as project data. Keep it deliberately humble: named strings first, not a giant nested bible schema.
+
+Codex can update these notes when production discovers language that works. Example: after several good boards, Codex might write a storyboard note like "Use flat 2x3 deadpan panel boards with minimal camera drama and clean graphic blocking."
+
+These notes should be visible/editable in the notebook/config layer and eventually in the Web Studio. They should also be selectable per action via context overrides.
+
+### 7. Shrink presets
 
 Reduce presets/workflows to:
 
 - intake suggestions
 - default model/provider preferences
-- optional starter style description
+- optional starter style description / starter style-note buckets
 
 No recurring runtime doctrine by default.
 
-### 7. Update skills and AGENTS/CLAUDE
+### 8. Harvest reusable presets later
+
+Do not build the full production-bible system before a project earns it.
+
+Add a later explicit action such as `codify_project_as_preset(name, sections?)` that snapshots selected project style notes plus useful project overrides into a reusable preset. This should be artist-confirmed, reversible, and framed around real production moments: sequel, series, client template, or "make more like this."
+
+### 9. Update skills and AGENTS/CLAUDE
 
 Teach agents:
 
@@ -259,8 +333,11 @@ Teach agents:
 - For prompt/spec refine, edit the local draft or exact saved text first, then apply. Do not ask a backend refine prompt to guess the diff when Codex can make the edit.
 - For media refine, send the existing asset plus a narrow positive edit instruction. Do not regenerate from the whole original prompt unless that is intentionally the chosen strategy.
 - Use `contextOverrides` before fighting the prompt template.
+- Use selected project style notes instead of dumping a whole preset/bible into every call.
+- Update project style notes when a phrase or technique keeps improving outputs.
 - Use `promptOverride` for final concrete worker prompts.
-- Promote repeated successful call overrides to project overrides.
+- Promote repeated successful call overrides to project overrides or project style notes.
+- Suggest harvesting a reusable preset only after a project/episode has actually worked.
 - Backfill style/character/env descriptions when artists upload images as-is.
 
 ## What This Lets Us Build
@@ -289,11 +366,19 @@ The graph can represent that too. Audio exists; analysis is optional; render can
 
 ## Open Calls
 
-1. Should `workflow_key` remain as a DB field for UI filtering/back-compat, while no longer driving prompt text?
-2. What exact `ContextOverride` shape should land first? Looks/style/storyboard are probably enough for v1.
-3. Should legacy web buttons keep minimal taste/user-note prompts until UI becomes agent-backed?
-4. Should project overrides be freeform text only, or structured by action surface?
-5. How much should the Prompt Library show composer internals versus graph/action contracts?
+Settled by D27/D28:
+
+1. `workflow_key` can remain for UI filtering/back-compat, but it must not drive recurring prompt doctrine.
+2. Legacy web buttons may keep minimal raw-note helper prompts until the UI becomes agent-backed; those paths should be labeled legacy/web-direct.
+3. Project overrides remain freeform by action surface for now.
+4. The Prompt Library should primarily show graph/action contracts. Composer internals are debug/X-Ray surface.
+
+Still open before implementation:
+
+1. Exact storage shape for project style notes: columns vs JSON config vs existing project config/preferences layer.
+2. Exact `contextOverrides.styleNoteSections` syntax and which actions support it first.
+3. Whether `modelPhrases` belongs in v1 style notes or waits until the first real model-specific phrase proves it is needed.
+4. Harvest action timing and surface: likely later, after the first successful project/episode proves the shape.
 
 ## Summary
 
@@ -301,4 +386,4 @@ Mirage should not be "workflow prompt plus tools." It should be a graph of produ
 
 The composer is not the director. It is editable plumbing.
 
-Taste belongs in project data, references, skills, and Codex's reasoning. Presets are intake hints and defaults. Worker actions keep only the small hard contracts needed to make media generation behave.
+Taste belongs in project data, references, skills, Codex's reasoning, and eventually harvested project style notes. Presets are intake hints and defaults until a good project earns a reusable production bible. Worker actions keep only the small hard contracts needed to make media generation behave.
