@@ -77,6 +77,15 @@ Legacy rows may still surface `music_video` or `anime_scripted`; treat them as a
 
 For text-native work, Codex writes the content and Mirage apply tools validate/persist it. Do not call backend LLM-wrapper tools when an apply-only tool exists.
 
+Raw artist chat is not an agent action payload. Treat phrases like "make it brighter," "less grungy," or "more like the reference" as intent for you to interpret, not text to forward into a generic `userNote` slot.
+
+Use the right operation:
+
+- **Prompt/spec refine:** edit the local draft, saved prompt text, or structured object in concrete positive language, then apply it. Example: replace "dirty dim bunker" with "clean pale bunker, bright overhead light, crisp flat shadows."
+- **Paid regenerate:** run from the saved graph/spec after the prompt is right. Use `contextOverrides` to unplug/swap refs before resorting to a full `promptOverride`.
+- **Media edit:** send the existing asset plus a narrow `editInstruction`: keep everything else, change this one visual/audio property. Do not resend the whole original prompt unless intentionally regenerating.
+- **Legacy/web-direct note:** only use raw-note refine helpers when operating a direct Web Studio fallback or debugging a legacy route where no harness translated the artist's intent.
+
 Load the right shard before writing:
 
 | Apply tool | Shard |

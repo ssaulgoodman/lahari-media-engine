@@ -6,6 +6,8 @@ Purpose: inspect the prompt composer, preset taste additives, and runtime prompt
 Status: merged — Codex's table-structured analysis (`8fbf4a4`) + Claude's Pattern 7 finding and architectural proposal.
 
 > **Read this audit through `docs/mirage-composer-architecture.md`.** The latest direction is graph-first: presets/workflows are intake hints, the composer is editable plumbing, and `contextOverrides` are a first-class missing primitive. Verdicts in this audit that pre-date that decision are marked **⚠️ provisional** below. A full row-by-row re-verdict happens after the open calls in the architecture doc settle.
+>
+> **2026-05-27 correction:** agent-native Mirage does not treat raw artist chat as a `userNote` slot. Codex interprets intent and turns it into exact graph/spec edits, `contextOverrides`, `promptOverride`, `callInstruction`, or `editInstruction`. `userNote` remains only for legacy web-direct LLM helper paths where no harness translated the artist's words.
 
 ## Executive Read
 
@@ -62,9 +64,9 @@ Today, the composer has no concept of "project override." Each prompt builder ad
 | `workflowContext` | One or two sentences: scripted narrative vs music-led | Prevents wrong graph assumptions without enum labels | Mostly yes; small and cheap | Keep, but drop from image-gen prompts if final prompt is already visually specific | ☐ |
 | `inputs` | Project/source/shot/cast/style data | Grounding; prevents generic output | Yes, but raw source caps are sometimes too large for tiny edits | Keep; tighten per tool | ☐ |
 | `presetTaste` | Preset source/style/look/studio/audio rules | Medium guard and taste | Yes, but repeated full blocks are costly | Keep, split into small per-surface taste fragments | ☐ |
-| `userNotePolicy` | How artist feedback interacts with contract/taste | Prevents "note as vague nudge" drift | Yes for generate/refine tools; verbose in repeated examples | Keep, replace repeated Polaroid/live-action examples with a shared short rule | ☐ |
+| `userNotePolicy` | How raw web-direct feedback interacts with contract/taste | Prevents legacy web buttons from treating notes as vague nudges | **Not agent-native.** Useful only where no harness has translated intent | Demote to legacy/web-direct helper paths; remove from agent-preferred actions | ☐ |
 | `outputContract` | Required response shape and hard rules | Enforces JSON/tool shape | Yes, but too many contracts explain content philosophy | Keep, cut to schema + 5-8 hard rules | ☐ |
-| `userNote` | Raw artist note | Direction | Yes | Keep | ☐ |
+| `userNote` | Raw artist note | Direction for legacy web-direct buttons | **Not agent-native.** Codex should translate chat into exact edits/instructions before calling MCP | Keep only for legacy web-direct helpers; do not expose as preferred agent action input | ☐ |
 | **NEW: `projectOverride`** | DB-stored per-project override body for this kind | Lets artist taste persist across calls per Pattern 7 | Currently fictional for 6 of 8 surfaces | **Add as first-class composer section** (between presetTaste and userNotePolicy) | ☐ |
 | `inspectComposedPrompt` | Reverse parser for X-Ray | Debug transparency | Yes as debug-only | Keep; edge case noted: exact header lines inside user text can mis-split | ☐ |
 
@@ -247,6 +249,27 @@ The audit was framed before `contextOverrides` was identified as the missing pri
 
 Without this, the trim work in C1-C5 can only remove text — not give Codex per-call control over which context attaches. C0 unlocks "make character without the locked style image for one experiment" and "use uploaded audio as soundtrack only, skip music-structure analysis."
 
+### C0.5 — Split agent intent from legacy `userNote`
+
+The old audit treated `userNote` as a normal composer layer. That is the wrong mental model for agent-native Mirage.
+
+Agent session rule:
+
+- Raw artist chat stays in Codex.
+- Codex translates it into an exact spec edit, `contextOverrides`, `promptOverride`, `callInstruction`, `editInstruction`, or a persistent project override.
+- Mirage validates/persists/runs the concrete result.
+
+Legacy web rule:
+
+- Web Studio buttons may still pass raw notes to backend LLM helper prompts because no agent has interpreted the intent.
+- Those paths should be labeled legacy/web-direct in code and Tool Recipes so they do not define the agent contract.
+
+Storyboard is the first implementation target:
+
+- If the saved storyboard prompt is wrong, Codex edits the saved prompt/cut plan and applies it.
+- If the board image is close but needs a visual edit, Codex uses an edit action with `editInstruction`.
+- If the board should be regenerated from a better prompt, Codex writes the positive prompt first, then runs generation.
+
 ### C1 — Cut `writeShotPrompts` hard (architecture step 3)
 
 Target: reduce one-shot sample from ~7,000 chars to **under 3,500 chars** without losing correctness.
@@ -291,7 +314,7 @@ Use the new `identify_style` action when locked style has an image but empty/wea
 
 **This is the architectural one.** Today each prompt builder ad-hoc decides where to inject the override. 6 of 8 declared kinds aren't injected anywhere. Fix:
 
-1. Add `projectOverride?: string` to `ComposePromptParts` in `_composer.ts`. New section title `PROJECT OVERRIDE`. Slots between `presetTaste` and `userNotePolicy`.
+1. Add `projectOverride?: string` to `ComposePromptParts` in `_composer.ts`. New section title `PROJECT OVERRIDE`. Slots before per-call/call override text.
 2. Every prompt builder calls `getProjectPromptOverride(projectId, kind)` and passes the result in.
 3. Storyboard's current "append to presetTaste" pattern moves to the new section instead. Behavior unchanged for storyboard; new behavior available for the other 6.
 4. Skill instruction ("promote a repeated promptOverride") becomes truthful across all surfaces.
@@ -301,10 +324,11 @@ Alternative (smaller scope, dishonest API): Option B — narrow schema to just `
 ## Priority Verdict
 
 - **P0:** `ContextOverride` primitive (C0) — prerequisite for the rest; unlocks per-call context control
+- **P0:** Split agent intent from legacy `userNote` (C0.5) — prevents the agent path from becoming a raw-note backend refine loop
 - **P0:** `shotPrompts.ts` trim (C1) — biggest single win, biggest source of vague output
 - **P1:** Project overrides wired into composer (C5) — architecture step 2
 - **P1:** Preset taste relocation (C2) — architecture steps 4-6
-- **P2:** User-note policy collapse (C3)
+- **P2:** User-note policy collapse/demotion (C3) — keep only where a legacy web-direct helper still needs it
 - **P3:** Style description backfill (C4)
 
 Everything else can wait until after the full deployed smoke test.

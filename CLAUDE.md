@@ -49,6 +49,7 @@ Artist director work happens through deployed Mirage remote MCP, not inside this
 
 Prompt source-of-truth discipline:
 - Runtime prompt changes must keep the registry/composer/tool-recipe surfaces aligned: `server/tools/registry.ts`, `server/prompts/*`, `/api/prompts`, `components/PromptsLibrary.tsx`, and the secondary reference `server/prompts/catalog.ts`.
+- Agent-native intent is not a raw `userNote` pipe. Codex/Claude must translate artist chat into exact graph/spec edits, `contextOverrides`, precise `promptOverride`, `callInstruction`, `editInstruction`, or a project override before calling Mirage actions. `userNote` is legacy/web-direct only.
 - Pipeline behavior changes must update `docs/pipeline-anatomy.md`.
 - Keep `CLAUDE.md` short; do not paste full prompt bodies or long endpoint inventories here.
 
@@ -97,7 +98,7 @@ Text-provider routing does **not** include script writing. `planScenes`, `refine
 The current architecture is registry + composer, not a pile of fat prompt templates.
 
 - `server/tools/registry.ts` is the cross-surface contract for what tools exist, what they need/read/produce, and where they appear.
-- `server/prompts/*` and `server/prompts/_composer.ts` build runtime prompts from explicit sections: core task, workflow context, inputs, preset taste, user-note policy, output contract, user note.
+- `server/prompts/*` and `server/prompts/_composer.ts` build worker-call context from explicit sources: task, selected project data, selected references, project override, call override, and output contract. Raw artist notes are for legacy web-direct helpers, not the agent-preferred path.
 - `components/PromptsLibrary.tsx` is the Tool Recipes UI. It should show artist-readable tool behavior first; raw prompt/template references are secondary/debug.
 - Avoid injecting workflow/preset enum labels into LLM prompt bodies. Logs may carry keys; prompts should receive human production language.
 

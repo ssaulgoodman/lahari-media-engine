@@ -147,8 +147,8 @@ Agentic path:
 1. Artist says intent in chat.
 2. Codex reads graph state.
 3. Codex decides next action.
-4. Codex either trusts default composer context or sends `promptOverride` / `contextOverrides`.
-5. Worker model receives concrete final context.
+4. Codex rewrites the relevant project object or call spec in concrete production language.
+5. Mirage validates and persists the graph/spec, or runs the paid worker from that saved spec.
 
 Legacy web path:
 
@@ -156,6 +156,25 @@ Legacy web path:
 2. Backend may still need to send a small user note and minimal taste anchor because no agent translated intent.
 
 Do not design the agentic path around limitations of the legacy web-button path. Keep the legacy path working, but do not let it force composer bloat forever.
+
+## Agent-Native Correction: Intent Is Not A Prompt Slot
+
+Raw artist language is not the unit Mirage should pass through agent MCP actions.
+
+When the artist says "make this brighter" or "less grungy," Codex should not forward that sentence as `userNote` and ask a backend composer to interpret it. Codex is the interpreter. It should inspect the current graph/prompt/asset, decide what needs to change, and turn the request into one of three concrete operations:
+
+1. **Spec edit:** update the saved graph object or saved prompt text. Example: edit `storyboard_prompt` from "dim, grimy bunker" to "clean bright overhead light, pale gray walls, crisp flat shadows," then apply that exact saved prompt.
+2. **Worker generation from saved spec:** run an image/video/audio worker from the current saved graph/spec, with optional `contextOverrides` or a precise `promptOverride` written by Codex.
+3. **Media edit:** send the existing image/video plus a narrow edit instruction: "Keep composition, characters, and panel layout identical; brighten the lighting and clean up the dirty texture." This is not a full regenerate from the original prompt.
+
+`userNote` is therefore a legacy/web-direct concept, not the happy path for agent sessions. It exists for places where the artist clicks a web refine button and no harness has translated intent. In agent sessions, raw chat becomes a deliberate edit to project data, a direct worker instruction, or a saved project override.
+
+This also fixes the refine split:
+
+- **Prompt/spec refine:** Codex edits text or structured JSON and applies it. It should prefer local notebook/draft edits when available because small inline edits are safer than rewriting a whole prompt from memory.
+- **Image/video refine:** Codex uses an edit action against the existing media with a concise positive instruction. It should not resend the whole original generation prompt unless the edit model explicitly requires background context.
+
+The composer is still useful, but only as plumbing for worker calls. It assembles selected graph data, selected references, project overrides, call overrides, and output contracts. It is not the creative director.
 
 ## Migration Plan
 
@@ -172,6 +191,17 @@ Add trace/X-Ray output that shows:
 - projectOverride used or not
 
 This makes the composer debuggable as plumbing.
+
+### 1b. Split raw notes from agent instructions
+
+Rename the concepts in action specs and docs:
+
+- `userNote`: legacy web-direct raw artist text. Allowed only on backend LLM helper/refine routes where no harness has interpreted intent.
+- `callInstruction`: precise one-off instruction written by Codex for a worker call.
+- `editInstruction`: precise instruction for media edit/refine actions.
+- `promptOverride`: exact final worker prompt, authored by Codex or a saved project override.
+
+Storyboard should be the first migration target because it has all three cases: saved prompt edits, storyboard image generation, and storyboard image refine.
 
 ### 2. Fix project overrides
 
@@ -225,6 +255,9 @@ Teach agents:
 
 - Mirage is graph-first.
 - Workflow/preset names are hints, not truth.
+- Raw artist chat is not an MCP `userNote`; translate it into exact graph/spec edits, call instructions, edit instructions, context overrides, or prompt overrides.
+- For prompt/spec refine, edit the local draft or exact saved text first, then apply. Do not ask a backend refine prompt to guess the diff when Codex can make the edit.
+- For media refine, send the existing asset plus a narrow positive edit instruction. Do not regenerate from the whole original prompt unless that is intentionally the chosen strategy.
 - Use `contextOverrides` before fighting the prompt template.
 - Use `promptOverride` for final concrete worker prompts.
 - Promote repeated successful call overrides to project overrides.

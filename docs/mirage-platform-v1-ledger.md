@@ -12,7 +12,7 @@ This is the single source of truth for getting Mirage Platform v1 shipped. Every
 
 Both Claude and Codex read from and append progress to this ledger. Pick a task by its ID (e.g. `T3.2`), do it, check it off, log a one-line note in the Checkpoints section.
 
-**Navigation:** §2 (locked decisions D1-D26), §3 (architecture), §4 (tracks T1-T10), §6 (sequencing), §7 (contracts), §8 (open questions), §9 (checkpoints, append-only). When jumping in cold, read your owned tracks in §4 + tail §9 for what just shipped. The whole file is the single source of truth; if older docs disagree, this wins.
+**Navigation:** §2 (locked decisions D1-D27), §3 (architecture), §4 (tracks T1-T10), §6 (sequencing), §7 (contracts), §8 (open questions), §9 (checkpoints, append-only). When jumping in cold, read your owned tracks in §4 + tail §9 for what just shipped. The whole file is the single source of truth; if older docs disagree, this wins.
 
 ---
 
@@ -79,6 +79,7 @@ Every one of these has been debated and settled in conversation. Don't re-litiga
 | D24 | Tool registry is the cross-surface contract. Every LLM-driven tool and every apply tool has a manifest in `server/tools/registry.ts` declaring `key`, `label`, `description` (agent-facing), `requires`, `contextInputs`, `produces`, `surface`, optional `enabledFor?: WorkflowKey[]` (workflow/profile scoping; omit = available across all profiles), and optional `buildPrompt`. `availableTools(project)` and `blockedTools(project)` are pure functions over the manifest list + project asset state. Both MCP packet and Web UI read the same registry. `WorkflowRecipe.stages` has been removed — orchestration emerges from tool dependencies. **Vocabulary discipline:** *preset* = taste/defaults (`preset_key` column); *workflow / production profile* = what kind of thing we're making (`workflow_key` column). The manifest scope field gates on **workflow profile**, not preset, and is named accordingly. | One source of truth for "what can run when." No hardcoded phase gates. Adding a new tool surfaces in both agent and UI automatically. Adding a new preset is a taste profile + maybe new tool entries, not a separate stage definition. Vocabulary clarified 2026-05-20 after Codex review — the manifest scope field was misnamed `preset?` when it actually keyed on workflow profile. |
 | D25 | Prompt composition: every LLM-driven tool builds its prompt via `composePrompt({ coreTask, workflowContext, inputs, presetTaste, userNotePolicy, outputContract, userNote })`. **`coreTask` is shared across workflows** — it states what the tool does in workflow-agnostic production language ("Propose 4 distinct visual style directions for this project. No story/scenes/characters. Cover a real range."). **`workflowContext` is a small graph-context string** (one or two sentences: "This is a scripted narrative — directions will become the visual world the episode/film sits inside" / "This is a music-led project — directions will become a visual world the video sits inside"). **`presetTaste` carries medium + taste** — this is where medium-guard lives ("Medium is anime, 2D animation; stay inside anime production; do not propose live-action photography, documentary stills, photoreal pastiches"). **`userNotePolicy` is per-tool** — declares the hierarchy between tool contract, medium guard, user note, and range within the constrained space. For generate-style tools the policy is "user note = hard creative constraint inside contract + TASTE; range means variety inside the note." For refine-style tools the policy is "apply note surgically; preserve locked structure; do not regenerate from scratch." For script parser etc. there is no userNotePolicy. `outputContract` is shared (JSON schema / shape rules). `userNote` is optional free-form direction. **The doctrine, not the text, is what's shared across surfaces.** Backend composer governs API-tool LLM calls (web UI buttons; agent fast-path tool calls). Agent-native reasoning consumes skills + packet + registry, never the composed text directly. Skills carry the same vocabulary discipline in agent-readable form. **Enum-label ban still holds:** prompt text receives only human-readable production language — never raw workflow/preset enum labels like `scripted_narrative` or `anime_default`. Logs and metadata can reference enum keys; prompt bodies cannot. **Constraint hierarchy** (top to bottom, codified via the section order): tool contract > medium guard (preset) > user note > range. Tools express this hierarchy by the policy text they pass; the composer just orders the sections. | Replaces both failure modes: the "one fat template with nouns swapped" drift (where music-video chrome contaminated anime) AND the "N per-workflow body files" overcorrection (which would have duplicated the same instruction across every new workflow). The right layering is: shared mechanism in coreTask, workflow as small context, taste/medium as preset injection. The Polaroid leak came from baking taste into the shared body, not from sharing the body — fix the layering, not the duplication. Doctrine refined 2026-05-20 after Saul pushed first-principles on per-workflow coreTask burden. `userNotePolicy` slot added 2026-05-20 evening after T9.2 proof-gate run showed user notes were being treated as nudges; old `buildStyleBrainstormPrompt` had treated them as hard constraints. Codifying the hierarchy in the composer (not per-prompt) so every tool's stance on user notes is explicit and reviewable. |
 | D26 | Workflow archetypes locked at 4. **v1 active canonical keys:** `music_led` (audio is the spine — analyze song/lyrics/structure, then build scenes/shots around it); `scripted_narrative` (script/story is the spine — film, anime, short film, episode, dialogue scenes all fit here). **Deferred:** `campaign` (brief/product/offer is the spine — ads, launch videos, explainers, CTA-driven pieces); `short_form` (hook/beat/retention is the spine — reels, TikToks, UGC-style cuts). Anime is a **preset** under `scripted_narrative`, not its own workflow. Naming rule: workflows describe the **planner's spine** (what production structure is built around), not the output format label. **Migration rule:** current code/rows may still contain legacy keys `music_video` and `anime_scripted`; migration must support them as aliases until all runtime types, registry `enabledFor` values, `WorkflowRecipeKey`, DB rows, frontend refs, MCP packets, and docs have moved to the canonical keys. | First-principles test for "is this a workflow": different seed type + different planner logic. Anime and live-action drama share the scripted_narrative planner (scene → shot → dialogue → motion); they differ only in style preset. Music-led has its own planner (sections → shots driven by audio). Campaign has its own (brief → hook → product → CTA). Short-form has its own (hook → retention → payoff). Locking the archetype set early prevents new "workflow" requests from multiplying without a planner change behind them. Codex proposed the archetype shape 2026-05-20 after Saul pushed first-principles on per-workflow coreTask burden. |
+| D27 | Agent-native intent handling: raw artist chat is not an MCP `userNote` payload. In harness sessions, Codex interprets artist intent and converts it into exact graph/spec edits, `contextOverrides`, precise `promptOverride`, `callInstruction`, `editInstruction`, or a persistent project override. `userNote` and `userNotePolicy` are legacy/web-direct mechanisms for UI buttons where no harness has interpreted the artist's words. Prompt/spec refines edit saved text or structured project objects first; media refines send existing media plus a narrow positive edit instruction. | Closes the composer confusion exposed 2026-05-27. The agent is the director, not a courier for raw notes into backend refine prompts. Backend composer remains worker-call plumbing; it assembles selected graph data, refs, overrides, and output contracts. This preserves the web UI fallback path without letting it define the agent path. |
 
 ---
 
@@ -730,46 +731,45 @@ type ToolSurface =
   | 'agent-only';               // agent-callable but not surfaced in web UI
 ```
 
-### Composed prompt shape (D25)
+### Composed prompt shape (D25, amended by D27)
 
 ```ts
 type ComposePromptParts = {
   coreTask: string;             // SHARED across workflows. "What this tool does"
                                 // in workflow-agnostic production language.
-  workflowContext?: string;     // small graph-context string. e.g.
-                                // "This is a scripted narrative" / "music-led project".
-                                // NOT enum labels — production language only.
+  // workflowContext was removed from the runtime prompt stack in the
+  // composer cleanup. Project graph fields carry this context now.
   inputs?: string;              // formatted project context the tool received
-  presetTaste?: string;         // taste + medium-guard from project preset.
-                                // Medium-guard ("anime, 2D animation, no live-action
-                                // photo pastiche") lives HERE, not in coreTask.
-  userNotePolicy?: string;      // per-tool stance on user note. Generate-tools:
-                                // "user note = hard constraint; range is variation
-                                // inside it." Refine-tools: "apply note surgically;
-                                // preserve locked structure." Some tools skip it.
+  presetTaste?: string;         // temporary worker/image invariants only.
+                                // Text-model runtime prompts should not receive
+                                // preset doctrine; graph data carries taste.
+  projectOverride?: string;     // persistent per-project override for this kind
+  callOverride?: string;        // exact agent-authored call instruction or final
+                                // prompt override, not raw artist chat.
   outputContract: string;       // shared. JSON schema or shape contract.
-  userNote?: string;            // optional free-form artist direction
+  userNote?: string;            // legacy/web-direct only. Agent sessions translate
+                                // artist chat before calling MCP actions.
 };
 
 // Composed output (section order encodes the constraint hierarchy):
 // <coreTask>                     ← tool contract (top of hierarchy)
 //
-// CONTEXT
-// <workflowContext>
-//
 // INPUTS
 // <inputs>
 //
-// TASTE
-// <presetTaste>                  ← medium guard
+// REFERENCES
+// <selected asset/ref labels where applicable>
 //
-// USER NOTE POLICY
-// <userNotePolicy>               ← how to resolve user note vs other layers
+// PROJECT OVERRIDE
+// <projectOverride>
+//
+// CALL OVERRIDE
+// <callOverride>
 //
 // <outputContract>
 //
 // USER NOTE
-// <userNote>                     ← actual artist direction
+// <userNote>                     ← legacy web-direct only
 ```
 
 ---
