@@ -48,12 +48,12 @@ export const workflowContextFor = (preset: PipelinePreset): string => {
  * vocabulary genuinely matters; otherwise the shared constant is
  * sufficient.
  */
-export const GENERATE_USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract and TASTE rules. All returned output must satisfy it.
+export const GENERATE_USER_NOTE_POLICY = `If USER NOTE is present, treat it as a hard creative constraint inside the tool contract and project data. All returned output must satisfy it.
 
-If the note conflicts with the source material, preset rules, or the layer's tool contract, refuse the conflicting part and translate the rest into the closest valid intent at this layer.`;
+If the note conflicts with the source material, project data, or the layer's tool contract, refuse the conflicting part and translate the rest into the closest valid intent at this layer.`;
 
 export const REFINE_USER_NOTE_POLICY = `USER NOTE contains the director's feedback. Apply it surgically:
 - Touch only the fields the note addresses.
 - Preserve unchanged what the note doesn't mention.
 - Do not regenerate from scratch.
-- If the note conflicts with the source material, preset rules, or contract layer, refuse the conflicting part and translate the rest into the closest valid intent at this layer.`;
+- If the note conflicts with the source material, project data, or the layer's tool contract, refuse the conflicting part and translate the rest into the closest valid intent at this layer.`;
