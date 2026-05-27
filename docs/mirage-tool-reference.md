@@ -92,41 +92,40 @@ Web-direct prompts will eventually be deprecated as the agent surface displaces 
 
 ## Index
 
-**Reading note:** all 25 actions are agent-callable through `run_action` / `start_job`. The **Kind** column tells you what happens when the agent invokes it:
+All 25 actions are agent-callable through `run_action` / `start_job`. **Actions** are what the agent invokes (code). **Prompts** are LLM templates that may fire inside an action, or from a Visual Studio button, or both.
 
-- **`persistence`** — write Codex-authored data to the DB. No backend LLM call. Most `apply_*`. Some have related web-only recipes that exist for Visual Studio's flow, not the agent's.
-- **`generation`** — fires a paid model call (LLM, image, video, or media edit) when invoked. `generate_*` and `refine_storyboard_image`.
-- **`analysis`** — fires a paid model call but doesn't mutate (e.g. `identify_style` reads an image, returns text).
-- **`read`** — list/get; no mutation, no model call.
-- **`control`** — lock/unlock/revert; mutation but no model call.
+The next two columns split prompts by where they fire:
 
-| Key | Surface | Kind | Mutates | Paid | One-liner |
-|---|---|---|:-:|:-:|---|
-| `apply_concept` | concept | persistence | ● | — | Persist Codex-written locked concept. |
-| `apply_script` | script | persistence | ● | — | Persist cast/environments/scenes/shots from JSON or markdown. |
-| `apply_shot_prompts` | script | persistence | ● | — | Persist Codex-written visual/motion/direction/continuity per shot. |
-| `apply_shot_workflow_modes` | script | persistence | ● | — | Persist per-shot workflow path: auto/storyboard/keyframe. |
-| `generate_style_candidates` | style | generation | ● | ● | Paid style reference candidate batch. |
-| `identify_style` | style | analysis | — | ● | Analyze locked style asset; return concise style text. |
-| `apply_style_direction` | style | persistence | ● | — | Persist style text and/or lock a style asset. |
-| `generate_candidates` | looks | generation | ● | ● | Paid cast/environment reference candidate batch. |
-| `list_candidates` | looks | read | — | — | List candidate URLs/asset IDs for one entity. |
-| `lock_reference` | looks | control | ● | — | Set canonical character/environment reference. |
-| `generate_storyboard` | storyboard | generation | ● | ● | Render storyboard image for one shot. |
-| `bulk_generate_storyboards` | storyboard | generation | ● | ● | Render storyboards for many shots. |
-| `apply_storyboard_prompts` | storyboard | persistence | ● | — | Persist Codex-written storyboard prompt + cut plan. |
-| `refine_storyboard_image` | storyboard | generation | ● | ● | Image-edit the current storyboard with a narrow instruction. |
-| `lock_storyboard` | storyboard | control | ● | — | Approve a storyboard version for video gen. |
-| `unlock_storyboard` | storyboard | control | ● | — | Clear storyboard approval. |
-| `generate_video` | video | generation | ● | ● | Render the video clip for one shot. |
-| `apply_video_prompt` | video | persistence | ● | — | Persist Codex-written keyframe motion prompt. |
-| `generate_dialogue_audio` | audio | generation | ● | ● | Generate ElevenLabs TTS for dialogue lines. |
-| `apply_audio_plan` | audio | persistence | ● | — | Persist Codex-written dialogue + sound notes per shot. |
-| `apply_cast_voice` | audio | persistence | ● | — | Assign ElevenLabs voice ID to a cast member. |
-| `apply_project_preferences` | system | persistence | ● | — | Persist model/provider routing for the project. |
-| `apply_project_style_notes` | system | persistence | ● | — | Persist per-surface project taste/technique memory. |
-| `apply_project_prompt_override` | system | persistence | ● | — | Persist a project-scoped complete prompt recipe. |
-| `revert_project_prompt_override` | system | control | ● | — | Roll back a project prompt override. |
+- **Inside the action** — runs *when the agent invokes this action*. Empty means the action is pure data persistence (no model call; Codex's text gets saved as-is).
+- **Web-only (same surface)** — prompts that fire only from Visual Studio buttons on the same data surface. **The agent never fires these.** In the agent flow Codex writes the text itself and uses the action to persist.
+
+| Key | Surface | Inside the action (agent fires) | Web-only (same surface, agent skips) | Mutates | Paid |
+|---|---|---|---|:-:|:-:|
+| `apply_concept` | concept | — (saves to DB) | `generate-concepts`, `refine-concept` | ● | — |
+| `apply_script` | script | — (saves to DB) | `plan-scenes`, `plan-scenes-openai`, `refine-script` (+ `parse-script-intake` at intake) | ● | — |
+| `apply_shot_prompts` | script | — (saves to DB) | `write-shot-prompts`, `refine-shot-prompt`, `refine-end-frame-prompt`, `refine-video-prompt` (+ `chained-shot-refresh` automatic) | ● | — |
+| `apply_shot_workflow_modes` | script | — (saves to DB) | — | ● | — |
+| `generate_style_candidates` | style | `brainstorm-style-directions` or `visualize-style` (image model) | — | ● | ● |
+| `identify_style` | style | `analyze-image-style` (vision LLM) | — | — | ● |
+| `apply_style_direction` | style | — (saves to DB; auto-runs `identify_style` if locking with empty text) | `refine-style-direction` | ● | — |
+| `generate_candidates` | looks | `character-look` or `environment-look` (image model) | `refine-look-prompt` | ● | ● |
+| `list_candidates` | looks | — (reads DB) | — | — | — |
+| `lock_reference` | looks | — (DB toggle) | — | ● | — |
+| `generate_storyboard` | storyboard | `render-seedance-storyboard-image` (image model) | — | ● | ● |
+| `bulk_generate_storyboards` | storyboard | `render-seedance-storyboard-image` (per shot) | — | ● | ● |
+| `apply_storyboard_prompts` | storyboard | — (saves to DB) | `seedance-storyboard-image` (planner) | ● | — |
+| `refine_storyboard_image` | storyboard | `seedance-storyboard-refine` edit_image branch | `seedance-storyboard-refine` replan branch | ● | ● |
+| `lock_storyboard` | storyboard | — (DB toggle) | — | ● | — |
+| `unlock_storyboard` | storyboard | — (DB toggle) | — | ● | — |
+| `generate_video` | video | `shot-video-assembly` (keyframe) or `seedance-storyboard-video` (storyboard) | — | ● | ● |
+| `apply_video_prompt` | video | — (saves to DB) | — | ● | — |
+| `generate_dialogue_audio` | audio | TTS (ElevenLabs; no LLM) | — | ● | ● |
+| `apply_audio_plan` | audio | — (saves to DB) | `write-audio-plan` | ● | — |
+| `apply_cast_voice` | audio | — (saves to DB) | — | ● | — |
+| `apply_project_preferences` | system | — (saves to DB) | — | ● | — |
+| `apply_project_style_notes` | system | — (saves to DB) | — | ● | — |
+| `apply_project_prompt_override` | system | — (saves to DB) | — | ● | — |
+| `revert_project_prompt_override` | system | — (DB toggle) | — | ● | — |
 
 Pipeline-only prompts (not MCP-callable): `transcribe-lyrics`, `detect-structure`, `summarize-meaning`, `critique-shot-image`, `describe-frame`, `chat-with-director`.
 

@@ -57,41 +57,44 @@ Today's distribution: 15 web-direct, 8 agent, 4 intake, 3 automatic, 1 shared.
 
 **How to read this table:**
 
-- **Every action in this table is agent-callable.** They're all dispatched through `run_action` / `start_job`. The Recipes column does *not* tell you whether the action is available to the agent — it always is.
-- The Recipes column shows **backend LLM prompts that share the action's data surface**, and their `path` tag tells you who fires them at runtime.
-- For **persistence-only actions** (every `apply_*`, plus `lock_*` / `unlock_*` / `revert_*`), there's no LLM call inside the action — they just write to the DB. Any recipes shown next to them are web-direct prompts that exist to generate the text in the web flow (e.g. `generate-concepts` lets a web user brainstorm; `apply_concept` then persists). In the agent flow, Codex writes the text directly and the same `apply_*` persists it.
-- For **generation actions** (`generate_*`, `identify_*`, `refine_storyboard_image`), the recipes ARE the prompts that fire when the agent invokes the action. Their path tag will be `agent` for the prompts Codex actually triggers.
-- Rule of thumb: action key starts with `apply_` / `lock_` / `unlock_` / `revert_` → persistence; starts with `generate_` / `identify_` / `refine_` → fires a paid model call when invoked.
+- **Every action is agent-callable.** They all dispatch through `run_action` / `start_job`. The agent uses every tool below.
+- An **action** is the thing the agent invokes (code). A **prompt** is an LLM template that may fire inside an action, or may fire from a Visual Studio button, or both. Actions and prompts are separate things.
+- The next two columns split prompts by where they fire:
+  - **Inside the action** = the LLM/image/video/vision prompt that runs *when the agent invokes this action*. If empty, the action is pure data persistence — no model call, the agent's text gets saved as-is.
+  - **Web-only (same surface)** = prompts that exist for Visual Studio buttons on the same data surface. **The agent never fires these.** In the agent flow, Codex writes the text itself and the action persists it.
+- `apply_concept` having an empty "Inside the action" column and two web-only prompts is the canonical example: agent calls `apply_concept`, no LLM fires, concept gets saved. The web prompts only matter if a user clicks a Visual Studio "Generate concept" button.
 
-So `apply_concept` showing two `[web-direct]` recipes is correct: Codex *does* call `apply_concept`, but in the agent flow no backend prompt fires — Codex itself authored the concept text. The recipes column is documenting the web flow that uses the same surface.
+| Tool key | Surface | Inside the action (agent fires) | Web-only (same surface, agent skips) | Mutates | Paid | Verdict |
+|---|---|---|---|:-:|:-:|:-:|
+| `apply_concept` | concept | — (saves to DB) | `generate-concepts`, `refine-concept` | yes | no | ✅ |
+| `apply_script` | script | — (saves to DB) | `plan-scenes`, `plan-scenes-openai`, `refine-script` (+ `parse-script-intake` runs at intake) | yes | no | ✅ |
+| `apply_shot_prompts` | script | — (saves to DB) | `write-shot-prompts`, `refine-shot-prompt`, `refine-end-frame-prompt`, `refine-video-prompt` (+ `chained-shot-refresh` runs automatically) | yes | no | ✅ |
+| `apply_shot_workflow_modes` | script | — (saves to DB) | — | yes | no | ✅ |
+| `generate_style_candidates` | style | `brainstorm-style-directions` or `visualize-style` (image model) | — | yes | yes | ✅ |
+| `identify_style` | style | `analyze-image-style` (vision LLM) | — | no | yes | ✅ |
+| `apply_style_direction` | style | — (saves to DB; auto-runs `identify_style` if locking with empty text) | `refine-style-direction` | yes | no | ✅ |
+| `generate_candidates` | looks | `character-look` or `environment-look` (image model) | `refine-look-prompt` | yes | yes | ✅ |
+| `list_candidates` | looks | — (reads DB) | — | no | no | ✅ |
+| `lock_reference` | looks | — (DB toggle) | — | yes | no | ✅ |
+| `generate_storyboard` | storyboard | `render-seedance-storyboard-image` (image model) | — | yes | yes | ✅ |
+| `bulk_generate_storyboards` | storyboard | `render-seedance-storyboard-image` (image model, per shot) | — | yes | yes | ✅ |
+| `apply_storyboard_prompts` | storyboard | — (saves to DB) | `seedance-storyboard-image` (planner) | yes | no | ✅ |
+| `refine_storyboard_image` | storyboard | `seedance-storyboard-refine` edit_image branch (image edit) | `seedance-storyboard-refine` replan branch (web "Redo") | yes | yes | ✅ |
+| `lock_storyboard` | storyboard | — (DB toggle) | — | yes | no | ✅ |
+| `unlock_storyboard` | storyboard | — (DB toggle) | — | yes | no | ✅ |
+| `generate_video` | video | `shot-video-assembly` (keyframe) or `seedance-storyboard-video` (storyboard mode) | — | yes | yes | ✅ |
+| `apply_video_prompt` | video | — (saves to DB) | — | yes | no | ✅ |
+| `generate_dialogue_audio` | audio | TTS (ElevenLabs; no LLM) | — | yes | yes | ✅ |
+| `apply_audio_plan` | audio | — (saves to DB) | `write-audio-plan` | yes | no | ✅ |
+| `apply_cast_voice` | audio | — (saves to DB) | — | yes | no | ✅ |
+| `apply_project_preferences` | system | — (saves to DB) | — | yes | no | ✅ |
+| `apply_project_style_notes` | system | — (saves to DB) | — | yes | no | ✅ |
+| `apply_project_prompt_override` | system | — (saves to DB) | — | yes | no | ✅ |
+| `revert_project_prompt_override` | system | — (DB toggle) | — | yes | no | ✅ |
 
-| Tool key | Surface | Kind | Mutates | Paid | Recipes (path) | Last reviewed | Verdict |
-|---|---|---|:-:|:-:|---|---|:-:|
-| `apply_concept` | concept | persistence | yes | no | `generate-concepts` [web-direct], `refine-concept` [web-direct] | 1661727 | ✅ |
-| `apply_script` | script | persistence | yes | no | `plan-scenes` [web-direct], `plan-scenes-openai` [web-direct], `parse-script-intake` [intake], `refine-script` [web-direct] | 1661727 | ✅ |
-| `apply_shot_prompts` | script | persistence | yes | no | `write-shot-prompts` [web-direct], `refine-shot-prompt` [web-direct], `refine-end-frame-prompt` [web-direct], `refine-video-prompt` [web-direct], `chained-shot-refresh` [automatic] | 1661727 | ✅ |
-| `apply_shot_workflow_modes` | script | persistence | yes | no | — | 1661727 | ✅ |
-| `generate_style_candidates` | style | generation | yes | yes | `brainstorm-style-directions` [agent], `visualize-style` [agent] | 1661727 | ✅ |
-| `identify_style` | style | analysis | no | yes | `analyze-image-style` [agent] | 1661727 | ✅ |
-| `apply_style_direction` | style | persistence | yes | no | `refine-style-direction` [web-direct] | 1661727 | ✅ |
-| `generate_candidates` | looks | generation | yes | yes | `character-look` [agent], `environment-look` [agent], `refine-look-prompt` [web-direct] | 1661727 | ✅ |
-| `list_candidates` | looks | read | no | no | — | 1661727 | ✅ |
-| `lock_reference` | looks | control | yes | no | — | 1661727 | ✅ |
-| `generate_storyboard` | storyboard | generation | yes | yes | `render-seedance-storyboard-image` [agent] | 1661727 | ✅ |
-| `bulk_generate_storyboards` | storyboard | generation | yes | yes | `render-seedance-storyboard-image` [agent] | 1661727 | ✅ |
-| `apply_storyboard_prompts` | storyboard | persistence | yes | no | `seedance-storyboard-image` [web-direct] | 1661727 | ✅ |
-| `refine_storyboard_image` | storyboard | generation | yes | yes | `seedance-storyboard-refine` [shared] | 1661727 | ✅ |
-| `lock_storyboard` | storyboard | control | yes | no | — | 1661727 | ✅ |
-| `unlock_storyboard` | storyboard | control | yes | no | — | 1661727 | ✅ |
-| `generate_video` | video | generation | yes | yes | `shot-video-assembly` [agent], `seedance-storyboard-video` [agent] | 1661727 | ✅ |
-| `apply_video_prompt` | video | persistence | yes | no | — | 1661727 | ✅ |
-| `generate_dialogue_audio` | audio | generation | yes | yes | — (TTS direct) | 1661727 | ✅ |
-| `apply_audio_plan` | audio | persistence | yes | no | `write-audio-plan` [web-direct] | 1661727 | ✅ |
-| `apply_cast_voice` | audio | persistence | yes | no | — | 1661727 | ✅ |
-| `apply_project_preferences` | system | persistence | yes | no | — | 1661727 | ✅ |
-| `apply_project_style_notes` | system | persistence | yes | no | — | 1661727 | ✅ |
-| `apply_project_prompt_override` | system | persistence | yes | no | — | 1661727 | ✅ |
-| `revert_project_prompt_override` | system | control | yes | no | — | 1661727 | ✅ |
+**Read it as:** "When the agent invokes this action, [Inside the action] runs. The web UI may also have [Web-only] buttons on the same data surface, but the agent never fires those — Codex writes the text itself and uses the action to persist."
+
+Last reviewed across the table: commit `e654790` (column restructure).
 
 **Pipeline-only prompts (no MCP action surface):**
 
