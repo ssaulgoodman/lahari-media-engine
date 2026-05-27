@@ -17,6 +17,7 @@ import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
+import { formatSelectedStyleNotes, getProjectStyleNotesState } from '../services/projectConfig.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -125,6 +126,8 @@ export const mountStyleRoutes = (router: Router) => {
       const scriptSummary = scenes.length > 0
         ? scenes.map((s: any) => `[${s.section_label}] ${s.narrative_description}`).join('\n')
         : undefined;
+      const projectStyleNotes = await getProjectStyleNotesState(project.id);
+      const styleNotes = formatSelectedStyleNotes(projectStyleNotes, ['image']);
 
       const { directions, prompt } = await brainstormStyleDirections(
         project.lyrics || '',
@@ -137,6 +140,7 @@ export const mountStyleRoutes = (router: Router) => {
         project.is_meditative ?? undefined,
         project.text_provider,
         preset,
+        styleNotes,
       );
       const durationMs = Date.now() - t0;
 
@@ -190,7 +194,9 @@ export const mountStyleRoutes = (router: Router) => {
     // Each direction gets its own prompt from its own description.
     const preset = getProjectRuntimePreset(project, req.body?.presetKey);
     const subject = presetSubject(concept, project.title, preset);
-    const genPrompt = buildStylePrompt(stylePrompt, subject, preset);
+    const projectStyleNotes = await getProjectStyleNotesState(project.id);
+    const styleNotes = formatSelectedStyleNotes(projectStyleNotes, ['image']);
+    const genPrompt = buildStylePrompt(stylePrompt, subject, preset, styleNotes);
 
     try {
       console.log(`[${project.id}] Visualizing style direction...`);
@@ -256,7 +262,9 @@ export const mountStyleRoutes = (router: Router) => {
 
     try {
       const t0 = Date.now();
-      const refined = await refineStyleDirection(description, feedback, concept, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey));
+      const projectStyleNotes = await getProjectStyleNotesState(project.id);
+      const styleNotes = formatSelectedStyleNotes(projectStyleNotes, ['image']);
+      const refined = await refineStyleDirection(description, feedback, concept, project.text_provider, getProjectRuntimePreset(project, req.body?.presetKey), styleNotes);
       const durationMs = Date.now() - t0;
 
       await updateRows('projects', { id: project.id }, { style_generation_prompt: null });

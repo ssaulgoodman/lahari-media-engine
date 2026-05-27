@@ -7,11 +7,12 @@ import { buildCharacterPrompt, buildEnvironmentPrompt } from '../imagen.js';
 import { refineFramePrompt } from '../claude.js';
 import { getImageGenerationModelName, getImageService } from '../image-provider.js';
 import { recordDirectorEvent } from '../directorEvents.js';
-import { getProjectPreferencesState, getProjectPromptOverride } from '../projectConfig.js';
+import { formatSelectedStyleNotes, getProjectPreferencesState, getProjectPromptOverride, getProjectStyleNotesState } from '../projectConfig.js';
 import { isLegacyLookPrompt } from '../../prompts/lookPrompts.js';
 import {
   contextTracePreview,
   emptyContextTrace,
+  selectedStyleNoteSections,
   shouldIncludeGuideAsset,
   shouldIncludeProjectStyleDescription,
   shouldIncludeStyleImage,
@@ -108,6 +109,7 @@ export const generateCharacterLooksForDirector = async (
   if (opts.guideAssetId && !guideImagePath) contextTrace.excluded.push('guide:image');
   const preset = getPipelinePreset(project.presetKey);
   const projectPreferences = await getProjectPreferencesState(project as any);
+  const projectStyleNotes = await getProjectStyleNotesState(project as any);
   const imageModel = projectPreferences.preferences.imageModel;
   const characterLooksRecipe = await getProjectPromptOverride(project.id, 'character_looks');
   const imageService = getImageService(imageModel);
@@ -122,12 +124,17 @@ export const generateCharacterLooksForDirector = async (
     const promptSource = opts.promptOverride?.trim() ? 'override' : opts.note ? 'note' : shouldUseSavedPrompt(member.generationPrompt, member.promptsStale) ? 'saved' : 'rebuilt';
     const shouldRebuildPrompt = !opts.promptOverride && (!genPrompt || member.promptsStale || isLegacyLookPrompt(genPrompt));
     if (shouldRebuildPrompt) {
+      const styleNoteSections = selectedStyleNoteSections(['image'], opts.contextOverrides);
+      const styleNotes = formatSelectedStyleNotes(projectStyleNotes, styleNoteSections, { modelKey: imageModel });
+      if (styleNotes) contextTrace.included.push(`styleNotes:${styleNoteSections.join(',')}`);
+      if (opts.contextOverrides?.styleNoteSections?.exclude?.length) contextTrace.excluded.push(`styleNotes:${opts.contextOverrides.styleNoteSections.exclude.join(',')}`);
       genPrompt = buildCharacterPrompt(
         { name: member.name, description: member.description || '' },
         {
           styleIdx: styleImagePath ? 1 : undefined,
           preset,
           styleDescription: shouldIncludeProjectStyleDescription(opts.contextOverrides) ? project.styleDescription : undefined,
+          styleNotes,
           projectOverride: characterLooksRecipe,
         },
       );
@@ -265,6 +272,7 @@ export const generateEnvironmentLooksForDirector = async (
   if (opts.guideAssetId && !guideImagePath) contextTrace.excluded.push('guide:image');
   const preset = getPipelinePreset(project.presetKey);
   const projectPreferences = await getProjectPreferencesState(project as any);
+  const projectStyleNotes = await getProjectStyleNotesState(project as any);
   const imageModel = projectPreferences.preferences.imageModel;
   const environmentLooksRecipe = await getProjectPromptOverride(project.id, 'environment_looks');
   const imageService = getImageService(imageModel);
@@ -279,12 +287,17 @@ export const generateEnvironmentLooksForDirector = async (
     const promptSource = opts.promptOverride?.trim() ? 'override' : opts.note ? 'note' : shouldUseSavedPrompt(environment.generationPrompt, environment.promptsStale) ? 'saved' : 'rebuilt';
     const shouldRebuildPrompt = !opts.promptOverride && (!genPrompt || environment.promptsStale || isLegacyLookPrompt(genPrompt));
     if (shouldRebuildPrompt) {
+      const styleNoteSections = selectedStyleNoteSections(['image'], opts.contextOverrides);
+      const styleNotes = formatSelectedStyleNotes(projectStyleNotes, styleNoteSections, { modelKey: imageModel });
+      if (styleNotes) contextTrace.included.push(`styleNotes:${styleNoteSections.join(',')}`);
+      if (opts.contextOverrides?.styleNoteSections?.exclude?.length) contextTrace.excluded.push(`styleNotes:${opts.contextOverrides.styleNoteSections.exclude.join(',')}`);
       genPrompt = buildEnvironmentPrompt(
         { name: environment.name, description: environment.description || '' },
         {
           styleIdx: styleImagePath ? 1 : undefined,
           preset,
           styleDescription: shouldIncludeProjectStyleDescription(opts.contextOverrides) ? project.styleDescription : undefined,
+          styleNotes,
           projectOverride: environmentLooksRecipe,
         },
       );

@@ -9,7 +9,7 @@ import { getTextProvider, type TextProviderKey } from '../../constants/textProvi
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
 import { buildContextChain, logCall } from '../xray.js';
 import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
-import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
+import { formatSelectedStyleNotes, getProjectPreferencesState, getProjectPromptOverride, getProjectStyleNotesState } from './projectConfig.js';
 import { getProjectRuntimePreset } from '../presets.js';
 import { buildStoryboardPlannerPrompt } from '../prompts/storyboard.js';
 import {
@@ -352,6 +352,7 @@ export const planStoryboardPrompt = async (opts: {
   const basePrompt = buildStoryboardPrompt(ctx.input, variant);
   const projectStoryboardOverride = await getProjectPromptOverride(opts.projectId, 'storyboard');
   const preferences = await getProjectPreferencesState(ctx.project as any);
+  const projectStyleNotes = await getProjectStyleNotesState(ctx.project as any);
   // Provider selection: per-project setting. Falls back to the registry's
   // first entry (Claude Opus) when text_provider is null on the row. The
   // env-var override (OPENAI_STORYBOARD_PLANNER_MODEL) is no longer
@@ -375,6 +376,9 @@ export const planStoryboardPrompt = async (opts: {
   // actually getting the previous storyboard image. Refs filter below
   // controls whether we send it; this note tells the model how to use it.
   const prevStoryboardRef = ctx.refMeta.find((r) => r.excludableKey === 'prev_storyboard');
+  const storyboardStyleNotes = formatSelectedStyleNotes(projectStyleNotes, ['image', 'storyboard'], {
+    modelKey: preferences.preferences.storyboardProvider,
+  });
   const prompt = buildStoryboardPlannerPrompt({
     sourceBrief: basePrompt,
     currentPrompt,
@@ -383,6 +387,7 @@ export const planStoryboardPrompt = async (opts: {
     hasArtistReference: !!opts.artistReferenceImagePath,
     hasPreviousStoryboardRef: !!prevStoryboardRef,
     previousCutPlanTail: prevCutPlanTail || undefined,
+    styleNotes: storyboardStyleNotes || undefined,
     projectOverride: projectStoryboardOverride || undefined,
     preset: ctx.input.preset,
   });

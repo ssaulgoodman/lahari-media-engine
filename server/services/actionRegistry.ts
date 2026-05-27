@@ -13,7 +13,7 @@ export const LOOK_ACTION_SPECS = {
       note: 'optional string',
       promptOverride: 'optional string; only one entityId may be used',
       guideAssetId: 'optional existing Mirage asset id',
-      contextOverrides: 'optional context include/exclude controls, e.g. { includeStyleImage: false, includeProjectStyleDescription: false }',
+      contextOverrides: 'optional context include/exclude controls, e.g. { includeStyleImage: false, includeProjectStyleDescription: false, styleNoteSections: { include: ["image"] } }',
     },
     examples: [{
       projectId: 'project_uuid',
@@ -76,7 +76,7 @@ export const STORYBOARD_ACTION_SPECS = {
       dryRun: 'optional boolean',
       artistNote: 'optional soft direction for image generation',
       modelOverride: 'optional storyboardProvider override',
-      contextOverrides: 'optional per-call ref controls, e.g. { includeStyleImage: false, excludeCastRefs: ["cast_uuid"], includePreviousStoryboard: false }',
+      contextOverrides: 'optional per-call ref/style-note controls, e.g. { includeStyleImage: false, excludeCastRefs: ["cast_uuid"], includePreviousStoryboard: false, styleNoteSections: { exclude: ["motion"] } }',
     },
     examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
   },
@@ -93,7 +93,7 @@ export const STORYBOARD_ACTION_SPECS = {
       force: 'optional boolean',
       artistNote: 'optional soft direction',
       modelOverride: 'optional storyboardProvider override',
-      contextOverrides: 'optional per-call ref controls applied to each generated storyboard',
+      contextOverrides: 'optional per-call ref/style-note controls applied to each generated storyboard',
     },
     examples: [{ projectId: 'project_uuid', shotIds: ['shot_a', 'shot_b'], force: true }],
   },
@@ -363,6 +363,26 @@ export const SYSTEM_ACTION_SPECS = {
       baseHash: 'optional string',
     },
     examples: [{ projectId: 'project_uuid', preferences: { videoModel: 'seedance-2.0-fast' } }],
+  },
+  apply_project_style_notes: {
+    key: 'apply_project_style_notes',
+    title: 'Apply project style notes',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Persist per-surface project style notes learned during production. Use these for repeatable visual, storyboard, motion, script, dialogue, and audio taste instead of stuffing presetTaste or raw notes into every call.',
+    input: {
+      projectId: 'string',
+      styleNotes: '{ image?, storyboard?, motion?, script?, dialogue?, audio?, modelPhrases? }',
+      baseHash: 'optional string',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      styleNotes: {
+        image: 'Flat deadpan anime lighting, clean gray bunker palette, crisp simple shadows.',
+        storyboard: 'Use readable 2x3 panel boards with restrained blocking and no decorative camera drama.',
+      },
+    }],
   },
   apply_project_prompt_override: {
     key: 'apply_project_prompt_override',

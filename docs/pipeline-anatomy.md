@@ -622,9 +622,10 @@ LAYER 1: CODE TEMPLATES
   server/prompts/*.ts, action handler constants, skill files
   Modified via: code commits
 
-LAYER 2: PROJECT-SCOPED OVERRIDES
+LAYER 2: PROJECT-SCOPED CONFIG
   project_prompt_overrides table
-  Modified via: apply_project_prompt_override
+  project_config.style_notes
+  Modified via: apply_project_prompt_override / apply_project_style_notes
 
 LAYER 3: PROJECT DATA (graph state)
   concept text, script JSON, style description, refs, scenes, shots, etc.
@@ -672,10 +673,10 @@ For a given action call (say `generate_storyboard` for `shotId X`):
 
 1. **Code template (Layer 1):** composer pulls the slim core-task constant for storyboard generation.
 2. **Project override (Layer 2):** composer reads `getProjectPromptOverride(projectId, 'storyboard')`. If present, injects as `PROJECT OVERRIDE` section.
-3. **Project data (Layer 3):** composer reads `project.style_asset_id`, char ref URLs for cast in this shot, env ref URL, the storyboard prompt text saved on the shot, the cut plan. Assembles as `PROJECT DATA` + `REFERENCES`.
+3. **Project data (Layer 3):** composer reads `project.style_asset_id`, char ref URLs for cast in this shot, env ref URL, the storyboard prompt text saved on the shot, the cut plan, and selected project style-note buckets. Assembles as `PROJECT DATA` + `REFERENCES` + `STYLE NOTES`.
 4. **Per-call input (Layer 4):** if Codex shipped `promptOverride`, composer is bypassed entirely. If Codex shipped `contextOverrides` (e.g. `includeStyleImage: false`), composer respects the include/exclude flags. If neither, default assembly.
 
-The composer should never inject taste rules from preset config at runtime. Those should live in graph data (project.style_description as the taste anchor) or in action handler constants (image-gen worker invariants), never as a layer-1 template that's re-read on every call.
+The composer should never inject taste rules from preset config at runtime. Those should live in graph data (`project.style_description` and `project_config.style_notes`) or in action handler constants (image-gen worker invariants), never as a preset doctrine blob that's re-read on every call.
 
 ### Pattern 7 (from composer audit) — Half-wired overrides
 
@@ -683,7 +684,7 @@ The `apply_project_prompt_override` schema declares 8 override kinds but only 2 
 
 | Override kind | Schema accepts | Stored in DB | Consumed by prompt builder? |
 |---|---|---|---|
-| `storyboard` | ✅ | ✅ | ✅ (appended to presetTaste in storyboard.ts) |
+| `storyboard` | ✅ | ✅ | ✅ (`PROJECT OVERRIDE` section in composer) |
 | `video` | ✅ | ✅ | ✅ (read in videoGeneration.ts) |
 | `concept` | ✅ | ✅ | ❌ never consumed |
 | `script` | ✅ | ✅ | ❌ never consumed |

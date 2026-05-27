@@ -11,6 +11,7 @@ type StyleBrainstormPromptInput = {
   songType?: string;
   isNarrative?: boolean;
   isMeditative?: boolean;
+  styleNotes?: string;
   preset: PipelinePreset;
 };
 
@@ -45,12 +46,12 @@ const CORE_TASK = `Propose 4 distinct visual style directions for this project.
 
 Each direction is one coherent visual world the project could live inside.
 Do not write story, scenes, characters, camera shot lists, or plot beats.
-Cover a real range across legitimate aesthetics for the medium described in TASTE.`;
+Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.`;
 
 // User-note policy is shared (_shared.ts). Style-brainstorm-specific tail:
-// medium-guard conflicts get translated to safe analogues rather than
-// leaving the medium, and range = variety inside the note (not in spite of it).
-const USER_NOTE_TAIL = `Specifically: if the note asks for a medium that conflicts with TASTE (e.g. live-action when the project is anime), translate the intent into the closest medium-safe analogue rather than leaving the medium. Range means variety inside the noted constraint, not in spite of it.`;
+// Source/style-note conflicts get translated to safe analogues rather than
+// leaving the project, and range = variety inside the note (not in spite of it).
+const USER_NOTE_TAIL = `Specifically: if the note conflicts with the locked project source or STYLE NOTES, preserve the project intent and translate the note into the closest production-safe analogue. Range means variety inside the noted constraint, not in spite of it.`;
 
 const OUTPUT_CONTRACT = `Return exactly 4 directions as JSON.
 
@@ -68,15 +69,10 @@ Hard rules:
 - When USER NOTE is present, all 4 directions satisfy it; range is variation inside the noted constraint.`;
 
 export const buildStyleBrainstormPrompt = (input: StyleBrainstormPromptInput): string => {
-  const presetTaste = [
-    input.preset.style.rules,
-    input.preset.style.brainstormTaste,
-  ].filter(Boolean).join('\n\n');
-
   return composePrompt({
     coreTask: CORE_TASK,
     inputs: formatInputs(input),
-    presetTaste,
+    styleNotes: input.styleNotes,
     userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
     outputContract: OUTPUT_CONTRACT,
     userNote: input.userNote,

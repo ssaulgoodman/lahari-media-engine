@@ -615,6 +615,7 @@ export const buildStyleBrainstormPrompt = (
   isNarrative?: boolean,
   isMeditative?: boolean,
   preset: PipelinePreset = getRuntimePreset(),
+  styleNotes?: string,
 ): string => {
   return buildComposedStyleBrainstormPrompt({
     sourceText: lyrics,
@@ -626,6 +627,7 @@ export const buildStyleBrainstormPrompt = (
     isNarrative,
     isMeditative,
     preset,
+    styleNotes,
   });
 };
 
@@ -640,6 +642,7 @@ export const brainstormStyleDirections = async (
   isMeditative?: boolean,
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
+  styleNotes?: string,
 ): Promise<{ directions: { title: string; description: string }[]; prompt: string }> => {
   const prompt = buildStyleBrainstormPrompt(
     lyrics,
@@ -651,6 +654,7 @@ export const brainstormStyleDirections = async (
     isNarrative,
     isMeditative,
     preset,
+    styleNotes,
   );
   const { parsedJson } = await generateText(textProvider, {
     userPrompt: prompt,
@@ -689,12 +693,14 @@ export const refineStyleDirection = async (
   concept: any,
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
+  styleNotes?: string,
 ): Promise<{ title: string; description: string }> => {
   const prompt = buildRefineStylePrompt({
     currentDescription,
     feedback,
     concept,
     preset,
+    styleNotes,
   });
 
   const { parsedJson } = await generateText(textProvider, {

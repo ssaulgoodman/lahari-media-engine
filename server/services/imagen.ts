@@ -187,8 +187,8 @@ export const generateStyleOptions = async (
  * Build the default style visualization prompt from description + subject.
  * Produces a reusable style reference frame — not a scene, character portrait, or poster.
  */
-export const buildStylePrompt = (styleDescription: string, subject: string, preset: PipelinePreset = getRuntimePreset()): string =>
-  buildVisualizeStylePrompt({ styleDescription, subject, preset });
+export const buildStylePrompt = (styleDescription: string, subject: string, preset: PipelinePreset = getRuntimePreset(), styleNotes?: string | null): string =>
+  buildVisualizeStylePrompt({ styleDescription, subject, preset, styleNotes: styleNotes || undefined });
 
 export const generateSingleStyleImage = async (
   styleDescription: string,
@@ -217,7 +217,7 @@ export const generateSingleStyleImage = async (
  */
 export const buildCharacterPrompt = (
   character: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null; projectOverride?: string | null }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null; styleNotes?: string | null; projectOverride?: string | null }
 ): string => {
   const preset = opts?.preset || getRuntimePreset();
   return buildCharacterLookPrompt({
@@ -225,6 +225,7 @@ export const buildCharacterPrompt = (
     styleIdx: opts?.styleIdx,
     userRefIdx: opts?.userRefIdx,
     styleDescription: opts?.styleDescription,
+    styleNotes: opts?.styleNotes,
     projectOverride: opts?.projectOverride,
     preset,
   });
@@ -313,7 +314,7 @@ export const generateCharacterLooks = async (
  */
 export const buildEnvironmentPrompt = (
   environment: { name: string; description: string },
-  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null; projectOverride?: string | null }
+  opts?: { styleIdx?: number; userRefIdx?: number; preset?: PipelinePreset; styleDescription?: string | null; styleNotes?: string | null; projectOverride?: string | null }
 ): string => {
   const preset = opts?.preset || getRuntimePreset();
   return buildEnvironmentLookPrompt({
@@ -321,6 +322,7 @@ export const buildEnvironmentPrompt = (
     styleIdx: opts?.styleIdx,
     userRefIdx: opts?.userRefIdx,
     styleDescription: opts?.styleDescription,
+    styleNotes: opts?.styleNotes,
     projectOverride: opts?.projectOverride,
     preset,
   });

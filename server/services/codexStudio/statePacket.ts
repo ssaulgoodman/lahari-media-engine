@@ -33,6 +33,8 @@ const baseProject = async (project: Project) => {
       storyboardProvider: preferences.storyboardProvider,
       videoModel: preferences.videoModel,
     },
+    styleNotes: projectConfig.styleNotes.styleNotes,
+    styleNotesHash: projectConfig.styleNotes.hash,
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
   };
 };

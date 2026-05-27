@@ -1,10 +1,15 @@
 export type ContextOverrideList = boolean | string[];
+export type StyleNoteSection = 'image' | 'storyboard' | 'motion' | 'script' | 'dialogue' | 'audio';
 
 export type ContextOverrides = {
   includeStyleImage?: boolean;
   // undefined = use project default style asset; null = use no style asset;
   // string = use this project asset instead of the default.
   styleAssetId?: string | null;
+  styleNoteSections?: {
+    include?: StyleNoteSection[];
+    exclude?: StyleNoteSection[];
+  };
   includeCastRefs?: ContextOverrideList;
   excludeCastRefs?: string[];
   includeEnvironmentRefs?: ContextOverrideList;
@@ -54,6 +59,16 @@ export const shouldIncludeGuideAsset = (overrides?: ContextOverrides | null) => 
 export const shouldIncludeConcept = (overrides?: ContextOverrides | null) => (
   overrides?.includeConcept !== false
 );
+
+export const selectedStyleNoteSections = (
+  defaults: StyleNoteSection[],
+  overrides?: ContextOverrides | null,
+): StyleNoteSection[] => {
+  const requested = overrides?.styleNoteSections;
+  const start = requested?.include?.length ? requested.include : defaults;
+  const excluded = new Set(requested?.exclude || []);
+  return [...new Set(start)].filter((section) => !excluded.has(section));
+};
 
 export const shouldIncludeStoryboardRefKey = (key?: string, overrides?: ContextOverrides | null) => {
   if (!key || !overrides) return true;

@@ -8,6 +8,7 @@ type RefineStylePromptInput = {
   currentTitle?: string;
   feedback: string;
   concept: any;
+  styleNotes?: string;
   preset: PipelinePreset;
 };
 
@@ -16,9 +17,9 @@ const CORE_TASK = `Revise the current style direction text using the director's 
 This is a surgical refinement, not a replacement. Preserve the direction's core identity. Update only the aspects the feedback addresses; leave the rest of the description intact.`;
 
 // User-note policy is shared (_shared.ts). Style-refine-specific tail:
-// medium-guard conflicts get translated to safe analogues; don't propose
+// source/style-note conflicts get translated to safe analogues; don't propose
 // a different direction.
-const USER_NOTE_TAIL = `Do not propose a different direction. If the note asks for a medium that conflicts with TASTE (e.g. live-action when the project is anime), refuse the conflicting part and translate the intent to the closest medium-safe analogue.`;
+const USER_NOTE_TAIL = `Do not propose a different direction. If the note conflicts with the locked project source or STYLE NOTES, refuse the conflicting part and translate the intent to the closest production-safe analogue.`;
 
 const OUTPUT_CONTRACT = `Return the revised direction as JSON:
 - title: short evocative label, 2-5 words (revise only if the feedback addresses the title or shifts the direction's identity)
@@ -26,7 +27,7 @@ const OUTPUT_CONTRACT = `Return the revised direction as JSON:
 
 Hard rules:
 - Description is style/treatment only. No character names, no scene beats, no plot.
-- Stay inside the medium described in TASTE.`;
+- Stay inside the locked project source and any STYLE NOTES.`;
 
 const formatInputs = (input: RefineStylePromptInput): string => {
   const lines: string[] = [
@@ -46,7 +47,7 @@ const formatInputs = (input: RefineStylePromptInput): string => {
 export const buildRefineStylePrompt = (input: RefineStylePromptInput): string => composePrompt({
   coreTask: CORE_TASK,
   inputs: formatInputs(input),
-  presetTaste: input.preset.style.rules,
+  styleNotes: input.styleNotes,
   userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,
   outputContract: OUTPUT_CONTRACT,
   userNote: input.feedback,

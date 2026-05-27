@@ -7,6 +7,7 @@ type LookPromptInput = {
   styleIdx?: number;
   userRefIdx?: number;
   styleDescription?: string | null;
+  styleNotes?: string | null;
   projectOverride?: string | null;
   preset: PipelinePreset;
 };
@@ -72,11 +73,7 @@ export const buildCharacterLookPrompt = (input: LookPromptInput): string => {
   return composePrompt({
     coreTask: `Generate one reusable character or object reference for production continuity.`,
     inputs,
-    presetTaste: [
-      input.preset.style.rules,
-      input.preset.looks.characterRules,
-      input.preset.looks.qualityRules,
-    ].filter(Boolean).join('\n\n'),
+    styleNotes: input.styleNotes || undefined,
     projectOverride: input.projectOverride || undefined,
     outputContract: `${SHARED_OUTPUT_CONTRACT}
 Neutral pose or neutral object presentation. Plain/soft background. No action or scene-specific props.
@@ -95,11 +92,7 @@ export const buildEnvironmentLookPrompt = (input: LookPromptInput): string => {
   return composePrompt({
     coreTask: `Generate one reusable environment reference for production continuity.`,
     inputs,
-    presetTaste: [
-      input.preset.style.rules,
-      input.preset.looks.environmentRules,
-      input.preset.looks.qualityRules,
-    ].filter(Boolean).join('\n\n'),
+    styleNotes: input.styleNotes || undefined,
     projectOverride: input.projectOverride || undefined,
     outputContract: `${SHARED_OUTPUT_CONTRACT}
 Whole space visible and readable. No scene-specific action.

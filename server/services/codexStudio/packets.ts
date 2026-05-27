@@ -251,6 +251,8 @@ export const buildProjectPacket = async (project: Project) => {
     },
     projectConfig: {
       preferences: projectConfig.preferences.preferences,
+      styleNotes: projectConfig.styleNotes.styleNotes,
+      styleNotesHash: projectConfig.styleNotes.hash,
       effectivePreferences: {
         textProvider: preferences.textProvider,
         imageModel: preferences.imageModel,

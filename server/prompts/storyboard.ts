@@ -10,6 +10,7 @@ type BuildStoryboardPlannerPromptInput = {
   hasArtistReference?: boolean;
   hasPreviousStoryboardRef?: boolean;
   previousCutPlanTail?: string;
+  styleNotes?: string;
   projectOverride?: string;
   preset: PipelinePreset;
 };
@@ -43,11 +44,6 @@ const formatInputs = (input: BuildStoryboardPlannerPromptInput): string => {
   return parts.join('\n\n');
 };
 
-const presetTasteFor = (input: BuildStoryboardPlannerPromptInput): string => [
-  input.preset.style.rules,
-  input.preset.studio.storyboardRules,
-].filter(Boolean).join('\n\n');
-
 const OUTPUT_CONTRACT = `Return only JSON with keys:
 {
   "storyboardPrompt": "complete image-model prompt with the panel layout, subject/setting context, per-panel action descriptions inline, explicit inter-panel consistency demand, and no-text-in-panels rule",
@@ -71,7 +67,7 @@ cutPlanText hard rules:
 export const buildStoryboardPlannerPrompt = (input: BuildStoryboardPlannerPromptInput): string => composePrompt({
   coreTask: input.artistNote?.trim() ? REFINE_CORE_TASK : WRITE_CORE_TASK,
   inputs: formatInputs(input),
-  presetTaste: presetTasteFor(input),
+  styleNotes: input.styleNotes,
   projectOverride: input.projectOverride || undefined,
   userNotePolicy: input.artistNote?.trim() ? `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}` : undefined,
   outputContract: OUTPUT_CONTRACT,

@@ -73,6 +73,7 @@ Files under mirrors/ are read-only desk copies written from Mirage state. Do not
 Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For audio work, inspect mirrors/audio-plan.md and use apply_audio_plan for structured JSON updates. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
+Use config/style-notes.json for project-learned visual, storyboard, motion, script, dialogue, and audio style notes; persist with apply_project_style_notes.
 
 For Looks work, prefer list_actions / describe_action / run_action. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
 
@@ -429,6 +430,10 @@ const buildHashes = async (project: Project) => {
       hash: config.preferences.hash,
       source: config.preferences.source,
     },
+    styleNotes: {
+      hash: config.styleNotes.hash,
+      source: config.styleNotes.source,
+    },
   };
 };
 
@@ -584,7 +589,7 @@ export const buildNotebookMirrorArtifacts = (
 
 export const buildNotebookConfigArtifacts = async (
   project: Project,
-  opts: { preferences?: boolean; promptKinds?: ProjectPromptOverrideKind[]; hashes?: boolean } = {},
+  opts: { preferences?: boolean; styleNotes?: boolean; promptKinds?: ProjectPromptOverrideKind[]; hashes?: boolean } = {},
 ): Promise<NotebookFile[]> => {
   const baseDir = normalizedProjectDir(project);
   const config = await getProjectConfigState(project);
@@ -596,6 +601,15 @@ export const buildNotebookConfigArtifacts = async (
       writePolicy: 'review_before_overwrite',
       description: 'Editable project model preferences. Apply with apply_project_preferences.',
       content: `${JSON.stringify(config.preferences.preferences, null, 2)}\n`,
+    });
+  }
+  if (opts.styleNotes) {
+    files.push({
+      path: `${baseDir}/config/style-notes.json`,
+      mode: 'config',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable per-surface project style notes. Apply with apply_project_style_notes.',
+      content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
     });
   }
   for (const kind of opts.promptKinds || []) {
@@ -724,6 +738,13 @@ export const buildProjectNotebook = async (project: Project) => {
       writePolicy: 'review_before_overwrite',
       description: 'Editable project model preferences. Apply with apply_project_preferences.',
       content: `${JSON.stringify(config.preferences.preferences, null, 2)}\n`,
+    },
+    {
+      path: `${baseDir}/config/style-notes.json`,
+      mode: 'config',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable per-surface project style notes. Apply with apply_project_style_notes.',
+      content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
     },
     ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
       path: `${baseDir}/config/prompts/${kind}.md`,

@@ -6,12 +6,14 @@ import { analyzeImageStyle } from '../../claude.js';
 import { getImageGenerationModelName, getImageService, getStyleOptionsModelName } from '../../image-provider.js';
 import { getProjectRuntimePreset, presetSubject } from '../../../presets.js';
 import { buildContextChain, logCall } from '../../../xray.js';
+import { formatSelectedStyleNotes, getProjectStyleNotesState } from '../../projectConfig.js';
 import {
   contextTracePreview,
   emptyContextTrace,
   shouldIncludeConcept,
   shouldIncludeGuideAsset,
   shouldIncludeProjectStyleDescription,
+  selectedStyleNoteSections,
   type ContextOverrides,
 } from '../../contextOverrides.js';
 import { styleDirectionHash, webStudioUrl, type Project } from '../core.js';
@@ -236,7 +238,16 @@ export const generateStyleCandidates = async (
     workflow_key: project.workflowKey,
   } as any);
   const subject = presetSubject(concept, project.title, preset);
-  let styleNotes = input.promptOverride || input.note || (shouldIncludeProjectStyleDescription(input.contextOverrides) ? project.styleDescription : undefined) || undefined;
+  const projectStyleNotes = await getProjectStyleNotesState(project.id);
+  const styleNoteSections = selectedStyleNoteSections(['image'], input.contextOverrides);
+  const learnedStyleNotes = formatSelectedStyleNotes(projectStyleNotes, styleNoteSections, { modelKey: getImageGenerationModelName(project.imageModel) });
+  let styleNotes = input.promptOverride
+    || [input.note, shouldIncludeProjectStyleDescription(input.contextOverrides) ? project.styleDescription : undefined, learnedStyleNotes]
+      .filter(Boolean)
+      .join('\n\n')
+    || undefined;
+  if (learnedStyleNotes) contextTrace.included.push(`styleNotes:${styleNoteSections.join(',')}`);
+  if (input.contextOverrides?.styleNoteSections?.exclude?.length) contextTrace.excluded.push(`styleNotes:${input.contextOverrides.styleNoteSections.exclude.join(',')}`);
   if (input.contextOverrides?.includeProjectStyleDescription === false) contextTrace.excluded.push('style:description');
   let guideAsset: any = null;
 

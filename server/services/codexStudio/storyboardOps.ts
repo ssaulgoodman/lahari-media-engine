@@ -6,6 +6,7 @@ import { getModelMinDuration } from '../segmind.js';
 import type { StoryboardPromptVariant } from '../seedance-storyboard-rd.js';
 import {
   applyProjectPreferences,
+  applyProjectStyleNotes,
   applyProjectPromptOverride,
   revertProjectPromptOverride,
   writeProjectConfigDeskCopy,
@@ -840,6 +841,49 @@ export const applyProjectPreferencesConfig = async (
     },
     changedArtifacts: await buildNotebookConfigArtifacts(project, { preferences: true, hashes: true }),
     note: 'Applied project preferences. Supabase is canonical; local config hashes were refreshed.',
+  };
+};
+
+export const applyProjectStyleNotesConfig = async (
+  project: Project,
+  styleNotes: unknown,
+  baseHash?: string | null,
+) => {
+  const result = await applyProjectStyleNotes(project, styleNotes, baseHash);
+  const configCopy = await writeProjectConfigDeskCopy(project, defaultProjectWorkbenchDir(project));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_style_notes_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: 'Codex applied project style notes.',
+    payload: {
+      baseHash: baseHash || null,
+      newHash: result.hash,
+      styleNotes: result.styleNotes,
+      configPath: configCopy.styleNotesPath,
+    },
+  });
+  appendSessionJournalEntry(
+    project,
+    'applied project style notes',
+    `New hash: ${result.hash}\nLocal style notes: ${configCopy.styleNotesPath}\nLocal hashes: ${configCopy.hashesPath}`,
+  );
+
+  return {
+    kind: 'mirage.apply.project_style_notes',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    styleNotes: result.styleNotes,
+    hash: result.hash,
+    warnings: result.warnings,
+    localFiles: {
+      styleNotes: configCopy.styleNotesPath,
+      hashes: configCopy.hashesPath,
+    },
+    changedArtifacts: await buildNotebookConfigArtifacts(project, { styleNotes: true, hashes: true }),
+    note: 'Applied project style notes. Supabase is canonical; local config hashes were refreshed.',
   };
 };
 

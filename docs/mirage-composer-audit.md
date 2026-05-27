@@ -8,6 +8,8 @@ Status: merged — Codex's table-structured analysis (`8fbf4a4`) + Claude's Patt
 > **Read this audit through `docs/mirage-composer-architecture.md`.** The latest direction is graph-first: presets/workflows are intake hints, the composer is editable plumbing, and `contextOverrides` are a first-class missing primitive. Verdicts in this audit that pre-date that decision are marked **⚠️ provisional** below. A full row-by-row re-verdict happens after the open calls in the architecture doc settle.
 >
 > **2026-05-27 correction:** agent-native Mirage does not treat raw artist chat as a `userNote` slot. Codex interprets intent and turns it into exact graph/spec edits, `contextOverrides`, `promptOverride`, `callInstruction`, or `editInstruction`. `userNote` remains only for legacy web-direct LLM helper paths where no harness translated the artist's words.
+>
+> **2026-05-27 implementation update:** `workflowContext` and runtime `presetTaste` have now been removed from the composer. The runtime path uses action contracts, `STYLE NOTES`, `PROJECT OVERRIDE`, selected graph data, and per-call context overrides. The historical tables below remain useful as the audit ledger, but rows describing `workflowContext` / `presetTaste` are pre-implementation evidence, not current runtime truth.
 
 ## Executive Read
 

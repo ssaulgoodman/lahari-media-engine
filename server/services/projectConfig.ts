@@ -36,6 +36,21 @@ export interface ProjectPreferencesState {
   source: 'project_config' | 'project_row';
 }
 
+export const PROJECT_STYLE_NOTE_SECTIONS = ['image', 'storyboard', 'motion', 'script', 'dialogue', 'audio'] as const;
+export type ProjectStyleNoteSection = typeof PROJECT_STYLE_NOTE_SECTIONS[number];
+
+export type ProjectStyleNotes = Partial<Record<ProjectStyleNoteSection, string>> & {
+  modelPhrases?: Record<string, string[]>;
+};
+
+export interface ProjectStyleNotesState {
+  styleNotes: ProjectStyleNotes;
+  storedStyleNotes: Record<string, unknown>;
+  hash: string;
+  warnings: string[];
+  source: 'project_config' | 'empty';
+}
+
 export interface PromptOverrideState {
   kind: ProjectPromptOverrideKind;
   scopeType: ProjectPromptScopeType;
@@ -50,6 +65,7 @@ export interface PromptOverrideState {
 
 export interface ProjectConfigState {
   preferences: ProjectPreferencesState;
+  styleNotes: ProjectStyleNotesState;
   prompts: Record<ProjectPromptOverrideKind, PromptOverrideState>;
 }
 
@@ -81,6 +97,7 @@ const isMissingConfigTableError = (error: unknown): boolean => {
     || code === 'PGRST205'
     || message.includes('lahari_project_config')
     || message.includes('lahari_project_prompt_overrides')
+    || message.includes('style_notes')
     || message.includes('could not find the table');
 };
 
@@ -206,6 +223,86 @@ const cleanPreferences = (
   return { preferences: next, stored, warnings };
 };
 
+const cleanStyleNotes = (input: unknown): { styleNotes: ProjectStyleNotes; stored: Record<string, unknown>; warnings: string[] } => {
+  const raw = (input && typeof input === 'object' && !Array.isArray(input))
+    ? input as Record<string, unknown>
+    : {};
+  const warnings: string[] = [];
+  const stored: Record<string, unknown> = {};
+  const next: ProjectStyleNotes = {};
+
+  for (const section of PROJECT_STYLE_NOTE_SECTIONS) {
+    const value = raw[section];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'string') {
+      warnings.push(`${section} style note must be a string; ignoring.`);
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (trimmed.length > 5000) {
+      warnings.push(`${section} style note was trimmed to 5000 characters.`);
+      next[section] = trimmed.slice(0, 5000).trim();
+      stored[section] = next[section];
+      continue;
+    }
+    next[section] = trimmed;
+    stored[section] = trimmed;
+  }
+
+  const modelPhrases = raw.modelPhrases;
+  if (modelPhrases !== undefined && modelPhrases !== null) {
+    if (!modelPhrases || typeof modelPhrases !== 'object' || Array.isArray(modelPhrases)) {
+      warnings.push('modelPhrases must be an object keyed by model name; ignoring.');
+    } else {
+      const cleanedPhrases: Record<string, string[]> = {};
+      for (const [modelKey, phrases] of Object.entries(modelPhrases as Record<string, unknown>)) {
+        if (!Array.isArray(phrases)) {
+          warnings.push(`modelPhrases.${modelKey} must be an array; ignoring.`);
+          continue;
+        }
+        const cleaned = phrases
+          .filter((phrase): phrase is string => typeof phrase === 'string')
+          .map((phrase) => phrase.trim())
+          .filter(Boolean)
+          .slice(0, 20)
+          .map((phrase) => phrase.slice(0, 500).trim());
+        if (cleaned.length) cleanedPhrases[modelKey.slice(0, 120)] = cleaned;
+      }
+      if (Object.keys(cleanedPhrases).length) {
+        next.modelPhrases = cleanedPhrases;
+        stored.modelPhrases = cleanedPhrases;
+      }
+    }
+  }
+
+  return { styleNotes: next, stored, warnings };
+};
+
+export const formatSelectedStyleNotes = (
+  styleNotes: ProjectStyleNotes | ProjectStyleNotesState | null | undefined,
+  sections: ProjectStyleNoteSection[],
+  opts: { modelKey?: string | null } = {},
+): string => {
+  const notes: ProjectStyleNotes | null | undefined = (
+    styleNotes && typeof styleNotes === 'object' && 'hash' in styleNotes && 'styleNotes' in styleNotes
+  )
+    ? styleNotes.styleNotes
+    : styleNotes as ProjectStyleNotes | null | undefined;
+  if (!notes) return '';
+  const lines: string[] = [];
+  for (const sectionName of sections) {
+    const value = notes[sectionName]?.trim();
+    if (value) lines.push(`${sectionName} style note:\n${value}`);
+  }
+  const modelKey = opts.modelKey?.trim();
+  const phrases = modelKey ? notes.modelPhrases?.[modelKey] : undefined;
+  if (phrases?.length) {
+    lines.push(`model phrases for ${modelKey}:\n${phrases.map((phrase) => `- ${phrase}`).join('\n')}`);
+  }
+  return lines.join('\n\n');
+};
+
 const normalizeScope = (scope: ProjectPromptScope = {}): Required<ProjectPromptScope> => ({
   scopeType: scope.scopeType || 'project',
   scopeId: scope.scopeType && scope.scopeType !== 'project' ? scope.scopeId ?? null : null,
@@ -289,6 +386,36 @@ export const getProjectPreferencesState = async (project: Project): Promise<Proj
   }
 };
 
+export const getProjectStyleNotesState = async (project: Project): Promise<ProjectStyleNotesState> => {
+  try {
+    const { data, error } = await getSB()
+      .from(T.project_config)
+      .select('style_notes')
+      .eq('project_id', project.id)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const { styleNotes, stored, warnings } = cleanStyleNotes(data?.style_notes);
+    return {
+      styleNotes,
+      storedStyleNotes: stored,
+      hash: hashJson(styleNotes),
+      warnings,
+      source: data ? 'project_config' : 'empty',
+    };
+  } catch (error) {
+    if (!isMissingConfigTableError(error)) throw error;
+    const empty = {};
+    return {
+      styleNotes: empty,
+      storedStyleNotes: {},
+      hash: hashJson(empty),
+      warnings: ['Project config style_notes is not available yet; using empty style notes.'],
+      source: 'empty',
+    };
+  }
+};
+
 export const getPromptOverrideState = async (
   projectId: string,
   kind: ProjectPromptOverrideKind,
@@ -321,6 +448,7 @@ export const getProjectPromptOverride = async (
 
 export const getProjectConfigState = async (project: Project): Promise<ProjectConfigState> => ({
   preferences: await getProjectPreferencesState(project),
+  styleNotes: await getProjectStyleNotesState(project),
   prompts: Object.fromEntries(await Promise.all(PROJECT_PROMPT_OVERRIDE_KINDS.map(async (kind) => [
     kind,
     await getPromptOverrideState(project.id, kind),
@@ -339,6 +467,7 @@ export const writeProjectConfigDeskCopy = async (
 ): Promise<{
   configDir: string;
   preferencesPath: string;
+  styleNotesPath: string;
   promptPaths: Record<ProjectPromptOverrideKind, string>;
   hashesPath: string;
   state: ProjectConfigState;
@@ -346,6 +475,7 @@ export const writeProjectConfigDeskCopy = async (
   const state = await getProjectConfigState(project);
   const configDir = ensureConfigDir(projectDir);
   const preferencesPath = path.join(configDir, 'preferences.json');
+  const styleNotesPath = path.join(configDir, 'style-notes.json');
   const promptPaths = Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
     kind,
     path.join(configDir, 'prompts', `${kind}.md`),
@@ -353,6 +483,7 @@ export const writeProjectConfigDeskCopy = async (
   const hashesPath = path.join(configDir, 'hashes.json');
 
   fs.writeFileSync(preferencesPath, `${JSON.stringify(state.preferences.preferences, null, 2)}\n`);
+  fs.writeFileSync(styleNotesPath, `${JSON.stringify(state.styleNotes.styleNotes, null, 2)}\n`);
   for (const kind of PROJECT_PROMPT_OVERRIDE_KINDS) {
     const body = state.prompts[kind].body;
     fs.writeFileSync(promptPaths[kind], body.endsWith('\n') ? body : `${body}\n`);
@@ -362,6 +493,10 @@ export const writeProjectConfigDeskCopy = async (
     preferences: {
       hash: state.preferences.hash,
       source: state.preferences.source,
+    },
+    styleNotes: {
+      hash: state.styleNotes.hash,
+      source: state.styleNotes.source,
     },
     prompts: Object.fromEntries(PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => [
       kind,
@@ -376,6 +511,7 @@ export const writeProjectConfigDeskCopy = async (
   return {
     configDir,
     preferencesPath,
+    styleNotesPath,
     promptPaths,
     hashesPath,
     state,
@@ -409,6 +545,27 @@ export const applyProjectPreferences = async (
     }, { onConflict: 'project_id' });
   if (error) throw new Error(`DB upsert project_config: ${error.message}`);
   return getProjectPreferencesState(project);
+};
+
+export const applyProjectStyleNotes = async (
+  project: Project,
+  styleNotesInput: unknown,
+  baseHash?: string | null,
+): Promise<ProjectStyleNotesState> => {
+  const current = await getProjectStyleNotesState(project);
+  if (baseHash && baseHash !== current.hash) {
+    throw driftError('Project style notes changed since this desk copy was written. Re-attach or refresh config before applying.', current.hash, baseHash);
+  }
+  const cleaned = cleanStyleNotes(styleNotesInput);
+  const { error } = await getSB()
+    .from(T.project_config)
+    .upsert({
+      project_id: project.id,
+      style_notes: cleaned.stored,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'project_id' });
+  if (error) throw new Error(`DB upsert project_config style_notes: ${error.message}`);
+  return getProjectStyleNotesState(project);
 };
 
 const deactivateActivePromptRows = async (

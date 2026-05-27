@@ -9,6 +9,7 @@ type VisualizeStylePromptInput = {
   subject: string;
   /** Optional artist-supplied generation prompt; if set, the artist edited the prompt. */
   generationPrompt?: string;
+  styleNotes?: string;
   preset: PipelinePreset;
 };
 
@@ -38,15 +39,10 @@ export const buildVisualizeStylePrompt = (input: VisualizeStylePromptInput): str
   // bypasses `buildStylePrompt`.
   if (input.generationPrompt) return input.generationPrompt;
 
-  const presetTaste = [
-    input.preset.style.rules,
-    input.preset.looks.qualityRules,
-  ].filter(Boolean).join('\n\n');
-
   return composePrompt({
     coreTask: CORE_TASK,
     inputs: formatInputs(input),
-    presetTaste,
+    styleNotes: input.styleNotes,
     outputContract: OUTPUT_CONTRACT,
   });
 };

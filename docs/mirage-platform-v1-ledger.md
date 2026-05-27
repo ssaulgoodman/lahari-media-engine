@@ -923,6 +923,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-27 Codex: Composer doctrine updated again after Saul/Claude preset discussion. Added D28: presets are not recurring runtime doctrine; generic action contracts live in handlers, learned taste/technique lives in editable per-surface project style notes, and reusable production bibles/presets are harvested from successful projects later. `docs/mirage-composer-architecture.md` now frames the next implementation around `actionContract + projectStyleNotes + contextSelection + optional harvestable preset`, with `presetTaste` explicitly targeted for removal from the composer concept.
 
+2026-05-27 Codex: D28 implementation slice landed. Added `project_config.style_notes` for Lahari/studio prefixes, `config/style-notes.json` in notebooks, `apply_project_style_notes` in the action registry, MCP `contextOverrides.styleNoteSections`, and style-note state in project packets. Runtime `composePrompt` no longer has `workflowContext` or `presetTaste`; touched builders now assemble `CORE TASK`, `INPUTS`, optional `STYLE NOTES`, optional `PROJECT OVERRIDE`, policy for legacy web-direct helpers, and `OUTPUT CONTRACT`. Looks, style, and storyboard planning read selected style-note buckets while hard worker rules stay in action contracts instead of preset blobs. Validation passed: `npx tsc --noEmit --pretty false`, `npm run build`, `git diff --check`.
+
 ---
 
 ## 10. References

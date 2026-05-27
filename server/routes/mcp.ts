@@ -80,7 +80,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects first, then open_project. If the artist asks to start a new non-audio project, call create_project, then open_project. For Concept, Script, Style, Looks, Storyboard, Video, Audio, and System config work, prefer list_actions -> describe_action -> run_action. For paid media actions, prefer start_job so Mirage returns a jobId immediately and Visual Studio can show progress; use get_job only when the artist asks for status or you need the completed result. Use parallel_run only for short independent non-paid actions or when the artist explicitly wants a blocking batch. The project graph supplies default context, but defaults are editable plumbing: for Looks, Style, and Storyboard actions use contextOverrides to include/exclude/swap references before writing a full promptOverride. For style image work, use generate_style_candidates for guide/note/promptOverride candidates, identify_style to describe a locked or uploaded style image, and apply_style_direction with sourceAssetId to lock an existing style asset. For video, use generate_video with dryRun=true for requirements/cost, then start_job(generate_video) when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If the same per-call promptOverride keeps working, suggest promoting it with apply_project_prompt_override. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates/generate_style_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit drafts/script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects first, then open_project. If the artist asks to start a new non-audio project, call create_project, then open_project. For Concept, Script, Style, Looks, Storyboard, Video, Audio, and System config work, prefer list_actions -> describe_action -> run_action. For paid media actions, prefer start_job so Mirage returns a jobId immediately and Visual Studio can show progress; use get_job only when the artist asks for status or you need the completed result. Use parallel_run only for short independent non-paid actions or when the artist explicitly wants a blocking batch. The project graph supplies default context, but defaults are editable plumbing: for Looks, Style, and Storyboard actions use contextOverrides to include/exclude/swap references and style-note sections before writing a full promptOverride. Use apply_project_style_notes when repeated phrasing or technique should become project data; reserve apply_project_prompt_override for a repeated complete recipe. For style image work, use generate_style_candidates for guide/note/promptOverride candidates, identify_style to describe a locked or uploaded style image, and apply_style_direction with sourceAssetId to lock an existing style asset. For video, use generate_video with dryRun=true for requirements/cost, then start_job(generate_video) when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If you need to bring a local/native image into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference as sourceAssetId or generate_candidates/generate_style_candidates as guideAssetId. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path. Treat mirrors/ files as read-only DB snapshots. Edit config/style-notes.json for learned image/storyboard/motion/script/dialogue/audio style notes, then persist with run_action(apply_project_style_notes). Edit drafts/script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown. Edit drafts/audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -134,9 +134,14 @@ const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const jobStatusSchema = z.enum(['running', 'success', 'error']);
 const contextOverrideListSchema = z.union([z.boolean(), maxArray(idString, 80)]);
+const styleNoteSectionSchema = z.enum(['image', 'storyboard', 'motion', 'script', 'dialogue', 'audio']);
 const contextOverridesSchema = z.object({
   includeStyleImage: z.boolean().optional(),
   styleAssetId: idString.nullable().optional(),
+  styleNoteSections: z.object({
+    include: maxArray(styleNoteSectionSchema, 12).optional(),
+    exclude: maxArray(styleNoteSectionSchema, 12).optional(),
+  }).optional(),
   includeCastRefs: contextOverrideListSchema.optional(),
   excludeCastRefs: maxArray(idString, 80).optional(),
   includeEnvironmentRefs: contextOverrideListSchema.optional(),
@@ -371,6 +376,19 @@ const projectPreferencesInputSchema = z.object({
     imageModel: idString.optional(),
     storyboardProvider: idString.optional(),
     videoModel: idString.optional(),
+  }),
+  baseHash: idString.optional(),
+});
+const projectStyleNotesInputSchema = z.object({
+  projectId,
+  styleNotes: z.object({
+    image: optionalPromptText,
+    storyboard: optionalPromptText,
+    motion: optionalPromptText,
+    script: optionalPromptText,
+    dialogue: optionalPromptText,
+    audio: optionalPromptText,
+    modelPhrases: z.record(z.string().min(1).max(120), maxArray(z.string().min(1).max(500), 20)).optional(),
   }),
   baseHash: idString.optional(),
 });
@@ -638,6 +656,10 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (actionKey === 'apply_project_preferences') {
       const input = projectPreferencesInputSchema.parse(rawInput);
       return studio.applyProjectPreferencesConfig(await fullProjectForUser(input.projectId, auth.userId), input.preferences, input.baseHash);
+    }
+    if (actionKey === 'apply_project_style_notes') {
+      const input = projectStyleNotesInputSchema.parse(rawInput);
+      return studio.applyProjectStyleNotesConfig(await fullProjectForUser(input.projectId, auth.userId), input.styleNotes, input.baseHash);
     }
     if (actionKey === 'apply_project_prompt_override') {
       const input = projectPromptOverrideInputSchema.parse(rawInput);

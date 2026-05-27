@@ -1,7 +1,7 @@
 export type ComposePromptParts = {
   coreTask: string;
   inputs?: string;
-  presetTaste?: string;
+  styleNotes?: string;
   projectOverride?: string;
   userNotePolicy?: string;
   outputContract: string;
@@ -11,7 +11,7 @@ export type ComposePromptParts = {
 export type ComposePromptSectionKey =
   | 'coreTask'
   | 'inputs'
-  | 'presetTaste'
+  | 'styleNotes'
   | 'projectOverride'
   | 'userNotePolicy'
   | 'outputContract'
@@ -36,7 +36,7 @@ const maybeSection = (key: ComposePromptSectionKey, title: string, body?: string
 export const composePromptSections = (parts: ComposePromptParts): ComposePromptSection[] => [
   maybeSection('coreTask', 'CORE TASK', parts.coreTask),
   maybeSection('inputs', 'INPUTS', parts.inputs),
-  maybeSection('presetTaste', 'TASTE', parts.presetTaste),
+  maybeSection('styleNotes', 'STYLE NOTES', parts.styleNotes),
   maybeSection('projectOverride', 'PROJECT OVERRIDE', parts.projectOverride),
   maybeSection('userNotePolicy', 'USER NOTE POLICY', parts.userNotePolicy),
   maybeSection('outputContract', 'OUTPUT CONTRACT', parts.outputContract),
@@ -55,7 +55,7 @@ export const composePrompt = (parts: ComposePromptParts): string =>
 
 const SECTION_TITLES: Array<{ key: ComposePromptSectionKey; title: string }> = [
   { key: 'inputs', title: 'INPUTS' },
-  { key: 'presetTaste', title: 'TASTE' },
+  { key: 'styleNotes', title: 'STYLE NOTES' },
   { key: 'projectOverride', title: 'PROJECT OVERRIDE' },
   { key: 'userNotePolicy', title: 'USER NOTE POLICY' },
   { key: 'outputContract', title: 'OUTPUT CONTRACT' },

@@ -49,6 +49,7 @@ import {
   applyGenerateStoryboard,
   applyGenerateVideo,
   applyProjectPreferencesConfig,
+  applyProjectStyleNotesConfig,
   applyProjectPromptOverrideConfig,
   buildStoryboardStatus,
   bulkGenerateStoryboards,
@@ -93,6 +94,7 @@ export {
   applyGenerateStoryboard,
   applyGenerateVideo,
   applyProjectPreferencesConfig,
+  applyProjectStyleNotesConfig,
   applyProjectPromptOverrideConfig,
   buildStoryboardStatus,
   bulkGenerateStoryboards,
@@ -200,6 +202,8 @@ const sessionState = (
     projectConfig: projectConfig ? {
       preferences: projectConfig.preferences.preferences,
       preferencesHash: projectConfig.preferences.hash,
+      styleNotes: projectConfig.styleNotes.styleNotes,
+      styleNotesHash: projectConfig.styleNotes.hash,
       warnings: projectConfig.preferences.warnings,
       promptOverrides: Object.values(projectConfig.prompts).map((prompt) => ({
         kind: prompt.kind,

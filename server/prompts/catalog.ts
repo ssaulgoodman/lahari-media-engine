@@ -329,7 +329,7 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
     summary: 'Proposes 4 distinct visual style directions — lighting, palette, texture, cultural references.',
     variables: [
       { name: 'concept', description: 'Locked concept' },
-      { name: 'presetTaste', description: 'Preset style rules + brainstorm-only taste rules' },
+      { name: 'styleNotes', description: 'Optional project style-note buckets selected for this call' },
       { name: 'sourceText', description: 'Lyrics/source excerpt for music-led projects; script/source excerpt for scripted narrative projects' },
       { name: 'meaning', description: 'Music-led meaning/intent, or scripted director brief/logline when available' },
       { name: 'scriptSummary', description: 'Optional scene/script overview once it exists' },
@@ -339,14 +339,13 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
 
 Each direction is one coherent visual world the project could live inside.
 Do not write story, scenes, characters, camera shot lists, or plot beats.
-Cover a real range across legitimate aesthetics for the medium described in TASTE.
+Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.
 
 INPUTS
 {{formatted project subject, concept/theme, mood, source excerpt, meaning/logline, and script overview}}
 
-TASTE
-{{preset.style.rules}}
-{{preset.style.brainstormTaste}}
+STYLE NOTES
+{{selected project style-note buckets, if any}}
 
 Return exactly 4 directions as JSON.
 
@@ -379,7 +378,7 @@ USER NOTE
       { name: 'currentTitle', description: 'Optional current title' },
       { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
       { name: 'concept', description: 'Locked concept (for subject/mood context)' },
-      { name: 'presetTaste', description: 'preset.style.rules — medium + drift bans' },
+      { name: 'styleNotes', description: 'Optional project style-note buckets selected for this call' },
       { name: 'userNotePolicy', description: 'Surgical-application policy: touch only addressed fields, preserve identity, translate medium conflicts' },
     ],
     template: `Revise the current style direction text using the director's feedback.
@@ -389,8 +388,8 @@ This is a surgical refinement, not a replacement. Preserve the direction's core 
 INPUTS
 {{Subject, mood, theme, and the current direction text}}
 
-TASTE
-{{preset.style.rules}}
+STYLE NOTES
+{{selected project style-note buckets, if any}}
 
 USER NOTE POLICY
 {{Apply surgically. Touch only what the note addresses. Preserve identity. Refuse medium conflicts or translate to medium-safe analogue.}}
@@ -412,7 +411,7 @@ USER NOTE
     variables: [
       { name: 'styleDescription', description: 'The selected style direction text from the brainstorm/refine step' },
       { name: 'subject', description: 'Project subject from the locked concept or title' },
-      { name: 'presetTaste', description: 'preset.style.rules + preset.looks.qualityRules' },
+      { name: 'styleNotes', description: 'Optional project style-note buckets selected for this call' },
       { name: 'imageModel', description: 'Project image model routing slot' },
     ],
     template: `Generate one reusable visual style reference frame for this project.
@@ -427,9 +426,8 @@ Project world: {{preset.style.subjectPrompt(subject)}}
 Style direction to render:
 {{styleDescription}}
 
-TASTE
-{{preset.style.rules}}
-{{preset.looks.qualityRules}}
+STYLE NOTES
+{{selected project style-note buckets, if any}}
 
 OUTPUT CONTRACT
 Output the final reference image. High production value. No text. No watermark.`,
