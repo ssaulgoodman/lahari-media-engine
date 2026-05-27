@@ -103,7 +103,7 @@ export const STORYBOARD_ACTION_SPECS = {
     surface: 'storyboard',
     mutates: true,
     paid: false,
-    description: 'Persist storyboard prompt/cut-plan text. Accepts either structured shots[] or one scene markdown draft.',
+    description: 'Persist Codex-written storyboard prompt and cut-plan text. Accepts either structured shots[] or one scene markdown draft. Edit the saved text here when "make it brighter" / "less grungy" is really a prompt change; do not use refine_storyboard_image for prompt rewrites.',
     input: {
       projectId: 'string',
       shots: 'optional array of {shotId, storyboardPrompt, storyboardCutPlan?, baseHash?}',
@@ -118,15 +118,15 @@ export const STORYBOARD_ACTION_SPECS = {
     surface: 'storyboard',
     mutates: true,
     paid: true,
-    description: 'Edit the current storyboard image using artist feedback. This is image-edit mode, not prompt text persistence.',
+    description: 'Edit the current storyboard image using a narrow positive edit instruction (image-edit mode, not prompt rewrite). Codex translates raw artist chat into a concrete one-axis change before calling this; do not forward "make it less grungy" / "make it brighter" style notes verbatim. If the prompt itself is wrong, use apply_storyboard_prompts instead.',
     input: {
       projectId: 'string',
       shotId: 'string',
-      feedback: 'string',
+      feedback: 'concise positive edit instruction written by Codex from artist intent — describes the specific visual change to apply while preserving everything else',
       previousVersionId: 'optional string',
       modelOverride: 'optional storyboardProvider override',
     },
-    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', feedback: 'make the pose less dramatic' }],
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', feedback: 'Keep composition, characters, panel layout. Brighten lighting one stop; clean up the dirty grungy texture into a cleaner matte finish.' }],
   },
   lock_storyboard: {
     key: 'lock_storyboard',
@@ -208,7 +208,7 @@ export const AUDIO_ACTION_SPECS = {
     surface: 'audio',
     mutates: true,
     paid: false,
-    description: 'Persist per-shot dialogue, sound notes, and lipsync/overlay strategy. Accepts structured shots[] or one audio-plan markdown draft.',
+    description: 'Persist Codex-written per-shot dialogue lines, sound notes, and lipsync/overlay strategy. Accepts structured shots[] or one audio-plan markdown draft.',
     input: {
       projectId: 'string',
       shots: 'optional array of {shotId, audioPlan, baseHash?}',
@@ -278,7 +278,7 @@ export const SCRIPT_ACTION_SPECS = {
     surface: 'script',
     mutates: true,
     paid: false,
-    description: 'Persist visual, motion, direction, or continuity updates for one or more shots.',
+    description: 'Persist Codex-written visual, motion, direction, or continuity prompt text for one or more shots. This is the prompt-edit path; use it when the artist asks for a tonal/wording change rather than a media regenerate.',
     input: {
       projectId: 'string',
       shots: 'array of {shotId, visualPrompt?, motionPrompt?, direction?, continuityFrom?, baseHash?}',
@@ -315,7 +315,7 @@ export const STYLE_ACTION_SPECS = {
       promptOverride: 'optional exact final style prompt; returns one candidate',
       guideAssetId: 'optional uploaded style guide asset id',
       count: 'optional 1-4',
-      contextOverrides: 'optional context controls, e.g. { includeConcept: false, includeProjectStyleDescription: false, includeGuideAsset: false }',
+      contextOverrides: 'optional context controls, e.g. { includeConcept: false, includeProjectStyleDescription: false, includeGuideAsset: false, styleNoteSections: { include: ["image"] } }',
     },
     examples: [{ projectId: 'project_uuid', guideAssetId: 'asset_uuid', note: 'keep the crude flat cartoon look' }],
   },
@@ -370,7 +370,7 @@ export const SYSTEM_ACTION_SPECS = {
     surface: 'system',
     mutates: true,
     paid: false,
-    description: 'Persist per-surface project style notes learned during production. Use these for repeatable visual, storyboard, motion, script, dialogue, and audio taste instead of stuffing presetTaste or raw notes into every call.',
+    description: 'Persist per-surface project style notes learned during production — the editable taste/technique memory the project graph carries into every relevant call. Use this when the same phrasing or technique keeps improving outputs and should become project data rather than a per-call note. Lighter than apply_project_prompt_override (that one carries a full recipe; this one carries phrasing fragments).',
     input: {
       projectId: 'string',
       styleNotes: '{ image?, storyboard?, motion?, script?, dialogue?, audio?, modelPhrases? }',
@@ -390,7 +390,7 @@ export const SYSTEM_ACTION_SPECS = {
     surface: 'system',
     mutates: true,
     paid: false,
-    description: 'Persist a project-scoped prompt recipe override. Use when repeated per-call promptOverride experiments should become the project default.',
+    description: 'Persist a project-scoped complete prompt recipe override for one declared kind. Use when the same complete per-call promptOverride keeps working and should become the project default. For repeated phrasing or per-surface taste fragments, prefer apply_project_style_notes (lighter, graph-data, composer-injected).',
     input: {
       projectId: 'string',
       kind: 'prompt override kind',

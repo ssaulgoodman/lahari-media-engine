@@ -141,7 +141,7 @@ Under 150 words. Write in English.`,
       { name: 'scene', description: 'Scene label, narrative description, and any source/lyrics text' },
       { name: 'shot', description: 'Shot ID, duration, direction, visual prompt, and cast IDs' },
       { name: 'cast', description: 'Allowed cast IDs with names, descriptions, look availability, and voice assignment state' },
-      { name: 'preset', description: 'Runtime preset, including source and audio rules' },
+      { name: 'projectOverride', description: 'Optional project-scoped audio_plan recipe override (apply_project_prompt_override)' },
     ],
     template: `CORE TASK
 Write spoken dialogue lines and restrained sound notes for one shot only.
@@ -176,7 +176,7 @@ OUTPUT CONTRACT
     model: 'project.text_provider',
     modelLabel: 'Project text provider',
     triggeredBy: "Fires when you click 'Generate concept' on the Concept phase.",
-    summary: 'Proposes 3 creative narrative directions for the project (or 1 if a director brief is set). Composed via composePrompt; concept stays story/brief-level — style and medium are decided in later phases. User note is a hard creative constraint inside the tool contract.',
+    summary: 'Proposes 3 creative narrative directions for the project (or 1 if a director brief is set). Composed via composePrompt; concept stays story/brief-level — style and medium are decided in later phases. Legacy web-direct path: USER NOTE flows directly. Agent path: Codex translates intent into the call before invoking apply_concept.',
     variables: [
       { name: 'title', description: 'Project title' },
       { name: 'language', description: 'Project language' },
@@ -202,7 +202,7 @@ INPUTS
 {{formatted title, language, source text, meaning, musical structure or script overview, audio classification, director brief if set}}
 
 USER NOTE POLICY
-{{If USER NOTE is present, treat it as a hard creative constraint. All returned directions must satisfy it. Conflicts with source/preset/tool contract are refused or translated to concept-layer intent. Variety means distinct directions inside the constraint.}}
+{{If USER NOTE is present, treat it as a hard creative constraint. All returned directions must satisfy it. Conflicts with the locked project source, tool contract, or project data are refused or translated to concept-layer intent. Variety means distinct directions inside the constraint.}}
 
 Return EXACTLY 3 concepts (or 1 if directorBrief is set). Each: title, subject, mood, theme, conceptDirection, description.
 
@@ -217,7 +217,7 @@ USER NOTE
     model: 'project.script_writer',
     modelLabel: 'Project script writer',
     triggeredBy: "Fires when you click 'Generate script' on the Script phase.",
-    summary: 'Plans the full music-led video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Composed via composePrompt; user note is a hard structural constraint inside source timing and preset rules.',
+    summary: 'Plans the full music-led video structure — cast list, environments, scenes aligned to musical sections, and shot directions. Composed via composePrompt; user note is a hard structural constraint inside source timing and tool contract.',
     variables: [
       { name: 'videoModel', description: 'Selected video model; Seedance enables storyboard-clip pacing rules' },
       { name: 'concept', description: 'Locked concept (subject, direction, theme, expanded description, mood)' },
@@ -259,7 +259,7 @@ USER NOTE
     model: 'project.script_writer',
     modelLabel: 'Project script writer',
     triggeredBy: 'Fires when a script-first project is created from direct intake.',
-    summary: 'Converts an uploaded script/treatment into cast, environments, scenes, and shots. Composed via composePrompt; preserves story intent and uses preset rules for extraction/planning.',
+    summary: 'Converts an uploaded script/treatment into cast, environments, scenes, and shots. Composed via composePrompt; preserves story intent and reads the project graph for extraction/planning targets.',
     variables: [
       { name: 'scriptText', description: 'Uploaded script, treatment, or episode brief' },
       { name: 'directorBrief', description: 'Optional intake brief' },
@@ -407,7 +407,7 @@ USER NOTE
     model: 'project.image_model',
     modelLabel: 'Project image model',
     triggeredBy: "Fires when you click 'Visualize' or 'Re-visualize' on one brainstormed style direction.",
-    summary: 'Turns one selected text style direction into a reusable style reference image. Uses the project image model and the preset style/quality rules; the selected direction is the main input.',
+    summary: 'Turns one selected text style direction into a reusable style reference image. Uses the project image model with the selected direction as the main input, plus optional project style-note buckets when learned taste exists. Action invariants (no text, no watermark, single image) live in the OUTPUT CONTRACT.',
     variables: [
       { name: 'styleDescription', description: 'The selected style direction text from the brainstorm/refine step' },
       { name: 'subject', description: 'Project subject from the locked concept or title' },
@@ -446,17 +446,18 @@ Output the final reference image. High production value. No text. No watermark.`
     stage: 'looks',
     model: 'project.image_model',
     modelLabel: 'Project image model',
-    triggeredBy: "Fires 3× in parallel when you click 'Generate look' on a character.",
-    summary: 'Generates 3 reusable neutral character reference portraits — no props, no actions, plain background for reuse across shots.',
+    triggeredBy: "Fires 3× in parallel when you click 'Generate look' on a character, or via generate_candidates from an agent.",
+    summary: 'Generates one reusable neutral character reference portrait — no props, no actions, plain background. Action invariants (neutral pose, single image, no text) live in the action contract; project taste comes from selected style-note buckets, not preset doctrine.',
     variables: [
       { name: 'character.name', description: 'Character name' },
       { name: 'character.description', description: 'Physical + cultural description' },
       { name: 'styleImage', description: 'Locked style reference (Image N)' },
       { name: 'styleDescription', description: 'Optional style intent note stored on the locked style' },
-      { name: 'userRefImage', description: 'Optional director-supplied reference' },
-      { name: 'userFeedback', description: 'Optional director note' },
+      { name: 'userRefImage', description: 'Optional director-supplied reference (uploaded via /api/agent/uploads, then passed as guideAssetId)' },
+      { name: 'styleNotes', description: 'Optional project style-note buckets selected for this call (image bucket by default; per-model phrases attached when present)' },
+      { name: 'projectOverride', description: 'Optional project-scoped character_looks recipe override (apply_project_prompt_override)' },
     ],
-    template: `Generate one reusable character reference portrait.
+    template: `Generate one reusable character or object reference for production continuity.
 
 INPUTS
 Style reference image: Image 1
@@ -467,14 +468,16 @@ The style image is the visual authority for medium, rendering, line treatment, p
 Character: {{character.name}}
 Character description: {{character.description}}
 
-TASTE
-{{preset.style.rules}}
-{{preset.looks.characterRules}}
-{{preset.looks.qualityRules}}
+STYLE NOTES
+{{selected project style-note buckets, if any}}
+
+PROJECT OVERRIDE
+{{character_looks recipe override, if set}}
 
 OUTPUT CONTRACT
-One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Mid-shot portrait, neutral pose, plain or softly blurred background, no props or scene-specific action.`,
+One isolated reference image. No collage, grid, text, watermark, or multiple panels.
+Neutral pose or neutral object presentation. Plain/soft background. No action or scene-specific props.
+Preserve identity: face/body/costume for people; shape/material/status details for objects.`,
     source: { file: 'server/prompts/lookPrompts.ts', lines: 'buildCharacterLookPrompt' },
   },
   {
@@ -483,17 +486,18 @@ Mid-shot portrait, neutral pose, plain or softly blurred background, no props or
     stage: 'looks',
     model: 'project.image_model',
     modelLabel: 'Project image model',
-    triggeredBy: "Fires 3× in parallel when you click 'Generate look' on an environment.",
-    summary: 'Generates 3 wide establishing shots of the environment — empty, no characters.',
+    triggeredBy: "Fires 3× in parallel when you click 'Generate look' on an environment, or via generate_candidates from an agent.",
+    summary: 'Generates one reusable establishing image of the environment — whole space visible, no scene-specific action. Action invariants (single image, whole space, no characters unless tiny for scale) live in the action contract; project taste comes from selected style-note buckets, not preset doctrine.',
     variables: [
       { name: 'environment.name', description: 'Environment name' },
       { name: 'environment.description', description: 'Spatial description' },
       { name: 'styleImage', description: 'Locked style reference (Image N)' },
       { name: 'styleDescription', description: 'Optional style intent note stored on the locked style' },
-      { name: 'userRefImage', description: 'Optional director-supplied reference' },
-      { name: 'userNote', description: 'Optional director note' },
+      { name: 'userRefImage', description: 'Optional director-supplied reference (uploaded via /api/agent/uploads, then passed as guideAssetId)' },
+      { name: 'styleNotes', description: 'Optional project style-note buckets selected for this call (image bucket by default; per-model phrases attached when present)' },
+      { name: 'projectOverride', description: 'Optional project-scoped environment_looks recipe override (apply_project_prompt_override)' },
     ],
-    template: `Generate one reusable environment reference image.
+    template: `Generate one reusable environment reference for production continuity.
 
 INPUTS
 Style reference image: Image 1
@@ -504,14 +508,16 @@ The style image is the visual authority for medium, rendering, line treatment, p
 Environment: {{environment.name}}
 Environment description: {{environment.description}}
 
-TASTE
-{{preset.style.rules}}
-{{preset.looks.environmentRules}}
-{{preset.looks.qualityRules}}
+STYLE NOTES
+{{selected project style-note buckets, if any}}
+
+PROJECT OVERRIDE
+{{environment_looks recipe override, if set}}
 
 OUTPUT CONTRACT
-One single image. No collage, no grid, no multiple panels. No text, no watermark.
-Full reusable environment reference, whole space visible, no characters unless scale absolutely requires tiny neutral figures.`,
+One isolated reference image. No collage, grid, text, watermark, or multiple panels.
+Whole space visible and readable. No scene-specific action.
+No characters unless tiny neutral figures are needed for scale.`,
     source: { file: 'server/prompts/lookPrompts.ts', lines: 'buildEnvironmentLookPrompt' },
   },
 
@@ -523,11 +529,11 @@ Full reusable environment reference, whole space visible, no characters unless s
     model: 'project.script_writer',
     modelLabel: 'Project script writer',
     triggeredBy: "Auto-fires once at the end of Blueprint, or when you click 'Rewrite all' in Studio.",
-    summary: 'Composed via composePrompt. Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot). User note is a hard creative constraint applied across every shot; conflicts with the locked style reference or preset rules translate to closest valid intent. "Cinematic but renderable" — functional for AI models without being literary or schematic.',
+    summary: 'Composed via composePrompt. Writes visual + motion prompts per shot plus a continuity tag (cut vs prev_shot). User note is a hard creative constraint applied across every shot; conflicts with the locked style reference or project data translate to closest valid intent. "Cinematic but renderable" — functional for AI models without being literary or schematic.',
     variables: [
       { name: 'shots', description: 'List of shots with id, direction, duration, cast, scene context' },
       { name: 'cast', description: 'Character descriptions' },
-      { name: 'userNotePolicy', description: 'Hard-constraint policy applied to every shot; refuse conflicts with style ref / preset' },
+      { name: 'userNotePolicy', description: 'Hard-constraint policy applied to every shot; refuse conflicts with the locked style reference, project data, or tool contract' },
       { name: 'videoModel', description: 'Selected video model; appends Seedance-specific guidance to INPUTS' },
       { name: 'songType', description: 'Audio classification (music_led only)' },
       { name: 'isNarrative', description: 'Has dramatic arc? (music_led only)' },
@@ -549,7 +555,7 @@ Model guidance: {{seedance or default video guidance}}
 Music-led audio classification/pacing flags appear only for music-led projects.
 
 USER NOTE POLICY
-{{If USER NOTE is present, treat it as a hard creative constraint across every shot unless it conflicts with the locked style reference, preset rules, cast/environment facts, or output contract.}}
+{{If USER NOTE is present, treat it as a hard creative constraint across every shot unless it conflicts with the locked style reference, project data, cast/environment facts, or output contract.}}
 
 OUTPUT CONTRACT
 - id must exactly match the shot ID.
@@ -567,7 +573,7 @@ OUTPUT CONTRACT
     model: 'project.text_provider.refine',
     modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
-    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. Panel actions appear in both outputs; locked refs and preset taste decide the medium.',
+    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. Panel actions appear in both outputs; locked refs and selected project style-notes (image + storyboard buckets, plus per-model phrases) decide the medium. Action invariants like "no readable text on panels" live in the OUTPUT CONTRACT, not preset doctrine.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'concept', description: 'Locked concept summary' },
@@ -582,7 +588,9 @@ OUTPUT CONTRACT
       { name: 'styleImage', description: 'Locked style reference (vision input — always sent so the planner can read the medium and adjust output language)' },
       { name: 'prevStoryboardImage', description: 'Optional prev shot storyboard (vision input) when shot.use_prev_storyboard_ref is true' },
       { name: 'prevCutPlanText', description: 'Optional prev shot cut plan (text context) when shot.include_prev_cut_plan resolves true (smart default: continuity_from === prev_shot)' },
-      { name: 'artistNote', description: 'Optional rewrite/refine instruction' },
+      { name: 'styleNotes', description: 'Selected project style-note buckets — image + storyboard by default, with per-model phrases for the active storyboard provider when present' },
+      { name: 'projectOverride', description: 'Optional project-scoped storyboard recipe override (apply_project_prompt_override kind=storyboard)' },
+      { name: 'artistNote', description: 'Optional rewrite/refine instruction (refine mode only)' },
       { name: 'artistReferenceImage', description: 'Optional visual reference attached during refine' },
     ],
     template: `CORE TASK
@@ -596,10 +604,11 @@ Previous storyboard ref: {{present when enabled}}
 Previous cut plan tail: {{present when enabled}}
 Artist reference: {{present during refine with image}}
 
-TASTE
-{{preset.style.rules}}
-{{preset.studio.storyboardRules}}
-{{project storyboard override}}
+STYLE NOTES
+{{selected project style-note buckets, if any}}
+
+PROJECT OVERRIDE
+{{storyboard recipe override, if set}}
 
 USER NOTE POLICY
 {{Refine only: apply director feedback surgically; preserve source brief, locked refs, panel logic, and continuity unless the note changes them.}}
