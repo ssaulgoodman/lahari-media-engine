@@ -733,6 +733,8 @@ type ToolSurface =
 
 ### Composed prompt shape (D25, amended by D27)
 
+This is the **target contract**, not a claim that `_composer.ts` already matches it exactly. Current code has `projectOverride` from C5, but `callOverride` and the "userNote is legacy/web-direct only" split still land in the D27/C0.5 implementation slice. Until then, some legacy route/action schemas still expose `userNote` as a normal first-class field.
+
 ```ts
 type ComposePromptParts = {
   coreTask: string;             // SHARED across workflows. "What this tool does"
