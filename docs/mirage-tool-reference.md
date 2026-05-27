@@ -92,33 +92,41 @@ Web-direct prompts will eventually be deprecated as the agent surface displaces 
 
 ## Index
 
-| Key | Surface | Mutates | Paid | One-liner |
-|---|---|:-:|:-:|---|
-| `apply_concept` | concept | ● | — | Persist Codex-written locked concept. |
-| `apply_script` | script | ● | — | Persist cast/environments/scenes/shots from JSON or markdown. |
-| `apply_shot_prompts` | script | ● | — | Persist Codex-written visual/motion/direction/continuity per shot. |
-| `apply_shot_workflow_modes` | script | ● | — | Persist per-shot workflow path: auto/storyboard/keyframe. |
-| `generate_style_candidates` | style | ● | ● | Paid style reference candidate batch. |
-| `identify_style` | style | — | ● | Analyze locked style asset; return concise style text. |
-| `apply_style_direction` | style | ● | — | Persist style text and/or lock a style asset. |
-| `generate_candidates` | looks | ● | ● | Paid cast/environment reference candidate batch. |
-| `list_candidates` | looks | — | — | List candidate URLs/asset IDs for one entity. |
-| `lock_reference` | looks | ● | — | Set canonical character/environment reference. |
-| `generate_storyboard` | storyboard | ● | ● | Render storyboard image for one shot. |
-| `bulk_generate_storyboards` | storyboard | ● | ● | Render storyboards for many shots. |
-| `apply_storyboard_prompts` | storyboard | ● | — | Persist Codex-written storyboard prompt + cut plan. |
-| `refine_storyboard_image` | storyboard | ● | ● | Image-edit the current storyboard with a narrow instruction. |
-| `lock_storyboard` | storyboard | ● | — | Approve a storyboard version for video gen. |
-| `unlock_storyboard` | storyboard | ● | — | Clear storyboard approval. |
-| `generate_video` | video | ● | ● | Render the video clip for one shot. |
-| `apply_video_prompt` | video | ● | — | Persist Codex-written keyframe motion prompt. |
-| `generate_dialogue_audio` | audio | ● | ● | Generate ElevenLabs TTS for dialogue lines. |
-| `apply_audio_plan` | audio | ● | — | Persist Codex-written dialogue + sound notes per shot. |
-| `apply_cast_voice` | audio | ● | — | Assign ElevenLabs voice ID to a cast member. |
-| `apply_project_preferences` | system | ● | — | Persist model/provider routing for the project. |
-| `apply_project_style_notes` | system | ● | — | Persist per-surface project taste/technique memory. |
-| `apply_project_prompt_override` | system | ● | — | Persist a project-scoped complete prompt recipe. |
-| `revert_project_prompt_override` | system | ● | — | Roll back a project prompt override. |
+**Reading note:** all 25 actions are agent-callable through `run_action` / `start_job`. The **Kind** column tells you what happens when the agent invokes it:
+
+- **`persistence`** — write Codex-authored data to the DB. No backend LLM call. Most `apply_*`. Some have related web-only recipes that exist for Visual Studio's flow, not the agent's.
+- **`generation`** — fires a paid model call (LLM, image, video, or media edit) when invoked. `generate_*` and `refine_storyboard_image`.
+- **`analysis`** — fires a paid model call but doesn't mutate (e.g. `identify_style` reads an image, returns text).
+- **`read`** — list/get; no mutation, no model call.
+- **`control`** — lock/unlock/revert; mutation but no model call.
+
+| Key | Surface | Kind | Mutates | Paid | One-liner |
+|---|---|---|:-:|:-:|---|
+| `apply_concept` | concept | persistence | ● | — | Persist Codex-written locked concept. |
+| `apply_script` | script | persistence | ● | — | Persist cast/environments/scenes/shots from JSON or markdown. |
+| `apply_shot_prompts` | script | persistence | ● | — | Persist Codex-written visual/motion/direction/continuity per shot. |
+| `apply_shot_workflow_modes` | script | persistence | ● | — | Persist per-shot workflow path: auto/storyboard/keyframe. |
+| `generate_style_candidates` | style | generation | ● | ● | Paid style reference candidate batch. |
+| `identify_style` | style | analysis | — | ● | Analyze locked style asset; return concise style text. |
+| `apply_style_direction` | style | persistence | ● | — | Persist style text and/or lock a style asset. |
+| `generate_candidates` | looks | generation | ● | ● | Paid cast/environment reference candidate batch. |
+| `list_candidates` | looks | read | — | — | List candidate URLs/asset IDs for one entity. |
+| `lock_reference` | looks | control | ● | — | Set canonical character/environment reference. |
+| `generate_storyboard` | storyboard | generation | ● | ● | Render storyboard image for one shot. |
+| `bulk_generate_storyboards` | storyboard | generation | ● | ● | Render storyboards for many shots. |
+| `apply_storyboard_prompts` | storyboard | persistence | ● | — | Persist Codex-written storyboard prompt + cut plan. |
+| `refine_storyboard_image` | storyboard | generation | ● | ● | Image-edit the current storyboard with a narrow instruction. |
+| `lock_storyboard` | storyboard | control | ● | — | Approve a storyboard version for video gen. |
+| `unlock_storyboard` | storyboard | control | ● | — | Clear storyboard approval. |
+| `generate_video` | video | generation | ● | ● | Render the video clip for one shot. |
+| `apply_video_prompt` | video | persistence | ● | — | Persist Codex-written keyframe motion prompt. |
+| `generate_dialogue_audio` | audio | generation | ● | ● | Generate ElevenLabs TTS for dialogue lines. |
+| `apply_audio_plan` | audio | persistence | ● | — | Persist Codex-written dialogue + sound notes per shot. |
+| `apply_cast_voice` | audio | persistence | ● | — | Assign ElevenLabs voice ID to a cast member. |
+| `apply_project_preferences` | system | persistence | ● | — | Persist model/provider routing for the project. |
+| `apply_project_style_notes` | system | persistence | ● | — | Persist per-surface project taste/technique memory. |
+| `apply_project_prompt_override` | system | persistence | ● | — | Persist a project-scoped complete prompt recipe. |
+| `revert_project_prompt_override` | system | control | ● | — | Roll back a project prompt override. |
 
 Pipeline-only prompts (not MCP-callable): `transcribe-lyrics`, `detect-structure`, `summarize-meaning`, `critique-shot-image`, `describe-frame`, `chat-with-director`.
 
