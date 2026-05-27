@@ -913,6 +913,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-26 Claude/Codex: Composer redesign cleanup advanced. Claude's C2/C3 slice relocated preset taste out of text prompts and collapsed repeated user-note policies into shared generate/refine constants. Codex's C5 slice added a first-class `PROJECT OVERRIDE` composer section and wired project prompt overrides into concept, script/parse/refine, shot-prompt, storyboard, character/environment look, and audio-plan prompt builders so `apply_project_prompt_override` is no longer dead text outside storyboard/video.
 
+2026-05-27 Codex: Composer C4 style backfill slice landed. `apply_style_direction` now auto-identifies style text when locking a style asset and the project has an empty/weak `styleDescription`; lock still succeeds if identification fails. The shared `identify_style` analysis path is reused for X-Ray logging and director events. `/api/agent/uploads` and agent docs now tell harnesses to lock uploaded style references directly and let Mirage backfill semantics unless artist confirmation is needed first.
+
 ---
 
 ## 10. References

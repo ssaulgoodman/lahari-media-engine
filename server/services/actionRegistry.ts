@@ -338,7 +338,7 @@ export const STYLE_ACTION_SPECS = {
     surface: 'style',
     mutates: true,
     paid: false,
-    description: 'Persist style direction text and/or lock an existing style asset as the project style.',
+    description: 'Persist style direction text and/or lock an existing style asset as the project style. When locking a style asset with empty style text, Mirage auto-identifies a concise style description.',
     input: {
       projectId: 'string',
       style: '{ styleDescription?, styleGenerationPrompt?, colorPalette?, sourceAssetId? }',

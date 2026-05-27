@@ -33,6 +33,53 @@ const findProjectStyleAsset = async (project: Project, assetId?: string | null) 
   return asset;
 };
 
+const styleDescriptionNeedsBackfill = (value?: string | null) => {
+  const text = String(value || '').trim();
+  return text.length < 40;
+};
+
+const identifyStyleAsset = async (
+  project: Project,
+  asset: any,
+  opts: { apply?: boolean; auto?: boolean } = {},
+) => {
+  const t0 = Date.now();
+  const base64 = await readAsBase64(asset.file_path);
+  const mimeType = mimeFromExt(asset.file_path);
+  const styleDescription = await analyzeImageStyle(base64, mimeType, project.textProvider);
+  const durationMs = Date.now() - t0;
+
+  await logCall({
+    projectId: project.id,
+    stage: opts.auto ? 'identify-style-auto' : 'identify-style',
+    model: project.textProvider || 'claude-sonnet-4-6',
+    prompt: 'Analyze locked style reference image for a concise style description.',
+    referenceInputs: [{ type: 'image', label: 'Style reference', url: storageUrl(asset.file_path) }],
+    contextChain: await buildContextChain(project.id),
+    responseSummary: styleDescription.slice(0, 200),
+    durationMs,
+    costEstimate: 0.01,
+  });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'style_identified',
+    entityType: 'asset',
+    entityId: asset.id,
+    summary: opts.auto
+      ? 'Codex auto-identified the locked style reference.'
+      : 'Codex identified the locked style reference.',
+    payload: {
+      assetId: asset.id,
+      descriptionChars: styleDescription.length,
+      applied: !!opts.apply,
+      auto: !!opts.auto,
+    },
+  });
+
+  return styleDescription;
+};
+
 export const markStyleDependentsStale = async (projectId: string) => {
   await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
   await updateRows('environments', { project_id: projectId }, { prompts_stale: true });
@@ -67,11 +114,26 @@ export const applyStyleDirection = async (
     return applyError('validation_failed', 'sourceAssetId must be an image asset in this project.', { field: 'sourceAssetId' });
   }
 
+  let autoIdentifiedStyleDescription: string | null = null;
+  let autoIdentifyError: string | null = null;
+  if (
+    sourceAsset
+    && input.styleDescription === undefined
+    && styleDescriptionNeedsBackfill(project.styleDescription)
+  ) {
+    try {
+      autoIdentifiedStyleDescription = await identifyStyleAsset(project, sourceAsset, { apply: true, auto: true });
+    } catch (err: any) {
+      autoIdentifyError = err?.message || String(err);
+      console.warn(`[${project.id}] Style auto-identification failed for ${sourceAsset.id}: ${autoIdentifyError}`);
+    }
+  }
+
   const nextProject = {
     ...project,
     styleDescription: input.styleDescription !== undefined
       ? input.styleDescription.trim()
-      : project.styleDescription || '',
+      : autoIdentifiedStyleDescription || project.styleDescription || '',
     styleGenerationPrompt: input.styleGenerationPrompt !== undefined
       ? input.styleGenerationPrompt?.trim() || undefined
       : project.styleGenerationPrompt,
@@ -104,6 +166,8 @@ export const applyStyleDirection = async (
       descriptionChars: nextProject.styleDescription.length,
       generationPromptChars: nextProject.styleGenerationPrompt?.length || 0,
       colorPaletteChanged: input.colorPalette !== undefined,
+      autoIdentified: !!autoIdentifiedStyleDescription,
+      autoIdentifyError,
     },
   });
   appendApplyJournal(project, 'applied style direction', `New hash: ${newHash}\nDescription chars: ${nextProject.styleDescription.length}\nGeneration prompt chars: ${nextProject.styleGenerationPrompt?.length || 0}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
@@ -122,8 +186,12 @@ export const applyStyleDirection = async (
     changedArtifacts: buildNotebookMirrorArtifacts(nextProject, { style: true }),
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
     note: sourceAsset
-      ? 'Locked style reference and applied style text. Downstream references and prompts were marked stale.'
+      ? autoIdentifiedStyleDescription
+        ? 'Locked style reference, auto-identified style text, and marked downstream references/prompts stale.'
+        : 'Locked style reference and marked downstream references/prompts stale.'
       : 'Applied style direction text. No style image was generated or locked.',
+    autoIdentified: !!autoIdentifiedStyleDescription,
+    autoIdentifyError,
   };
 };
 
@@ -132,32 +200,7 @@ export const identifyStyle = async (project: Project, input: { assetId?: string;
   const asset = await findProjectStyleAsset(project, assetId);
   if (!asset) return applyError('validation_failed', 'No style asset found to identify.', { field: 'assetId' });
 
-  const t0 = Date.now();
-  const base64 = await readAsBase64(asset.file_path);
-  const mimeType = mimeFromExt(asset.file_path);
-  const styleDescription = await analyzeImageStyle(base64, mimeType, project.textProvider);
-  const durationMs = Date.now() - t0;
-
-  await logCall({
-    projectId: project.id,
-    stage: 'identify-style',
-    model: project.textProvider || 'claude-sonnet-4-6',
-    prompt: 'Analyze locked style reference image for a concise style description.',
-    referenceInputs: [{ type: 'image', label: 'Style reference', url: storageUrl(asset.file_path) }],
-    contextChain: await buildContextChain(project.id),
-    responseSummary: styleDescription.slice(0, 200),
-    durationMs,
-    costEstimate: 0.01,
-  });
-  await recordDirectorEvent({
-    projectId: project.id,
-    source: 'codex',
-    eventType: 'style_identified',
-    entityType: 'asset',
-    entityId: asset.id,
-    summary: 'Codex identified the locked style reference.',
-    payload: { assetId: asset.id, descriptionChars: styleDescription.length, applied: !!input.apply },
-  });
+  const styleDescription = await identifyStyleAsset(project, asset, { apply: input.apply });
 
   if (input.apply) {
     const applied = await applyStyleDirection(project, { styleDescription }, {});
