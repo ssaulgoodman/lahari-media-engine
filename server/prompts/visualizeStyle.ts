@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, workflowContextFor } from './_shared.js';
+import { clip } from './_shared.js';
 
 type VisualizeStylePromptInput = {
   /** Locked style direction text — the description to render. */
@@ -45,7 +45,6 @@ export const buildVisualizeStylePrompt = (input: VisualizeStylePromptInput): str
 
   return composePrompt({
     coreTask: CORE_TASK,
-    workflowContext: workflowContextFor(input.preset),
     inputs: formatInputs(input),
     presetTaste,
     outputContract: OUTPUT_CONTRACT,

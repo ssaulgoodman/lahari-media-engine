@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { REFINE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { REFINE_USER_NOTE_POLICY, clip, conceptSubject } from './_shared.js';
 
 type RefineScriptPromptInput = {
   currentScript: {
@@ -134,7 +134,6 @@ ENVIRONMENT rules:
 
 export const buildRefineScriptPrompt = (input: RefineScriptPromptInput): string => composePrompt({
   coreTask: CORE_TASK,
-  workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   projectOverride: input.projectOverride || undefined,
   userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,

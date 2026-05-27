@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { REFINE_USER_NOTE_POLICY, clip, workflowContextFor } from './_shared.js';
+import { REFINE_USER_NOTE_POLICY, clip } from './_shared.js';
 
 type BuildStoryboardPlannerPromptInput = {
   sourceBrief: string;
@@ -70,7 +70,6 @@ cutPlanText hard rules:
 
 export const buildStoryboardPlannerPrompt = (input: BuildStoryboardPlannerPromptInput): string => composePrompt({
   coreTask: input.artistNote?.trim() ? REFINE_CORE_TASK : WRITE_CORE_TASK,
-  workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   presetTaste: presetTasteFor(input),
   projectOverride: input.projectOverride || undefined,

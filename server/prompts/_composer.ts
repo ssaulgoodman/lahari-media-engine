@@ -1,6 +1,5 @@
 export type ComposePromptParts = {
   coreTask: string;
-  workflowContext?: string;
   inputs?: string;
   presetTaste?: string;
   projectOverride?: string;
@@ -11,7 +10,6 @@ export type ComposePromptParts = {
 
 export type ComposePromptSectionKey =
   | 'coreTask'
-  | 'workflowContext'
   | 'inputs'
   | 'presetTaste'
   | 'projectOverride'
@@ -37,7 +35,6 @@ const maybeSection = (key: ComposePromptSectionKey, title: string, body?: string
 
 export const composePromptSections = (parts: ComposePromptParts): ComposePromptSection[] => [
   maybeSection('coreTask', 'CORE TASK', parts.coreTask),
-  maybeSection('workflowContext', 'CONTEXT', parts.workflowContext),
   maybeSection('inputs', 'INPUTS', parts.inputs),
   maybeSection('presetTaste', 'TASTE', parts.presetTaste),
   maybeSection('projectOverride', 'PROJECT OVERRIDE', parts.projectOverride),
@@ -57,7 +54,6 @@ export const composePrompt = (parts: ComposePromptParts): string =>
   renderPromptSections(composePromptSections(parts));
 
 const SECTION_TITLES: Array<{ key: ComposePromptSectionKey; title: string }> = [
-  { key: 'workflowContext', title: 'CONTEXT' },
   { key: 'inputs', title: 'INPUTS' },
   { key: 'presetTaste', title: 'TASTE' },
   { key: 'projectOverride', title: 'PROJECT OVERRIDE' },

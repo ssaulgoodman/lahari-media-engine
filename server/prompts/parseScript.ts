@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, workflowContextFor } from './_shared.js';
+import { clip } from './_shared.js';
 
 type ParseScriptPromptInput = {
   scriptText: string;
@@ -39,7 +39,6 @@ Hard rules:
 
 export const buildParseScriptPrompt = (input: ParseScriptPromptInput): string => composePrompt({
   coreTask: CORE_TASK,
-  workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   projectOverride: input.projectOverride || undefined,
   outputContract: OUTPUT_CONTRACT,

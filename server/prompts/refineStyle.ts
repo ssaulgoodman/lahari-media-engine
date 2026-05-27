@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { REFINE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { REFINE_USER_NOTE_POLICY, clip, conceptSubject } from './_shared.js';
 
 type RefineStylePromptInput = {
   currentDescription: string;
@@ -45,7 +45,6 @@ const formatInputs = (input: RefineStylePromptInput): string => {
 
 export const buildRefineStylePrompt = (input: RefineStylePromptInput): string => composePrompt({
   coreTask: CORE_TASK,
-  workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   presetTaste: input.preset.style.rules,
   userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,

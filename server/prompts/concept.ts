@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { GENERATE_USER_NOTE_POLICY, REFINE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, REFINE_USER_NOTE_POLICY, clip, conceptSubject } from './_shared.js';
 
 // ─── Generate Concept Options ─────────────────────────────────────────
 
@@ -117,7 +117,6 @@ export const buildGenerateConceptPrompt = (input: GenerateConceptPromptInput): s
 
   return composePrompt({
     coreTask: GENERATE_CORE_TASK,
-    workflowContext: workflowContextFor(input.preset),
     inputs: formatGenerateInputs(input),
     projectOverride: input.projectOverride || undefined,
     userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${GENERATE_USER_NOTE_TAIL}`,
@@ -167,7 +166,6 @@ const formatRefineInputs = (concept: any): string => {
 
 export const buildRefineConceptPrompt = (input: RefineConceptPromptInput): string => composePrompt({
   coreTask: REFINE_CORE_TASK,
-  workflowContext: workflowContextFor(input.preset),
   inputs: formatRefineInputs(input.currentConcept),
   projectOverride: input.projectOverride || undefined,
   userNotePolicy: `${REFINE_USER_NOTE_POLICY}\n\n${REFINE_USER_NOTE_TAIL}`,

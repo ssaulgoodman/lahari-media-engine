@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { GENERATE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, clip, conceptSubject } from './_shared.js';
 
 type StyleBrainstormPromptInput = {
   sourceText?: string;
@@ -75,7 +75,6 @@ export const buildStyleBrainstormPrompt = (input: StyleBrainstormPromptInput): s
 
   return composePrompt({
     coreTask: CORE_TASK,
-    workflowContext: workflowContextFor(input.preset),
     inputs: formatInputs(input),
     presetTaste,
     userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,

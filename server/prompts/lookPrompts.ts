@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { clip, workflowContextFor } from './_shared.js';
+import { clip } from './_shared.js';
 
 type LookPromptInput = {
   entity: { name: string; description: string };
@@ -65,7 +65,6 @@ export const buildCharacterLookPrompt = (input: LookPromptInput): string => {
 
   return composePrompt({
     coreTask: `Generate one reusable character or object reference for production continuity.`,
-    workflowContext: workflowContextFor(input.preset),
     inputs,
     presetTaste: [
       input.preset.style.rules,
@@ -89,7 +88,6 @@ export const buildEnvironmentLookPrompt = (input: LookPromptInput): string => {
 
   return composePrompt({
     coreTask: `Generate one reusable environment reference for production continuity.`,
-    workflowContext: workflowContextFor(input.preset),
     inputs,
     presetTaste: [
       input.preset.style.rules,

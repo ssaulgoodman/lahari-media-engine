@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { GENERATE_USER_NOTE_POLICY, clip, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, clip } from './_shared.js';
 
 type ShotInput = {
   id: string;
@@ -150,7 +150,6 @@ Match the IDs exactly.`;
 
 export const buildWriteShotPromptsPrompt = (input: WriteShotPromptsPromptInput): string => composePrompt({
   coreTask: CORE_TASK,
-  workflowContext: workflowContextFor(input.preset),
   inputs: formatInputs(input),
   projectOverride: input.projectOverride || undefined,
   userNotePolicy: `${GENERATE_USER_NOTE_POLICY}\n\n${USER_NOTE_TAIL}`,

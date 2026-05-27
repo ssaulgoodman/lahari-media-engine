@@ -1,6 +1,6 @@
 import type { PipelinePreset } from '../presets.js';
 import { composePrompt } from './_composer.js';
-import { GENERATE_USER_NOTE_POLICY, clip, conceptSubject, workflowContextFor } from './_shared.js';
+import { GENERATE_USER_NOTE_POLICY, clip, conceptSubject } from './_shared.js';
 
 type PlanScenesPromptInput = {
   concept: any;
@@ -109,7 +109,6 @@ export const buildPlanScenesPrompt = (input: PlanScenesPromptInput): string => {
 
   return composePrompt({
     coreTask: CORE_TASK,
-    workflowContext: workflowContextFor(input.preset),
     inputs,
     projectOverride: input.projectOverride || undefined,
     userNotePolicy: GENERATE_USER_NOTE_POLICY,
