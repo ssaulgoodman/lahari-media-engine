@@ -32,10 +32,32 @@ export type PromptStage =
   | 'studio'         // Shot-level image/video work
   | 'utilities';     // Vision describe, critique, chat
 
+/**
+ * Which path actually fires this prompt at runtime.
+ *
+ * - `agent`        Backend prompt that runs when Codex invokes the matching
+ *                  MCP apply_/generate_ action. Both web UI and agent path
+ *                  trigger it through the same code path.
+ * - `web-direct`   Web UI button only. The agent path equivalent is to edit
+ *                  the saved text in a local notebook file and call the
+ *                  matching apply_* tool — no backend LLM call. Marked
+ *                  legacy in agent sessions.
+ * - `intake`       Fires automatically at project creation, before any agent
+ *                  session exists. Source-of-truth ingestion (lyrics,
+ *                  structure, parse uploaded script).
+ * - `automatic`    Backend service that fires on system events (e.g. after a
+ *                  shot's video lands). Not artist- or agent-triggered.
+ * - `shared`       Used by both an active path and an automatic path
+ *                  (rare; reserved for cases that genuinely straddle).
+ */
+export type PromptPath = 'agent' | 'web-direct' | 'intake' | 'automatic' | 'shared';
+
 export type PromptMeta = {
   id: string;
   name: string;
   stage: PromptStage;
+  /** Which path actually fires this prompt at runtime. */
+  path: PromptPath;
   /** Routing slot, not necessarily a fixed vendor model. */
   model: string;
   /** Fallback label when no project is in view. */
@@ -54,6 +76,7 @@ export const PROMPT_CATALOG: PromptMeta[] = [
   // ─── Audio ────────────────────────────────────────────────────────
   {
     id: 'transcribe-lyrics',
+    path: 'intake',
     name: 'Transcribe lyrics',
     stage: 'audio',
     model: 'audio.analysis',
@@ -79,6 +102,7 @@ Return ONLY the transcription.`,
   },
   {
     id: 'detect-structure',
+    path: 'intake',
     name: 'Detect musical structure + classify song',
     stage: 'audio',
     model: 'audio.analysis',
@@ -99,6 +123,7 @@ Return ONLY the transcription.`,
   },
   {
     id: 'summarize-meaning',
+    path: 'intake',
     name: 'Summarize meaning',
     stage: 'audio',
     model: 'project.text_provider',
@@ -130,6 +155,7 @@ Under 150 words. Write in English.`,
   },
   {
     id: 'write-audio-plan',
+    path: 'web-direct',
     name: 'Write dialogue / narration audio plan',
     stage: 'audio',
     model: 'project.text_provider',
@@ -171,6 +197,7 @@ OUTPUT CONTRACT
   // ─── Blueprint ────────────────────────────────────────────────────
   {
     id: 'generate-concepts',
+    path: 'web-direct',
     name: 'Generate concept directions',
     stage: 'blueprint',
     model: 'project.text_provider',
@@ -212,6 +239,7 @@ USER NOTE
   },
   {
     id: 'plan-scenes',
+    path: 'web-direct',
     name: 'Plan script (cast, environments, scenes, shots)',
     stage: 'blueprint',
     model: 'project.script_writer',
@@ -254,6 +282,7 @@ USER NOTE
   },
   {
     id: 'parse-script-intake',
+    path: 'intake',
     name: 'Parse script seed',
     stage: 'blueprint',
     model: 'project.script_writer',
@@ -285,6 +314,7 @@ Hard rules:
   },
   {
     id: 'plan-scenes-openai',
+    path: 'web-direct',
     name: 'Plan script (GPT-5.5 experiment)',
     stage: 'blueprint',
     model: 'gpt-5.5',
@@ -321,6 +351,7 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
   },
   {
     id: 'brainstorm-style-directions',
+    path: 'agent',
     name: 'Brainstorm style directions',
     stage: 'blueprint',
     model: 'project.text_provider',
@@ -367,6 +398,7 @@ USER NOTE
   },
   {
     id: 'refine-style-direction',
+    path: 'web-direct',
     name: 'Refine style direction',
     stage: 'blueprint',
     model: 'project.text_provider.refine',
@@ -402,6 +434,7 @@ USER NOTE
   },
   {
     id: 'visualize-style',
+    path: 'agent',
     name: 'Visualize style',
     stage: 'blueprint',
     model: 'project.image_model',
@@ -442,6 +475,7 @@ Output the final reference image. High production value. No text. No watermark.`
   // ─── Looks ────────────────────────────────────────────────────────
   {
     id: 'character-look',
+    path: 'agent',
     name: 'Character look',
     stage: 'looks',
     model: 'project.image_model',
@@ -482,6 +516,7 @@ Preserve identity: face/body/costume for people; shape/material/status details f
   },
   {
     id: 'environment-look',
+    path: 'agent',
     name: 'Environment look',
     stage: 'looks',
     model: 'project.image_model',
@@ -524,6 +559,7 @@ No characters unless tiny neutral figures are needed for scale.`,
   // ─── Studio ───────────────────────────────────────────────────────
   {
     id: 'write-shot-prompts',
+    path: 'web-direct',
     name: 'Write shot prompts (bulk)',
     stage: 'studio',
     model: 'project.script_writer',
@@ -568,6 +604,7 @@ OUTPUT CONTRACT
   },
   {
     id: 'seedance-storyboard-image',
+    path: 'web-direct',
     name: 'Write Seedance storyboard prompt',
     stage: 'studio',
     model: 'project.text_provider.refine',
@@ -625,6 +662,7 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
   },
   {
     id: 'render-seedance-storyboard-image',
+    path: 'agent',
     name: 'Render Seedance storyboard image',
     stage: 'studio',
     model: 'project.storyboard_provider',
@@ -644,6 +682,7 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
   },
   {
     id: 'seedance-storyboard-refine',
+    path: 'shared',
     name: 'Refine Seedance storyboard',
     stage: 'studio',
     model: 'project.text_provider.refine OR project.storyboard_provider',
@@ -686,6 +725,7 @@ Artist image edit note:
   },
   {
     id: 'shot-start-frame',
+    path: 'web-direct',
     name: 'Shot start frame',
     stage: 'studio',
     model: 'project.image_model',
@@ -720,6 +760,7 @@ Priority: character identity > continuity > environment > style.`,
   },
   {
     id: 'refine-shot-prompt',
+    path: 'web-direct',
     name: 'Refine shot visual prompt',
     stage: 'studio',
     model: 'project.text_provider.refine',
@@ -747,6 +788,7 @@ Output via rewrite_frame_prompt tool: { visualPrompt }`,
   },
   {
     id: 'refine-end-frame-prompt',
+    path: 'web-direct',
     name: 'Refine end-frame prompt',
     stage: 'studio',
     model: 'project.text_provider.refine',
@@ -774,6 +816,7 @@ Output via rewrite_frame_prompt tool: { visualPrompt }`,
   },
   {
     id: 'refine-look-prompt',
+    path: 'web-direct',
     name: 'Refine character/environment look prompt',
     stage: 'looks',
     model: 'project.text_provider.refine',
@@ -801,6 +844,7 @@ Output via rewrite_frame_prompt tool: { visualPrompt }`,
   },
   {
     id: 'refine-video-prompt',
+    path: 'web-direct',
     name: 'Refine video/motion prompt',
     stage: 'studio',
     model: 'project.text_provider.refine',
@@ -833,6 +877,7 @@ Output via rewrite_motion_prompt tool: { motionPrompt }`,
   },
   {
     id: 'refine-concept',
+    path: 'web-direct',
     name: 'Refine locked concept',
     stage: 'blueprint',
     model: 'project.text_provider.refine',
@@ -864,6 +909,7 @@ USER NOTE
   },
   {
     id: 'refine-script',
+    path: 'web-direct',
     name: 'Refine script (surgical edit)',
     stage: 'blueprint',
     model: 'project.script_writer',
@@ -900,6 +946,7 @@ USER NOTE
   },
   {
     id: 'chained-shot-refresh',
+    path: 'automatic',
     name: 'Chained-shot refresh (prev-frame grounded)',
     stage: 'studio',
     model: 'project.text_provider.refine',
@@ -932,6 +979,7 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
   },
   {
     id: 'shot-video-assembly',
+    path: 'agent',
     name: 'Shot video prompt (keyframe mode)',
     stage: 'studio',
     model: 'project.video_model',
@@ -947,6 +995,7 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
   },
   {
     id: 'seedance-storyboard-video',
+    path: 'agent',
     name: 'Seedance video from locked storyboard',
     stage: 'studio',
     model: 'project.video_model',
@@ -984,6 +1033,7 @@ Do not render text, panel borders, numbers, gutters, or split-screen artifacts f
   // ─── Utilities ────────────────────────────────────────────────────
   {
     id: 'critique-shot-image',
+    path: 'automatic',
     name: 'Critique shot image',
     stage: 'utilities',
     model: 'utility.vision',
@@ -1017,6 +1067,7 @@ Return JSON with score, reasoning, isConsistent, suggestions. "suggestions" must
   },
   {
     id: 'describe-frame',
+    path: 'automatic',
     name: 'Describe frame (continuity)',
     stage: 'utilities',
     model: 'utility.vision',
@@ -1033,6 +1084,7 @@ Do NOT speculate about narrative or use flowery language. Write like a script su
   },
   {
     id: 'analyze-image-style',
+    path: 'agent',
     name: 'Analyze uploaded style image',
     stage: 'utilities',
     model: 'project.text_provider.refine',
@@ -1049,6 +1101,7 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.`,
   },
   {
     id: 'chat-with-director',
+    path: 'web-direct',
     name: 'Chat with director',
     stage: 'utilities',
     model: 'utility.text',

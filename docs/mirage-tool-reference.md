@@ -32,6 +32,60 @@ Project-level mechanisms (lighter to heavier):
 - **`apply_project_prompt_override`** — complete prompt recipe for one declared kind. Composer reads into a `PROJECT OVERRIDE` section. Use for repeated complete recipes.
 - **`apply_project_preferences`** — model/provider routing (textProvider, imageModel, storyboardProvider, videoModel).
 
+## MCP surface layout
+
+Mirage's MCP server exposes three concentric layers. The 25 action specs in the index below are **not MCP tools themselves** — they're dispatched through the registry layer via `run_action` / `start_job`.
+
+**Cockpit (orchestration — 6 tools):**
+
+| Tool | Purpose |
+|---|---|
+| `list_projects` | List projects you can access |
+| `open_project` | Start a session on one project; writes notebook desk copy + mirror snapshots |
+| `create_project` | Create a non-audio project from intake |
+| `get_project_state` | Current project graph snapshot |
+| `get_agent_timing_summary` | Quick perf snapshot |
+| `mirage_capture_issue` | Capture artist-reported issue |
+
+**Registry dispatch (action invocation — 8 tools):**
+
+| Tool | Purpose |
+|---|---|
+| `list_actions` | List action-spec keys available for this project |
+| `describe_action` | Full schema + example for one action |
+| `run_action(actionKey, input)` | Synchronous dispatch; returns result |
+| `start_job(actionKey, input)` | Async dispatch; returns `jobId` |
+| `get_job(jobId)` | Poll job state |
+| `list_jobs({ projectId? })` | List recent jobs |
+| `parallel_run({ calls[] })` | Small parallel batch (independent non-paid) |
+| `list_results({ projectId? })` | Recent generation results |
+
+**Resources (project file/data reads — 3 tools):**
+
+| Tool | Purpose |
+|---|---|
+| `get_project_notebook_manifest` | List files in the project workbench |
+| `read_project_notebook_file` | Read one file by path |
+| `mint_cli_token` | Issue shell-specific sync command for notebook materialization |
+
+**Legacy** (~50 direct tools): hidden by default; surface only when `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1`. For backward-compat debugging.
+
+**Total active MCP surface:** 17 tools. Everything else flows through `run_action` / `start_job` with one of the action keys below.
+
+## How prompts get fired
+
+Catalog entries in `server/prompts/catalog.ts` carry a `path` tag indicating who triggers them at runtime. The reference below uses the same tags inline (e.g. `character-look [agent]`).
+
+| Tag | What it means |
+|---|---|
+| `agent` | Fires when an MCP action invokes a backend LLM/image/video call. Both Visual Studio buttons and agent sessions hit the same code. |
+| `web-direct` | Fires only on Visual Studio buttons. In agent path, Codex does the equivalent work locally (edits `drafts/*.md` or saved JSON) and calls the matching `apply_*` tool — **no backend LLM call.** |
+| `intake` | Fires at project creation before any agent session exists (lyric transcription, music structure analysis, script seed parsing). |
+| `automatic` | Fires on system events — after a shot's video lands (continuity refresh), after a frame lands (critique). Not artist- or agent-triggered. |
+| `shared` | Used by both paths; rare. Today only `seedance-storyboard-refine` because its replan branch is web-direct and its edit_image branch is agent-callable. |
+
+Web-direct prompts will eventually be deprecated as the agent surface displaces the corresponding Visual Studio buttons. Until then they coexist; the tag tells you which path to expect.
+
 ## Index
 
 | Key | Surface | Mutates | Paid | One-liner |
@@ -80,8 +134,8 @@ Output mirage.apply.concept
 No LLM call. Concept body is Codex-authored before this call; for web-direct intake the `generate-concepts` prompt produces options the user picks among.
 
 **Related runtime prompts:**
-- `generate-concepts` — `server/prompts/concept.ts:buildGenerateConceptPrompt`. Web-direct concept proposals.
-- `refine-concept` — `server/prompts/concept.ts:buildRefineConceptPrompt`. Web-direct surgical refine.
+- `generate-concepts` `[web-direct]` — `server/prompts/concept.ts:buildGenerateConceptPrompt`. Web brainstorm of 3 directions.
+- `refine-concept` `[web-direct]` — `server/prompts/concept.ts:buildRefineConceptPrompt`. Surgical refine via web button. **Agent path:** Codex edits the concept JSON and re-calls `apply_concept`.
 
 ---
 
@@ -99,10 +153,10 @@ Output mirage.apply.script
 Atomic. Drift-checked via `baseFingerprint`. Use `force: true` only when intentionally overwriting drift.
 
 **Related runtime prompts:**
-- `plan-scenes` — `server/prompts/planScenes.ts:buildPlanScenesPrompt`. Initial script generation (music_led). Extended thinking + validation loop.
-- `plan-scenes-openai` — Same composed prompt, GPT-5.5 worker (experimental).
-- `parse-script-intake` — `server/prompts/parseScript.ts:buildParseScriptPrompt`. Conversion when artist uploads script seed.
-- `refine-script` — `server/prompts/refineScript.ts:buildRefineScriptPrompt`. Surgical refine; preserves IDs, no cast/env renaming.
+- `plan-scenes` `[web-direct]` — `server/prompts/planScenes.ts:buildPlanScenesPrompt`. Initial script generation via web button (music_led). Extended thinking + validation loop. **Agent path:** Codex writes the script in `drafts/script.md` and applies.
+- `plan-scenes-openai` `[web-direct]` — Same composed prompt, GPT-5.5 worker (experimental, env-flagged; cut candidate).
+- `parse-script-intake` `[intake]` — `server/prompts/parseScript.ts:buildParseScriptPrompt`. Auto-fires when an artist uploads a script seed at project creation. Agent intake (Codex-driven) bypasses this — Codex reads the source itself.
+- `refine-script` `[web-direct]` — `server/prompts/refineScript.ts:buildRefineScriptPrompt`. Surgical refine via web button. **Agent path:** Codex edits `drafts/script.md` and re-applies with markdown.
 
 ### apply_shot_prompts
 
@@ -114,9 +168,9 @@ Output mirage.apply.shot_prompts
 ```
 
 **Related runtime prompts:**
-- `write-shot-prompts` — `server/prompts/shotPrompts.ts:buildWriteShotPromptsPrompt`. Bulk shot prompt writing. Composed via composePrompt.
-- `refine-shot-prompt` / `refine-end-frame-prompt` / `refine-video-prompt` — `server/services/claude.ts:refineFramePrompt`/`refineMotionPrompt`. Single-prompt surgical rewrites.
-- `chained-shot-refresh` — `server/services/claude.ts:refreshChainedShotPrompt`. Auto-fires after a shot's video lands when next shot is `prev_shot`.
+- `write-shot-prompts` `[web-direct]` — `server/prompts/shotPrompts.ts:buildWriteShotPromptsPrompt`. Bulk shot prompt writing via web "Rewrite all" button. **Agent path:** Codex writes per-shot prompts inline and applies.
+- `refine-shot-prompt` / `refine-end-frame-prompt` / `refine-video-prompt` `[web-direct]` — `server/services/claude.ts:refineFramePrompt`/`refineMotionPrompt`. Web refine buttons. **Agent path:** Codex edits the saved prompt text and calls `apply_shot_prompts` / `apply_video_prompt`.
+- `chained-shot-refresh` `[automatic]` — `server/services/claude.ts:refreshChainedShotPrompt`. Auto-fires after a shot's video lands when next shot is `prev_shot`. Not artist- or agent-triggered.
 
 ### apply_shot_workflow_modes
 
@@ -146,8 +200,8 @@ Output mirage.generate.style_candidates
 For local-image upload, POST multipart to `/api/agent/uploads` with the Mirage bearer token to get an `assetId`, then pass as `guideAssetId`.
 
 **Related runtime prompts:**
-- `brainstorm-style-directions` — `server/prompts/styleBrainstorm.ts:buildStyleBrainstormPrompt`. Text brainstorm of 4 directions when no guide. Includes selected style-note buckets when learned.
-- `visualize-style` — `server/prompts/visualizeStyle.ts:buildVisualizeStylePrompt`. Renders one direction into a style reference frame. Action invariants (no text, no watermark, single image) in OUTPUT CONTRACT.
+- `brainstorm-style-directions` `[agent]` — `server/prompts/styleBrainstorm.ts:buildStyleBrainstormPrompt`. Text brainstorm of 4 directions when no guide. Includes selected style-note buckets when learned.
+- `visualize-style` `[agent]` — `server/prompts/visualizeStyle.ts:buildVisualizeStylePrompt`. Renders one direction into a style reference frame. Action invariants (no text, no watermark, single image) in OUTPUT CONTRACT.
 
 ### identify_style
 
@@ -161,7 +215,7 @@ Output mirage.style.identification
 Auto-fires on `apply_style_direction` when locking an asset with empty/weak style text (per C4).
 
 **Related runtime prompt:**
-- `analyze-image-style` — `server/services/claude.ts:analyzeImageStyle`. Returns 2-3 sentence style fragment.
+- `analyze-image-style` `[agent]` — `server/services/claude.ts:analyzeImageStyle`. Returns 2-3 sentence style fragment.
 
 ### apply_style_direction
 
@@ -173,7 +227,7 @@ Output mirage.apply.style_direction
 ```
 
 **Related runtime prompt:**
-- `refine-style-direction` — `server/prompts/refineStyle.ts:buildRefineStylePrompt`. Web-direct surgical refine. Agent path: Codex edits direction text and calls `apply_style_direction`.
+- `refine-style-direction` `[web-direct]` — `server/prompts/refineStyle.ts:buildRefineStylePrompt`. Surgical refine via web button. **Agent path:** Codex edits the saved direction text and re-calls `apply_style_direction`.
 
 ---
 
@@ -193,9 +247,9 @@ Output mirage.generate.candidates
 `promptOverride` requires a single `entityId`. Style-note default bucket: `image` (with per-model phrases for the active image model).
 
 **Related runtime prompts:**
-- `character-look` — `server/prompts/lookPrompts.ts:buildCharacterLookPrompt`. Action invariants (neutral pose, plain background, no scene action) in OUTPUT CONTRACT.
-- `environment-look` — `server/prompts/lookPrompts.ts:buildEnvironmentLookPrompt`. Whole space visible, no characters unless tiny for scale.
-- `refine-look-prompt` — `server/services/claude.ts` via `refineFramePrompt`. Web-direct path. Agent: Codex rewrites the look prompt and re-runs `generate_candidates` with `promptOverride`.
+- `character-look` `[agent]` — `server/prompts/lookPrompts.ts:buildCharacterLookPrompt`. Action invariants (neutral pose, plain background, no scene action) in OUTPUT CONTRACT.
+- `environment-look` `[agent]` — `server/prompts/lookPrompts.ts:buildEnvironmentLookPrompt`. Whole space visible, no characters unless tiny for scale.
+- `refine-look-prompt` `[web-direct]` — `server/services/claude.ts` via `refineFramePrompt`. **Agent path:** Codex rewrites the saved look prompt and re-runs `generate_candidates` with `promptOverride`.
 
 ### list_candidates
 
@@ -232,7 +286,7 @@ Output mirage.generate.storyboard | mirage.dryrun.storyboard
 Sends saved `storyboardPrompt` + locked refs to the active storyboard provider. Cut plan is NOT sent here (it drives downstream Seedance video). In edit_image refine mode, previous storyboard is prepended.
 
 **Related runtime prompt:**
-- `render-seedance-storyboard-image` — `server/services/storyboard.ts:generateStoryboardVersion`.
+- `render-seedance-storyboard-image` `[agent]` — `server/services/storyboard.ts:generateStoryboardVersion`.
 
 ### bulk_generate_storyboards
 
@@ -255,7 +309,7 @@ Output mirage.apply.storyboard_prompts
 ```
 
 **Related runtime prompt (the planner that authors the persisted prompt):**
-- `seedance-storyboard-image` — `server/prompts/storyboard.ts:buildStoryboardPlannerPrompt`. STYLE NOTES (image + storyboard buckets, per-model phrases) + PROJECT OVERRIDE wired.
+- `seedance-storyboard-image` `[web-direct]` — `server/prompts/storyboard.ts:buildStoryboardPlannerPrompt`. Fires when web "Board prompts" is clicked. STYLE NOTES (image + storyboard buckets, per-model phrases) + PROJECT OVERRIDE wired. **Agent path:** Codex writes the storyboard prompt inline in `drafts/storyboards/<scene>.md` and applies via `apply_storyboard_prompts`.
 
 ### refine_storyboard_image
 
@@ -269,7 +323,7 @@ Output mirage.refine.storyboard
 `feedback` is the Codex-translated edit instruction — e.g. "Keep composition, characters, panel layout. Brighten lighting one stop; clean up the dirty grungy texture into a cleaner matte finish."
 
 **Related runtime prompt:**
-- `seedance-storyboard-refine` — `server/services/storyboard.ts:generateStoryboardVersion` (edit_image branch).
+- `seedance-storyboard-refine` `[shared]` — `server/services/storyboard.ts:generateStoryboardVersion`. Two branches: `edit_image` is agent-callable (this action); `replan` is web-direct (web "Refine" → rewrites saved storyboardPrompt + cutPlan; in agent path Codex edits the text and calls `apply_storyboard_prompts`).
 
 ### lock_storyboard / unlock_storyboard
 
@@ -298,8 +352,8 @@ Two paths depending on shot's workflow mode:
 - **Storyboard** — animates locked storyboard panels via `seedance-storyboard-video`; consumes saved cut plan.
 
 **Related runtime prompts:**
-- `shot-video-assembly` — `server/routes/generate-video.ts`. `{motionPrompt}. {refLabels}`.
-- `seedance-storyboard-video` — `server/services/seedance-storyboard-rd.ts:buildSeedanceStoryboardVideoPrompt`.
+- `shot-video-assembly` `[agent]` — `server/routes/generate-video.ts`. `{motionPrompt}. {refLabels}`.
+- `seedance-storyboard-video` `[agent]` — `server/services/seedance-storyboard-rd.ts:buildSeedanceStoryboardVideoPrompt`.
 
 ### apply_video_prompt
 
@@ -337,7 +391,7 @@ Output mirage.apply.audio_plan
 ```
 
 **Related runtime prompt:**
-- `write-audio-plan` — `server/prompts/audioPlan.ts:buildAudioPlanPrompt`. Composed via composePrompt. Generates structured audio-plan JSON: dialogue array + soundNotes.
+- `write-audio-plan` `[web-direct]` — `server/prompts/audioPlan.ts:buildAudioPlanPrompt`. Composed via composePrompt. Generates structured audio-plan JSON on web "Write dialogue" click. **Agent path:** Codex writes the audio plan inline in `drafts/audio-plan.md` and applies.
 
 ### apply_cast_voice
 
@@ -401,16 +455,16 @@ Output mirage.revert.project_prompt_override
 
 ## Pipeline-only prompts
 
-Not MCP-callable; fire automatically inside the engine.
+Not exposed as agent-callable MCP actions. Fire either at intake, on system events, or via Visual Studio surfaces.
 
-| Id | Stage | Model | Builder | Purpose |
-|---|---|---|---|---|
-| `transcribe-lyrics` | audio | audio.analysis | `server/services/gemini.ts` | Timestamped lyric extraction at intake. |
-| `detect-structure` | audio | audio.analysis | `server/services/gemini.ts:detectStructure` | Musical sections + song-type classification. |
-| `summarize-meaning` | audio | project.text_provider | `server/services/claude.ts` | 150-word interpretive song summary. |
-| `critique-shot-image` | utilities | utility.vision | `server/services/gemini.ts` | Auto-fires after a shot frame lands; 0–10 score + suggestions. |
-| `describe-frame` | utilities | utility.vision | `server/services/gemini.ts` | Continuity description for chained shots. |
-| `chat-with-director` | utilities | utility.text | `server/services/gemini.ts` | Web Chat panel. |
+| Id | Path | Stage | Model | Builder | Purpose |
+|---|---|---|---|---|---|
+| `transcribe-lyrics` | `intake` | audio | audio.analysis | `server/services/gemini.ts` | Timestamped lyric extraction at intake. |
+| `detect-structure` | `intake` | audio | audio.analysis | `server/services/gemini.ts:detectStructure` | Musical sections + song-type classification. |
+| `summarize-meaning` | `intake` | audio | project.text_provider | `server/services/claude.ts` | 150-word interpretive song summary. |
+| `critique-shot-image` | `automatic` | utilities | utility.vision | `server/services/gemini.ts` | Auto-fires after a shot frame lands; 0–10 score + suggestions. |
+| `describe-frame` | `automatic` | utilities | utility.vision | `server/services/gemini.ts` | Continuity description for chained shots. |
+| `chat-with-director` | `web-direct` | utilities | utility.text | `server/services/gemini.ts` | Web Chat panel only — no agent equivalent (agent IS the chat). |
 
 ---
 
