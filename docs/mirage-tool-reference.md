@@ -2,7 +2,11 @@
 
 Canonical reference for every Mirage MCP action and runtime prompt. Describes the current shape — what each tool does, what it accepts, what prompt (if any) runs, and where its code lives.
 
-**This is not an audit doc.** No notes, no pass log, no history. For the active audit/review surface see `docs/mirage-tool-and-prompt-audit.md`. For architectural background see `docs/mirage-composer-architecture.md` and the locked decisions in `docs/mirage-platform-v1-ledger.md` §2.
+**Read order:**
+- **This doc** = canonical zero-notes mirror. Read here when you want the clean current shape of the system.
+- **`docs/mirage-tool-and-prompt-audit.md`** = working/audit doc with the same content plus per-tool Notes blocks and Pass log. Read there when you're doing a review pass and want to leave findings.
+- **`docs/mirage-composer-architecture.md`** = architectural background.
+- **`docs/mirage-platform-v1-ledger.md`** §2 = locked decisions (D1–D27).
 
 **Sources of truth this is derived from:**
 - Action contracts: `server/services/actionRegistry.ts`

@@ -11,6 +11,8 @@ Two surfaces drift independently and need periodic audit passes:
 
 These are paired but not identical: not every action runs an LLM (e.g. `apply_concept` just persists), and not every prompt is exposed as an MCP action (e.g. `transcribe-lyrics` runs automatically on intake).
 
+**This is the doc to read and annotate.** The sibling `docs/mirage-tool-reference.md` is the canonical zero-notes mirror — read that if you want the clean shape; read this one when you want to review and leave findings.
+
 ## How to use this doc
 
 - Read top-to-bottom or jump by surface section.
@@ -24,37 +26,77 @@ These are paired but not identical: not every action runs an LLM (e.g. `apply_co
 - ❌ — known wrong, change needed
 - 🟡 — needs deeper review (e.g. paid call output not yet smoke-tested)
 
+## MCP surface layout
+
+The 25 action specs below are **not MCP tools themselves** — they dispatch through the registry layer via `run_action` / `start_job`. Active MCP surface:
+
+| Layer | Tool count | Tools |
+|---|---|---|
+| Cockpit (orchestration) | 6 | `list_projects`, `open_project`, `create_project`, `get_project_state`, `get_agent_timing_summary`, `mirage_capture_issue` |
+| Registry dispatch | 8 | `list_actions`, `describe_action`, `run_action`, `start_job`, `get_job`, `list_jobs`, `parallel_run`, `list_results` |
+| Resources (project reads) | 3 | `get_project_notebook_manifest`, `read_project_notebook_file`, `mint_cli_token` |
+| Legacy direct tools | ~50 | Hidden by default; surface only when `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1`. |
+
+**Active MCP surface = 17 tools.** Every action spec below is invoked through `run_action(key, input)` or `start_job(key, input)`.
+
+## Prompt path tags
+
+Catalog entries (`server/prompts/catalog.ts`) carry a `path` field indicating who actually fires them at runtime. The audit entries below use the same tags inline.
+
+| Tag | Meaning | What to look for in review |
+|---|---|---|
+| `agent` | Fires when an MCP action invokes a backend LLM/image/video call. Same code path serves Visual Studio and agent sessions. | Wording should be agent-readable; should not contain web-only chrome or button names. |
+| `web-direct` | Web button only. In agent path Codex does the equivalent work locally (edits `drafts/*.md` or saved JSON) and calls the matching `apply_*` tool — no backend LLM. | Should be clearly labeled as legacy/web-only. Should mention what the agent equivalent is. |
+| `intake` | Auto-fires at project creation before any agent session exists (lyric transcription, music structure, script seed parsing). | Source-of-truth ingestion. Should be lean; no creative direction. |
+| `automatic` | Fires on system events (after a shot's video lands, etc.). Not artist- or agent-triggered. | Should be invisible to the artist; failure handling should be graceful. |
+| `shared` | Used by both an active path and an automatic/web path. Rare. | Should not pretend to be one when it's actually both. |
+
+Today's distribution: 15 web-direct, 8 agent, 4 intake, 3 automatic, 1 shared.
+
 ## Index
 
-| Tool key | Surface | Mutates | Paid | Recipe id | Last reviewed | Verdict |
+Recipe column lists each related runtime prompt with its path tag — that's how you can scan which tools the agent actually uses vs which exist only for Visual Studio.
+
+| Tool key | Surface | Mutates | Paid | Recipes (path) | Last reviewed | Verdict |
 |---|---|:-:|:-:|---|---|:-:|
-| `apply_concept` | concept | yes | no | `generate-concepts`, `refine-concept` | 1661727 | ✅ |
-| `apply_script` | script | yes | no | `plan-scenes`, `plan-scenes-openai`, `parse-script-intake`, `refine-script` | 1661727 | ✅ |
-| `apply_shot_prompts` | script | yes | no | `write-shot-prompts`, `refine-shot-prompt`, `refine-end-frame-prompt`, `refine-video-prompt`, `chained-shot-refresh` | 1661727 | ✅ |
+| `apply_concept` | concept | yes | no | `generate-concepts` [web-direct], `refine-concept` [web-direct] | 1661727 | ✅ |
+| `apply_script` | script | yes | no | `plan-scenes` [web-direct], `plan-scenes-openai` [web-direct], `parse-script-intake` [intake], `refine-script` [web-direct] | 1661727 | ✅ |
+| `apply_shot_prompts` | script | yes | no | `write-shot-prompts` [web-direct], `refine-shot-prompt` [web-direct], `refine-end-frame-prompt` [web-direct], `refine-video-prompt` [web-direct], `chained-shot-refresh` [automatic] | 1661727 | ✅ |
 | `apply_shot_workflow_modes` | script | yes | no | — | 1661727 | ✅ |
-| `generate_style_candidates` | style | yes | yes | `brainstorm-style-directions`, `visualize-style` | 1661727 | ✅ |
-| `identify_style` | style | no | yes | `analyze-image-style` | 1661727 | ✅ |
-| `apply_style_direction` | style | yes | no | `refine-style-direction` | 1661727 | ✅ |
-| `generate_candidates` | looks | yes | yes | `character-look`, `environment-look`, `refine-look-prompt` | 1661727 | ✅ |
+| `generate_style_candidates` | style | yes | yes | `brainstorm-style-directions` [agent], `visualize-style` [agent] | 1661727 | ✅ |
+| `identify_style` | style | no | yes | `analyze-image-style` [agent] | 1661727 | ✅ |
+| `apply_style_direction` | style | yes | no | `refine-style-direction` [web-direct] | 1661727 | ✅ |
+| `generate_candidates` | looks | yes | yes | `character-look` [agent], `environment-look` [agent], `refine-look-prompt` [web-direct] | 1661727 | ✅ |
 | `list_candidates` | looks | no | no | — | 1661727 | ✅ |
 | `lock_reference` | looks | yes | no | — | 1661727 | ✅ |
-| `generate_storyboard` | storyboard | yes | yes | `render-seedance-storyboard-image` | 1661727 | ✅ |
-| `bulk_generate_storyboards` | storyboard | yes | yes | `render-seedance-storyboard-image` | 1661727 | ✅ |
-| `apply_storyboard_prompts` | storyboard | yes | no | `seedance-storyboard-image` | 1661727 | ✅ |
-| `refine_storyboard_image` | storyboard | yes | yes | `seedance-storyboard-refine` | 1661727 | ✅ |
+| `generate_storyboard` | storyboard | yes | yes | `render-seedance-storyboard-image` [agent] | 1661727 | ✅ |
+| `bulk_generate_storyboards` | storyboard | yes | yes | `render-seedance-storyboard-image` [agent] | 1661727 | ✅ |
+| `apply_storyboard_prompts` | storyboard | yes | no | `seedance-storyboard-image` [web-direct] | 1661727 | ✅ |
+| `refine_storyboard_image` | storyboard | yes | yes | `seedance-storyboard-refine` [shared] | 1661727 | ✅ |
 | `lock_storyboard` | storyboard | yes | no | — | 1661727 | ✅ |
 | `unlock_storyboard` | storyboard | yes | no | — | 1661727 | ✅ |
-| `generate_video` | video | yes | yes | `shot-video-assembly`, `seedance-storyboard-video` | 1661727 | ✅ |
+| `generate_video` | video | yes | yes | `shot-video-assembly` [agent], `seedance-storyboard-video` [agent] | 1661727 | ✅ |
 | `apply_video_prompt` | video | yes | no | — | 1661727 | ✅ |
 | `generate_dialogue_audio` | audio | yes | yes | — (TTS direct) | 1661727 | ✅ |
-| `apply_audio_plan` | audio | yes | no | `write-audio-plan` | 1661727 | ✅ |
+| `apply_audio_plan` | audio | yes | no | `write-audio-plan` [web-direct] | 1661727 | ✅ |
 | `apply_cast_voice` | audio | yes | no | — | 1661727 | ✅ |
 | `apply_project_preferences` | system | yes | no | — | 1661727 | ✅ |
 | `apply_project_style_notes` | system | yes | no | — | 1661727 | ✅ |
 | `apply_project_prompt_override` | system | yes | no | — | 1661727 | ✅ |
 | `revert_project_prompt_override` | system | yes | no | — | 1661727 | ✅ |
 
-**Pipeline-only prompts (no MCP action surface):** `transcribe-lyrics`, `detect-structure`, `summarize-meaning`, `critique-shot-image`, `describe-frame`, `chat-with-director`.
+**Pipeline-only prompts (no MCP action surface):**
+
+| Recipe | Path | Stage | Purpose |
+|---|---|---|---|
+| `transcribe-lyrics` | intake | audio | Timestamped lyric extraction at audio intake |
+| `detect-structure` | intake | audio | Musical sections + song-type classification |
+| `summarize-meaning` | intake | audio | 150-word interpretive song summary |
+| `critique-shot-image` | automatic | utilities | Auto-fires after a shot frame lands; 0–10 score |
+| `describe-frame` | automatic | utilities | Continuity description for chained shots |
+| `chat-with-director` | web-direct | utilities | Web Chat panel; no agent equivalent (agent IS the chat) |
+
+**At-a-glance read:** of 31 catalog entries, 15 are web-direct (legacy refines and bulk-writes), 8 are agent-callable (image/video generation + style brainstorm), 4 fire at intake, 3 fire automatically on system events, 1 is shared. Audit priority: web-direct entries should clearly point at the agent-path equivalent; agent entries should be lean since Codex sees them on every relevant call.
 
 ---
 
