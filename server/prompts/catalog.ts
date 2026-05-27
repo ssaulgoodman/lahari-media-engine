@@ -147,9 +147,6 @@ Under 150 words. Write in English.`,
 Write spoken dialogue lines and restrained sound notes for one shot only.
 This is structured production data that drives dialogue context for video generation and optional TTS for overlay renders. It is not prose and it is not a script rewrite.
 
-CONTEXT
-{{workflowContextFor(preset)}}
-
 INPUTS
 Project title: {{project.title}}
 Scene label: {{scene.section_label}}
@@ -161,12 +158,6 @@ Shot direction: {{shot.direction}}
 Shot visual prompt: {{shot.visual_prompt}}
 Allowed cast: {{allowedCast}}
 Raw source material: {{source_payload}}
-
-TASTE
-{{preset.source.rules}}
-{{preset.audio.dialogueRules}}
-{{preset.audio.soundRules}}
-{{preset.audio.strategyRules}}
 
 OUTPUT CONTRACT
 - Use only the listed cast IDs. Do not invent characters.
@@ -189,8 +180,6 @@ OUTPUT CONTRACT
     variables: [
       { name: 'title', description: 'Project title' },
       { name: 'language', description: 'Project language' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context; never raw workflow enum labels' },
-      { name: 'presetTaste', description: 'preset.concept.rules — concept-layer rules only; no style/medium content' },
       { name: 'userNotePolicy', description: 'Hard-constraint policy: all directions satisfy the note; conflicts translate to concept-layer intent' },
       { name: 'sourceText', description: 'Lyrics (music_led) or script excerpt (scripted_narrative)' },
       { name: 'meaning', description: 'Music meaning/intent OR director brief/logline' },
@@ -209,14 +198,8 @@ Each direction is one coherent idea — what the viewer follows, what visibly ha
 
 Visual style, palette, and cinematography are decided in later phases. Do not include art-style language, camera directions, or color palette in any field — those belong to the style phase, not the concept phase.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 {{formatted title, language, source text, meaning, musical structure or script overview, audio classification, director brief if set}}
-
-TASTE
-{{preset.concept.rules}}
 
 USER NOTE POLICY
 {{If USER NOTE is present, treat it as a hard creative constraint. All returned directions must satisfy it. Conflicts with source/preset/tool contract are refused or translated to concept-layer intent. Variety means distinct directions inside the constraint.}}
@@ -243,8 +226,6 @@ USER NOTE
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Shot duration in seconds (default 15 — matches Seedance storyboard-mode workhorse clip length)' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
-      { name: 'workflowContext', description: 'Human-readable music-led production context; never raw workflow enum labels' },
-      { name: 'presetTaste', description: 'Source rules, workflow shot-plan rules, pacing, and preset script rules' },
       { name: 'userNotePolicy', description: 'Hard-constraint policy: all structure satisfies the note unless source timing/tool contract wins' },
       { name: 'songType', description: 'Audio classification when available' },
       { name: 'isNarrative', description: 'Has dramatic arc?' },
@@ -255,17 +236,8 @@ USER NOTE
 
 Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 {{Concept, audio classification, lyrics/source text, meaning/intent, musical structure}}
-
-TASTE
-{{preset.source.rules}}
-{{workflow.shotPlanRules}}
-{{director mode + pacing guidance}}
-{{preset.script.castRules / environmentRules / sceneRules / shot examples}}
 
 USER NOTE POLICY
 {{If USER NOTE is present, all returned structure satisfies it. If it conflicts with source timing or production constraints, preserve the contract and translate the note into closest valid structural intent.}}
@@ -289,27 +261,16 @@ USER NOTE
     triggeredBy: 'Fires when a script-first project is created from direct intake.',
     summary: 'Converts an uploaded script/treatment into cast, environments, scenes, and shots. Composed via composePrompt; preserves story intent and uses preset rules for extraction/planning.',
     variables: [
-      { name: 'workflowContext', description: 'Human-readable scripted narrative context; never raw workflow enum labels' },
       { name: 'scriptText', description: 'Uploaded script, treatment, or episode brief' },
       { name: 'directorBrief', description: 'Optional intake brief' },
       { name: 'targetRuntime', description: 'Optional total runtime target, stored in project_brief' },
-      { name: 'presetTaste', description: 'Source rules, workflow shot-plan rules, pacing, cast/env extraction rules, and scene planning rules' },
     ],
     template: `Convert the uploaded script into a production-ready scene and shot plan.
 
 This is extraction and production planning, not story rewriting. Preserve story intent, scene order, character actions, and dialogue order unless the director brief explicitly asks for adaptation.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 {{Source title, director brief, target runtime, script text}}
-
-TASTE
-{{preset.source.rules}}
-{{workflow.shotPlanRules}}
-{{default pacing}}
-{{preset.script.castRules / environmentRules / sceneRules}}
 
 Return the plan using the parse_scripted_narrative tool.
 
@@ -348,18 +309,8 @@ Hard rules:
 CORE TASK
 Plan the production structure: cast, reusable environments, scenes aligned to source timing, and concrete shot directions.
 
-CONTEXT
-{{workflowContextFor(preset)}}
-
 INPUTS
 {{concept, source text, meaning/director brief, musical or timing structure, model pacing, and optional user note}}
-
-TASTE
-{{preset.source.rules}}
-{{preset.workflow.scriptRules}}
-{{preset.script.sceneRules}}
-{{preset.script.castRules}}
-{{preset.script.environmentRules}}
 
 USER NOTE POLICY
 {{Hard structural constraint when present; source timing and output contract still win.}}
@@ -378,7 +329,6 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
     summary: 'Proposes 4 distinct visual style directions — lighting, palette, texture, cultural references.',
     variables: [
       { name: 'concept', description: 'Locked concept' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context; never raw workflow enum labels' },
       { name: 'presetTaste', description: 'Preset style rules + brainstorm-only taste rules' },
       { name: 'sourceText', description: 'Lyrics/source excerpt for music-led projects; script/source excerpt for scripted narrative projects' },
       { name: 'meaning', description: 'Music-led meaning/intent, or scripted director brief/logline when available' },
@@ -390,9 +340,6 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
 Each direction is one coherent visual world the project could live inside.
 Do not write story, scenes, characters, camera shot lists, or plot beats.
 Cover a real range across legitimate aesthetics for the medium described in TASTE.
-
-CONTEXT
-{{workflowContext}}
 
 INPUTS
 {{formatted project subject, concept/theme, mood, source excerpt, meaning/logline, and script overview}}
@@ -432,16 +379,12 @@ USER NOTE
       { name: 'currentTitle', description: 'Optional current title' },
       { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
       { name: 'concept', description: 'Locked concept (for subject/mood context)' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context' },
       { name: 'presetTaste', description: 'preset.style.rules — medium + drift bans' },
       { name: 'userNotePolicy', description: 'Surgical-application policy: touch only addressed fields, preserve identity, translate medium conflicts' },
     ],
     template: `Revise the current style direction text using the director's feedback.
 
 This is a surgical refinement, not a replacement. Preserve the direction's core identity. Update only the aspects the feedback addresses; leave the rest of the description intact.
-
-CONTEXT
-{{workflowContext}}
 
 INPUTS
 {{Subject, mood, theme, and the current direction text}}
@@ -469,7 +412,6 @@ USER NOTE
     variables: [
       { name: 'styleDescription', description: 'The selected style direction text from the brainstorm/refine step' },
       { name: 'subject', description: 'Project subject from the locked concept or title' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context' },
       { name: 'presetTaste', description: 'preset.style.rules + preset.looks.qualityRules' },
       { name: 'imageModel', description: 'Project image model routing slot' },
     ],
@@ -478,9 +420,6 @@ USER NOTE
 The frame should demonstrate the style system clearly — lighting behavior, color palette, texture or medium, rendering approach, atmosphere — using a simple motif, anonymous figure, prop vignette, environment detail, or production-design element that belongs to the project. Keep the composition concrete and readable enough that the visual treatment is easy to reuse downstream.
 
 This is not a character design sheet, storyboard panel, poster, collage, or title card. It can feel like a clean production still, anonymous character-style frame, or background-detail frame, but it should not depict a specific plot beat.
-
-CONTEXT
-{{workflowContext}}
 
 INPUTS
 Project world: {{preset.style.subjectPrompt(subject)}}
@@ -521,9 +460,6 @@ Output the final reference image. High production value. No text. No watermark.`
     ],
     template: `Generate one reusable character reference portrait.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 Style reference image: Image 1
 The style image is the visual authority for medium, rendering, line treatment, palette, texture, lighting, and finish.
@@ -561,9 +497,6 @@ Mid-shot portrait, neutral pose, plain or softly blurred background, no props or
     ],
     template: `Generate one reusable environment reference image.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 Style reference image: Image 1
 The style image is the visual authority for medium, rendering, line treatment, palette, texture, lighting, and finish.
@@ -596,8 +529,6 @@ Full reusable environment reference, whole space visible, no characters unless s
     variables: [
       { name: 'shots', description: 'List of shots with id, direction, duration, cast, scene context' },
       { name: 'cast', description: 'Character descriptions' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context' },
-      { name: 'presetTaste', description: 'preset.studio.shotPromptRules' },
       { name: 'userNotePolicy', description: 'Hard-constraint policy applied to every shot; refuse conflicts with style ref / preset' },
       { name: 'videoModel', description: 'Selected video model; appends Seedance-specific guidance to INPUTS' },
       { name: 'songType', description: 'Audio classification (music_led only)' },
@@ -610,9 +541,6 @@ Full reusable environment reference, whole space visible, no characters unless s
     template: `CORE TASK
 Write renderable visualPrompt + motionPrompt pairs for the listed shots. The script already planned what happens; this tool turns those beats into image/video model instructions.
 
-CONTEXT
-{{workflowContextFor(preset)}}
-
 INPUTS
 Mood: {{concept.mood}}
 Video model: {{videoModel}}
@@ -621,9 +549,6 @@ Previous batch tail: {{previousBatchTail}}
 Shots to write: {{shotList}}
 Model guidance: {{seedance or default video guidance}}
 Music-led audio classification/pacing flags appear only for music-led projects.
-
-TASTE
-{{preset.studio.shotPromptRules}}
 
 USER NOTE POLICY
 {{If USER NOTE is present, treat it as a hard creative constraint across every shot unless it conflicts with the locked style reference, preset rules, cast/environment facts, or output contract.}}
@@ -664,9 +589,6 @@ OUTPUT CONTRACT
     ],
     template: `CORE TASK
 Plan one storyboard board and cut plan for a two-step storyboard workflow.
-
-CONTEXT
-{{workflowContextFor(preset)}}
 
 INPUTS
 Source brief: {{shot title, concept, scene, clip direction, cast, environment, duration, panel grid}}
@@ -913,8 +835,6 @@ Output via rewrite_motion_prompt tool: { motionPrompt }`,
     variables: [
       { name: 'lockedConcept', description: 'Current locked concept JSON' },
       { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context' },
-      { name: 'presetTaste', description: 'preset.concept.rules — concept-layer rules only; no style/medium content' },
       { name: 'userNotePolicy', description: 'Surgical-application policy: touch only addressed fields, preserve locked fields, refuse layer-violating notes' },
     ],
     template: `Revise the locked concept using the director's feedback.
@@ -923,14 +843,8 @@ This is a refinement, not a replacement — preserve the core identity. Update o
 
 Visual style, palette, and cinematography belong to later phases. Do not introduce art-style language, camera directions, or color palette here.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 {{Current concept: title, subject, mood, theme, conceptDirection, description}}
-
-TASTE
-{{preset.concept.rules}}
 
 USER NOTE POLICY
 {{Apply surgically. Touch only fields addressed by the note. Preserve locked fields. Refuse style/medium asks at this layer and translate to concept-layer intent.}}
@@ -953,8 +867,6 @@ USER NOTE
       { name: 'currentScript', description: 'Full current script (cast, environments, scenes with shots)' },
       { name: 'feedback', description: 'Director feedback — flows into USER NOTE' },
       { name: 'concept', description: 'Locked concept' },
-      { name: 'workflowContext', description: 'Human-readable production-spine context' },
-      { name: 'presetTaste', description: 'preset.script.sceneRules + planner identity' },
       { name: 'userNotePolicy', description: 'Surgical-application policy: preserve unchanged scenes, do not rename cast/environments' },
       { name: 'sourceText', description: 'Lyrics (music_led) or script excerpt (scripted_narrative)' },
       { name: 'meaning', description: 'Meaning / director brief' },
@@ -967,14 +879,8 @@ USER NOTE
 
 This is SURGICAL refinement, not rewriting from scratch. Think editor, not new writer.
 
-CONTEXT
-{{workflowContext}}
-
 INPUTS
 {{Concept, source text, meaning, structure, pacing guidance (Seedance or standard), current script JSON}}
-
-TASTE
-{{preset.script.sceneRules + planner identity}}
 
 USER NOTE POLICY
 {{Preserve unchanged scenes/shots exactly. Do not rename existing cast/environments — they are IDs. Every shot keeps castNames + environmentName. Refuse style/medium asks at this layer.}}

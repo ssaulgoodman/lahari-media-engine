@@ -15,11 +15,17 @@ const SHARED_OUTPUT_CONTRACT = `One isolated reference image. No collage, grid, 
 
 export const isLegacyLookPrompt = (prompt?: string | null): boolean => {
   const text = typeof prompt === 'string' ? prompt : '';
+  // The "composed by Mirage's composer" marker is OUTPUT CONTRACT — every
+  // composer-built prompt has it (required field on ComposePromptParts).
+  // Prior heuristic used CONTEXT, which was removed when workflowContext
+  // was deleted from the composer; that made new env/cast prompts look
+  // legacy and triggered spurious rebuilds.
+  const isComposedByComposer = text.includes('\nOUTPUT CONTRACT\n');
   return text.includes('Generate ONE character reference portrait. Match the visual style EXACTLY from Image')
     || text.includes('Generate ONE environment shot. Match the visual style EXACTLY from Image')
     || (
       text.length > 0
-      && !text.includes('\nCONTEXT\n')
+      && !isComposedByComposer
       && (
         /character reference portrait/i.test(text)
         || /reusable character reference/i.test(text)
