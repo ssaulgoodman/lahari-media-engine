@@ -55,46 +55,43 @@ Today's distribution: 15 web-direct, 8 agent, 4 intake, 3 automatic, 1 shared.
 
 ## Index
 
-**How to read this table:**
+**The rule for reading the table:** every tool below is agent-callable. **"What happens when agent calls it"** describes the actual runtime behavior — a model call, a DB save, a read, or a lock toggle. **"Web flow on same surface"** tells you what the Visual Studio UI does instead, either calling the same action or running a separate backend LLM to write text the agent would write inline.
 
-- **Every action is agent-callable.** They all dispatch through `run_action` / `start_job`. The agent uses every tool below.
-- An **action** is the thing the agent invokes (code). A **prompt** is an LLM template that may fire inside an action, or may fire from a Visual Studio button, or both. Actions and prompts are separate things.
-- The next two columns split prompts by where they fire:
-  - **Inside the action** = the LLM/image/video/vision prompt that runs *when the agent invokes this action*. If empty, the action is pure data persistence — no model call, the agent's text gets saved as-is.
-  - **Web-only (same surface)** = prompts that exist for Visual Studio buttons on the same data surface. **The agent never fires these.** In the agent flow, Codex writes the text itself and the action persists it.
-- `apply_concept` having an empty "Inside the action" column and two web-only prompts is the canonical example: agent calls `apply_concept`, no LLM fires, concept gets saved. The web prompts only matter if a user clicks a Visual Studio "Generate concept" button.
+| Tool | What happens when agent calls it | Paid? | Web flow on same surface | Verdict |
+|---|---|:-:|---|:-:|
+| `apply_concept` | Saves Codex-written concept JSON to DB | — | Web "Generate concept" runs `generate-concepts` LLM, user picks, then applies | ✅ |
+| `apply_script` | Saves Codex-written script (JSON or markdown) to DB | — | Web "Generate script" runs `plan-scenes` LLM, then applies (`plan-scenes-openai` is a stale GPT variant, cut candidate; `refine-script` is the web refine button) | ✅ |
+| `apply_shot_prompts` | Saves Codex-written visual/motion/direction text per shot | — | Web "Rewrite all" runs `write-shot-prompts` LLM, then applies. Individual refine buttons run `refine-shot-prompt` / `refine-end-frame-prompt` / `refine-video-prompt`. `chained-shot-refresh` auto-fires after a shot's video lands. | ✅ |
+| `apply_shot_workflow_modes` | Sets per-shot path: `auto` / `storyboard` / `keyframe` | — | Same — web mode toggle calls this | ✅ |
+| `generate_style_candidates` | Fires image model to render style reference candidates (uses `brainstorm-style-directions` or `visualize-style` prompt internally) | ● | Same — web "Brainstorm styles" calls this exact action | ✅ |
+| `identify_style` | Fires vision LLM to read a style image, returns description (no DB write) | ● | Same — also auto-fires when locking a style asset with empty text | ✅ |
+| `apply_style_direction` | Saves style description and/or locks a style asset | — | Web "Refine style" runs `refine-style-direction` LLM, then applies | ✅ |
+| `generate_candidates` | Fires image model to render cast/env reference candidates (uses `character-look` or `environment-look` prompt internally) | ● | Same — web "Generate look" calls this. Web also has "Refine" button that runs `refine-look-prompt` LLM separately to rewrite the saved prompt. | ✅ |
+| `list_candidates` | Reads candidate URLs/asset IDs for one entity from DB | — | Same — web reads this | ✅ |
+| `lock_reference` | Sets canonical character/env reference (DB toggle) | — | Same — web "Lock" calls this | ✅ |
+| `generate_storyboard` | Fires image model to render storyboard from saved prompt | ● | Same — web "Generate storyboard" calls this | ✅ |
+| `bulk_generate_storyboards` | Fires image model per shot for many storyboards | ● | Same — web "Generate all" calls this | ✅ |
+| `apply_storyboard_prompts` | Saves Codex-written storyboard prompt + cut plan text | — | Web "Board prompts" runs `seedance-storyboard-image` planner LLM, then applies | ✅ |
+| `refine_storyboard_image` | Fires image edit model with a Codex-translated narrow edit instruction | ● | Same — web "Refine" edit_image mode calls this. Web also has separate "Redo" mode that runs `seedance-storyboard-refine` LLM to rewrite saved text. | ✅ |
+| `lock_storyboard` | Approves a storyboard version for video gen (DB toggle) | — | Same — web "Lock" calls this | ✅ |
+| `unlock_storyboard` | Clears storyboard approval (DB toggle) | — | Same — web "Unlock" calls this | ✅ |
+| `generate_video` | Fires video model (Seedance or Veo) to render shot clip | ● | Same — web "Generate video" calls this | ✅ |
+| `apply_video_prompt` | Saves Codex-written keyframe motion prompt | — | Same — web "Save motion prompt" calls this. Web "Refine" button separately runs `refine-video-prompt` LLM. | ✅ |
+| `generate_dialogue_audio` | Fires TTS (ElevenLabs) for dialogue lines (no LLM) | ● | Same — web "Generate dialogue" calls this | ✅ |
+| `apply_audio_plan` | Saves Codex-written dialogue + sound notes per shot | — | Web "Write dialogue" runs `write-audio-plan` LLM, then applies | ✅ |
+| `apply_cast_voice` | Assigns ElevenLabs voice ID to a cast member | — | Same — web voice picker calls this | ✅ |
+| `apply_project_preferences` | Saves project model/provider routing | — | Same — web preferences panel calls this | ✅ |
+| `apply_project_style_notes` | Saves project per-surface style notes (taste memory) | — | Same — agent-driven today; web UI not yet wired | ✅ |
+| `apply_project_prompt_override` | Saves project-scoped prompt recipe override | — | Same — web prompt override editor calls this | ✅ |
+| `revert_project_prompt_override` | Rolls back a project prompt override (DB toggle) | — | Same — web "Revert" calls this | ✅ |
 
-| Tool key | Surface | Inside the action (agent fires) | Web-only (same surface, agent skips) | Mutates | Paid | Verdict |
-|---|---|---|---|:-:|:-:|:-:|
-| `apply_concept` | concept | — (saves to DB) | `generate-concepts`, `refine-concept` | yes | no | ✅ |
-| `apply_script` | script | — (saves to DB) | `plan-scenes`, `plan-scenes-openai`, `refine-script` (+ `parse-script-intake` runs at intake) | yes | no | ✅ |
-| `apply_shot_prompts` | script | — (saves to DB) | `write-shot-prompts`, `refine-shot-prompt`, `refine-end-frame-prompt`, `refine-video-prompt` (+ `chained-shot-refresh` runs automatically) | yes | no | ✅ |
-| `apply_shot_workflow_modes` | script | — (saves to DB) | — | yes | no | ✅ |
-| `generate_style_candidates` | style | `brainstorm-style-directions` or `visualize-style` (image model) | — | yes | yes | ✅ |
-| `identify_style` | style | `analyze-image-style` (vision LLM) | — | no | yes | ✅ |
-| `apply_style_direction` | style | — (saves to DB; auto-runs `identify_style` if locking with empty text) | `refine-style-direction` | yes | no | ✅ |
-| `generate_candidates` | looks | `character-look` or `environment-look` (image model) | `refine-look-prompt` | yes | yes | ✅ |
-| `list_candidates` | looks | — (reads DB) | — | no | no | ✅ |
-| `lock_reference` | looks | — (DB toggle) | — | yes | no | ✅ |
-| `generate_storyboard` | storyboard | `render-seedance-storyboard-image` (image model) | — | yes | yes | ✅ |
-| `bulk_generate_storyboards` | storyboard | `render-seedance-storyboard-image` (image model, per shot) | — | yes | yes | ✅ |
-| `apply_storyboard_prompts` | storyboard | — (saves to DB) | `seedance-storyboard-image` (planner) | yes | no | ✅ |
-| `refine_storyboard_image` | storyboard | `seedance-storyboard-refine` edit_image branch (image edit) | `seedance-storyboard-refine` replan branch (web "Redo") | yes | yes | ✅ |
-| `lock_storyboard` | storyboard | — (DB toggle) | — | yes | no | ✅ |
-| `unlock_storyboard` | storyboard | — (DB toggle) | — | yes | no | ✅ |
-| `generate_video` | video | `shot-video-assembly` (keyframe) or `seedance-storyboard-video` (storyboard mode) | — | yes | yes | ✅ |
-| `apply_video_prompt` | video | — (saves to DB) | — | yes | no | ✅ |
-| `generate_dialogue_audio` | audio | TTS (ElevenLabs; no LLM) | — | yes | yes | ✅ |
-| `apply_audio_plan` | audio | — (saves to DB) | `write-audio-plan` | yes | no | ✅ |
-| `apply_cast_voice` | audio | — (saves to DB) | — | yes | no | ✅ |
-| `apply_project_preferences` | system | — (saves to DB) | — | yes | no | ✅ |
-| `apply_project_style_notes` | system | — (saves to DB) | — | yes | no | ✅ |
-| `apply_project_prompt_override` | system | — (saves to DB) | — | yes | no | ✅ |
-| `revert_project_prompt_override` | system | — (DB toggle) | — | yes | no | ✅ |
+**Quick takeaways for the audit pass:**
+- Tools where **"Web flow"** says "Same — web calls this action" → only one path exists. Cleanest tools. Just audit the action's contract.
+- Tools where **"Web flow"** names a separate LLM (e.g. `generate-concepts`, `plan-scenes`) → two parallel paths to the same DB surface. The named LLM is a web-only legacy that will get cut when the corresponding button is deprecated. Audit both the action contract AND whether the named LLM is still needed.
+- **Cut candidates today:** `plan-scenes-openai` (stale GPT-5.5 experiment, env-flagged, never default).
+- **Conditional cuts** (deprecate when web UI button goes): `generate-concepts`, `refine-concept`, `plan-scenes`, `refine-script`, `write-shot-prompts`, `refine-shot-prompt`, `refine-end-frame-prompt`, `refine-video-prompt`, `refine-look-prompt`, `refine-style-direction`, `seedance-storyboard-image` planner, `seedance-storyboard-refine` replan branch, `write-audio-plan`. 13 LLM prompts will go when the web UI is reshaped around the agent surface.
 
-**Read it as:** "When the agent invokes this action, [Inside the action] runs. The web UI may also have [Web-only] buttons on the same data surface, but the agent never fires those — Codex writes the text itself and uses the action to persist."
-
-Last reviewed across the table: commit `e654790` (column restructure).
+Last reviewed across the table: commit `e654790`.
 
 **Pipeline-only prompts (no MCP action surface):**
 
