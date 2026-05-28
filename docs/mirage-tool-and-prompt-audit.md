@@ -709,6 +709,54 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Why deferred:** no active per-project filtering today, so no real drift to fix yet. Add when per-project gating becomes a real feature.
 
+### 5. Cut audio-classification tags (`isNarrative`, `isMeditative`, `songType`)
+
+**Problem:** Lahari-era devotional-music domain leakage. Used in `detect-structure` output, concept.ts, planScenes.ts, shotPrompts.ts (`meditativeGuidance` injects ~7 lines of "favor stillness, patience" doctrine when meditative=true), styleBrainstorm.ts. Auto-injected preset doctrine is exactly what the style-notes architecture replaces.
+
+**Slice:**
+- Drop `is_narrative` / `is_meditative` / `song_type` columns from project + audio_analysis tables
+- Remove conditional branches in 5 prompt builders
+- Simplify `detect-structure` LLM output (return only sections + lyrics, no traits)
+- If an artist wants meditative pacing, they write it into `style-notes.image` / `style-notes.motion` as a one-time bible note — ships into every relevant call automatically
+
+**Why deferred:** clean cleanup with no behavior loss for the general machine. Defer until music_led pipelines have been smoke-tested without these flags (or confirmed unused by current Bhakti projects).
+
+### 6. Split `generate_style_candidates` into brainstorm + render
+
+**Problem:** Today `generate_style_candidates` does two things in one action: fires `brainstorm-style-directions` LLM to write 4 direction texts, then fires `visualize-style` per direction to render images. In agent-native flow, Codex writes the direction texts itself; only the image render is genuinely paid work that needs a backend action.
+
+**Workaround today:** Codex calls the action 4 times with 4 different `promptOverride` values to bypass brainstorm. Functional but ugly.
+
+**Slice:**
+- Add `directions?: Array<{ title, description }>` input to `generate_style_candidates`
+- When provided, skip brainstorm and render each direction
+- When absent, fire brainstorm as today (web flow)
+- Retag `brainstorm-style-directions` `[web-direct]`; the only remaining `[agent]`-tagged style prompt becomes `visualize-style`
+
+**Why deferred:** the workaround works; not blocking. Land alongside web-direct deprecation pass.
+
+### 7. Fallback strategy when agents are unavailable
+
+**Problem:** If we fully cut web-direct prompts (the 13 conditional cuts), Mirage operates only through agents. If Codex is down and no alternate agent is reachable, artists can't operate the system. This is the operational SLA question.
+
+**Three realistic fallback layers:**
+1. **Multi-agent compatibility (primary).** Codex isn't the only MCP client. Claude / Claude Code / future agents can drive the same surface. If Codex is down, point another agent at the MCP server. Natural resilience.
+2. **Manual entry web (secondary).** Artist can type concept JSON / script markdown / etc. directly into web forms and hit Apply. No backend LLM. Engineer-friendly fallback.
+3. **Thin admin/emergency LLM (tertiary).** Backend LLM layer gated behind a feature flag, not artist-facing by default. Used only when 1+2 are both unavailable. Tiny surface, mostly dormant.
+
+**Why deferred:** the question matters before fully cutting web-direct prompts but doesn't block agent-native work today. Decide before the Phase 3 / 4 deprecation lands. Likely the answer is "multi-agent + manual entry; no emergency LLM layer" — Mirage's SLA becomes agent availability.
+
+### 8. Hide `identify_style` from agent-facing action surface
+
+**Problem:** `identify_style` is the one Layer 2 action where Codex's native vision genuinely overlaps the action's job. Every other generate_* fires a model Codex can't run (image/video/TTS/edit). Codex can see images directly and write a 2-3 sentence style description into `apply_style_direction` without calling `identify_style` at all.
+
+**Slice:**
+- Filter `identify_style` out of `config/actions/style.json` when materializing for agent
+- Keep server-side auto-fire behavior inside `apply_style_direction` (C4 auto-identify when locking with empty text)
+- Web UI keeps calling it via legacy route
+
+**Why deferred:** tiny saving (1 action shaved). Principled, not urgent.
+
 ---
 
 ## Appendix
