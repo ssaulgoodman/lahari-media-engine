@@ -660,6 +660,57 @@ That's 13 prompts queued for deprecation. The 8 `[agent]`-tagged prompts stay; t
 
 ---
 
+## Future cleanup backlog
+
+Pinned items that surfaced during audit but aren't blocking. Take after smoke test passes so we know which abstractions earned their keep under real use.
+
+### 1. Audio intake via agent path
+
+**Problem:** `create_project` MCP today says "non-audio only." Audio projects still go through the legacy queue. That violates the general-machine principle — the agent should be able to start any project type from any seed.
+
+**Slice:**
+- Extend `/api/agent/uploads` with `audio_source` purpose (binary upload, same pattern as image purposes)
+- Extend `create_project` MCP to accept `sourceAssetId` for audio
+- Backend auto-fires the intake chain (`transcribe-lyrics` → `detect-structure` → `summarize-meaning`) when source is audio
+
+**Why deferred:** small slice but not blocking. Bhakti / current production users still use the queue. Land after smoke test confirms agent-native intake works for non-audio projects first.
+
+### 2. `workflow_key` as runtime branch is mostly legacy
+
+**Problem:** `workflow_key` (`music_led` / `scripted_narrative`) was the *backend planner* discriminator under the old LLM-as-planner model. In agent-native Mirage, Codex IS the planner — it reads what's in the project (audio? script? brief?) and proceeds without needing a typed enum to route between backend prompts.
+
+**Where it still earns its keep:**
+- Auto-intake chain ("if source is audio, transcribe + analyze") — can be derived from source type, doesn't need an explicit workflow key
+- Per-project `availableTools` / `blockedTools` filtering — can be derived from source assets
+- Web-direct planner prompts (`plan-scenes` vs `parse-script-intake`) — cuttable when those web prompts go
+
+**Slice (eventual):** replace `workflow_key` with a `seed_kind` derived property (or fold into source-asset existence). Most call sites collapse to "does this project have audio? does it have a script?" rather than a typed branching enum.
+
+**Why deferred:** real refactor; cuts run deep. Make web-direct planner prompts deprecated first (#3 below), then workflow_key cleanup is the natural follow-up.
+
+### 3. Collapse `mirrors/` + `drafts/` into single editable artifacts
+
+**Problem:** The two-file pattern is inherited cruft. Editable surfaces (script, audio-plan, storyboard prompts) currently have both a read-only `mirrors/` snapshot and an editable `drafts/` copy. In agent-native flow, Codex's apply response already returns the refreshed artifact inline; the disk file just needs auto-refresh from the sync layer.
+
+**Slice (per Codex's read on this):**
+- Collapse only the editable surfaces — `mirrors/script.json` + `drafts/script.md` → single editable `script.md`. Same for audio-plan, storyboard drafts.
+- Keep `state/` (renamed from surviving `mirrors/`) for read-only DB projections: cast, environments, asset manifest, render history, event log. These aren't authored content; they're DB-computed.
+- Apply tools' `changedArtifacts` response field carries the refreshed content; CLI sync layer writes it.
+
+**Why deferred:** workbench file restructure with downstream ripples (CLI sync, MCP notebook builder, AGENTS.md, every codex reference). Do it after the audit pass is complete so notes don't get harder to apply mid-restructure.
+
+### 4. Per-project filtering of materialized action schemas
+
+**Problem:** `config/actions/index.json` and `config/actions/<surface>.json` currently contain the full 25-action registry, not filtered by per-project `availableTools` / `blockedTools`. MCP `list_actions` does filter, so the file and the live tool can disagree.
+
+**Today this doesn't bite** because `availableTools` filtering isn't actively gating actions in production. Will bite when it does.
+
+**Slice:** apply per-project filtering when materializing the action files. Small change in `buildActionsArtifacts()`.
+
+**Why deferred:** no active per-project filtering today, so no real drift to fix yet. Add when per-project gating becomes a real feature.
+
+---
+
 ## Appendix
 
 ### Upload boundary
