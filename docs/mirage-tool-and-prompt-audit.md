@@ -757,6 +757,46 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Why deferred:** tiny saving (1 action shaved). Principled, not urgent.
 
+### 9. Storyboard `edit_image` refine — drop saved prompt from payload
+
+**Problem:** Current code sends `savedStoryboardPrompt + artistEditNote` as the prompt body alongside the previous storyboard image. The saved prompt is at best redundant (the image carries visual state) and at worst conflicts with the edit instruction (e.g. "dim grimy bunker" + "make it bright" = model confused which signal to trust). Real-world image-edit APIs perform best with source image + concise change description, not source + full original prompt + delta.
+
+**Slice:**
+- In `edit_image` refine mode, send only: previous image + identity refs (style/cast/env for stability) + artist edit instruction
+- Drop the saved storyboardPrompt from the prompt body
+- Test on 3-5 representative refine scenarios to confirm cleaner output
+- If output regresses, restore but add an explicit "edit only the specified change; preserve everything else" wrapper
+
+**Why deferred:** small focused test. Land alongside the broader vision-label cleanup so both image-edit and label changes ship together.
+
+### 10. Audit Layer 3 utility prompts — cut unused, reroute one
+
+**Per Saul's read of actual usage:**
+- **Cut `critique-shot-image` fully** — unused in production. Remove `critiqueShotImage` from `services/gemini.ts`, remove auto-fire wiring in shot-frame generation paths, remove catalog entry, remove from docs.
+- **Cut `chat-with-director` fully** — unused. Remove `chatWithDirector` from `services/gemini.ts`, the route handler, the frontend Chat panel hook (or keep panel UX with new agent backing if desired separately), and the catalog entry.
+- **Reroute `describe-frame` to `project.text_provider` with image input.** Today it's hardcoded `gemini-3-pro-preview`. The text provider is multimodal; routing through it gives the project's chosen LLM consistency with other vision-input refines. Touches `services/gemini.ts:describeFrame` plus any callers.
+- **Keep audio-analysis prompts on Gemini** — `transcribe-lyrics`, `detect-structure`, `summarize-meaning`. Only Gemini does audio transcription + structure detection reliably. This is intentional, not legacy.
+
+**Slice:** one cleanup pass touching `services/gemini.ts` (remove 2 functions, reroute 1), `server/routes/generate-shots.ts` (remove critique auto-fire), `server/routes/chat.ts` or equivalent (remove chat route), `components/ChatPanel.tsx` and related (frontend cleanup), `server/prompts/catalog.ts` (drop 2 entries, relabel describe-frame model).
+
+**Why deferred:** small but cross-file. Audit doc gets cleaner numbers after (29 Layer 3 prompts instead of 31).
+
+### 11. Replace "vision LLM" terminology across the project
+
+**Problem:** "Vision LLM" appears in docs, catalog model labels, and possibly code comments as if it's a separate model class. It isn't. All our text providers (Claude, GPT-5.5, Gemini) are multimodal. When a refine prompt sends an image, it's the same text provider in refine mode with `inputImages` attached.
+
+**Correct labels:**
+- "project.text_provider.refine (with image input)" — for LLM refines that send images (refine-shot-prompt, refine-end-frame-prompt, refine-look-prompt, refine-video-prompt, analyze-image-style, chained-shot-refresh, describe-frame after rerouting)
+- "utility (Gemini, hardcoded)" — for audio-analysis hardcoded calls (transcribe-lyrics, detect-structure, summarize-meaning)
+
+**Sweep targets:**
+- `docs/mirage-tool-reference.md` + `docs/mirage-tool-and-prompt-audit.md` — every "vision LLM" → accurate label
+- `server/prompts/catalog.ts` — model strings: `utility.vision` → `utility (Gemini)` for audio prompts; refines that wrongly say "utility.vision" should say `project.text_provider.refine`
+- `components/PromptsLibrary.tsx` — `ROUTING_FILTERS` includes `model === 'utility.vision'` — update
+- Search `server/services/claude.ts`, `services/gemini.ts` comments for "vision LLM" / "vision model" misuse
+
+**Why deferred:** doc + label cleanup, no behavior change. Cosmetic but matters for accuracy.
+
 ---
 
 ## Appendix
