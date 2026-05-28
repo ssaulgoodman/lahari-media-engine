@@ -805,6 +805,33 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Why deferred:** doc + label cleanup, no behavior change. Cosmetic but matters for accuracy.
 
+### 12. Decouple intake-analysis from upload (general-machine cleanup)
+
+**Problem:** Today an audio upload auto-fires `transcribe-lyrics → detect-structure → summarize-meaning` regardless of what the artist actually wants the audio for. This is Lahari-era doctrine where "every audio is a devotional song to plan around." For soundtrack-only / narration / reference / non-music uploads it's expensive, slow, and produces unused outputs.
+
+**Proposed flow:**
+1. **Upload just persists.** Asset row created, no auto-fire chain. Returns `assetId` and that's it.
+2. **Analysis becomes opt-in callable actions:**
+   - `analyze_audio_transcribe(assetId)` → lyrics
+   - `analyze_audio_structure(assetId)` → sections (drop songType/isNarrative/isMeditative traits per backlog #5)
+   - **Drop `summarize-meaning` entirely** — Codex can write a 150-word interpretation in-conversation; no backend prompt needed
+3. **`parse-script-intake`** — stays as a callable action for web-direct script-PDF intake. Agent path bypasses (Codex reads PDFs natively → writes `drafts/script.md` → `apply_script`).
+4. **Codex orchestrates.** Codex asks artist "soundtrack or source?" and runs only matching analysis. Web UI buttons can call the same actions for non-agent flow.
+
+**Net surface change:** 4 intake prompts → 2 callable actions (transcribe, structure) + 1 web fallback (parse-script). `summarize-meaning` cut entirely.
+
+**Combines with backlog #1** (audio intake via agent path). Same slice fundamentally.
+
+**Why deferred:** real refactor across upload route, intake service, frontend intake screen, MCP action surface. Land after agent-native non-audio intake (scripted_narrative) proves out in smoke testing.
+
+### 13. Web UI audit deferred — pin and review later
+
+**Reminder for Saul.** This audit pass skipped the Visual Studio (web UI) surface entirely. The web flow has many of the same Pattern 7 issues (backend LLM helpers where the user could write directly, dual-shape buttons, refine vs regenerate confusion, intake auto-fire UX). Plus reshaping web UI around the agent surface is the precondition for cutting the 13 web-direct prompts and for backlog items 12 (intake decoupling) and 1 (audio intake).
+
+**When:** after the current agent-path smoke testing lands and basic agent-native production flow works. Then a deliberate Visual Studio audit pass: per-component review, identify which buttons map to which Layer 2 actions, which are pure UI sugar, which have to stay legacy.
+
+**Don't forget to do this.** Easy to defer indefinitely; that's how legacy chrome accumulates.
+
 ---
 
 ## Appendix
