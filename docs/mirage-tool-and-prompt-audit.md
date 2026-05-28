@@ -159,7 +159,10 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 #### identify_style
 
-**Notes:** _blank_
+**Notes:**
+- Redundant for agent path. Codex sees images natively and can write a 2-3 sentence style description directly into `apply_style_direction({ style: { styleDescription, sourceAssetId } })`. Paying for a separate vision LLM call when Codex IS a vision LLM is waste. The Layer 3 prompt `analyze-image-style` has the same redundancy.
+- Honest agent flow: when locking a style asset, Codex writes the description in the same turn as the apply. The C4 auto-identify fallback (auto-fires `analyze-image-style` inside `apply_style_direction` when text is empty) was built for cases where the apply caller doesn't bother to describe — but in agent path Codex always should.
+- Tracked as backlog item 8 (hide from agent-facing `config/actions/style.json` + keep C4 server-side fallback for legacy callers). When that lands, `analyze-image-style` also retags `[web-direct]` and stops being agent-callable.
 
 **Pass log:** none
 
