@@ -822,6 +822,8 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Combines with backlog #1** (audio intake via agent path). Same slice fundamentally.
 
+**Web UI requirement:** when the auto-fire chain dies, the Visual Studio intake screen needs explicit buttons for each opt-in action: "Transcribe this audio", "Analyze structure", "Parse this script". Without these, non-agent users have no way to trigger the analysis they want. Slice scope includes adding those buttons (or repurposing the existing intake screen toggle).
+
 **Why deferred:** real refactor across upload route, intake service, frontend intake screen, MCP action surface. Land after agent-native non-audio intake (scripted_narrative) proves out in smoke testing.
 
 ### 13. Web UI audit deferred — pin and review later
@@ -829,6 +831,8 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 **Reminder for Saul.** This audit pass skipped the Visual Studio (web UI) surface entirely. The web flow has many of the same Pattern 7 issues (backend LLM helpers where the user could write directly, dual-shape buttons, refine vs regenerate confusion, intake auto-fire UX). Plus reshaping web UI around the agent surface is the precondition for cutting the 13 web-direct prompts and for backlog items 12 (intake decoupling) and 1 (audio intake).
 
 **When:** after the current agent-path smoke testing lands and basic agent-native production flow works. Then a deliberate Visual Studio audit pass: per-component review, identify which buttons map to which Layer 2 actions, which are pure UI sugar, which have to stay legacy.
+
+**Also re-review Layer 3 prompts after backlog #10 + #12 land.** Once intake auto-fire is killed (#12) and the utility prompts are cleaned (#10 cuts critique-shot-image + chat-with-director, reroutes describe-frame), the remaining Layer 3 surface shifts meaningfully. Do a fresh read of the prompts section to confirm what survives, what's still needed, and what should still be retagged. Saul has asked to be explicitly reminded — don't skip this.
 
 **Don't forget to do this.** Easy to defer indefinitely; that's how legacy chrome accumulates.
 
