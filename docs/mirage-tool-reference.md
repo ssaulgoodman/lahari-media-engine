@@ -1,528 +1,507 @@
 # Mirage Tool Reference
 
-Canonical reference for every Mirage MCP action and runtime prompt. Describes the current shape — what each tool does, what it accepts, what prompt (if any) runs, and where its code lives.
+Canonical reference for the Mirage MCP surface. Three layers: MCP tools, actions, prompts. Each layer is the format that fits it — table for tools/actions, grouped blocks for prompts.
 
 **Read order:**
-- **This doc** = canonical zero-notes mirror. Read here when you want the clean current shape of the system.
-- **`docs/mirage-tool-and-prompt-audit.md`** = working/audit doc with the same content plus per-tool Notes blocks and Pass log. Read there when you're doing a review pass and want to leave findings.
-- **`docs/mirage-composer-architecture.md`** = architectural background.
-- **`docs/mirage-platform-v1-ledger.md`** §2 = locked decisions (D1–D27).
+- This doc = clean current shape, no notes/history.
+- `docs/mirage-tool-and-prompt-audit.md` = same content + per-action Notes blocks and Pass log for active reviews.
+- `docs/mirage-composer-architecture.md` = architectural background.
+- `docs/mirage-platform-v1-ledger.md` §2 = locked decisions (D1–D28).
 
-**Sources of truth this is derived from:**
-- Action contracts: `server/services/actionRegistry.ts`
-- Runtime prompt builders: `server/prompts/*.ts`
-- Catalog metadata: `server/prompts/catalog.ts`
-- MCP wiring: `server/routes/mcp.ts`
+Sources of truth this is derived from: `server/services/actionRegistry.ts`, `server/prompts/*.ts`, `server/services/{claude,gemini,storyboard,seedance-storyboard-rd}.ts`, `server/routes/mcp.ts`, `server/prompts/catalog.ts`. If this doc drifts from those files, those files win.
 
-If this doc drifts from those files, those files win. Re-derive after material changes.
+---
 
-## Mental model
+## How the layers connect
 
-Three classes of MCP-callable action:
+```
+Codex
+  │
+  │  calls MCP tool (Layer 1)
+  ↓
+MCP tool (e.g. run_action)
+  │
+  │  dispatches to an action by key (Layer 2)
+  ↓
+Action (e.g. apply_concept)
+  │
+  │  may fire 0..N LLM/image/video prompts (Layer 3)
+  ↓
+Prompt (e.g. character-look) — or no prompt for pure persistence
+```
 
-1. **`apply_*` — graph writes.** Persist Codex-authored text or structured data into the project graph. Cheap. No LLM call inside Mirage. Agent path: Codex writes, Mirage validates and persists.
-2. **`generate_*` — paid worker calls.** Spend money: image/video/audio generation, style brainstorm, candidate batches. `dryRun: true` returns cost/requirements without spending. Most accept `contextOverrides` for per-call ref/style-note control and `promptOverride` for one-off exact prompt swaps.
-3. **`refine_*` — media edits.** Edit an existing generated asset using a Codex-translated edit instruction. Not a regenerate from scratch — preserves everything except the requested change.
+**Worked example — agent applies a concept:**
+1. Codex calls MCP tool `run_action({ actionKey: 'apply_concept', input: { projectId, concept: {...} } })`
+2. `run_action` dispatcher routes to the `apply_concept` action handler
+3. Handler validates input, writes concept JSON to DB
+4. Returns result. **No Layer 3 prompt fires** because `apply_concept` is pure persistence
 
-Cross-cutting controls available on most generate calls:
+**Compare — web user clicks "Generate concept":**
+1. Backend HTTP route fires the `generate-concepts` Layer 3 prompt (web-direct tag) via the LLM
+2. User picks one of the 3 returned directions
+3. Backend route then calls the same `apply_concept` action internally to persist
+4. Same DB write, but a Layer 3 prompt ran along the way
 
-- **`contextOverrides`** — per-call include/exclude/swap of attached refs and style-note buckets. Cheaper than a `promptOverride` when you only need to drop one ref or include a different style asset.
-- **`promptOverride`** — exact final prompt the worker receives. Highest-leverage agent control; use when graph data + overrides aren't enough.
-- **`modelOverride`** — swap the routed model for this call only (image/video/storyboard provider).
+---
 
-Project-level mechanisms (lighter to heavier):
+## Layer 1 — MCP tools (17 active)
 
-- **`apply_project_style_notes`** — per-surface taste/technique memory (image, storyboard, motion, script, dialogue, audio). Composer reads selected buckets into a `STYLE NOTES` section. Use for repeated phrasing/technique.
-- **`apply_project_prompt_override`** — complete prompt recipe for one declared kind. Composer reads into a `PROJECT OVERRIDE` section. Use for repeated complete recipes.
-- **`apply_project_preferences`** — model/provider routing (textProvider, imageModel, storyboardProvider, videoModel).
+The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MCP tools — they're dispatched through `run_action` / `start_job`.
 
-## MCP surface layout
-
-Mirage's MCP server exposes three concentric layers. The 25 action specs in the index below are **not MCP tools themselves** — they're dispatched through the registry layer via `run_action` / `start_job`.
-
-**Cockpit (orchestration — 6 tools):**
+### Cockpit (6) — orchestration
 
 | Tool | Purpose |
 |---|---|
-| `list_projects` | List projects you can access |
-| `open_project` | Start a session on one project; writes notebook desk copy + mirror snapshots |
-| `create_project` | Create a non-audio project from intake |
-| `get_project_state` | Current project graph snapshot |
-| `get_agent_timing_summary` | Quick perf snapshot |
-| `mirage_capture_issue` | Capture artist-reported issue |
+| `list_projects` | List projects accessible to this auth token. |
+| `open_project` | Start a session on one project; writes notebook desk copy + mirrors. |
+| `create_project` | Create a non-audio project from intake. |
+| `get_project_state` | Current project graph snapshot. Includes `actionsHash` for schema drift detection. |
+| `get_agent_timing_summary` | Quick perf snapshot. |
+| `mirage_capture_issue` | Capture an artist-reported issue. |
 
-**Registry dispatch (action invocation — 8 tools):**
-
-| Tool | Purpose |
-|---|---|
-| `list_actions` | List action-spec keys available for this project |
-| `describe_action` | Full schema + example for one action |
-| `run_action(actionKey, input)` | Synchronous dispatch; returns result |
-| `start_job(actionKey, input)` | Async dispatch; returns `jobId` |
-| `get_job(jobId)` | Poll job state |
-| `list_jobs({ projectId? })` | List recent jobs |
-| `parallel_run({ calls[] })` | Small parallel batch (independent non-paid) |
-| `list_results({ projectId? })` | Recent generation results |
-
-**Resources (project file/data reads — 3 tools):**
+### Registry dispatch (8) — action invocation
 
 | Tool | Purpose |
 |---|---|
-| `get_project_notebook_manifest` | List files in the project workbench |
-| `read_project_notebook_file` | Read one file by path |
-| `mint_cli_token` | Issue shell-specific sync command for notebook materialization |
+| `list_actions` | List action-spec keys available for this project (filtered by `availableTools`/`blockedTools`). |
+| `describe_action` | Full schema + example for one action. |
+| `run_action` | Synchronous dispatch by `actionKey`; returns result. |
+| `start_job` | Async dispatch; returns `jobId` for paid actions. |
+| `get_job` | Poll job state. |
+| `list_jobs` | List recent jobs. |
+| `parallel_run` | Small parallel batch (independent non-paid actions, cap 8). |
+| `list_results` | List recent generation results (durable URLs/asset IDs). |
 
-**Legacy** (~50 direct tools): hidden by default; surface only when `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1`. For backward-compat debugging.
+### Resources (3) — project file reads
 
-**Total active MCP surface:** 17 tools. Everything else flows through `run_action` / `start_job` with one of the action keys below.
-
-## How prompts get fired
-
-Catalog entries in `server/prompts/catalog.ts` carry a `path` tag indicating who triggers them at runtime. The reference below uses the same tags inline (e.g. `character-look [agent]`).
-
-| Tag | What it means |
+| Tool | Purpose |
 |---|---|
-| `agent` | Fires when an MCP action invokes a backend LLM/image/video call. Both Visual Studio buttons and agent sessions hit the same code. |
-| `web-direct` | Fires only on Visual Studio buttons. In agent path, Codex does the equivalent work locally (edits `drafts/*.md` or saved JSON) and calls the matching `apply_*` tool — **no backend LLM call.** |
-| `intake` | Fires at project creation before any agent session exists (lyric transcription, music structure analysis, script seed parsing). |
-| `automatic` | Fires on system events — after a shot's video lands (continuity refresh), after a frame lands (critique). Not artist- or agent-triggered. |
-| `shared` | Used by both paths; rare. Today only `seedance-storyboard-refine` because its replan branch is web-direct and its edit_image branch is agent-callable. |
+| `get_project_notebook_manifest` | List files in the project workbench. |
+| `read_project_notebook_file` | Read one workbench file by path. |
+| `mint_cli_token` | Issue shell-specific sync command for notebook materialization. |
 
-Web-direct prompts will eventually be deprecated as the agent surface displaces the corresponding Visual Studio buttons. Until then they coexist; the tag tells you which path to expect.
-
-## Index
-
-Every tool below is agent-callable. The columns:
-
-- **"What happens when agent calls it"** — actual runtime behavior. A model call (image/video/vision/TTS), a DB save, a read, or a lock toggle.
-- **"Web flow on same surface"** — what Visual Studio does. Either calls the same action, OR runs a separate backend LLM to write text that the agent would write inline.
-
-| Key | What happens when agent calls it | Paid? | Web flow on same surface |
-|---|---|:-:|---|
-| `apply_concept` | Saves Codex-written concept JSON to DB | — | Web "Generate concept" runs `generate-concepts` LLM, user picks, then applies |
-| `apply_script` | Saves Codex-written script (JSON or markdown) to DB | — | Web "Generate script" runs `plan-scenes` LLM, then applies. `plan-scenes-openai` is a stale GPT variant. `refine-script` is the web refine button. |
-| `apply_shot_prompts` | Saves Codex-written visual/motion/direction text per shot | — | Web "Rewrite all" runs `write-shot-prompts` LLM, then applies. Per-prompt refines run `refine-shot-prompt` / `refine-end-frame-prompt` / `refine-video-prompt`. `chained-shot-refresh` auto-fires after a shot's video lands. |
-| `apply_shot_workflow_modes` | Sets per-shot path: `auto` / `storyboard` / `keyframe` | — | Same — web mode toggle calls this |
-| `generate_style_candidates` | Fires image model to render style reference candidates | ● | Same — web "Brainstorm styles" calls this action |
-| `identify_style` | Fires vision LLM to read a style image; returns description (no DB write) | ● | Same — also auto-fires when locking a style asset with empty text |
-| `apply_style_direction` | Saves style description and/or locks a style asset | — | Web "Refine style" runs `refine-style-direction` LLM, then applies |
-| `generate_candidates` | Fires image model to render cast/env reference candidates | ● | Same — web "Generate look" calls this. Web "Refine" button separately runs `refine-look-prompt` LLM to rewrite the saved prompt. |
-| `list_candidates` | Reads candidate URLs/asset IDs for one entity from DB | — | Same — web reads this |
-| `lock_reference` | Sets canonical character/env reference (DB toggle) | — | Same — web "Lock" calls this |
-| `generate_storyboard` | Fires image model to render storyboard from saved prompt | ● | Same — web "Generate storyboard" calls this |
-| `bulk_generate_storyboards` | Fires image model per shot for many storyboards | ● | Same — web "Generate all" calls this |
-| `apply_storyboard_prompts` | Saves Codex-written storyboard prompt + cut plan text | — | Web "Board prompts" runs `seedance-storyboard-image` planner LLM, then applies |
-| `refine_storyboard_image` | Fires image edit model with a Codex-translated narrow edit instruction | ● | Same — web "Refine" edit_image mode calls this. Web "Redo" mode runs `seedance-storyboard-refine` LLM separately. |
-| `lock_storyboard` | Approves a storyboard version for video gen (DB toggle) | — | Same — web "Lock" calls this |
-| `unlock_storyboard` | Clears storyboard approval (DB toggle) | — | Same — web "Unlock" calls this |
-| `generate_video` | Fires video model (Seedance or Veo) to render shot clip | ● | Same — web "Generate video" calls this |
-| `apply_video_prompt` | Saves Codex-written keyframe motion prompt | — | Same — web "Save" calls this. Web "Refine" button runs `refine-video-prompt` LLM separately. |
-| `generate_dialogue_audio` | Fires TTS (ElevenLabs) for dialogue lines (no LLM) | ● | Same — web "Generate dialogue" calls this |
-| `apply_audio_plan` | Saves Codex-written dialogue + sound notes per shot | — | Web "Write dialogue" runs `write-audio-plan` LLM, then applies |
-| `apply_cast_voice` | Assigns ElevenLabs voice ID to a cast member | — | Same — web voice picker calls this |
-| `apply_project_preferences` | Saves project model/provider routing | — | Same — web preferences panel calls this |
-| `apply_project_style_notes` | Saves project per-surface style notes (taste memory) | — | Same — agent-driven today; web UI not yet wired |
-| `apply_project_prompt_override` | Saves project-scoped prompt recipe override | — | Same — web prompt override editor calls this |
-| `revert_project_prompt_override` | Rolls back a project prompt override (DB toggle) | — | Same — web "Revert" calls this |
-
-Pipeline-only prompts (not MCP-callable): `transcribe-lyrics`, `detect-structure`, `summarize-meaning`, `critique-shot-image`, `describe-frame`, `chat-with-director`.
+**Legacy:** ~50 direct tools hidden by default; set `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1` to surface for compatibility debugging only.
 
 ---
 
-## Concept
+## Layer 2 — Actions (25 total)
 
-### apply_concept
+Every action is agent-callable via `run_action(actionKey, input)` or `start_job(actionKey, input)`. **"Calls"** column tells you what runs when the agent invokes it.
 
-Persist a Codex-written locked concept object. Reapplying is the edit path.
-
-```
-Input  { projectId, concept: { title, direction, description, mood? }, baseHash?, force? }
-Output mirage.apply.concept
-```
-
-No LLM call. Concept body is Codex-authored before this call; for web-direct intake the `generate-concepts` prompt produces options the user picks among.
-
-**Related runtime prompts:**
-- `generate-concepts` `[web-direct]` — `server/prompts/concept.ts:buildGenerateConceptPrompt`. Web brainstorm of 3 directions.
-- `refine-concept` `[web-direct]` — `server/prompts/concept.ts:buildRefineConceptPrompt`. Surgical refine via web button. **Agent path:** Codex edits the concept JSON and re-calls `apply_concept`.
-
----
-
-## Script
-
-### apply_script
-
-Persist project cast, environments, scenes, and shots. Accepts structured script JSON or one Mirage script markdown draft.
-
-```
-Input  { projectId, script?, markdown?, baseFingerprint?, force? }
-Output mirage.apply.script
-```
-
-Atomic. Drift-checked via `baseFingerprint`. Use `force: true` only when intentionally overwriting drift.
-
-**Related runtime prompts:**
-- `plan-scenes` `[web-direct]` — `server/prompts/planScenes.ts:buildPlanScenesPrompt`. Initial script generation via web button (music_led). Extended thinking + validation loop. **Agent path:** Codex writes the script in `drafts/script.md` and applies.
-- `plan-scenes-openai` `[web-direct]` — Same composed prompt, GPT-5.5 worker (experimental, env-flagged; cut candidate).
-- `parse-script-intake` `[intake]` — `server/prompts/parseScript.ts:buildParseScriptPrompt`. Auto-fires when an artist uploads a script seed at project creation. Agent intake (Codex-driven) bypasses this — Codex reads the source itself.
-- `refine-script` `[web-direct]` — `server/prompts/refineScript.ts:buildRefineScriptPrompt`. Surgical refine via web button. **Agent path:** Codex edits `drafts/script.md` and re-applies with markdown.
-
-### apply_shot_prompts
-
-Persist Codex-written visual, motion, direction, or continuity prompt text for one or more shots. This is the prompt-edit path; use it when the artist asks for a tonal/wording change rather than a media regenerate.
-
-```
-Input  { projectId, shots: [{ shotId, visualPrompt?, motionPrompt?, direction?, continuityFrom?, baseHash? }], force? }
-Output mirage.apply.shot_prompts
-```
-
-**Related runtime prompts:**
-- `write-shot-prompts` `[web-direct]` — `server/prompts/shotPrompts.ts:buildWriteShotPromptsPrompt`. Bulk shot prompt writing via web "Rewrite all" button. **Agent path:** Codex writes per-shot prompts inline and applies.
-- `refine-shot-prompt` / `refine-end-frame-prompt` / `refine-video-prompt` `[web-direct]` — `server/services/claude.ts:refineFramePrompt`/`refineMotionPrompt`. Web refine buttons. **Agent path:** Codex edits the saved prompt text and calls `apply_shot_prompts` / `apply_video_prompt`.
-- `chained-shot-refresh` `[automatic]` — `server/services/claude.ts:refreshChainedShotPrompt`. Auto-fires after a shot's video lands when next shot is `prev_shot`. Not artist- or agent-triggered.
-
-### apply_shot_workflow_modes
-
-Persist per-shot workflow path overrides: auto, storyboard, or keyframe.
-
-```
-Input  { projectId, shots: [{ shotId, workflowMode, note? }] }
-Output mirage.apply.shot_workflow_modes
-```
-
-No LLM call.
+| Key | Surface | What it does | Calls | Paid? |
+|---|---|---|---|:-:|
+| `apply_concept` | concept | Saves Codex-written concept JSON to DB | DB only | — |
+| `apply_script` | script | Saves Codex-written script (JSON or markdown) to DB | DB only | — |
+| `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
+| `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
+| `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
+| `identify_style` | style | Reads a style image, returns concise description | vision LLM | ● |
+| `apply_style_direction` | style | Saves style description and/or locks a style asset | DB only (auto-runs `identify_style` if locking empty) | — |
+| `generate_candidates` | looks | Renders 3 character/env reference candidates per entity | image model | ● |
+| `list_candidates` | looks | Lists previously-generated candidates | DB read | — |
+| `lock_reference` | looks | Sets canonical character/env reference | DB only | — |
+| `generate_storyboard` | storyboard | Renders one storyboard image from saved prompt | image model | ● |
+| `bulk_generate_storyboards` | storyboard | Renders many storyboards (per shot) | image model | ● |
+| `apply_storyboard_prompts` | storyboard | Saves Codex-written storyboard prompt + cut plan | DB only | — |
+| `refine_storyboard_image` | storyboard | Edits existing storyboard with narrow instruction | image edit | ● |
+| `lock_storyboard` | storyboard | Approves a storyboard version for video gen | DB only | — |
+| `unlock_storyboard` | storyboard | Clears storyboard approval | DB only | — |
+| `generate_video` | video | Renders the video clip for one shot | video model | ● |
+| `apply_video_prompt` | video | Saves Codex-written keyframe motion prompt | DB only | — |
+| `generate_dialogue_audio` | audio | Renders TTS for selected dialogue lines | TTS | ● |
+| `apply_audio_plan` | audio | Saves Codex-written dialogue + sound notes per shot | DB only | — |
+| `apply_cast_voice` | audio | Assigns ElevenLabs voice ID to a cast member | DB only | — |
+| `apply_project_preferences` | system | Saves project model/provider routing | DB only | — |
+| `apply_project_style_notes` | system | Saves project per-surface style notes (taste memory) | DB only | — |
+| `apply_project_prompt_override` | system | Saves project-scoped prompt recipe override | DB only | — |
+| `revert_project_prompt_override` | system | Rolls back a project prompt override | DB only | — |
 
 ---
 
-## Style
+## Layer 3 — Prompts (31 total), grouped by path tag
 
-### generate_style_candidates
+The `path` tag on each Layer 3 prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
-Generate reusable style reference candidates. Use `guideAssetId` after uploading an image as visual guidance, `note` for soft direction, or `promptOverride` for one exact candidate.
+### Agent (8) — fires when an MCP action invokes a paid model
 
-```
-Input  { projectId, note?, promptOverride?, guideAssetId?, count? (1-4),
-         contextOverrides?: { includeConcept?, includeProjectStyleDescription?, includeGuideAsset?, styleNoteSections? } }
-Output mirage.generate.style_candidates
-```
+These are the prompts Codex's actions actually trigger.
 
-For local-image upload, POST multipart to `/api/agent/uploads` with the Mirage bearer token to get an `assetId`, then pass as `guideAssetId`.
+#### brainstorm-style-directions `[agent]`
 
-**Related runtime prompts:**
-- `brainstorm-style-directions` `[agent]` — `server/prompts/styleBrainstorm.ts:buildStyleBrainstormPrompt`. Text brainstorm of 4 directions when no guide. Includes selected style-note buckets when learned.
-- `visualize-style` `[agent]` — `server/prompts/visualizeStyle.ts:buildVisualizeStylePrompt`. Renders one direction into a style reference frame. Action invariants (no text, no watermark, single image) in OUTPUT CONTRACT.
+Proposes 4 distinct visual style directions for the project.
 
-### identify_style
+- Triggered by: `generate_style_candidates` when no `promptOverride` / `guideAssetId` is given
+- Model: `project.text_provider`
+- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, songType, isNarrative, isMeditative, styleNotes, userNote
+- Contract: *Propose 4 distinct visual style directions for this project. Each direction is one coherent visual world the project could live inside. Do not write story, scenes, characters, camera shot lists, or plot beats. Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.*
+- Output: 4 directions as JSON, each `{ title, description }`
 
-Analyze the locked or provided style asset and return a concise style description for artist confirmation.
+#### visualize-style `[agent]`
 
-```
-Input  { projectId, assetId? (defaults to locked style) }
-Output mirage.style.identification
-```
+Renders one selected text style direction into a reusable style reference frame.
 
-Auto-fires on `apply_style_direction` when locking an asset with empty/weak style text (per C4).
+- Triggered by: `generate_style_candidates` (per direction render step)
+- Model: `project.image_model`
+- Inputs: styleDescription, subject, styleNotes
+- Contract: *Generate one reusable visual style reference frame for this project. The frame should demonstrate the style system clearly — lighting behavior, color palette, texture or medium, rendering approach, atmosphere — using a simple motif, anonymous figure, prop vignette, environment detail, or production-design element that belongs to the project. This is not a character design sheet, storyboard panel, poster, collage, or title card.*
+- Output: image. High production value. No text. No watermark.
 
-**Related runtime prompt:**
-- `analyze-image-style` `[agent]` — `server/services/claude.ts:analyzeImageStyle`. Returns 2-3 sentence style fragment.
+#### character-look `[agent]`
 
-### apply_style_direction
+Renders one reusable character or object reference for production continuity.
 
-Persist style direction text and/or lock an existing style asset as the project style. When locking a style asset with empty style text, Mirage auto-identifies a concise style description.
+- Triggered by: `generate_candidates({ entityType: 'cast' })`
+- Model: `project.image_model`
+- Inputs: character.name, character.description, styleImage, styleDescription, userRefImage, styleNotes, projectOverride
+- Contract: *Generate one reusable character or object reference for production continuity.*
+- Output: one isolated image. Neutral pose, plain/soft background. No collage, grid, text, or scene-specific props.
 
-```
-Input  { projectId, style: { styleDescription?, styleGenerationPrompt?, colorPalette?, sourceAssetId? }, baseHash?, force? }
-Output mirage.apply.style_direction
-```
+#### environment-look `[agent]`
 
-**Related runtime prompt:**
-- `refine-style-direction` `[web-direct]` — `server/prompts/refineStyle.ts:buildRefineStylePrompt`. Surgical refine via web button. **Agent path:** Codex edits the saved direction text and re-calls `apply_style_direction`.
+Renders one reusable environment reference.
 
----
+- Triggered by: `generate_candidates({ entityType: 'environment' })`
+- Model: `project.image_model`
+- Inputs: environment.name, environment.description, styleImage, styleDescription, userRefImage, styleNotes, projectOverride
+- Contract: *Generate one reusable environment reference for production continuity.*
+- Output: one isolated image. Whole space visible, no scene-specific action, no characters unless tiny for scale.
 
-## Looks
+#### render-seedance-storyboard-image `[agent]`
 
-### generate_candidates
+Renders the storyboard image for one shot from the saved storyboard prompt.
 
-Generate reusable character or environment reference candidates. Use `note` for soft direction, `promptOverride` for an exact final prompt, and `guideAssetId` after uploading an image as a visual guide.
+- Triggered by: `generate_storyboard`, `bulk_generate_storyboards`
+- Model: `project.storyboard_provider` (nano-banana-2 / nano-banana-pro / gpt-image-2)
+- Inputs: storyboardPrompt (saved), locked style/cast/env refs, optional artist edit instruction in refine mode
+- Contract: image-only render. Sends saved `storyboardPrompt` text plus attached refs to the storyboard image provider. Cut plan is NOT sent — that's for the downstream Seedance video step.
+- Output: storyboard image (typically 2×2 or 2×3 panel grid)
 
-```
-Input  { projectId, entityType: "cast" | "environment", entityIds: string[],
-         note?, promptOverride?, guideAssetId?,
-         contextOverrides?: { includeStyleImage?, includeProjectStyleDescription?, styleNoteSections? } }
-Output mirage.generate.candidates
-```
+#### shot-video-assembly `[agent]`
 
-`promptOverride` requires a single `entityId`. Style-note default bucket: `image` (with per-model phrases for the active image model).
+Composes the final keyframe-mode video prompt sent to the video provider.
 
-**Related runtime prompts:**
-- `character-look` `[agent]` — `server/prompts/lookPrompts.ts:buildCharacterLookPrompt`. Action invariants (neutral pose, plain background, no scene action) in OUTPUT CONTRACT.
-- `environment-look` `[agent]` — `server/prompts/lookPrompts.ts:buildEnvironmentLookPrompt`. Whole space visible, no characters unless tiny for scale.
-- `refine-look-prompt` `[web-direct]` — `server/services/claude.ts` via `refineFramePrompt`. **Agent path:** Codex rewrites the saved look prompt and re-runs `generate_candidates` with `promptOverride`.
+- Triggered by: `generate_video` in keyframe workflow mode
+- Model: `project.video_model` (Seedance / Veo)
+- Inputs: motionPrompt (saved), refLabels (auto-appended when ref images attached)
+- Contract: `{{motionPrompt}}. {{refLabels}}` — minimal composition. Start frame + ref images carry visual state.
+- Output: video clip
 
-### list_candidates
+#### seedance-storyboard-video `[agent]`
 
-List generated candidate image URLs and asset IDs for one cast member or environment.
+Composes the Seedance prompt for video gen from a locked storyboard.
 
-```
-Input  { projectId, entityType, entityId }
-Output mirage.list.candidates
-```
+- Triggered by: `generate_video` in storyboard workflow mode
+- Model: `project.video_model` (Seedance variants only)
+- Inputs: storyboardImage (@image1), referenceImages (@image2+), rows/cols, cutPlanText, clipDuration, mood, clipDirection, lipsyncEnabled
+- Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. No panel borders/numbers in output.
+- Output: video clip
 
-### lock_reference
+#### analyze-image-style `[agent]`
 
-Set an existing Mirage asset as the canonical character or environment reference. Use after `list_candidates` or `/api/agent/uploads`.
+Reads a style image and returns a concise style description.
 
-```
-Input  { projectId, entityType, entityId, sourceAssetId }
-Output mirage.apply.locked_reference
-```
-
----
-
-## Storyboard
-
-### generate_storyboard
-
-Render a storyboard board for one shot from its saved storyboard prompt. `dryRun: true` returns the plan without spending.
-
-```
-Input  { projectId, shotId, dryRun?, artistNote?, modelOverride?,
-         contextOverrides?: { includeStyleImage?, excludeCastRefs?, includePreviousStoryboard?, styleNoteSections? } }
-Output mirage.generate.storyboard | mirage.dryrun.storyboard
-```
-
-Sends saved `storyboardPrompt` + locked refs to the active storyboard provider. Cut plan is NOT sent here (it drives downstream Seedance video). In edit_image refine mode, previous storyboard is prepended.
-
-**Related runtime prompt:**
-- `render-seedance-storyboard-image` `[agent]` — `server/services/storyboard.ts:generateStoryboardVersion`.
-
-### bulk_generate_storyboards
-
-Generate missing/stale/error storyboard boards for selected shots. Use `parallel_run` for custom parallel batches.
-
-```
-Input  { projectId, shotIds?, force?, artistNote?, modelOverride?, contextOverrides? }
-Output mirage.bulk.storyboards
-```
-
-Same runtime template as `generate_storyboard`; `contextOverrides` applied to every shot in the batch.
-
-### apply_storyboard_prompts
-
-Persist Codex-written storyboard prompt and cut-plan text. Accepts either structured `shots[]` or one scene markdown draft. **Edit the saved text here when "make it brighter" / "less grungy" is really a prompt change; do not use `refine_storyboard_image` for prompt rewrites.**
-
-```
-Input  { projectId, shots?, markdown?, force? }
-Output mirage.apply.storyboard_prompts
-```
-
-**Related runtime prompt (the planner that authors the persisted prompt):**
-- `seedance-storyboard-image` `[web-direct]` — `server/prompts/storyboard.ts:buildStoryboardPlannerPrompt`. Fires when web "Board prompts" is clicked. STYLE NOTES (image + storyboard buckets, per-model phrases) + PROJECT OVERRIDE wired. **Agent path:** Codex writes the storyboard prompt inline in `drafts/storyboards/<scene>.md` and applies via `apply_storyboard_prompts`.
-
-### refine_storyboard_image
-
-Edit the current storyboard image using a narrow positive edit instruction (image-edit mode, not prompt rewrite). Codex translates raw artist chat into a concrete one-axis change before calling this; do not forward "make it less grungy" / "make it brighter" style notes verbatim. **If the prompt itself is wrong, use `apply_storyboard_prompts` instead.**
-
-```
-Input  { projectId, shotId, feedback, previousVersionId?, modelOverride? }
-Output mirage.refine.storyboard
-```
-
-`feedback` is the Codex-translated edit instruction — e.g. "Keep composition, characters, panel layout. Brighten lighting one stop; clean up the dirty grungy texture into a cleaner matte finish."
-
-**Related runtime prompt:**
-- `seedance-storyboard-refine` `[shared]` — `server/services/storyboard.ts:generateStoryboardVersion`. Two branches: `edit_image` is agent-callable (this action); `replan` is web-direct (web "Refine" → rewrites saved storyboardPrompt + cutPlan; in agent path Codex edits the text and calls `apply_storyboard_prompts`).
-
-### lock_storyboard / unlock_storyboard
-
-```
-lock_storyboard   { projectId, shotId, versionId? }
-unlock_storyboard { projectId, shotId }
-```
-
-No LLM call. `lock_storyboard` marks the active version approved so `generate_video` can consume it. `unlock` clears approval.
+- Triggered by: `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
+- Model: `project.text_provider.refine` (vision input)
+- Inputs: image
+- Contract: *Analyze this image and describe its "Art Style" in detail. Return a concise prompt fragment (2-3 sentences) covering: lighting, color palette, texture/medium, composition, mood. Be concrete and specific — this will be used as an image generation style reference. Return ONLY the style fragment text. No quotes, no JSON, no markdown.*
+- Output: 2–3 sentence style description, plain text
 
 ---
 
-## Video
+### Web-direct (15) — fires only from Visual Studio buttons
 
-### generate_video
+These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
 
-Generate the video clip for one shot. `dryRun: true` returns requirements, provider, and cost without spending.
+#### generate-concepts `[web-direct]`
 
-```
-Input  { projectId, shotId, dryRun?, promptOverride?, modelOverride? }
-Output mirage.generate.video | mirage.dryrun.video
-```
+Proposes 3 narrative concept directions (or 1 if a director brief is set).
 
-Two paths depending on shot's workflow mode:
-- **Keyframe** — uses saved `motionPrompt` and attached ref labels via `shot-video-assembly`.
-- **Storyboard** — animates locked storyboard panels via `seedance-storyboard-video`; consumes saved cut plan.
+- Triggered by: Web "Generate concept" button. **Agent path:** Codex writes concept JSON inline → `apply_concept`.
+- Model: `project.text_provider`
+- Inputs: title, language, sourceText, meaning, musicalStructure, scriptSummary, songType, isNarrative, isMeditative, directorBrief, context, userNote
+- Contract: *Propose creative narrative directions for this project. Each direction is one coherent idea — what the viewer follows, what visibly happens, the emotional arc, the world the work lives in. Focus on story, beats, and what visibly happens. Visual style, palette, and cinematography are decided in later phases. Do not include art-style language, camera directions, or color palette in any field — those belong to the style phase, not the concept phase.*
+- Output: 3 (or 1) concepts as JSON, each `{ title, subject, mood, theme, conceptDirection, description }`
 
-**Related runtime prompts:**
-- `shot-video-assembly` `[agent]` — `server/routes/generate-video.ts`. `{motionPrompt}. {refLabels}`.
-- `seedance-storyboard-video` `[agent]` — `server/services/seedance-storyboard-rd.ts:buildSeedanceStoryboardVideoPrompt`.
+#### refine-concept `[web-direct]`
 
-### apply_video_prompt
+Surgical refine of a locked concept using director feedback.
 
-Persist a Codex-written keyframe-mode motion prompt. This does not generate video.
+- Triggered by: Web "Refine" button on locked concept. **Agent path:** Codex edits concept JSON and re-calls `apply_concept` with `baseHash`.
+- Model: `project.text_provider.refine`
+- Inputs: lockedConcept, feedback, userNotePolicy
+- Contract: *Revise the locked concept using the director's feedback. This is a refinement, not a replacement — preserve the core identity. Update only the fields the feedback addresses; leave the rest unchanged. Visual style, palette, and cinematography belong to later phases. Do not introduce art-style language, camera directions, or color palette here.*
+- Output: refined concept JSON, all fields populated
 
-```
-Input  { projectId, shotId, motionPrompt, baseHash?, force? }
-Output mirage.apply.video_prompt
-```
+#### plan-scenes `[web-direct]`
 
-Keyframe mode only. Storyboard mode consumes the saved cut plan from `apply_storyboard_prompts`, not this field.
+Plans cast, environments, scenes, and shots from concept + source.
+
+- Triggered by: Web "Generate script" button (music_led). **Agent path:** Codex writes `drafts/script.md` and `apply_script({ markdown })`.
+- Model: `project.script_writer` (Claude Opus with extended thinking + validation loop)
+- Inputs: concept, lyrics, meaning, musicalStructure, basePacing, minShotDuration, videoModel, songType, isNarrative, isMeditative, userNote
+- Contract: *Plan the production structure for a music-led video. Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.*
+- Output: structured plan via `plan_music_video` tool — cast, environments, scenes (with shots)
+
+#### plan-scenes-openai `[web-direct]` **(cut candidate)**
+
+GPT-5.5 variant of `plan-scenes`. Same composed prompt, different worker.
+
+- Triggered by: `SCRIPT_WRITER_PROVIDER=openai` env flag or per-request `scriptProvider: 'openai'`. Experimental; never the default.
+- Model: GPT-5.5 (Responses API structured output)
+- Inputs: same as `plan-scenes`
+- Contract: same as `plan-scenes`
+- Output: same as `plan-scenes`
+- **Cut now:** experimental dead branch; deleting saves the env flag + the OpenAI-specific code path.
+
+#### refine-script `[web-direct]`
+
+Surgical refine of a full production script using director feedback.
+
+- Triggered by: Web "Refine script" button. **Agent path:** Codex edits `drafts/script.md` and re-calls `apply_script({ markdown, baseFingerprint })`.
+- Model: `project.script_writer`
+- Inputs: currentScript, feedback, concept, sourceText, meaning, musicalStructure, basePacing, minShotDuration, videoModel
+- Contract: *Refine the existing production script using the director's feedback. This is SURGICAL refinement, not rewriting from scratch. Think editor, not new writer. Preserve what works; scope changes to what the feedback asks for; respect existing cast and environments (they may already have locked reference images); maintain source structure (section labels and timestamps are fixed). The visual medium is decided separately via the locked style reference. Do not add cinematography, camera, or color-palette directions to the script.*
+- Output: complete updated script via `plan_music_video` tool
+
+#### refine-style-direction `[web-direct]`
+
+Surgical refine of one style direction's text.
+
+- Triggered by: Web "Refine" button on a brainstormed style direction. **Agent path:** Codex edits saved style description and re-calls `apply_style_direction`.
+- Model: `project.text_provider.refine`
+- Inputs: currentDescription, currentTitle, feedback, concept, styleNotes
+- Contract: *Revise the current style direction text using the director's feedback. This is a surgical refinement, not a replacement. Preserve the direction's core identity. Update only the aspects the feedback addresses; leave the rest of the description intact.*
+- Output: refined direction JSON `{ title, description }`
+
+#### write-shot-prompts `[web-direct]`
+
+Bulk-writes visualPrompt + motionPrompt pairs per shot, plus continuity tags.
+
+- Triggered by: Web "Rewrite all" or end-of-Blueprint auto-fire. **Agent path:** Codex writes prompts per shot inline → `apply_shot_prompts`.
+- Model: `project.script_writer`
+- Inputs: shots[], cast[], concept, videoModel, songType, isNarrative, isMeditative, previousBatchTail, userNote
+- Contract: *You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Outputs go directly to an image model (visualPrompt) and a video model (motionPrompt). Every sentence must name a visible subject, an action or change, and a spatial or timing anchor. Translate emotion into physical evidence; do not write metaphor, inner state, or invisible causes. The visual medium is locked separately via the project's style reference image. Do not dictate art style, color palette, or "cinematic" framing in words.* (Source includes GOOD/BAD examples per axis.)
+- Output: per-shot JSON via `write_shot_prompts` tool — `{ id, visualPrompt, motionPrompt, continuityFrom }`
+
+#### seedance-storyboard-image `[web-direct]` (planner only — the render step is agent-tagged)
+
+Plans one storyboard board + cut plan.
+
+- Triggered by: Web "Board prompts" or per-shot "Write prompt". **Agent path:** Codex writes `drafts/storyboards/<scene>.md` → `apply_storyboard_prompts({ markdown })`.
+- Model: `project.text_provider.refine`
+- Inputs: sourceBrief, currentPrompt (refine), currentCutPlan (refine), artistNote, hasArtistReference, hasPreviousStoryboardRef, previousCutPlanTail, styleNotes, projectOverride
+- Contract (write mode): *Plan one storyboard board and cut plan for a two-step storyboard workflow. The first output, storyboardPrompt, is the prompt that the storyboard image model will read. The second output, cutPlanText, is the matching panel-beat list that the video model will read later. The panel actions must appear in both outputs: the image model needs them inline to know what to draw, and the video model needs them as a clean beat list.*
+- Contract (refine mode): *Refine one saved storyboard render prompt and cut plan using the director's feedback. This is a surgical rewrite of storyboard production text, not a new shot.*
+- Output: `{ storyboardPrompt, cutPlanText }`
+
+#### shot-start-frame `[web-direct]`
+
+Generates a shot's start frame using the full reference chain.
+
+- Triggered by: Web frame icon or "Generate all frames". **Agent path:** generally use `generate_video` directly (start frame is auto-handled internally) or call image gen with `promptOverride`.
+- Model: `project.image_model`
+- Inputs: visualPrompt, styleImage, characterRefs, environmentRef, prevShotEndFrame, continuityDescription, userFeedback, failedImage
+- Contract: render start frame matching visual prompt + reference chain. Priority order: character identity > continuity > environment > style.
+- Output: start frame image
+
+#### refine-shot-prompt `[web-direct]`
+
+Rewrites one shot's visual prompt using director feedback + failed image.
+
+- Triggered by: Web "Refine" on shot visual prompt. **Agent path:** Codex edits saved `visual_prompt` and calls `apply_shot_prompts`.
+- Model: `project.text_provider.refine` (vision)
+- Inputs: feedback, currentPrompt, failedImage (optional), referenceImage (optional)
+- Contract: *Apply the director's feedback to the current prompt. Keep what works, change what they asked for. 1-3 sentences. This prompt goes to an image model — just describe what should be in the frame.*
+- Output: `{ visualPrompt }` via `rewrite_frame_prompt` tool
+
+#### refine-end-frame-prompt `[web-direct]`
+
+Same shape as `refine-shot-prompt`, applied to the end-frame prompt.
+
+- Triggered by: Web "Refine" on end-frame prompt. **Agent path:** Codex edits saved `end_visual_prompt` and calls `apply_shot_prompts`.
+- Model: `project.text_provider.refine` (vision)
+- Inputs: feedback, currentPrompt, failedImage, referenceImage
+- Contract: same as `refine-shot-prompt`, applied to the end-frame text.
+- Output: `{ visualPrompt }`
+
+#### refine-look-prompt `[web-direct]`
+
+Rewrites a character or environment look-generation prompt using feedback.
+
+- Triggered by: Web refine note before regenerating looks. **Agent path:** Codex rewrites the saved `generation_prompt` and re-runs `generate_candidates` with `promptOverride`.
+- Model: `project.text_provider.refine` (vision)
+- Inputs: feedback, currentPrompt, lockedLook, referenceImage
+- Contract: same shape as `refine-shot-prompt`. Apply feedback to the reusable look prompt. Preserve identity and production usefulness. 1-3 sentences.
+- Output: `{ visualPrompt }`
+
+#### refine-video-prompt `[web-direct]`
+
+Rewrites a shot's motion prompt using feedback + start/end frame context.
+
+- Triggered by: Web "Refine" on motion prompt. **Agent path:** Codex edits saved `motion_prompt` and calls `apply_video_prompt`.
+- Model: `project.text_provider.refine` (vision)
+- Inputs: feedback, currentMotionPrompt, shotVisualPrompt, startFrame, endFrame, referenceImage
+- Contract: *Apply the director's feedback to the motion prompt. This prompt goes to a video model alongside the start frame — it tells the model what to animate. 1-2 sentences, action + camera.*
+- Output: `{ motionPrompt }` via `rewrite_motion_prompt` tool
+
+#### write-audio-plan `[web-direct]`
+
+Writes structured per-shot dialogue + sound notes from script + scene context.
+
+- Triggered by: Web "Write dialogue" or audio-phase rewrites. **Agent path:** Codex writes `drafts/audio-plan.md` → `apply_audio_plan({ markdown })`.
+- Model: `project.text_provider`
+- Inputs: project (title/source_payload), scene (label/narrative/lyrics), shot (id/duration/direction/visualPrompt/castIds), cast (with voice state), projectOverride
+- Contract: *Write production audio data for one shot. Write spoken dialogue lines and restrained sound notes for this shot only. This is structured production data that drives dialogue context for video generation and optional TTS for overlay renders. It is not prose and it is not a script rewrite.*
+- Output: structured audio-plan JSON — `{ dialogue: [{ characterId, text, order, targetSec? }], soundNotes? }`
+
+#### chat-with-director `[web-direct]`
+
+Answers user questions with project analysis context in view.
+
+- Triggered by: Web Chat panel only. No agent equivalent — the agent IS the chat.
+- Model: utility text (Gemini)
+- Inputs: analysisContext, userMessage, history
+- Contract: provides advice on prompts and pipeline with project analysis context. Light utility prompt, no production action.
+- Output: plain text response
 
 ---
 
-## Audio
+### Intake (4) — auto-fires at project creation, before any agent session
 
-### generate_dialogue_audio
+These run automatically when a project is first created (audio uploaded, or script seed pasted). No agent or user trigger.
 
-Generate ElevenLabs TTS for selected pending/error dialogue lines. `dryRun: true` returns cost and missing voices without spending.
+#### transcribe-lyrics `[intake]`
 
-```
-Input  { projectId, dryRun?, shotIds?, dialogueIds?, characterIds? }
-Output mirage.generate.dialogue_audio | mirage.dryrun.dialogue_audio
-```
+Extracts timestamped lyrics from an uploaded audio file.
 
-No LLM call. Dialogue text being spoken comes from `apply_audio_plan`; cast voice IDs from `apply_cast_voice`.
+- Triggered by: audio upload at project creation
+- Model: `audio.analysis` (Gemini 3 Pro)
+- Inputs: audioBase64, mimeType, optional language hint
+- Contract: timestamped lyric extraction with English transliteration where applicable
+- Output: structured lyrics with timestamps
 
-### apply_audio_plan
+#### detect-structure `[intake]`
 
-Persist Codex-written per-shot dialogue lines, sound notes, and lipsync/overlay strategy. Accepts structured `shots[]` or one audio-plan markdown draft.
+Detects musical sections + classifies song type + flags narrative/meditative traits.
 
-```
-Input  { projectId, shots?, markdown?, force? }
-Output mirage.apply.audio_plan
-```
+- Triggered by: audio upload at project creation, after `transcribe-lyrics`
+- Model: `audio.analysis` (Gemini 3 Pro)
+- Inputs: audioBase64, mimeType
+- Contract: identifies sections (intro/verse/chorus/etc.) with timestamps and tags audio classification flags
+- Output: `{ sections[], songType, isNarrative, isMeditative }`
 
-**Related runtime prompt:**
-- `write-audio-plan` `[web-direct]` — `server/prompts/audioPlan.ts:buildAudioPlanPrompt`. Composed via composePrompt. Generates structured audio-plan JSON on web "Write dialogue" click. **Agent path:** Codex writes the audio plan inline in `drafts/audio-plan.md` and applies.
+#### summarize-meaning `[intake]`
 
-### apply_cast_voice
+150-word interpretive summary of song meaning + cultural context.
 
-Assign an ElevenLabs voice ID to one cast member for overlay TTS generation.
+- Triggered by: audio upload at project creation, after structure detection
+- Model: `project.text_provider`
+- Inputs: lyrics, songType, structure
+- Contract: under 150 words covering narrative arc, central message/metaphor, emotional progression, cultural/spiritual context. English.
+- Output: short interpretive prose
 
-```
-Input  { projectId, castMemberId, voiceProvider: "elevenlabs", voiceId, voiceName?, baseHash?, force? }
-Output mirage.apply.cast_voice
-```
+#### parse-script-intake `[intake]`
 
----
+Converts uploaded script/treatment into structured cast/env/scenes/shots.
 
-## System
-
-### apply_project_preferences
-
-Persist project-level model/provider preferences such as `textProvider`, `imageModel`, `storyboardProvider`, and `videoModel`.
-
-```
-Input  { projectId, preferences: { textProvider?, imageModel?, storyboardProvider?, videoModel? }, baseHash? }
-Output mirage.apply.project_preferences
-```
-
-### apply_project_style_notes
-
-Persist per-surface project style notes learned during production — the editable taste/technique memory the project graph carries into every relevant call. Use this when the same phrasing or technique keeps improving outputs and should become project data rather than a per-call note. Lighter than `apply_project_prompt_override` (that one carries a full recipe; this one carries phrasing fragments).
-
-```
-Input  { projectId,
-         styleNotes: {
-           image?, storyboard?, motion?, script?, dialogue?, audio?,
-           modelPhrases?: { [modelKey]: string[] }
-         },
-         baseHash? }
-Output mirage.apply.project_style_notes
-```
-
-Composer reads selected buckets into a `STYLE NOTES` section. Currently consumed at runtime: `image` (look/style/storyboard), `storyboard` (storyboard planner). `motion`, `script`, `dialogue`, `audio` are accepted by the schema but not yet read by any builder (forward-compat).
-
-### apply_project_prompt_override
-
-Persist a project-scoped complete prompt recipe override for one declared kind. Use when the same complete per-call `promptOverride` keeps working and should become the project default. For repeated phrasing or per-surface taste fragments, prefer `apply_project_style_notes` (lighter, graph-data, composer-injected).
-
-```
-Input  { projectId, kind, body, baseHash? }
-Output mirage.apply.project_prompt_override
-```
-
-Declared kinds: `concept`, `script`, `style`, `character_looks`, `environment_looks`, `storyboard`, `video`, `audio_plan`. **Currently consumed at runtime:** `storyboard`, `video`, `character_looks`, `environment_looks`. The other four are declared but not yet wired (Pattern 7 — tracked in composer audit).
-
-### revert_project_prompt_override
-
-Remove or roll back a project-scoped prompt recipe override so the engine uses the previous active recipe or global default.
-
-```
-Input  { projectId, kind, baseHash? }
-Output mirage.revert.project_prompt_override
-```
+- Triggered by: script-first project creation from direct intake (PDF/text upload)
+- Model: `project.script_writer`
+- Inputs: scriptText, title, directorBrief, targetRuntime, pacing
+- Contract: *Convert the uploaded script into a production-ready scene and shot plan. This is extraction and production planning, not story rewriting. Preserve story intent, scene order, character actions, and dialogue order unless the director brief explicitly asks for adaptation.*
+- Output: structured plan via `parse_scripted_narrative` tool
 
 ---
 
-## Pipeline-only prompts
+### Automatic (3) — fires on system events
 
-Not exposed as agent-callable MCP actions. Fire either at intake, on system events, or via Visual Studio surfaces.
+These fire as side effects of other operations, not by direct user or agent invocation.
 
-| Id | Path | Stage | Model | Builder | Purpose |
-|---|---|---|---|---|---|
-| `transcribe-lyrics` | `intake` | audio | audio.analysis | `server/services/gemini.ts` | Timestamped lyric extraction at intake. |
-| `detect-structure` | `intake` | audio | audio.analysis | `server/services/gemini.ts:detectStructure` | Musical sections + song-type classification. |
-| `summarize-meaning` | `intake` | audio | project.text_provider | `server/services/claude.ts` | 150-word interpretive song summary. |
-| `critique-shot-image` | `automatic` | utilities | utility.vision | `server/services/gemini.ts` | Auto-fires after a shot frame lands; 0–10 score + suggestions. |
-| `describe-frame` | `automatic` | utilities | utility.vision | `server/services/gemini.ts` | Continuity description for chained shots. |
-| `chat-with-director` | `web-direct` | utilities | utility.text | `server/services/gemini.ts` | Web Chat panel only — no agent equivalent (agent IS the chat). |
+#### chained-shot-refresh `[automatic]`
+
+Rewrites the next shot's prompts when the previous shot's video lands.
+
+- Triggered by: a shot's video gen completing when the next shot is tagged `continuity_from: prev_shot`
+- Model: `project.text_provider.refine` (vision)
+- Inputs: prevFrame, shotDirection, currentVisualPrompt, currentMotionPrompt, characterNames, environmentName
+- Contract: *The image is the last frame of the previous shot. The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened while honoring the shot's intent. Keep the shot intent. Rewrite so the first moment matches the frame — same characters, same state, natural continuation. Visual: 1-3 sentences. Motion: 1-2 sentences.*
+- Output: `{ visualPrompt, motionPrompt }` via `rewrite_chained_shot` tool. Skipped in Seedance storyboard mode.
+
+#### critique-shot-image `[automatic]`
+
+Scores a generated shot frame 0–10 with actionable suggestions.
+
+- Triggered by: a shot frame generation completing
+- Model: utility vision (Gemini)
+- Inputs: image, referenceImages (character refs), compiledPrompt, styleDNA
+- Contract: scores style adherence (40%), prompt fidelity (30%), character consistency (20%), technical quality (10%). Returns score, reasoning, suggestions.
+- Output: `{ score, reasoning, isConsistent, suggestions }`
+
+#### describe-frame `[automatic]`
+
+Short factual description of a video frame for continuity stitching.
+
+- Triggered by: continuity description requests (typically before chained-shot-refresh in the legacy path)
+- Model: utility vision (Gemini)
+- Inputs: image
+- Contract: *Describe this single video frame factually for shot continuity. 2-3 sentences max. Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion. Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.*
+- Output: 2–3 sentence factual description, plain text
 
 ---
 
-## Composer section order
+### Shared (1) — multiple code paths into same template
 
-Every composer-built prompt assembles in this order. Sections that have no content are omitted (not rendered as empty headers).
+The only entry that genuinely straddles. Same prompt template, two callers.
 
-```
-<coreTask>                  ← action contract (top of hierarchy)
+#### seedance-storyboard-refine `[shared]`
 
-INPUTS
-<formatted project graph data + refs the tool received>
+Refine path for Seedance storyboards. Two branches:
 
-STYLE NOTES
-<selected per-surface project style-note buckets, optional model-phrase list>
+- **`replan` branch** (`[web-direct]`): rewrites the saved storyboardPrompt + cutPlanText via `project.text_provider.refine` LLM. Fires from web "Redo". Agent path: edit local file → `apply_storyboard_prompts`.
+- **`edit_image` branch** (`[agent]`): renders a new storyboard image via `project.storyboard_provider` using the current image + a narrow edit instruction. Fires from `refine_storyboard_image` action and from web "Refine".
 
-PROJECT OVERRIDE
-<per-project recipe override body for this kind, if set>
+Inputs: artistNote (required), refineMode, currentPrompt, currentCutPlan (replan), baseStoryboardPrompt (replan), referenceImages, artistReferenceImage (optional)
 
-USER NOTE POLICY                ← legacy/web-direct only
-<how this tool's USER NOTE interacts with contract/data; absent in agent path>
+Contract differs by branch — replan rewrites text; edit_image edits the image.
 
-OUTPUT CONTRACT
-<required response shape and hard rules>
+---
 
-USER NOTE                       ← legacy/web-direct only
-<raw artist note; agent sessions translate before calling MCP>
-```
+## Cut candidates
 
-Section names referenced in this doc map to those headers. Builders pass typed `ComposePromptParts` — see `server/prompts/_composer.ts`.
+**Immediate cut today:** `plan-scenes-openai` — experimental GPT-5.5 variant, env-flagged, never the default. Removing it cleans up the OpenAI script-provider branch entirely.
 
-## Upload boundary
+**Conditional cuts** (deprecate when the corresponding Visual Studio buttons are reshaped around the agent surface):
 
-Local image upload uses an HTTPS endpoint, not MCP. Do not send bytes through MCP tools.
+| Prompt | Web button that fires it | Agent equivalent |
+|---|---|---|
+| `generate-concepts` | "Generate concept" | Codex writes JSON → `apply_concept` |
+| `refine-concept` | "Refine" on concept | Codex edits JSON → `apply_concept` |
+| `plan-scenes` | "Generate script" | Codex writes `drafts/script.md` → `apply_script` |
+| `refine-script` | "Refine script" | Codex edits `drafts/script.md` → `apply_script` |
+| `write-shot-prompts` | "Rewrite all" | Codex writes prompts inline → `apply_shot_prompts` |
+| `refine-shot-prompt` | "Refine" on visual prompt | Codex edits → `apply_shot_prompts` |
+| `refine-end-frame-prompt` | "Refine" on end-frame | Codex edits → `apply_shot_prompts` |
+| `refine-look-prompt` | "Refine" on look | Codex edits → `generate_candidates({ promptOverride })` |
+| `refine-style-direction` | "Refine" on style | Codex edits → `apply_style_direction` |
+| `refine-video-prompt` | "Refine" on motion | Codex edits → `apply_video_prompt` |
+| `seedance-storyboard-image` planner | "Board prompts" | Codex writes `drafts/storyboards/<scene>.md` → `apply_storyboard_prompts` |
+| `seedance-storyboard-refine` replan | "Redo" storyboard | Codex edits storyboard markdown → `apply_storyboard_prompts` |
+| `write-audio-plan` | "Write dialogue" | Codex writes `drafts/audio-plan.md` → `apply_audio_plan` |
 
-```
-POST /api/agent/uploads
-  Authorization: Bearer <mirage_token>
-  Content-Type: multipart/form-data
-  fields: projectId, purpose, file
+That's 13 prompts queued for deprecation. The 8 `[agent]`-tagged prompts stay; they're the actual production engines.
 
-Returns: { assetId, ... }
-```
+---
 
-Purposes: `style_guide`, `style_reference`, `cast_guide`, `cast_reference`, `env_guide`, `env_reference`. Then pass the returned `assetId` as `sourceAssetId` (lock as-is) or `guideAssetId` (use as visual guide for generation).
+## Appendix
 
-## Async jobs
+### Upload boundary
 
-Paid actions can be fired async via the cockpit:
+Local images do not go through MCP. POST multipart to `/api/agent/uploads` with the Mirage bearer token; pass the returned `assetId` as `sourceAssetId` (lock as-is) or `guideAssetId` (use as visual guide).
+
+Purposes: `style_guide`, `style_reference`, `cast_guide`, `cast_reference`, `env_guide`, `env_reference`.
+
+### Async jobs
+
+Paid actions can be fired async via cockpit:
 
 ```
 start_job(actionKey, input)  → { jobId }
@@ -531,3 +510,24 @@ list_jobs({ projectId? })    → [{ jobId, status, ... }]
 ```
 
 Job state persists in `studio_agent_operations`. Visual Studio realtime listener picks up the agent pill automatically.
+
+### Composer section order
+
+Every composer-built prompt assembles in this order (sections with no content are omitted):
+
+```
+<coreTask>                  ← top of hierarchy
+INPUTS
+<formatted project graph data + refs>
+STYLE NOTES                 ← selected project style-note buckets
+PROJECT OVERRIDE            ← project-scoped recipe override, if set
+USER NOTE POLICY            ← legacy/web-direct flows only
+OUTPUT CONTRACT
+USER NOTE                   ← legacy/web-direct only
+```
+
+See `server/prompts/_composer.ts` for the typed `ComposePromptParts` contract.
+
+### Notebook drift detection
+
+The `actionsHash` field on `get_project_state`, `open_project`, and project packets carries a hash of the action registry. Compare against the `version` field at the top of `config/actions/index.json` to detect schema drift. Re-sync via `mint_cli_token` if mismatch.
