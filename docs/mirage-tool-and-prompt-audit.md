@@ -351,8 +351,9 @@ Composes the final keyframe-mode video prompt sent to the video provider.
 
 - Triggered by: `generate_video` in keyframe workflow mode
 - Model: `project.video_model` (Seedance / Veo)
-- Inputs: motionPrompt (saved), refLabels (auto-appended when ref images attached)
-- Contract: `{{motionPrompt}}. {{refLabels}}` — minimal composition. Start frame + ref images carry visual state.
+- Inputs (text): motionPrompt (saved), refLabels (auto-appended when ref images attached)
+- Inputs (API params, not text): start frame via `first_frame_url`, ref images via `reference_images` array
+- Contract: prompt text is `{{motionPrompt}}. {{refLabels}}` — minimal because the video API contract treats start frame + refs as structural inputs. Prompt only describes the motion delta (what changes during the clip).
 - Output: video clip
 
 #### seedance-storyboard-video `[agent]`
