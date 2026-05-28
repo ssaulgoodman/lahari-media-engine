@@ -927,6 +927,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-27 Codex: Action-schema materialization slice landed from Saul/Claude audit feedback. Generated notebooks now include `config/actions/index.json` plus one full schema file per action surface under `config/actions/<surface>.json`; `notebook.json`, `open_project`, `get_project_state`, and full packets carry `actionsHash` for drift detection. Agent instructions now prefer local action files and reserve MCP `list_actions` for missing/stale/live-truth fallback, reducing registry context dumps during ordinary Codex work.
 
+2026-05-28 Codex: Captured post-audit enterprise architecture target in `docs/mirage-agent-platform-api-architecture.md`. Direction: Mirage should become a production-graph HTTP API + OpenAPI first, with MCP demoted to a tiny agent cockpit, plugin as install/onboarding packaging, notebooks as local working sets, and Web Studio as visual/operator truth. This is explicitly queued after the action/prompt audit, not a replacement for the current cleanup.
+
 ---
 
 ## 10. References
@@ -936,6 +938,7 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 - `docs/r29-project-config-design.md` — project-level override pattern that pairs with workflow presets
 - `docs/abstraction-platform-plan.md` — strategic shape; the audio Blueprint addition supersedes the "anime is just script→shots" framing
 - `docs/preset-abstraction-plan.md` — preset/workflow/seed framework (still authoritative for that layer)
+- `docs/mirage-agent-platform-api-architecture.md` — post-audit target for Core HTTP API + OpenAPI + small MCP cockpit
 - `docs/studio-db-bootstrap.md` — clean Supabase setup steps
 - `server/presets.ts` — runtime presets + workflow recipes (extending with `audio` stage state in T3.9)
 - `migrations/2026-05-13_create_studio_workspace_schema.sql` — bootstrap migration (extending in T3.1)
