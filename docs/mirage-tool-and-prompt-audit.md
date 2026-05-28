@@ -213,7 +213,11 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 #### refine_storyboard_image
 
-**Notes:** _blank_
+**Notes:**
+- Carries half of the `seedance-storyboard-refine` shared template (the `edit_image` branch). The other half (`replan` branch) is a backend-LLM text rewrite — web-direct only; agent path bypasses by editing `drafts/storyboards/<scene>.md` and calling `apply_storyboard_prompts`.
+- The "shared" tag on `seedance-storyboard-refine` is mechanical (same builder file) not semantic — the two branches do genuinely different operations.
+- **Boundaries become cleaner after backlog #9 lands** (drop saved prompt from edit_image payload). At that point: `refine_storyboard_image` = pure image edit with narrow delta; `apply_storyboard_prompts` = Codex-written prompt rewrite; `generate_storyboard` = fresh render. Then the replan branch becomes web-direct-only legacy.
+- **Final boundary pass tracked under backlog #13** — re-review Layer 3 templates after #9 / #10 / #12 land. Likely outcome: split `seedance-storyboard-refine` into two distinct templates or collapse `replan` into the `web-direct` cut list.
 
 **Pass log:**
 - 2026-05-27 (1661727): input field clarified as Codex-translated edit instruction (D27); example shows a real positive edit instruction.
