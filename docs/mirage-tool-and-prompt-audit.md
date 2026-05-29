@@ -665,7 +665,12 @@ That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; t
 
 ## Future cleanup backlog
 
-Pinned items that surfaced during audit but aren't blocking. Take after smoke test passes so we know which abstractions earned their keep under real use.
+**This is the single canonical work queue.** Forward plans in `docs/mirage-agent-platform-api-architecture.md` (Phase 0.5) and `docs/mirage-platform-v1-ledger.md` checkpoints reference this list; they do not restate it. When an item ships, move its findings into the relevant Layer 2 action's Pass log and delete the item here.
+
+Numbering is stable IDs, not sequential — gaps (1, 3, 5, 6, 8–12) are items that already shipped during Tier 1–3; their history lives in the Pass logs above. Two clusters remain:
+
+- **Original audit backlog** (items 2, 4, 7, 13, 14): deferred-after-smoke architectural cleanups. Take when the abstraction earns it.
+- **Smoke feedback queue** (item 15): the active P0–P3 list from the first agent-native Blueprint smoke. This is what the current round of fixes pulls from. Work P0s first.
 
 ### 2. `workflow_key` as runtime branch is mostly legacy
 

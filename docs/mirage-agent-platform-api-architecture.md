@@ -261,19 +261,13 @@ Completion criteria:
 
 ### Phase 0.5: Stabilize Agent Smoke Path
 
-Before the broader Core API migration, fix the product seams exposed by the first smoke test:
+Before the broader Core API migration, fix the product seams the first smoke test exposed. This phase proves the core agent loop before we invest in the full enterprise API shape — it is not a detour from it.
 
-1. Preserve locked references across script applies when cast/environment IDs survive; destructive downstream visual wipes must require an explicit flag or preflight confirmation.
-2. Add an agent-sized state packet: checkpoint, entity IDs, locked refs, shot mappings, stale flags, weak links, next legal actions, and notebook freshness.
-3. Add a reliable workbench refresh path that does not depend on global npm cache state. The sync command should use an isolated cache or a stable local helper and should support changed-artifact refresh.
-4. Add local/native storyboard import: upload `purpose=storyboard_image`, then `import_storyboard_image({ shotId, sourceAssetId, lock? })`.
-5. Tighten storyboard prompt craft so agents write graph-name blocking/action prompts and let the renderer bind references.
-6. Compress batch receipts so multi-action calls summarize graph mutations and tell agents when to refresh canonical state.
-7. Version notebook skills and refresh them through the same changed-artifact sync contract as project files.
+The seams cluster around the control-plane / data-plane split this doc defines: the smoke failure was a *data-plane* (local workbench sync) reliability bug, not a control-plane logic bug. The fixes preserve the local-workbench-first model rather than abandoning it.
 
-The first guards for items 1 and 5 have landed; keep them in this phase until smoke confirms the behavior is solid rather than merely safer.
+**The ranked, actionable item list is the single source of truth in `docs/mirage-tool-and-prompt-audit.md` → backlog item 15 ("Smoke feedback queue").** Do not restate it here; it would drift. Architecture intent lives in this doc; the work queue lives there.
 
-This phase is not a detour from the API architecture. It proves the core agent loop before we invest in the full enterprise API shape.
+In brief, the phase covers: reliable workbench sync isolated from global npm state, receipt-driven changed-file refresh, lock TTL/owner metadata, an agent-sized state packet, local/native storyboard import, preserve-refs on script apply, versioned notebook skills, and lean batch receipts. The first guards (script-apply downstream protection, graph-name storyboard prompt craft, reference binding contract) have already landed.
 
 ### Phase 1: Name the Core API
 
