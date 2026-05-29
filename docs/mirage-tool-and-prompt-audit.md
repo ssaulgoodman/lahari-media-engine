@@ -728,8 +728,10 @@ Numbering is stable IDs, not sequential — gaps (1, 3, 5, 6, 8–12) are items 
 
 Ranked findings from the first real agent-native Blueprint smoke. These are product-surface improvements, not prompt-audit theory.
 
+**Design law for this round:** one confident path per operation. Fallbacks are automatic/invisible or explicitly off-path. Do not make agents choose between happy-path forks during creative work.
+
 **P0 before deeper smoke: preserve locked references across `apply_script`.**
-First guard landed: `force` no longer authorizes a downstream visual wipe by itself. Remaining product behavior: script edits should preserve visual groundwork when cast/environment IDs survive. Preflight should report whether IDs are preserved, replaced, or dropped. Apply should clear refs only for removed/replaced entities, not unchanged IDs.
+First guard landed: `force` no longer authorizes a downstream visual wipe by itself. Remaining product behavior: script edits should preserve visual groundwork when cast/environment IDs survive. Preflight should report whether IDs are preserved, replaced, or dropped. Apply should clear refs only for removed/replaced entities, not unchanged IDs. Eventual target: diff-based script apply by stable entity/scene/shot IDs, not wholesale topology replacement.
 
 **P1 soon: project-visible title sync.**
 The shell title and concept title can diverge (`Neon Afterimage` vs `Beautiful Killers`) with no obvious agent action to rename the visible project. Add `rename_project`, or let `apply_concept` optionally sync the shell title.
@@ -738,13 +740,13 @@ The shell title and concept title can diverge (`Neon Afterimage` vs `Beautiful K
 Add `get_project_state({ detail: "agent_working_set" })` for the common loop: checkpoint, entities with IDs/locked refs, shots with cast/env IDs, stale flags, weak links, and next legal actions. Current production state is useful but still larger than needed for many turns.
 
 **P1 soon: clean batch receipts.**
-`parallel_run` correctly applies state, but receipts from many actions mutating the same files can look like partial truth. Batch receipts should summarize outcomes (`7 refs locked`, mapping, stale counts, errors) and tell the agent to refresh state for canonical artifacts instead of returning every changed artifact snapshot.
+`parallel_run` correctly applies state, but receipts from many actions mutating the same files can look like partial truth. This is the same mechanism as receipt-driven sync: action responses should return compact outcomes plus changed paths + hashes, not every artifact body. The bridge pulls changed files; the receipt summarizes graph mutations (`7 refs locked`, mapping, stale counts, errors) and tells the agent when to refresh canonical state.
 
 **P1 soon: stronger action examples.**
 Action schemas need exact happy-path examples for each common mode. `generate_candidates` must make `entityIds[]` impossible to miss, with separate cast/env examples including `guideAssetId` and `promptOverride`.
 
 **P0 before more agent smoke: reliable local workbench sync.**
-The first smoke test exposed the sync seam: the intended `mint_cli_token -> mirage-cli sync` path failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads. That fallback is useful for diagnostics, but it bloats context and does not refresh the local workbench. Keep the local workbench as the primary editing surface; harden sync so it is isolated from global npm state, reports `fresh/stale/unknown`, supports changed-artifact refresh, and gives the agent one confident command/path after mutations. Apply/action receipts should return changed paths + hashes; the bridge should pull only those. Sync locks need owner metadata + TTL/expiry so stale lock files cannot trap the agent.
+The first smoke test exposed the sync seam: the intended `mint_cli_token -> mirage-cli sync` path failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads. That fallback is useful for diagnostics, but it bloats context and does not refresh the local workbench. Keep the local workbench as the primary editing surface; harden sync so it is isolated from global npm state, reports `fresh/stale/unknown`, supports changed-artifact refresh, and gives the agent one confident command/path after mutations. The returned sync command should be trusted and retried once on error; MCP file reads are only for harnesses with no shell/npx capability, not recoverable sync failures. Apply/action receipts should return changed paths + hashes; the bridge should pull only those. Sync locks need owner metadata + TTL/expiry so stale lock files cannot trap the agent.
 
 **P0 before Studio smoke continues: local/native storyboard import.**
 Codex can create or edit a stronger storyboard image with native imagegen, but Mirage has no way to upload that PNG as a storyboard version and lock it. Add `purpose=storyboard_image` to `/api/agent/uploads`, then an `import_storyboard_image({ shotId, sourceAssetId, lock? })` action that creates the storyboard asset/version, updates the shot, and optionally locks it.
