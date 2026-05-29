@@ -748,11 +748,18 @@ Pass log:
 **P1 soon: stronger action examples.**
 Action schemas need exact happy-path examples for each common mode. `generate_candidates` must make `entityIds[]` impossible to miss, with separate cast/env examples including `guideAssetId` and `promptOverride`.
 
-**P0 before more agent smoke: reliable local workbench sync.**
-The first smoke test exposed the sync seam: the intended `mint_cli_token -> mirage-cli sync` path failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads. That fallback is useful for diagnostics, but it bloats context and does not refresh the local workbench. Keep the local workbench as the primary editing surface; harden sync so it is isolated from global npm state, reports `fresh/stale/unknown`, supports changed-artifact refresh, and gives the agent one confident command/path after mutations. The returned sync command should be trusted and retried once on error; MCP file reads are only for harnesses with no shell/npx capability, not recoverable sync failures. Apply/action receipts should return changed paths + hashes; the bridge should pull only those. Sync locks need owner metadata + TTL/expiry so stale lock files cannot trap the agent.
+**Substantially resolved for smoke (was P0): reliable local workbench sync.**
+The first smoke test exposed the sync seam: `mint_cli_token -> mirage-cli sync` failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads, which bloats context and can't do a full refresh. The CLI bridge is now hardened enough that this is no longer a smoke blocker. What remains is the durable architecture move (kill npx entirely), demoted to the deferred tier below.
 
 Pass log:
-- 2026-05-30 Codex: `mint_cli_token` commands isolate npm cache from ambient `~/.npm`; CLI `0.1.2` adds sync-lock owner metadata, 15-minute TTL, stale-lock move-aside, and releases locks on recoverable CLI errors.
+- 2026-05-30 Codex: `mint_cli_token` commands isolate npm cache from ambient `~/.npm` (slice 1, 1954f50). Fallback wording tightened — sync command is the trusted path, retried once on error; MCP file reads only when no shell/npx exists, not on recoverable failures (cc7aa31).
+- 2026-05-30 Codex: lean receipts — action responses return changed paths + hashes, never file bodies, uniformly at the MCP boundary (slice 2, 471b297).
+- 2026-05-30 Codex: CLI `0.1.2` shipped (62c7fb7) — changed-only sync via manifest hash-diff (skips unchanged files), local-vs-server conflict + untracked-file + removed-remote detection, sync-lock owner metadata + 15-min TTL + stale-lock move-aside, lock release on recoverable errors. Published, Railway `MIRAGE_CLI_PACKAGE` pinned to `0.1.2`, live `mint_cli_token` verified.
+
+Net: isolated cache + changed-only diff + conflict-awareness + lock safety + lean receipts are all in. The CLI bridge is now confident enough to re-smoke and operate on. The only remaining sync work is the durable shape (item below), which is no longer blocking.
+
+**Deferred (durable shape, no longer smoke-blocking): replace npx bridge with HTTP data plane + local plugin bridge.**
+The CLI 0.1.2 is robust but still depends on `npx` per session. The durable shape is a Codex-plugin local bridge over plain HTTPS read endpoints (`GET notebook manifest`, `GET file?path=`) so sync never touches npx/npm at all — the same binary-boundary pattern as `/api/agent/uploads`. The HTTP read endpoints are also the substrate the plugin bridge sits on, so they are not wasted work. Build this when the CLI bridge proves insufficient under real use, or alongside the plugin packaging milestone — not as a smoke blocker now that 0.1.2 holds.
 
 **P0 before Studio smoke continues: local/native storyboard import.**
 Codex can create or edit a stronger storyboard image with native imagegen, but Mirage has no way to upload that PNG as a storyboard version and lock it. Add `purpose=storyboard_image` to `/api/agent/uploads`, then an `import_storyboard_image({ shotId, sourceAssetId, lock? })` action that creates the storyboard asset/version, updates the shot, and optionally locks it.
