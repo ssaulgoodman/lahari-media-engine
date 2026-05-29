@@ -351,7 +351,7 @@ Return only the script JSON schema: cast, environments, scenes, shots.`,
   },
   {
     id: 'brainstorm-style-directions',
-    path: 'agent',
+    path: 'web-direct',
     name: 'Brainstorm style directions',
     stage: 'blueprint',
     model: 'project.text_provider',

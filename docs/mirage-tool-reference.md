@@ -84,7 +84,7 @@ The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MC
 
 ---
 
-## Layer 2 — Actions (25 total)
+## Layer 2 — Actions (25 live registry actions; 24 materialized for agents)
 
 Every action is agent-callable via `run_action(actionKey, input)` or `start_job(actionKey, input)`. **"Calls"** column tells you what runs when the agent invokes it.
 
@@ -95,7 +95,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 | `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
 | `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
 | `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
-| `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input) | ● |
+| `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input); hidden from materialized agent action files | ● |
 | `apply_style_direction` | style | Saves style description and/or locks a style asset | DB only (auto-runs `identify_style` if locking empty) | — |
 | `generate_candidates` | looks | Renders 3 character/env reference candidates per entity | image model | ● |
 | `list_candidates` | looks | Lists previously-generated candidates | DB read | — |
@@ -122,7 +122,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 
 The `path` tag on each Layer 3 prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
-### Agent (8) — fires when an MCP action invokes a paid model
+### Agent (7) — fires when an MCP action invokes a paid model
 
 These are the prompts Codex's actions actually trigger.
 
@@ -197,21 +197,19 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 - Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. No panel borders/numbers in output.
 - Output: video clip
 
-#### analyze-image-style `[agent]`
+### Web-direct (15) — fires only from Visual Studio buttons
+
+These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
+
+#### analyze-image-style `[web-direct]`
 
 Reads a style image and returns a concise style description.
 
-- Triggered by: `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
+- Triggered by: legacy `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
 - Model: `project.text_provider.refine` (with image input)
 - Inputs: image
 - Contract: *Analyze this image and describe its "Art Style" in detail. Return a concise prompt fragment (2-3 sentences) covering: lighting, color palette, texture/medium, composition, mood. Be concrete and specific — this will be used as an image generation style reference. Return ONLY the style fragment text. No quotes, no JSON, no markdown.*
 - Output: 2–3 sentence style description, plain text
-
----
-
-### Web-direct (15) — fires only from Visual Studio buttons
-
-These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
 
 #### generate-concepts `[web-direct]`
 
@@ -468,7 +466,7 @@ Contract differs by branch — replan rewrites text; edit_image edits the image.
 | `seedance-storyboard-refine` replan | "Redo" storyboard | Codex edits storyboard markdown → `apply_storyboard_prompts` |
 | `write-audio-plan` | "Write dialogue" | Codex writes `drafts/audio-plan.md` → `apply_audio_plan` |
 
-That's 13 prompts queued for deprecation. The 8 `[agent]`-tagged prompts stay; they're the actual production engines.
+That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; they're the actual production engines.
 
 ---
 

@@ -87,7 +87,7 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 
 ---
 
-## Layer 2 — Actions (25 total)
+## Layer 2 — Actions (25 live registry actions; 24 materialized for agents)
 
 Every action is agent-callable via `run_action` / `start_job`. Quick index table first, then per-action Notes blocks for audit findings.
 
@@ -100,7 +100,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 | `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
 | `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
 | `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
-| `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input) | ● |
+| `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input); hidden from materialized agent action files | ● |
 | `apply_style_direction` | style | Saves style description and/or locks a style asset | DB only (auto-runs `identify_style` if locking empty) | — |
 | `generate_candidates` | looks | Renders 3 character/env reference candidates per entity | image model | ● |
 | `list_candidates` | looks | Lists previously-generated candidates | DB read | — |
@@ -162,10 +162,11 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 **Notes:**
 - Redundant for agent path. Codex sees images natively and can write a 2-3 sentence style description directly into `apply_style_direction({ style: { styleDescription, sourceAssetId } })`. Paying for a separate `project.text_provider.refine` call with image input when Codex can inspect the image is waste. The Layer 3 prompt `analyze-image-style` has the same redundancy.
 - Honest agent flow: when locking a style asset, Codex writes the description in the same turn as the apply. The C4 auto-identify fallback (auto-fires `analyze-image-style` inside `apply_style_direction` when text is empty) was built for cases where the apply caller doesn't bother to describe — but in agent path Codex always should.
-- Tracked as backlog item 8 (hide from agent-facing `config/actions/style.json` + keep C4 server-side fallback for legacy callers). When that lands, `analyze-image-style` also retags `[web-direct]` and stops being agent-callable.
+- Hidden from materialized agent-facing `config/actions/style.json`; server-side C4 auto-identify stays as fallback for callers that lock a style asset without text.
 
 **Pass log:**
 - 2026-05-29 (this commit): backlog #11 terminology cleanup — replaced fake separate-vision-model label with `project.text_provider.refine (with image input)`.
+- 2026-05-29 (this commit): backlog #8 agent-surface cleanup — removed from materialized agent action files; `analyze-image-style` is now web-direct/fallback only.
 
 #### apply_style_direction
 
@@ -303,7 +304,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 The `path` tag on each prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
-### Agent (8) — fires when an MCP action invokes a paid model
+### Agent (7) — fires when an MCP action invokes a paid model
 
 These are the prompts Codex's actions actually trigger.
 
@@ -378,21 +379,19 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 - Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. No panel borders/numbers in output.
 - Output: video clip
 
-#### analyze-image-style `[agent]`
+### Web-direct (15) — fires only from Visual Studio buttons
+
+These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
+
+#### analyze-image-style `[web-direct]`
 
 Reads a style image and returns a concise style description.
 
-- Triggered by: `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
+- Triggered by: legacy `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
 - Model: `project.text_provider.refine` (with image input)
 - Inputs: image
 - Contract: *Analyze this image and describe its "Art Style" in detail. Return a concise prompt fragment (2-3 sentences) covering: lighting, color palette, texture/medium, composition, mood. Be concrete and specific — this will be used as an image generation style reference. Return ONLY the style fragment text. No quotes, no JSON, no markdown.*
 - Output: 2–3 sentence style description, plain text
-
----
-
-### Web-direct (15) — fires only from Visual Studio buttons
-
-These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
 
 #### generate-concepts `[web-direct]`
 
@@ -652,7 +651,7 @@ Contract differs by branch — replan rewrites text; edit_image edits the image.
 | `seedance-storyboard-refine` replan | "Redo" storyboard | Codex edits storyboard markdown → `apply_storyboard_prompts` |
 | `write-audio-plan` | "Write dialogue" | Codex writes `drafts/audio-plan.md` → `apply_audio_plan` |
 
-That's 13 prompts queued for deprecation. The 8 `[agent]`-tagged prompts stay; they're the actual production engines.
+That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; they're the actual production engines.
 
 ---
 
@@ -697,7 +696,7 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 ### 4. Per-project filtering of materialized action schemas
 
-**Problem:** `config/actions/index.json` and `config/actions/<surface>.json` currently contain the full 25-action registry, not filtered by per-project `availableTools` / `blockedTools`. MCP `list_actions` does filter, so the file and the live tool can disagree.
+**Problem:** `config/actions/index.json` and `config/actions/<surface>.json` currently contain the full materialized agent action set (24 actions after `identify_style` is hidden), not filtered by per-project `availableTools` / `blockedTools`. MCP `list_actions` does filter, so the file and the live tool can disagree.
 
 **Today this doesn't bite** because `availableTools` filtering isn't actively gating actions in production. Will bite when it does.
 
@@ -741,17 +740,6 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 3. **Thin admin/emergency LLM (tertiary).** Backend LLM layer gated behind a feature flag, not artist-facing by default. Used only when 1+2 are both unavailable. Tiny surface, mostly dormant.
 
 **Why deferred:** the question matters before fully cutting web-direct prompts but doesn't block agent-native work today. Decide before the Phase 3 / 4 deprecation lands. Likely the answer is "multi-agent + manual entry; no emergency LLM layer" — Mirage's SLA becomes agent availability.
-
-### 8. Hide `identify_style` from agent-facing action surface
-
-**Problem:** `identify_style` is the one Layer 2 action where Codex's native vision genuinely overlaps the action's job. Every other generate_* fires a model Codex can't run (image/video/TTS/edit). Codex can see images directly and write a 2-3 sentence style description into `apply_style_direction` without calling `identify_style` at all.
-
-**Slice:**
-- Filter `identify_style` out of `config/actions/style.json` when materializing for agent
-- Keep server-side auto-fire behavior inside `apply_style_direction` (C4 auto-identify when locking with empty text)
-- Web UI keeps calling it via legacy route
-
-**Why deferred:** tiny saving (1 action shaved). Principled, not urgent.
 
 ### 9. Storyboard `edit_image` refine — drop saved prompt from payload
 

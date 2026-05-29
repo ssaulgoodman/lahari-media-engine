@@ -27,6 +27,7 @@ import {
   buildActionSchemaIndex,
   buildActionSchemaPayload,
   buildActionsHash,
+  isMaterializedAgentActionSpec,
 } from '../actionRegistry.js';
 
 export type NotebookFile = {
@@ -470,12 +471,13 @@ const buildActionsArtifacts = (project: Project): NotebookFile[] => {
   // TODO: When availableTools/blockedTools become hard runtime gating for
   // registry actions, filter these materialized specs by project before
   // writing. Today they intentionally mirror the full action registry.
+  const agentActions = actionSpecsForSurface().filter(isMaterializedAgentActionSpec);
   const index = {
     kind: 'mirage.actions.index',
     projectId: project.id,
     generatedAt,
     version: actionsHash,
-    ...buildActionSchemaIndex(),
+    ...buildActionSchemaIndex(agentActions),
   };
   const files: NotebookFile[] = [{
     path: `${baseDir}/config/actions/index.json`,
@@ -485,7 +487,7 @@ const buildActionsArtifacts = (project: Project): NotebookFile[] => {
     content: `${JSON.stringify(index, null, 2)}\n`,
   }];
   for (const surface of ACTION_SURFACES) {
-    const actions = actionSpecsForSurface(surface);
+    const actions = actionSpecsForSurface(surface).filter(isMaterializedAgentActionSpec);
     files.push({
       path: `${baseDir}/config/actions/${surface}.json`,
       mode: 'config',

@@ -327,6 +327,7 @@ export const STYLE_ACTION_SPECS = {
     surface: 'style',
     mutates: false,
     paid: true,
+    materializeForAgent: false,
     description: 'Analyze the locked or provided style asset and return a concise style description for artist confirmation.',
     input: {
       projectId: 'string',
@@ -444,6 +445,9 @@ export const actionSpecsForSurface = (surface?: ActionSurface | null) =>
   Object.values(ALL_ACTION_SPECS).filter((spec) => !surface || spec.surface === surface);
 
 export type MirageActionSpec = typeof ALL_ACTION_SPECS[ActionKey];
+
+export const isMaterializedAgentActionSpec = (spec: MirageActionSpec) =>
+  !('materializeForAgent' in spec) || spec.materializeForAgent !== false;
 
 export const summarizeActionSpec = (spec: MirageActionSpec) => ({
   key: spec.key,
