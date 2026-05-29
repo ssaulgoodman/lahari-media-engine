@@ -238,92 +238,45 @@ The composer is still useful, but only as plumbing for worker calls. It assemble
 
 ## Migration Plan
 
-### 1. Establish the new contract in code
+Status legend: **✅ shipped** / **🟡 partial** / **🔵 deferred (intentional)**
 
-Add a shared `ContextOverride` type and support it in action specs for looks, style, storyboard, video, audio, and script actions where relevant.
+### 1. Establish the new contract in code — ✅ shipped
 
-Add trace/X-Ray output that shows:
+`ContextOverride` type lives in `server/services/contextOverrides.ts` and ships with looks, style, storyboard, video, audio, and script actions. X-Ray trace output records included/excluded graph fields, attached refs/assets, promptOverride and projectOverride usage, plus styleNoteSections include/exclude.
 
-- included graph fields
-- excluded graph fields
-- attached refs/assets
-- promptOverride used or not
-- projectOverride used or not
+### 1b. Split raw notes from agent instructions — 🟡 partial
 
-This makes the composer debuggable as plumbing.
+D27 locked the doctrine: agent path translates raw artist chat into spec edits, contextOverrides, promptOverride, callInstruction, editInstruction, or a project override. `userNote` no longer flows on the agent path. Field-level renames in action specs (`feedback` → `editInstruction` etc.) deferred to a follow-up; today the same field carries the Codex-translated instruction.
 
-### 1b. Split raw notes from agent instructions
+### 2. Fix project overrides — ✅ shipped
 
-Rename the concepts in action specs and docs:
+`PROJECT OVERRIDE` section is first-class in the composer (C5). All declared override kinds — `concept`, `script`, `shot_prompts`, `storyboard`, `video`, `character_looks`, `environment_looks`, `audio_plan` — wire through `getProjectPromptOverride()` and flow into the composer section uniformly. No ad-hoc per-builder injection.
 
-- `userNote`: legacy web-direct raw artist text. Allowed only on backend LLM helper/refine routes where no harness has interpreted intent.
-- `callInstruction`: precise one-off instruction written by Codex for a worker call.
-- `editInstruction`: precise instruction for media edit/refine actions.
-- `promptOverride`: exact final worker prompt, authored by Codex or a saved project override.
+### 3. Cut `writeShotPrompts` — ✅ shipped
 
-Storyboard should be the first migration target because it has all three cases: saved prompt edits, storyboard image generation, and storyboard image refine.
+C1 trimmed `writeShotPrompts` from ~7000 to ~3800 chars. Kept one GOOD/BAD per axis (visual + motion). Removed preset taste, USER_NOTE_POLICY local constant, workflowContext, OUTPUT-CONTRACT 6-item checklist. previousBatchTail capped to last 3 shots.
 
-### 2. Fix project overrides
+### 4. Remove workflow/preset doctrine from text prompts — ✅ shipped
 
-Either wire every declared override kind or delete unsupported kinds. Preferred: wire them.
+C2 relocated preset taste out of text-gen prompts. Concept, script/parse/refine, shot prompts, audio plan, style brainstorm all run on action contracts + selected graph context. `workflowContext` removed from composer entirely. Text models receive no preset doctrine.
 
-Add a real `PROJECT OVERRIDE` section in the composer instead of ad-hoc injection in storyboard/video only.
+### 5. Move worker-model invariants to actions — 🟡 partial
 
-### 3. Cut `writeShotPrompts`
+Action invariants like "neutral pose," "no text/watermark," "single image" already live in per-action OUTPUT CONTRACT constants in `server/prompts/lookPrompts.ts`, `server/prompts/storyboard.ts`, etc. Some image-gen worker invariants still live in `preset.looks.qualityRules` / `preset.studio.storyboardRules` and need to be sorted into action handler constants. Tracked in audit backlog as "architecture step 5 reshape."
 
-Use the tactical audit. It is the worst offender and should be the first prompt trim.
+### 6. Add project style-note buckets — ✅ shipped
 
-Target: less doctrine, more shot data. Keep one useful example if needed; delete the rest from runtime.
+D28: `project_config.style_notes` (jsonb) carries per-surface buckets — `image`, `storyboard`, `motion`, `script`, `dialogue`, `audio`, plus `modelPhrases[modelKey]`. `apply_project_style_notes` action persists them. Composer reads selected buckets per action via `STYLE NOTES` section. Selectable per call via `contextOverrides.styleNoteSections.{include,exclude}`. Currently consumed at runtime: `image`, `storyboard`. Other buckets accepted but not yet read (forward-compat).
 
-### 4. Remove workflow/preset doctrine from text prompts
+### 7. Shrink presets — 🟡 partial
 
-Start with text-model prompts where Codex or project data should carry taste:
+Presets no longer ship runtime doctrine to text prompts. Image-gen workers still pull `preset.looks.qualityRules` / `preset.style.rules` etc. Final shrink waits on step 5 cleanup. The current state preserves backward compat for image rendering while text path is fully cleaned.
 
-- concept
-- script/parse/refine
-- shot prompts
-- audio plan
-- style brainstorm
+### 8. Harvest reusable presets later — 🔵 deferred (intentional)
 
-Keep only action contracts and selected graph context.
+`codify_project_as_preset(name, sections?)` not built. Intentional: per the harvest doctrine, we wait until a real "I shipped a great anime, now make episode 2" moment proves the shape. Today: project style notes accumulate per project; no cross-project codification action exists.
 
-### 5. Move worker-model invariants to actions
-
-For image/video/audio workers, keep short hard constraints at the action level:
-
-- reusable character ref
-- no text/watermark/collage
-- storyboard board constraints
-- video continuity/ref preservation
-- TTS output requirements
-
-These are not workflows. They are the worker contract.
-
-### 6. Add project style-note buckets
-
-Add the small per-surface note layer as project data. Keep it deliberately humble: named strings first, not a giant nested bible schema.
-
-Codex can update these notes when production discovers language that works. Example: after several good boards, Codex might write a storyboard note like "Use flat 2x3 deadpan panel boards with minimal camera drama and clean graphic blocking."
-
-These notes should be visible/editable in the notebook/config layer and eventually in the Web Studio. They should also be selectable per action via context overrides.
-
-### 7. Shrink presets
-
-Reduce presets/workflows to:
-
-- intake suggestions
-- default model/provider preferences
-- optional starter style description / starter style-note buckets
-
-No recurring runtime doctrine by default.
-
-### 8. Harvest reusable presets later
-
-Do not build the full production-bible system before a project earns it.
-
-Add a later explicit action such as `codify_project_as_preset(name, sections?)` that snapshots selected project style notes plus useful project overrides into a reusable preset. This should be artist-confirmed, reversible, and framed around real production moments: sequel, series, client template, or "make more like this."
-
-### 9. Update skills and AGENTS/CLAUDE
+### 9. Update skills and AGENTS/CLAUDE — ✅ shipped
 
 Teach agents:
 
@@ -366,19 +319,21 @@ The graph can represent that too. Audio exists; analysis is optional; render can
 
 ## Open Calls
 
-Settled by D27/D28:
+Settled (D27/D28 + Tier 1-3 implementation):
 
-1. `workflow_key` can remain for UI filtering/back-compat, but it must not drive recurring prompt doctrine.
-2. Legacy web buttons may keep minimal raw-note helper prompts until the UI becomes agent-backed; those paths should be labeled legacy/web-direct.
-3. Project overrides remain freeform by action surface for now.
-4. The Prompt Library should primarily show graph/action contracts. Composer internals are debug/X-Ray surface.
+1. `workflow_key` remains for UI filtering / backward compat but does not drive recurring prompt doctrine.
+2. Legacy web buttons keep minimal raw-note helper prompts until the UI becomes agent-backed; those paths are labeled `[web-direct]` in the catalog.
+3. Project overrides remain freeform by action surface.
+4. The Prompt Library shows graph/action contracts; composer internals are debug/X-Ray surface.
+5. **Project style-note storage:** JSONB column on `project_config.style_notes` (D28 implementation slice).
+6. **`contextOverrides.styleNoteSections` syntax:** `{ include?: SectionKey[], exclude?: SectionKey[] }`. Default sections per action (e.g. looks defaults to `['image']`; storyboard to `['image', 'storyboard']`).
+7. **`modelPhrases`:** in v1 style notes, keyed by model name. Used today by image/storyboard render paths.
 
-Still open before implementation:
+Still open:
 
-1. Exact storage shape for project style notes: columns vs JSON config vs existing project config/preferences layer.
-2. Exact `contextOverrides.styleNoteSections` syntax and which actions support it first.
-3. Whether `modelPhrases` belongs in v1 style notes or waits until the first real model-specific phrase proves it is needed.
-4. Harvest action timing and surface: likely later, after the first successful project/episode proves the shape.
+1. Harvest action timing and surface — likely later, after the first successful project/episode proves the shape.
+2. Architecture step 5 finish: image-gen worker invariants currently in `preset.looks.qualityRules` / `preset.studio.storyboardRules` need to be sorted into per-action handler constants; preset surface shrinks correspondingly.
+3. Field rename across action specs (`userNote` → `editInstruction` / `callInstruction` where the path is agent-only). Doctrine is locked; field-level rename is a follow-up slice.
 
 ## Summary
 
