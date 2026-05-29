@@ -463,14 +463,13 @@ export { forkProject };
 // codexStudio code) is derived from this so adding registry output to
 // getFullProject can't recurse on itself at the type level.
 const _getFullProjectCore = async (projectId: string) => {
-  // Parallel fetch: project + cast + environments + scenes + chat — 5 queries instead of serial
-  const [project, cast, environments, scenes, chatMessages] = await Promise.all([
+  // Parallel fetch: project + cast + environments + scenes — 4 queries instead of serial
+  const [project, cast, environments, scenes] = await Promise.all([
     selectOne('projects', { id: projectId }),
     selectAll('cast_members', { project_id: projectId }, { orderBy: 'sort_order' }),
     selectAll('environments', { project_id: projectId }, { orderBy: 'sort_order' }),
     selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' }),
-    selectColumns('chat_messages', 'role, text', { project_id: projectId }, { orderBy: 'id' }),
-  ]) as [any, any[], any[], any[], any[]];
+  ]) as [any, any[], any[], any[]];
   if (!project) return null;
 
   // Fetch ALL shots for this project's scenes in one query (not N queries per scene)
@@ -708,7 +707,6 @@ const _getFullProjectCore = async (projectId: string) => {
         lastError: shot.last_error || undefined,
       }))
     })),
-    chatHistory: chatMessages,
     targetDuration: project.target_duration,
     costEstimate: project.cost_estimate,
     createdAt: project.created_at,

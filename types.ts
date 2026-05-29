@@ -28,11 +28,6 @@ export type ProjectPhase =
   | 'rendered'
   | 'error';
 
-export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
-}
-
 export interface MusicalSection {
   id: string;
   label: string;
@@ -269,7 +264,6 @@ export interface ApiProject {
   cast: CastMember[];
   environments: Environment[];
   scenes: VideoScene[];
-  chatHistory: ChatMessage[];
   targetDuration: number;
   costEstimate: number;
   createdAt: string;
