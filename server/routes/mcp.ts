@@ -96,6 +96,42 @@ const textResult = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
 });
 
+const projectIdFromMcpArgs = (args: any): string | undefined => {
+  const candidate = args?.projectId
+    || args?.input?.projectId
+    || args?.actions?.[0]?.input?.projectId;
+  return typeof candidate === 'string' ? candidate : undefined;
+};
+
+const resultSizeTrace = (value: unknown): { responseBytes: number; jsonOk: boolean } => {
+  try {
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+    return {
+      responseBytes: Buffer.byteLength(serialized || '', 'utf8'),
+      jsonOk: true,
+    };
+  } catch {
+    return { responseBytes: 0, jsonOk: false };
+  }
+};
+
+const logMcpCallTrace = (entry: {
+  tool: string;
+  durationMs: number;
+  responseBytes: number;
+  jsonOk: boolean;
+  projectId?: string;
+  userId: string;
+  ok: boolean;
+  errorCode?: string;
+}) => {
+  console.error(JSON.stringify({
+    kind: 'mcp.call',
+    ts: new Date().toISOString(),
+    ...entry,
+  }));
+};
+
 const bearerToken = (header?: string | null) => {
   const match = (header || '').match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
@@ -594,13 +630,34 @@ const createHostedMcpServer = (auth: HostedAuth) => {
           });
         }
         const result = await handler(args || {});
+        const { responseBytes, jsonOk } = resultSizeTrace(result);
         await finishAgentOperation(operationId, 'success', { result });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, result, durationMs: Date.now() - start, startedAt });
+        logMcpCallTrace({
+          tool: name,
+          durationMs: Date.now() - start,
+          responseBytes,
+          jsonOk,
+          projectId: projectIdFromMcpArgs(args),
+          userId: auth.userId,
+          ok: true,
+        });
         return textResult(result);
       } catch (error) {
         await finishAgentOperation(operationId, 'error', { error });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, error, durationMs: Date.now() - start, startedAt });
-        throw new Error(JSON.stringify(structuredToolError(error), null, 2));
+        const toolError = structuredToolError(error);
+        logMcpCallTrace({
+          tool: name,
+          durationMs: Date.now() - start,
+          responseBytes: 0,
+          jsonOk: true,
+          projectId: projectIdFromMcpArgs(args),
+          userId: auth.userId,
+          ok: false,
+          errorCode: toolError.code,
+        });
+        throw new Error(JSON.stringify(toolError, null, 2));
       }
     });
   };
