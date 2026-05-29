@@ -90,7 +90,7 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 **Notes:** _blank_
 
 **Pass log:**
-- 2026-05-29 (pending): backlog #3 — collapsed editable `mirrors/` + `drafts/` pairs into single root artifacts (`script.md`, `audio-plan.md`, `storyboards/<scene>.md`); surviving read-only projections now live under `state/`.
+- 2026-05-29 (b2e089e): backlog #3 — collapsed editable `mirrors/` + `drafts/` pairs into single root artifacts (`script.md`, `audio-plan.md`, `storyboards/<scene>.md`); surviving read-only projections now live under `state/`.
 
 ---
 
@@ -165,7 +165,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 **Pass log:**
 - 2026-05-27 (1661727): added `styleNoteSections` to `contextOverrides` example for consistency with looks/storyboard.
-- 2026-05-29 (pending): backlog #6 — added `directions[]` agent-native input. When present, backend skips `brainstorm-style-directions` and renders each Codex-written direction directly.
+- 2026-05-29 (f97ca4c): backlog #6 — added `directions[]` agent-native input. When present, backend skips `brainstorm-style-directions` and renders each Codex-written direction directly.
 
 #### identify_style
 
@@ -233,7 +233,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 **Pass log:**
 - 2026-05-27 (1661727): input field clarified as Codex-translated edit instruction (D27); example shows a real positive edit instruction.
-- 2026-05-29 (pending): backlog #9 — edit-image refine no longer sends saved storyboard prompt; it sends previous image + refs + exact edit instruction.
+- 2026-05-29 (526844d): backlog #9 — edit-image refine no longer sends saved storyboard prompt; it sends previous image + refs + exact edit instruction.
 
 #### lock_storyboard
 
@@ -577,7 +577,7 @@ Detects musical sections.
 
 **Pass log:**
 - 2026-05-29 (188ab8b): backlog #1/#12 audio-intake cleanup — structure detection is now an explicit action/web button; backend meaning summary was removed.
-- 2026-05-29 (pending): backlog #5 — audio classification tags removed from structure output and runtime prompt inputs.
+- 2026-05-29 (99f29ce): backlog #5 — audio classification tags removed from structure output and runtime prompt inputs.
 
 #### parse-script-intake `[intake]`
 
