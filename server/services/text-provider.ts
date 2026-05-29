@@ -247,7 +247,7 @@ const runOpenAI = async (model: string, req: TextRequest): Promise<TextResponse>
 
 // ─── Google (Gemini) ───────────────────────────────────────────────────────
 
-/** Fetch an HTTPS URL and return base64 + mimeType. Gemini's vision input
+/** Fetch an HTTPS URL and return base64 + mimeType. Gemini's image input
  *  uses inlineData (not fileData — fileData.fileUri is for Files API
  *  uploads, not arbitrary public URLs). Matches imagen.ts's pattern. */
 const fetchImageAsInline = async (url: string, fallbackMime?: string): Promise<{ mimeType: string; data: string }> => {

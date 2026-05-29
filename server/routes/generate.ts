@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows } from '../database.js';
 import { storageUrl } from '../storage.js';
-import { chatWithDirector } from '../services/gemini.js';
 import { getImageService, getStyleOptionsModelName } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -236,57 +235,6 @@ router.post('/:id/unlock-environments', async (req, res) => {
 // All shot-level routes (generate-image, generate-end-frame, refine, clear, lock, history, refs)
 // → generate-shots.ts
 
-
-// ─── Chat ───────────────────────────────────────────────────────────
-
-router.post('/:id/chat', async (req, res) => {
-  const { message } = req.body;
-  if (!message) return res.status(400).json({ error: 'message required' });
-
-  const project = await selectOne('projects', { id: paramStr(req.params.id) });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  // Save user message
-  await insertRow('chat_messages', { project_id: paramStr(req.params.id), role: 'user', text: message });
-
-  const history = await selectAll('chat_messages', { project_id: paramStr(req.params.id) }, { orderBy: 'id', ascending: true });
-  const concept = JSON.parse(project.locked_concept || project.concept_options || '{}');
-
-  const chatContext = `Project: ${project.title}, Concept: ${JSON.stringify(concept).substring(0, 500)}`;
-
-  try {
-    const t0 = Date.now();
-    const response = await chatWithDirector(chatContext, message, history);
-    const durationMs = Date.now() - t0;
-
-    await insertRow('chat_messages', { project_id: paramStr(req.params.id), role: 'model', text: response });
-
-    await logCall({
-      projectId: paramStr(req.params.id),
-      stage: 'chat',
-      model: 'gemini-3-pro-preview',
-      prompt: `[User]: ${message}\n[System context]: ${chatContext}`,
-      contextChain: await buildContextChain(paramStr(req.params.id)),
-      responseSummary: response.substring(0, 300),
-      durationMs,
-      costEstimate: 0.005,
-    });
-
-    res.json({ text: response, project: await getFullProject(paramStr(req.params.id)) });
-  } catch (err: any) {
-    await logCall({
-      projectId: paramStr(req.params.id),
-      stage: 'chat',
-      model: 'gemini-3-pro-preview',
-      prompt: `[User]: ${message}`,
-      durationMs: 0,
-      error: err.message,
-    });
-    const errMsg = 'Error connecting to AI.';
-    await insertRow('chat_messages', { project_id: paramStr(req.params.id), role: 'model', text: errMsg });
-    res.json({ text: errMsg });
-  }
-});
 
 // ─── Mount extracted route modules ──────────────────────────────────
 mountStyleRoutes(router);

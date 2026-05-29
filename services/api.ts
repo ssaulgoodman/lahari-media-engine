@@ -936,17 +936,6 @@ export const getXRayCalls = async (projectId: string) => {
   return handleResponse(res);
 };
 
-// ─── Chat ───────────────────────────────────────────────────────────
-
-export const sendChatMessage = async (projectId: string, message: string) => {
-  const res = await authFetch(`${API}/projects/${projectId}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message })
-  });
-  return handleResponse(res);
-};
-
 // ─── Audio Blueprint (anime workflow) ──────────────────────────────
 // Backend: write-audio-plan + generate-dialogue-audio + audio-plan-cost.
 

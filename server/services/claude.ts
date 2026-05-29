@@ -4,7 +4,8 @@
  *
  * Opus: generateConceptOptions, brainstormStyleDirections, planScenes, writeShotPrompts, refineScript
  * Sonnet: summarizeMeaning, refineStyleDirection, analyzeImageStyle, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt
- * Gemini still handles: audio analysis (transcribe, structure), image critique (vision), chat
+ * Gemini still handles hardcoded audio analysis (transcribe, structure). Image-input
+ * text refines route through the project text provider.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { generateText } from './text-provider.js';
@@ -882,7 +883,7 @@ Apply the director's feedback to the motion prompt. This prompt goes to a video 
   return parsedJson as { motionPrompt: string };
 };
 
-// ─── Refresh Chained Shot Prompt from Prev Frame (vision) ────────────
+// ─── Refresh Chained Shot Prompt from Prev Frame (image input) ────────
 
 /**
  * When a prev_shot's video lands, Claude sees the actual last frame and

@@ -26,10 +26,8 @@ const STAGE_AI_CALL_MAP: Record<string, string[]> = {
   'refine-script':           ['refine-script'],
   'chained-shot-refresh':    ['chained-refresh', 'refresh-chained-prompt'],
   'shot-video-assembly':     ['generate-video', 'shot-video'],
-  'critique-shot-image':     ['critique'],
   'describe-frame':          ['describe-frame'],
   'analyze-image-style':     ['analyze-image-style'],
-  'chat-with-director':      ['chat'],
 };
 
 router.get('/', async (_req, res) => {

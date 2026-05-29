@@ -1032,46 +1032,12 @@ Do not render text, panel borders, numbers, gutters, or split-screen artifacts f
 
   // ─── Utilities ────────────────────────────────────────────────────
   {
-    id: 'critique-shot-image',
-    path: 'automatic',
-    name: 'Critique shot image',
-    stage: 'utilities',
-    model: 'utility.gemini',
-    modelLabel: 'Utility multimodal model',
-    triggeredBy: 'Fires automatically after a shot frame lands — scores + suggests fixes.',
-    summary: 'Scores the image 0-10 on style adherence, prompt fidelity, character consistency, technical quality; returns specific actionable suggestions.',
-    variables: [
-      { name: 'image', description: 'The generated image' },
-      { name: 'referenceImages', description: 'Character refs' },
-      { name: 'compiledPrompt', description: 'The prompt that produced this image' },
-      { name: 'styleDNA', description: 'Locked style keywords' },
-    ],
-    template: `You are a meticulous Art Director reviewing this generated image for a video project.
-
-SCORING RUBRIC (0-10):
-  9-10: Publication ready. Style is spot-on, characters are recognizable, composition is compelling.
-  7-8:  Strong result with minor issues — slight color drift, a small costume detail off, minor composition weakness.
-  5-6:  Mediocre. Noticeable style mismatch, character inconsistency, or weak composition. Needs rework.
-  3-4:  Poor. Major problems — wrong style, unrecognizable characters, bad anatomy, or broken composition.
-  0-2:  Failed. Completely off-brief or technically broken.
-
-EVALUATE THESE CRITERIA (weighted):
-
-1. STYLE ADHERENCE (40%): Does the image match the locked visual style?
-2. PROMPT FIDELITY (30%): Does the image faithfully depict the prompt?
-3. CHARACTER CONSISTENCY (20% if refs present): Do characters match their references?
-4. TECHNICAL QUALITY (10-30%): Artifacts, anatomy, lighting, noise.
-
-Return JSON with score, reasoning, isConsistent, suggestions. "suggestions" must be specific + actionable.`,
-    source: { file: 'server/services/gemini.ts', lines: '136-201' },
-  },
-  {
     id: 'describe-frame',
     path: 'automatic',
     name: 'Describe frame (continuity)',
     stage: 'utilities',
-    model: 'utility.gemini',
-    modelLabel: 'Utility multimodal model',
+    model: 'project.text_provider.refine',
+    modelLabel: 'Project text provider (refine, with image input)',
     triggeredBy: "Fires when building continuity description for a chained shot.",
     summary: 'Short factual description of a video frame — subject pose, framing, lighting, action mid-beat — like a script supervisor note.',
     variables: [
@@ -1080,7 +1046,7 @@ Return JSON with score, reasoning, isConsistent, suggestions. "suggestions" must
     template: `Describe this single video frame factually for shot continuity. 2-3 sentences max.
 Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion.
 Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.`,
-    source: { file: 'server/services/gemini.ts', lines: '210-224' },
+    source: { file: 'server/services/gemini.ts', lines: '169-189' },
   },
   {
     id: 'analyze-image-style',
@@ -1098,25 +1064,6 @@ Do NOT speculate about narrative or use flowery language. Write like a script su
 
 Return ONLY the style fragment text. No quotes, no JSON, no markdown.`,
     source: { file: 'server/services/claude.ts', lines: '565-585' },
-  },
-  {
-    id: 'chat-with-director',
-    path: 'web-direct',
-    name: 'Chat with director',
-    stage: 'utilities',
-    model: 'utility.text',
-    modelLabel: 'Utility text model',
-    triggeredBy: 'Fires when you send a message in the Chat panel.',
-    summary: 'Answers questions about prompts and pipeline with the project analysis context in view.',
-    variables: [
-      { name: 'analysisContext', description: 'Project analysis (concept, script, style summary)' },
-      { name: 'userMessage', description: 'Your message' },
-      { name: 'history', description: 'Prior chat turns' },
-    ],
-    template: `Context: {{analysisContext}}
-
-User Message: {{userMessage}}. (Provide advice on prompts)`,
-    source: { file: 'server/services/gemini.ts', lines: '228-242' },
   },
 ];
 

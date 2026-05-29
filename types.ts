@@ -126,7 +126,7 @@ export interface VideoShot {
    *  ref appetites (Seedance often wants only the locked storyboard image). */
   excludedRefs?: { storyboard: string[]; video: string[] };
   /** When true, the previous shot in the same scene's locked storyboard is
-   *  attached as a continuity ref — sent to the planner as vision input and
+   *  attached as a continuity ref — sent to the planner as image input and
    *  to the image renderer as an @imageN ref. */
   usePrevStoryboardRef?: boolean;
   /** Nullable: null means "use smart default" (true when continuity_from is

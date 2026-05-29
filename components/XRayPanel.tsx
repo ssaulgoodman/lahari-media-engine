@@ -58,8 +58,7 @@ const STAGE_GROUPS: { key: string; label: string; prefixes: string[] }[] = [
   { key: 'all',     label: 'All',       prefixes: [] },
   { key: 'errors',  label: 'Errors',    prefixes: [] },
   { key: 'blueprint', label: 'Blueprint', prefixes: ['transcribe', 'detect-structure', 'summarize', 'generate-concepts', 'generate-script', 'brainstorm-styles', 'visualize-style', 'refine-style', 'analyze-style', 'enrich-style', 'lock-style', 'generate-looks', 'generate-environment', 'write-shot-prompts'] },
-  { key: 'studio',  label: 'Studio',    prefixes: ['generate-shot-image', 'generate-shot-video', 'generate-shot-start-frame', 'generate-shot-end-frame', 'generate-shot-frame-pair', 'describe-frame', 'critique'] },
-  { key: 'chat',    label: 'Chat',      prefixes: ['chat'] },
+  { key: 'studio',  label: 'Studio',    prefixes: ['generate-shot-image', 'generate-shot-video', 'generate-shot-start-frame', 'generate-shot-end-frame', 'generate-shot-frame-pair', 'describe-frame'] },
 ];
 
 const prettyStage = (stage: string): string => {

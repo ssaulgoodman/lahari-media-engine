@@ -61,7 +61,7 @@ const ROUTING_FILTERS = [
   { key: 'llm', label: 'LLM', match: (p: PromptMeta) => p.model.includes('text_provider') || p.model === 'project.script_writer' || p.model === 'gpt-5.5' || p.model === 'utility.text' },
   { key: 'refine', label: 'Refine', match: (p: PromptMeta) => p.id.includes('refine') || p.name.toLowerCase().includes('refine') || p.model.includes('refine') },
   { key: 'script-writer', label: 'Script writer', match: (p: PromptMeta) => p.model === 'project.script_writer' || p.model === 'gpt-5.5' },
-  { key: 'image', label: 'Image', match: (p: PromptMeta) => p.model === 'project.image_model' || p.model === 'project.storyboard_provider' || p.model === 'utility.gemini' },
+  { key: 'image', label: 'Image', match: (p: PromptMeta) => p.model === 'project.image_model' || p.model === 'project.storyboard_provider' },
   { key: 'video', label: 'Video', match: (p: PromptMeta) => p.model === 'project.video_model' },
   { key: 'fixed', label: 'Fixed', match: (p: PromptMeta) => p.model.startsWith('audio.') || p.model.startsWith('utility.') },
 ];
@@ -115,8 +115,6 @@ const resolveRouteLabel = (prompt: PromptMeta): string => {
       return 'Video route · project video model';
     case 'audio.analysis':
       return 'Fixed · audio analysis';
-    case 'utility.gemini':
-      return 'Fixed · Gemini utility with image input';
     case 'utility.text':
       return 'Fixed · utility text';
     default:

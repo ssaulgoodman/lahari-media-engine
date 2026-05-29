@@ -118,7 +118,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 
 ---
 
-## Layer 3 — Prompts (31 total), grouped by path tag
+## Layer 3 — Prompts (29 total), grouped by path tag
 
 The `path` tag on each Layer 3 prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
@@ -310,7 +310,7 @@ Generates a shot's start frame using the full reference chain.
 Rewrites one shot's visual prompt using director feedback + failed image.
 
 - Triggered by: Web "Refine" on shot visual prompt. **Agent path:** Codex edits saved `visual_prompt` and calls `apply_shot_prompts`.
-- Model: `project.text_provider.refine` (vision)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: feedback, currentPrompt, failedImage (optional), referenceImage (optional)
 - Contract: *Apply the director's feedback to the current prompt. Keep what works, change what they asked for. 1-3 sentences. This prompt goes to an image model — just describe what should be in the frame.*
 - Output: `{ visualPrompt }` via `rewrite_frame_prompt` tool
@@ -320,7 +320,7 @@ Rewrites one shot's visual prompt using director feedback + failed image.
 Same shape as `refine-shot-prompt`, applied to the end-frame prompt.
 
 - Triggered by: Web "Refine" on end-frame prompt. **Agent path:** Codex edits saved `end_visual_prompt` and calls `apply_shot_prompts`.
-- Model: `project.text_provider.refine` (vision)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: feedback, currentPrompt, failedImage, referenceImage
 - Contract: same as `refine-shot-prompt`, applied to the end-frame text.
 - Output: `{ visualPrompt }`
@@ -330,7 +330,7 @@ Same shape as `refine-shot-prompt`, applied to the end-frame prompt.
 Rewrites a character or environment look-generation prompt using feedback.
 
 - Triggered by: Web refine note before regenerating looks. **Agent path:** Codex rewrites the saved `generation_prompt` and re-runs `generate_candidates` with `promptOverride`.
-- Model: `project.text_provider.refine` (vision)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: feedback, currentPrompt, lockedLook, referenceImage
 - Contract: same shape as `refine-shot-prompt`. Apply feedback to the reusable look prompt. Preserve identity and production usefulness. 1-3 sentences.
 - Output: `{ visualPrompt }`
@@ -340,7 +340,7 @@ Rewrites a character or environment look-generation prompt using feedback.
 Rewrites a shot's motion prompt using feedback + start/end frame context.
 
 - Triggered by: Web "Refine" on motion prompt. **Agent path:** Codex edits saved `motion_prompt` and calls `apply_video_prompt`.
-- Model: `project.text_provider.refine` (vision)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: feedback, currentMotionPrompt, shotVisualPrompt, startFrame, endFrame, referenceImage
 - Contract: *Apply the director's feedback to the motion prompt. This prompt goes to a video model alongside the start frame — it tells the model what to animate. 1-2 sentences, action + camera.*
 - Output: `{ motionPrompt }` via `rewrite_motion_prompt` tool
@@ -354,16 +354,6 @@ Writes structured per-shot dialogue + sound notes from script + scene context.
 - Inputs: project (title/source_payload), scene (label/narrative/lyrics), shot (id/duration/direction/visualPrompt/castIds), cast (with voice state), projectOverride
 - Contract: *Write production audio data for one shot. Write spoken dialogue lines and restrained sound notes for this shot only. This is structured production data that drives dialogue context for video generation and optional TTS for overlay renders. It is not prose and it is not a script rewrite.*
 - Output: structured audio-plan JSON — `{ dialogue: [{ characterId, text, order, targetSec? }], soundNotes? }`
-
-#### chat-with-director `[web-direct]`
-
-Answers user questions with project analysis context in view.
-
-- Triggered by: Web Chat panel only. No agent equivalent — the agent IS the chat.
-- Model: utility text (Gemini)
-- Inputs: analysisContext, userMessage, history
-- Contract: provides advice on prompts and pipeline with project analysis context. Light utility prompt, no production action.
-- Output: plain text response
 
 ---
 
@@ -413,7 +403,7 @@ Converts uploaded script/treatment into structured cast/env/scenes/shots.
 
 ---
 
-### Automatic (3) — fires on system events
+### Automatic (2) — fires on system events
 
 These fire as side effects of other operations, not by direct user or agent invocation.
 
@@ -422,27 +412,17 @@ These fire as side effects of other operations, not by direct user or agent invo
 Rewrites the next shot's prompts when the previous shot's video lands.
 
 - Triggered by: a shot's video gen completing when the next shot is tagged `continuity_from: prev_shot`
-- Model: `project.text_provider.refine` (vision)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: prevFrame, shotDirection, currentVisualPrompt, currentMotionPrompt, characterNames, environmentName
 - Contract: *The image is the last frame of the previous shot. The next shot was drafted before this frame existed. Rewrite its prompts so they flow from what actually happened while honoring the shot's intent. Keep the shot intent. Rewrite so the first moment matches the frame — same characters, same state, natural continuation. Visual: 1-3 sentences. Motion: 1-2 sentences.*
 - Output: `{ visualPrompt, motionPrompt }` via `rewrite_chained_shot` tool. Skipped in Seedance storyboard mode.
-
-#### critique-shot-image `[automatic]`
-
-Scores a generated shot frame 0–10 with actionable suggestions.
-
-- Triggered by: a shot frame generation completing
-- Model: utility Gemini (with image input)
-- Inputs: image, referenceImages (character refs), compiledPrompt, styleDNA
-- Contract: scores style adherence (40%), prompt fidelity (30%), character consistency (20%), technical quality (10%). Returns score, reasoning, suggestions.
-- Output: `{ score, reasoning, isConsistent, suggestions }`
 
 #### describe-frame `[automatic]`
 
 Short factual description of a video frame for continuity stitching.
 
 - Triggered by: continuity description requests (typically before chained-shot-refresh in the legacy path)
-- Model: utility Gemini (with image input)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: image
 - Contract: *Describe this single video frame factually for shot continuity. 2-3 sentences max. Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion. Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.*
 - Output: 2–3 sentence factual description, plain text

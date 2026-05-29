@@ -225,7 +225,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     try {
       const base64 = await readAsBase64(prevShotEndFramePath);
       const mime = mimeFromExt(prevShotEndFramePath);
-      continuityDescription = await describeFrame(base64, mime);
+      continuityDescription = await describeFrame(base64, mime, project.text_provider);
       await updateRows('shots', { id: shot.id }, { continuity_description: continuityDescription });
     } catch (err: any) {
       console.warn(`[shot ${shot.id}] Continuity description failed: ${err.message}`);

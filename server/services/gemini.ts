@@ -5,6 +5,7 @@
  */
 import { GoogleGenAI, Type } from '@google/genai';
 import { requireProviderApiKey } from './byok/providerKeys.js';
+import { generateText } from './text-provider.js';
 
 const getAI = async () => new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
 
@@ -164,75 +165,6 @@ Return ONLY the JSON object.` }
 };
 
 
-// ─── Shot Critique ──────────────────────────────────────────────────
-
-export const critiqueShotImage = async (
-  imageBase64: string,
-  referenceImages: { name: string; imageBase64: string }[],
-  compiledPrompt: string,
-  styleDNA: string
-): Promise<{ score: number; reasoning: string; isConsistent: boolean; suggestions: string }> => {
-  const ai = await getAI();
-
-  const hasRefs = referenceImages.length > 0;
-
-  const contents: any[] = [
-    { text: 'GENERATED IMAGE — judge this:' },
-    { inlineData: { mimeType: 'image/png', data: imageBase64 } },
-    { text: `THE PROMPT THAT PRODUCED THIS IMAGE:\n${compiledPrompt}` },
-    { text: `THE PROJECT'S LOCKED VISUAL STYLE:\n${styleDNA}` }
-  ];
-
-  if (hasRefs) {
-    contents.push({ text: 'CHARACTER REFERENCES — the ground truth for what these characters should look like:' });
-    referenceImages.forEach(ref => {
-      contents.push({ text: `${ref.name}:` });
-      contents.push({ inlineData: { mimeType: 'image/png', data: ref.imageBase64 } });
-    });
-  }
-
-  contents.push({ text: `You are a meticulous Art Director reviewing this generated image for an AI video project.
-
-SCORING RUBRIC (0-10):
-  9-10: Publication ready. Style is spot-on, characters are recognizable, composition is compelling.
-  7-8:  Strong result with minor issues — slight color drift, a small costume detail off, minor composition weakness.
-  5-6:  Mediocre. Noticeable style mismatch, character inconsistency, or weak composition. Needs rework.
-  3-4:  Poor. Major problems — wrong style, unrecognizable characters, bad anatomy, or broken composition.
-  0-2:  Failed. Completely off-brief or technically broken.
-
-EVALUATE THESE CRITERIA (weighted):
-
-1. STYLE ADHERENCE (40%): Does the image match the locked visual style? Compare lighting, color palette, texture, and artistic medium against the style DNA. Do NOT default to "photorealism" — judge against whatever the locked style actually is (painterly, illustrative, cinematic, etc).
-
-2. PROMPT FIDELITY (30%): Does the image faithfully depict what was described in the prompt? Check composition, setting, action, and atmosphere.
-
-3. CHARACTER CONSISTENCY (${hasRefs ? '20%' : '0% — no references provided, skip this'}): ${hasRefs ? 'Do the characters match their reference images? Check face structure, body proportions, wardrobe, accessories, and distinctive design details. Minor pose differences are fine — identity must be preserved.' : 'N/A'}
-
-4. TECHNICAL QUALITY (${hasRefs ? '10%' : '30%'}): Check for artifacts, anatomical errors (extra fingers, distorted faces), unnatural lighting, or visual noise.
-
-Return your assessment as JSON. The "suggestions" field should contain SPECIFIC, ACTIONABLE fixes for the next attempt — e.g. "darken the background to deep indigo, add more gold ornamental detail to the crown, use warmer skin tones" — not vague notes like "improve quality".` });
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: { parts: contents },
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          score: { type: Type.NUMBER },
-          reasoning: { type: Type.STRING },
-          isConsistent: { type: Type.BOOLEAN },
-          suggestions: { type: Type.STRING }
-        }
-      }
-    }
-  });
-
-  if (!response.text) return { score: 5, reasoning: 'Critique failed — no response', isConsistent: false, suggestions: 'Retry with more contrast and sharper character details' };
-  return safeParseJSON(response.text);
-};
-
 // ─── Frame Description (for shot continuity reconciliation) ─────────
 
 /**
@@ -240,36 +172,18 @@ Return your assessment as JSON. The "suggestions" field should contain SPECIFIC,
  * shot what the previous shot actually ended with (subject pose, camera
  * position, lighting, action mid-beat). Kept short and factual.
  */
-export const describeFrame = async (imageBase64: string, mimeType = 'image/png'): Promise<string> => {
-  const ai = await getAI();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: {
-      parts: [
-        { inlineData: { mimeType, data: imageBase64 } },
-        { text: `Describe this single video frame factually for shot continuity. 2-3 sentences max.
+export const describeFrame = async (
+  imageBase64: string,
+  mimeType = 'image/png',
+  providerKey?: string | null,
+): Promise<string> => {
+  const response = await generateText(providerKey, {
+    userPrompt: `Describe this single video frame factually for shot continuity. 2-3 sentences max.
 Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion.
-Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.` }
-      ]
-    }
+Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.`,
+    inputImages: [{ data: imageBase64, mimeType }],
+    useRefineModel: true,
+    maxTokens: 300,
   });
   return (response.text || '').trim();
-};
-
-// ─── Chat ───────────────────────────────────────────────────────────
-
-export const chatWithDirector = async (
-  analysisContext: string,
-  userMessage: string,
-  history: { role: string; text: string }[]
-): Promise<string> => {
-  const ai = await getAI();
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: [
-      ...history.map(m => ({ role: m.role as 'user' | 'model', parts: [{ text: m.text }] })),
-      { role: 'user', parts: [{ text: `Context: ${analysisContext}\n\nUser Message: ${userMessage}. (Provide advice on prompts)` }] }
-    ]
-  });
-  return response.text || 'I can help guide you.';
 };
