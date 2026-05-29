@@ -751,6 +751,9 @@ Action schemas need exact happy-path examples for each common mode. `generate_ca
 **P0 before more agent smoke: reliable local workbench sync.**
 The first smoke test exposed the sync seam: the intended `mint_cli_token -> mirage-cli sync` path failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads. That fallback is useful for diagnostics, but it bloats context and does not refresh the local workbench. Keep the local workbench as the primary editing surface; harden sync so it is isolated from global npm state, reports `fresh/stale/unknown`, supports changed-artifact refresh, and gives the agent one confident command/path after mutations. The returned sync command should be trusted and retried once on error; MCP file reads are only for harnesses with no shell/npx capability, not recoverable sync failures. Apply/action receipts should return changed paths + hashes; the bridge should pull only those. Sync locks need owner metadata + TTL/expiry so stale lock files cannot trap the agent.
 
+Pass log:
+- 2026-05-30 Codex: `mint_cli_token` commands isolate npm cache from ambient `~/.npm`; CLI `0.1.2` adds sync-lock owner metadata, 15-minute TTL, stale-lock move-aside, and releases locks on recoverable CLI errors.
+
 **P0 before Studio smoke continues: local/native storyboard import.**
 Codex can create or edit a stronger storyboard image with native imagegen, but Mirage has no way to upload that PNG as a storyboard version and lock it. Add `purpose=storyboard_image` to `/api/agent/uploads`, then an `import_storyboard_image({ shotId, sourceAssetId, lock? })` action that creates the storyboard asset/version, updates the shot, and optionally locks it.
 

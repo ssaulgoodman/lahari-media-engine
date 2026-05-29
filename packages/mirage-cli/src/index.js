@@ -10,14 +10,23 @@ const pkg = require('../package.json');
 const DEFAULT_API_URL = 'https://mirage-platform-production-05ca.up.railway.app';
 const STATE_FILE = '.sync-state.json';
 const LOCK_DIR = '.sync-state.lock';
+const DEFAULT_LOCK_TTL_MS = 15 * 60 * 1000;
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const normalizeSlash = (value) => value.split(path.sep).join('/');
 const output = (value) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 
+class CliFailure extends Error {
+  constructor(code, message, details = undefined, exitCode = 1) {
+    super(message);
+    this.code = code;
+    this.details = details;
+    this.exitCode = exitCode;
+  }
+}
+
 const fail = (code, message, details = undefined, exitCode = 1) => {
-  output({ ok: false, code, message, details });
-  process.exit(exitCode);
+  throw new CliFailure(code, message, details, exitCode);
 };
 
 const parseArgs = (argv) => {
@@ -96,6 +105,40 @@ const writeText = (filePath, content) => {
   fs.writeFileSync(filePath, content);
 };
 
+const lockTtlMs = () => {
+  const n = Number(process.env.MIRAGE_SYNC_LOCK_TTL_MS || DEFAULT_LOCK_TTL_MS);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_LOCK_TTL_MS;
+};
+
+const safeTimestamp = (date = new Date()) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+
+const readLockOwner = (lockPath) => {
+  const owner = readJson(path.join(lockPath, 'owner.json'), null);
+  let stat = null;
+  try {
+    stat = fs.statSync(lockPath);
+  } catch {
+    // Best effort; owner metadata is enough when present.
+  }
+  const createdAt = owner?.createdAt || (stat?.mtime ? stat.mtime.toISOString() : null);
+  const createdMs = createdAt ? Date.parse(createdAt) : NaN;
+  const ageMs = Number.isFinite(createdMs) ? Date.now() - createdMs : null;
+  return {
+    ...owner,
+    createdAt,
+    ageMs,
+    lockPath,
+  };
+};
+
+const moveStaleLockAside = (lockPath, owner) => {
+  const suffix = safeTimestamp(owner?.createdAt ? new Date(owner.createdAt) : new Date());
+  let target = `${lockPath}.stale-${suffix}`;
+  if (fs.existsSync(target)) target = `${target}-${process.pid}`;
+  fs.renameSync(lockPath, target);
+  return target;
+};
+
 const acquireLock = (lockPath) => {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
   try {
@@ -103,12 +146,43 @@ const acquireLock = (lockPath) => {
     writeText(path.join(lockPath, 'owner.json'), `${JSON.stringify({
       pid: process.pid,
       createdAt: new Date().toISOString(),
+      cliVersion: pkg.version,
+      cwd: process.cwd(),
     }, null, 2)}\n`);
   } catch (error) {
     if (error?.code === 'EEXIST') {
-      fail('sync_already_running', 'Another Mirage notebook sync appears to be running for this project. Wait for it to finish, then retry.', { lockPath }, 4);
+      const owner = readLockOwner(lockPath);
+      const ttlMs = lockTtlMs();
+      if (owner.ageMs != null && owner.ageMs > ttlMs) {
+        const movedTo = moveStaleLockAside(lockPath, owner);
+        try {
+          fs.mkdirSync(lockPath);
+          writeText(path.join(lockPath, 'owner.json'), `${JSON.stringify({
+            pid: process.pid,
+            createdAt: new Date().toISOString(),
+            cliVersion: pkg.version,
+            cwd: process.cwd(),
+            replacedStaleLock: {
+              movedTo,
+              previousOwner: owner,
+            },
+          }, null, 2)}\n`);
+        } catch (retryError) {
+          if (retryError?.code === 'EEXIST') {
+            fail('sync_already_running', 'Another Mirage notebook sync started while replacing a stale lock. Retry once.', { lockPath, movedTo }, 4);
+          }
+          throw retryError;
+        }
+      } else {
+        fail('sync_already_running', 'Another Mirage notebook sync appears to be running for this project. Wait for it to finish, then retry.', {
+          lockPath,
+          owner,
+          lockTtlMs: ttlMs,
+        }, 4);
+      }
+    } else {
+      throw error;
     }
-    throw error;
   }
   let released = false;
   return () => {
@@ -321,15 +395,28 @@ const uploadReference = async (opts) => {
   });
 };
 
-const opts = parseArgs(process.argv.slice(2));
-if (!opts.command || opts.help || opts.command === '--help' || opts.command === '-h') {
-  process.stdout.write(help());
-  process.exit(0);
-}
-if (opts.command === 'sync') {
-  await sync(opts);
-} else if (opts.command === 'upload-cast-reference' || opts.command === 'upload-environment-reference') {
-  await uploadReference(opts);
-} else {
-  fail('unknown_command', `Unknown command: ${opts.command}`, { help: help() });
+try {
+  const opts = parseArgs(process.argv.slice(2));
+  if (!opts.command || opts.help || opts.command === '--help' || opts.command === '-h') {
+    process.stdout.write(help());
+    process.exit(0);
+  }
+  if (opts.command === 'sync') {
+    await sync(opts);
+  } else if (opts.command === 'upload-cast-reference' || opts.command === 'upload-environment-reference') {
+    await uploadReference(opts);
+  } else {
+    fail('unknown_command', `Unknown command: ${opts.command}`, { help: help() });
+  }
+} catch (error) {
+  if (error instanceof CliFailure) {
+    output({ ok: false, code: error.code, message: error.message, details: error.details });
+    process.exit(error.exitCode);
+  }
+  output({
+    ok: false,
+    code: 'mirage_cli_error',
+    message: error?.message || String(error),
+  });
+  process.exit(1);
 }
