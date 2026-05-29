@@ -554,7 +554,7 @@ Extracts timestamped lyrics from an uploaded audio file.
 - Output: structured lyrics with timestamps
 
 **Pass log:**
-- 2026-05-29 (a208b8c): backlog #1/#12 audio-intake cleanup — audio uploads now persist only; transcription is an explicit action/web button.
+- 2026-05-29 (188ab8b): backlog #1/#12 audio-intake cleanup — audio uploads now persist only; transcription is an explicit action/web button.
 
 #### detect-structure `[intake]`
 
@@ -567,7 +567,7 @@ Detects musical sections + classifies song type + flags narrative/meditative tra
 - Output: `{ sections[], songType, isNarrative, isMeditative }`
 
 **Pass log:**
-- 2026-05-29 (a208b8c): backlog #1/#12 audio-intake cleanup — structure detection is now an explicit action/web button; backend meaning summary was removed.
+- 2026-05-29 (188ab8b): backlog #1/#12 audio-intake cleanup — structure detection is now an explicit action/web button; backend meaning summary was removed.
 
 #### parse-script-intake `[intake]`
 
