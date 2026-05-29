@@ -136,7 +136,7 @@ scriptFingerprint: ${scriptContentHash(project)}
 
 # Script Draft
 
-Edit this file surgically, then apply it with apply_script_markdown. Keep IDs in brackets unchanged unless you are intentionally replacing that entity.
+Edit this file surgically, then apply it with run_action(apply_script) using this markdown. Keep IDs in brackets unchanged unless you are intentionally replacing that entity.
 `;
 
   const cast = `## Cast

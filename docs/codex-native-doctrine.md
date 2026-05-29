@@ -121,11 +121,11 @@ Three tiers within tier-2 (project state) operations:
 **Supabase Postgres is canonical for everything in tier 2 (project state) and tier 1 (project config after persistence).**
 
 - Web studio state = cache of Postgres
-- `lahari/` notebook files = desk copies and drafts. Read mirrors freely, edit drafts/config files surgically, sync via apply tools
+- `lahari/` notebook files = desk copies and editable artifacts. Read `state/` freely, edit root artifacts/config files surgically, sync via apply tools
 - Codex's in-context understanding = derived from packets which derive from Postgres
 - Local journal (`lahari/projects/<id>/journal.md`) = working memory only, not authoritative
 
-**Never dual-write.** If a piece of state lives in tier 1 or tier 2, Supabase remains canonical. Local files are working surfaces: `mirrors/` reflect Supabase, `drafts/` hold surgical edits awaiting apply, and `config/` holds project override bodies awaiting apply. Don't treat local files and Supabase as parallel truths.
+**Never dual-write.** If a piece of state lives in tier 1 or tier 2, Supabase remains canonical. Local files are working surfaces: `state/` reflects Supabase, root artifacts like `script.md`, `audio-plan.md`, and `storyboards/<scene>.md` hold surgical edits awaiting apply, and `config/` holds project override bodies awaiting apply. Don't treat local files and Supabase as parallel truths.
 
 **Exception:** the session journal lives only on disk. That's intentional — it's Codex's working memory, not engine state. The `lahari_director_events` table captures the structured events that the journal narrates.
 
@@ -138,9 +138,9 @@ Three tiers within tier-2 (project state) operations:
 **Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, then refreshes the notebook. Preferred path: call `mint_cli_token(projectId)` and run the returned shell-specific command so file bodies move over HTTP directly to disk, not through chat. On Windows, the returned PowerShell command wraps `npx` through `cmd /c` to avoid `npx.ps1` execution-policy blocks. If shell/npx/npm is still blocked, call `get_project_notebook_manifest` and `read_project_notebook_file` path-by-path. Last fallback: call `write_project_notebook(projectId)` and manually write returned file payloads when the notebook is small enough. Either way the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + drafts + config + journal.
 
 Notebook roles:
-- `mirrors/` are read-only Supabase snapshots. Refresh them from notebook output or `changedArtifacts`.
-- `drafts/` are editable working copies. In phase 1, `drafts/script.md` is the script surgery surface; apply with `apply_script_markdown`, which parses strict markdown, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
-- `drafts/storyboards/<scene>.md` files are scene-level storyboard prompt + Seedance cut-plan surfaces. Apply with `apply_storyboard_scene_markdown`; write adjacent shots together so continuity, motifs, and pacing are authored as one scene rather than as isolated prompt calls.
+- `state/` are read-only Supabase snapshots. Refresh them from notebook output or `changedArtifacts`.
+- `script.md` is the script surgery surface; apply with `run_action(apply_script)`, which parses strict markdown, checks `scriptFingerprint` drift, validates references/durations, and persists through the atomic script apply path.
+- `storyboards/<scene>.md` files are scene-level storyboard prompt + Seedance cut-plan surfaces. Apply with `run_action(apply_storyboard_prompts)`; write adjacent shots together so continuity, motifs, and pacing are authored as one scene rather than as isolated prompt calls.
 - `config/` is the project override layer. Edit prompt/preference files locally, then persist with config apply tools.
 - `journal.md` is local working memory, not canonical project state.
 

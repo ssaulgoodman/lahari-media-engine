@@ -56,7 +56,7 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 | Tool | Purpose |
 |---|---|
 | `list_projects` | List projects accessible to this auth token. |
-| `open_project` | Start a session on one project; writes notebook desk copy + mirrors. |
+| `open_project` | Start a session on one project; writes notebook desk copy: `state/`, root editable artifacts, `config/`, actions, skills. |
 | `create_project` | Create a non-audio project from intake. |
 | `get_project_state` | Current project graph snapshot. Includes `actionsHash` for schema drift detection. |
 | `get_agent_timing_summary` | Quick perf snapshot. |
@@ -84,6 +84,13 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 | `mint_cli_token` | Issue shell-specific sync command for notebook materialization. |
 
 **Legacy:** ~50 direct tools hidden behind `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1`.
+
+### Workbench artifact layout
+
+**Notes:** _blank_
+
+**Pass log:**
+- 2026-05-29 (pending): backlog #3 — collapsed editable `mirrors/` + `drafts/` pairs into single root artifacts (`script.md`, `audio-plan.md`, `storyboards/<scene>.md`); surviving read-only projections now live under `state/`.
 
 ---
 
@@ -219,7 +226,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 #### refine_storyboard_image
 
 **Notes:**
-- Carries half of the `seedance-storyboard-refine` shared template (the `edit_image` branch). The other half (`replan` branch) is a backend-LLM text rewrite — web-direct only; agent path bypasses by editing `drafts/storyboards/<scene>.md` and calling `apply_storyboard_prompts`.
+- Carries half of the `seedance-storyboard-refine` shared template (the `edit_image` branch). The other half (`replan` branch) is a backend-LLM text rewrite — web-direct only; agent path bypasses by editing `storyboards/<scene>.md` and calling `apply_storyboard_prompts`.
 - The "shared" tag on `seedance-storyboard-refine` is mechanical (same builder file) not semantic — the two branches do genuinely different operations.
 - `refine_storyboard_image` is now pure image edit with narrow delta: previous board image + locked refs + edit instruction. It does not resend the saved storyboard prompt or cut plan. `apply_storyboard_prompts` is the Codex-written prompt rewrite path; `generate_storyboard` is fresh render.
 - **Final boundary pass tracked under backlog #13** — re-review Layer 3 templates after #9 / #10 / #12 land. Likely outcome: split `seedance-storyboard-refine` into two distinct templates or collapse `replan` into the `web-direct` cut list.
@@ -421,7 +428,7 @@ Surgical refine of a locked concept using director feedback.
 
 Plans cast, environments, scenes, and shots from concept + source.
 
-- Triggered by: Web "Generate script" button (music_led). **Agent path:** Codex writes `drafts/script.md` and `apply_script({ markdown })`.
+- Triggered by: Web "Generate script" button (music_led). **Agent path:** Codex writes `script.md` and `apply_script({ markdown })`.
 - Model: `project.script_writer` (Claude Opus with extended thinking + validation loop)
 - Inputs: concept, lyrics, meaning, musicalStructure, basePacing, minShotDuration, videoModel, userNote
 - Contract: *Plan the production structure for a music-led video. Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.*
@@ -442,7 +449,7 @@ GPT-5.5 variant of `plan-scenes`. Same composed prompt, different worker.
 
 Surgical refine of a full production script using director feedback.
 
-- Triggered by: Web "Refine script" button. **Agent path:** Codex edits `drafts/script.md` and re-calls `apply_script({ markdown, baseFingerprint })`.
+- Triggered by: Web "Refine script" button. **Agent path:** Codex edits `script.md` and re-calls `apply_script({ markdown, baseFingerprint })`.
 - Model: `project.script_writer`
 - Inputs: currentScript, feedback, concept, sourceText, meaning, musicalStructure, basePacing, minShotDuration, videoModel
 - Contract: *Refine the existing production script using the director's feedback. This is SURGICAL refinement, not rewriting from scratch. Think editor, not new writer. Preserve what works; scope changes to what the feedback asks for; respect existing cast and environments (they may already have locked reference images); maintain source structure (section labels and timestamps are fixed). The visual medium is decided separately via the locked style reference. Do not add cinematography, camera, or color-palette directions to the script.*
@@ -472,7 +479,7 @@ Bulk-writes visualPrompt + motionPrompt pairs per shot, plus continuity tags.
 
 Plans one storyboard board + cut plan.
 
-- Triggered by: Web "Board prompts" or per-shot "Write prompt". **Agent path:** Codex writes `drafts/storyboards/<scene>.md` → `apply_storyboard_prompts({ markdown })`.
+- Triggered by: Web "Board prompts" or per-shot "Write prompt". **Agent path:** Codex writes `storyboards/<scene>.md` → `apply_storyboard_prompts({ markdown })`.
 - Model: `project.text_provider.refine`
 - Inputs: sourceBrief, currentPrompt (refine), currentCutPlan (refine), artistNote, hasArtistReference, hasPreviousStoryboardRef, previousCutPlanTail, styleNotes, projectOverride
 - Contract (write mode): *Plan one storyboard board and cut plan for a two-step storyboard workflow. The first output, storyboardPrompt, is the prompt that the storyboard image model will read. The second output, cutPlanText, is the matching panel-beat list that the video model will read later. The panel actions must appear in both outputs: the image model needs them inline to know what to draw, and the video model needs them as a clean beat list.*
@@ -533,7 +540,7 @@ Rewrites a shot's motion prompt using feedback + start/end frame context.
 
 Writes structured per-shot dialogue + sound notes from script + scene context.
 
-- Triggered by: Web "Write dialogue" or audio-phase rewrites. **Agent path:** Codex writes `drafts/audio-plan.md` → `apply_audio_plan({ markdown })`.
+- Triggered by: Web "Write dialogue" or audio-phase rewrites. **Agent path:** Codex writes `audio-plan.md` → `apply_audio_plan({ markdown })`.
 - Model: `project.text_provider`
 - Inputs: project (title/source_payload), scene (label/narrative/lyrics), shot (id/duration/direction/visualPrompt/castIds), cast (with voice state), projectOverride
 - Contract: *Write production audio data for one shot. Write spoken dialogue lines and restrained sound notes for this shot only. This is structured production data that drives dialogue context for video generation and optional TTS for overlay renders. It is not prose and it is not a script rewrite.*
@@ -640,17 +647,17 @@ Contract differs by branch — replan rewrites text; edit_image edits the image.
 |---|---|---|
 | `generate-concepts` | "Generate concept" | Codex writes JSON → `apply_concept` |
 | `refine-concept` | "Refine" on concept | Codex edits JSON → `apply_concept` |
-| `plan-scenes` | "Generate script" | Codex writes `drafts/script.md` → `apply_script` |
-| `refine-script` | "Refine script" | Codex edits `drafts/script.md` → `apply_script` |
+| `plan-scenes` | "Generate script" | Codex writes `script.md` → `apply_script` |
+| `refine-script` | "Refine script" | Codex edits `script.md` → `apply_script` |
 | `write-shot-prompts` | "Rewrite all" | Codex writes prompts inline → `apply_shot_prompts` |
 | `refine-shot-prompt` | "Refine" on visual prompt | Codex edits → `apply_shot_prompts` |
 | `refine-end-frame-prompt` | "Refine" on end-frame | Codex edits → `apply_shot_prompts` |
 | `refine-look-prompt` | "Refine" on look | Codex edits → `generate_candidates({ promptOverride })` |
 | `refine-style-direction` | "Refine" on style | Codex edits → `apply_style_direction` |
 | `refine-video-prompt` | "Refine" on motion | Codex edits → `apply_video_prompt` |
-| `seedance-storyboard-image` planner | "Board prompts" | Codex writes `drafts/storyboards/<scene>.md` → `apply_storyboard_prompts` |
+| `seedance-storyboard-image` planner | "Board prompts" | Codex writes `storyboards/<scene>.md` → `apply_storyboard_prompts` |
 | `seedance-storyboard-refine` replan | "Redo" storyboard | Codex edits storyboard markdown → `apply_storyboard_prompts` |
-| `write-audio-plan` | "Write dialogue" | Codex writes `drafts/audio-plan.md` → `apply_audio_plan` |
+| `write-audio-plan` | "Write dialogue" | Codex writes `audio-plan.md` → `apply_audio_plan` |
 
 That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; they're the actual production engines.
 
@@ -672,17 +679,6 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 **Slice (eventual):** replace `workflow_key` with a `seed_kind` derived property (or fold into source-asset existence). Most call sites collapse to "does this project have audio? does it have a script?" rather than a typed branching enum.
 
 **Why deferred:** real refactor; cuts run deep. Make web-direct planner prompts deprecated first (#3 below), then workflow_key cleanup is the natural follow-up.
-
-### 3. Collapse `mirrors/` + `drafts/` into single editable artifacts
-
-**Problem:** The two-file pattern is inherited cruft. Editable surfaces (script, audio-plan, storyboard prompts) currently have both a read-only `mirrors/` snapshot and an editable `drafts/` copy. In agent-native flow, Codex's apply response already returns the refreshed artifact inline; the disk file just needs auto-refresh from the sync layer.
-
-**Slice (per Codex's read on this):**
-- Collapse only the editable surfaces — `mirrors/script.json` + `drafts/script.md` → single editable `script.md`. Same for audio-plan, storyboard drafts.
-- Keep `state/` (renamed from surviving `mirrors/`) for read-only DB projections: cast, environments, asset manifest, render history, event log. These aren't authored content; they're DB-computed.
-- Apply tools' `changedArtifacts` response field carries the refreshed content; CLI sync layer writes it.
-
-**Why deferred:** workbench file restructure with downstream ripples (CLI sync, MCP notebook builder, AGENTS.md, every codex reference). Do it after the audit pass is complete so notes don't get harder to apply mid-restructure.
 
 ### 4. Per-project filtering of materialized action schemas
 

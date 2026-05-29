@@ -24,7 +24,7 @@ ${JSON.stringify(audioPlan, null, 2)}
 Project ID: ${project.id}
 Project: ${project.title}
 
-Edit the JSON block for each shot, then apply with apply_audio_plan_markdown. Preserve shot_id and base_hash comments unless you intentionally pass force: true after reviewing drift.
+Edit the JSON block for each shot, then apply with run_action(apply_audio_plan) using this markdown. Preserve shot_id and base_hash comments unless you intentionally pass force: true after reviewing drift.
 
 ${sections || 'No shots saved.'}
 `;

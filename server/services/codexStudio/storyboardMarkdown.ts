@@ -60,7 +60,7 @@ export const storyboardSceneDraftPath = (
   project: Project,
   sceneIndex: number,
   scene: Project['scenes'][number],
-): string => `mirage/projects/${project.id}/drafts/storyboards/${sceneSlug(sceneIndex, scene)}.md`;
+): string => `mirage/projects/${project.id}/storyboards/${sceneSlug(sceneIndex, scene)}.md`;
 
 export const buildStoryboardSceneMarkdownDraft = (
   project: Project,
@@ -75,7 +75,7 @@ sceneId: ${scene.id}
 
 # Storyboard Scene Draft
 
-Edit this file scene-by-scene, then apply it with apply_storyboard_scene_markdown. Preserve shot IDs and base hashes unless you intentionally force through drift.
+Edit this file scene-by-scene, then apply it with run_action(apply_storyboard_prompts) using markdown. Preserve shot IDs and base hashes unless you intentionally force through drift.
 
 Scene: ${scene.sectionLabel || `Scene ${sceneIndex + 1}`}
 Time: ${scene.startTime || '?'}-${scene.endTime || '?'}

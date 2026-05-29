@@ -53,7 +53,7 @@ The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MC
 | Tool | Purpose |
 |---|---|
 | `list_projects` | List projects accessible to this auth token. |
-| `open_project` | Start a session on one project; writes notebook desk copy + mirrors. |
+| `open_project` | Start a session on one project; writes notebook desk copy: `state/`, root editable artifacts, `config/`, actions, skills. |
 | `create_project` | Create a non-audio project from intake. |
 | `get_project_state` | Current project graph snapshot. Includes `actionsHash` for schema drift detection. |
 | `get_agent_timing_summary` | Quick perf snapshot. |
@@ -237,7 +237,7 @@ Surgical refine of a locked concept using director feedback.
 
 Plans cast, environments, scenes, and shots from concept + source.
 
-- Triggered by: Web "Generate script" button (music_led). **Agent path:** Codex writes `drafts/script.md` and `apply_script({ markdown })`.
+- Triggered by: Web "Generate script" button (music_led). **Agent path:** Codex writes `script.md` and `apply_script({ markdown })`.
 - Model: `project.script_writer` (Claude Opus with extended thinking + validation loop)
 - Inputs: concept, lyrics, meaning, musicalStructure, basePacing, minShotDuration, videoModel, userNote
 - Contract: *Plan the production structure for a music-led video. Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.*
@@ -258,7 +258,7 @@ GPT-5.5 variant of `plan-scenes`. Same composed prompt, different worker.
 
 Surgical refine of a full production script using director feedback.
 
-- Triggered by: Web "Refine script" button. **Agent path:** Codex edits `drafts/script.md` and re-calls `apply_script({ markdown, baseFingerprint })`.
+- Triggered by: Web "Refine script" button. **Agent path:** Codex edits `script.md` and re-calls `apply_script({ markdown, baseFingerprint })`.
 - Model: `project.script_writer`
 - Inputs: currentScript, feedback, concept, sourceText, meaning, musicalStructure, basePacing, minShotDuration, videoModel
 - Contract: *Refine the existing production script using the director's feedback. This is SURGICAL refinement, not rewriting from scratch. Think editor, not new writer. Preserve what works; scope changes to what the feedback asks for; respect existing cast and environments (they may already have locked reference images); maintain source structure (section labels and timestamps are fixed). The visual medium is decided separately via the locked style reference. Do not add cinematography, camera, or color-palette directions to the script.*
@@ -288,7 +288,7 @@ Bulk-writes visualPrompt + motionPrompt pairs per shot, plus continuity tags.
 
 Plans one storyboard board + cut plan.
 
-- Triggered by: Web "Board prompts" or per-shot "Write prompt". **Agent path:** Codex writes `drafts/storyboards/<scene>.md` → `apply_storyboard_prompts({ markdown })`.
+- Triggered by: Web "Board prompts" or per-shot "Write prompt". **Agent path:** Codex writes `storyboards/<scene>.md` → `apply_storyboard_prompts({ markdown })`.
 - Model: `project.text_provider.refine`
 - Inputs: sourceBrief, currentPrompt (refine), currentCutPlan (refine), artistNote, hasArtistReference, hasPreviousStoryboardRef, previousCutPlanTail, styleNotes, projectOverride
 - Contract (write mode): *Plan one storyboard board and cut plan for a two-step storyboard workflow. The first output, storyboardPrompt, is the prompt that the storyboard image model will read. The second output, cutPlanText, is the matching panel-beat list that the video model will read later. The panel actions must appear in both outputs: the image model needs them inline to know what to draw, and the video model needs them as a clean beat list.*
@@ -349,7 +349,7 @@ Rewrites a shot's motion prompt using feedback + start/end frame context.
 
 Writes structured per-shot dialogue + sound notes from script + scene context.
 
-- Triggered by: Web "Write dialogue" or audio-phase rewrites. **Agent path:** Codex writes `drafts/audio-plan.md` → `apply_audio_plan({ markdown })`.
+- Triggered by: Web "Write dialogue" or audio-phase rewrites. **Agent path:** Codex writes `audio-plan.md` → `apply_audio_plan({ markdown })`.
 - Model: `project.text_provider`
 - Inputs: project (title/source_payload), scene (label/narrative/lyrics), shot (id/duration/direction/visualPrompt/castIds), cast (with voice state), projectOverride
 - Contract: *Write production audio data for one shot. Write spoken dialogue lines and restrained sound notes for this shot only. This is structured production data that drives dialogue context for video generation and optional TTS for overlay renders. It is not prose and it is not a script rewrite.*
@@ -446,17 +446,17 @@ Contract differs by branch — replan rewrites text; edit_image edits the image.
 |---|---|---|
 | `generate-concepts` | "Generate concept" | Codex writes JSON → `apply_concept` |
 | `refine-concept` | "Refine" on concept | Codex edits JSON → `apply_concept` |
-| `plan-scenes` | "Generate script" | Codex writes `drafts/script.md` → `apply_script` |
-| `refine-script` | "Refine script" | Codex edits `drafts/script.md` → `apply_script` |
+| `plan-scenes` | "Generate script" | Codex writes `script.md` → `apply_script` |
+| `refine-script` | "Refine script" | Codex edits `script.md` → `apply_script` |
 | `write-shot-prompts` | "Rewrite all" | Codex writes prompts inline → `apply_shot_prompts` |
 | `refine-shot-prompt` | "Refine" on visual prompt | Codex edits → `apply_shot_prompts` |
 | `refine-end-frame-prompt` | "Refine" on end-frame | Codex edits → `apply_shot_prompts` |
 | `refine-look-prompt` | "Refine" on look | Codex edits → `generate_candidates({ promptOverride })` |
 | `refine-style-direction` | "Refine" on style | Codex edits → `apply_style_direction` |
 | `refine-video-prompt` | "Refine" on motion | Codex edits → `apply_video_prompt` |
-| `seedance-storyboard-image` planner | "Board prompts" | Codex writes `drafts/storyboards/<scene>.md` → `apply_storyboard_prompts` |
+| `seedance-storyboard-image` planner | "Board prompts" | Codex writes `storyboards/<scene>.md` → `apply_storyboard_prompts` |
 | `seedance-storyboard-refine` replan | "Redo" storyboard | Codex edits storyboard markdown → `apply_storyboard_prompts` |
-| `write-audio-plan` | "Write dialogue" | Codex writes `drafts/audio-plan.md` → `apply_audio_plan` |
+| `write-audio-plan` | "Write dialogue" | Codex writes `audio-plan.md` → `apply_audio_plan` |
 
 That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; they're the actual production engines.
 

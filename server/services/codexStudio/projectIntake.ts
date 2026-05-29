@@ -138,7 +138,7 @@ export const createProjectForDirector = async (userId: string, opts: {
     seedKind,
     webUrl: webStudioUrl(projectId, { step: 'blueprint' }),
     next: scriptText
-      ? 'Project shell created with scriptText saved in source_payload. Use apply_script or apply_script_markdown to persist scenes, shots, cast, and environments.'
+      ? 'Project shell created with scriptText saved in source_payload. Use run_action(apply_script) with structured JSON or script.md markdown to persist scenes, shots, cast, and environments.'
       : seedKind === 'audio'
         ? (audioPath
             ? 'Audio source attached. Ask the artist whether this is soundtrack-only or source material; run analyze_audio_transcribe/analyze_audio_structure only if needed.'

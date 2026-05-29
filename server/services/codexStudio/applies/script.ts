@@ -199,7 +199,7 @@ const validateScriptDurationsForProject = (project: Project, script: ReturnType<
     if (Math.abs(total - sceneDuration) > 0.01) {
       return applyError('validation_failed', `Scene "${scene.sectionLabel}" durations add to ${total}s but scene duration is ${sceneDuration}s.`, {
         field: 'duration',
-        next: 'Edit drafts/script.md so shot durations in this scene add exactly to the scene timestamp range.',
+        next: 'Edit script.md so shot durations in this scene add exactly to the scene timestamp range.',
       });
     }
     if (usesStoryboardWorkflow(project) || project.videoModel?.startsWith('seedance')) {
@@ -227,7 +227,7 @@ const validateScriptReferences = (script: any) => {
           return applyError('validation_failed', `Shot ${shot.id} references unknown cast ID ${castId}.`, {
             field: 'castIds',
             shotId: shot.id,
-            next: 'Keep cast IDs exactly as written in drafts/script.md, or add the cast entry before referencing it.',
+            next: 'Keep cast IDs exactly as written in script.md, or add the cast entry before referencing it.',
           });
         }
       }
@@ -235,7 +235,7 @@ const validateScriptReferences = (script: any) => {
         return applyError('validation_failed', `Shot ${shot.id} references unknown environment ID ${shot.environmentId}.`, {
           field: 'environmentId',
           shotId: shot.id,
-          next: 'Keep environment IDs exactly as written in drafts/script.md, or add the environment entry before referencing it.',
+          next: 'Keep environment IDs exactly as written in script.md, or add the environment entry before referencing it.',
         });
       }
     }
@@ -261,7 +261,7 @@ export const applyScriptMarkdown = async (
       field: 'scriptFingerprint',
       currentHash: scriptContentHash(project),
       submittedBaseHash: opts.baseFingerprint,
-      next: 'Use the scriptFingerprint from drafts/script.md, or refresh the notebook and reconcile the draft.',
+      next: 'Use the scriptFingerprint from script.md, or refresh the notebook and reconcile the draft.',
     });
   }
   const baseFingerprint = opts.baseFingerprint || parsed.baseFingerprint || undefined;

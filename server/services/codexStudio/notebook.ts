@@ -33,7 +33,7 @@ import {
 export type NotebookFile = {
   path: string;
   content: string;
-  mode: 'mirror' | 'draft' | 'config' | 'journal' | 'instructions' | 'skill';
+  mode: 'state' | 'draft' | 'config' | 'journal' | 'instructions' | 'skill';
   writePolicy: 'overwrite' | 'create_if_missing' | 'review_before_overwrite';
   description: string;
 };
@@ -76,9 +76,9 @@ Supabase is canonical. This is an artist notebook, not the engine source checkou
 
 If the MCP server returns a newer notebookVersion than the one shown here or in mirage/projects/${project.id}/notebook.json, refresh before continuing. Preferred path: call mint_cli_token, then run the returned command for the active shell in this workspace. Use commands.posix on macOS/Linux. Use commands.powershell on Windows; it wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is still blocked, call get_project_notebook_manifest and then read_project_notebook_file path-by-path. Last fallback: call write_project_notebook and write the returned files manually only when the payload is small enough.
 
-Files under mirrors/ are read-only desk copies written from Mirage state. Do not hand-edit mirrors; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
+Files under state/ are read-only desk copies written from Mirage state. Do not hand-edit state files; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
 
-Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For audio work, inspect mirrors/audio-plan.md and use apply_audio_plan for structured JSON updates. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+Editable production artifacts live at the project root. For script changes, edit script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with run_action(apply_script) using markdown. For audio work, edit audio-plan.md and apply with run_action(apply_audio_plan) using markdown. For storyboard prompt work, edit storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with run_action(apply_storyboard_prompts) using markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 Use config/style-notes.json for project-learned visual, storyboard, motion, script, dialogue, and audio style notes; persist with apply_project_style_notes.
@@ -96,7 +96,7 @@ Default ritual:
 1. resolve_project when the artist names a project; use list_queue/search_catalog only for catalog/queue-backed music-video work
 2. attach_director_session once you have a projectId
 3. mint_cli_token, then npx @ssaulgoodman420/mirage-cli sync; for local reference images use /api/agent/uploads with the Mirage bearer token, then run_action(lock_reference) or run_action(generate_candidates with guideAssetId); if blocked, use get_project_notebook_manifest + read_project_notebook_file
-4. read relevant mirrors and project mode before proposing changes
+4. read relevant state files and project mode before proposing changes
 5. apply approved changes through typed MCP tools
 6. refresh affected notebook files
 `;
@@ -367,17 +367,17 @@ ${md(plan?.soundNotes)}
 Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
-This is a mirror for agent review. Persist changes with apply_audio_plan using the Shot ID and Base hash for each edited shot.
+This is a state snapshot for agent review. Edit audio-plan.md for changes, then persist with run_action(apply_audio_plan) using the Shot ID and Base hash for each edited shot.
 
 ${body || 'No shots saved.'}
 `;
 };
 
 const buildStoryboardFile = (project: Project, sceneIndex: number, shotIndex: number, shot: Project['scenes'][number]['shots'][number]): NotebookFile => ({
-  path: `${normalizedProjectDir(project)}/mirrors/storyboards/${shot.id}.md`,
-  mode: 'mirror',
+  path: `${normalizedProjectDir(project)}/state/storyboards/${shot.id}.md`,
+  mode: 'state',
   writePolicy: 'overwrite',
-  description: `Storyboard prompt mirror for ${shotLabel(sceneIndex, shotIndex)}.`,
+  description: `Storyboard prompt state snapshot for ${shotLabel(sceneIndex, shotIndex)}.`,
   content: `# ${shotLabel(sceneIndex, shotIndex)} Storyboard
 
 Updated: ${projectUpdatedAt(project)}
@@ -409,7 +409,7 @@ const buildStoryboardSceneDraftFile = (project: Project, sceneIndex: number, sce
   path: storyboardSceneDraftPath(project, sceneIndex, scene),
   mode: 'draft',
   writePolicy: 'review_before_overwrite',
-  description: `Editable storyboard prompt/cut-plan draft for ${scene.sectionLabel || `Scene ${sceneIndex + 1}`}. Apply with apply_storyboard_scene_markdown.`,
+  description: `Editable storyboard prompt/cut-plan artifact for ${scene.sectionLabel || `Scene ${sceneIndex + 1}`}. Apply with run_action(apply_storyboard_prompts) using markdown.`,
   content: buildStoryboardSceneMarkdownDraft(project, sceneIndex, scene),
 });
 
@@ -511,18 +511,18 @@ export const buildNotebookMirrorArtifacts = (
     storyboardSceneIds?: string[];
     style?: boolean;
     cast?: boolean;
-	    environments?: boolean;
-	    shotPrompts?: boolean;
-	    audioPlan?: boolean;
-	    storyboardShotIds?: string[];
-	  } = {},
+    environments?: boolean;
+    shotPrompts?: boolean;
+    audioPlan?: boolean;
+    storyboardShotIds?: string[];
+  } = {},
 ): NotebookFile[] => {
   const baseDir = normalizedProjectDir(project);
   const files: NotebookFile[] = [];
   if (opts.brief) {
     files.push({
-      path: `${baseDir}/mirrors/brief.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/brief.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
       description: 'Compact production read and next action.',
       content: buildBrief(project, buildProjectActionList(project)),
@@ -530,93 +530,77 @@ export const buildNotebookMirrorArtifacts = (
   }
   if (opts.audioAnalysis) {
     files.push({
-      path: `${baseDir}/mirrors/audio-analysis.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/audio-analysis.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Audio meaning, classification, lyrics, and structure mirror.',
+      description: 'Audio meaning/brief, lyrics, and structure state snapshot.',
       content: buildAudioAnalysis(project),
     });
   }
   if (opts.concept) {
     files.push({
-      path: `${baseDir}/mirrors/concept.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/concept.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Locked concept mirror.',
+      description: 'Locked concept state snapshot.',
       content: buildConcept(project),
     });
   }
-  if (opts.script) {
+  if (opts.script || opts.scriptDraft) {
     files.push({
-      path: `${baseDir}/mirrors/script.md`,
-      mode: 'mirror',
-      writePolicy: 'overwrite',
-      description: 'Script mirror with scenes and shot beats.',
-      content: buildScript(project),
-    });
-  }
-  if (opts.scriptDraft) {
-    files.push({
-      path: `${baseDir}/drafts/script.md`,
+      path: `${baseDir}/script.md`,
       mode: 'draft',
       writePolicy: 'review_before_overwrite',
-      description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
+      description: 'Editable script artifact. Edit surgically and apply with run_action(apply_script) using markdown.',
       content: buildScriptMarkdownDraft(project),
     });
   }
   if (opts.style) {
     files.push({
-      path: `${baseDir}/mirrors/style.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/style.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Style direction and locked style URL mirror.',
+      description: 'Style direction and locked style URL state snapshot.',
       content: buildStyle(project),
     });
   }
   if (opts.cast) {
     files.push({
-      path: `${baseDir}/mirrors/cast.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/cast.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Character/entity mirror.',
+      description: 'Character/entity state snapshot.',
       content: buildCast(project),
     });
   }
   if (opts.environments) {
     files.push({
-      path: `${baseDir}/mirrors/environments.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/environments.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Environment/location mirror.',
+      description: 'Environment/location state snapshot.',
       content: buildEnvironments(project),
     });
   }
-	  if (opts.shotPrompts) {
-	    files.push({
-      path: `${baseDir}/mirrors/shot-prompts.md`,
-      mode: 'mirror',
+  if (opts.shotPrompts) {
+    files.push({
+      path: `${baseDir}/state/shot-prompts.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Per-shot prompt mirror.',
+      description: 'Per-shot prompt state snapshot.',
       content: buildShotPrompts(project),
     });
-	  }
-	  if (opts.audioPlan) {
-	    files.push({
-	      path: `${baseDir}/mirrors/audio-plan.md`,
-	      mode: 'mirror',
-	      writePolicy: 'overwrite',
-	      description: 'Per-shot dialogue/TTS audio plan mirror.',
-	      content: buildAudioPlan(project),
-	    });
-	    files.push({
-	      path: `${baseDir}/drafts/audio-plan.md`,
-	      mode: 'draft',
-	      writePolicy: 'review_before_overwrite',
-	      description: 'Editable audio plan draft. Edit JSON per shot and apply with apply_audio_plan_markdown.',
-	      content: buildAudioPlanMarkdownDraft(project),
-	    });
-	  }
-	  if (opts.storyboardShotIds?.length) {
+  }
+  if (opts.audioPlan) {
+    files.push({
+      path: `${baseDir}/audio-plan.md`,
+      mode: 'draft',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable audio plan artifact. Edit JSON per shot and apply with run_action(apply_audio_plan) using markdown.',
+      content: buildAudioPlanMarkdownDraft(project),
+    });
+  }
+  if (opts.storyboardShotIds?.length) {
     const requested = new Set(opts.storyboardShotIds);
     for (const [sceneIndex, scene] of project.scenes.entries()) {
       for (const [shotIndex, shot] of scene.shots.entries()) {
@@ -701,84 +685,70 @@ export const buildProjectNotebook = async (project: Project) => {
     },
     ...buildSkillFiles(),
     {
-      path: `${baseDir}/mirrors/brief.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/brief.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
       description: 'Compact production read and next action.',
       content: buildBrief(project, actions),
     },
     {
-      path: `${baseDir}/mirrors/audio-analysis.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/audio-analysis.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Audio meaning, classification, lyrics, and structure mirror.',
+      description: 'Audio meaning/brief, lyrics, and structure state snapshot.',
       content: buildAudioAnalysis(project),
     },
     {
-      path: `${baseDir}/mirrors/concept.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/concept.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Locked concept mirror.',
+      description: 'Locked concept state snapshot.',
       content: buildConcept(project),
     },
     {
-      path: `${baseDir}/mirrors/script.md`,
-      mode: 'mirror',
-      writePolicy: 'overwrite',
-      description: 'Script mirror with scenes and shot beats.',
-      content: buildScript(project),
-    },
-    {
-      path: `${baseDir}/drafts/script.md`,
+      path: `${baseDir}/script.md`,
       mode: 'draft',
       writePolicy: 'review_before_overwrite',
-      description: 'Editable script draft. Edit surgically and apply with apply_script_markdown.',
+      description: 'Editable script artifact. Edit surgically and apply with run_action(apply_script) using markdown.',
       content: buildScriptMarkdownDraft(project),
     },
     ...project.scenes.map((scene, sceneIndex) => buildStoryboardSceneDraftFile(project, sceneIndex, scene)),
     {
-      path: `${baseDir}/mirrors/style.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/style.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Style direction and locked style URL mirror.',
+      description: 'Style direction and locked style URL state snapshot.',
       content: buildStyle(project),
     },
     {
-      path: `${baseDir}/mirrors/cast.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/cast.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Character/entity mirror.',
+      description: 'Character/entity state snapshot.',
       content: buildCast(project),
     },
     {
-      path: `${baseDir}/mirrors/environments.md`,
-      mode: 'mirror',
+      path: `${baseDir}/state/environments.md`,
+      mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Environment/location mirror.',
+      description: 'Environment/location state snapshot.',
       content: buildEnvironments(project),
     },
-	    {
-	      path: `${baseDir}/mirrors/shot-prompts.md`,
-	      mode: 'mirror',
-	      writePolicy: 'overwrite',
-	      description: 'Per-shot prompt mirror.',
-	      content: buildShotPrompts(project),
-	    },
-	    {
-	      path: `${baseDir}/mirrors/audio-plan.md`,
-	      mode: 'mirror',
-	      writePolicy: 'overwrite',
-	      description: 'Per-shot dialogue/TTS audio plan mirror.',
-	      content: buildAudioPlan(project),
-	    },
-	    {
-	      path: `${baseDir}/drafts/audio-plan.md`,
-	      mode: 'draft',
-	      writePolicy: 'review_before_overwrite',
-	      description: 'Editable audio plan draft. Edit JSON per shot and apply with apply_audio_plan_markdown.',
-	      content: buildAudioPlanMarkdownDraft(project),
-	    },
-	    ...project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => buildStoryboardFile(project, sceneIndex, shotIndex, shot))),
+    {
+      path: `${baseDir}/state/shot-prompts.md`,
+      mode: 'state',
+      writePolicy: 'overwrite',
+      description: 'Per-shot prompt state snapshot.',
+      content: buildShotPrompts(project),
+    },
+    {
+      path: `${baseDir}/audio-plan.md`,
+      mode: 'draft',
+      writePolicy: 'review_before_overwrite',
+      description: 'Editable audio plan artifact. Edit JSON per shot and apply with run_action(apply_audio_plan) using markdown.',
+      content: buildAudioPlanMarkdownDraft(project),
+    },
+    ...project.scenes.flatMap((scene, sceneIndex) => scene.shots.map((shot, shotIndex) => buildStoryboardFile(project, sceneIndex, shotIndex, shot))),
     {
       path: `${baseDir}/config/preferences.json`,
       mode: 'config',
@@ -810,7 +780,7 @@ export const buildProjectNotebook = async (project: Project) => {
     },
     {
       path: `${baseDir}/notebook.json`,
-      mode: 'mirror',
+      mode: 'state',
       writePolicy: 'overwrite',
       description: 'Machine-readable notebook metadata, including notebookVersion for stale-workspace checks.',
       content: `${JSON.stringify(buildNotebookMeta(project, actions), null, 2)}\n`,
@@ -843,6 +813,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific npx @ssaulgoodman420/mirage-cli sync command so file bodies do not travel through chat. If shell/npx/npm is blocked, prefer get_project_notebook_manifest + read_project_notebook_file path-by-path. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, mirrors/, and hashes. Create journal.md only if missing. Before overwriting drafts/ or config/, check whether the file has unsaved local edits; drafts are editable working copies and config files are editable project overrides. Apply script draft edits with apply_script_markdown. Apply scene storyboard drafts with apply_storyboard_scene_markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific npx @ssaulgoodman420/mirage-cli sync command so file bodies do not travel through chat. If shell/npx/npm is blocked, prefer get_project_notebook_manifest + read_project_notebook_file path-by-path. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, state/, and hashes. Create journal.md only if missing. Before overwriting editable artifacts or config/, check whether the file has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and config files are editable project overrides. Apply script edits with run_action(apply_script) using markdown. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

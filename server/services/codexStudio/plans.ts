@@ -144,8 +144,8 @@ export const buildStoryboardPromptReview = (project: Project) => {
           estimatedCost: plan.estimatedCost,
         } : null,
         webUrl: webStudioUrl(project.id, { step: 'studio', shotId: shot.id, action: 'review-storyboard-prompt' }),
-        rewriteTool: 'apply_storyboard_prompt',
-        rewriteNote: 'Rewrite the prompt in the notebook draft, then call apply_storyboard_prompt or apply_storyboard_scene_markdown with the preserved shot ID and base hash.',
+        rewriteTool: 'apply_storyboard_prompts',
+        rewriteNote: 'Rewrite the scene artifact at storyboards/<scene>.md, then call run_action(apply_storyboard_prompts) with the preserved shot ID and base hash.',
       });
     }
   }
