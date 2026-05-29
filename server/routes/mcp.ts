@@ -368,6 +368,10 @@ const generateStyleCandidatesInputSchema = z.object({
   projectId,
   note: mediumText.optional(),
   promptOverride: optionalPromptText,
+  directions: maxArray(z.object({
+    title: shortText.optional(),
+    description: promptText,
+  }), 4).optional(),
   guideAssetId: idString.optional(),
   count: z.number().int().min(1).max(4).optional(),
   contextOverrides: contextOverridesSchema,
@@ -650,6 +654,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       return studio.generateStyleCandidates(await fullProjectForUser(input.projectId, auth.userId), {
         note: input.note,
         promptOverride: input.promptOverride,
+        directions: input.directions,
         guideAssetId: input.guideAssetId,
         count: input.count,
         contextOverrides: input.contextOverrides,

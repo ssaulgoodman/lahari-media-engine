@@ -158,6 +158,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 **Pass log:**
 - 2026-05-27 (1661727): added `styleNoteSections` to `contextOverrides` example for consistency with looks/storyboard.
+- 2026-05-29 (pending): backlog #6 — added `directions[]` agent-native input. When present, backend skips `brainstorm-style-directions` and renders each Codex-written direction directly.
 
 #### identify_style
 
@@ -307,19 +308,9 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 The `path` tag on each prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
-### Agent (7) — fires when an MCP action invokes a paid model
+### Agent (6) — fires when an MCP action invokes a paid model
 
 These are the prompts Codex's actions actually trigger.
-
-#### brainstorm-style-directions `[agent]`
-
-Proposes 4 distinct visual style directions for the project.
-
-- Triggered by: `generate_style_candidates` when no `promptOverride` / `guideAssetId` is given
-- Model: `project.text_provider`
-- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, styleNotes, userNote
-- Contract: *Propose 4 distinct visual style directions for this project. Each direction is one coherent visual world the project could live inside. Do not write story, scenes, characters, camera shot lists, or plot beats. Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.*
-- Output: 4 directions as JSON, each `{ title, description }`
 
 #### visualize-style `[agent]`
 
@@ -382,9 +373,19 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 - Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. No panel borders/numbers in output.
 - Output: video clip
 
-### Web-direct (15) — fires only from Visual Studio buttons
+### Web-direct (16) — fires only from Visual Studio buttons
 
-These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
+These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 16 are cut candidates when the corresponding web UI buttons get deprecated.
+
+#### brainstorm-style-directions `[web-direct]`
+
+Proposes 4 distinct visual style directions for the project.
+
+- Triggered by: `generate_style_candidates` when no `directions[]`, `promptOverride`, or `guideAssetId` is given.
+- Model: `project.text_provider`
+- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, styleNotes, userNote
+- Contract: *Propose 4 distinct visual style directions for this project. Each direction is one coherent visual world the project could live inside. Do not write story, scenes, characters, camera shot lists, or plot beats. Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.*
+- Output: 4 directions as JSON, each `{ title, description }`
 
 #### analyze-image-style `[web-direct]`
 
@@ -692,20 +693,6 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 **Slice:** apply per-project filtering when materializing the action files. Small change in `buildActionsArtifacts()`.
 
 **Why deferred:** no active per-project filtering today, so no real drift to fix yet. Add when per-project gating becomes a real feature.
-
-### 6. Split `generate_style_candidates` into brainstorm + render
-
-**Problem:** Today `generate_style_candidates` does two things in one action: fires `brainstorm-style-directions` LLM to write 4 direction texts, then fires `visualize-style` per direction to render images. In agent-native flow, Codex writes the direction texts itself; only the image render is genuinely paid work that needs a backend action.
-
-**Workaround today:** Codex calls the action 4 times with 4 different `promptOverride` values to bypass brainstorm. Functional but ugly.
-
-**Slice:**
-- Add `directions?: Array<{ title, description }>` input to `generate_style_candidates`
-- When provided, skip brainstorm and render each direction
-- When absent, fire brainstorm as today (web flow)
-- Retag `brainstorm-style-directions` `[web-direct]`; the only remaining `[agent]`-tagged style prompt becomes `visualize-style`
-
-**Why deferred:** the workaround works; not blocking. Land alongside web-direct deprecation pass.
 
 ### 7. Fallback strategy when agents are unavailable
 

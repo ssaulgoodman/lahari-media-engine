@@ -228,7 +228,14 @@ export const identifyStyle = async (project: Project, input: { assetId?: string;
 
 export const generateStyleCandidates = async (
   project: Project,
-  input: { note?: string; promptOverride?: string; guideAssetId?: string; count?: number; contextOverrides?: ContextOverrides } = {},
+  input: {
+    note?: string;
+    promptOverride?: string;
+    directions?: Array<{ title?: string; description: string }>;
+    guideAssetId?: string;
+    count?: number;
+    contextOverrides?: ContextOverrides;
+  } = {},
 ) => {
   const contextTrace = emptyContextTrace(input.contextOverrides);
   const concept = shouldIncludeConcept(input.contextOverrides) ? project.lockedConcept || {} : {};
@@ -267,8 +274,16 @@ export const generateStyleCandidates = async (
 
   const t0 = Date.now();
   const imageService = getImageService(project.imageModel);
-  const results = input.promptOverride
+  const suppliedDirections = input.directions
+    ?.map((direction) => ({
+      title: String(direction.title || '').trim(),
+      description: String(direction.description || '').trim(),
+    }))
+    .filter((direction) => direction.description)
+    .slice(0, 4) || [];
+  const results: Array<{ title?: string; style: string; assetPath: string }> = input.promptOverride
     ? [{
+      title: 'Prompt override',
       style: input.promptOverride,
       assetPath: await imageService.generateSingleStyleImage(
         input.promptOverride,
@@ -278,6 +293,18 @@ export const generateStyleCandidates = async (
         getImageGenerationModelName(project.imageModel),
       ),
     }]
+    : suppliedDirections.length
+      ? await Promise.all(suppliedDirections.map(async (direction) => ({
+        title: direction.title || undefined,
+        style: direction.description,
+        assetPath: await imageService.generateSingleStyleImage(
+          direction.description,
+          subject,
+          direction.description,
+          preset,
+          getImageGenerationModelName(project.imageModel),
+        ),
+      })))
     : await imageService.generateStyleOptions(
       subject,
       styleNotes,
@@ -300,6 +327,8 @@ export const generateStyleCandidates = async (
         generatedBy: 'generate_style_candidates',
         guideAssetId: guideAsset?.id || null,
         promptOverride: !!input.promptOverride,
+        suppliedDirection: suppliedDirections.length > 0,
+        title: result.title || null,
         contextOverrides: contextTrace,
       }),
     });
@@ -312,7 +341,7 @@ export const generateStyleCandidates = async (
 
   const styleExploration = {
     slots: candidates.map((candidate, index) => ({
-      title: `Style ${index + 1}`,
+      title: (results[index] as any)?.title || `Style ${index + 1}`,
       description: candidate.description,
       imageUrl: candidate.url,
       assetId: candidate.assetId,

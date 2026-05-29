@@ -124,19 +124,9 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 
 The `path` tag on each Layer 3 prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
-### Agent (7) — fires when an MCP action invokes a paid model
+### Agent (6) — fires when an MCP action invokes a paid model
 
 These are the prompts Codex's actions actually trigger.
-
-#### brainstorm-style-directions `[agent]`
-
-Proposes 4 distinct visual style directions for the project.
-
-- Triggered by: `generate_style_candidates` when no `promptOverride` / `guideAssetId` is given
-- Model: `project.text_provider`
-- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, styleNotes, userNote
-- Contract: *Propose 4 distinct visual style directions for this project. Each direction is one coherent visual world the project could live inside. Do not write story, scenes, characters, camera shot lists, or plot beats. Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.*
-- Output: 4 directions as JSON, each `{ title, description }`
 
 #### visualize-style `[agent]`
 
@@ -199,9 +189,19 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 - Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. No panel borders/numbers in output.
 - Output: video clip
 
-### Web-direct (15) — fires only from Visual Studio buttons
+### Web-direct (16) — fires only from Visual Studio buttons
 
-These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 15 are cut candidates when the corresponding web UI buttons get deprecated.
+These are legacy refine/generate helpers. **The agent never fires them.** In the agent path, Codex writes the equivalent text inline and uses the matching `apply_*` action to persist. All 16 are cut candidates when the corresponding web UI buttons get deprecated.
+
+#### brainstorm-style-directions `[web-direct]`
+
+Proposes 4 distinct visual style directions for the project.
+
+- Triggered by: `generate_style_candidates` when no `directions[]`, `promptOverride`, or `guideAssetId` is given.
+- Model: `project.text_provider`
+- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, styleNotes, userNote
+- Contract: *Propose 4 distinct visual style directions for this project. Each direction is one coherent visual world the project could live inside. Do not write story, scenes, characters, camera shot lists, or plot beats. Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.*
+- Output: 4 directions as JSON, each `{ title, description }`
 
 #### analyze-image-style `[web-direct]`
 
