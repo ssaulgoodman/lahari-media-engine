@@ -42,6 +42,10 @@ const normalizeTtlMinutes = (ttlMinutes?: number | null) => {
   return Math.max(5, Math.min(Math.round(n), MAX_CLI_TTL_MINUTES));
 };
 
+const posixCliCacheDir = '${TMPDIR:-/tmp}/mirage-npm-cache';
+const posixCliCacheEnv = `NPM_CONFIG_CACHE="${posixCliCacheDir}" npm_config_cache="${posixCliCacheDir}"`;
+const powershellCliCacheCommand = `$env:NPM_CONFIG_CACHE=(Join-Path ([System.IO.Path]::GetTempPath()) 'mirage-npm-cache'); $env:npm_config_cache=$env:NPM_CONFIG_CACHE`;
+
 export const createMcpToken = async (
   userId: string,
   opts: { label?: string | null; expiresInDays?: number | null } = {},
@@ -123,8 +127,8 @@ export const createCliToken = async (
   const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production-05ca.up.railway.app').replace(/\/+$/, '');
   const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@latest';
   const uploadEndpoint = `${apiUrl}/api/agent/uploads`;
-  const posixCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
-  const powershellCommand = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
+  const posixCommand = `${posixCliCacheEnv} MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
+  const powershellCommand = `${powershellCliCacheCommand}; $env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
   const posixUploadExample = `curl -sS -H "Authorization: Bearer ${token}" -F projectId=${opts.projectId} -F purpose=cast_reference -F entityId=<castMemberId> -F file=@<imagePath> ${uploadEndpoint}`;
   const powershellUploadExample = `curl.exe -sS -H "Authorization: Bearer ${token}" -F "projectId=${opts.projectId}" -F "purpose=cast_reference" -F "entityId=<castMemberId>" -F "file=@<imagePath>" "${uploadEndpoint}"`;
   return {
@@ -159,6 +163,13 @@ export const createCliToken = async (
       next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction, as guideAssetId for generation, or leave audio_source attached to the project.',
     },
     note: 'Short-lived project-scoped token. Do not store it. Use commands.posix/commands.powershell for notebook sync. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
+    sync: {
+      npmCache: {
+        posix: posixCliCacheDir,
+        powershell: '%TEMP%\\mirage-npm-cache',
+        reason: 'The returned sync commands isolate npx/npm cache from ambient ~/.npm so root-owned global cache files cannot block notebook refresh.',
+      },
+    },
   };
 };
 
