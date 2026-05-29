@@ -75,7 +75,7 @@ Load the right shard before writing:
 | `generate_style_reference`, `lock_style_reference` | `style-ref-critic` |
 | `generate_character_look`, `lock_character_look`, `generate_environment_look`, `lock_environment_look` | `style-ref-critic` + `render-triage` when judging results |
 | `apply_script`, `apply_script_markdown` | `script-doctor` |
-| `add_extra_shot` | `script-doctor` + `storyboard-prompt-craft` |
+| `add_extra_shot`, `delete_extra_shot` | `script-doctor` + `storyboard-prompt-craft` |
 | `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
 | `apply_shot_workflow_modes` | `script-doctor` + `storyboard-prompt-craft` |
 | `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk`, `apply_storyboard_scene_markdown` | `storyboard-prompt-craft` |
@@ -89,7 +89,7 @@ For storyboard-mode projects, prefer scene drafts: edit `lahari/projects/<projec
 
 Use `apply_shot_workflow_modes` when a specific shot should be forced to `storyboard` or `keyframe`; leave it `auto` when project/model defaults are fine. Use `modelOverride` on generation tools for one-off experiments instead of changing project preferences unless the new model should become the project default.
 
-When the artist asks for extra shots, inserts, montage pieces, or B-roll, do not rewrite the canonical script just to make room. Read the current concept/script/style, reuse existing cast/environment IDs by default, propose a short contextual beat, then call `add_extra_shot` after approval. The tool appends the shot under `Extra Shots`; it should move through the normal storyboard/video workflow and land in the Render media library for manual timeline placement. Do not generate a random standalone clip or attach every reference by default.
+When the artist asks for extra shots, inserts, montage pieces, or B-roll, do not rewrite the canonical script just to make room. Read the current concept/script/style, reuse existing cast/environment IDs by default, propose a short contextual beat, then call `add_extra_shot` after approval. The tool appends the shot under `Extra Shots`; it should move through the normal storyboard/video workflow and land in the Render media library for manual timeline placement. Do not generate a random standalone clip or attach every reference by default. When removing an unwanted insert, call `delete_extra_shot`; never use `apply_script` or `apply_script_markdown` just to delete an extra shot.
 
 Use `changedArtifacts` from apply results for small surgical refreshes. When an apply result says `notebookRefresh.recommended`, or when the local notebook looks stale/damaged, prefer CLI sync. If CLI sync fails because Windows/PowerShell/npm/Codex permissions block `npx`, switch to the manifest + per-file MCP fallback instead of retrying npm or escalating with a live token.
 

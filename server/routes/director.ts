@@ -368,6 +368,15 @@ router.post('/apply/extra-shot', audited('director.apply.extra_shot', async (req
   },
 )));
 
+router.post('/apply/delete-extra-shot', audited('director.apply.delete_extra_shot', async (req) => studio.deleteExtraShot(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  {
+    shotId: req.body.shotId,
+    force: !!req.body.force,
+    reason: req.body.reason,
+  },
+)));
+
 router.post('/apply/concept', audited('director.apply.concept', async (req) => studio.applyConcept(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.concept,

@@ -206,7 +206,7 @@ const toolAnnotations = (name) => {
   if (name === 'add_director_note' || name === 'lahari_capture_issue') {
     return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   }
-  if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+  if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('delete_') || name.startsWith('rollback_') || name.startsWith('revert_')) {
     return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
   }
   if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
@@ -748,6 +748,17 @@ registerTool('add_extra_shot', {
     placementNote: z.string().optional(),
   },
 }, (input) => directorPost('/api/director/apply/extra-shot', input));
+
+registerTool('delete_extra_shot', {
+  title: 'Delete extra shot',
+  description: 'Mutating and destructive. Removes exactly one out-of-band Extra Shots row. Refuses canonical shots and refuses generated-asset shots unless force:true.',
+  inputSchema: {
+    projectId,
+    shotId: z.string().min(1),
+    force: z.boolean().optional(),
+    reason: z.string().optional(),
+  },
+}, (input) => directorPost('/api/director/apply/delete-extra-shot', input));
 
 registerTool('apply_project_prompt_override', {
   title: 'Apply project prompt override',

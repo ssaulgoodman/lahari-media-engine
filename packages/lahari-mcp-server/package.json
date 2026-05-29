@@ -1,6 +1,6 @@
 {
   "name": "@lahari/mcp-server",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Remote Lahari MCP server for artist workspaces.",
   "type": "module",
   "bin": {
