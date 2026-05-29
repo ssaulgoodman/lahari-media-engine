@@ -77,6 +77,7 @@ export {
 export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
 export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';
 export { applyAudioPlan, applyAudioPlanMarkdown, applyCastVoice, generateDialogueAudio, getAudioPlanCost } from './codexStudio/audioPlan.js';
+export { analyzeAudioTranscribe, analyzeAudioStructure } from './codexStudio/audioAnalysis.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectState } from './codexStudio/statePacket.js';

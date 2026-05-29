@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, supportsPlatformColumns } from '../../database.js';
+import { insertRow, selectOne, supportsPlatformColumns } from '../../database.js';
 import { resolveProjectIntake, type SeedKind } from '../../presets.js';
 import { recordDirectorEvent } from '../directorEvents.js';
 import { webStudioUrl } from './core.js';
@@ -17,6 +17,7 @@ export const createProjectForDirector = async (userId: string, opts: {
   workflowKey?: string | null;
   presetKey?: string | null;
   seedKind?: SeedKind | null;
+  sourceAssetId?: string | null;
   directorBrief?: string | null;
   scriptText?: string | null;
   targetRuntime?: number | null;
@@ -28,12 +29,6 @@ export const createProjectForDirector = async (userId: string, opts: {
     presetKey: opts.presetKey,
     seedKind: requestedSeedKind,
   });
-  if (seedKind === 'audio') {
-    const err = new Error('MCP project creation does not upload audio. Create audio-seed projects in the web studio, or create a brief/idea project here.');
-    (err as any).statusCode = 400;
-    throw err;
-  }
-
   const projectId = uuidv4();
   const title = cleanString(opts.title, `Untitled ${workflow.label} Project`);
   const directorBrief = cleanString(opts.directorBrief);
@@ -54,11 +49,34 @@ export const createProjectForDirector = async (userId: string, opts: {
     targetRuntime,
     targetShotDuration,
   };
+  const sourceAsset = opts.sourceAssetId
+    ? await selectOne('assets', { id: opts.sourceAssetId })
+    : null;
+  if (opts.sourceAssetId) {
+    if (!sourceAsset) {
+      const err = new Error(`Audio source asset not found: ${opts.sourceAssetId}`);
+      (err as any).statusCode = 404;
+      throw err;
+    }
+    const ownerProject = await selectOne('projects', { id: sourceAsset.project_id });
+    if (!ownerProject || ownerProject.user_id !== userId) {
+      const err = new Error('Access denied for sourceAssetId.');
+      (err as any).statusCode = 403;
+      throw err;
+    }
+    if (sourceAsset.category !== 'audio_source') {
+      const err = new Error('sourceAssetId must reference an audio_source asset.');
+      (err as any).statusCode = 400;
+      throw err;
+    }
+  }
+  const audioPath = seedKind === 'audio' && sourceAsset ? sourceAsset.file_path : null;
 
   await insertRow('projects', {
     id: projectId,
     title,
     status: 'uploaded',
+    audio_path: audioPath,
     lyrics: scriptText,
     meaning: directorBrief,
     musical_structure: JSON.stringify([]),
@@ -74,9 +92,26 @@ export const createProjectForDirector = async (userId: string, opts: {
       workflow_key: workflow.key,
       seed_kind: seedKind,
       project_brief: projectBrief,
-      source_payload: sourcePayload,
+      source_payload: {
+        ...sourcePayload,
+        ...(audioPath ? { sourceAssetId: opts.sourceAssetId, storageKey: audioPath } : {}),
+      },
     }),
   });
+
+  if (audioPath && sourceAsset) {
+    await insertRow('assets', {
+      id: uuidv4(),
+      project_id: projectId,
+      category: 'audio_source',
+      file_path: audioPath,
+      prompt: sourceAsset.prompt || 'Attached audio source',
+      metadata: JSON.stringify({
+        copiedFromAssetId: sourceAsset.id,
+        attachedBy: 'create_project',
+      }),
+    });
+  }
 
   await recordDirectorEvent({
     projectId,
@@ -89,6 +124,7 @@ export const createProjectForDirector = async (userId: string, opts: {
       workflowKey: workflow.key,
       presetKey: preset.key,
       seedKind,
+      sourceAssetId: opts.sourceAssetId || null,
       hasScriptText: !!scriptText,
     },
   });
@@ -103,6 +139,10 @@ export const createProjectForDirector = async (userId: string, opts: {
     webUrl: webStudioUrl(projectId, { step: 'blueprint' }),
     next: scriptText
       ? 'Project shell created with scriptText saved in source_payload. Use apply_script or apply_script_markdown to persist scenes, shots, cast, and environments.'
+      : seedKind === 'audio'
+        ? (audioPath
+            ? 'Audio source attached. Ask the artist whether this is soundtrack-only or source material; run analyze_audio_transcribe/analyze_audio_structure only if needed.'
+            : 'Audio project shell created. Upload the audio file with /api/agent/uploads purpose=audio_source, then run analysis actions only if the audio should drive the work.')
       : 'Project shell created. Use apply_concept/apply_script and then write_project_notebook to materialize the workspace.',
   };
 };

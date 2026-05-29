@@ -129,8 +129,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   // ─── Project Intake ─────────────────────────────────────────────
   // Single entry path for both modes. Music video uploads audio and lands in
-  // Blueprint while server-side analysis runs (polled below); anime parses
-  // the script synchronously and lands in Blueprint already populated.
+  // Blueprint without auto-analysis; anime parses the script synchronously
+  // and lands in Blueprint already populated.
 
   const handleCreateFromIntake = async (opts: CreateIntakeOpts) => {
     setLoading(true);
@@ -142,8 +142,9 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
       setActiveSceneIdx(0);
       setCurrentStep(AppStep.BLUEPRINT);
 
-      // Music video starts in `analyzing` while audio transcription / structure
-      // detection runs server-side. Poll until it flips, then refresh project.
+      // Older deployments may still return `analyzing`; keep the poll as a
+      // compatibility guard, but new audio intake returns `uploaded` and waits
+      // for explicit analysis actions.
       if (p.status === 'analyzing') {
         const projectId = p.id;
         const poll = setInterval(async () => {

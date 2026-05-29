@@ -9,7 +9,6 @@ const router = Router();
 const STAGE_AI_CALL_MAP: Record<string, string[]> = {
   'transcribe-lyrics':       ['audio-analysis', 'transcribe'],
   'detect-structure':        ['audio-analysis', 'structure'],
-  'summarize-meaning':       ['meaning'],
   'generate-concepts':       ['concept', 'generate-concepts'],
   'plan-scenes':             ['script', 'generate-script'],
   'brainstorm-style-directions': ['style-brainstorm', 'brainstorm-styles'],

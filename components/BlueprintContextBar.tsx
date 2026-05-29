@@ -106,10 +106,10 @@ export const BlueprintContextBar: React.FC<Props> = ({
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onEsc); };
   }, [contextPopover]);
 
-  const handleRerunAnalysis = async () => {
+  const handleRerunAnalysis = async (steps?: Array<'transcribe' | 'structure'>) => {
     setIsAnalyzingAudio(true);
     try {
-      const updated = await api.analyzeAudio(project.id);
+      const updated = await api.analyzeAudio(project.id, steps?.length ? { steps } : undefined);
       onSetProject?.(updated);
     } catch (err: any) {
       // Pass the raw error so missing_key (Gemini audio analysis) surfaces
@@ -158,7 +158,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
     ? [
       { label: 'Lyrics', present: !!project.lyrics },
       { label: 'Structure', present: project.musicalStructure?.length > 0 },
-      { label: 'Meaning', present: !!project.meaning },
       ...(songTypeLabel ? [{ label: songTypeLabel, present: true }] : []),
     ]
     : [
@@ -167,11 +166,11 @@ export const BlueprintContextBar: React.FC<Props> = ({
       ...(logline ? [{ label: 'Logline', present: true }] : []),
     ];
   const hasAnalysis = isMusicVideo
-    ? !!(project.lyrics || project.meaning || project.musicalStructure?.length > 0 || songTypeLabel)
+    ? !!(project.audioPath || project.lyrics || project.musicalStructure?.length > 0 || songTypeLabel)
     : !!(hasSourceSeed || directorBrief || logline);
   const missingAnalysisItems = analysisItems.filter(i => !i.present);
   const needsAnalysis = isMusicVideo
-    ? (!project.lyrics || !project.meaning || !(project.musicalStructure?.length > 0))
+    ? (!project.lyrics || !(project.musicalStructure?.length > 0))
     : false;
 
   return (
@@ -357,9 +356,29 @@ export const BlueprintContextBar: React.FC<Props> = ({
               >
                 <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
                   {needsAnalysis && (
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {!project.lyrics && (
+                        <button
+                          onClick={() => handleRerunAnalysis(['transcribe'])}
+                          disabled={isAnalyzingAudio}
+                          className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                          {isAnalyzingAudio ? 'Analyzing…' : 'Transcribe audio'}
+                        </button>
+                      )}
+                      {!(project.musicalStructure?.length > 0) && (
+                        <button
+                          onClick={() => handleRerunAnalysis(['structure'])}
+                          disabled={isAnalyzingAudio}
+                          className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
+                          {isAnalyzingAudio ? 'Analyzing…' : 'Analyze structure'}
+                        </button>
+                      )}
                       <button
-                        onClick={handleRerunAnalysis}
+                        onClick={() => handleRerunAnalysis(missingAnalysisItems.map((i): 'transcribe' | 'structure' => i.label === 'Lyrics' ? 'transcribe' : 'structure'))}
                         disabled={isAnalyzingAudio}
                         className="text-[11px] bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-2"
                       >

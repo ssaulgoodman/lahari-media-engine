@@ -86,7 +86,7 @@ Action schemas are materialized under config/actions/. Read config/actions/index
 
 For Looks work, prefer list_actions / describe_action / run_action. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
 
-For local image files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. Use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
+For local image/audio files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. For images, use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. For audio, use purpose=audio_source; upload only attaches the source file, then you decide whether to run analyze_audio_transcribe/analyze_audio_structure. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
 
 Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
 

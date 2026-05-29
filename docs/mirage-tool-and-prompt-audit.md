@@ -87,7 +87,7 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 
 ---
 
-## Layer 2 — Actions (25 live registry actions; 24 materialized for agents)
+## Layer 2 — Actions (27 live registry actions; 26 materialized for agents)
 
 Every action is agent-callable via `run_action` / `start_job`. Quick index table first, then per-action Notes blocks for audit findings.
 
@@ -113,6 +113,8 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 | `unlock_storyboard` | storyboard | Clears storyboard approval | DB only | — |
 | `generate_video` | video | Renders the video clip for one shot | video model | ● |
 | `apply_video_prompt` | video | Saves Codex-written keyframe motion prompt | DB only | — |
+| `analyze_audio_transcribe` | audio | Opt-in audio transcription | audio analysis model | ● |
+| `analyze_audio_structure` | audio | Opt-in musical structure detection | audio analysis model | ● |
 | `generate_dialogue_audio` | audio | Renders TTS for selected dialogue lines | TTS | ● |
 | `apply_audio_plan` | audio | Saves Codex-written dialogue + sound notes per shot | DB only | — |
 | `apply_cast_voice` | audio | Assigns ElevenLabs voice ID to a cast member | DB only | — |
@@ -300,7 +302,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 ---
 
-## Layer 3 — Prompts (29 total), grouped by path tag
+## Layer 3 — Prompts (28 total), grouped by path tag
 
 The `path` tag on each prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
@@ -537,39 +539,35 @@ Writes structured per-shot dialogue + sound notes from script + scene context.
 
 ---
 
-### Intake (4) — auto-fires at project creation, before any agent session
+### Intake (3) — fires only from explicit intake/action choices
 
-These run automatically when a project is first created (audio uploaded, or script seed pasted). No agent or user trigger.
+Audio upload no longer runs analysis automatically. Transcription and structure detection are explicit actions; script parsing still fires for the web-direct script intake path.
 
 #### transcribe-lyrics `[intake]`
 
 Extracts timestamped lyrics from an uploaded audio file.
 
-- Triggered by: audio upload at project creation
+- Triggered by: `analyze_audio_transcribe` or the web "Transcribe audio" button
 - Model: `audio.analysis` (Gemini 3 Pro)
 - Inputs: audioBase64, mimeType, optional language hint
 - Contract: timestamped lyric extraction with English transliteration where applicable
 - Output: structured lyrics with timestamps
 
+**Pass log:**
+- 2026-05-29 (a208b8c): backlog #1/#12 audio-intake cleanup — audio uploads now persist only; transcription is an explicit action/web button.
+
 #### detect-structure `[intake]`
 
 Detects musical sections + classifies song type + flags narrative/meditative traits.
 
-- Triggered by: audio upload at project creation, after `transcribe-lyrics`
+- Triggered by: `analyze_audio_structure` or the web "Analyze structure" button
 - Model: `audio.analysis` (Gemini 3 Pro)
 - Inputs: audioBase64, mimeType
 - Contract: identifies sections (intro/verse/chorus/etc.) with timestamps and tags audio classification flags
 - Output: `{ sections[], songType, isNarrative, isMeditative }`
 
-#### summarize-meaning `[intake]`
-
-150-word interpretive summary of song meaning + cultural context.
-
-- Triggered by: audio upload at project creation, after structure detection
-- Model: `project.text_provider`
-- Inputs: lyrics, songType, structure
-- Contract: under 150 words covering narrative arc, central message/metaphor, emotional progression, cultural/spiritual context. English.
-- Output: short interpretive prose
+**Pass log:**
+- 2026-05-29 (a208b8c): backlog #1/#12 audio-intake cleanup — structure detection is now an explicit action/web button; backend meaning summary was removed.
 
 #### parse-script-intake `[intake]`
 
@@ -659,17 +657,6 @@ That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; t
 
 Pinned items that surfaced during audit but aren't blocking. Take after smoke test passes so we know which abstractions earned their keep under real use.
 
-### 1. Audio intake via agent path
-
-**Problem:** `create_project` MCP today says "non-audio only." Audio projects still go through the legacy queue. That violates the general-machine principle — the agent should be able to start any project type from any seed.
-
-**Slice:**
-- Extend `/api/agent/uploads` with `audio_source` purpose (binary upload, same pattern as image purposes)
-- Extend `create_project` MCP to accept `sourceAssetId` for audio
-- Backend auto-fires the intake chain (`transcribe-lyrics` → `detect-structure` → `summarize-meaning`) when source is audio
-
-**Why deferred:** small slice but not blocking. Bhakti / current production users still use the queue. Land after smoke test confirms agent-native intake works for non-audio projects first.
-
 ### 2. `workflow_key` as runtime branch is mostly legacy
 
 **Problem:** `workflow_key` (`music_led` / `scripted_narrative`) was the *backend planner* discriminator under the old LLM-as-planner model. In agent-native Mirage, Codex IS the planner — it reads what's in the project (audio? script? brief?) and proceeds without needing a typed enum to route between backend prompts.
@@ -753,27 +740,6 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Why deferred:** small focused test. Land alongside the broader image-input label cleanup so both image-edit and label changes ship together.
 
-### 12. Decouple intake-analysis from upload (general-machine cleanup)
-
-**Problem:** Today an audio upload auto-fires `transcribe-lyrics → detect-structure → summarize-meaning` regardless of what the artist actually wants the audio for. This is Lahari-era doctrine where "every audio is a devotional song to plan around." For soundtrack-only / narration / reference / non-music uploads it's expensive, slow, and produces unused outputs.
-
-**Proposed flow:**
-1. **Upload just persists.** Asset row created, no auto-fire chain. Returns `assetId` and that's it.
-2. **Analysis becomes opt-in callable actions:**
-   - `analyze_audio_transcribe(assetId)` → lyrics
-   - `analyze_audio_structure(assetId)` → sections (drop songType/isNarrative/isMeditative traits per backlog #5)
-   - **Drop `summarize-meaning` entirely** — Codex can write a 150-word interpretation in-conversation; no backend prompt needed
-3. **`parse-script-intake`** — stays as a callable action for web-direct script-PDF intake. Agent path bypasses (Codex reads PDFs natively → writes `drafts/script.md` → `apply_script`).
-4. **Codex orchestrates.** Codex asks artist "soundtrack or source?" and runs only matching analysis. Web UI buttons can call the same actions for non-agent flow.
-
-**Net surface change:** 4 intake prompts → 2 callable actions (transcribe, structure) + 1 web fallback (parse-script). `summarize-meaning` cut entirely.
-
-**Combines with backlog #1** (audio intake via agent path). Same slice fundamentally.
-
-**Web UI requirement:** when the auto-fire chain dies, the Visual Studio intake screen needs explicit buttons for each opt-in action: "Transcribe this audio", "Analyze structure", "Parse this script". Without these, non-agent users have no way to trigger the analysis they want. Slice scope includes adding those buttons (or repurposing the existing intake screen toggle).
-
-**Why deferred:** real refactor across upload route, intake service, frontend intake screen, MCP action surface. Land after agent-native non-audio intake (scripted_narrative) proves out in smoke testing.
-
 ### 13. Web UI audit deferred — pin and review later
 
 **Reminder for Saul.** This audit pass skipped the Visual Studio (web UI) surface entirely. The web flow has many of the same Pattern 7 issues (backend LLM helpers where the user could write directly, dual-shape buttons, refine vs regenerate confusion, intake auto-fire UX). Plus reshaping web UI around the agent surface is the precondition for cutting the 13 web-direct prompts and for backlog items 12 (intake decoupling) and 1 (audio intake).
@@ -792,7 +758,7 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 Local images do not go through MCP. POST multipart to `/api/agent/uploads` with the Mirage bearer token; pass the returned `assetId` as `sourceAssetId` (lock as-is) or `guideAssetId` (use as visual guide).
 
-Purposes: `style_guide`, `style_reference`, `cast_guide`, `cast_reference`, `env_guide`, `env_reference`.
+Purposes: `style_guide`, `style_reference`, `cast_guide`, `cast_reference`, `env_guide`, `env_reference`, `audio_source`.
 
 ### Async jobs
 

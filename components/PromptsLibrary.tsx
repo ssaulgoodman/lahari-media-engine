@@ -87,7 +87,7 @@ const WORKFLOW_LABELS: Record<string, string> = {
 const humanizeKey = (key?: string | null): string =>
   key ? key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Not set';
 
-const MUSIC_ONLY_PROMPTS = new Set(['transcribe-lyrics', 'detect-structure', 'summarize-meaning', 'plan-scenes']);
+const MUSIC_ONLY_PROMPTS = new Set(['transcribe-lyrics', 'detect-structure', 'plan-scenes']);
 const SCRIPTED_ONLY_PROMPTS = new Set(['parse-script-intake', 'write-audio-plan']);
 
 const appliesToWorkflow = (prompt: PromptMeta, workflowKey: string): boolean => {

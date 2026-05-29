@@ -81,7 +81,7 @@ export const PROMPT_CATALOG: PromptMeta[] = [
     stage: 'audio',
     model: 'audio.analysis',
     modelLabel: 'Audio analysis model',
-    triggeredBy: 'Queue start (fallback when no SRT and no cached analysis), direct upload, or "Fill missing" button.',
+    triggeredBy: 'Explicit audio transcription action, web "Transcribe audio" button, or queue fallback when no SRT/cached lyrics exist.',
     summary: 'Extracts timestamped lyrics ([M:SS] format) from audio. Queue checks cached analysis on songs table first, then SRT, then this fallback.',
     variables: [
       { name: 'language', description: 'Song language or "Detect automatically"' },
@@ -107,7 +107,7 @@ Return ONLY the transcription.`,
     stage: 'audio',
     model: 'audio.analysis',
     modelLabel: 'Audio analysis model',
-    triggeredBy: 'Fires in parallel with transcription at project creation.',
+    triggeredBy: 'Explicit audio structure action, web "Analyze structure" button, or legacy queue fallback.',
     summary: 'Identifies musical sections + classifies the song type from audio. Returns sections array, songType enum (stotra/chant/bhajan/kirtan/song/unknown), isNarrative boolean, isMeditative boolean. Classification flows to concept generation.',
     variables: [],
     template: `Analyze this audio and return a JSON object with four fields:
@@ -120,38 +120,6 @@ Return ONLY the transcription.`,
 
 4. "isMeditative" — true if the song is contemplative, steady, inward-focused.`,
     source: { file: 'server/services/gemini.ts', lines: 'detectStructure' },
-  },
-  {
-    id: 'summarize-meaning',
-    path: 'intake',
-    name: 'Summarize meaning',
-    stage: 'audio',
-    model: 'project.text_provider',
-    modelLabel: 'Project text provider',
-    triggeredBy: 'Chains after lyrics are available (never in parallel with transcription).',
-    summary: 'Writes a 150-word interpretive summary: theme, addressee, emotional arc, cultural context.',
-    variables: [
-      { name: 'title', description: 'Song title' },
-      { name: 'language', description: 'Song language' },
-      { name: 'context', description: 'Optional extra context from queue metadata' },
-      { name: 'lyrics', description: 'Transcribed lyrics' },
-    ],
-    template: `Song: {{title}} ({{language}})
-{{context ? "Context: " + context : ""}}
-
-LYRICS:
-{{lyrics}}
-
-Summarize the meaning of this song.
-
-Cover:
-1. What is the song about? (2-3 sentences)
-2. Who is it addressed to?
-3. Emotional arc
-4. Cultural/spiritual context
-
-Under 150 words. Write in English.`,
-    source: { file: 'server/services/claude.ts', lines: '19-51' },
   },
   {
     id: 'write-audio-plan',

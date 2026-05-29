@@ -84,7 +84,7 @@ The MCP server exposes 17 tools to Codex. Action specs in Layer 2 are **not** MC
 
 ---
 
-## Layer 2 — Actions (25 live registry actions; 24 materialized for agents)
+## Layer 2 — Actions (27 live registry actions; 26 materialized for agents)
 
 Every action is agent-callable via `run_action(actionKey, input)` or `start_job(actionKey, input)`. **"Calls"** column tells you what runs when the agent invokes it.
 
@@ -108,6 +108,8 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 | `unlock_storyboard` | storyboard | Clears storyboard approval | DB only | — |
 | `generate_video` | video | Renders the video clip for one shot | video model | ● |
 | `apply_video_prompt` | video | Saves Codex-written keyframe motion prompt | DB only | — |
+| `analyze_audio_transcribe` | audio | Opt-in audio transcription | audio analysis model | ● |
+| `analyze_audio_structure` | audio | Opt-in musical structure detection | audio analysis model | ● |
 | `generate_dialogue_audio` | audio | Renders TTS for selected dialogue lines | TTS | ● |
 | `apply_audio_plan` | audio | Saves Codex-written dialogue + sound notes per shot | DB only | — |
 | `apply_cast_voice` | audio | Assigns ElevenLabs voice ID to a cast member | DB only | — |
@@ -118,7 +120,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 
 ---
 
-## Layer 3 — Prompts (29 total), grouped by path tag
+## Layer 3 — Prompts (28 total), grouped by path tag
 
 The `path` tag on each Layer 3 prompt tells you who fires it at runtime. Contracts below are quoted verbatim from the prompt builder's `coreTask` (or its inline service equivalent).
 
@@ -355,15 +357,15 @@ Writes structured per-shot dialogue + sound notes from script + scene context.
 
 ---
 
-### Intake (4) — auto-fires at project creation, before any agent session
+### Intake (3) — fires only from explicit intake/action choices
 
-These run automatically when a project is first created (audio uploaded, or script seed pasted). No agent or user trigger.
+Audio upload no longer runs analysis automatically. Transcription and structure detection are explicit actions; script parsing still fires for the web-direct script intake path.
 
 #### transcribe-lyrics `[intake]`
 
 Extracts timestamped lyrics from an uploaded audio file.
 
-- Triggered by: audio upload at project creation
+- Triggered by: `analyze_audio_transcribe` or the web "Transcribe audio" button
 - Model: `audio.analysis` (Gemini 3 Pro)
 - Inputs: audioBase64, mimeType, optional language hint
 - Contract: timestamped lyric extraction with English transliteration where applicable
@@ -373,21 +375,11 @@ Extracts timestamped lyrics from an uploaded audio file.
 
 Detects musical sections + classifies song type + flags narrative/meditative traits.
 
-- Triggered by: audio upload at project creation, after `transcribe-lyrics`
+- Triggered by: `analyze_audio_structure` or the web "Analyze structure" button
 - Model: `audio.analysis` (Gemini 3 Pro)
 - Inputs: audioBase64, mimeType
 - Contract: identifies sections (intro/verse/chorus/etc.) with timestamps and tags audio classification flags
 - Output: `{ sections[], songType, isNarrative, isMeditative }`
-
-#### summarize-meaning `[intake]`
-
-150-word interpretive summary of song meaning + cultural context.
-
-- Triggered by: audio upload at project creation, after structure detection
-- Model: `project.text_provider`
-- Inputs: lyrics, songType, structure
-- Contract: under 150 words covering narrative arc, central message/metaphor, emotional progression, cultural/spiritual context. English.
-- Output: short interpretive prose
 
 #### parse-script-intake `[intake]`
 

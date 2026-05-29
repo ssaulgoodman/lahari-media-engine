@@ -188,7 +188,11 @@ export const revokeMcpToken = async (tokenId: string) => {
   return body.data;
 };
 
-export const analyzeAudio = async (id: string, opts?: { fork?: boolean }, signal?: AbortSignal) => {
+export const analyzeAudio = async (
+  id: string,
+  opts?: { fork?: boolean; steps?: Array<'transcribe' | 'structure'> },
+  signal?: AbortSignal,
+) => {
   const res = await authFetch(`${API}/projects/${id}/analyze-audio`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

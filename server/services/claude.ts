@@ -3,7 +3,7 @@
  * Uses tool_use for guaranteed valid JSON output (no truncation, no schema violations).
  *
  * Opus: generateConceptOptions, brainstormStyleDirections, planScenes, writeShotPrompts, refineScript
- * Sonnet: summarizeMeaning, refineStyleDirection, analyzeImageStyle, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt
+ * Sonnet/refine tier: refineStyleDirection, analyzeImageStyle, refineFramePrompt, refineMotionPrompt, refreshChainedShotPrompt
  * Gemini still handles hardcoded audio analysis (transcribe, structure). Image-input
  * text refines route through the project text provider.
  */
@@ -32,43 +32,6 @@ const getClient = async () => new Anthropic({ apiKey: await requireProviderApiKe
 // routes through generateText() which picks the model from project.text_provider.
 const SONNET = 'claude-sonnet-4-6';
 const OPUS = 'claude-opus-4-7';
-
-// ─── Meaning Summary (Stage 3) ──────────────────────────────────────
-
-export const summarizeMeaning = async (
-  title: string,
-  language: string,
-  lyrics: string,
-  context?: string,
-  textProvider?: string,
-): Promise<string> => {
-  const prompt = `Song: ${title} (${language})
-${context ? `Context: ${context}` : ''}
-
-LYRICS:
-${lyrics}
-
-Summarize the meaning of this song.
-
-Cover:
-1. What is the song about? (2-3 sentences)
-2. Who is it addressed to?
-3. Emotional arc
-4. Cultural/spiritual context
-
-Under 150 words. Write in English.`;
-
-  // Routed through generateText so the project's text provider picks the
-  // model. useRefineModel: true → cheap sibling per provider (Sonnet 4.6 on
-  // Claude, gpt-5.5 on OpenAI, gemini-3.1-flash on Gemini). Meaning summary
-  // is a small analytical task; no need for the primary tier.
-  const { text } = await generateText(textProvider, {
-    userPrompt: prompt,
-    maxTokens: 1024,
-    useRefineModel: true,
-  });
-  return text;
-};
 
 // ─── Concept Generation (Stage 4) ───────────────────────────────────
 
@@ -131,7 +94,7 @@ export const generateConceptOptions = async (
                 primarySubject: { type: 'string', description: 'Legacy-compatible alias for subject' },
                 mood: { type: 'string', description: 'Emotional keyword — unique per concept' },
                 theme: { type: 'string', description: 'Core narrative idea (1 sentence)' },
-                lyricsSummary: { type: 'string', description: 'Brief meaning summary' },
+                lyricsSummary: { type: 'string', description: 'Optional brief source-material summary' },
                 conceptDirection: { type: 'string', description: 'Short creative label' },
                 description: { type: 'string', description: '2-3 sentence expansion of the concept' },
               },

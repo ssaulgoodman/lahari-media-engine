@@ -10,7 +10,7 @@ import {
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
 import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
-import { summarizeMeaning, generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
+import { generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } from '../presets.js';
 import { availableTools, blockedTools } from '../tools/registry.js';
@@ -840,7 +840,7 @@ const createAudioProjectFromSeed = async (opts: {
   await insertRow('projects', {
     id: projectId,
     title,
-    status: 'analyzing',
+    status: 'uploaded',
     audio_path: audioPath,
     image_model: preset.defaults.imageModel,
     storyboard_provider: preset.defaults.imageModel,
@@ -857,88 +857,19 @@ const createAudioProjectFromSeed = async (opts: {
   });
 
   try {
-    const audioBase64 = await readAsBase64(audioPath);
-    const audioMime = mimeFromExt(audioPath);
-    const audioRef = [{ type: 'audio' as const, label: 'Uploaded audio', url: storageUrl(audioPath) }];
-
-    console.log(`[${projectId}] Analyzing ${workflow.key} audio seed via ${preset.key}: lyrics + structure...`);
-    const t0Phase1 = Date.now();
-    const [lyricsResult, structureResult] = await Promise.allSettled([
-      transcribeLyrics(audioBase64, audioMime, language),
-      detectStructure(audioBase64, audioMime),
-    ]);
-    const phase1Duration = Date.now() - t0Phase1;
-
-    const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
-    const structureData = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
-    const musicalStructure = Array.isArray(structureData) ? structureData : structureData.sections;
-    const songType = Array.isArray(structureData) ? 'unknown' : (structureData.songType || 'unknown');
-    const isNarrative = Array.isArray(structureData) ? false : (structureData.isNarrative ?? false);
-    const isMeditative = Array.isArray(structureData) ? false : (structureData.isMeditative ?? false);
-
-    if (lyricsResult.status === 'rejected') console.warn('[lyrics] Failed:', lyricsResult.reason);
-    if (structureResult.status === 'rejected') console.warn('[structure] Failed:', structureResult.reason);
-
-    logCall({
+    await recordDirectorEvent({
       projectId,
-      stage: 'transcribe-lyrics',
-      model: 'gemini-3-pro-preview',
-      prompt: `Transcribe the lyrics of this audio.\nLanguage: ${language || 'Detect automatically'}.\nFormat: [timestamp] lyrics - original language only, no translations.`,
-      referenceInputs: audioRef,
-      responseSummary: lyricsResult.status === 'fulfilled' ? lyrics : 'FAILED',
-      durationMs: phase1Duration,
-      costEstimate: 0.01,
-      error: lyricsResult.status === 'rejected' ? String(lyricsResult.reason) : undefined,
+      userId: opts.userId,
+      source: 'web',
+      eventType: 'audio_source_uploaded',
+      entityType: 'project',
+      entityId: projectId,
+      summary: 'Artist uploaded an audio source. Analysis is opt-in.',
+      payload: { workflowKey: workflow.key, presetKey: preset.key, language: language || null, context: context || null },
     });
-
-    logCall({
-      projectId,
-      stage: 'detect-structure',
-      model: 'gemini-3-pro-preview',
-      prompt: 'Identify musical sections: label, startTime, endTime, energy level, description. Max 10 sections.',
-      referenceInputs: audioRef,
-      responseSummary: structureResult.status === 'fulfilled'
-        ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}-${s.endTime}] ${s.energyLevel || ''} ${s.description || ''}`).join('\n')
-        : 'FAILED',
-      durationMs: phase1Duration,
-      costEstimate: 0.01,
-      error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
-    });
-
-    let meaning = '';
-    if (lyrics) {
-      console.log(`[${projectId}] Summarizing meaning (Claude Sonnet)...`);
-      const t0Meaning = Date.now();
-      try {
-        meaning = await summarizeMeaning(title, language || 'Unknown', lyrics, context);
-      } catch (err: any) {
-        console.warn('[meaning] Failed:', err.message);
-      }
-      logCall({
-        projectId,
-        stage: 'summarize-meaning',
-        model: 'claude-sonnet-4-6',
-        prompt: `Summarize the meaning of "${title}": what it's about, who it addresses, emotional arc, cultural context.`,
-        responseSummary: meaning || 'FAILED',
-        durationMs: Date.now() - t0Meaning,
-        costEstimate: 0.005,
-      });
-    }
-
-    await updateRows('projects', { id: projectId }, {
-      status: 'analyzed',
-      lyrics,
-      musical_structure: JSON.stringify(musicalStructure),
-      song_type: songType,
-      is_narrative: isNarrative,
-      is_meditative: isMeditative,
-      meaning,
-      updated_at: new Date().toISOString(),
-    });
-
     return await getFullProject(projectId);
   } catch (err: any) {
-    console.error(`[${projectId}] Analysis failed:`, err);
+    console.error(`[${projectId}] Audio intake failed:`, err);
     await updateRows('projects', { id: projectId }, { status: 'error', updated_at: new Date().toISOString() });
     throw err;
   }
@@ -1584,11 +1515,22 @@ router.post('/:id/analyze-audio', async (req, res) => {
     const audioRef = [{ type: 'audio' as const, label: 'Project audio', url: storageUrl(project.audio_path) }];
     const t0 = Date.now();
 
-    // Step 1: Transcribe lyrics (if missing) + detect structure — in parallel
     const needsLyrics = !project.lyrics;
+    const requestedSteps = Array.isArray(req.body?.steps)
+      ? req.body.steps.map((step: unknown) => String(step))
+      : [];
+    const runTranscribe = requestedSteps.length === 0 ? needsLyrics : requestedSteps.includes('transcribe');
+    const runStructure = requestedSteps.length === 0 ? true : requestedSteps.includes('structure');
+    if (!runTranscribe && !runStructure) return res.status(400).json({ error: 'steps must include transcribe and/or structure' });
+
     const [lyricsResult, structureResult] = await Promise.allSettled([
-      needsLyrics ? transcribeLyrics(audioBase64, audioMime) : Promise.resolve(project.lyrics as string),
-      detectStructure(audioBase64, audioMime),
+      runTranscribe ? transcribeLyrics(audioBase64, audioMime) : Promise.resolve(project.lyrics || ''),
+      runStructure ? detectStructure(audioBase64, audioMime) : Promise.resolve({
+        sections: project.musical_structure ? JSON.parse(project.musical_structure) : [],
+        songType: project.song_type || 'unknown',
+        isNarrative: project.is_narrative ?? false,
+        isMeditative: project.is_meditative ?? false,
+      }),
     ]);
 
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
@@ -1601,24 +1543,12 @@ router.post('/:id/analyze-audio', async (req, res) => {
     if (lyricsResult.status === 'rejected') console.warn(`[${projectId}] lyrics transcription failed:`, lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
 
-    // Step 2: Meaning — requires lyrics, so runs after step 1
-    let meaning = project.meaning || '';
-    let meaningError: string | undefined;
-    if (lyrics && !project.meaning) {
-      try {
-        meaning = await summarizeMeaning(project.title || 'Untitled', 'Unknown', lyrics, '', project.text_provider);
-      } catch (e: any) {
-        console.warn(`[${projectId}] meaning failed:`, e);
-        meaningError = String(e);
-      }
-    }
     const analysisMs = Date.now() - t0;
 
-    // Log AI calls
-    if (needsLyrics) {
+    if (runTranscribe) {
       logCall({
         projectId,
-        stage: 'transcribe',
+        stage: 'transcribe-lyrics',
         model: 'gemini-3-pro-preview',
         prompt: 'Transcribe lyrics from audio with timestamps.',
         referenceInputs: audioRef,
@@ -1628,42 +1558,33 @@ router.post('/:id/analyze-audio', async (req, res) => {
         error: lyricsResult.status === 'rejected' ? String(lyricsResult.reason) : undefined,
       });
     }
-    logCall({
-      projectId,
-      stage: 'detect-structure',
-      model: 'gemini-3-pro-preview',
-      prompt: 'Re-run: identify musical sections (label, startTime, endTime, energyLevel, description).',
-      referenceInputs: audioRef,
-      responseSummary: structureResult.status === 'fulfilled'
-        ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join('\n')
-        : 'FAILED',
-      durationMs: analysisMs,
-      costEstimate: 0.01,
-      error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
-    });
-    if (lyrics) {
+    if (runStructure) {
       logCall({
         projectId,
-        stage: 'summarize-meaning',
-        model: 'claude-sonnet-4-6',
-        prompt: `Summarize meaning of "${project.title}".`,
-        responseSummary: meaning || 'FAILED',
+        stage: 'detect-structure',
+        model: 'gemini-3-pro-preview',
+        prompt: 'Re-run: identify musical sections (label, startTime, endTime, energyLevel, description).',
+        referenceInputs: audioRef,
+        responseSummary: structureResult.status === 'fulfilled'
+          ? musicalStructure.map((s: any) => `${s.label} [${s.startTime}–${s.endTime}]`).join('\n')
+          : 'FAILED',
         durationMs: analysisMs,
-        costEstimate: 0.005,
-        error: meaningError,
+        costEstimate: 0.01,
+        error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
       });
     }
 
     // Conditional status update: only move to 'analyzed' if currently 'uploaded' or 'analyzing'
     const statusUpdate: Record<string, any> = {
-      musical_structure: JSON.stringify(musicalStructure),
-      song_type: songType2,
-      is_narrative: isNarrative2,
-      is_meditative: isMeditative2,
-      meaning,
       updated_at: new Date().toISOString(),
     };
-    if (lyrics && needsLyrics) statusUpdate.lyrics = lyrics;
+    if (runTranscribe && lyrics) statusUpdate.lyrics = lyrics;
+    if (runStructure) {
+      statusUpdate.musical_structure = JSON.stringify(musicalStructure);
+      statusUpdate.song_type = songType2;
+      statusUpdate.is_narrative = isNarrative2;
+      statusUpdate.is_meditative = isMeditative2;
+    }
     if (project.status === 'uploaded' || project.status === 'analyzing') {
       statusUpdate.status = 'analyzed';
     }
@@ -1672,17 +1593,20 @@ router.post('/:id/analyze-audio', async (req, res) => {
       projectId,
       userId: req.userId,
       source: 'web',
-      eventType: 'audio_analysis_rerun',
+      eventType: 'audio_analysis_applied',
       entityType: 'project',
       entityId: projectId,
       summary: 'Artist re-ran audio analysis for the project.',
       payload: {
         sourceProjectId: sourceId,
         forked: req.body?.fork === true,
-        sections: musicalStructure.length,
-        songType: songType2,
-        isNarrative: isNarrative2,
-        isMeditative: isMeditative2,
+        transcribed: runTranscribe,
+        structure: runStructure ? {
+          sections: musicalStructure.length,
+          songType: songType2,
+          isNarrative: isNarrative2,
+          isMeditative: isMeditative2,
+        } : null,
       },
     });
 

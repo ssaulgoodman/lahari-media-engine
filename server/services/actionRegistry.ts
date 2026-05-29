@@ -188,6 +188,31 @@ export const VIDEO_ACTION_SPECS = {
 } as const;
 
 export const AUDIO_ACTION_SPECS = {
+  analyze_audio_transcribe: {
+    key: 'analyze_audio_transcribe',
+    title: 'Transcribe audio',
+    surface: 'audio',
+    mutates: true,
+    paid: true,
+    description: 'Opt-in audio transcription for audio-seed projects. Uploading audio does not run this automatically.',
+    input: {
+      projectId: 'string',
+      language: 'optional language hint',
+    },
+    examples: [{ projectId: 'project_uuid', language: 'Telugu' }],
+  },
+  analyze_audio_structure: {
+    key: 'analyze_audio_structure',
+    title: 'Analyze audio structure',
+    surface: 'audio',
+    mutates: true,
+    paid: true,
+    description: 'Opt-in musical structure detection for audio-seed projects. Use only when the audio should drive scenes or pacing.',
+    input: {
+      projectId: 'string',
+    },
+    examples: [{ projectId: 'project_uuid' }],
+  },
   generate_dialogue_audio: {
     key: 'generate_dialogue_audio',
     title: 'Generate dialogue audio',

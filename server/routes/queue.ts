@@ -6,7 +6,6 @@ import multer from 'multer';
 import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile, findQueueByProjectIds } from '../services/supabase.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { transcribeLyrics, detectStructure } from '../services/gemini.js';
-import { summarizeMeaning } from '../services/claude.js';
 import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows, getSB, T, supportsPlatformColumns, usesLegacyQueueAdapter } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -279,16 +278,15 @@ router.post('/:queueId/start', async (req, res) => {
           await updateRows('projects', { id: projectId }, { lyrics });
         }
 
-        await setStep('Detecting structure + summarizing meaning');
+        await setStep('Detecting structure');
         const audioBase64 = await readAsBase64(audioPath);
         const audioMime = mimeFromExt(audioPath);
         const audioRef = [{ type: 'audio' as const, label: 'Queued audio', url: storageUrl(audioPath) }];
 
         const t0 = Date.now();
-        const [structureResult, meaningResult] = await Promise.allSettled([
-          detectStructure(audioBase64, audioMime),
-          lyrics ? summarizeMeaning(item.song_name || 'Untitled', item.original_language || 'Unknown', lyrics, '') : Promise.resolve(''),
-        ]);
+        const structureResult = await Promise.resolve(detectStructure(audioBase64, audioMime))
+          .then((value) => ({ status: 'fulfilled' as const, value }))
+          .catch((reason) => ({ status: 'rejected' as const, reason }));
         const analysisMs = Date.now() - t0;
 
         const structureData = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
@@ -296,10 +294,8 @@ router.post('/:queueId/start', async (req, res) => {
         const songType = Array.isArray(structureData) ? 'unknown' : (structureData.songType || 'unknown');
         const isNarrative = Array.isArray(structureData) ? false : (structureData.isNarrative ?? false);
         const isMeditative = Array.isArray(structureData) ? false : (structureData.isMeditative ?? false);
-        const meaning = meaningResult.status === 'fulfilled' ? meaningResult.value : '';
 
         if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
-        if (meaningResult.status === 'rejected') console.warn(`[queue ${projectId}] meaning failed:`, meaningResult.reason);
 
         await logCall({
           projectId,
@@ -315,19 +311,6 @@ router.post('/:queueId/start', async (req, res) => {
           error: structureResult.status === 'rejected' ? String(structureResult.reason) : undefined,
         });
 
-        if (lyrics) {
-          await logCall({
-            projectId,
-            stage: 'summarize-meaning',
-            model: 'claude-sonnet-4-6',
-            prompt: `Summarize the meaning of "${item.song_name}": what it's about, who it addresses, emotional arc, cultural context.`,
-            responseSummary: meaning || 'FAILED',
-            durationMs: analysisMs,
-            costEstimate: 0.005,
-            error: meaningResult.status === 'rejected' ? String(meaningResult.reason) : undefined,
-          });
-        }
-
         const structureJson = JSON.stringify(musicalStructure);
         await updateRows('projects', { id: projectId }, {
           status: 'analyzed',
@@ -337,19 +320,17 @@ router.post('/:queueId/start', async (req, res) => {
           song_type: songType,
           is_narrative: isNarrative,
           is_meditative: isMeditative,
-          meaning,
           updated_at: new Date().toISOString(),
         });
 
         // Cache analysis on songs table for future users
-        if (lyrics || musicalStructure.length || meaning) {
+        if (lyrics || musicalStructure.length) {
           await getSB().from('songs').update({
             cached_lyrics: lyrics || null,
             cached_structure: structureJson || null,
             cached_song_type: songType !== 'unknown' ? songType : null,
             cached_is_narrative: isNarrative,
             cached_is_meditative: isMeditative,
-            cached_meaning: meaning || null,
           }).eq('id', item.song_id);
           console.log(`[queue] Cached analysis on song ${item.song_id} for future use`);
         }

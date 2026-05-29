@@ -2,8 +2,8 @@
  * Unified text-generation interface across Anthropic, OpenAI, and Google.
  *
  * Every stage in the pipeline that produces TEXT — concept writer, style
- * brainstorm, all refines, storyboard prompt writer, meaning summary,
- * style-image analysis — calls this instead of a vendor-specific SDK
+ * brainstorm, all refines, storyboard prompt writer, style-image analysis,
+ * and other runtime text helpers — calls this instead of a vendor-specific SDK
  * directly. The project's `text_provider` column controls which model
  * handles every call.
  *
@@ -22,7 +22,7 @@
  *
  * Refines fall back to each provider's cheap sibling model
  * (TextProviderSpec.refineModel) when useRefineModel is true. Concept gen,
- * style brainstorm, storyboard planner, and meaning summary all use the
+ * style brainstorm, and storyboard planner all use the
  * primary runtimeModel.
  *
  * Script writer is INTENTIONALLY not routed through this module — it uses
