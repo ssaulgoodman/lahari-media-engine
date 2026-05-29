@@ -645,7 +645,7 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
     ],
     template: `{{storyboardPrompt}}
 
-{{editImageMode ? "Artist image edit note:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan." : "") : ""}}`,
+{{editImageMode ? "Edit the provided storyboard image. Preserve panel layout, characters, environment, style, and continuity unless the instruction explicitly changes them.\\n\\nEdit instruction:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only." : "") : ""}}`,
     source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion / renderWithProvider' },
   },
   {
@@ -656,11 +656,11 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
     model: 'project.text_provider.refine OR project.storyboard_provider',
     modelLabel: 'Project text provider / storyboard provider',
     triggeredBy: "Fires when you enter a natural-language note and click 'Refine' in storyboard mode.",
-    summary: 'Refine has two modes. Redo (replan) routes through project.text_provider (cheap refine sibling) to rewrite saved storyboardPrompt + cutPlanText; the artist must click Generate after to render a new image. Edit (edit_image) calls the project storyboard_provider directly with the previous storyboard image + the saved prompt + the artist note — text fields untouched. Edit prompt does NOT include the cut plan (image renderer does not use it).',
+    summary: 'Refine has two modes. Redo (replan) routes through project.text_provider (cheap refine sibling) to rewrite saved storyboardPrompt + cutPlanText; the artist must click Generate after to render a new image. Edit (edit_image) calls the project storyboard_provider directly with the previous storyboard image + locked refs + a narrow edit instruction — text fields untouched. Edit prompt does NOT include the saved prompt or cut plan.',
     variables: [
       { name: 'artistNote', description: 'Natural-language refinement note (required, route 400s if empty)' },
       { name: 'refineMode', description: 'replan or edit_image' },
-      { name: 'currentPrompt', description: 'Saved storyboardPrompt (used in both modes — as revision context for replan, as base prompt for edit_image)' },
+      { name: 'currentPrompt', description: 'Saved storyboardPrompt (replan only — Edit does not send this)' },
       { name: 'currentCutPlan', description: 'Saved storyboard_cut_plan (replan only — Edit does not send this)' },
       { name: 'baseStoryboardPrompt', description: 'Canonical source brief for this shot (replan only)' },
       { name: 'referenceImages', description: 'replan: only the artist-attached refinement ref is sent (planner is treated as text-only). edit_image: previous storyboard image (prepended), locked style/cast/env refs filtered by shot.excluded_refs.storyboard, then artist-attached ref (appended).' },
@@ -684,11 +684,11 @@ Original source brief:
 ---
 
 EDIT / edit_image mode (image provider — renders a new image):
-{{currentPrompt}}
+Edit the provided storyboard image. Preserve panel layout, characters, environment, style, and continuity unless the instruction explicitly changes them.
 
-Artist image edit note:
+Edit instruction:
 {{artistNote}}
-{{artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan." : ""}}`,
+{{artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only." : ""}}`,
     source: { file: 'server/routes/generate-shots.ts + server/services/storyboard.ts', lines: 'refine-storyboard / writeStoryboardPrompt / generateStoryboardVersion' },
   },
   {

@@ -220,11 +220,12 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 **Notes:**
 - Carries half of the `seedance-storyboard-refine` shared template (the `edit_image` branch). The other half (`replan` branch) is a backend-LLM text rewrite — web-direct only; agent path bypasses by editing `drafts/storyboards/<scene>.md` and calling `apply_storyboard_prompts`.
 - The "shared" tag on `seedance-storyboard-refine` is mechanical (same builder file) not semantic — the two branches do genuinely different operations.
-- **Boundaries become cleaner after backlog #9 lands** (drop saved prompt from edit_image payload). At that point: `refine_storyboard_image` = pure image edit with narrow delta; `apply_storyboard_prompts` = Codex-written prompt rewrite; `generate_storyboard` = fresh render. Then the replan branch becomes web-direct-only legacy.
+- `refine_storyboard_image` is now pure image edit with narrow delta: previous board image + locked refs + edit instruction. It does not resend the saved storyboard prompt or cut plan. `apply_storyboard_prompts` is the Codex-written prompt rewrite path; `generate_storyboard` is fresh render.
 - **Final boundary pass tracked under backlog #13** — re-review Layer 3 templates after #9 / #10 / #12 land. Likely outcome: split `seedance-storyboard-refine` into two distinct templates or collapse `replan` into the `web-direct` cut list.
 
 **Pass log:**
 - 2026-05-27 (1661727): input field clarified as Codex-translated edit instruction (D27); example shows a real positive edit instruction.
+- 2026-05-29 (pending): backlog #9 — edit-image refine no longer sends saved storyboard prompt; it sends previous image + refs + exact edit instruction.
 
 #### lock_storyboard
 
@@ -727,18 +728,6 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 3. **Thin admin/emergency LLM (tertiary).** Backend LLM layer gated behind a feature flag, not artist-facing by default. Used only when 1+2 are both unavailable. Tiny surface, mostly dormant.
 
 **Why deferred:** the question matters before fully cutting web-direct prompts but doesn't block agent-native work today. Decide before the Phase 3 / 4 deprecation lands. Likely the answer is "multi-agent + manual entry; no emergency LLM layer" — Mirage's SLA becomes agent availability.
-
-### 9. Storyboard `edit_image` refine — drop saved prompt from payload
-
-**Problem:** Current code sends `savedStoryboardPrompt + artistEditNote` as the prompt body alongside the previous storyboard image. The saved prompt is at best redundant (the image carries visual state) and at worst conflicts with the edit instruction (e.g. "dim grimy bunker" + "make it bright" = model confused which signal to trust). Real-world image-edit APIs perform best with source image + concise change description, not source + full original prompt + delta.
-
-**Slice:**
-- In `edit_image` refine mode, send only: previous image + identity refs (style/cast/env for stability) + artist edit instruction
-- Drop the saved storyboardPrompt from the prompt body
-- Test on 3-5 representative refine scenarios to confirm cleaner output
-- If output regresses, restore but add an explicit "edit only the specified change; preserve everything else" wrapper
-
-**Why deferred:** small focused test. Land alongside the broader image-input label cleanup so both image-edit and label changes ship together.
 
 ### 13. Web UI audit deferred — pin and review later
 

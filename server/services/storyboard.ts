@@ -583,17 +583,15 @@ export const generateStoryboardVersion = async (opts: {
     : filteredMeta;
   const { refs, refMeta } = withArtistRef(baseRefs, baseRefMeta, opts.artistReferenceImagePath);
   const artistRefNote = opts.artistReferenceImagePath
-    ? `\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only; preserve the locked cast, environment, style refs, and saved cut plan.`
+    ? `\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only.`
     : '';
   // Edit mode = "this storyboard image is good, change this one thing."
-  // The image renderer doesn't render motion, timestamps, or cut sequencing,
-  // so the cut plan is irrelevant context — at best ignored, at worst
-  // bleeds visible text/arrows into the panels. Send only the base prompt
-  // (which describes the target image) + the artist's edit instruction.
+  // The previous image carries the visual state; resend neither the saved
+  // prompt nor the cut plan, which can conflict with the requested edit.
   const prompt = opts.artistNote?.trim() && refineMode === 'edit_image'
-    ? `${promptBase}
+    ? `Edit the provided storyboard image. Preserve panel layout, characters, environment, style, and continuity unless the instruction explicitly changes them.
 
-Artist image edit note:
+Edit instruction:
 ${opts.artistNote.trim()}
 ${artistRefNote}`
     : promptBase;
