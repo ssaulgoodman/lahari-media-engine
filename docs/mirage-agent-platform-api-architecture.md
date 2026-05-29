@@ -50,30 +50,41 @@ Prompts are worker calls over selected graph state. Actions mutate or advance th
 Canonical endpoints:
 
 ```txt
-GET  /api/projects
-POST /api/projects
-GET  /api/projects/:projectId/state
+GET  /api/v1/projects
+POST /api/v1/projects
+GET  /api/v1/projects/:projectId/state
 
-GET  /api/projects/:projectId/actions
-POST /api/projects/:projectId/actions/run
+GET  /api/v1/projects/:projectId/actions
+POST /api/v1/projects/:projectId/actions/run
 
-POST /api/projects/:projectId/jobs/start
-GET  /api/projects/:projectId/jobs/:jobId
-GET  /api/projects/:projectId/jobs
+POST /api/v1/projects/:projectId/jobs/start
+GET  /api/v1/projects/:projectId/jobs/:jobId
+GET  /api/v1/projects/:projectId/jobs
 
-POST /api/projects/:projectId/assets/upload
-GET  /api/projects/:projectId/assets
-GET  /api/projects/:projectId/results
+POST /api/v1/projects/:projectId/assets/upload
+GET  /api/v1/projects/:projectId/assets
+GET  /api/v1/projects/:projectId/results
 
-POST /api/projects/:projectId/renders/start
-GET  /api/projects/:projectId/renders/:renderId
+POST /api/v1/projects/:projectId/renders/start
+GET  /api/v1/projects/:projectId/renders/:renderId
 
-POST /api/projects/:projectId/notebook/sync-token
-GET  /api/projects/:projectId/notebook/manifest
-GET  /api/projects/:projectId/notebook/files/*
+POST /api/v1/projects/:projectId/notebook/sync-token
+GET  /api/v1/projects/:projectId/notebook/manifest
+GET  /api/v1/projects/:projectId/notebook/files/*
 ```
 
 The existing services already contain much of this logic. The work is to formalize the API boundary and route every surface through it.
+
+Use `/api/v1` from the first externalized route. Breaking changes need a version story before enterprise clients or plugins depend on the contract.
+
+Keep sync and async separate:
+
+- `POST /api/v1/projects/:projectId/actions/run` is synchronous and returns the action result or a structured error.
+- `POST /api/v1/projects/:projectId/jobs/start` is asynchronous and returns a job ID immediately.
+
+Do not fold these into a `mode: "sync" | "async"` flag. They have different timeout semantics, retry behavior, response envelopes, and user expectations.
+
+For mutating or paid endpoints, accept an `Idempotency-Key` header. Store keys for at least 24 hours per account/project/action. If the same key is replayed with the same request body, return the original response; if the body differs, return an idempotency conflict. This belongs in Phase 1 because it prevents duplicate paid generations from network retries.
 
 ### 2. OpenAPI Contract
 
@@ -100,6 +111,40 @@ Why we want it:
 - one place to explain auth, idempotency, rate limits, and job semantics
 
 OpenAPI does not replace MCP. It describes the canonical HTTP API that MCP calls.
+
+Source of truth:
+
+- `server/services/actionRegistry.ts` remains the source for action schemas.
+- OpenAPI is generated from the registry plus route metadata.
+- Do not reverse-generate the registry from OpenAPI; that creates a second action contract to drift.
+
+Canonical error envelope:
+
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "Human-readable summary.",
+    "field": "optional.field",
+    "details": {},
+    "requestId": "req_..."
+  }
+}
+```
+
+Use the existing structured-error style as the implementation base. Every generated SDK, MCP adapter, and web client should see the same envelope.
+
+Minimum auth scopes for Phase 1:
+
+```txt
+project:read
+project:write
+media:generate
+render:run
+admin
+```
+
+Endpoint design should encode these from the start. `project:write` is not enough for paid media generation, and render execution deserves its own boundary.
 
 ### 3. MCP Cockpit
 
@@ -176,6 +221,8 @@ It can ship:
 
 Project-specific state still comes from the notebook. Live mutation still goes through Core API/MCP.
 
+Notebook sync stays CLI-token based for v1. A first-class signed-manifest sync API is useful, but it is Phase 5 work after the Core API is stable.
+
 ## Migration Plan
 
 ### Phase 0: Finish Current Audit
@@ -193,13 +240,20 @@ Completion criteria:
 
 Add HTTP endpoints that wrap the existing action/job dispatcher:
 
-- `GET /api/projects/:id/actions`
-- `POST /api/projects/:id/actions/run`
-- `POST /api/projects/:id/jobs/start`
-- `GET /api/projects/:id/jobs/:jobId`
-- `POST /api/projects/:id/assets/upload`
+- `GET /api/v1/projects/:id/actions`
+- `POST /api/v1/projects/:id/actions/run`
+- `POST /api/v1/projects/:id/jobs/start`
+- `GET /api/v1/projects/:id/jobs/:jobId`
+- `POST /api/v1/projects/:id/assets/upload`
 
 Keep MCP behavior unchanged externally, but internally have MCP call the same dispatcher used by these endpoints.
+
+Phase 1 must also establish:
+
+- `Idempotency-Key` on paid/mutating POSTs.
+- the canonical structured error envelope.
+- request IDs in responses/logs.
+- the first auth-scope checks.
 
 ### Phase 2: Add OpenAPI
 
@@ -243,7 +297,6 @@ Strengthen job lifecycle:
 
 - persistent job rows
 - restart watchdog
-- idempotency keys
 - structured progress
 - realtime updates to Visual Studio
 - optional webhooks for enterprise/API clients
@@ -267,6 +320,14 @@ Once the API/action contracts are stable:
 - Do not push binary payloads through MCP when HTTP upload exists.
 - Do not make the Codex plugin the source of runtime truth.
 - Do not rebuild the old preset/workflow doctrine under a new API name.
+- Do not expose prompt template internals, model-routing logic, or billing computation as stable API contracts. Those are implementation details behind actions/jobs.
+
+Asset lifecycle rule for v1:
+
+- uploaded assets persist while the project exists
+- locked/reference assets are retained with the project
+- orphaned uploads should be cleaned after a short window, default 7 days
+- enterprise contracts can later add explicit retention/data-residency controls
 
 ## Relationship To Krea's API Move
 
@@ -286,12 +347,18 @@ But the developer-experience lesson applies: make the contract legible through H
 
 ## Open Questions
 
-1. Should `run_action` and `start_job` be one endpoint with `mode: "sync" | "async"`, or separate endpoints?
-2. Should action schemas remain JSON files generated from `actionRegistry.ts`, or should OpenAPI become the source and generate action files?
-3. What auth scopes do enterprise clients need: project read, project write, media generate, render, admin?
-4. What is the minimum webhook contract for jobs and renders?
-5. Should notebook sync remain CLI-token based, or become a first-class API endpoint with signed artifact manifests?
-6. When do we collapse editable mirrors/drafts into single artifacts?
+Resolved now:
+
+1. `run_action` and `start_job` stay separate endpoints.
+2. `actionRegistry.ts` stays the action-schema source of truth; OpenAPI is generated from it.
+3. Phase 1 scopes are `project:read`, `project:write`, `media:generate`, `render:run`, and `admin`.
+4. Notebook sync stays CLI-token based for v1; signed artifact manifests are Phase 5.
+5. Editable mirrors/drafts are already collapsed into root artifacts plus `state/`.
+
+Still open:
+
+1. What is the minimum webhook contract for jobs and renders?
+2. What asset-retention controls are required for the first enterprise deployment?
 
 ## Near-Term Next Step
 
@@ -304,3 +371,5 @@ After the action/prompt audit:
 5. Confirm Web Studio and Codex produce identical graph mutations through the same path.
 
 That is the proof slice for the enterprise platform shape.
+
+Phase 3 risk: routing Web Studio through the Core API is the load-bearing migration. It touches many current bespoke `/api/projects/:id/...` routes. Treat it as its own sub-plan when the time comes: choose thin wrappers first, migrate one surface at a time, and delete old routes only after web + MCP are both using the shared action/job path.
