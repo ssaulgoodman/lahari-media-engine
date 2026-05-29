@@ -7,9 +7,21 @@ description: Use when writing or rewriting a shot's storyboard prompt and cut pl
 
 You are writing a prompt that an image model will turn into a multi-panel storyboard. The model sees text. It does not see "dolly in" or "rack focus." It does not understand cinematography vocabulary. It understands subjects, actions, composition words, lighting words, and medium words.
 
+## Do This Now
+
+Use canonical graph names only: `The Boss`, `The Knife Orchid`, `Red Den Room`.
+Do not restate locked character appearance, costume, face, props, environment design, or style.
+Write panel blocking: who is where, what changes, what the viewer sees in each panel.
+Let Mirage bind graph names to attached reference images during render.
+Keep the prompt short enough that the model follows the action instead of drowning in design prose.
+
 ## Core Rules
 
 **The prompt describes images, not films.** Panels are static. Action happens *between* panels, captured at decisive moments. If you write "the camera slowly pans across the room," you've written film grammar that image models will misinterpret or ignore.
+
+**Canonical names carry identity.** If a character or environment has a locked reference, write the name and the action. Do not describe the character again. "The Boss rises from the couch while The Knife Orchid stays seated" is right. "The Boss, short-haired in a tailored suit..." is wrong unless the shot is explicitly about changing or revealing that detail.
+
+**The server binds references.** Codex writes graph-language prompts; Mirage compiles the render call with attached images and a reference binding map. Do not manually count images or write "Image 2 is The Boss" in saved storyboard prompts.
 
 **Per-panel actions live inside the prompt, not as a separate bullet list.** Image models follow narrative prompts better than parsed lists. "Panel 1 — Shantamma kneels at the threshold, palms pressed together. Panel 2 — close on her face, eyes closed, tears tracing the lines below her cheekbones. Panel 3 — the lamp she lit flickers as she rises, still holding the flame's warmth in her cupped palms." Inline beats Saul's existing instinct.
 
@@ -29,7 +41,7 @@ You are writing a prompt that an image model will turn into a multi-panel storyb
 
 **One emotional beat per board, not three.** A storyboard captures a moment, not an arc. If three things happen, that's three shots, not one storyboard.
 
-**Specific subjects, not generic types.** "Shantamma, elderly Tamil grandmother, gray hair tied back, wearing a faded cotton sari" — the model uses identity refs anyway, but the textual grounding helps. "An old woman" is too generic.
+**Specific graph names, not generic types.** "Shantamma kneels at the threshold" is useful. "An old woman kneels" is too generic. Once the character has a locked reference, do not keep repeating physical description; use the name and stage the action.
 
 **Medium language anchored to the locked style.** If the project's style is a painterly miniature, the storyboard should read as panels of that miniature — not as cinematic frames with painterly tint. The planner now sees the locked style ref directly (since 2026-05-12 fix), so describe the medium consistent with what the artist locked.
 

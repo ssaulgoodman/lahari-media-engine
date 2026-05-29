@@ -17,7 +17,7 @@ type BuildStoryboardPlannerPromptInput = {
 
 const WRITE_CORE_TASK = `Plan one storyboard board and cut plan for a two-step storyboard workflow.
 
-The first output, storyboardPrompt, is the prompt that the storyboard image model will read. The second output, cutPlanText, is the matching panel-beat list that the video model will read later. The panel actions must appear in both outputs: the image model needs them inline to know what to draw, and the video model needs them as a clean beat list.`;
+The first output, storyboardPrompt, is the shot's renderable board text. It should use the project's canonical graph names for cast and environments, then focus on panel blocking, action, staging, composition, and continuity. Do not restate character appearance, costume, style, or environment design when locked references exist; the render step binds those names to attached images. The second output, cutPlanText, is the matching panel-beat list that the video model will read later.`;
 
 const REFINE_CORE_TASK = `Refine one saved storyboard render prompt and cut plan using the director's feedback.
 
@@ -46,17 +46,17 @@ const formatInputs = (input: BuildStoryboardPlannerPromptInput): string => {
 
 const OUTPUT_CONTRACT = `Return only JSON with keys:
 {
-  "storyboardPrompt": "complete image-model prompt with the panel layout, subject/setting context, per-panel action descriptions inline, explicit inter-panel consistency demand, and no-text-in-panels rule",
+  "storyboardPrompt": "complete image-model prompt with panel layout, one-line shot setup using canonical cast/environment names, per-panel blocking/action descriptions inline, continuity between panels, and no-text-in-panels rule",
   "cutPlanText": "Panel N — <action> per panel, one line each"
 }
 
 storyboardPrompt hard rules:
 - Include the panel layout: grid spec, 16:9 panels, borders/background.
-- Include one-line subject/shot context.
-- Include per-panel action descriptions, one short sentence per panel, in order. Format: "Panel 1: <framing> — <action>".
-- Include an explicit inter-panel consistency demand: style reference controls medium/lighting/palette; character refs control identity/costume/silhouette; environment refs control physical space.
+- Include one-line shot setup using canonical graph names only, e.g. "The Boss and The Knife Orchid in the Red Den Room." Do not describe their hair, outfit, face, prop design, room architecture, or art style unless the shot specifically changes it.
+- Include per-panel blocking/action descriptions, one short sentence per panel, in order. Format: "Panel 1: <framing/staging> — <visible action>".
+- Keep identity, costume, style, and environment continuity implicit through the canonical names. The renderer will attach and bind the matching reference images later.
 - Include the no-text-in-panels rule: no captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks.
-- Keep it lean, roughly under 330 words. No contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, or "cinematic film still" language.
+- Keep it lean, roughly under 220 words. No character design prose, environment design prose, contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, or "cinematic film still" language.
 
 cutPlanText hard rules:
 - Same panel beats as storyboardPrompt.

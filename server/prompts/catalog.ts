@@ -560,7 +560,7 @@ OUTPUT CONTRACT
     model: 'project.text_provider.refine',
     modelLabel: 'Project text provider (refine)',
     triggeredBy: "Fires when you click 'Board prompts' or per-shot 'Write prompt' in Seedance storyboard mode.",
-    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. Panel actions appear in both outputs; locked refs and selected project style-notes (image + storyboard buckets, plus per-model phrases) decide the medium. Action invariants like "no readable text on panels" live in the OUTPUT CONTRACT, not preset doctrine.',
+    summary: 'Composer-backed planner step. Converts one shot brief into two saved artifacts: storyboardPrompt for the image renderer and cutPlanText for Seedance video. The saved prompt uses canonical cast/environment names and focuses on blocking, action, staging, and continuity. The render step binds those names to locked refs; the planner should not restate character costumes, faces, environment design, or style prose.',
     variables: [
       { name: 'title', description: 'Song title' },
       { name: 'concept', description: 'Locked concept summary' },
@@ -603,11 +603,11 @@ USER NOTE POLICY
 OUTPUT CONTRACT
 Return only JSON:
 {
-  "storyboardPrompt": "complete image-model prompt with panel layout, subject/setting context, per-panel action descriptions inline, explicit inter-panel consistency demand, and no-text-in-panels rule",
+  "storyboardPrompt": "complete image-model prompt with panel layout, one-line shot setup using canonical cast/environment names, per-panel blocking/action descriptions inline, continuity between panels, and no-text-in-panels rule",
   "cutPlanText": "Panel N — <action> per panel, one line each"
 }
 
-storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
+storyboardPrompt stays lean, roughly under 220 words. No character design prose, environment design prose, contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
     source: { file: 'server/prompts/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'buildStoryboardPlannerPrompt / buildStoryboardPrompt' },
   },
   {
@@ -618,14 +618,16 @@ storyboardPrompt stays lean, roughly under 330 words. No contract bullet lists, 
     model: 'project.storyboard_provider',
     modelLabel: 'Project storyboard provider',
     triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
-    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Three provider options, all routed through Segmind BYOK: nano-banana-2 (default), nano-banana-pro, and gpt-image-2.',
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Before rendering, Mirage prepends a generated reference binding map so names in the saved prompt resolve to the correct attached images. Cut plan is NOT sent — it is for the downstream Seedance video step only.',
     variables: [
       { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
       { name: 'storyboardProvider', description: 'Project storyboard provider: nano-banana-2 | nano-banana-pro | gpt-image-2' },
       { name: 'referenceImages', description: 'Locked style, cast, environment refs (filtered by shot.excluded_refs.storyboard). When shot.use_prev_storyboard_ref is true, the prev shot\'s locked storyboard is also attached. In edit_image refine mode, the previous storyboard image is prepended; an artist-attached refinement ref is appended last.' },
       { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction.' },
     ],
-    template: `{{storyboardPrompt}}
+    template: `{{generated reference binding map}}
+
+{{storyboardPrompt}}
 
 {{editImageMode ? "Edit the provided storyboard image. Preserve panel layout, characters, environment, style, and continuity unless the instruction explicitly changes them.\\n\\nEdit instruction:\\n" + artistNote + (artistReferenceImage ? "\\nArtist attached an additional refinement reference image. Use it as guidance for the requested change only." : "") : ""}}`,
     source: { file: 'server/services/storyboard.ts', lines: 'generateStoryboardVersion / renderWithProvider' },
