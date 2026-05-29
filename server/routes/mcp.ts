@@ -80,7 +80,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects first, then open_project. If the artist asks to start a new project, call create_project, then open_project; for audio seeds, create the shell, upload the local file to /api/agent/uploads with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analyze_audio_transcribe/analyze_audio_structure. Audio upload only persists the source; no analysis runs automatically. For Concept, Script, Style, Looks, Storyboard, Video, Audio, and System config work, prefer the local notebook action files under config/actions/: read index.json, then the one surface file you need, and use list_actions only when those files are missing/stale or you need live server truth. For paid media/actions, prefer start_job so Mirage returns a jobId immediately and Visual Studio can show progress; use get_job only when the artist asks for status or you need the completed result. Use parallel_run only for short independent non-paid actions or when the artist explicitly wants a blocking batch. The project graph supplies default context, but defaults are editable plumbing: for Looks, Style, and Storyboard actions use contextOverrides to include/exclude/swap references and style-note sections before writing a full promptOverride. Use apply_project_style_notes when repeated phrasing or technique should become project data; reserve apply_project_prompt_override for a repeated complete recipe. For style image work, use generate_style_candidates for guide/note/promptOverride candidates and apply_style_direction with sourceAssetId to lock an existing style asset; write the style description yourself when you can inspect the image, and let the server auto-identify only as fallback when style text is empty. For video, use generate_video with dryRun=true for requirements/cost, then start_job(generate_video) when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use analyze_audio_transcribe/analyze_audio_structure only when the audio should drive source understanding or pacing, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If you need to bring a local/native image or audio file into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference/generate_candidates/generate_style_candidates for images or leave purpose=audio_source attached to the project for audio. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows. The returned commands isolate npm's cache in a temp Mirage directory and the Windows command wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. The returned command is the reliable path; if it errors, retry it once. Only fall back to MCP file reads when there is no shell/npx capability at all, such as a sandboxed harness, not on a recoverable sync error. Treat state/ files as read-only DB snapshots. Edit config/style-notes.json for learned image/storyboard/motion/script/dialogue/audio style notes, then persist with run_action(apply_project_style_notes). Edit script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown from storyboards/<scene>.md. Edit audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a project, calls out a workflow, or asks to continue work, call list_projects first, then open_project. If the artist asks to start a new project, call create_project, then open_project; for audio seeds, create the shell, upload the local file to /api/agent/uploads with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analyze_audio_transcribe/analyze_audio_structure. Audio upload only persists the source; no analysis runs automatically. For Concept, Script, Style, Looks, Storyboard, Video, Audio, and System config work, prefer the local notebook action files under config/actions/: read index.json, then the one surface file you need, and use list_actions only when those files are missing/stale or you need live server truth. For paid media/actions, prefer start_job so Mirage returns a jobId immediately and Visual Studio can show progress; use get_job only when the artist asks for status or you need the completed result. Use parallel_run only for short independent non-paid actions or when the artist explicitly wants a blocking batch. The project graph supplies default context, but defaults are editable plumbing: for Looks, Style, and Storyboard actions use contextOverrides to include/exclude/swap references and style-note sections before writing a full promptOverride. Use apply_project_style_notes when repeated phrasing or technique should become project data; reserve apply_project_prompt_override for a repeated complete recipe. For style image work, use generate_style_candidates for guide/note/promptOverride candidates and apply_style_direction with sourceAssetId to lock an existing style asset; write the style description yourself when you can inspect the image, and let the server auto-identify only as fallback when style text is empty. For video, use generate_video with dryRun=true for requirements/cost, then start_job(generate_video) when the artist approves; apply_video_prompt persists keyframe-mode motion prompt text only. For audio, use analyze_audio_transcribe/analyze_audio_structure only when the audio should drive source understanding or pacing, use generate_dialogue_audio with dryRun=true for TTS cost/missing voices, apply_cast_voice for overlay TTS voice IDs, and apply_audio_plan for shot dialogue/sound strategy. If you need to bring a local/native image or audio file into Mirage, do not send bytes through MCP: POST multipart to /api/agent/uploads with the same bearer token, then pass the returned assetId to lock_reference/generate_candidates/generate_style_candidates for images or leave purpose=audio_source attached to the project for audio. For notebook/file editing, prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows. The returned commands isolate npm's cache in a temp Mirage directory and the Windows command wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. The returned command is the reliable path; if it errors, retry it once. Only fall back to MCP file reads when there is no shell/npx capability at all, such as a sandboxed harness, not on a recoverable sync error. Mutating action receipts return changedArtifacts as paths/hashes only, not file bodies; run the sync command after important mutations to refresh changed files. Treat state/ files as read-only DB snapshots. Edit config/style-notes.json for learned image/storyboard/motion/script/dialogue/audio style notes, then persist with run_action(apply_project_style_notes). Edit script.md for surgical script changes, then persist with run_action(apply_script) using markdown. Storyboard prompt text can be persisted through run_action(apply_storyboard_prompts) with either shots[] or scene markdown from storyboards/<scene>.md. Edit audio-plan.md for dialogue/audio-plan changes, then persist with run_action(apply_audio_plan) using either shots[] or markdown. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. Media generation stays tool-based and paid; ask before generation. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -113,6 +113,44 @@ const resultSizeTrace = (value: unknown): { responseBytes: number; jsonOk: boole
   } catch {
     return { responseBytes: 0, jsonOk: false };
   }
+};
+
+const artifactHash = (content: string) => crypto.createHash('sha256').update(content).digest('hex');
+
+const leanNotebookArtifact = (artifact: any) => {
+  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact) || typeof artifact.path !== 'string') return artifact;
+  const content = typeof artifact.content === 'string' ? artifact.content : '';
+  return {
+    kind: 'mirage.notebook.changed_artifact',
+    path: artifact.path,
+    hash: typeof artifact.hash === 'string' ? artifact.hash : artifactHash(content),
+    size: typeof artifact.size === 'number' ? artifact.size : Buffer.byteLength(content, 'utf8'),
+    mode: artifact.mode,
+    writePolicy: artifact.writePolicy,
+    description: artifact.description,
+  };
+};
+
+const normalizeLeanActionReceipt = (value: unknown): unknown => {
+  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(normalizeLeanActionReceipt);
+  const obj = value as Record<string, any>;
+  const out: Record<string, any> = {};
+  for (const [key, child] of Object.entries(obj)) {
+    if (key === 'changedArtifacts' && Array.isArray(child)) {
+      out.changedArtifacts = child.map(leanNotebookArtifact);
+      out.changedArtifactSummary = {
+        count: out.changedArtifacts.length,
+        paths: out.changedArtifacts.map((artifact: any) => artifact.path),
+        sync: out.changedArtifacts.length
+          ? 'Run the returned notebook sync command to refresh these changed paths; Supabase remains canonical.'
+          : 'No notebook artifacts changed.',
+      };
+      continue;
+    }
+    out[key] = normalizeLeanActionReceipt(child);
+  }
+  return out;
 };
 
 const logMcpCallTrace = (entry: {
@@ -630,7 +668,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
             args,
           });
         }
-        const result = await handler(args || {});
+        const result = normalizeLeanActionReceipt(await handler(args || {}));
         const { responseBytes, jsonOk } = resultSizeTrace(result);
         await finishAgentOperation(operationId, 'success', { result });
         recordMcpAudit({ source: 'mcp-remote', phase: 'finish', tool: name, args, result, durationMs: Date.now() - start, startedAt });
@@ -898,7 +936,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
     void Promise.resolve()
       .then(async () => {
-        const result = await runRegistryAction(actionKey, rawInput);
+        const result = normalizeLeanActionReceipt(await runRegistryAction(actionKey, rawInput));
         await finishAgentOperation(jobId, 'success', { result });
       })
       .catch(async (error) => {

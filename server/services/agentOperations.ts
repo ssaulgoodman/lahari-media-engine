@@ -54,10 +54,22 @@ const compactResult = (value: unknown) => {
     };
   }
   if (result.summary && typeof result.summary === 'object') compact.summary = result.summary;
+  if (result.changedArtifactSummary && typeof result.changedArtifactSummary === 'object') compact.changedArtifactSummary = result.changedArtifactSummary;
+  if (Array.isArray(result.changedArtifacts)) compact.changedArtifacts = result.changedArtifacts.map((row: any) => ({
+    kind: row?.kind,
+    path: row?.path,
+    hash: row?.hash,
+    size: row?.size,
+    mode: row?.mode,
+    writePolicy: row?.writePolicy,
+    description: row?.description,
+  }));
   if (Array.isArray(result.results)) compact.results = result.results.map((row: any) => ({
     shotId: row?.shotId,
     status: row?.status,
     error: row?.error,
+    changedArtifactSummary: row?.changedArtifactSummary,
+    changedArtifacts: row?.changedArtifacts,
   }));
   if (Array.isArray(result.candidates)) compact.candidates = result.candidates.map((row: any) => ({
     assetId: row?.assetId,

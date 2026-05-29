@@ -742,6 +742,9 @@ Add `get_project_state({ detail: "agent_working_set" })` for the common loop: ch
 **P1 soon: clean batch receipts.**
 `parallel_run` correctly applies state, but receipts from many actions mutating the same files can look like partial truth. This is the same mechanism as receipt-driven sync: action responses should return compact outcomes plus changed paths + hashes, not every artifact body. The bridge pulls changed files; the receipt summarizes graph mutations (`7 refs locked`, mapping, stale counts, errors) and tells the agent when to refresh canonical state.
 
+Pass log:
+- 2026-05-30 Codex: MCP action/job/parallel receipts now normalize `changedArtifacts` to `{ path, hash, size, mode, writePolicy, description }` plus `changedArtifactSummary`; file bodies no longer travel in action receipts.
+
 **P1 soon: stronger action examples.**
 Action schemas need exact happy-path examples for each common mode. `generate_candidates` must make `entityIds[]` impossible to miss, with separate cast/env examples including `guideAssetId` and `promptOverride`.
 
