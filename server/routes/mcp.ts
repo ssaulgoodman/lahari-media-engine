@@ -1282,7 +1282,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('mint_cli_token', {
     title: 'Mint short-lived CLI sync token',
-    description: 'Mutating security surface. Issues a short-lived project-scoped token for Mirage CLI sync so notebook file bodies do not travel through chat.',
+    description: 'Mutating security surface. Issues a short-lived project-scoped token for Mirage CLI notebook sync and direct HTTPS uploads so file bodies do not travel through MCP.',
     inputSchema: {
       projectId,
       ttlMinutes: z.number().int().min(5).max(180).optional(),

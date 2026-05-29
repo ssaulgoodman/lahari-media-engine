@@ -122,12 +122,11 @@ export const createCliToken = async (
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
   const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production-05ca.up.railway.app').replace(/\/+$/, '');
   const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@latest';
+  const uploadEndpoint = `${apiUrl}/api/agent/uploads`;
   const posixCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
   const powershellCommand = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
-  const posixUploadCast = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} upload-cast-reference ${opts.projectId} <castMemberId> <imagePath>`;
-  const posixUploadEnvironment = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} upload-environment-reference ${opts.projectId} <environmentId> <imagePath>`;
-  const powershellUploadCast = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} upload-cast-reference ${opts.projectId} <castMemberId> <imagePath>`;
-  const powershellUploadEnvironment = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} upload-environment-reference ${opts.projectId} <environmentId> <imagePath>`;
+  const posixUploadExample = `curl -sS -H "Authorization: Bearer ${token}" -F projectId=${opts.projectId} -F purpose=cast_reference -F entityId=<castMemberId> -F file=@<imagePath> ${uploadEndpoint}`;
+  const powershellUploadExample = `curl.exe -sS -H "Authorization: Bearer ${token}" -F "projectId=${opts.projectId}" -F "purpose=cast_reference" -F "entityId=<castMemberId>" -F "file=@<imagePath>" "${uploadEndpoint}"`;
   return {
     kind: 'mirage.cli_token.created',
     id: data.id,
@@ -141,12 +140,25 @@ export const createCliToken = async (
     commands: {
       posix: posixCommand,
       powershell: powershellCommand,
-      uploadCastReferencePosix: posixUploadCast,
-      uploadEnvironmentReferencePosix: posixUploadEnvironment,
-      uploadCastReferencePowershell: powershellUploadCast,
-      uploadEnvironmentReferencePowershell: powershellUploadEnvironment,
     },
-    note: 'Short-lived project-scoped token. Do not store it. Use sync for notebook refresh; use upload-cast-reference/upload-environment-reference when a local image file must become a locked Mirage reference.',
+    upload: {
+      endpoint: uploadEndpoint,
+      method: 'POST',
+      auth: 'Authorization: Bearer <token>',
+      contentType: 'multipart/form-data',
+      fileField: 'file',
+      fields: {
+        projectId: opts.projectId,
+        purpose: 'cast_reference | env_reference | style_reference | cast_guide | env_guide | style_guide | audio_source',
+        entityId: 'required for cast_reference, env_reference, cast_guide, and env_guide',
+      },
+      examples: {
+        posix: posixUploadExample,
+        powershell: powershellUploadExample,
+      },
+      next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction, as guideAssetId for generation, or leave audio_source attached to the project.',
+    },
+    note: 'Short-lived project-scoped token. Do not store it. Use commands.posix/commands.powershell for notebook sync. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
   };
 };
 
