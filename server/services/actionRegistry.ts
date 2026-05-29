@@ -88,6 +88,7 @@ export const STORYBOARD_ACTION_SPECS = {
     surface: 'storyboard',
     mutates: true,
     paid: true,
+    materializeForAgent: false,
     description: 'Generate missing/stale/error storyboard boards for selected shots. Use parallel_run for custom parallel batches.',
     input: {
       projectId: 'string',
