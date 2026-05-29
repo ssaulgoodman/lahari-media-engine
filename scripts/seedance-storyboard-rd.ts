@@ -183,7 +183,6 @@ const loadShotContext = async (projectId: string, shotId: string, durationOverri
       title: project.title || 'Untitled Lahari project',
       concept: concept.conceptDirection || concept.theme || concept.title || 'Locked concept',
       mood: concept.mood || project.style_description || undefined,
-      songType: project.song_type || undefined,
       sceneLabel: scene.section_label || 'Scene',
       sceneStart: scene.start_time || '0:00',
       sceneEnd: scene.end_time || '0:00',
@@ -513,9 +512,6 @@ Outputs are printed as storage keys/paths and mirrored in ${OUT_DIR}.`);
       minShotDuration: getModelMinDuration(project.video_model),
       videoModel: project.video_model || undefined,
       userNote: args['user-note'] && args['user-note'] !== true ? String(args['user-note']) : undefined,
-      songType: project.song_type || undefined,
-      isNarrative: project.is_narrative ?? undefined,
-      isMeditative: project.is_meditative ?? undefined,
     });
     writeText(path.join(outDir, 'full-script.prompt.txt'), result.prompt);
     writeText(path.join(outDir, 'full-script.json'), JSON.stringify({

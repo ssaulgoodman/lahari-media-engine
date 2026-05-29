@@ -8,9 +8,6 @@ type StyleBrainstormPromptInput = {
   concept?: any;
   userNote?: string;
   scriptSummary?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
   styleNotes?: string;
   preset: PipelinePreset;
 };
@@ -25,12 +22,6 @@ const formatInputs = (input: StyleBrainstormPromptInput): string => {
   if (concept.language) lines.push(`Language: ${clip(concept.language, 80)}`);
 
   if (input.preset.workflowKey === 'music_led') {
-    const traits = [
-      input.songType && input.songType !== 'unknown' ? input.songType : null,
-      input.isNarrative ? 'narrative' : null,
-      input.isMeditative ? 'meditative' : null,
-    ].filter(Boolean);
-    if (traits.length) lines.push(`Audio classification: ${traits.join(', ')}`);
     if (input.meaning) lines.push(`Meaning/intent:\n${clip(input.meaning, 1500)}`);
     if (input.sourceText) lines.push(`Lyrics/source excerpt:\n${clip(input.sourceText, 3000)}`);
   } else {

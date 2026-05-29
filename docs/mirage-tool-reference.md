@@ -134,7 +134,7 @@ Proposes 4 distinct visual style directions for the project.
 
 - Triggered by: `generate_style_candidates` when no `promptOverride` / `guideAssetId` is given
 - Model: `project.text_provider`
-- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, songType, isNarrative, isMeditative, styleNotes, userNote
+- Inputs: concept, sourceText, meaning, scriptSummary, musicalStructure, styleNotes, userNote
 - Contract: *Propose 4 distinct visual style directions for this project. Each direction is one coherent visual world the project could live inside. Do not write story, scenes, characters, camera shot lists, or plot beats. Cover a real range across legitimate aesthetics for the project source and any STYLE NOTES.*
 - Output: 4 directions as JSON, each `{ title, description }`
 
@@ -219,7 +219,7 @@ Proposes 3 narrative concept directions (or 1 if a director brief is set).
 
 - Triggered by: Web "Generate concept" button. **Agent path:** Codex writes concept JSON inline → `apply_concept`.
 - Model: `project.text_provider`
-- Inputs: title, language, sourceText, meaning, musicalStructure, scriptSummary, songType, isNarrative, isMeditative, directorBrief, context, userNote
+- Inputs: title, language, sourceText, meaning, musicalStructure, scriptSummary, directorBrief, context, userNote
 - Contract: *Propose creative narrative directions for this project. Each direction is one coherent idea — what the viewer follows, what visibly happens, the emotional arc, the world the work lives in. Focus on story, beats, and what visibly happens. Visual style, palette, and cinematography are decided in later phases. Do not include art-style language, camera directions, or color palette in any field — those belong to the style phase, not the concept phase.*
 - Output: 3 (or 1) concepts as JSON, each `{ title, subject, mood, theme, conceptDirection, description }`
 
@@ -239,7 +239,7 @@ Plans cast, environments, scenes, and shots from concept + source.
 
 - Triggered by: Web "Generate script" button (music_led). **Agent path:** Codex writes `drafts/script.md` and `apply_script({ markdown })`.
 - Model: `project.script_writer` (Claude Opus with extended thinking + validation loop)
-- Inputs: concept, lyrics, meaning, musicalStructure, basePacing, minShotDuration, videoModel, songType, isNarrative, isMeditative, userNote
+- Inputs: concept, lyrics, meaning, musicalStructure, basePacing, minShotDuration, videoModel, userNote
 - Contract: *Plan the production structure for a music-led video. Create cast, environments, scenes, and shot directions. A later prompt decides visual framing and camera language, so focus on what happens: visible action, performance, emotional movement, scene progression, and musical response.*
 - Output: structured plan via `plan_music_video` tool — cast, environments, scenes (with shots)
 
@@ -280,7 +280,7 @@ Bulk-writes visualPrompt + motionPrompt pairs per shot, plus continuity tags.
 
 - Triggered by: Web "Rewrite all" or end-of-Blueprint auto-fire. **Agent path:** Codex writes prompts per shot inline → `apply_shot_prompts`.
 - Model: `project.script_writer`
-- Inputs: shots[], cast[], concept, videoModel, songType, isNarrative, isMeditative, previousBatchTail, userNote
+- Inputs: shots[], cast[], concept, videoModel, previousBatchTail, userNote
 - Contract: *You are an art director / shot writer. The script writer planned what happens in each shot — you decide how it looks on screen and how it moves. Outputs go directly to an image model (visualPrompt) and a video model (motionPrompt). Every sentence must name a visible subject, an action or change, and a spatial or timing anchor. Translate emotion into physical evidence; do not write metaphor, inner state, or invisible causes. The visual medium is locked separately via the project's style reference image. Do not dictate art style, color palette, or "cinematic" framing in words.* (Source includes GOOD/BAD examples per axis.)
 - Output: per-shot JSON via `write_shot_prompts` tool — `{ id, visualPrompt, motionPrompt, continuityFrom }`
 
@@ -373,13 +373,13 @@ Extracts timestamped lyrics from an uploaded audio file.
 
 #### detect-structure `[intake]`
 
-Detects musical sections + classifies song type + flags narrative/meditative traits.
+Detects musical sections.
 
 - Triggered by: `analyze_audio_structure` or the web "Analyze structure" button
 - Model: `audio.analysis` (Gemini 3 Pro)
 - Inputs: audioBase64, mimeType
-- Contract: identifies sections (intro/verse/chorus/etc.) with timestamps and tags audio classification flags
-- Output: `{ sections[], songType, isNarrative, isMeditative }`
+- Contract: identifies sections (intro/verse/chorus/etc.) with timestamps and energy descriptions. It does not classify song type or infer narrative/meditative traits.
+- Output: `{ sections[] }`
 
 #### parse-script-intake `[intake]`
 

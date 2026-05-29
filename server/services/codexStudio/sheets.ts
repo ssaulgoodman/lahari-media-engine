@@ -55,7 +55,6 @@ Generated: ${new Date().toISOString()}
 - ID: ${project.id}
 - Status: ${project.status}
 - Preset: ${project.presetKey || 'unknown'}
-- Song type: ${project.songType || 'unknown'}${project.isMeditative ? ', meditative' : ''}${project.isNarrative ? ', narrative' : ''}
 - Workflow: ${workflow}
 - Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
 - Format: ${project.aspectRatio}, ${project.videoResolution}, target shot duration ${project.targetDuration || 'unset'}s
@@ -176,7 +175,7 @@ const sheetHtml = (project: Project, title: string, sections: string, stats?: st
 <body>
   <header>
     <h1>${escapeHtml(project.title)}</h1>
-    <p class="sub">${escapeHtml(title)} - ${escapeHtml(project.status)} - ${escapeHtml(project.songType || 'unknown')}</p>
+    <p class="sub">${escapeHtml(title)} - ${escapeHtml(project.status)}</p>
     ${stats || ''}
   </header>
   ${sections}
@@ -351,7 +350,7 @@ export const buildProjectContactSheet = (project: Project): string => {
 <body>
   <header>
     <h1>${escapeHtml(project.title)}</h1>
-    <p class="sub">${escapeHtml(project.status)} · ${escapeHtml(project.songType || 'unknown')} ${project.isMeditative ? '· meditative' : ''}${project.isNarrative ? '· narrative' : ''}</p>
+    <p class="sub">${escapeHtml(project.status)}</p>
     <div class="stats">
       <span class="pill">${counts.scenes} scenes</span>
       <span class="pill">${counts.shots} shots</span>

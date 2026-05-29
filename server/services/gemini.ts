@@ -97,30 +97,15 @@ Return ONLY the transcription.` }
 export const detectStructure = async (
   audioBase64: string,
   mimeType: string
-): Promise<{ sections: any[]; songType: string; isNarrative: boolean; isMeditative: boolean }> => {
+): Promise<{ sections: any[] }> => {
   const ai = await getAI();
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: { parts: [
       { inlineData: { mimeType, data: audioBase64 } },
-      { text: `Analyze this audio and return a JSON object with four fields:
+      { text: `Analyze this audio and return a JSON object with one field:
 
 1. "sections" — array of musical sections (max 10). Each: label (Intro/Verse/Chorus/Bridge/Interlude/Outro), startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.
-
-2. "songType" — classify what you HEAR. One of: ballad, rap, pop, rock, electronic, cinematic, ambient, spoken_word, unknown.
-   - ballad: lyrical song with clear verses and emotional progression
-   - rap: rhythmic spoken or rapped vocal performance
-   - pop: produced song with hook/refrain structure
-   - rock: band-driven song with prominent drums/guitars or comparable live energy
-   - electronic: synth/electronic production is the dominant musical identity
-   - cinematic: score-like, orchestral, trailer-like, or soundtrack-driven
-   - ambient: minimal, atmospheric, low-change soundscape
-   - spoken_word: narration, monologue, dialogue, or poetry is dominant
-   - unknown: doesn't fit the above
-
-3. "isNarrative" — true if the audio tells a story or has a dramatic arc with distinct emotional shifts. false if it's repetitive or maintains a steady mood.
-
-4. "isMeditative" — true if the song is contemplative, steady, inward-focused. false if it's energetic, dynamic, or dramatic.
 
 Return ONLY the JSON object.` }
     ]},
@@ -143,24 +128,18 @@ Return ONLY the JSON object.` }
               },
               required: ['label', 'startTime', 'endTime']
             }
-          },
-          songType: { type: Type.STRING, enum: ['ballad', 'rap', 'pop', 'rock', 'electronic', 'cinematic', 'ambient', 'spoken_word', 'unknown'] },
-          isNarrative: { type: Type.BOOLEAN },
-          isMeditative: { type: Type.BOOLEAN }
+          }
         },
-        required: ['sections', 'songType', 'isNarrative', 'isMeditative']
+        required: ['sections']
       }
     }
   });
-  if (!response.text) return { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
+  if (!response.text) return { sections: [] };
   const parsed = safeParseJSON(response.text);
   // Handle both new object format and legacy array format
-  if (Array.isArray(parsed)) return { sections: parsed, songType: 'unknown', isNarrative: false, isMeditative: false };
+  if (Array.isArray(parsed)) return { sections: parsed };
   return {
     sections: parsed.sections || parsed.musicalStructure || [],
-    songType: parsed.songType || 'unknown',
-    isNarrative: parsed.isNarrative ?? false,
-    isMeditative: parsed.isMeditative ?? false,
   };
 };
 

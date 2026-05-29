@@ -86,15 +86,9 @@ export const analyzeAudioStructure = async (
   const structureData = await detectStructure(audioBase64, audioMime);
   const durationMs = Date.now() - t0;
   const musicalStructure = Array.isArray(structureData) ? structureData : structureData.sections || [];
-  const songType = Array.isArray(structureData) ? 'unknown' : (structureData.songType || 'unknown');
-  const isNarrative = Array.isArray(structureData) ? false : (structureData.isNarrative ?? false);
-  const isMeditative = Array.isArray(structureData) ? false : (structureData.isMeditative ?? false);
 
   await updateRows('projects', { id: project.id }, {
     musical_structure: JSON.stringify(musicalStructure),
-    song_type: songType,
-    is_narrative: isNarrative,
-    is_meditative: isMeditative,
     status: project.status === 'uploaded' || project.status === 'analyzing' ? 'analyzed' : project.status,
     updated_at: new Date().toISOString(),
   });
@@ -116,25 +110,19 @@ export const analyzeAudioStructure = async (
     entityType: 'project',
     entityId: project.id,
     summary: 'Audio structure applied to the project.',
-    payload: { sections: musicalStructure.length, songType, isNarrative, isMeditative },
+    payload: { sections: musicalStructure.length },
   });
-  appendApplyJournal(project, 'analyzed audio structure', `Sections: ${musicalStructure.length}\nSong type: ${songType}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+  appendApplyJournal(project, 'analyzed audio structure', `Sections: ${musicalStructure.length}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   const updatedProject = nextProject(project, {
     musicalStructure,
-    songType,
-    isNarrative,
-    isMeditative,
     status: 'analyzed',
   } as Partial<Project>);
   return {
     kind: 'mirage.audio.structure',
     projectId: project.id,
     musicalStructure,
-    songType,
-    isNarrative,
-    isMeditative,
     changedArtifacts: buildNotebookMirrorArtifacts(updatedProject, { audioAnalysis: true }),
-    note: 'Analyzed audio structure. Classification fields are legacy hints and are slated for backlog #5 cleanup.',
+    note: 'Analyzed audio structure. Audio classification tags are no longer generated; use project style notes for pacing/taste decisions.',
   };
 };

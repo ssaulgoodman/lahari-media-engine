@@ -159,11 +159,11 @@ router.post('/:queueId/start', async (req, res) => {
     // ─── Check for cached analysis on songs table ───
     const { data: songRow } = await getSB()
       .from('songs')
-      .select('cached_lyrics, cached_structure, cached_meaning, cached_song_type, cached_is_narrative, cached_is_meditative')
+      .select('cached_lyrics, cached_structure, cached_meaning')
       .eq('id', item.song_id)
       .single();
     const cached = songRow || {} as any;
-    const hasCachedAnalysis = cached.cached_lyrics && cached.cached_structure && cached.cached_meaning;
+    const hasCachedAnalysis = cached.cached_lyrics && cached.cached_structure;
 
     // Create project immediately — artist navigates to Blueprint right away.
     // Always start as 'analyzing' — background block promotes to 'analyzed'
@@ -177,9 +177,6 @@ router.post('/:queueId/start', async (req, res) => {
       lyrics: cached.cached_lyrics || null,
       musical_structure: cached.cached_structure || null,
       meaning: cached.cached_meaning || '',
-      song_type: cached.cached_song_type || null,
-      is_narrative: cached.cached_is_narrative ?? null,
-      is_meditative: cached.cached_is_meditative ?? null,
       // Defaults aligned with constants/*.ts first-entry conventions.
       // Image: Nano Banana Pro (gemini-3-pro) — strongest ref-image
       // conditioning. Storyboard: Nano Banana 2 — cheapest board renderer.
@@ -289,11 +286,8 @@ router.post('/:queueId/start', async (req, res) => {
           .catch((reason) => ({ status: 'rejected' as const, reason }));
         const analysisMs = Date.now() - t0;
 
-        const structureData = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
+        const structureData = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [] };
         const musicalStructure = Array.isArray(structureData) ? structureData : structureData.sections;
-        const songType = Array.isArray(structureData) ? 'unknown' : (structureData.songType || 'unknown');
-        const isNarrative = Array.isArray(structureData) ? false : (structureData.isNarrative ?? false);
-        const isMeditative = Array.isArray(structureData) ? false : (structureData.isMeditative ?? false);
 
         if (structureResult.status === 'rejected') console.warn(`[queue ${projectId}] structure failed:`, structureResult.reason);
 
@@ -317,9 +311,6 @@ router.post('/:queueId/start', async (req, res) => {
           analysis_step: null,
           lyrics: lyrics || null,
           musical_structure: structureJson,
-          song_type: songType,
-          is_narrative: isNarrative,
-          is_meditative: isMeditative,
           updated_at: new Date().toISOString(),
         });
 
@@ -328,9 +319,6 @@ router.post('/:queueId/start', async (req, res) => {
           await getSB().from('songs').update({
             cached_lyrics: lyrics || null,
             cached_structure: structureJson || null,
-            cached_song_type: songType !== 'unknown' ? songType : null,
-            cached_is_narrative: isNarrative,
-            cached_is_meditative: isMeditative,
           }).eq('id', item.song_id);
           console.log(`[queue] Cached analysis on song ${item.song_id} for future use`);
         }

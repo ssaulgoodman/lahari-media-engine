@@ -10,9 +10,6 @@ type PlanScenesPromptInput = {
   basePacing: number;
   minShotDuration?: number;
   userNote?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
   videoModel?: string;
   projectOverride?: string | null;
   preset: PipelinePreset;
@@ -33,14 +30,7 @@ const formatShotExamples = (preset: PipelinePreset): string => {
 };
 
 const formatSourceSignals = (input: PlanScenesPromptInput): string => {
-  const traits = [
-    input.songType && input.songType !== 'unknown' ? input.songType : null,
-    input.isNarrative ? 'narrative' : null,
-    input.isMeditative ? 'meditative' : null,
-  ].filter(Boolean);
-
   return [
-    traits.length ? `Audio classification: ${traits.join(', ')}` : '',
     `Lyrics / audio source:\n${clip(input.lyrics, 5000)}`,
     input.meaning ? `Meaning / intent:\n${clip(input.meaning, 1600)}` : '',
     `Musical structure:\n${clip(input.musicalStructure, 3000)}`,

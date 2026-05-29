@@ -858,7 +858,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   }, async ({ limit }) => {
     const rows = await selectColumns(
       'projects',
-      'id,title,status,preset_key,workflow_key,seed_kind,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
+      'id,title,status,preset_key,workflow_key,seed_kind,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
       { user_id: auth.userId },
       { orderBy: 'updated_at', ascending: false, limit: Math.min(Number(limit || 20) || 20, 100) },
     );
@@ -872,9 +872,6 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         presetKey: row.preset_key || null,
         workflowKey: normalizeWorkflowKey(row.workflow_key),
         seedKind: row.seed_kind || null,
-        songType: row.song_type || null,
-        isNarrative: row.is_narrative ?? null,
-        isMeditative: row.is_meditative ?? null,
         imageModel: row.image_model,
         storyboardProvider: row.storyboard_provider,
         videoModel: row.video_model,

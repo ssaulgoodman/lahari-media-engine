@@ -8,7 +8,6 @@ export type StoryboardRdInput = {
   title: string;
   concept: string;
   mood?: string;
-  songType?: string;
   sceneLabel: string;
   sceneStart: string;
   sceneEnd: string;
@@ -57,14 +56,14 @@ const sourceExcerptLabel = (input: StoryboardRdInput) => isMusicVideoWorkflow(in
 // because the planner needs them to decide clip boundaries and beats.
 const sceneContext = (input: StoryboardRdInput) => `${projectLabel(input)}: ${input.title}
 Production intent: ${input.concept}
-${input.mood ? `Mood: ${input.mood}\n` : ''}${isMusicVideoWorkflow(input) && input.songType && input.songType !== 'song' ? `Song type: ${input.songType}\n` : ''}Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
+${input.mood ? `Mood: ${input.mood}\n` : ''}Scene: ${input.sceneLabel} (${input.sceneStart}-${input.sceneEnd})
 Scene overview: ${input.sceneNarrative}
 ${input.musicalCue ? `${isMusicVideoWorkflow(input) ? 'Musical structure cue' : 'Timing cue'}: ${input.musicalCue}\n` : ''}${input.sceneLyrics ? `${sourceExcerptLabel(input)}: ${input.sceneLyrics}\n` : ''}Cast available in scene: ${castLine(input)}
 Environment: ${input.environmentName || 'unspecified'}`;
 
 // Clip-scoped context — for the storyboard generator and the video model,
 // both of which produce a single 4-15s clip. Deliberately drops scene
-// narrative, scene timestamps, lyrics, and song type: those describe a
+// narrative, scene timestamps, and lyrics: those describe a
 // broader window than this clip and risk leaking events (e.g. another
 // character mentioned in the scene narrative) into the storyboard. The
 // shot direction alone defines what gets drawn. Optional fields drop

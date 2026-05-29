@@ -151,9 +151,6 @@ export const buildProjectPacket = async (project: Project) => {
       projectBrief: project.projectBrief,
       sourcePayload: project.sourcePayload,
       audioPath: project.audioPath,
-      songType: project.songType,
-      isNarrative: project.isNarrative,
-      isMeditative: project.isMeditative,
       meaning: compactText(project.meaning, 900),
       lyricsPreview: compactText(project.lyrics, 900),
       musicalStructure: project.musicalStructure.map((section: any) => ({

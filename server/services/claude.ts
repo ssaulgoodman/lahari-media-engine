@@ -45,10 +45,6 @@ export const generateConceptOptions = async (
   userNote?: string,
   /** If provided, generates ONE concept matching the director's vision instead of 3 preset directions. */
   directorBrief?: string,
-  /** Gemini's classification: chant, stotra, bhajan, kirtan, film-song, narrative, unknown. */
-  songType?: string,
-  isNarrative?: boolean,
-  isMeditative?: boolean,
   /** Project's text provider — picks Claude / OpenAI / Gemini at the call site. */
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
@@ -61,9 +57,6 @@ export const generateConceptOptions = async (
     meaning,
     musicalStructure,
     context,
-    songType,
-    isNarrative,
-    isMeditative,
     directorBrief,
     userNote,
     projectOverride,
@@ -331,7 +324,7 @@ export const parseAnimeScriptToPlan = async (input: {
 };
 
 export const planScenes = async (
-  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null }
+  input: ScriptInput & { lyrics: string; meaning: string; musicalStructure: string; basePacing: number; minShotDuration?: number; userNote?: string; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null }
 ): Promise<{ cast: any[]; environments: any[]; scenes: any[]; prompt: string }> => {
   const client = await getClient();
   const preset = input.preset || getRuntimePreset();
@@ -508,7 +501,7 @@ export const refineScript = async (
 
 export const writeShotPrompts = async (
   shots: { id: string; direction: string; duration: number; castNames: string[]; sceneNarrative: string; sceneLyrics: string }[],
-  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; songType?: string; isNarrative?: boolean; isMeditative?: boolean; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null },
+  context: { cast: { name: string; description: string }[]; concept: any; userNote?: string; videoModel?: string; preset?: PipelinePreset; projectOverride?: string | null },
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[]
 ): Promise<{ shots: { id: string; visualPrompt: string; motionPrompt: string; continuityFrom: 'cut' | 'prev_shot' }[]; prompt: string }> => {
   const client = await getClient();
@@ -519,9 +512,6 @@ export const writeShotPrompts = async (
     cast: context.cast,
     concept: context.concept,
     userNote: context.userNote,
-    songType: context.songType,
-    isNarrative: context.isNarrative,
-    isMeditative: context.isMeditative,
     videoModel: context.videoModel,
     previousBatchTail,
     projectOverride: context.projectOverride,
@@ -575,9 +565,6 @@ export const buildStyleBrainstormPrompt = (
   concept: any,
   userNotes?: string,
   scriptSummary?: string,
-  songType?: string,
-  isNarrative?: boolean,
-  isMeditative?: boolean,
   preset: PipelinePreset = getRuntimePreset(),
   styleNotes?: string,
 ): string => {
@@ -587,9 +574,6 @@ export const buildStyleBrainstormPrompt = (
     concept,
     userNote: userNotes,
     scriptSummary,
-    songType,
-    isNarrative,
-    isMeditative,
     preset,
     styleNotes,
   });
@@ -601,9 +585,6 @@ export const brainstormStyleDirections = async (
   concept: any,
   userNotes?: string,
   scriptSummary?: string,
-  songType?: string,
-  isNarrative?: boolean,
-  isMeditative?: boolean,
   textProvider?: string,
   preset: PipelinePreset = getRuntimePreset(),
   styleNotes?: string,
@@ -614,9 +595,6 @@ export const brainstormStyleDirections = async (
     concept,
     userNotes,
     scriptSummary,
-    songType,
-    isNarrative,
-    isMeditative,
     preset,
     styleNotes,
   );

@@ -136,11 +136,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
     value: res,
     label: res === '1080p' ? '1080p (Full HD)' : '720p (HD)',
   }));
-  const songTypeLabel = project.songType && project.songType !== 'unknown'
-    ? project.songType.charAt(0).toUpperCase() + project.songType.slice(1)
-      + (project.isMeditative ? ' · Meditative' : '')
-      + (project.isNarrative ? ' · Narrative' : '')
-    : null;
   const isMusicVideo = project.workflowKey === 'music_led' || project.workflowKey === 'music_video';
   const isScriptSeed = project.seedKind === 'script';
   const directorBrief = typeof project.projectBrief?.directorBrief === 'string'
@@ -158,7 +153,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
     ? [
       { label: 'Lyrics', present: !!project.lyrics },
       { label: 'Structure', present: project.musicalStructure?.length > 0 },
-      ...(songTypeLabel ? [{ label: songTypeLabel, present: true }] : []),
     ]
     : [
       { label: sourceLabel, present: hasSourceSeed },
@@ -166,7 +160,7 @@ export const BlueprintContextBar: React.FC<Props> = ({
       ...(logline ? [{ label: 'Logline', present: true }] : []),
     ];
   const hasAnalysis = isMusicVideo
-    ? !!(project.audioPath || project.lyrics || project.musicalStructure?.length > 0 || songTypeLabel)
+    ? !!(project.audioPath || project.lyrics || project.musicalStructure?.length > 0)
     : !!(hasSourceSeed || directorBrief || logline);
   const missingAnalysisItems = analysisItems.filter(i => !i.present);
   const needsAnalysis = isMusicVideo
@@ -385,12 +379,6 @@ export const BlueprintContextBar: React.FC<Props> = ({
                         {isAnalyzingAudio && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin"></div>}
                         {isAnalyzingAudio ? 'Analyzing…' : `Fill missing (${missingAnalysisItems.map(i => i.label).join(', ')})`}
                       </button>
-                    </div>
-                  )}
-                  {songTypeLabel && (
-                    <div>
-                      <h4 className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">Song classification</h4>
-                      <span className="text-sm text-white">{songTypeLabel}</span>
                     </div>
                   )}
                   {directorBrief && (

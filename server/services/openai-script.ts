@@ -18,9 +18,6 @@ type PlanScenesInput = {
   basePacing: number;
   minShotDuration?: number;
   userNote?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
   videoModel?: string;
   projectOverride?: string | null;
   preset?: PipelinePreset;
@@ -344,9 +341,6 @@ type WriteShotPromptsInput = {
   cast: { name: string; description: string }[];
   concept: any;
   userNote?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
   videoModel?: string;
   preset?: PipelinePreset;
   previousBatchTail?: { id: string; visualPrompt: string; motionPrompt: string }[];

@@ -32,9 +32,6 @@ type UserProjectRow = {
   title: string | null;
   status: string | null;
   source_queue_id: string | null;
-  song_type?: string | null;
-  is_narrative?: boolean | null;
-  is_meditative?: boolean | null;
   updated_at?: string | null;
 };
 
@@ -43,7 +40,7 @@ const loadUserProjectsByQueue = async (userId: string, queueIds: string[]) => {
   if (!queueIds.length) return byQueue;
   const { data, error } = await getSB()
     .from(T.projects)
-    .select('id,title,status,source_queue_id,song_type,is_narrative,is_meditative,updated_at')
+    .select('id,title,status,source_queue_id,updated_at')
     .eq('user_id', userId)
     .in('source_queue_id', queueIds)
     .order('updated_at', { ascending: false });
@@ -112,9 +109,6 @@ const normalizeProjectMatch = (project: UserProjectRow) => ({
   title: project.title || 'Untitled',
   status: project.status || null,
   sourceQueueId: project.source_queue_id || null,
-  songType: project.song_type || null,
-  isNarrative: project.is_narrative ?? null,
-  isMeditative: project.is_meditative ?? null,
   updatedAt: project.updated_at || null,
   webUrl: webStudioUrl(project.id, { step: project.status === 'completed' ? 'render' : 'blueprint' }),
   nextAction: {
@@ -179,7 +173,7 @@ export const searchCatalogForDirector = async (userId: string, query: string, op
   const pattern = `%${clean.replace(/[%_]/g, '\\$&')}%`;
   const { data: projects, error } = await getSB()
     .from(T.projects)
-    .select('id,title,status,source_queue_id,song_type,is_narrative,is_meditative,updated_at')
+    .select('id,title,status,source_queue_id,updated_at')
     .eq('user_id', userId)
     .ilike('title', pattern)
     .order('updated_at', { ascending: false })
@@ -205,7 +199,7 @@ export const resolveProjectForDirector = async (userId: string, query: string) =
 
   const { data: exactProject } = await getSB()
     .from(T.projects)
-    .select('id,title,status,source_queue_id,song_type,is_narrative,is_meditative,updated_at,user_id')
+    .select('id,title,status,source_queue_id,updated_at,user_id')
     .eq('id', clean)
     .limit(1)
     .maybeSingle();

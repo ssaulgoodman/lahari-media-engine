@@ -19,9 +19,6 @@ type GenerateConceptPromptInput = {
   }>;
   context?: string;
   scriptSummary?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
   /** If set, generate ONE concept that realizes this brief instead of three directions. */
   directorBrief?: string;
   /** Free-form artist nudge for this generation call. */
@@ -84,12 +81,6 @@ const formatGenerateInputs = (input: GenerateConceptPromptInput): string => {
   if (input.context) lines.push(`Context: ${clip(input.context, 800)}`);
 
   if (input.preset.workflowKey === 'music_led') {
-    const traits = [
-      input.songType && input.songType !== 'unknown' ? input.songType : null,
-      input.isNarrative ? 'narrative (has dramatic arc)' : null,
-      input.isMeditative ? 'meditative (contemplative, inward)' : null,
-    ].filter(Boolean);
-    if (traits.length) lines.push(`Audio classification: ${traits.join(', ')}`);
     const structure = formatMusicalStructure(input.musicalStructure);
     if (structure) lines.push(`\nMusical structure:\n${structure}`);
     if (input.sourceText) lines.push(`\nLyrics:\n${clip(input.sourceText, 4000)}`);

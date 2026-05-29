@@ -209,13 +209,7 @@ const buildAudioAnalysis = (project: Project): string => {
 Updated: ${projectUpdatedAt(project)}
 Project: ${project.title}
 
-## Classification
-
-- Song type: ${project.songType || 'unknown'}
-- Narrative: ${project.isNarrative ?? 'unknown'}
-- Meditative: ${project.isMeditative ?? 'unknown'}
-
-## Meaning
+## Meaning / Brief
 
 ${md(project.meaning)}
 

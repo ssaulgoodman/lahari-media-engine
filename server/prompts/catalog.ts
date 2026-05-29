@@ -103,22 +103,16 @@ Return ONLY the transcription.`,
   {
     id: 'detect-structure',
     path: 'intake',
-    name: 'Detect musical structure + classify song',
+    name: 'Detect musical structure',
     stage: 'audio',
     model: 'audio.analysis',
     modelLabel: 'Audio analysis model',
     triggeredBy: 'Explicit audio structure action, web "Analyze structure" button, or legacy queue fallback.',
-    summary: 'Identifies musical sections + classifies the song type from audio. Returns sections array, songType enum (stotra/chant/bhajan/kirtan/song/unknown), isNarrative boolean, isMeditative boolean. Classification flows to concept generation.',
+    summary: 'Identifies musical sections from audio. Returns section labels, timestamps, energy, and short descriptions. It does not classify song type or infer narrative/meditative traits.',
     variables: [],
-    template: `Analyze this audio and return a JSON object with four fields:
+    template: `Analyze this audio and return a JSON object with one field:
 
-1. "sections" — array of musical sections (max 10). Each: label, startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.
-
-2. "songType" — one of: stotra, chant, bhajan, kirtan, song, unknown.
-
-3. "isNarrative" — true if the song tells a story or has a dramatic arc.
-
-4. "isMeditative" — true if the song is contemplative, steady, inward-focused.`,
+1. "sections" — array of musical sections (max 10). Each: label, startTime (M:SS), endTime (M:SS), energy (Low/Medium/High), 5-word description.`,
     source: { file: 'server/services/gemini.ts', lines: 'detectStructure' },
   },
   {
@@ -180,9 +174,6 @@ OUTPUT CONTRACT
       { name: 'meaning', description: 'Music meaning/intent OR director brief/logline' },
       { name: 'musicalStructure', description: 'Section summary for music_led' },
       { name: 'scriptSummary', description: 'Optional script overview for scripted_narrative' },
-      { name: 'songType', description: 'Audio classification for music_led' },
-      { name: 'isNarrative', description: 'Has dramatic arc?' },
-      { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'context', description: 'Optional project context' },
       { name: 'directorBrief', description: "If set, output is EXACTLY 1 concept that realizes the brief instead of 3 directions" },
       { name: 'userNote', description: 'Optional director nudge for this generation call' },
@@ -223,9 +214,6 @@ USER NOTE
       { name: 'pacing', description: 'Shot duration in seconds (default 15 — matches Seedance storyboard-mode workhorse clip length)' },
       { name: 'minShotDuration', description: 'Video model minimum clip length (e.g. 4s for Veo Standard, 8s for Veo Fast)' },
       { name: 'userNotePolicy', description: 'Hard-constraint policy: all structure satisfies the note unless source timing/tool contract wins' },
-      { name: 'songType', description: 'Audio classification when available' },
-      { name: 'isNarrative', description: 'Has dramatic arc?' },
-      { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNote', description: 'Optional director note' },
     ],
     template: `Plan the production structure for a music-led video.
@@ -297,9 +285,6 @@ Hard rules:
       { name: 'musicalStructure', description: 'Sections with timestamps' },
       { name: 'pacing', description: 'Base shot duration for keyframe mode' },
       { name: 'minShotDuration', description: 'Video model minimum clip length' },
-      { name: 'songType', description: 'Audio classification for music-led projects' },
-      { name: 'isNarrative', description: 'Has dramatic arc?' },
-      { name: 'isMeditative', description: 'Contemplative/inward?' },
       { name: 'userNote', description: 'Optional director note' },
     ],
     template: `This path delegates to server/prompts/planScenes.ts and then asks GPT-5.5 for the same strict JSON schema used by the Claude planner.
@@ -539,9 +524,6 @@ No characters unless tiny neutral figures are needed for scale.`,
       { name: 'cast', description: 'Character descriptions' },
       { name: 'userNotePolicy', description: 'Hard-constraint policy applied to every shot; refuse conflicts with the locked style reference, project data, or tool contract' },
       { name: 'videoModel', description: 'Selected video model; appends Seedance-specific guidance to INPUTS' },
-      { name: 'songType', description: 'Audio classification (music_led only)' },
-      { name: 'isNarrative', description: 'Has dramatic arc? (music_led only)' },
-      { name: 'isMeditative', description: 'Contemplative/inward? — appends pacing guidance' },
       { name: 'concept', description: 'Used only for mood anchor' },
       { name: 'userNote', description: 'Optional director note' },
       { name: 'previousBatchTail', description: 'Tail of previous batch for continuity context' },

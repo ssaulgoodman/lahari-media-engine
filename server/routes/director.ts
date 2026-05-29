@@ -199,7 +199,7 @@ router.get('/version', audited('director.version', async () => ({
 router.get('/projects', audited('director.projects.list', async (req) => {
   const rows = await selectColumns(
     'projects',
-    'id,title,status,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
+    'id,title,status,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
     { user_id: req.userId },
     { orderBy: 'updated_at', ascending: false, limit: Math.min(Number(req.query.limit || 20) || 20, 100) },
   );
@@ -210,9 +210,6 @@ router.get('/projects', audited('director.projects.list', async (req) => {
       id: row.id,
       title: row.title,
       status: row.status,
-      songType: row.song_type || null,
-      isNarrative: row.is_narrative ?? null,
-      isMeditative: row.is_meditative ?? null,
       imageModel: row.image_model,
       storyboardProvider: row.storyboard_provider,
       videoModel: row.video_model,

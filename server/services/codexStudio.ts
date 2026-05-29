@@ -503,9 +503,6 @@ export const previewRewriteShotPrompts = async (project: Project, userNote?: str
       cast: project.cast.map((member) => ({ name: member.name, description: member.description })),
       concept: project.lockedConcept || {},
       userNote,
-      songType: project.songType || undefined,
-      isNarrative: project.isNarrative ?? undefined,
-      isMeditative: project.isMeditative ?? undefined,
       projectOverride,
     }, previousBatchTail);
 
@@ -996,13 +993,7 @@ const buildAudioAnalysisMarkdown = (project: Project): string => {
 Project: ${project.title}
 Updated: ${new Date().toISOString()}
 
-## Classification
-
-- Song type: ${project.songType || 'unknown'}
-- Narrative: ${project.isNarrative ?? 'unknown'}
-- Meditative: ${project.isMeditative ?? 'unknown'}
-
-## Meaning
+## Meaning / Brief
 
 ${md(project.meaning)}
 
@@ -1395,9 +1386,6 @@ export const previewRewriteScript = async (project: Project, userNote?: string) 
     : await planScenes({
       ...context,
       userNote,
-      songType: project.songType || undefined,
-      isNarrative: project.isNarrative ?? undefined,
-      isMeditative: project.isMeditative ?? undefined,
     });
 
   const now = new Date().toISOString();

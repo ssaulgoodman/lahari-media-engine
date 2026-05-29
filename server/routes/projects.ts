@@ -291,9 +291,6 @@ const forkProject = async (
     last_write_shots_prompt: src.last_write_shots_prompt,
     style_generation_prompt: src.style_generation_prompt,
     text_provider: src.text_provider,
-    song_type: src.song_type,
-    is_narrative: src.is_narrative,
-    is_meditative: src.is_meditative,
     user_id: opts?.newUserId ?? src.user_id,
     parent_project_id: sourceId,
     source_queue_id: opts && 'newSourceQueueId' in opts ? opts.newSourceQueueId : src.source_queue_id,
@@ -581,9 +578,6 @@ const _getFullProjectCore = async (projectId: string) => {
     lyrics: project.lyrics,
     meaning: project.meaning,
     musicalStructure: project.musical_structure ? JSON.parse(project.musical_structure) : [],
-    songType: project.song_type || null,
-    isNarrative: project.is_narrative ?? null,
-    isMeditative: project.is_meditative ?? null,
     analysisStep: project.analysis_step || null,
     conceptOptions: project.concept_options ? JSON.parse(project.concept_options) : [],
     lockedConcept: project.locked_concept ? JSON.parse(project.locked_concept) : null,
@@ -1074,9 +1068,6 @@ router.post('/:id/generate-concepts', async (req, res) => {
       context,
       userNote,
       directorBrief,
-      project.song_type || undefined,
-      project.is_narrative ?? undefined,
-      project.is_meditative ?? undefined,
       project.text_provider,
       getProjectRuntimePreset(project, req.body?.presetKey),
       projectOverride,
@@ -1527,18 +1518,12 @@ router.post('/:id/analyze-audio', async (req, res) => {
       runTranscribe ? transcribeLyrics(audioBase64, audioMime) : Promise.resolve(project.lyrics || ''),
       runStructure ? detectStructure(audioBase64, audioMime) : Promise.resolve({
         sections: project.musical_structure ? JSON.parse(project.musical_structure) : [],
-        songType: project.song_type || 'unknown',
-        isNarrative: project.is_narrative ?? false,
-        isMeditative: project.is_meditative ?? false,
       }),
     ]);
 
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
-    const structureData2 = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [], songType: 'unknown', isNarrative: false, isMeditative: false };
+    const structureData2 = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [] };
     const musicalStructure = Array.isArray(structureData2) ? structureData2 : structureData2.sections;
-    const songType2 = Array.isArray(structureData2) ? 'unknown' : (structureData2.songType || 'unknown');
-    const isNarrative2 = Array.isArray(structureData2) ? false : (structureData2.isNarrative ?? false);
-    const isMeditative2 = Array.isArray(structureData2) ? false : (structureData2.isMeditative ?? false);
 
     if (lyricsResult.status === 'rejected') console.warn(`[${projectId}] lyrics transcription failed:`, lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
@@ -1581,9 +1566,6 @@ router.post('/:id/analyze-audio', async (req, res) => {
     if (runTranscribe && lyrics) statusUpdate.lyrics = lyrics;
     if (runStructure) {
       statusUpdate.musical_structure = JSON.stringify(musicalStructure);
-      statusUpdate.song_type = songType2;
-      statusUpdate.is_narrative = isNarrative2;
-      statusUpdate.is_meditative = isMeditative2;
     }
     if (project.status === 'uploaded' || project.status === 'analyzing') {
       statusUpdate.status = 'analyzed';
@@ -1603,9 +1585,6 @@ router.post('/:id/analyze-audio', async (req, res) => {
         transcribed: runTranscribe,
         structure: runStructure ? {
           sections: musicalStructure.length,
-          songType: songType2,
-          isNarrative: isNarrative2,
-          isMeditative: isMeditative2,
         } : null,
       },
     });

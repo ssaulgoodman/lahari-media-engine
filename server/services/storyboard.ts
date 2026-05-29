@@ -249,7 +249,6 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
     title: project.title,
     concept: concept.concept,
     mood: concept.mood,
-    songType: project.song_type || undefined,
     sceneLabel: scene.section_label || `Scene ${scene.sort_order + 1}`,
     sceneStart: scene.start_time || '',
     sceneEnd: scene.end_time || '',

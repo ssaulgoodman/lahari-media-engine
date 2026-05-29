@@ -216,7 +216,7 @@ export const listProjects = async (limitArg?: string) => {
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 20;
   const rows = await selectColumns(
     'projects',
-    'id,title,status,preset_key,song_type,is_narrative,is_meditative,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
+    'id,title,status,preset_key,image_model,storyboard_provider,video_model,text_provider,created_at,updated_at',
     {},
     { orderBy: 'updated_at', ascending: false, limit },
   );
@@ -230,9 +230,6 @@ export const listProjects = async (limitArg?: string) => {
       title: row.title,
       status: row.status,
       preset: row.preset_key || 'music_video_default',
-      songType: row.song_type || null,
-      isNarrative: row.is_narrative ?? null,
-      isMeditative: row.is_meditative ?? null,
       imageModel: row.image_model || IMAGE_MODELS[0].key,
       storyboardProvider: row.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
       videoModel: row.video_model || VIDEO_MODELS[0].key,
@@ -432,7 +429,6 @@ export const deriveCheckpointState = (project: Project) => {
     summary = 'Concept options exist. Choose, refine, or regenerate before script planning.';
   }
 
-  const classificationIssue = project.songType ? null : 'Song classification is missing; re-run audio analysis if this project still needs classification-sensitive decisions.';
   const openIssues = [
     counts.stalePrompts ? `${counts.stalePrompts} stale prompt${counts.stalePrompts === 1 ? '' : 's'} need review.` : null,
     counts.errors ? `${counts.errors} error state${counts.errors === 1 ? ' needs' : 's need'} triage.` : null,
@@ -445,7 +441,6 @@ export const deriveCheckpointState = (project: Project) => {
     storyboardWorkflow && counts.storyboards > counts.lockedStoryboards ? `${counts.storyboards - counts.lockedStoryboards} storyboard board${counts.storyboards - counts.lockedStoryboards === 1 ? '' : 's'} need review/lock before video.` : null,
     counts.shots && counts.videos < counts.shots ? `${counts.shots - counts.videos} video${counts.shots - counts.videos === 1 ? '' : 's'} missing.` : null,
     counts.shots && counts.lockedShots < counts.shots ? `${counts.shots - counts.lockedShots} shot${counts.shots - counts.lockedShots === 1 ? '' : 's'} not locked.` : null,
-    classificationIssue,
   ].filter(Boolean) as string[];
 
   return {

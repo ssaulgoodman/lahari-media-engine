@@ -22,9 +22,6 @@ type WriteShotPromptsPromptInput = {
   cast: { name: string; description: string }[];
   concept: any;
   userNote?: string;
-  songType?: string;
-  isNarrative?: boolean;
-  isMeditative?: boolean;
   videoModel?: string;
   previousBatchTail?: PreviousBatchTailItem[];
   projectOverride?: string | null;
@@ -71,28 +68,6 @@ const formatPreviousBatchTail = (tail?: PreviousBatchTailItem[]): string => {
   return `PREVIOUS SHOTS (read-only context for continuity — do NOT rewrite these):\n${items}`;
 };
 
-const formatSongTypeSignal = (input: WriteShotPromptsPromptInput): string => {
-  // Audio-analysis signal; only meaningful for music_led. Scripted_narrative
-  // projects don't get an audio classification, so emitting "SONG TYPE: ..."
-  // would be music-led chrome leaking into the wrong workflow.
-  if (input.preset.workflowKey !== 'music_led') return '';
-  const typeLabel = input.songType && input.songType !== 'unknown' ? input.songType : null;
-  const traits = [
-    input.isNarrative ? 'narrative' : null,
-    input.isMeditative ? 'meditative' : null,
-  ].filter(Boolean);
-  if (!typeLabel && !traits.length) return '';
-  return `SONG TYPE: ${[typeLabel, ...traits].filter(Boolean).join(', ')}`;
-};
-
-const meditativeGuidance = (isMeditative?: boolean): string => isMeditative
-  ? `PATIENT / CONTEMPLATIVE PACING:
-- Favor stillness, patience, and negative space. Let the frame breathe.
-- Resist the urge to fill every shot with spectacle. A still face, a tightening hand, or a small environmental change can carry more weight than overt VFX.
-- Show emotional presence through atmosphere and reaction, not abstract explanation.
-- When a supernatural or heightened element appears, keep it grounded in the shot's visible state.`
-  : '';
-
 const modelGuidance = (input: WriteShotPromptsPromptInput): string => {
   const isSeedance = input.videoModel?.startsWith('seedance');
   const isMusicLed = input.preset.workflowKey === 'music_led';
@@ -114,8 +89,6 @@ const modelGuidance = (input: WriteShotPromptsPromptInput): string => {
 const formatInputs = (input: WriteShotPromptsPromptInput): string => {
   const sections: string[] = [];
 
-  const songTypeSignal = formatSongTypeSignal(input);
-  if (songTypeSignal) sections.push(songTypeSignal);
   sections.push(`Mood: ${clip(input.concept?.mood, 160) || 'unspecified'}`);
   if (input.videoModel) sections.push(`Video model: ${input.videoModel}`);
 
@@ -128,9 +101,6 @@ const formatInputs = (input: WriteShotPromptsPromptInput): string => {
 
   const model = modelGuidance(input);
   if (model) sections.push(model);
-
-  const meditative = meditativeGuidance(input.isMeditative);
-  if (meditative) sections.push(meditative);
 
   return sections.join('\n\n');
 };
