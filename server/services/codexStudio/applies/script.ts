@@ -118,7 +118,7 @@ const replaceScriptRows = async (projectId: string, normalized: ReturnType<typeo
 export const applyScript = async (
   project: Project,
   script: unknown,
-  opts: { baseFingerprint?: string; force?: boolean } = {},
+  opts: { baseFingerprint?: string; force?: boolean; allowDownstreamVisualWipe?: boolean } = {},
 ) => {
   const normalized = normalizeScriptForApply(script);
   const counts = scriptCounts(normalized);
@@ -142,9 +142,9 @@ export const applyScript = async (
 
   const drift = validateBaseHash(scriptContentHash(project), opts.baseFingerprint, opts.force);
   if (drift) return drift;
-  if (hasDownstreamVisualWork(project) && !opts.force) {
-    return applyError('downstream_visual_work', 'Project has generated references, boards, videos, or locks. Fork before applying a new script, or pass force: true after explicit approval.', {
-      next: `Fork first, or explicitly approve force: true to wipe downstream work for ${project.id}.`,
+  if (hasDownstreamVisualWork(project) && !opts.allowDownstreamVisualWipe) {
+    return applyError('downstream_visual_work', 'Project has generated references, boards, videos, or locks. Script apply currently replaces topology and would wipe downstream visual rows.', {
+      next: `Use apply_shot_prompts for surgical wording changes. Only pass allowDownstreamVisualWipe: true after the artist explicitly approves deleting generated visual work for ${project.id}.`,
     });
   }
 
@@ -163,9 +163,10 @@ export const applyScript = async (
       newFingerprint,
       counts,
       forced: !!opts.force,
+      allowDownstreamVisualWipe: !!opts.allowDownstreamVisualWipe,
     },
   });
-  appendApplyJournal(project, 'applied script', `Scenes: ${counts.scenes}\nShots: ${counts.shots}\nNew fingerprint: ${newFingerprint}\nForce: ${!!opts.force}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+  appendApplyJournal(project, 'applied script', `Scenes: ${counts.scenes}\nShots: ${counts.shots}\nNew fingerprint: ${newFingerprint}\nForce: ${!!opts.force}\nAllow downstream visual wipe: ${!!opts.allowDownstreamVisualWipe}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   return {
     kind: 'mirage.apply.script',
@@ -173,6 +174,7 @@ export const applyScript = async (
     counts,
     newFingerprint,
     forced: !!opts.force,
+    allowDownstreamVisualWipe: !!opts.allowDownstreamVisualWipe,
     changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
       script: true,
       scriptDraft: true,
@@ -246,7 +248,7 @@ const validateScriptReferences = (script: any) => {
 export const applyScriptMarkdown = async (
   project: Project,
   markdown: string,
-  opts: { baseFingerprint?: string; force?: boolean } = {},
+  opts: { baseFingerprint?: string; force?: boolean; allowDownstreamVisualWipe?: boolean } = {},
 ) => {
   const parsed = parseScriptMarkdownDraft(markdown);
   if (isApplyError(parsed)) return parsed;

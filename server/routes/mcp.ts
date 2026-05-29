@@ -368,6 +368,7 @@ const scriptInputSchema = z.object({
   markdown: scriptMarkdownText.optional(),
   baseFingerprint: idString.optional(),
   force: z.boolean().optional(),
+  allowDownstreamVisualWipe: z.boolean().optional(),
 });
 const shotPromptsInputSchema = z.object({
   projectId,
@@ -684,11 +685,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       if (input.markdown) return studio.applyScriptMarkdown(project, input.markdown, {
         baseFingerprint: input.baseFingerprint,
         force: input.force,
+        allowDownstreamVisualWipe: input.allowDownstreamVisualWipe,
       });
       if (!input.script) throw new Error('apply_script requires either script or markdown.');
       return studio.applyScript(project, input.script, {
         baseFingerprint: input.baseFingerprint,
         force: input.force,
+        allowDownstreamVisualWipe: input.allowDownstreamVisualWipe,
       });
     }
     if (actionKey === 'apply_shot_prompts') {
@@ -1602,8 +1605,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       }),
       baseFingerprint: idString.optional(),
       force: z.boolean().optional(),
+      allowDownstreamVisualWipe: z.boolean().optional().describe('Dangerous: permits script apply to replace topology even when generated references, boards, videos, or locks exist. Use only after explicit artist approval.'),
     },
-  }, async ({ projectId, script, baseFingerprint, force }) => studio.applyScript(await fullProjectForUser(projectId, auth.userId), script, { baseFingerprint, force }));
+  }, async ({ projectId, script, baseFingerprint, force, allowDownstreamVisualWipe }) => studio.applyScript(await fullProjectForUser(projectId, auth.userId), script, { baseFingerprint, force, allowDownstreamVisualWipe }));
 
   registerTool('apply_script_markdown', {
     title: 'Apply script markdown',
@@ -1613,8 +1617,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       markdown: scriptMarkdownText,
       baseFingerprint: idString.optional(),
       force: z.boolean().optional(),
+      allowDownstreamVisualWipe: z.boolean().optional().describe('Dangerous: permits script apply to replace topology even when generated references, boards, videos, or locks exist. Use only after explicit artist approval.'),
     },
-  }, async ({ projectId, markdown, baseFingerprint, force }) => studio.applyScriptMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { baseFingerprint, force }));
+  }, async ({ projectId, markdown, baseFingerprint, force, allowDownstreamVisualWipe }) => studio.applyScriptMarkdown(await fullProjectForUser(projectId, auth.userId), markdown, { baseFingerprint, force, allowDownstreamVisualWipe }));
 
   registerTool('apply_audio_plan', {
     title: 'Apply audio plan',

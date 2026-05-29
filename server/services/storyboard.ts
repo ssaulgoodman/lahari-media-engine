@@ -147,6 +147,31 @@ const estimateStoryboardPlanCost = (): number => {
   return configured > 0 ? configured : 0.02;
 };
 
+const buildStoryboardRefBindingContract = (refMeta: StoryboardRefMeta[]): string => {
+  if (!refMeta.length) return '';
+  const lines = refMeta.map((ref, index) => {
+    const slot = `Image ${index + 1}`;
+    if (ref.excludableKey === 'style') {
+      return `- ${slot}: ${ref.label}. Use for overall medium, palette, lighting, line quality, and finish only; do not copy its subject.`;
+    }
+    if (ref.excludableKey?.startsWith('cast:')) {
+      return `- ${slot}: ${ref.label}. When the storyboard names this character, bind the appearance and outfit to this exact reference.`;
+    }
+    if (ref.excludableKey?.startsWith('env:')) {
+      return `- ${slot}: ${ref.label}. When the storyboard names this location, bind layout, materials, color, and props to this exact reference.`;
+    }
+    if (ref.excludableKey === 'prev_storyboard') {
+      return `- ${slot}: ${ref.label}. Use only for continuity from the previous shot.`;
+    }
+    return `- ${slot}: ${ref.label}. Use only for the role named here.`;
+  });
+  return [
+    'REFERENCE BINDING CONTRACT',
+    ...lines,
+    'Do not swap identities between reference images. Do not invent alternate outfits, faces, rooms, or props when the matching reference image is present.',
+  ].join('\n');
+};
+
 const extractJsonObject = (text: string): any => {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
@@ -594,13 +619,15 @@ Edit instruction:
 ${opts.artistNote.trim()}
 ${artistRefNote}`
     : promptBase;
+  const refBindingContract = buildStoryboardRefBindingContract(refMeta);
+  const renderPrompt = refBindingContract ? `${refBindingContract}\n\n${prompt}` : prompt;
 
   await updateRows('shots', { id: opts.shotId }, { storyboard_status: 'loading' });
   const t0 = Date.now();
   const preferences = await getProjectPreferencesState(ctx.project as any);
 
   try {
-    const rendered = await renderWithProvider(opts.modelOverride?.storyboardProvider || preferences.preferences.storyboardProvider, prompt, ctx.project.aspect_ratio || '16:9', refs);
+    const rendered = await renderWithProvider(opts.modelOverride?.storyboardProvider || preferences.preferences.storyboardProvider, renderPrompt, ctx.project.aspect_ratio || '16:9', refs);
     const assetId = uuidv4();
     const versionId = uuidv4();
     const durationMs = Date.now() - t0;
@@ -610,7 +637,7 @@ ${artistRefNote}`
       shot_id: opts.shotId,
       category: 'shot_storyboard',
       file_path: rendered.storagePath,
-      prompt,
+      prompt: renderPrompt,
       metadata: JSON.stringify({
         storyboardVersionId: versionId,
         provider: rendered.provider,
@@ -631,7 +658,7 @@ ${artistRefNote}`
       openai_image_call_ids: [],
       reasoning_model: null,
       image_model: rendered.model,
-      prompt,
+      prompt: renderPrompt,
       artist_note: opts.artistNote || null,
       refs: refMeta,
       metadata: {
@@ -640,6 +667,8 @@ ${artistRefNote}`
         sceneLabel: ctx.input.sceneLabel,
         cutPlanText,
         storyboardPrompt: promptBase,
+        renderPrompt,
+        refBindingContract,
         provider: rendered.provider,
         rendererModel: rendered.model,
         imageRenderOnly: true,
@@ -662,7 +691,7 @@ ${artistRefNote}`
       projectId: opts.projectId,
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
       model: rendered.model,
-      prompt,
+      prompt: renderPrompt,
       referenceInputs: [
         ...refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
         ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
@@ -690,7 +719,7 @@ ${artistRefNote}`
       projectId: opts.projectId,
       stage: opts.artistNote?.trim() ? 'edit-storyboard-image' : 'render-storyboard-image',
       model: getStoryboardProvider(preferences.preferences.storyboardProvider).runtimeModel,
-      prompt,
+      prompt: renderPrompt,
       referenceInputs: [
         ...refMeta.map((ref) => ({ type: 'image' as const, label: ref.label, url: storageUrl(ref.filePath) })),
         ...(contextTrace.requested ? [{ type: 'text' as const, label: 'Context overrides', preview: contextTracePreview(contextTrace) }] : []),
