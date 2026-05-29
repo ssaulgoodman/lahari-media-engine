@@ -95,7 +95,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 | `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
 | `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
 | `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
-| `identify_style` | style | Reads a style image, returns concise description | vision LLM | ● |
+| `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input) | ● |
 | `apply_style_direction` | style | Saves style description and/or locks a style asset | DB only (auto-runs `identify_style` if locking empty) | — |
 | `generate_candidates` | looks | Renders 3 character/env reference candidates per entity | image model | ● |
 | `list_candidates` | looks | Lists previously-generated candidates | DB read | — |
@@ -202,7 +202,7 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 Reads a style image and returns a concise style description.
 
 - Triggered by: `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
-- Model: `project.text_provider.refine` (vision input)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: image
 - Contract: *Analyze this image and describe its "Art Style" in detail. Return a concise prompt fragment (2-3 sentences) covering: lighting, color palette, texture/medium, composition, mood. Be concrete and specific — this will be used as an image generation style reference. Return ONLY the style fragment text. No quotes, no JSON, no markdown.*
 - Output: 2–3 sentence style description, plain text
@@ -432,7 +432,7 @@ Rewrites the next shot's prompts when the previous shot's video lands.
 Scores a generated shot frame 0–10 with actionable suggestions.
 
 - Triggered by: a shot frame generation completing
-- Model: utility vision (Gemini)
+- Model: utility Gemini (with image input)
 - Inputs: image, referenceImages (character refs), compiledPrompt, styleDNA
 - Contract: scores style adherence (40%), prompt fidelity (30%), character consistency (20%), technical quality (10%). Returns score, reasoning, suggestions.
 - Output: `{ score, reasoning, isConsistent, suggestions }`
@@ -442,7 +442,7 @@ Scores a generated shot frame 0–10 with actionable suggestions.
 Short factual description of a video frame for continuity stitching.
 
 - Triggered by: continuity description requests (typically before chained-shot-refresh in the legacy path)
-- Model: utility vision (Gemini)
+- Model: utility Gemini (with image input)
 - Inputs: image
 - Contract: *Describe this single video frame factually for shot continuity. 2-3 sentences max. Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion. Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.*
 - Output: 2–3 sentence factual description, plain text

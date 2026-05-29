@@ -100,7 +100,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 | `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
 | `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
 | `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
-| `identify_style` | style | Reads a style image, returns concise description | vision LLM | ● |
+| `identify_style` | style | Reads a style image, returns concise description | project.text_provider.refine (with image input) | ● |
 | `apply_style_direction` | style | Saves style description and/or locks a style asset | DB only (auto-runs `identify_style` if locking empty) | — |
 | `generate_candidates` | looks | Renders 3 character/env reference candidates per entity | image model | ● |
 | `list_candidates` | looks | Lists previously-generated candidates | DB read | — |
@@ -160,11 +160,12 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 #### identify_style
 
 **Notes:**
-- Redundant for agent path. Codex sees images natively and can write a 2-3 sentence style description directly into `apply_style_direction({ style: { styleDescription, sourceAssetId } })`. Paying for a separate vision LLM call when Codex IS a vision LLM is waste. The Layer 3 prompt `analyze-image-style` has the same redundancy.
+- Redundant for agent path. Codex sees images natively and can write a 2-3 sentence style description directly into `apply_style_direction({ style: { styleDescription, sourceAssetId } })`. Paying for a separate `project.text_provider.refine` call with image input when Codex can inspect the image is waste. The Layer 3 prompt `analyze-image-style` has the same redundancy.
 - Honest agent flow: when locking a style asset, Codex writes the description in the same turn as the apply. The C4 auto-identify fallback (auto-fires `analyze-image-style` inside `apply_style_direction` when text is empty) was built for cases where the apply caller doesn't bother to describe — but in agent path Codex always should.
 - Tracked as backlog item 8 (hide from agent-facing `config/actions/style.json` + keep C4 server-side fallback for legacy callers). When that lands, `analyze-image-style` also retags `[web-direct]` and stops being agent-callable.
 
-**Pass log:** none
+**Pass log:**
+- 2026-05-29 (this commit): backlog #11 terminology cleanup — replaced fake separate-vision-model label with `project.text_provider.refine (with image input)`.
 
 #### apply_style_direction
 
@@ -382,7 +383,7 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 Reads a style image and returns a concise style description.
 
 - Triggered by: `identify_style`; also auto-fires from `apply_style_direction` when locking an asset with empty text
-- Model: `project.text_provider.refine` (vision input)
+- Model: `project.text_provider.refine` (with image input)
 - Inputs: image
 - Contract: *Analyze this image and describe its "Art Style" in detail. Return a concise prompt fragment (2-3 sentences) covering: lighting, color palette, texture/medium, composition, mood. Be concrete and specific — this will be used as an image generation style reference. Return ONLY the style fragment text. No quotes, no JSON, no markdown.*
 - Output: 2–3 sentence style description, plain text
@@ -612,7 +613,7 @@ Rewrites the next shot's prompts when the previous shot's video lands.
 Scores a generated shot frame 0–10 with actionable suggestions.
 
 - Triggered by: a shot frame generation completing
-- Model: utility vision (Gemini)
+- Model: utility Gemini (with image input)
 - Inputs: image, referenceImages (character refs), compiledPrompt, styleDNA
 - Contract: scores style adherence (40%), prompt fidelity (30%), character consistency (20%), technical quality (10%). Returns score, reasoning, suggestions.
 - Output: `{ score, reasoning, isConsistent, suggestions }`
@@ -622,7 +623,7 @@ Scores a generated shot frame 0–10 with actionable suggestions.
 Short factual description of a video frame for continuity stitching.
 
 - Triggered by: continuity description requests (typically before chained-shot-refresh in the legacy path)
-- Model: utility vision (Gemini)
+- Model: utility Gemini (with image input)
 - Inputs: image
 - Contract: *Describe this single video frame factually for shot continuity. 2-3 sentences max. Focus on: subject position/pose/expression, camera framing + angle, lighting mood, what action is mid-motion. Do NOT speculate about narrative or use flowery language. Write like a script supervisor noting continuity.*
 - Output: 2–3 sentence factual description, plain text
@@ -792,22 +793,6 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 **Slice:** one cleanup pass touching `services/gemini.ts` (remove 2 functions, reroute 1), `server/routes/generate-shots.ts` (remove critique auto-fire), `server/routes/chat.ts` or equivalent (remove chat route), `components/ChatPanel.tsx` and related (frontend cleanup), `server/prompts/catalog.ts` (drop 2 entries, relabel describe-frame model).
 
 **Why deferred:** small but cross-file. Audit doc gets cleaner numbers after (29 Layer 3 prompts instead of 31).
-
-### 11. Replace "vision LLM" terminology across the project
-
-**Problem:** "Vision LLM" appears in docs, catalog model labels, and possibly code comments as if it's a separate model class. It isn't. All our text providers (Claude, GPT-5.5, Gemini) are multimodal. When a refine prompt sends an image, it's the same text provider in refine mode with `inputImages` attached.
-
-**Correct labels:**
-- "project.text_provider.refine (with image input)" — for LLM refines that send images (refine-shot-prompt, refine-end-frame-prompt, refine-look-prompt, refine-video-prompt, analyze-image-style, chained-shot-refresh, describe-frame after rerouting)
-- "utility (Gemini, hardcoded)" — for audio-analysis hardcoded calls (transcribe-lyrics, detect-structure, summarize-meaning)
-
-**Sweep targets:**
-- `docs/mirage-tool-reference.md` + `docs/mirage-tool-and-prompt-audit.md` — every "vision LLM" → accurate label
-- `server/prompts/catalog.ts` — model strings: `utility.vision` → `utility (Gemini)` for audio prompts; refines that wrongly say "utility.vision" should say `project.text_provider.refine`
-- `components/PromptsLibrary.tsx` — `ROUTING_FILTERS` includes `model === 'utility.vision'` — update
-- Search `server/services/claude.ts`, `services/gemini.ts` comments for "vision LLM" / "vision model" misuse
-
-**Why deferred:** doc + label cleanup, no behavior change. Cosmetic but matters for accuracy.
 
 ### 12. Decouple intake-analysis from upload (general-machine cleanup)
 
