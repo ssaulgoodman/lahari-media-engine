@@ -711,6 +711,14 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Don't forget to do this.** Easy to defer indefinitely; that's how legacy chrome accumulates.
 
+### 14. Durable issue capture
+
+**Problem:** `mirage_capture_issue` currently writes JSON files to the server-local `.mirage/issues/` directory. That works for local engine debugging, but deployed Railway storage is ephemeral; reports can disappear on restart/redeploy and there is no web-visible issue inbox.
+
+**Slice:** add a prefix-mapped `*_issues` table and route `mirage_capture_issue` / `/api/director/issues/capture` into it. Store `project_id`, `user_id`, `severity`, `summary`, `suggested_fix`, redacted recent tool tail, status, timestamps, and source (`mcp`, `director-api`, `web`). Keep the local JSON file only as a dev fallback if DB insert fails outside production.
+
+**Why deferred:** not a smoke blocker, but important before widening beta. Agents telling artists "I logged it" should mean the issue is durable and inspectable after deploys.
+
 ---
 
 ## Appendix
