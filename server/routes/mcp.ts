@@ -21,7 +21,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Lahari as an assistant direct
 
 Supabase is canonical project truth. Use MCP tools for reads, applies, generation, locks, and issue capture. Do not invent direct database writes.
 
-Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. Use query_artist_memory and search_artist_assets when they ask about prior work, styles used before, reusable visual references, older storyboards, or taste patterns across their owned projects. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
+Artist flow: when the artist names a song/project, call resolve_project first. Use list_queue or search_catalog when they ask what is available or what is in progress. Use query_artist_memory and search_artist_assets when they ask about prior work, styles used before, reusable visual references, older storyboards, or taste patterns across their owned projects. After resolving a project, attach_director_session, then prefer mint_cli_token plus the returned shell-specific sync command to materialize or refresh the notebook without moving file bodies through chat. Use commands.posix on macOS/Linux; use commands.powershell on Windows, which intentionally wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. If shell/npx/npm is unavailable or blocked, use get_project_notebook_manifest then read_project_notebook_file path-by-path and write each returned file. If even that is unavailable, fall back to write_project_notebook for small notebooks. Treat mirrors/ files as read-only desk copies. Edit drafts/script.md for surgical script changes, then persist with apply_script_markdown. Do not use apply_script/apply_script_markdown just to remove an extra insert; use delete_extra_shot. Write storyboard prompts scene-by-scene in drafts/storyboards/*.md, then persist with apply_storyboard_scene_markdown. Edit config/ files only when preparing project-level overrides, then persist with apply_project_preferences or apply_project_prompt_override. Append concise decisions to journal.md. After first notebook write, restart or open a fresh harness session in that folder so native skills are discovered.
 
 Text generation is harness-native: write concepts, style directions, scripts, shot prompts, storyboard prompts, and video prompts yourself, then persist with apply-only tools. When the artist asks for extra inserts/B-roll, write a context-aware beat from the current concept/script/style, then use add_extra_shot; do not rewrite existing scenes just to make an insert. Media generation stays tool-based and paid; ask before generation. Use generate_style_reference, generate_character_look, and generate_environment_look for approved visual reference generation; lock the chosen assets only after visual approval. Use per-call modelOverride for experiments instead of changing project defaults.
 
@@ -73,6 +73,12 @@ const extraShotInputSchema = {
   continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
   workflowMode: workflowModeSchema.optional(),
   placementNote: mediumText.optional().describe('Optional note about where this insert is intended to be placed in the final edit.'),
+};
+const deleteExtraShotInputSchema = {
+  projectId,
+  shotId,
+  force: z.boolean().optional().describe('Required only when the extra shot already has generated assets. Asset rows are preserved; only the shot is removed from the project.'),
+  reason: mediumText.optional(),
 };
 
 const MCP_LIMITS = {
@@ -203,7 +209,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (name === 'add_director_note' || name === 'lahari_capture_issue') {
       return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
     }
-    if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+    if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('delete_') || name.startsWith('rollback_') || name.startsWith('revert_')) {
       return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
     }
     if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
@@ -685,6 +691,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     description: 'Mutating. Appends one out-of-band insert/B-roll shot to the project without rewriting the script or touching existing shots. Use when the artist wants an extra contextual shot for the media library/timeline.',
     inputSchema: extraShotInputSchema,
   }, async (input) => studio.addExtraShot(await fullProjectForUser(input.projectId, auth.userId), input));
+
+  registerTool('delete_extra_shot', {
+    title: 'Delete extra shot',
+    description: 'Mutating and destructive. Removes exactly one out-of-band Extra Shots row. Refuses canonical shots and refuses generated-asset shots unless force:true. Never use apply_script just to delete an extra shot.',
+    inputSchema: deleteExtraShotInputSchema,
+  }, async (input) => studio.deleteExtraShot(await fullProjectForUser(input.projectId, auth.userId), input));
 
   registerTool('apply_storyboard_prompt', {
     title: 'Apply storyboard prompt',

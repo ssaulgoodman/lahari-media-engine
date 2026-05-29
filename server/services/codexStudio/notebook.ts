@@ -57,7 +57,7 @@ Files under mirrors/ are read-only desk copies written from Lahari state. Do not
 
 Files under drafts/ are editable working copies. For script changes, edit drafts/script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with apply_script_markdown. For storyboard prompt work, edit drafts/storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with apply_storyboard_scene_markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
-For extra inserts/B-roll, do not rewrite existing scenes just to make room. Read mirrors and drafts, propose a short contextual beat using existing cast/environment IDs by default, then call add_extra_shot. It appends under Extra Shots for the normal storyboard/video workflow; resulting videos belong in the Render media library for manual timeline placement.
+For extra inserts/B-roll, do not rewrite existing scenes just to make room. Read mirrors and drafts, propose a short contextual beat using existing cast/environment IDs by default, then call add_extra_shot. It appends under Extra Shots for the normal storyboard/video workflow; resulting videos belong in the Render media library for manual timeline placement. To remove an unwanted insert, call delete_extra_shot; never use apply_script/apply_script_markdown just to delete an extra shot.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 

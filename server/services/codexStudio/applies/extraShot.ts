@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, updateRows } from '../../../database.js';
+import { deleteRows, insertRow, selectAll, updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import { buildNotebookMirrorArtifacts } from '../notebook.js';
 import { webStudioUrl, type Project } from '../core.js';
@@ -16,6 +16,12 @@ export type AddExtraShotInput = {
   continuityFrom?: 'cut' | 'prev_shot';
   workflowMode?: 'auto' | 'storyboard' | 'keyframe';
   placementNote?: string;
+};
+
+export type DeleteExtraShotInput = {
+  shotId: string;
+  force?: boolean;
+  reason?: string;
 };
 
 const lastSceneEndTime = (project: Project): string => {
@@ -195,5 +201,110 @@ export const addExtraShot = async (project: Project, input: AddExtraShotInput) =
     },
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId }),
     note: 'Added an out-of-band extra shot. Generate storyboard/video through the normal shot workflow; its video will appear in the Media Library for manual timeline placement.',
+  };
+};
+
+export const deleteExtraShot = async (project: Project, input: DeleteExtraShotInput) => {
+  const shotId = input.shotId?.trim();
+  if (!shotId) {
+    return applyError('validation_failed', 'shotId is required to delete an extra shot.', {
+      field: 'shotId',
+      next: 'Pass the exact extra shot ID, for example extra_ab12cd34.',
+    });
+  }
+
+  const scene = project.scenes.find((candidate) => candidate.shots.some((shot) => shot.id === shotId));
+  const shot = scene?.shots.find((candidate) => candidate.id === shotId);
+  if (!scene || !shot) {
+    return applyError('shot_not_found', `Shot not found in this project: ${shotId}.`, {
+      field: 'shotId',
+      next: 'Refresh the notebook/project packet and retry with a current shot ID.',
+    });
+  }
+
+  if (!shot.isExtra) {
+    return applyError('validation_failed', `Refusing to delete non-extra shot: ${shotId}.`, {
+      field: 'shotId',
+      next: 'Use script editing for canonical script topology changes. This tool is only for out-of-band Extra Shots.',
+    });
+  }
+
+  const assets = await selectAll('assets', { project_id: project.id, shot_id: shotId });
+  const hasPointers = Boolean((shot as any).storyboardUrl || (shot as any).videoUrl || (shot as any).imageUrl || (shot as any).endImageUrl);
+  const hasAssets = assets.length > 0;
+  if ((hasPointers || hasAssets) && !input.force) {
+    const categories = Array.from(new Set(assets.map((asset) => asset.category))).sort();
+    return applyError('downstream_visual_work', `Extra shot ${shotId} has generated assets; refusing to delete without force.`, {
+      field: 'force',
+      next: `If the artist explicitly wants to remove the shot from the project, retry with force:true. Paid asset rows will remain in the asset library; only the shot pointer is removed. Asset rows: ${assets.length}${categories.length ? ` (${categories.join(', ')})` : ''}.`,
+    });
+  }
+
+  await deleteRows('shots', { id: shotId });
+
+  const remainingExtraShots = scene.shots.filter((candidate) => candidate.id !== shotId);
+  const sceneDeleted = scene.sectionLabel === EXTRA_SCENE_LABEL && remainingExtraShots.length === 0;
+  if (sceneDeleted) {
+    await deleteRows('scenes', { id: scene.id });
+  }
+
+  await updateRows('projects', { id: project.id }, { updated_at: new Date().toISOString() });
+
+  const nextScenes = sceneDeleted
+    ? project.scenes.filter((candidate) => candidate.id !== scene.id)
+    : project.scenes.map((candidate) => (
+      candidate.id === scene.id
+        ? { ...candidate, shots: candidate.shots.filter((existingShot) => existingShot.id !== shotId) }
+        : candidate
+    ));
+  const notebookProject = {
+    ...project,
+    updatedAt: new Date().toISOString(),
+    scenes: nextScenes,
+  };
+
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'extra_shot_deleted',
+    entityType: 'shot',
+    entityId: shotId,
+    summary: `Codex deleted extra shot ${shotId}.`,
+    payload: {
+      shotId,
+      sceneId: scene.id,
+      force: !!input.force,
+      reason: input.reason?.trim() || null,
+      preservedAssetCount: assets.length,
+      preservedAssetCategories: Array.from(new Set(assets.map((asset) => asset.category))).sort(),
+    },
+  });
+  appendApplyJournal(project, 'deleted extra shot', `Shot ID: ${shotId}\nReason: ${input.reason?.trim() || 'not specified'}\nPreserved asset rows: ${assets.length}`);
+
+  return {
+    kind: 'lahari.apply.extra_shot_delete',
+    projectId: project.id,
+    deletedShotId: shotId,
+    scene: {
+      id: scene.id,
+      label: scene.sectionLabel,
+      deleted: sceneDeleted,
+    },
+    preservedAssets: assets.map((asset) => ({
+      id: asset.id,
+      category: asset.category,
+      filePath: asset.file_path,
+    })),
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject as Project, {
+      script: true,
+      scriptDraft: true,
+      storyboardSceneIds: [scene.id],
+    }),
+    notebookRefresh: {
+      recommended: true,
+      reason: 'Deleting an extra shot changes notebook topology. Refresh/sync before editing storyboard drafts.',
+    },
+    webUrl: webStudioUrl(project.id, { step: 'studio' }),
+    note: 'Deleted only the extra shot row. Existing paid/generated asset rows were preserved.',
   };
 };

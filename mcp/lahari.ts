@@ -52,7 +52,7 @@ const toolAnnotations = (name: string): ToolAnnotations => {
   if (name === 'add_director_note' || name === 'lahari_capture_issue') {
     return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
   }
-  if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('rollback_') || name.startsWith('revert_')) {
+  if (name === 'apply_script' || name === 'apply_script_markdown' || name.startsWith('delete_') || name.startsWith('rollback_') || name.startsWith('revert_')) {
     return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
   }
   if (name.startsWith('apply_') || name.startsWith('generate_') || name.startsWith('bulk_generate_') || name.startsWith('refine_') || name.startsWith('lock_') || name.startsWith('unlock_')) {
@@ -737,6 +737,25 @@ registerAuditedTool('add_extra_shot', {
   const studio = await loadStudio();
   const project = await studio.getFullProject(input.projectId);
   return textResult(await studio.addExtraShot(project, input));
+});
+
+registerAuditedTool('delete_extra_shot', {
+  title: 'Delete extra shot',
+  description: 'Mutating and destructive. Removes exactly one out-of-band Extra Shots row. Refuses canonical shots and refuses generated-asset shots unless force:true.',
+  inputSchema: {
+    projectId: z.string().min(1).describe('Lahari project ID.'),
+    shotId: z.string().min(1).describe('Extra shot ID to remove. Must belong to the Extra Shots section.'),
+    force: z.boolean().optional().describe('Required only when generated assets exist. Paid asset rows are preserved.'),
+    reason: z.string().optional(),
+  },
+}, async (input) => {
+  const env = await prepareCodexWriteEnv();
+  if (env.warning) console.error(`[lahari:mcp] ${env.warning}`);
+  if (env.keyMode === 'missing') throw new Error('A valid SUPABASE_SERVICE_KEY is required for delete_extra_shot.');
+
+  const studio = await loadStudio();
+  const project = await studio.getFullProject(input.projectId);
+  return textResult(await studio.deleteExtraShot(project, input));
 });
 
 registerAuditedTool('apply_storyboard_prompt', {
