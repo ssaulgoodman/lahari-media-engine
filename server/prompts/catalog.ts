@@ -1018,7 +1018,7 @@ Return ONLY the style fragment text. No quotes, no JSON, no markdown.`,
 ];
 
 export const STAGE_META: Record<PromptStage, { label: string; description: string; order: number }> = {
-  audio:      { label: 'Audio',      description: 'Lyrics, structure, and meaning — fires once at project creation.', order: 1 },
+  audio:      { label: 'Audio',      description: 'Lyrics and structure — explicit actions after audio upload.', order: 1 },
   blueprint:  { label: 'Blueprint',  description: 'Concept, script, and style direction — the creative decisions.',   order: 2 },
   looks:      { label: 'Looks',      description: 'Character and environment reference images — 3 parallel each.',    order: 3 },
   studio:     { label: 'Studio',     description: 'Per-shot work: prompt writing, frames, refine, and video.',        order: 4 },

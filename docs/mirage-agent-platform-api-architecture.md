@@ -144,7 +144,7 @@ state/*.json or state/*.md
 journal.md
 ```
 
-Future cleanup: collapse editable `mirrors/` + `drafts/` pairs into one obvious editable artifact per surface, while keeping read-only state summaries for non-editable graph state.
+Current cleanup landed: editable workbench surfaces are single root artifacts (`script.md`, `audio-plan.md`, `storyboards/*.md`), while read-only project projections live under `state/`.
 
 ### 5. Web Studio
 
