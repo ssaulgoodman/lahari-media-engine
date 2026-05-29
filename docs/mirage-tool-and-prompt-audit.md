@@ -719,6 +719,43 @@ Pinned items that surfaced during audit but aren't blocking. Take after smoke te
 
 **Why deferred:** not a smoke blocker, but important before widening beta. Agents telling artists "I logged it" should mean the issue is durable and inspectable after deploys.
 
+### 15. Smoke feedback queue from first Blueprint agent run
+
+Ranked findings from the first real agent-native Blueprint smoke. These are product-surface improvements, not prompt-audit theory.
+
+**P0 before deeper smoke: preserve locked references across `apply_script`.**
+First guard landed: `force` no longer authorizes a downstream visual wipe by itself. Remaining product behavior: script edits should preserve visual groundwork when cast/environment IDs survive. Preflight should report whether IDs are preserved, replaced, or dropped. Apply should clear refs only for removed/replaced entities, not unchanged IDs.
+
+**P1 soon: project-visible title sync.**
+The shell title and concept title can diverge (`Neon Afterimage` vs `Beautiful Killers`) with no obvious agent action to rename the visible project. Add `rename_project`, or let `apply_concept` optionally sync the shell title.
+
+**P1 soon: compact agent working set.**
+Add `get_project_state({ detail: "agent_working_set" })` for the common loop: checkpoint, entities with IDs/locked refs, shots with cast/env IDs, stale flags, weak links, and next legal actions. Current production state is useful but still larger than needed for many turns.
+
+**P1 soon: clean batch receipts.**
+`parallel_run` correctly applies state, but receipts from many actions mutating the same files can look like partial truth. Batch receipts should summarize outcomes (`7 refs locked`, mapping, stale counts, errors) and tell the agent to refresh state for canonical artifacts instead of returning every changed artifact snapshot.
+
+**P1 soon: stronger action examples.**
+Action schemas need exact happy-path examples for each common mode. `generate_candidates` must make `entityIds[]` impossible to miss, with separate cast/env examples including `guideAssetId` and `promptOverride`.
+
+**P0 before more agent smoke: reliable local workbench sync.**
+The first smoke test exposed the sync seam: the intended `mint_cli_token -> mirage-cli sync` path failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads. That fallback is useful for diagnostics, but it bloats context and does not refresh the local workbench. Keep the local workbench as the primary editing surface; harden sync so it is isolated from global npm state, reports `fresh/stale/unknown`, supports changed-artifact refresh, and gives the agent one confident command/path after mutations. Apply/action receipts should return changed paths + hashes; the bridge should pull only those. Sync locks need owner metadata + TTL/expiry so stale lock files cannot trap the agent.
+
+**P0 before Studio smoke continues: local/native storyboard import.**
+Codex can create or edit a stronger storyboard image with native imagegen, but Mirage has no way to upload that PNG as a storyboard version and lock it. Add `purpose=storyboard_image` to `/api/agent/uploads`, then an `import_storyboard_image({ shotId, sourceAssetId, lock? })` action that creates the storyboard asset/version, updates the shot, and optionally locks it.
+
+**P0 before Studio smoke continues: versioned notebook skills.**
+Bad local skill guidance directly caused bad storyboard prompting during smoke. Treat materialized skills as first-class synced artifacts with versions/hashes. When server guidance changes, the workbench should know it is stale and refresh skills through the same changed-artifact path as project files.
+
+**P2 after Studio smoke: reference remap/relock workflow.**
+Real creative work often means "these assets are good but labels are wrong; remap refs, regenerate one, rewrite script to match." Capture this as a first-class recipe/action plan so agents can do it deliberately instead of improvising many small calls.
+
+**P2 after Studio smoke: shorten skill entry blocks.**
+Project skills are useful but long. Each should open with a tiny "do this now" block (5 lines max), with doctrine below.
+
+**P3 later: selective worker agents.**
+Useful workers: visual triage, continuity check, scene-level prompt drafting, issue/audit summarizer. Do not spawn workers for every action; use them for candidate review and multi-shot rewrite loops where parallel judgment pays for itself.
+
 ---
 
 ## Appendix

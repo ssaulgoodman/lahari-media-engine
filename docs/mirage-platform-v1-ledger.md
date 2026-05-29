@@ -929,6 +929,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-05-28 Codex: Captured post-audit enterprise architecture target in `docs/mirage-agent-platform-api-architecture.md`. Direction: Mirage should become a production-graph HTTP API + OpenAPI first, with MCP demoted to a tiny agent cockpit, plugin as install/onboarding packaging, notebooks as local working sets, and Web Studio as visual/operator truth. This is explicitly queued after the action/prompt audit, not a replacement for the current cleanup.
 
+2026-05-30 Codex: First agent-native smoke surfaced the local-workbench seam. The direction is now explicit in `docs/mirage-agent-platform-api-architecture.md`: Supabase is canonical, local workbench is the primary agent editing surface, MCP is the control plane, and HTTP/local bridge is the data plane for sync/uploads/imports. The near-term smoke stabilization queue in `docs/mirage-tool-and-prompt-audit.md` now includes reliable sync isolated from global npm state, receipt-driven changed-file refresh, lock TTL/owner metadata, versioned notebook skills, and local/native storyboard image import before more deep Studio smoke.
+
 ---
 
 ## 10. References

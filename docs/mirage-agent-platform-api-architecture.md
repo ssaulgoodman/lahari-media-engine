@@ -191,6 +191,29 @@ journal.md
 
 Current cleanup landed: editable workbench surfaces are single root artifacts (`script.md`, `audio-plan.md`, `storyboards/*.md`), while read-only project projections live under `state/`.
 
+Product law after the first smoke test:
+
+- Supabase remains canonical truth.
+- The local workbench remains the primary agent editing surface.
+- MCP is the control plane: state summaries, action/job calls, issue capture, sync/upload instructions.
+- HTTP is the data plane: file sync, asset upload, native image import, notebook materialization.
+- Large file bodies should not move through MCP in the happy path. Manifest/file-read tools are fallback diagnostics, not the normal sync loop.
+
+The current `mint_cli_token -> npx @ssaulgoodman420/mirage-cli sync` path is a temporary bridge, not the final product shape. The smoke-test failure mode was concrete: `npx` hit a root-owned global npm cache and the agent fell back to MCP file reads, which made the local workbench stale and context-heavy. That is a bridge reliability bug, not a reason to abandon the local workbench.
+
+The near-term bridge must be:
+
+- install-free during a session, or isolated from global npm state
+- able to refresh only changed artifacts
+- explicit about freshness: `fresh`, `stale`, or `unknown`
+- able to upload local/native assets through HTTP and return asset IDs
+- able to import a local/native storyboard image into a shot and optionally lock it
+- receipt-driven: apply/job responses return changed paths + hashes, and the bridge pulls only those files
+- lock-safe: sync locks carry owner metadata, created time, and TTL/expiry so stale lock files do not trap the agent
+- skill-versioned: materialized skills are first-class files with versions/hashes because bad skill guidance directly affects production output
+
+The long-term bridge is a Codex plugin/local helper that owns local file sync and upload. It can use the Core HTTP API and OpenAPI under the hood, but the agent should experience one confident workflow: edit local files, apply graph changes, sync changed artifacts, upload/import native files.
+
 ### 5. Web Studio
 
 Web Studio is the visual operator surface.
@@ -221,7 +244,7 @@ It can ship:
 
 Project-specific state still comes from the notebook. Live mutation still goes through Core API/MCP.
 
-Notebook sync stays CLI-token based for v1. A first-class signed-manifest sync API is useful, but it is Phase 5 work after the Core API is stable.
+Notebook sync stays CLI-token based for v1 only as a compatibility bridge. First-class signed-manifest sync and a local plugin/helper are part of the product direction, because agent-native editing depends on reliable local files.
 
 ## Migration Plan
 
@@ -235,6 +258,22 @@ Completion criteria:
 - worker invariants are separated from project style notes
 - prompt catalog reflects real runtime behavior
 - legacy prompt/template language is scrubbed or clearly marked
+
+### Phase 0.5: Stabilize Agent Smoke Path
+
+Before the broader Core API migration, fix the product seams exposed by the first smoke test:
+
+1. Preserve locked references across script applies when cast/environment IDs survive; destructive downstream visual wipes must require an explicit flag or preflight confirmation.
+2. Add an agent-sized state packet: checkpoint, entity IDs, locked refs, shot mappings, stale flags, weak links, next legal actions, and notebook freshness.
+3. Add a reliable workbench refresh path that does not depend on global npm cache state. The sync command should use an isolated cache or a stable local helper and should support changed-artifact refresh.
+4. Add local/native storyboard import: upload `purpose=storyboard_image`, then `import_storyboard_image({ shotId, sourceAssetId, lock? })`.
+5. Tighten storyboard prompt craft so agents write graph-name blocking/action prompts and let the renderer bind references.
+6. Compress batch receipts so multi-action calls summarize graph mutations and tell agents when to refresh canonical state.
+7. Version notebook skills and refresh them through the same changed-artifact sync contract as project files.
+
+The first guards for items 1 and 5 have landed; keep them in this phase until smoke confirms the behavior is solid rather than merely safer.
+
+This phase is not a detour from the API architecture. It proves the core agent loop before we invest in the full enterprise API shape.
 
 ### Phase 1: Name the Core API
 
