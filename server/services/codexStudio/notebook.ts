@@ -100,18 +100,10 @@ const renderTemplate = (template: string, values: Record<string, string>): strin
 };
 
 const buildWorkspaceInstructions = (project: Project): string => {
-  const preset = getPipelinePreset(project.presetKey);
-  const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
-  const seedKind = project.seedKind || workflow.primarySeed;
   return renderTemplate(readResourceText('notebook/AGENTS.md.template'), {
     PROJECT_TITLE: project.title,
     PROJECT_ID: project.id,
     NOTEBOOK_VERSION,
-    SEED_KIND: seedKind,
-    WORKFLOW_KEY: workflow.key,
-    WORKFLOW_SUMMARY: workflow.summary,
-    PRESET_KEY: preset.key,
-    PRESET_LABEL: preset.label,
   });
 };
 

@@ -4,12 +4,7 @@ Local notebook for Mirage project "{{PROJECT_TITLE}}" ({{PROJECT_ID}}).
 
 Notebook version: {{NOTEBOOK_VERSION}}
 
-Project metadata:
-- Seed kind: {{SEED_KIND}}
-- Workflow label: {{WORKFLOW_KEY}}
-- Preset label: {{PRESET_KEY}}
-
-Supabase/Mirage is canonical truth. This folder is a desk copy for reading, editing, and handoff. The working contract is the project graph: source material, concept, script, cast, environments, locked assets, style notes, stale flags, and action schemas. Seed/workflow/preset are orientation labels and compatibility metadata, not instructions to inject into prompts.
+Supabase/Mirage is canonical truth. This folder is a desk copy for reading, editing, and handoff. The working contract is the project graph: source material, concept, script, cast, environments, locked assets, style notes, stale flags, and action schemas.
 
 Use Mirage MCP for project state, applies, generation, locks, and issue capture. If the MCP tools are missing, stop and reconnect Mirage; do not substitute engine-repo shell commands.
 
