@@ -678,8 +678,8 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
 - ✅ Local/native storyboard import — `purpose=storyboard_image` upload + `import_storyboard_image` action
 - ✅ Versioned notebook skills — skills as hashed synced artifacts, stale-aware (mechanism for single-source skills)
-- ☐ **Skill content audit** (item 17) — the skills were never re-audited after the surface redesign: mirage-director teaches legacy tools + has `"Opening IT SAID OH"` corruption; storyboard-prompt-craft shipped copy fights the ref-binding contract; Lahari/Bhakti examples leaked across most skills. Execute on the clean single-source state once versioning is verified.
-- ☐ **Thorough test** of the full agent-native chain (after skill content is clean — bad skills = bad output regardless of harness)
+- ✅ **Skill content audit** (item 17) — mirage-director rewritten (legacy tools + "Opening IT SAID OH" corruption gone), all skills de-Bhakti'd + de-jargoned, render-triage trigger tightened, `npm run check:skills` lint guards content + pair identity (9449f35)
+- ☐ **Thorough test** of the full agent-native chain (skills now clean — measures the system, not skill rot)
 
 **B · Post-test friction wins (P1, small/high-ROI)**
 - ☐ Stronger action examples (make `entityIds[]` impossible to miss)
@@ -837,7 +837,12 @@ Useful workers: visual triage, continuity check, scene-level prompt drafting, is
 
 **Why deferred:** this is downstream of versioned notebook skills, style notes, and prompt overrides all being stable. Build after smoke proves the loop and after we see one real "episode 1 worked, make episode 2" harvest case. This is the clean home for reusable artist taste; it should not block current Studio stabilization.
 
-### 17. Skill system content audit (2026-05-30) — execute AFTER versioned-skills lands
+### 17. Skill system content audit (2026-05-30) — ✅ DONE (9449f35)
+
+**Pass log:**
+- 2026-05-30 (9449f35): executed on the single-source state. `mirage-director` rewritten (legacy/hidden tools → cockpit+actions, "Opening IT SAID OH" corruption deleted, `mirrors/`→`state/`, shard table completed, `apply_text_edits` added). All skills de-Bhakti'd (Shantamma/sari/lamp/priest/temple/devotional → generic) and de-jargoned (Saul/R28/Doctrine §/dated-fix-notes removed). `script-doctor` wired to `apply_text_edits` + `allowDownstreamVisualWipe`. `render-triage` trigger tightened from over-broad to a hard cost-gate. New `scripts/lint-skill-content.mjs` (`npm run check:skills`) bans the whole class + enforces `.agents` ↔ `server/resources` pair identity, so "consistent but bad" can't recur. `continuity-auditor` had no leaks (left as-is; cost-ladder dedup with render-triage deferred as cosmetic). Validation: check:skills + check:notebook + smoke:agent-contract --repeat=5 + tsc + build + git diff --check all green.
+
+Original findings (kept for history):
 
 The 7 skills (`mirage-director`, `storyboard-prompt-craft`, `render-triage`, `script-doctor`, `style-ref-critic`, `continuity-auditor`, `audio-director`) were written ~May 15–21 for the pre-cockpit surface and **never re-audited after the cockpit+registry+actions redesign or the composer/style-notes/text-edits work.** They're the highest-leverage artifact in the system — they shape every agent decision before any tool fires — and they were the one surface we never reviewed. Do NOT patch the shipped copies until versioned-skills gives a single source of truth (today `.agents/skills/` and `server/resources/skills/` have drifted; fixes land in one and miss the other — that's why the storyboard graph-names fix never reached artists).
 
