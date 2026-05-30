@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const root = process.cwd();
 const notebookPath = path.join(root, 'server/services/codexStudio/notebook.ts');
-const workspaceTemplatePath = path.join(root, 'server/resources/notebook/AGENTS.md.template');
+const workspaceTemplatePath = path.join(root, 'server/resources/notebook/AGENTS.template.md');
 const notebook = fs.readFileSync(notebookPath, 'utf8');
 const match = notebook.match(/const MIRAGE_SKILL_NAMES = \[([\s\S]*?)\] as const;/);
 
@@ -18,7 +18,7 @@ const resourceDir = path.join(root, 'server/resources/skills');
 const failures = [];
 
 if (!fs.existsSync(workspaceTemplatePath)) {
-  failures.push('missing packaged notebook workspace template: server/resources/notebook/AGENTS.md.template');
+  failures.push('missing packaged notebook workspace template: server/resources/notebook/AGENTS.template.md');
 }
 
 for (const skill of expected) {

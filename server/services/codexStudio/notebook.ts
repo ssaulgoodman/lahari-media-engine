@@ -40,7 +40,6 @@ export type NotebookFile = {
 
 const normalizedProjectDir = (project: Pick<Project, 'id'>) => `mirage/projects/${project.id}`;
 const MIRAGE_SKILL_NAMES = [
-  'mirage-director',
   'storyboard-prompt-craft',
   'script-doctor',
   'continuity-auditor',
@@ -99,7 +98,7 @@ const renderTemplate = (template: string, values: Record<string, string>): strin
 };
 
 const buildWorkspaceInstructions = (project: Project): string => {
-  return renderTemplate(readResourceText('notebook/AGENTS.md.template'), {
+  return renderTemplate(readResourceText('notebook/AGENTS.template.md'), {
     PROJECT_TITLE: project.title,
     PROJECT_ID: project.id,
     NOTEBOOK_VERSION,
