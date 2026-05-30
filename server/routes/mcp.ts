@@ -521,10 +521,11 @@ const fullProjectForUser = async (projectId: string, userId: string) => {
   return project;
 };
 
-const remoteSessionState = async (projectId: string, userId: string, opts: { sinceSeq?: number | null; note?: string | null } = {}) => {
+const remoteSessionState = async (projectId: string, userId: string, opts: { sinceSeq?: number | null; note?: string | null; detail?: 'summary' | 'production' | 'full' } = {}) => {
   const project = await fullProjectForUser(projectId, userId);
+  const detail = opts.detail ?? 'production';
   const [packet, actions, status, events] = await Promise.all([
-    studio.buildProjectPacket(project),
+    studio.buildProjectState(project, detail),
     studio.buildProjectActionList(project),
     studio.buildStoryboardStatus(project),
     listDirectorEvents(projectId, { afterSeq: opts.sinceSeq ?? null, limit: 50 }),
@@ -532,11 +533,12 @@ const remoteSessionState = async (projectId: string, userId: string, opts: { sin
   return {
     kind: 'mirage.director.remote_session',
     generatedAt: new Date().toISOString(),
+    detail,
     project: {
       id: project.id,
       title: project.title,
       status: project.status,
-      actionsHash: packet.project?.actionsHash || packet.projectConfig?.actionsHash || null,
+      actionsHash: (packet as any).project?.actionsHash || (packet as any).projectConfig?.actionsHash || null,
       webUrl: studio.webStudioUrl(project.id, { step: 'studio' }),
     },
     note: opts.note || null,
@@ -999,13 +1001,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('open_project', {
     title: 'Open Mirage project',
-    description: 'Read-only cockpit tool. Opens a project session and returns the current packet, actions, recent events, and web studio URL.',
+    description: 'Read-only cockpit tool. Opens a project session and returns the production working set (scene/shot tree, looks, diagnosis), available actions, recent events, and the web studio URL. Pass detail=full for the complete packet (all prompt bodies, base hashes, neighbors, audio, renders) or detail=summary for counts only.',
     inputSchema: {
       projectId,
+      detail: projectStateDetailSchema.optional(),
       sinceSeq: z.number().int().nonnegative().optional(),
       note: mediumText.optional(),
     },
-  }, async ({ projectId, sinceSeq, note }) => remoteSessionState(projectId, auth.userId, { sinceSeq: sinceSeq ?? null, note }));
+  }, async ({ projectId, detail, sinceSeq, note }) => remoteSessionState(projectId, auth.userId, { sinceSeq: sinceSeq ?? null, note, detail }));
 
   registerTool('get_project_state', {
     title: 'Get project state',
