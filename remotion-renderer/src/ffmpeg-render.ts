@@ -59,30 +59,6 @@ const hasNonDefaultEffects = (details: any) => {
   return false;
 };
 
-const hasLayoutOverrides = (details: any) => {
-  if (!details) return false;
-  const layoutKeys = [
-    'top',
-    'left',
-    'right',
-    'bottom',
-    'x',
-    'y',
-    'width',
-    'height',
-    'scale',
-    'scaleX',
-    'scaleY',
-    'rotate',
-    'rotation',
-    'transform',
-    'objectFit',
-    'objectPosition',
-    'crop',
-  ];
-  return layoutKeys.some((key) => details[key] !== undefined && details[key] !== null);
-};
-
 const itemSrc = (item: TimelineItem) => {
   const src = (item as any)?.details?.src;
   return typeof src === 'string' && src.trim().length > 0 ? src : undefined;
@@ -122,9 +98,6 @@ export const canRenderWithFfmpeg = (inputProps: TimelineRenderProps): Eligibilit
       const details = (item as any).details || {};
       if (hasNonDefaultEffects(details)) {
         return { ok: false, reason: 'timeline has visual effects' };
-      }
-      if (hasLayoutOverrides(details)) {
-        return { ok: false, reason: 'timeline has custom visual positioning' };
       }
     }
   }
