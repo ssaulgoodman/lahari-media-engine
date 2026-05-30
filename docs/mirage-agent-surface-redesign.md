@@ -4,6 +4,16 @@ Status: working draft for Codex/Claude/Saul iteration.
 
 This doc exists because Mirage's Visual Studio is working, but the remote Codex agent path feels slower and more ceremonial than the old Lahari director path. The goal is not to shrink agency. The goal is to preserve high agency while removing tool-surface drag, context flooding, and invisible setup ritual.
 
+## Realized as of 2026-05-30
+
+The proposed architecture below is now substantially shipped, plus four concepts that emerged while building it. Canonical homes: `server/resources/notebook/AGENTS.template.md` (the operator base), `docs/agent-working-method.md` (how we build), and the `2026-05-30` entries in `docs/mirage-platform-v1-ledger.md`.
+
+- **Cockpit + contextual registry (shipped).** ~18 active MCP tools (project + action-dispatch + notebook/file + issue); 29 typed actions across 8 surfaces dispatched via `run_action` / `start_job`, with `describe_action` for live schema. Legacy tools gated off.
+- **Lean-by-default reads (shipped, §3).** `open_project` / `get_project_state` return the `production` working set by default; `detail='full'` is an off-path debug escape hatch, not a body-fetch. `list_actions` returns a lean index; `list_jobs` is status-only. Prompt/storyboard bodies come from notebook files, never re-inflated payloads.
+- **Two-tier workspace (new).** A workspace holds many projects. Each materialized file declares `scope`: workspace-shared files (`AGENTS.md`/`CLAUDE.md`, skills, `config/actions/*`, `config/skills.json`) live at the workspace root and are hash-gated; project files live under `mirage/projects/<projectId>/`. The CLI (`@ssaulgoodman420/mirage-cli@0.1.3`) syncs the split and prunes the old per-project copies.
+- **Always-on surfaces as base+overlay (new).** Three always-on surfaces (`AGENTS.md`/`CLAUDE.md`, the MCP `instructions` payload, skills) now have single-owner-per-fact. `AGENTS.md` is the durable, protocol-agnostic base; the MCP payload is a thin starter that hands off; the `mirage-director` skill was dissolved into AGENTS.md. The durable substrate is the file (survives compaction), not the protocol handshake.
+- **Node skills as the maneuverability layer (new).** 8 skills, one per graph node, each teaching the maneuver/repair ladder + model behavior + failure modes — "schemas are the buttons; skills are how to play them." Action-behavior claims are code-verified, not doc-assumed.
+
 ## Starting Principle
 
 Mirage is a dual-control product, but it should not become duplicate-control.
