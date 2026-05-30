@@ -81,51 +81,38 @@ const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
+const readResourceText = (relativePath: string): string => {
+  const candidates = [
+    path.join(process.cwd(), 'server', 'resources', relativePath),
+    path.join(moduleDir, '..', '..', 'resources', relativePath),
+  ];
+  const resourcePath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!resourcePath) {
+    throw new Error(`Mirage notebook resource missing: ${relativePath}`);
+  }
+  return fs.readFileSync(resourcePath, 'utf8');
+};
+
+const renderTemplate = (template: string, values: Record<string, string>): string => {
+  return Object.entries(values).reduce((body, [key, value]) => {
+    return body.split(`{{${key}}}`).join(value);
+  }, template);
+};
+
 const buildWorkspaceInstructions = (project: Project): string => {
   const preset = getPipelinePreset(project.presetKey);
   const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
   const seedKind = project.seedKind || workflow.primarySeed;
-  return `# Mirage Workspace
-
-This folder is the local notebook for Mirage project "${project.title}" (${project.id}).
-
-Notebook version: ${NOTEBOOK_VERSION}
-
-Project mode:
-- Seed kind: ${seedKind}
-- Workflow: ${workflow.key} — ${workflow.summary}
-- Preset: ${preset.key} — ${preset.label}
-
-These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which planner/source spine applies. Preset says taste/model/default prompt rules. Available and blocked tools in the project packet are the source of truth for what can run next. Do not assume songs, lyrics, religious subjects, fixed locations, or audio analysis unless this project's seed/workflow/preset/tool list says so.
-
-Supabase is canonical. This is an artist notebook, not the engine source checkout. Use Mirage MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Mirage instead of substituting shell commands.
-
-If the MCP server returns a newer notebookVersion than the one shown here or in mirage/projects/${project.id}/notebook.json, refresh before continuing. Preferred path: call mint_cli_token, then run the returned command for the active shell in this workspace. Use commands.posix on macOS/Linux. Use commands.powershell on Windows; the returned commands isolate npm's cache in a temp Mirage directory, and Windows wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. The returned command is the reliable path; if it errors, retry it once. Only fall back to get_project_notebook_manifest + read_project_notebook_file when there is no shell/npx capability at all, such as a sandboxed harness, not on a recoverable sync error. Mutating action receipts list changed paths and hashes, not file bodies; run the sync command after important mutations to refresh changed files. Last fallback: call write_project_notebook and write the returned files manually only when the payload is small enough.
-
-Files under state/ are read-only desk copies written from Mirage state. Do not hand-edit state files; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
-
-Editable production artifacts live at the project root. Before visual work exists, edit script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with run_action(apply_script) using markdown. Once references, storyboards, or videos exist, use run_action(apply_text_edits) for wording-only changes to existing scene titles, shot directions, or dialogue lines; reserve apply_script for real topology rebuilds. For audio work, edit audio-plan.md and apply with run_action(apply_audio_plan) using markdown. For storyboard prompt work, edit storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with run_action(apply_storyboard_prompts) using markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
-
-Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
-Use config/style-notes.json for project-learned visual, storyboard, motion, script, dialogue, and audio style notes; persist with apply_project_style_notes.
-Action schemas are materialized under config/actions/. Read config/actions/index.json first, then only the surface file you need (for example config/actions/looks.json). Use MCP list_actions only when these files are missing, stale, or you need live server truth.
-
-For Looks work, prefer list_actions / describe_action / run_action. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
-
-For local image/audio files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. For images, use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. For native storyboard images, upload with purpose=storyboard_image, then run_action(import_storyboard_image) with shotId, sourceAssetId, and optional lock=true. For audio, use purpose=audio_source; upload only attaches the source file, then you decide whether to run analyze_audio_transcribe/analyze_audio_structure. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
-
-Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. config/skills.json lists the server-owned skill hashes and notebook.json carries the aggregate skillsHash. If skill hashes differ from server state or skill behavior seems stale, run the returned sync command and restart/open a fresh harness session so native skill discovery reloads them.
-
-Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
-
-Default ritual:
-1. resolve_project when the artist names a project; use list_queue/search_catalog only for catalog/queue-backed music-video work
-2. attach_director_session once you have a projectId
-3. mint_cli_token, then the returned isolated-cache sync command; retry it once on error. For local reference images use /api/agent/uploads with the Mirage bearer token, then run_action(lock_reference) or run_action(generate_candidates with guideAssetId). For native storyboard images, upload purpose=storyboard_image and run_action(import_storyboard_image). Use get_project_notebook_manifest + read_project_notebook_file only when the harness has no shell/npx capability.
-4. read relevant state files and project mode before proposing changes
-5. apply approved changes through typed MCP tools
-6. refresh affected notebook files
-`;
+  return renderTemplate(readResourceText('notebook/AGENTS.md.template'), {
+    PROJECT_TITLE: project.title,
+    PROJECT_ID: project.id,
+    NOTEBOOK_VERSION,
+    SEED_KIND: seedKind,
+    WORKFLOW_KEY: workflow.key,
+    WORKFLOW_SUMMARY: workflow.summary,
+    PRESET_KEY: preset.key,
+    PRESET_LABEL: preset.label,
+  });
 };
 
 const readSkillBody = (skillName: string): string => {
@@ -544,8 +531,8 @@ const buildNotebookMeta = (
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
   },
   discovery: {
-    openerTool: 'resolve_project',
-    browseTools: ['list_queue', 'search_catalog'],
+    openerTool: 'open_project',
+    browseTools: ['list_projects'],
   },
   diagnosis: actions.diagnosis,
 });
