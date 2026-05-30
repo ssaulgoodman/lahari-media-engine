@@ -675,8 +675,8 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 **A · Finish current round (smoke stabilization P0s) → then thorough test**
 - ✅ Reliable sync (isolated cache + lean receipts + CLI 0.1.2 changed-only/conflict/lock-TTL)
 - ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
-- ☐ Local/native storyboard import — `purpose=storyboard_image` + `import_storyboard_image`
-- ☐ Versioned notebook skills — skills as hashed synced artifacts, stale-aware
+- ✅ Local/native storyboard import — `purpose=storyboard_image` upload + `import_storyboard_image` action
+- ☐ Versioned notebook skills — skills as hashed synced artifacts, stale-aware (last P0 before test)
 - ☐ **Thorough test** of the full agent-native chain
 
 **B · Post-test friction wins (P1, small/high-ROI)**
@@ -689,7 +689,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 
 **D · Use Codex/Claude power (orchestration)**
 - ☐ Fan-out generation — concurrent looks/storyboards/candidates instead of sequential
-- ☐ Worker sub-agents — visual triage, continuity check, audit sweep (promote item 16 / P3)
+- ☐ Worker sub-agents — visual triage, continuity check, audit sweep (item 15 P3 "selective worker agents")
 - ☐ Director orchestration pattern — one agent fans out to N workers, synthesizes
 
 **E · Deferred architecture (durable, demand-driven, not smoke-blocking)**
@@ -700,7 +700,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ☐ Fallback strategy when agents unavailable (item 7)
 - ☐ Web UI audit (item 13)
 - ☐ Durable issue capture (item 14)
-- ☐ Harvest reusable presets — `codify_project_as_preset` (composer-architecture step 8)
+- ☐ Production bundles — user/team-scoped package of style notes + prompt overrides + reusable skills + refs, with `save_project_as_bundle` / `list_production_bundles` / `apply_production_bundle` (item 16; downstream of versioned skills + style notes stable)
 
 **F · Polish (P2/P3, later)**
 - ☐ Reference remap/relock workflow
