@@ -677,7 +677,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ✅ Reliable sync (isolated cache + lean receipts + CLI 0.1.2 changed-only/conflict/lock-TTL)
 - ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
 - ✅ Local/native storyboard import — `purpose=storyboard_image` upload + `import_storyboard_image` action
-- ☐ Versioned notebook skills — skills as hashed synced artifacts, stale-aware (last P0 before test)
+- ✅ Versioned notebook skills — skills as hashed synced artifacts, stale-aware
 - ☐ **Thorough test** of the full agent-native chain
 
 **B · Post-test friction wins (P1, small/high-ROI)**
@@ -815,6 +815,9 @@ Pass log:
 
 **P0 before Studio smoke continues: versioned notebook skills.**
 Bad local skill guidance directly caused bad storyboard prompting during smoke. Treat materialized skills as first-class synced artifacts with versions/hashes. When server guidance changes, the workbench should know it is stale and refresh skills through the same changed-artifact path as project files.
+
+Pass log:
+- 2026-05-30 Codex: materialized Mirage skills now publish `config/skills.json` plus `notebook.json.skillsHash`. The notebook records per-skill hashes/versions/paths, and workspace instructions tell agents to sync and restart/open a fresh harness session when skill hashes or behavior are stale.
 
 **P2 after Studio smoke: reference remap/relock workflow.**
 Real creative work often means "these assets are good but labels are wrong; remap refs, regenerate one, rewrite script to match." Capture this as a first-class recipe/action plan so agents can do it deliberately instead of improvising many small calls.

@@ -5,6 +5,7 @@ import {
   compactText,
   md,
   audioPlanHash,
+  hashJson,
   scriptContentHash,
   styleDirectionHash,
   shotPromptHash,
@@ -50,6 +51,31 @@ const MIRAGE_SKILL_NAMES = [
 ] as const;
 const NOTEBOOK_VERSION = '2026-05-21.mcp-polish-v1';
 
+type MirageSkillName = typeof MIRAGE_SKILL_NAMES[number];
+
+type NotebookSkillResource = {
+  name: MirageSkillName;
+  content: string;
+  hash: string;
+  version: string;
+  paths: string[];
+};
+
+type NotebookSkillsManifest = {
+  kind: 'mirage.skills.index';
+  version: string;
+  refresh: {
+    command: 'mint_cli_token -> returned isolated-cache sync command';
+    restartRequired: boolean;
+  };
+  skills: Array<{
+    name: MirageSkillName;
+    version: string;
+    hash: string;
+    paths: string[];
+  }>;
+};
+
 const ensureNewline = (value: string) => value.endsWith('\n') ? value : `${value}\n`;
 
 const projectUpdatedAt = (project: Project) => project.updatedAt || project.createdAt || 'unknown';
@@ -88,7 +114,7 @@ For Looks work, prefer list_actions / describe_action / run_action. Use generate
 
 For local image/audio files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. For images, use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. For native storyboard images, upload with purpose=storyboard_image, then run_action(import_storyboard_image) with shotId, sourceAssetId, and optional lock=true. For audio, use purpose=audio_source; upload only attaches the source file, then you decide whether to run analyze_audio_transcribe/analyze_audio_structure. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
 
-Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
+Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. config/skills.json lists the server-owned skill hashes and notebook.json carries the aggregate skillsHash. If skill hashes differ from server state or skill behavior seems stale, run the returned sync command and restart/open a fresh harness session so native skill discovery reloads them.
 
 Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
 
@@ -115,8 +141,48 @@ const readSkillBody = (skillName: string): string => {
   return fs.readFileSync(skillPath, 'utf8');
 };
 
-const buildSkillFiles = (): NotebookFile[] => MIRAGE_SKILL_NAMES.flatMap((skillName) => {
+const loadSkillResources = (): NotebookSkillResource[] => MIRAGE_SKILL_NAMES.map((skillName) => {
   const content = readSkillBody(skillName);
+  const hash = hashJson(content);
+  return {
+    name: skillName,
+    content,
+    hash,
+    version: hash.slice(0, 12),
+    paths: [
+      `.agents/skills/${skillName}/SKILL.md`,
+      `.claude/skills/${skillName}/SKILL.md`,
+    ],
+  };
+});
+
+const buildSkillsManifest = (skillResources: NotebookSkillResource[]): NotebookSkillsManifest => {
+  const skills = skillResources.map(({ name, hash, version, paths }) => ({
+    name,
+    version,
+    hash,
+    paths,
+  }));
+  return {
+    kind: 'mirage.skills.index',
+    version: hashJson(skills.map(({ name, hash }) => ({ name, hash }))),
+    refresh: {
+      command: 'mint_cli_token -> returned isolated-cache sync command',
+      restartRequired: true,
+    },
+    skills,
+  };
+};
+
+const buildSkillsManifestFile = (project: Project, manifest: NotebookSkillsManifest): NotebookFile => ({
+  path: `${normalizedProjectDir(project)}/config/skills.json`,
+  mode: 'config',
+  writePolicy: 'overwrite',
+  description: 'Server-owned Mirage skill manifest. If hashes differ from notebook.json, sync and restart/open a fresh harness session.',
+  content: `${JSON.stringify(manifest, null, 2)}\n`,
+});
+
+const buildSkillFiles = (skillResources: NotebookSkillResource[]): NotebookFile[] => skillResources.flatMap(({ name: skillName, content }) => {
   return [
     {
       path: `.agents/skills/${skillName}/SKILL.md`,
@@ -440,10 +506,21 @@ const buildHashes = async (project: Project) => {
   };
 };
 
-const buildNotebookMeta = (project: Project, actions: ReturnType<typeof buildProjectActionList>) => ({
+const buildNotebookMeta = (
+  project: Project,
+  actions: ReturnType<typeof buildProjectActionList>,
+  skillsManifest: NotebookSkillsManifest,
+) => ({
   notebookVersion: NOTEBOOK_VERSION,
   generatedAt: new Date().toISOString(),
   actionsHash: buildActionsHash(),
+  skillsHash: skillsManifest.version,
+  skills: skillsManifest.skills.map(({ name, version, hash, paths }) => ({
+    name,
+    version,
+    hash,
+    paths,
+  })),
   project: {
     id: project.id,
     title: project.title,
@@ -619,7 +696,14 @@ export const buildNotebookMirrorArtifacts = (
 
 export const buildNotebookConfigArtifacts = async (
   project: Project,
-  opts: { preferences?: boolean; styleNotes?: boolean; promptKinds?: ProjectPromptOverrideKind[]; hashes?: boolean; actions?: boolean } = {},
+  opts: {
+    preferences?: boolean;
+    styleNotes?: boolean;
+    promptKinds?: ProjectPromptOverrideKind[];
+    hashes?: boolean;
+    actions?: boolean;
+    skills?: boolean;
+  } = {},
 ): Promise<NotebookFile[]> => {
   const baseDir = normalizedProjectDir(project);
   const config = await getProjectConfigState(project);
@@ -661,6 +745,7 @@ export const buildNotebookConfigArtifacts = async (
     });
   }
   if (opts.actions) files.push(...buildActionsArtifacts(project));
+  if (opts.skills) files.push(buildSkillsManifestFile(project, buildSkillsManifest(loadSkillResources())));
   return files;
 };
 
@@ -668,6 +753,8 @@ export const buildProjectNotebook = async (project: Project) => {
   const baseDir = normalizedProjectDir(project);
   const actions = buildProjectActionList(project);
   const config = await getProjectConfigState(project);
+  const skillResources = loadSkillResources();
+  const skillsManifest = buildSkillsManifest(skillResources);
   const files: NotebookFile[] = [
     {
       path: 'AGENTS.md',
@@ -683,7 +770,7 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Claude Code workspace-local Mirage notebook instructions.',
       content: buildWorkspaceInstructions(project),
     },
-    ...buildSkillFiles(),
+    ...buildSkillFiles(skillResources),
     {
       path: `${baseDir}/state/brief.md`,
       mode: 'state',
@@ -764,6 +851,7 @@ export const buildProjectNotebook = async (project: Project) => {
       content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
     },
     ...buildActionsArtifacts(project),
+    buildSkillsManifestFile(project, skillsManifest),
     ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
       path: `${baseDir}/config/prompts/${kind}.md`,
       mode: 'config' as const,
@@ -782,8 +870,8 @@ export const buildProjectNotebook = async (project: Project) => {
       path: `${baseDir}/notebook.json`,
       mode: 'state',
       writePolicy: 'overwrite',
-      description: 'Machine-readable notebook metadata, including notebookVersion for stale-workspace checks.',
-      content: `${JSON.stringify(buildNotebookMeta(project, actions), null, 2)}\n`,
+      description: 'Machine-readable notebook metadata, including notebookVersion and skillsHash for stale-workspace checks.',
+      content: `${JSON.stringify(buildNotebookMeta(project, actions, skillsManifest), null, 2)}\n`,
     },
     {
       path: `${baseDir}/journal.md`,
@@ -813,6 +901,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific isolated-cache sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell/npx capability. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, state/, and hashes. Create journal.md only if missing. Before overwriting editable artifacts or config/, check whether the file has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and config files are editable project overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(apply_script) only for pre-visual scripts or topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific isolated-cache sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell/npx capability. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, state/, hashes, config/actions, and config/skills.json. Create journal.md only if missing. Before overwriting editable artifacts or config/, check whether the file has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and config files are editable project overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(apply_script) only for pre-visual scripts or topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After skills change or first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };
