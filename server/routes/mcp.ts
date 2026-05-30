@@ -84,11 +84,12 @@ const deleteExtraShotInputSchema = {
 const MCP_LIMITS = {
   requestPerMinute: envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120),
   mutatingPerHour: envInt('LAHARI_MCP_MUTATIONS_PER_HOUR', 180),
-  paidPerDay: envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 30),
+  paidImagePerDay: envInt('LAHARI_MCP_PAID_IMAGE_CALLS_PER_DAY', envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 120)),
+  paidVideoPerDay: envInt('LAHARI_MCP_PAID_VIDEO_CALLS_PER_DAY', 80),
   issuesPerHour: envInt('LAHARI_MCP_ISSUES_PER_HOUR', 20),
 };
 
-const PAID_TOOLS = new Set([
+const PAID_IMAGE_TOOLS = new Set([
   'generate_style_reference',
   'generate_character_look',
   'generate_environment_look',
@@ -96,8 +97,29 @@ const PAID_TOOLS = new Set([
   'generate_storyboard',
   'bulk_generate_storyboards',
   'refine_storyboard_image',
+]);
+
+const PAID_VIDEO_TOOLS = new Set([
   'apply_generate_video',
 ]);
+
+const paidToolLimit = (name: string) => {
+  if (PAID_VIDEO_TOOLS.has(name)) {
+    return {
+      key: 'paid-video',
+      limit: MCP_LIMITS.paidVideoPerDay,
+      label: 'Paid Lahari video generation',
+    };
+  }
+  if (PAID_IMAGE_TOOLS.has(name)) {
+    return {
+      key: 'paid-image',
+      limit: MCP_LIMITS.paidImagePerDay,
+      label: 'Paid Lahari image/reference generation',
+    };
+  }
+  return null;
+};
 
 const structuredToolError = (error: unknown) => {
   if (error instanceof RateLimitError) {
@@ -236,12 +258,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool: name, args, startedAt });
       let operationId: string | null = null;
       try {
-        if (PAID_TOOLS.has(name)) {
+        const paidLimit = paidToolLimit(name);
+        if (paidLimit) {
           assertRateLimit({
-            key: `mcp:paid:${auth.tokenId}`,
-            limit: MCP_LIMITS.paidPerDay,
+            key: `mcp:${paidLimit.key}:${auth.tokenId}`,
+            limit: paidLimit.limit,
             windowMs: 24 * 60 * 60 * 1000,
-            label: 'Paid Lahari MCP tool',
+            label: paidLimit.label,
           });
         } else if (name === 'lahari_capture_issue') {
           assertRateLimit({
@@ -280,7 +303,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
           startedAt,
           durationMs: Date.now() - start,
           readOnly: !!annotations.readOnlyHint,
-          paid: PAID_TOOLS.has(name),
+          paid: !!paidLimit,
         });
         return textResult(result);
       } catch (error) {
@@ -296,7 +319,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
           startedAt,
           durationMs: Date.now() - start,
           readOnly: !!annotations.readOnlyHint,
-          paid: PAID_TOOLS.has(name),
+          paid: !!paidToolLimit(name),
         });
         throw new Error(JSON.stringify(structuredToolError(error), null, 2));
       }
