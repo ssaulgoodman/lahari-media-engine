@@ -62,6 +62,7 @@ router.post('/projects/:projectId/notebook', async (req, res) => {
       return {
         path: file.path,
         mode: file.mode,
+        scope: file.scope || 'project',
         writePolicy: file.writePolicy,
         description: file.description,
         hash,

@@ -1277,6 +1277,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       files: notebook.files.map((file) => ({
         path: file.path,
         mode: file.mode,
+        scope: file.scope || 'project',
         writePolicy: file.writePolicy,
         description: file.description,
         hash: sha256(file.content),
@@ -1312,6 +1313,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       file: {
         path: file.path,
         mode: file.mode,
+        scope: file.scope || 'project',
         writePolicy: file.writePolicy,
         description: file.description,
         hash: sha256(file.content),

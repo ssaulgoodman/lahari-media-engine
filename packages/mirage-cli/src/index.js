@@ -9,6 +9,7 @@ const pkg = require('../package.json');
 
 const DEFAULT_API_URL = 'https://mirage-platform-production-05ca.up.railway.app';
 const STATE_FILE = '.sync-state.json';
+const WORKSPACE_STATE_FILE = '.mirage-workspace-state.json';
 const LOCK_DIR = '.sync-state.lock';
 const DEFAULT_LOCK_TTL_MS = 15 * 60 * 1000;
 
@@ -103,6 +104,30 @@ const readTextIfExists = (filePath) => {
 const writeText = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content);
+};
+
+const collectFiles = (dirPath) => {
+  if (!fs.existsSync(dirPath)) return [];
+  const stat = fs.statSync(dirPath);
+  if (!stat.isDirectory()) return stat.isFile() ? [dirPath] : [];
+  const files = [];
+  for (const name of fs.readdirSync(dirPath)) {
+    files.push(...collectFiles(path.join(dirPath, name)));
+  }
+  return files;
+};
+
+const removeEmptyDirsUpTo = (dirPath, stopDir) => {
+  let current = path.resolve(dirPath);
+  const stop = path.resolve(stopDir);
+  while (current.startsWith(stop) && current !== stop) {
+    try {
+      fs.rmdirSync(current);
+    } catch {
+      return;
+    }
+    current = path.dirname(current);
+  }
 };
 
 const lockTtlMs = () => {
@@ -229,10 +254,14 @@ const sync = async (opts) => {
   if (!opts.projectId) fail('missing_project_id', 'Usage: mirage sync <projectId>');
   const workspace = path.resolve(opts.cwd);
   const statePath = safeJoin(workspace, `mirage/projects/${opts.projectId}/${STATE_FILE}`);
+  const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
   const releaseLock = acquireLock(safeJoin(workspace, `mirage/projects/${opts.projectId}/${LOCK_DIR}`));
   try {
-  const previousState = readJson(statePath, { files: {} });
-  const previousFiles = previousState.files || {};
+  const previousProjectState = readJson(statePath, { files: {} });
+  const previousWorkspaceState = readJson(workspaceStatePath, { files: {} });
+  const previousProjectFiles = previousProjectState.files || {};
+  const previousWorkspaceFiles = previousWorkspaceState.files || {};
+  const previousFiles = { ...previousWorkspaceFiles, ...previousProjectFiles };
   const knownHashes = {};
   for (const [relativePath, entry] of Object.entries(previousFiles)) {
     try {
@@ -250,6 +279,7 @@ const sync = async (opts) => {
   const written = [];
   const skipped = [];
   const removed = [];
+  const pruned = [];
   const conflicts = [];
 
   for (const entry of manifest) {
@@ -266,6 +296,11 @@ const sync = async (opts) => {
 
     if (entry.writePolicy === 'create_if_missing' && localContent != null) {
       skipped.push({ path: entry.path, reason: 'exists_create_if_missing' });
+      continue;
+    }
+
+    if (localContent != null && localHash === entry.hash) {
+      skipped.push({ path: entry.path, reason: 'local_matches_server' });
       continue;
     }
 
@@ -304,25 +339,52 @@ const sync = async (opts) => {
     removed.push({ path: relativePath });
   }
 
-  const nextFiles = {};
+  const legacyGeneratedPaths = [
+    `mirage/projects/${opts.projectId}/config/skills.json`,
+    `mirage/projects/${opts.projectId}/config/actions`,
+  ];
+  for (const relativePath of legacyGeneratedPaths) {
+    if (manifestByPath.has(relativePath)) continue;
+    const absolutePath = safeJoin(workspace, relativePath);
+    for (const filePath of collectFiles(absolutePath)) {
+      const fileRelativePath = normalizeSlash(path.relative(workspace, filePath));
+      if (manifestByPath.has(fileRelativePath)) continue;
+      fs.unlinkSync(filePath);
+      removeEmptyDirsUpTo(path.dirname(filePath), path.dirname(absolutePath));
+      pruned.push({ path: fileRelativePath, reason: 'old_project_scoped_workspace_file' });
+    }
+  }
+
+  const nextWorkspaceFiles = {};
+  const nextProjectFiles = {};
   for (const entry of manifest) {
+    const nextFiles = entry.scope === 'workspace' ? nextWorkspaceFiles : nextProjectFiles;
+    const scopedPreviousFiles = entry.scope === 'workspace' ? previousWorkspaceFiles : previousProjectFiles;
     if (conflicts.some((conflict) => conflict.path === entry.path)) {
-      if (previousFiles[entry.path]) nextFiles[entry.path] = previousFiles[entry.path];
+      if (scopedPreviousFiles[entry.path]) nextFiles[entry.path] = scopedPreviousFiles[entry.path];
       continue;
     }
     nextFiles[entry.path] = {
       hash: entry.hash,
       mode: entry.mode,
+      scope: entry.scope || 'project',
       writePolicy: entry.writePolicy,
       size: entry.size,
     };
   }
+  writeText(workspaceStatePath, `${JSON.stringify({
+    kind: 'mirage.notebook.workspace_sync_state',
+    notebookVersion: remote.notebookVersion,
+    lastProject: remote.project,
+    syncedAt: new Date().toISOString(),
+    files: nextWorkspaceFiles,
+  }, null, 2)}\n`);
   writeText(statePath, `${JSON.stringify({
     kind: 'mirage.notebook.sync_state',
     notebookVersion: remote.notebookVersion,
     project: remote.project,
     syncedAt: new Date().toISOString(),
-    files: nextFiles,
+    files: nextProjectFiles,
   }, null, 2)}\n`);
 
   output({
@@ -334,9 +396,19 @@ const sync = async (opts) => {
     written: written.length,
     skipped: skipped.length,
     removed: removed.length,
+    pruned: pruned.length,
     conflicted: conflicts.length,
     conflicts,
-    details: { written, skipped, removed },
+    details: {
+      written,
+      skipped,
+      removed,
+      pruned,
+      scopes: {
+        workspace: Object.keys(nextWorkspaceFiles).length,
+        project: Object.keys(nextProjectFiles).length,
+      },
+    },
   });
   process.exit(conflicts.length ? 3 : 0);
   } finally {
