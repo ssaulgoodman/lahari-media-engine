@@ -1001,7 +1001,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('open_project', {
     title: 'Open Mirage project',
-    description: 'Read-only cockpit tool. Opens a project session and returns the production working set (scene/shot tree, looks, diagnosis), available actions, recent events, and the web studio URL. Pass detail=full for the complete packet (all prompt bodies, base hashes, neighbors, audio, renders) or detail=summary for counts only.',
+    description: 'Read-only cockpit tool. Opens a project session and returns the production working set (scene/shot tree, looks, diagnosis), available actions, recent events, and the web studio URL — enough to orient and pick the next move. detail=full is a heavy debug escape hatch (the entire packet: every prompt body, base hashes, neighbors, audio, renders); reserve it for state-mismatch debugging or legacy clients, not routine reads. To read one prompt or storyboard body, read its notebook file (read_project_notebook_file) instead of fetching full. detail=summary returns counts only.',
     inputSchema: {
       projectId,
       detail: projectStateDetailSchema.optional(),
@@ -1012,7 +1012,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('get_project_state', {
     title: 'Get project state',
-    description: 'Read-only cockpit tool. Returns a compact project state by default. Use detail=production for shot/look summaries or detail=full only when the complete legacy packet is required.',
+    description: 'Read-only cockpit tool. Returns a compact project state by default (summary = counts/flags; production = scene/shot tree, looks, diagnosis). detail=full is a heavy debug escape hatch (the complete legacy packet); reserve it for state-mismatch debugging or legacy clients. To read one prompt or storyboard body, read its notebook file rather than fetching full.',
     inputSchema: {
       projectId,
       detail: projectStateDetailSchema.optional(),

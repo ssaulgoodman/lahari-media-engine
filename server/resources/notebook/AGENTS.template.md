@@ -34,6 +34,7 @@ If MCP tools are unavailable, stop and ask the artist to reconnect Mirage. Do no
 
 - **Translate intent into typed edits.** Convert artist chat into exact action inputs — `contextOverrides`, a precise `promptOverride`, an `editInstruction`, or a project override. Do not pipe raw artist notes into actions.
 - **One confident path per operation.** Pick the right action; do not hedge across several.
+- **Reads stay lean.** `open_project` and `get_project_state` return the production working set by default — enough to orient. To read a specific prompt or storyboard body, read its notebook file (`read_project_notebook_file`, or the synced `state/shot-prompts.md` / `storyboards/`), not `detail='full'`. `detail='full'` is a heavy debug escape hatch, not a way to fetch bodies.
 - **Ask before** paid generation, locks/unlocks, prompt overwrites, topology rebuilds, publishing, or anything that stales or wipes downstream work.
 - **Edit text the safe way.** After refs/boards/videos exist, use `apply_text_edits` for wording-only changes to existing scene titles, shot directions, or dialogue. Reserve `apply_script` for fresh scripts or topology rebuilds.
 - **Bytes stay out of MCP.** Upload local images/audio to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` into actions. For native storyboards: `purpose=storyboard_image`, then `import_storyboard_image`.
