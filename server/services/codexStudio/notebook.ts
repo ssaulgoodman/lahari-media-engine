@@ -21,7 +21,6 @@ import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromp
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
 import { buildAudioPlanMarkdownDraft } from './audioPlanMarkdown.js';
 import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
-import { getPipelinePreset, getWorkflowRecipe } from '../../presets.js';
 import {
   ACTION_SURFACES,
   actionSpecsForSurface,
@@ -198,9 +197,6 @@ export const buildNotebookSkillArtifacts = (project: Pick<Project, 'id'>): {
 const buildBrief = (project: Project, actions: ReturnType<typeof buildProjectActionList>): string => {
   const counts = statusCounts(project);
   const diagnosis = actions.diagnosis;
-  const preset = getPipelinePreset(project.presetKey);
-  const workflow = getWorkflowRecipe(project.workflowKey || preset.workflowKey);
-  const seedKind = project.seedKind || workflow.primarySeed;
   return `# ${project.title}
 
 Updated: ${projectUpdatedAt(project)}
@@ -212,17 +208,12 @@ Web: ${webStudioUrl(project.id, { step: 'studio' })}
 ${diagnosis.productionRead}
 
 - Status: ${project.status}
-- Seed kind: ${seedKind}
-- Workflow: ${workflow.key} (${workflow.label}) — ${workflow.summary}
-- Preset: ${preset.key} (${preset.label})
 - Studio mode: ${usesStoryboardWorkflow(project) ? 'storyboard' : 'keyframe'}
 - Models: text ${project.textProvider}, image ${project.imageModel}, storyboard ${project.storyboardProvider}, video ${project.videoModel}
 - Counts: ${counts.scenes} scenes, ${counts.shots} shots, ${counts.storyboardPrompts}/${counts.shots} storyboard prompts, ${counts.storyboards}/${counts.shots} boards, ${counts.videos}/${counts.shots} videos
 
-## Source Contract
+## Project Source
 
-- Accepted seeds: ${workflow.acceptedSeeds.join(', ')}
-- Source rules: ${preset.source.rules}
 - Project brief: ${project.projectBrief ? md(JSON.stringify(project.projectBrief, null, 2)) : 'None saved.'}
 - Source payload: ${project.sourcePayload ? md(JSON.stringify(project.sourcePayload, null, 2)) : 'None saved.'}
 

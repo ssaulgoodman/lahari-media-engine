@@ -26,7 +26,7 @@ Supabase/Mirage is canonical. Local files are desk copies:
 - `config/actions/` contains action schemas.
 - `config/style-notes.json`, preferences, and prompt overrides are project config.
 
-The contract is the graph: source, concept, script, cast, environments, locked refs, style notes, stale flags, boards, videos, and action receipts. Seed/workflow/preset labels are orientation metadata; do not turn them into prompt instructions.
+The contract is the graph: source, concept, script, cast, environments, locked refs, style notes, stale flags, boards, videos, and action receipts.
 
 ## Action Routing
 

@@ -24,7 +24,7 @@ Scene structure follows the source:
 - script source: preserve the uploaded order of action/dialogue unless asked to adapt.
 - brief/document/idea: normalize into clear production assumptions and call out uncertainty.
 
-Shot duration should match the beat. For storyboard/video workflows, split shots above about 15 seconds unless the model/render plan explicitly supports longer coherent clips.
+Shot duration should match the beat. For storyboard/video generation, split shots above about 15 seconds unless the model/render plan explicitly supports longer coherent clips.
 
 ## Good Shot Directions
 

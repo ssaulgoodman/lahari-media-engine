@@ -12,7 +12,7 @@ The locked style reference is the visual anchor for the project. It should be re
 - Judge whether the style is a repeatable visual system, not just a pretty image.
 - Separate style from subject. A style frame should not depend on the exact scene, character, or plot moment.
 - Prefer project style notes for learned phrasing that keeps working.
-- Do not treat preset labels as the style source. The artist's locked style ref and project style notes win.
+- The artist's locked style ref and project style notes are the style source.
 
 ## A Good Style Direction Has
 
