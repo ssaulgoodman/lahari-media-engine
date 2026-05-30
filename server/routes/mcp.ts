@@ -16,7 +16,7 @@ import { normalizeLeanActionReceipt } from '../services/codexStudio/leanReceipt.
 import { runWithRequestContext } from '../requestContext.js';
 import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
-import { ACTION_KEYS, ACTION_SURFACES, actionSpec, actionSpecsForSurface, type ActionKey } from '../services/actionRegistry.js';
+import { ACTION_KEYS, ACTION_SURFACES, actionSpec, actionSpecsForSurface, buildActionSchemaIndex, isMaterializedAgentActionSpec, type ActionKey } from '../services/actionRegistry.js';
 
 const router = Router();
 const HOSTED_MCP_VERSION = '0.1.15';
@@ -1021,20 +1021,19 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('list_actions', {
     title: 'List Mirage actions',
-    description: 'Read-only cockpit tool. Lists contextual registry actions for Looks, Storyboard, Video, and Audio.',
+    description: "Read-only cockpit tool. Returns a lean index of registry actions (key, surface, paid, summary, and the local detail path) across all surfaces or one. For an action's full input schema call describe_action; for full specs offline read config/actions/<surface>.json.",
     inputSchema: {
       projectId,
       surface: actionSurfaceSchema.optional(),
     },
   }, async ({ projectId, surface }) => {
     await assertProjectAccess(projectId, auth.userId);
-    const actions = actionSpecsForSurface(surface);
+    const actions = actionSpecsForSurface(surface).filter(isMaterializedAgentActionSpec);
     return {
-      kind: 'mirage.actions.list',
+      kind: 'mirage.actions.index',
       projectId,
       surface: surface || null,
-      actions,
-      count: actions.length,
+      ...buildActionSchemaIndex(actions),
     };
   });
 
@@ -1095,7 +1094,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('list_jobs', {
     title: 'List Mirage jobs',
-    description: 'Read-only cockpit tool. Lists recent agent jobs/operations for a project.',
+    description: "Read-only cockpit tool. Lists recent agent jobs/operations for a project (status only, no result bodies). Call get_job for one job's full result.",
     inputSchema: {
       projectId,
       status: jobStatusSchema.optional(),
@@ -1116,7 +1115,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         error: row.error || null,
-        result: row.result || null,
+        hasResult: !!row.result,
       })),
     };
   });
