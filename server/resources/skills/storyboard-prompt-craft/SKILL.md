@@ -23,7 +23,7 @@ Keep the prompt short enough that the model follows the action instead of drowni
 
 **The server binds references.** Codex writes graph-language prompts; Mirage compiles the render call with attached images and a reference binding map. Do not manually count images or write "Image 2 is The Boss" in saved storyboard prompts.
 
-**Per-panel actions live inside the prompt, not as a separate bullet list.** Image models follow narrative prompts better than parsed lists. "Panel 1 — Shantamma kneels at the threshold, palms pressed together. Panel 2 — close on her face, eyes closed, tears tracing the lines below her cheekbones. Panel 3 — the lamp she lit flickers as she rises, still holding the flame's warmth in her cupped palms." Inline beats Saul's existing instinct.
+**Per-panel actions live inside the prompt, not as a separate bullet list.** Image models follow narrative prompts better than parsed lists. "Panel 1 — The Boss stops at the doorway, one hand still on the frame. Panel 2 — close on his face, jaw tight, eyes fixed on the empty desk. Panel 3 — he turns back into the hall, shoulders dropping." Inline narrative beats a parsed list.
 
 **Panels read left-to-right, then top-to-bottom.** For a 4-panel board: top-left, top-right, bottom-left, bottom-right. For a 3-panel board: left, middle, right. Never assume a different reading order.
 
@@ -37,13 +37,13 @@ Keep the prompt short enough that the model follows the action instead of drowni
 
 ## What Makes a Good Storyboard Prompt
 
-**Concrete actions, not interior feelings.** "She lowers her body to the stone" is shootable. "Her surrender pours out of her" is interior — the model can't render it.
+**Concrete actions, not interior feelings.** "She lowers herself to the floor" is shootable. "Her resolve pours out of her" is interior — the model can't render it.
 
 **One emotional beat per board, not three.** A storyboard captures a moment, not an arc. If three things happen, that's three shots, not one storyboard.
 
-**Specific graph names, not generic types.** "Shantamma kneels at the threshold" is useful. "An old woman kneels" is too generic. Once the character has a locked reference, do not keep repeating physical description; use the name and stage the action.
+**Specific graph names, not generic types.** "The Boss stops at the doorway" is useful. "A man stops" is too generic. Once the character has a locked reference, do not keep repeating physical description; use the name and stage the action.
 
-**Medium language anchored to the locked style.** If the project's style is a painterly miniature, the storyboard should read as panels of that miniature — not as cinematic frames with painterly tint. The planner now sees the locked style ref directly (since 2026-05-12 fix), so describe the medium consistent with what the artist locked.
+**Medium language anchored to the locked style.** If the project's style is a flat graphic illustration, the storyboard should read as panels of that illustration — not as cinematic frames with an illustrated tint. The planner sees the locked style reference directly, so describe the medium consistent with what the artist locked.
 
 **Tight length.** Storyboard prompts over ~3-4k characters degrade. The image model loses the through-line. If the prompt grows past that, you're describing too much detail per panel — compress.
 
@@ -61,12 +61,12 @@ These will make storyboard quality fall off a cliff. Avoid in every prompt.
 - ✅ "the threshold of the workshop, scattered tools near the door, dust hanging in the side light"
 
 **VFX vocabulary on a non-VFX project.**
-- ❌ "she dissolves into golden particles"
+- ❌ "she dissolves into glowing particles"
 - ❌ "rays of supernatural light burst from her chest"
-- ✅ "she stands very still, the lamps doubled in her wet eyes"
+- ✅ "she stands very still, the overhead light doubled in her wet eyes"
 
 **Inventing characters or props the project doesn't have.**
-- ❌ "a young priest watches from the corner" (when no young priest is in cast)
+- ❌ "a second guard watches from the corner" (when no such character is in cast)
 - ❌ "an ornate carved door swings open" (when the environment hasn't established that door)
 - ✅ stick to the cast and environments the script defined
 
@@ -80,7 +80,7 @@ These will make storyboard quality fall off a cliff. Avoid in every prompt.
 
 **Surgical refines preserve everything except the artist's stated edit.** If the artist says "make panel 3 closer," touch only panel 3's framing words. Don't rewrite panels 1-2-4 to "match the new mood."
 
-**Rewrites reset the whole board.** If the artist asks for a fundamentally different beat ("scrap this, the shot is about loss, not blessing"), throw the existing prompt away and start from the scene narrative.
+**Rewrites reset the whole board.** If the artist asks for a fundamentally different beat ("scrap this, the shot is about loss, not reunion"), throw the existing prompt away and start from the scene narrative.
 
 When in doubt, ask: "Surgical edit to panel N, or full rewrite of the shot?"
 
@@ -101,14 +101,13 @@ The same rubric applies to motion prompts (the `motion_prompt` field used by Veo
 
 The differences:
 - Motion prompts are shorter (typically 100-400 chars, hard cap 2000) because the video model uses the start frame to anchor everything else.
-- Motion prompts describe motion *over time*, not panel-by-panel. "She lowers her body to the stone over the first second, then exhales, eyes closing" — temporal beats inside one continuous shot.
+- Motion prompts describe motion *over time*, not panel-by-panel. "She lowers herself to the floor over the first second, then exhales, eyes closing" — temporal beats inside one continuous shot.
 - No panel ordering, no panel borders, no per-panel actions. The shot is one continuous take.
 
-When R28's `apply_video_prompt` ships, this is the rubric Codex follows. There is no separate `video-prompt-craft` shard — motion prompts and storyboard panel actions share enough that one skill covers both.
+`apply_video_prompt` persists the motion prompt; this is the rubric for it. There is no separate `video-prompt-craft` shard — motion prompts and storyboard panel actions share enough that one skill covers both.
 
 ## Cross-References
 
-- Doctrine §4 (harness-native text generation): why this skill exists rather than backend AI calls
 - `script-doctor`: when refining a storyboard requires rethinking the shot's beat
 - `continuity-auditor`: when storyboard composition has to honor prev_shot continuity
 - `style-ref-critic`: when storyboard medium needs to match locked style

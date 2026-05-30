@@ -13,11 +13,11 @@ Before writing or critiquing, read the project mode from the packet or notebook:
 - `workflow_key` — what production spine the project follows (`music_led`, `scripted_narrative`; later `campaign` / `short_form`)
 - `preset_key` — taste/model/default prompt rules (`music_video_default`, `anime_default`, later more)
 
-Do not assume lyrics, audio analysis, deity, temple, devotional context, or a queue unless the project mode says so.
+Do not assume lyrics, audio analysis, a specific genre, subject, or cultural context unless the project mode says so.
 
 ## Source Contract
 
-**Music-led workflow.** Scenes usually follow musical structure. Use lyrics, audio sections, rhythm, and meaning to decide scene boundaries and beat timing. If the song is meditative, let shots breathe. If it is narrative or performance-heavy, allow stronger progression and movement.
+**Music-led workflow.** Scenes usually follow musical structure. Use lyrics, audio sections, rhythm, and meaning to decide scene boundaries and beat timing. If the track is sparse or slow, let shots breathe. If it is narrative or performance-heavy, allow stronger progression and movement.
 
 **Scripted narrative workflow.** Scenes follow the uploaded script, treatment, or episode brief. The anime preset is one taste/medium layer inside this workflow, not a separate planner. Preserve dialogue/action order unless the director asks for adaptation. Shots should clarify acting beats, reactions, reveals, action choreography, screen direction, and continuity.
 
@@ -71,7 +71,7 @@ For future ad/reel workflows, ask: does this beat serve the offer, product promi
 
 **Surgical refines preserve references.** When the artist says "scene 4 needs more grief," edit scene 4's narrative and affected shots. Don't renumber, recast, or change scene boundaries unless asked.
 
-**Rewrites can wipe downstream.** When the artist says "scrap this and start over," it may invalidate style, cast, environments, shot prompts, boards, and videos. Confirm before running anything with `force`.
+**Rewrites can wipe downstream.** When the artist says "scrap this and start over," a topology rebuild via `apply_script` can invalidate style, cast, environments, shot prompts, boards, and videos — and once generated visual work exists it requires `allowDownstreamVisualWipe`. Confirm explicitly before running it. For anything that's really a wording change, use `apply_text_edits` instead — it preserves all visual work by construction.
 
 **The source wins.** Uploaded scripts, audio structure, briefs, and director notes outrank generic storytelling instincts.
 
@@ -83,6 +83,6 @@ For future ad/reel workflows, ask: does this beat serve the offer, product promi
 
 ## Cross-References
 
-- Doctrine §4: script writing is harness-native; the apply tool validates content shape but Codex writes it.
+- Script writing is harness-native: you write the content; the apply action validates its shape and persists it.
 - `storyboard-prompt-craft`: how a shot beat becomes a renderable storyboard prompt.
 - `continuity-auditor`: when chained shots constrain how the next shot opens.

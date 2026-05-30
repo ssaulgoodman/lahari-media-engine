@@ -14,7 +14,7 @@ Read the project packet first:
 - `production.audioPhase` tells you state, missing voices, pending TTS lines, and stale audio-plan shot IDs.
 - Cast entries carry `voice.assigned`, `voice.provider`, `voice.id`, and look/reference state.
 
-Do not assume lyrics, a music queue, deity, temple, devotional context, or existing audio unless the project says so.
+Do not assume lyrics, a music source, a specific genre or cultural context, or existing audio unless the project says so.
 
 ## Audio Plan Shape
 

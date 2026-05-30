@@ -1,6 +1,6 @@
 ---
 name: render-triage
-description: Use when a generated asset (storyboard, frame, video, render) doesn't match intent and you need to decide what to fix. Triggered by "this board is wrong," "the video drifted off the prompt," "why does this look generic," "should we regenerate or refine," "we tried twice and it's still off." Cost-aware diagnosis before paying to regenerate.
+description: Load ONLY when about to spend money regenerating a failed asset and you need to diagnose root cause first, OR when repeated regenerations keep failing and you must decide prompt vs reference vs model vs taste. This is a cost-gate before paid regeneration — not a general "is this shot good" review. Do not load for ordinary critique, single-shot feedback, or any read-only judgment; use mirage-director's output style for those.
 ---
 
 # Render Triage
@@ -102,4 +102,3 @@ The artist's instinct will often be to regenerate video. Resist. Ask: is the sto
 - `continuity-auditor`: identity / environment / style drift diagnosis.
 - `storyboard-prompt-craft`: writing better storyboard prompts after triage points there.
 - `style-ref-critic`: when the diagnosis points to a style problem.
-- Doctrine §5 (permission model): generate cost / blast radius / rollback expectations.

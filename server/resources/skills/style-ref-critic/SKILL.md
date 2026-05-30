@@ -79,12 +79,11 @@ Fix paths:
 
 ## What This Skill Doesn't Cover
 
-- Writing the style brainstorm or visualization prompts themselves — those are text-writing operations that move to R28 apply-only when ready.
-- Image-gen tool calls for style visualization — that's a tier-2 tool call.
+- Writing the style brainstorm directions themselves — you author those, then `generate_style_candidates` renders them.
+- The image-gen call for style visualization — that's a paid action, not this skill.
 - Critiquing generated character/environment look references (which are style-consuming, not style-defining) — that's its own kind of triage, partially covered by `render-triage`.
 
 ## Cross-References
 
 - `continuity-auditor`: style continuity across shots once locked.
 - `render-triage`: when generated outputs drift, deciding whether the cause is style.
-- Doctrine §4: visualization is image-gen (tool call); selection and refinement direction are taste (this skill).
