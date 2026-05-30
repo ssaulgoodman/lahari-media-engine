@@ -16,7 +16,7 @@ The locked style is the project's visual anchor: one reusable system (medium, pa
 - **Generate directions:** `start_job(generate_style_candidates)` (paid) with a note, a `promptOverride`, or a guide image. Judge them as systems, not pretty pictures.
 - **Lock:** `run_action(apply_style_direction)`. For an uploaded style image, upload via `/api/agent/uploads`, then `apply_style_direction({ style: { sourceAssetId } })` — Mirage auto-identifies the style text when the project description is empty/weak. Write the description yourself when you can inspect the image; let auto-identify be the fallback.
 - **Promote what works:** if a phrase or technique keeps improving outputs, save it to the relevant bucket with `run_action(apply_project_style_notes)` instead of repeating it per call. If a whole recipe keeps working, suggest a project prompt override.
-- **Unplug when it fights:** to test a shot without the locked style, use `contextOverrides: { includeStyleImage: false }` or swap `styleAssetId` per call.
+- **Unplug when it fights:** for image/storyboard/style calls that accept `contextOverrides`, test without the locked style via `{ includeStyleImage: false }`, or swap `styleAssetId` for that call. Video generation does not take `contextOverrides`; fix the board/frame or motion prompt instead.
 
 ## A good style direction has
 
