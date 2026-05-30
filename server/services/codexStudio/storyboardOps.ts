@@ -1,4 +1,7 @@
+import crypto from 'crypto';
 import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion, writeStoryboardPrompt } from '../storyboard.js';
+import { insertRow, selectOne, updateRows } from '../../database.js';
+import { storageUrl } from '../../storage.js';
 import type { ContextOverrides } from '../contextOverrides.js';
 import { generateShotVideo } from '../videoGeneration.js';
 import { eventResultPointers, recordDirectorEvent } from '../directorEvents.js';
@@ -759,6 +762,112 @@ export const lockStoryboardBoard = async (project: Project, shotId: string, vers
     changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, { storyboardShotIds: [shotId] }),
     webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-storyboard' }),
     note: 'Locked the active storyboard board. Video generation can now use this board as a trusted reference.',
+  };
+};
+
+export const importStoryboardImage = async (
+  project: Project,
+  input: { shotId: string; sourceAssetId: string; lock?: boolean; note?: string },
+) => {
+  const target = findProjectShot(project, input.shotId);
+  if (!target) throw new Error(`Shot not found in project: ${input.shotId}`);
+  const asset = await selectOne('assets', { id: input.sourceAssetId, project_id: project.id });
+  if (!asset) throw new Error(`Storyboard source asset not found in this project: ${input.sourceAssetId}`);
+  if (!asset.file_path) throw new Error(`Storyboard source asset has no file_path: ${input.sourceAssetId}`);
+  if (String(asset.category || '').includes('audio')) throw new Error('Storyboard imports require an image asset, not an audio asset.');
+
+  const versionId = crypto.randomUUID();
+  const parentVersionId = target.shot.storyboardVersionId || null;
+  const importedAt = new Date().toISOString();
+  await insertRow('storyboard_versions', {
+    id: versionId,
+    project_id: project.id,
+    shot_id: input.shotId,
+    asset_id: input.sourceAssetId,
+    parent_version_id: parentVersionId,
+    openai_response_id: null,
+    openai_image_call_ids: [],
+    reasoning_model: null,
+    image_model: 'agent_import',
+    prompt: target.shot.storyboardPrompt || null,
+    artist_note: input.note || null,
+    refs: [],
+    metadata: {
+      variant: 'agent_imported_storyboard_image',
+      sourceAssetId: input.sourceAssetId,
+      importedAt,
+      importedBy: 'agent',
+      previousVersionId: parentVersionId,
+      note: input.note || null,
+    },
+    locked: false,
+  });
+  await updateRows('storyboard_versions', { shot_id: input.shotId }, { locked: false });
+  if (input.lock) {
+    await updateRows('storyboard_versions', { id: versionId }, { locked: true });
+  }
+  await updateRows('shots', { id: input.shotId }, {
+    storyboard_asset_id: input.sourceAssetId,
+    storyboard_version_id: versionId,
+    storyboard_status: 'success',
+    storyboard_locked: !!input.lock,
+    storyboard_user_feedback: input.note || null,
+    video_status: 'stale',
+    last_error: null,
+  });
+
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: input.lock ? 'storyboard_imported_locked' : 'storyboard_imported',
+    entityType: 'shot',
+    entityId: input.shotId,
+    summary: `Codex imported a storyboard image for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}${input.lock ? ' and locked it' : ''}.`,
+    payload: {
+      versionId,
+      sourceAssetId: input.sourceAssetId,
+      locked: !!input.lock,
+      previousVersionId: parentVersionId,
+      webUrl: webStudioUrl(project.id, { step: 'studio', shotId: input.shotId, action: 'review-storyboard' }),
+    },
+  });
+  appendSessionJournalEntry(
+    project,
+    input.lock ? 'imported and locked storyboard image' : 'imported storyboard image',
+    `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${input.shotId}\nAsset ID: ${input.sourceAssetId}\nVersion ID: ${versionId}\nLocked: ${!!input.lock}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId: input.shotId, action: 'review-storyboard' })}`,
+  );
+  const imageUrl = storageUrl(asset.file_path);
+  const notebookProject = withShotPatch(project, input.shotId, {
+    storyboardUrl: imageUrl,
+    storyboardAssetId: input.sourceAssetId,
+    storyboardVersionId: versionId,
+    storyboardStatus: 'success',
+    storyboardLocked: !!input.lock,
+    storyboardUserFeedback: input.note || undefined,
+    videoStatus: 'stale',
+  });
+
+  return {
+    kind: 'mirage.apply.import_storyboard_image',
+    generatedAt: importedAt,
+    project: { id: project.id, title: project.title },
+    shot: {
+      id: input.shotId,
+      label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+      versionId,
+      sourceAssetId: input.sourceAssetId,
+      imageUrl,
+      locked: !!input.lock,
+      previousVersionId: parentVersionId,
+    },
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      shotPrompts: true,
+      storyboardShotIds: [input.shotId],
+    }),
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId: input.shotId, action: 'review-storyboard' }),
+    note: input.lock
+      ? 'Imported the provided image as a storyboard version and locked it. Existing previous boards remain in version history; video is marked stale.'
+      : 'Imported the provided image as the active storyboard version. Existing previous boards remain in version history; video is marked stale.',
   };
 };
 

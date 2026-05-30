@@ -153,14 +153,14 @@ export const createCliToken = async (
       fileField: 'file',
       fields: {
         projectId: opts.projectId,
-        purpose: 'cast_reference | env_reference | style_reference | cast_guide | env_guide | style_guide | audio_source',
+        purpose: 'cast_reference | env_reference | style_reference | cast_guide | env_guide | style_guide | storyboard_image | audio_source',
         entityId: 'required for cast_reference, env_reference, cast_guide, and env_guide',
       },
       examples: {
         posix: posixUploadExample,
         powershell: powershellUploadExample,
       },
-      next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction, as guideAssetId for generation, or leave audio_source attached to the project.',
+      next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction/import_storyboard_image, as guideAssetId for generation, or leave audio_source attached to the project.',
     },
     note: 'Short-lived project-scoped token. Do not store it. Use commands.posix/commands.powershell for notebook sync. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
     sync: {

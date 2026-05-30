@@ -131,6 +131,22 @@ export const STORYBOARD_ACTION_SPECS = {
     },
     examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', feedback: 'Keep composition, characters, panel layout. Brighten lighting one stop; clean up the dirty grungy texture into a cleaner matte finish.' }],
   },
+  import_storyboard_image: {
+    key: 'import_storyboard_image',
+    title: 'Import storyboard image',
+    surface: 'storyboard',
+    mutates: true,
+    paid: false,
+    description: 'Attach an uploaded/native image as a storyboard version for one shot, optionally locking that exact version. Use after /api/agent/uploads purpose=storyboard_image.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      sourceAssetId: 'uploaded asset id from /api/agent/uploads purpose=storyboard_image',
+      lock: 'optional boolean; true locks the imported version immediately',
+      note: 'optional short reason/source note',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', sourceAssetId: 'asset_uuid', lock: true }],
+  },
   lock_storyboard: {
     key: 'lock_storyboard',
     title: 'Lock storyboard',

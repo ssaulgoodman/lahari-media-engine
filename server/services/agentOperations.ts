@@ -109,6 +109,7 @@ const labelTool = (tool: string, args: Record<string, any>) => {
   if (action === 'generate_dialogue_audio') return 'Generating dialogue audio';
   if (action === 'bulk_generate_storyboards') return 'Generating storyboards';
   if (tool.includes('generate_storyboard') || tool.includes('generate.storyboard')) return `Generating storyboard${shot}`;
+  if (tool.includes('import_storyboard_image')) return `Importing storyboard${shot}`;
   if (tool.includes('refine_storyboard') || tool.includes('refine.storyboard')) return `Refining storyboard${shot}`;
   if (tool.includes('generate_video') || tool.includes('generate.video')) return `Generating video${shot}`;
   if (tool.includes('storyboard_scene_markdown')) return 'Updating storyboard scene prompts';

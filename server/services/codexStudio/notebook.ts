@@ -86,7 +86,7 @@ Action schemas are materialized under config/actions/. Read config/actions/index
 
 For Looks work, prefer list_actions / describe_action / run_action. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
 
-For local image/audio files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. For images, use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. For audio, use purpose=audio_source; upload only attaches the source file, then you decide whether to run analyze_audio_transcribe/analyze_audio_structure. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
+For local image/audio files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. For images, use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. For native storyboard images, upload with purpose=storyboard_image, then run_action(import_storyboard_image) with shotId, sourceAssetId, and optional lock=true. For audio, use purpose=audio_source; upload only attaches the source file, then you decide whether to run analyze_audio_transcribe/analyze_audio_structure. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
 
 Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. After this notebook is first written, restart or open a fresh harness session in this folder so native skill discovery can pick them up.
 
@@ -95,7 +95,7 @@ Use journal.md for your own concise operator notes: what changed, why, and what 
 Default ritual:
 1. resolve_project when the artist names a project; use list_queue/search_catalog only for catalog/queue-backed music-video work
 2. attach_director_session once you have a projectId
-3. mint_cli_token, then the returned isolated-cache sync command; retry it once on error. For local reference images use /api/agent/uploads with the Mirage bearer token, then run_action(lock_reference) or run_action(generate_candidates with guideAssetId). Use get_project_notebook_manifest + read_project_notebook_file only when the harness has no shell/npx capability.
+3. mint_cli_token, then the returned isolated-cache sync command; retry it once on error. For local reference images use /api/agent/uploads with the Mirage bearer token, then run_action(lock_reference) or run_action(generate_candidates with guideAssetId). For native storyboard images, upload purpose=storyboard_image and run_action(import_storyboard_image). Use get_project_notebook_manifest + read_project_notebook_file only when the harness has no shell/npx capability.
 4. read relevant state files and project mode before proposing changes
 5. apply approved changes through typed MCP tools
 6. refresh affected notebook files
