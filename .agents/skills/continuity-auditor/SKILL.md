@@ -22,7 +22,7 @@ A video that doesn't hold together visually feels cheap regardless of how good a
 **Across all of a character's shots:**
 - Same face? Same costume? Same age?
 - If the character ages or changes costume within the video, is that an intentional beat?
-- Look for drift: subtle differences that accumulate. A slightly different sari color in three shots reads as carelessness.
+- Look for drift: subtle differences that accumulate. A slightly different jacket color in three shots reads as carelessness.
 
 **Across all of an environment's shots:**
 - Same place? Same time of day?

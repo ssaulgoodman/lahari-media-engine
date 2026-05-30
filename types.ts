@@ -153,7 +153,7 @@ export interface ConceptOption {
   language: string;
   subject?: string;
   primarySubject?: string;
-  /** @deprecated Legacy devotional projects used this as the primary subject. */
+  /** @deprecated Legacy queue field; retained only for the legacy song-catalog filter. */
   deity?: string;
   mood: string;
   theme: string;

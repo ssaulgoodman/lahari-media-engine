@@ -46,7 +46,7 @@ const BANNED = [
   { pattern: /20\d\d-\d\d-\d\d fix/, why: 'internal dated-fix note' },
   // Lahari / devotional domain leak — general machine, generic examples only
   { pattern: /Shantamma/, why: 'Lahari example leak — use generic names' },
-  { pattern: /cotton sari/, why: 'Lahari/devotional example leak' },
+  { pattern: /\bsari\b/i, why: 'Lahari/devotional example leak' },
   { pattern: /\bdeity\b/i, why: 'devotional domain leak' },
   { pattern: /\bdevotional\b/i, why: 'devotional domain leak' },
   { pattern: /\bBhakti\b/i, why: 'Lahari domain leak' },
