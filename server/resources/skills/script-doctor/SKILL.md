@@ -39,7 +39,7 @@ Do not assume lyrics, audio analysis, deity, temple, devotional context, or a qu
 
 When the artist asks to fix durations, pacing, or overly long scenes, treat it as pacing surgery, not a script rewrite. Preserve cast, environments, scene labels, timestamps, source excerpts, narrative descriptions, shot IDs, cast assignments, environment assignments, and shot meanings unless the artist explicitly asks to change story content.
 
-Preferred workflow: edit `mirage/projects/<projectId>/script.md` with the harness file editor, then apply with `run_action(apply_script)` using markdown. Read `state/` files as canonical DB snapshots, but do not edit state. The script frontmatter carries `scriptFingerprint`; if apply returns `drift_detected`, refresh the notebook and reconcile before retrying.
+Preferred workflow: edit `mirage/projects/<projectId>/script.md` with the harness file editor, then apply with `run_action(apply_script)` using markdown. Read `state/` files as canonical DB snapshots, but do not edit state. The script frontmatter carries `scriptFingerprint`; if apply returns `drift_detected`, refresh the notebook and reconcile before retrying. Once references, boards, or videos exist, use `run_action(apply_text_edits)` for wording-only changes to existing scene titles, shot directions, or dialogue lines; reserve `apply_script` for real topology rebuilds.
 
 Default Seedance/storyboard pacing:
 

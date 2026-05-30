@@ -77,12 +77,21 @@ Legacy rows may still surface `music_video` or `anime_scripted`; treat them as a
 
 For text-native work, Codex writes the content and Mirage apply tools validate/persist it. Do not call backend LLM-wrapper tools when an apply-only tool exists.
 
+Raw artist chat is not an agent action payload. Treat phrases like "make it brighter," "less grungy," or "more like the reference" as intent for you to interpret, not text to forward into a generic `userNote` slot.
+
+Use the right operation:
+
+- **Prompt/spec refine:** edit the local draft, saved prompt text, or structured object in concrete positive language, then apply it. Example: replace "dirty dim bunker" with "clean pale bunker, bright overhead light, crisp flat shadows."
+- **Paid regenerate:** run from the saved graph/spec after the prompt is right. Use `contextOverrides` to unplug/swap refs before resorting to a full `promptOverride`.
+- **Media edit:** send the existing asset plus a narrow `editInstruction`: keep everything else, change this one visual/audio property. Do not resend the whole original prompt unless intentionally regenerating.
+- **Legacy/web-direct note:** only use raw-note refine helpers when operating a direct Web Studio fallback or debugging a legacy route where no harness translated the artist's intent.
+
 Load the right shard before writing:
 
 | Apply tool | Shard |
 |---|---|
 | `apply_concept` | this skill's concept taste checks |
-| `apply_script` | `script-doctor` |
+| `apply_script`, `apply_text_edits` | `script-doctor` |
 | `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
 | `apply_storyboard_prompts` | `storyboard-prompt-craft` |
 | `apply_video_prompt` | `storyboard-prompt-craft` |
@@ -93,9 +102,21 @@ When a read result includes `baseHashes`, pass the relevant hash into the apply 
 
 For character and environment references, do not scrape storage or write DB rows directly.
 
-- Recover generated candidates with `list_character_look_candidates` / `list_environment_look_candidates`, or the generic `list_reference_candidates`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
-- Lock an existing candidate or uploaded asset with `apply_cast_reference` / `apply_environment_reference`.
-- If you create or edit a reference image as a local file outside Mirage, prefer `mint_cli_token` and run the returned `mirage upload-cast-reference` / `mirage upload-environment-reference` CLI command. The local CLI reads the file bytes and uploads them without moving base64 through chat. Use `upload_cast_reference` / `upload_environment_reference` base64 only as fallback when shell/CLI is blocked. Both paths create the asset row, update the cast/environment reference, mark dependent shot prompts stale, and record the director event.
+- For Concept, Script, and Style work, prefer registry actions through `run_action`: `apply_concept`, `apply_script`, `apply_text_edits`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, and `apply_style_direction`. `apply_script` accepts either structured JSON or markdown from `script.md`. Lock a generated/uploaded style asset with `apply_style_direction({ style: { sourceAssetId } })`; Mirage auto-identifies style text when the project style description is empty/weak.
+- For System config work, prefer registry actions through `run_action`: `apply_project_preferences`, `apply_project_style_notes`, `apply_project_prompt_override`, and `revert_project_prompt_override`. Repeated successful phrasing/technique is a candidate for a project style-note bucket; a repeated complete recipe is a candidate for project prompt override.
+- For action discovery inside a materialized notebook, prefer local files: read `config/actions/index.json`, then the one surface file you need (for example `config/actions/looks.json`). Use MCP `list_actions` only when these files are missing/stale or you need live server truth.
+- For Looks work, prefer the Slice 1 action surface through `run_action`; use `generate_candidates`, `list_candidates`, and `lock_reference`.
+- Generate reusable character/environment candidates with `start_job({ actionKey: 'generate_candidates', input: { entityType, entityIds, note?, promptOverride?, guideAssetId?, contextOverrides? } })` after artist approval. Use `contextOverrides` before writing a full `promptOverride` when the only goal is to unplug/swap context, such as `{ includeStyleImage: false }`, `{ includeProjectStyleDescription: false }`, or `{ styleNoteSections: { include: ["image"], exclude: ["storyboard"] } }`.
+- Recover generated candidates with `run_action({ actionKey: 'list_candidates', input: { entityType, entityId } })` or `list_results({ resultType: 'candidates', ... })`. These return durable asset IDs/URLs even when a paid generation timed out at the MCP boundary.
+- Lock an existing candidate or uploaded asset with `run_action({ actionKey: 'lock_reference', input: { entityType, entityId, sourceAssetId } })`.
+- For style image candidates, use `start_job({ actionKey: 'generate_style_candidates', input: { note?, promptOverride?, guideAssetId?, contextOverrides? } })` after artist approval. Lock a generated or uploaded style asset with `run_action({ actionKey: 'apply_style_direction', input: { style: { sourceAssetId, styleDescription? } } })`; omit `styleDescription` when you want Mirage to backfill it from the image.
+- If you create or edit a reference image as a local file outside Mirage, upload bytes outside MCP: `POST /api/agent/uploads` as multipart with the same Mirage bearer token, `projectId`, `purpose`, optional `entityId`, and `file`. For cast/env uploads, use the returned `assetId` as `sourceAssetId` in `lock_reference` or as `guideAssetId` in `generate_candidates`. For style uploads, use it as `sourceAssetId` in `apply_style_direction` or as `guideAssetId` in `generate_style_candidates`. Legacy base64 upload tools remain fallback only when the HTTPS upload path is blocked.
+- For paid Storyboard work, prefer `start_job` with `generate_storyboard` or `refine_storyboard_image` after approval. `generate_storyboard` accepts `contextOverrides` for per-call ref/style-note control such as `{ excludeCastRefs: ["cast_id"] }`, `{ includeStyleImage: false }`, `{ includePreviousStoryboard: false }`, or `{ styleNoteSections: { exclude: ["motion"] } }`. Use `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`.
+- `parallel_run` waits for every action to finish before returning. Prefer `start_job` for paid generation so the artist can watch progress in Visual Studio while the agent continues.
+- Keep `parallel_run` batches small and only include actions the artist has approved. Current cap is 8 actions; split larger scene batches.
+- For Video work, use `run_action({ actionKey: 'generate_video', input: { projectId, shotId, dryRun: true } })` for requirements/cost, then `start_job({ actionKey: 'generate_video', input: { projectId, shotId, ... } })` after approval. Use `apply_video_prompt` only to persist keyframe-mode motion prompt text; it does not generate media.
+- For Audio work, prefer `apply_audio_plan` and `apply_cast_voice` through `run_action`. Use `generate_dialogue_audio` with `dryRun: true` for TTS cost/missing voices, then `start_job` after approval. Overlay TTS needs cast voices; lipsync video generation does not.
+- Legacy MCP tools are hidden from the default catalog. Stay on cockpit tools plus local action files / `run_action` / `start_job`; only use `list_actions` or legacy aliases if an engineer explicitly enables them for compatibility debugging.
 
 ## Friction Capture
 

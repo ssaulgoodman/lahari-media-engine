@@ -91,9 +91,9 @@ Load the right shard before writing:
 | Apply tool | Shard |
 |---|---|
 | `apply_concept` | this skill's concept taste checks |
-| `apply_script`, `apply_script_markdown` | `script-doctor` |
+| `apply_script`, `apply_text_edits` | `script-doctor` |
 | `apply_shot_prompts` | `script-doctor` + `continuity-auditor` |
-| `apply_storyboard_prompt`, `apply_storyboard_prompts_bulk` | `storyboard-prompt-craft` |
+| `apply_storyboard_prompts` | `storyboard-prompt-craft` |
 | `apply_video_prompt` | `storyboard-prompt-craft` |
 
 When a read result includes `baseHashes`, pass the relevant hash into the apply tool. If an apply tool returns `error: validation_failed`, the tool's `field` and `message` tell you what to fix; revise the content and retry. Do not pass `force: true` to skip validation or drift checks unless you have explicitly told the artist what will be overwritten and received approval.
@@ -102,7 +102,7 @@ When a read result includes `baseHashes`, pass the relevant hash into the apply 
 
 For character and environment references, do not scrape storage or write DB rows directly.
 
-- For Concept, Script, and Style work, prefer registry actions through `run_action`: `apply_concept`, `apply_script`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, `identify_style`, and `apply_style_direction`. `apply_script` accepts either structured JSON or markdown from `drafts/script.md`. Lock a generated/uploaded style asset with `apply_style_direction({ style: { sourceAssetId } })`; Mirage auto-identifies style text when the project style description is empty/weak. Use `identify_style` first only when you need artist confirmation before locking.
+- For Concept, Script, and Style work, prefer registry actions through `run_action`: `apply_concept`, `apply_script`, `apply_text_edits`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, and `apply_style_direction`. `apply_script` accepts either structured JSON or markdown from `script.md`. Lock a generated/uploaded style asset with `apply_style_direction({ style: { sourceAssetId } })`; Mirage auto-identifies style text when the project style description is empty/weak.
 - For System config work, prefer registry actions through `run_action`: `apply_project_preferences`, `apply_project_style_notes`, `apply_project_prompt_override`, and `revert_project_prompt_override`. Repeated successful phrasing/technique is a candidate for a project style-note bucket; a repeated complete recipe is a candidate for project prompt override.
 - For action discovery inside a materialized notebook, prefer local files: read `config/actions/index.json`, then the one surface file you need (for example `config/actions/looks.json`). Use MCP `list_actions` only when these files are missing/stale or you need live server truth.
 - For Looks work, prefer the Slice 1 action surface through `run_action`; use `generate_candidates`, `list_candidates`, and `lock_reference`.
@@ -111,8 +111,7 @@ For character and environment references, do not scrape storage or write DB rows
 - Lock an existing candidate or uploaded asset with `run_action({ actionKey: 'lock_reference', input: { entityType, entityId, sourceAssetId } })`.
 - For style image candidates, use `start_job({ actionKey: 'generate_style_candidates', input: { note?, promptOverride?, guideAssetId?, contextOverrides? } })` after artist approval. Lock a generated or uploaded style asset with `run_action({ actionKey: 'apply_style_direction', input: { style: { sourceAssetId, styleDescription? } } })`; omit `styleDescription` when you want Mirage to backfill it from the image.
 - If you create or edit a reference image as a local file outside Mirage, upload bytes outside MCP: `POST /api/agent/uploads` as multipart with the same Mirage bearer token, `projectId`, `purpose`, optional `entityId`, and `file`. For cast/env uploads, use the returned `assetId` as `sourceAssetId` in `lock_reference` or as `guideAssetId` in `generate_candidates`. For style uploads, use it as `sourceAssetId` in `apply_style_direction` or as `guideAssetId` in `generate_style_candidates`. Legacy base64 upload tools remain fallback only when the HTTPS upload path is blocked.
-- For paid Storyboard work, prefer `start_job` with `generate_storyboard`, `bulk_generate_storyboards`, or `refine_storyboard_image` after approval. `generate_storyboard` and `bulk_generate_storyboards` accept `contextOverrides` for per-call ref/style-note control such as `{ excludeCastRefs: ["cast_id"] }`, `{ includeStyleImage: false }`, `{ includePreviousStoryboard: false }`, or `{ styleNoteSections: { exclude: ["motion"] } }`. Use `run_action` for `apply_storyboard_prompts`, `lock_storyboard`, and `unlock_storyboard`.
-- Use `bulk_generate_storyboards` when the server should pick missing/stale/error boards for a project or selected shot list. Use `parallel_run` when you have already chosen specific independent shot actions and want to reduce round-trips.
+- For paid Storyboard work, prefer `start_job` with `generate_storyboard` or `refine_storyboard_image` after approval. `generate_storyboard` accepts `contextOverrides` for per-call ref/style-note control such as `{ excludeCastRefs: ["cast_id"] }`, `{ includeStyleImage: false }`, `{ includePreviousStoryboard: false }`, or `{ styleNoteSections: { exclude: ["motion"] } }`. Use `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`.
 - `parallel_run` waits for every action to finish before returning. Prefer `start_job` for paid generation so the artist can watch progress in Visual Studio while the agent continues.
 - Keep `parallel_run` batches small and only include actions the artist has approved. Current cap is 8 actions; split larger scene batches.
 - For Video work, use `run_action({ actionKey: 'generate_video', input: { projectId, shotId, dryRun: true } })` for requirements/cost, then `start_job({ actionKey: 'generate_video', input: { projectId, shotId, ... } })` after approval. Use `apply_video_prompt` only to persist keyframe-mode motion prompt text; it does not generate media.

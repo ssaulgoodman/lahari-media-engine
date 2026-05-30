@@ -39,7 +39,7 @@ export type NotebookFile = {
   description: string;
 };
 
-const normalizedProjectDir = (project: Project) => `mirage/projects/${project.id}`;
+const normalizedProjectDir = (project: Pick<Project, 'id'>) => `mirage/projects/${project.id}`;
 const MIRAGE_SKILL_NAMES = [
   'mirage-director',
   'storyboard-prompt-craft',
@@ -174,7 +174,7 @@ const buildSkillsManifest = (skillResources: NotebookSkillResource[]): NotebookS
   };
 };
 
-const buildSkillsManifestFile = (project: Project, manifest: NotebookSkillsManifest): NotebookFile => ({
+const buildSkillsManifestFile = (project: Pick<Project, 'id'>, manifest: NotebookSkillsManifest): NotebookFile => ({
   path: `${normalizedProjectDir(project)}/config/skills.json`,
   mode: 'config',
   writePolicy: 'overwrite',
@@ -200,6 +200,21 @@ const buildSkillFiles = (skillResources: NotebookSkillResource[]): NotebookFile[
     },
   ];
 });
+
+export const buildNotebookSkillArtifacts = (project: Pick<Project, 'id'>): {
+  manifest: NotebookSkillsManifest;
+  files: NotebookFile[];
+} => {
+  const skillResources = loadSkillResources();
+  const manifest = buildSkillsManifest(skillResources);
+  return {
+    manifest,
+    files: [
+      ...buildSkillFiles(skillResources),
+      buildSkillsManifestFile(project, manifest),
+    ],
+  };
+};
 
 const buildBrief = (project: Project, actions: ReturnType<typeof buildProjectActionList>): string => {
   const counts = statusCounts(project);

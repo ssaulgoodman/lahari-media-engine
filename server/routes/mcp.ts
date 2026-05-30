@@ -12,6 +12,7 @@ import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, getAgentOperation, listAgentOperations, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
+import { normalizeLeanActionReceipt } from '../services/codexStudio/leanReceipt.js';
 import { runWithRequestContext } from '../requestContext.js';
 import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
@@ -113,44 +114,6 @@ const resultSizeTrace = (value: unknown): { responseBytes: number; jsonOk: boole
   } catch {
     return { responseBytes: 0, jsonOk: false };
   }
-};
-
-const artifactHash = (content: string) => crypto.createHash('sha256').update(content).digest('hex');
-
-const leanNotebookArtifact = (artifact: any) => {
-  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact) || typeof artifact.path !== 'string') return artifact;
-  const content = typeof artifact.content === 'string' ? artifact.content : '';
-  return {
-    kind: 'mirage.notebook.changed_artifact',
-    path: artifact.path,
-    hash: typeof artifact.hash === 'string' ? artifact.hash : artifactHash(content),
-    size: typeof artifact.size === 'number' ? artifact.size : Buffer.byteLength(content, 'utf8'),
-    mode: artifact.mode,
-    writePolicy: artifact.writePolicy,
-    description: artifact.description,
-  };
-};
-
-const normalizeLeanActionReceipt = (value: unknown): unknown => {
-  if (!value || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(normalizeLeanActionReceipt);
-  const obj = value as Record<string, any>;
-  const out: Record<string, any> = {};
-  for (const [key, child] of Object.entries(obj)) {
-    if (key === 'changedArtifacts' && Array.isArray(child)) {
-      out.changedArtifacts = child.map(leanNotebookArtifact);
-      out.changedArtifactSummary = {
-        count: out.changedArtifacts.length,
-        paths: out.changedArtifacts.map((artifact: any) => artifact.path),
-        sync: out.changedArtifacts.length
-          ? 'Run the returned notebook sync command to refresh these changed paths; Supabase remains canonical.'
-          : 'No notebook artifacts changed.',
-      };
-      continue;
-    }
-    out[key] = normalizeLeanActionReceipt(child);
-  }
-  return out;
 };
 
 const logMcpCallTrace = (entry: {
