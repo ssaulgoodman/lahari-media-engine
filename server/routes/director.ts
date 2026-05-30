@@ -12,18 +12,37 @@ const router = Router();
 const DIRECTOR_API_VERSION = '2026-05-14.r17-first-pass';
 const DIRECTOR_LIMITS = {
   mutatingPerHour: envInt('LAHARI_DIRECTOR_API_MUTATIONS_PER_HOUR', 180),
-  paidPerDay: envInt('LAHARI_DIRECTOR_API_PAID_CALLS_PER_DAY', 30),
+  paidImagePerDay: envInt('LAHARI_DIRECTOR_API_PAID_IMAGE_CALLS_PER_DAY', envInt('LAHARI_DIRECTOR_API_PAID_CALLS_PER_DAY', 120)),
+  paidVideoPerDay: envInt('LAHARI_DIRECTOR_API_PAID_VIDEO_CALLS_PER_DAY', 80),
   issuesPerHour: envInt('LAHARI_DIRECTOR_API_ISSUES_PER_HOUR', 20),
 };
-const PAID_TOOLS = new Set([
+const PAID_IMAGE_TOOLS = new Set([
   'director.generate.style_reference',
   'director.generate.character_look',
   'director.generate.environment_look',
   'director.generate.storyboard',
   'director.generate.storyboards_bulk',
-  'director.generate.video',
   'director.refine.storyboard_image',
 ]);
+const PAID_VIDEO_TOOLS = new Set(['director.generate.video']);
+
+const paidToolLimit = (tool: string) => {
+  if (PAID_VIDEO_TOOLS.has(tool)) {
+    return {
+      key: 'paid-video',
+      limit: DIRECTOR_LIMITS.paidVideoPerDay,
+      label: 'Paid Lahari video generation',
+    };
+  }
+  if (PAID_IMAGE_TOOLS.has(tool)) {
+    return {
+      key: 'paid-image',
+      limit: DIRECTOR_LIMITS.paidImagePerDay,
+      label: 'Paid Lahari image/reference generation',
+    };
+  }
+  return null;
+};
 
 type DirectorHandler = (req: Request, res: Response) => Promise<unknown>;
 
@@ -88,12 +107,13 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
     || tool.includes('.preview');
   recordMcpAudit({ source: 'mcp-remote', phase: 'start', tool, args, startedAt });
   try {
-    if (PAID_TOOLS.has(tool)) {
+    const paidLimit = paidToolLimit(tool);
+    if (paidLimit) {
       assertRateLimit({
-        key: `director-api:paid:${req.userId || req.ip}`,
-        limit: DIRECTOR_LIMITS.paidPerDay,
+        key: `director-api:${paidLimit.key}:${req.userId || req.ip}`,
+        limit: paidLimit.limit,
         windowMs: 24 * 60 * 60 * 1000,
-        label: 'Paid Lahari Director API call',
+        label: paidLimit.label,
       });
     } else if (tool === 'director.issues.capture') {
       assertRateLimit({
@@ -132,7 +152,7 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
         startedAt,
         durationMs: Date.now() - start,
         readOnly: isReadOnly,
-        paid: PAID_TOOLS.has(tool),
+        paid: !!paidLimit,
       });
       return fail(res, data);
     }
@@ -147,7 +167,7 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
       startedAt,
       durationMs: Date.now() - start,
       readOnly: isReadOnly,
-      paid: PAID_TOOLS.has(tool),
+      paid: !!paidLimit,
     });
     return ok(res, data);
   } catch (error) {
@@ -162,7 +182,7 @@ const audited = (tool: string, handler: DirectorHandler) => async (req: Request,
       startedAt,
       durationMs: Date.now() - start,
       readOnly: isReadOnly,
-      paid: PAID_TOOLS.has(tool),
+      paid: !!paidToolLimit(tool),
     });
     return fail(res, error);
   }
