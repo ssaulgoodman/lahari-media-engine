@@ -36,13 +36,16 @@ storage/*.db
 
 # Local dev tooling (Claude Code, skills)
 .claude/
-.agents/
+.agents/*
 .lahari/
 .mirage/
 skills/
 !server/resources/skills/
 !server/resources/skills/*/
 !server/resources/skills/*/SKILL.md
+!.agents/skills/
+!.agents/skills/*/
+!.agents/skills/*/SKILL.md
 skills-lock.json
 .lahari/
 .npm-cache/

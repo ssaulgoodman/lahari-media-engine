@@ -40,12 +40,14 @@ export type NotebookFile = {
 
 const normalizedProjectDir = (project: Pick<Project, 'id'>) => `mirage/projects/${project.id}`;
 const MIRAGE_SKILL_NAMES = [
-  'storyboard-prompt-craft',
-  'script-doctor',
-  'continuity-auditor',
-  'style-ref-critic',
-  'render-triage',
+  'concept-writer',
+  'script-writer',
+  'art-director',
+  'casting-director',
+  'sound-director',
   'audio-director',
+  'storyboarding',
+  'video-director',
 ] as const;
 const NOTEBOOK_VERSION = '2026-05-21.mcp-polish-v1';
 

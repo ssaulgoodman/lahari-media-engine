@@ -50,15 +50,20 @@ If MCP tools are unavailable, stop and ask the artist to reconnect Mirage. Do no
 - `.agents/skills/` and `.claude/skills/` — project-local craft skills. If `config/skills.json` or `notebook.json.skillsHash` changes, sync and open a fresh session so skills reload.
 - `journal.md` — append concise decisions here.
 
-## Craft skills (load on demand)
+## Node skills (load on demand)
 
-Pull the focused skill when you do that kind of work:
-- `script-doctor` — script structure, shot beats, cast/env assignments, pacing.
-- `storyboard-prompt-craft` — storyboard prompts, cut plans, motion prompts.
-- `style-ref-critic` — style reference choice and style drift.
-- `continuity-auditor` — identity/environment/style continuity across shots.
-- `audio-director` — dialogue, voices, audio plan, TTS strategy.
-- `render-triage` — only before spending money to regenerate a failed asset.
+Actions are the buttons; skills are how to play them. For any non-trivial creative move, load the node skill — it teaches the maneuver/repair ladder (the several ways to get a result and when to pick which), model behavior, and failure modes, not just writing style. Combine skills when a task crosses nodes.
+
+- `concept-writer` — concept through-line, subject, tone; rewrite vs apply; the lock-wipes-downstream footgun.
+- `script-writer` — scene/shot structure, beats, cast/env assignments; safe text edit vs topology rebuild.
+- `art-director` — style reference and style notes; generate/lock/promote; fixing style-wide drift.
+- `casting-director` — cast/environment reference images; candidate judging, locking, identity consistency.
+- `sound-director` — uploaded source audio: soundtrack vs source material, when to transcribe/analyze structure.
+- `audio-director` — dialogue and narration: voices, lipsync vs overlay, TTS.
+- `storyboarding` — storyboard prompts and the full board repair ladder; cross-shot coherence.
+- `video-director` — shot video: keyframe vs storyboard mode, motion prompts, model behavior, cost.
+
+Render runs in the web timeline, not via an agent action — point the artist there for final assembly.
 
 ## Output style
 
