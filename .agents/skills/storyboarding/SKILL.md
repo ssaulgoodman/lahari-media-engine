@@ -36,7 +36,7 @@ The default storyboard provider handles most boards; switch provider (`nano-bana
 
 ## Ask before
 
-- `generate_storyboard`, `bulk_generate_storyboards`, and `refine_storyboard_image` are paid. Confirm before generating.
+- `generate_storyboard` and `refine_storyboard_image` are paid. Confirm before generating. For a batch, run `parallel_run` over per-shot `generate_storyboard` calls.
 
 ## Failure modes
 

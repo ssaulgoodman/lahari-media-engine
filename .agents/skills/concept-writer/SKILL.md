@@ -16,14 +16,14 @@ The concept is the project's spine: subject, direction, tone, and what the piece
 
 - **Write / rewrite:** draft the concept yourself, then persist with `run_action(apply_concept)`. Text is harness-native — you write it; the action only saves it.
 - **Tighten vs broaden:** if downstream keeps drifting, the concept may be over- or under-specified. One that names every visual detail boxes in the script; one that names none gives no anchor. Aim for subject + tone + intent, not a shot list.
-- **Keep it off every call:** the concept seeds context but isn't meant to ride in every image/video prompt. If it's polluting outputs, drop it per-call with `contextOverrides: { includeConcept: false }`.
+- **Where the concept actually goes:** downstream, the concept only feeds **style-candidate generation** — not looks, storyboards, or video. To generate a style candidate without it, pass `contextOverrides: { includeConcept: false }` to `generate_style_candidates`.
 
-## Ask before
+## Side effects (it's safe)
 
-- **Re-locking a changed concept is destructive.** If scenes already exist, locking a materially different concept can wipe or fork downstream script/cast/shots. State that plainly and confirm before applying — offer a fork if the artist wants to keep both.
+- `apply_concept` saves the concept and, if a script already exists, marks existing **shot prompts stale** for review. It does **not** delete or fork scenes, shots, or cast — "No script rows were changed." So a concept change is cheap and reversible: tell the artist their shot prompts will show as outdated, not that anything was wiped.
 
 ## Failure modes
 
 - Concept reads like a logline, not a production spine (no tone/visual intent) → script has nothing to inherit.
 - Concept over-specifies visuals → fights the style and looks nodes downstream.
-- Silent re-lock → downstream data loss. Always surface the wipe/fork choice first.
+- Over-warning that a concept change will "wipe" downstream → it only marks shot prompts stale. Don't make the artist hesitate over a safe edit.

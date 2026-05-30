@@ -17,7 +17,7 @@ Cast and environment references are the identity anchors: one locked image per c
 - **Review before locking:** `run_action(list_candidates)` to see options — don't lock blind.
 - **Lock:** `run_action(lock_reference)` with the chosen `sourceAssetId`. One locked ref per entity is what shots bind to.
 - **Use-as-is or guide:** upload a native image to `/api/agent/uploads`, then pass it as `sourceAssetId` (use the image directly) or `guideAssetId` (steer generation).
-- **Tune context per call:** `contextOverrides` — `includeStyleImage: false` to break from the style, `styleAssetId` to swap anchor, `excludeCastRefs`/`excludeEnvironmentRefs` to keep one entity from bleeding into another's generation.
+- **Tune context per call:** `contextOverrides` for candidate generation — `includeStyleImage: false` to break from the locked style, `styleAssetId` to swap the style anchor, `includeGuideAsset` / `includeProjectStyleDescription` to control what else feeds it. (Each candidate is generated from the style anchor alone; it doesn't attach other entities' refs, so there's nothing to exclude.)
 
 ## Ask before
 

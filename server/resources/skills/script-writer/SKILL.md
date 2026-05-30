@@ -25,7 +25,7 @@ Every named on-screen person/object/place that must be reused needs a cast or en
 
 ## Ask before
 
-- **`apply_script` on an existing project can wipe or fork downstream cast/scenes/prompts.** State the blast radius before applying; reserve it for genuine topology work. For anything that's "just reword it," use `apply_text_edits`.
+- **`apply_script` replaces topology** — it deletes and rebuilds scenes, shots, cast, and environments. If the project already has generated refs, boards, videos, or locks, it **refuses** unless you pass `allowDownstreamVisualWipe: true` after the artist explicitly approves losing that visual work. Reserve it for genuine topology change; for "just reword it," use `apply_text_edits`.
 
 ## Failure modes
 
