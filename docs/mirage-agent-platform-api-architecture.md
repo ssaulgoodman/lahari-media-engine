@@ -344,6 +344,7 @@ Once the API/action contracts are stable:
 - ship stable skills and MCP config
 - reduce notebook instruction payload
 - keep project-specific action schemas in notebook files
+- keep user/team production bundles as Mirage server/workbench data, not plugin payload
 
 ## What We Would Not Do
 

@@ -276,6 +276,12 @@ Presets no longer ship runtime doctrine to text prompts. Image-gen workers still
 
 `codify_project_as_preset(name, sections?)` not built. Intentional: per the harvest doctrine, we wait until a real "I shipped a great anime, now make episode 2" moment proves the shape. Today: project style notes accumulate per project; no cross-project codification action exists.
 
+Reusable skills belong in the same harvest family. If an artist or agent rewrites `storyboard-prompt-craft`, develops a stronger script voice, or finds a reliable render-triage rubric for a series, that should not require copying files between project notebooks or editing global Codex state by hand.
+
+Target product object: a **production bundle**. It is a user/team/project-scoped package of selected project style notes, prompt overrides, reusable skills, examples/model phrases, and optionally reusable refs/assets. A new project can apply the bundle at intake or after Codex suggests it. The bundle seeds project-local files and config, but the project copy stays editable and can diverge.
+
+The plugin boundary stays clean: a Mirage Codex plugin ships stable generic operating skills and connection glue; production bundles are Mirage server/workbench data selected per project. The plugin is not runtime truth, and user taste does not become hidden global doctrine.
+
 ### 9. Update skills and AGENTS/CLAUDE — ✅ shipped
 
 Teach agents:

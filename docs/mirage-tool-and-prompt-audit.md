@@ -776,6 +776,14 @@ Project skills are useful but long. Each should open with a tiny "do this now" b
 **P3 later: selective worker agents.**
 Useful workers: visual triage, continuity check, scene-level prompt drafting, issue/audit summarizer. Do not spawn workers for every action; use them for candidate review and multi-shot rewrite loops where parallel judgment pays for itself.
 
+### 16. User/team production bundles for reusable taste, overrides, refs, and skills
+
+**Problem:** a strong project can currently accumulate useful style notes, project prompt overrides, locked refs, examples/model phrases, and even rewritten local skills. But there is no clean way to reuse that earned production language across Mirage projects. The choices today are bad: copy project notebook files by hand, promote something into global platform skills too early, or ask every new agent to rediscover the same taste.
+
+**Slice:** add a `production_bundles` product object and actions such as `save_project_as_bundle`, `list_production_bundles`, and `apply_production_bundle`. A bundle should be scoped to user/team/project/public and include selected style-note buckets, prompt overrides, reusable skills, examples/model phrases, and optional reusable refs/assets. Applying a bundle seeds the new project's editable `config/` and `.agents/skills/` copies; it does not make the bundle hidden runtime doctrine.
+
+**Why deferred:** this is downstream of versioned notebook skills, style notes, and prompt overrides all being stable. Build after smoke proves the loop and after we see one real "episode 1 worked, make episode 2" harvest case. This is the clean home for reusable artist taste; it should not block current Studio stabilization.
+
 ---
 
 ## Appendix
