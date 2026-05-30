@@ -8,9 +8,11 @@ Guidance for Codex when working in this repo. Keep this file aligned with `CLAUD
 
 ## Operating Principle
 
-Supabase is canonical project truth. Local files in artist workspaces are desk copies for reading, editing, diffing, and handoff. `state/` contains read-only DB snapshots. `script.md`, `audio-plan.md`, and `storyboards/*.md` are editable working artifacts that become production only when an apply action persists them. `config/` is the editable project override layer.
+Supabase is canonical project truth. Local files in artist workspaces are desk copies for reading, editing, diffing, and handoff.
 
-**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Mirage — remote MCP at `/mcp`, materialized per-project workspaces via `write_project_notebook`. Internal legacy MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) still exist as engine-side debug + scripting tools, not as the director-session surface.
+Artist workspaces now use a **two-tier notebook**. Workspace-shared files live at the workspace root: `AGENTS.md`, `CLAUDE.md`, `.agents/skills/`, `.claude/skills/`, `config/actions/*`, and `config/skills.json`. Project files live under `mirage/projects/<projectId>/`: `state/` read-only DB snapshots, editable `script.md`, `audio-plan.md`, `storyboards/*.md`, project `config/`, `notebook.json`, and `journal.md`. Files become production only when a typed apply action persists them.
+
+**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Mirage — remote MCP at `/mcp`, synced into two-tier local workspaces with `mint_cli_token` + Mirage CLI. `write_project_notebook` remains the heavy no-shell fallback. Internal legacy MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) still exist as engine-side debug + scripting tools, not as the director-session surface.
 
 If you want to test director-session behavior, open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect`, install the remote MCP. Same shape an artist gets. Don't try to do director work from inside this engine repo — that's a transitional pattern from before distribution shipped and it gives a falsely-comfortable shape.
 
@@ -27,15 +29,17 @@ This checkout is the **Mirage platform lane**.
 
 Do Mirage platform work here. Do not switch the main checkout away from `main` for Lahari work, and do not use this checkout for urgent Lahari production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
-Artists do not use this repo. They mint a token at the deployed Mirage `/connect` page, paste the install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask to open a project. The agent attaches via remote MCP and `write_project_notebook` materializes the workspace (state, editable artifacts, config, journal, AGENTS.md, skills) inside that folder. No engine code on the artist's machine. Current CLI snippets use `@ssaulgoodman420/mirage-cli`.
+Artists do not use this repo. They mint a token at the deployed Mirage `/connect` page, paste the install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask to open a project. The agent attaches via remote MCP and syncs the notebook with `mint_cli_token` → returned `@ssaulgoodman420/mirage-cli@0.1.3` command. No engine code on the artist's machine.
 
 Current notebook contract:
-- `state/` is overwritten from Supabase and should not be hand-edited.
-- `script.md` is the editable script working artifact for pre-visual scripts and real topology rebuilds. Once references, storyboards, or videos exist, agents should use `run_action(apply_text_edits)` for wording-only changes to existing scene titles, shot directions, or dialogue lines. Keep `apply_script` for adding/removing/re-IDing cast, environments, scenes, or shots.
-- `config/prompts/*.md`, `config/preferences.json`, and `config/style-notes.json` are project-level runtime config. Edit locally, then persist with `apply_project_prompt_override`, `apply_project_preferences`, or `apply_project_style_notes`.
-- Reference-image bridge tools: in materialized artist notebooks, read `config/actions/index.json` first, then the relevant surface file such as `config/actions/looks.json`; use `list_actions` only if those files are missing/stale or you need live server truth. Use `run_action` with `generate_candidates`, `list_candidates`, and `lock_reference` for cast/env references. For paid image generation, use `start_job` after artist approval. Looks/style/storyboard generation supports `contextOverrides` so agents can unplug or swap default context per call (for example `includeStyleImage: false`, `styleAssetId`, `excludeCastRefs`, `includeProjectStyleDescription: false`, or `styleNoteSections: { exclude: ["storyboard"] }`) before resorting to a full `promptOverride`. For style images, use `generate_style_candidates`, `identify_style`, and `apply_style_direction`. For local/native images, POST multipart to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy MCP tools are hidden by default; set `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1` only for compatibility debugging.
-- Concept/script/style action bridge: prefer `run_action` for `apply_concept`, `apply_script`, `apply_text_edits`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, `identify_style`, and `apply_style_direction`. `apply_script` accepts either structured `script` JSON or markdown from `script.md`; use it for fresh topology, not post-visual wording cleanup. `apply_text_edits` only edits existing text fields and preserves refs/boards/videos while marking affected outputs stale. For uploaded style images, use `apply_style_direction({ style: { sourceAssetId } })` to lock the asset; Mirage auto-identifies style text when the project style description is empty/weak. Use `identify_style` first only when you need artist confirmation before locking.
-- Storyboard action bridge: prefer `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. For local/native storyboard PNGs created by Codex imagegen, POST to `/api/agent/uploads` with `purpose=storyboard_image`, then call `import_storyboard_image({ shotId, sourceAssetId, lock: true })` to attach and approve that exact board. For paid storyboard generation/refine, use `start_job` with `generate_storyboard`, `bulk_generate_storyboards`, or `refine_storyboard_image` after artist approval. Use `contextOverrides` on storyboard generation when the agent needs a one-off ref bundle rather than the shot's default style/cast/env/previous-board refs.
+- Workspace-shared files are hash-gated and tracked in root `.mirage-workspace-state.json`; project files are tracked in `mirage/projects/<projectId>/.sync-state.json`. Existing old per-project `config/actions/*` and `config/skills.json` are pruned by CLI sync.
+- `mirage/projects/<projectId>/state/` is overwritten from Supabase and should not be hand-edited.
+- `mirage/projects/<projectId>/script.md` is the editable script working artifact for pre-visual scripts and real topology rebuilds. Once references, storyboards, or videos exist, agents should use `run_action(apply_text_edits)` for wording-only changes to existing scene titles, shot directions, or dialogue lines. Keep `apply_script` for adding/removing/re-IDing cast, environments, scenes, or shots.
+- `mirage/projects/<projectId>/config/prompts/*.md`, `preferences.json`, and `style-notes.json` are project-level runtime config. Edit locally, then persist with `apply_project_prompt_override`, `apply_project_preferences`, or `apply_project_style_notes`.
+- Reference-image bridge tools: in materialized artist notebooks, read root `config/actions/index.json` first, then the relevant surface file such as `config/actions/looks.json`; use `list_actions` only if those files are missing/stale or you need live server truth. Use `run_action` with `generate_candidates`, `list_candidates`, and `lock_reference` for cast/env references. For paid image generation, use `start_job` after artist approval. Style/look/storyboard generation supports different `contextOverrides` by handler: style and looks honor style/guide/style-note controls such as `includeStyleImage`, `styleAssetId`, `includeProjectStyleDescription`, and `styleNoteSections`; storyboard generation also honors cast/env/previous-board controls such as `excludeCastRefs`, `excludeEnvironmentRefs`, and `includePreviousStoryboard`. Video generation does not take `contextOverrides`.
+- For style images, use `generate_style_candidates` and `apply_style_direction`. `identify_style` is hidden from the materialized agent surface; use it only through live MCP when you need explicit artist confirmation before locking. For local/native images, POST multipart to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy MCP tools are hidden by default; set `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1` only for compatibility debugging.
+- Concept/script/style action bridge: prefer `run_action` for `apply_concept`, `apply_script`, `apply_text_edits`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, and `apply_style_direction`. `apply_script` accepts either structured `script` JSON or markdown from `script.md`; use it for fresh topology, not post-visual wording cleanup. `apply_text_edits` only edits existing text fields and preserves refs/boards/videos while marking affected outputs stale. For uploaded style images, use `apply_style_direction({ style: { sourceAssetId } })` to lock the asset; Mirage auto-identifies style text when the project style description is empty/weak. Use hidden `identify_style` only through live MCP when you need artist confirmation before locking.
+- Storyboard action bridge: prefer `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. For local/native storyboard PNGs created by Codex imagegen, POST to `/api/agent/uploads` with `purpose=storyboard_image`, then call `import_storyboard_image({ shotId, sourceAssetId, lock: true })` to attach and approve that exact board. For paid storyboard generation/refine, use `start_job` with `generate_storyboard` or `refine_storyboard_image` after artist approval. `bulk_generate_storyboards` remains hidden from the materialized agent surface until proper async batch fan-out exists. Use `contextOverrides` on storyboard generation when the agent needs a one-off ref bundle rather than the shot's default style/cast/env/previous-board refs.
 - Agent-native intent rule: raw artist text is not the happy-path payload. If the artist says "make this brighter" or "less grungy," Codex should inspect the existing graph/spec/asset and translate that into an exact prompt/spec edit, `contextOverrides`, a precise `promptOverride`, or a media `editInstruction`. Use legacy raw-note refine helpers only for web-direct fallback/debug paths where no harness has interpreted intent.
 - Video action bridge: use `run_action(generate_video, dryRun: true)` for requirements/cost, then `start_job(generate_video)` after approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.
 - Audio action bridge: prefer `run_action` for `apply_audio_plan` and `apply_cast_voice`. Use `run_action(generate_dialogue_audio, dryRun: true)` for TTS cost/missing voices, then `start_job(generate_dialogue_audio)` after approval. `apply_audio_plan` accepts either structured `shots[]` or markdown from `audio-plan.md`.
@@ -99,7 +103,7 @@ Renderer validation:
 cd remotion-renderer && npm run build
 ```
 
-Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --check`. There is no `npm run check`.
+Useful checks in this repo: `npm run build`, `npx tsc --noEmit --pretty false`, `npm run check:notebook`, `npm run smoke:agent-contract -- --repeat=1`, `git diff --check`. There is no broad `npm run check`.
 
 ## Env Vars
 
@@ -137,9 +141,20 @@ Sessions in this repo are engine sessions only — improving Mirage itself (code
 
 Open any empty folder in Codex Desktop or Claude Code, mint a token at the deployed Mirage `/connect` page, paste the install snippet, restart the harness, ask to open a project. Same path an artist takes. That's the surface to test — not the internal MCP from inside this repo (the internal path bypasses real auth, real rate limits, real network conditions, and presents a falsely-comfortable shape).
 
-### Full Operating Skill
+### Director Skills
 
-The full director rubric (taste checks for concept/script/style/shots/assets/audio, permission rules, output style examples) lives at `.agents/skills/mirage-director/SKILL.md`. Read it when giving creative feedback or proposing changes — it captures the production language and refusal patterns to follow.
+The old monolithic `mirage-director` skill is gone. Root `AGENTS.md` is the durable always-on operating base; eight node skills teach craft and maneuverability on demand:
+
+- `concept-writer`
+- `script-writer`
+- `art-director`
+- `casting-director`
+- `sound-director`
+- `audio-director`
+- `storyboarding`
+- `video-director`
+
+When a behavior claim appears in a skill, verify it against `server/services/actionRegistry.ts`, `server/routes/mcp.ts`, and the target handler before editing it. The working-method gate lives in `docs/agent-working-method.md`.
 
 ## Internal Debug Surfaces
 
@@ -192,7 +207,7 @@ Generated local artifacts from current internal debug commands live under `.mira
 
 Durable artist/operator decisions are written to Supabase director events (`lahari_director_events` in legacy mode, prefix-mapped for studio mode where applicable). Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.mirage/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
 
-Remote artist notebooks use `mirage/projects/<projectId>/` instead of `.mirage/`. That folder is created by `write_project_notebook`, not by this repo's internal CLI.
+Remote artist notebooks use the two-tier layout: shared Mirage files at the workspace root, project files under `mirage/projects/<projectId>/`. The preferred path is `mint_cli_token` plus the returned `@ssaulgoodman420/mirage-cli@0.1.3 sync <projectId>` command; `write_project_notebook` is the heavy MCP fallback for no-shell harnesses.
 
 **Realtime transport is shipped (R36):** prefix-mapped `agent_operations` tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across project-relevant tables for cascade refresh.
 
@@ -358,7 +373,8 @@ Known caveat: `lahari_shots.prompts_stale` is shared by keyframe `visual_prompt`
 
 The current prompt/tool architecture has three layers:
 
-- `server/tools/registry.ts` — cross-surface tool contract: what exists, what it needs, what it reads, what it produces, and where it appears.
+- `server/services/actionRegistry.ts` — agent-visible action contract and materialized `config/actions/*` source.
+- `server/tools/registry.ts` — older web/tool-availability registry for Blueprint shelves and availability gating.
 - `server/prompts/*` + `server/prompts/_composer.ts` — runtime prompt builders. Keep them as action-scoped context assemblers: task, selected project data, selected references, project override, call override, and output contract. `userNote` is legacy/web-direct only; agent sessions translate artist chat before calling MCP actions.
 - `components/PromptsLibrary.tsx` / `/api/prompts` — artist/debug surface now framed as Tool Recipes, with legacy template references below.
 
@@ -367,7 +383,8 @@ The current prompt/tool architecture has three layers:
 Runtime prompt changes commonly touch:
 
 - `server/prompts/*`
-- `server/tools/registry.ts` when a tool's inputs/outputs/availability change
+- `server/services/actionRegistry.ts` when an agent-visible action's inputs/outputs/availability change
+- `server/tools/registry.ts` when web tool availability changes
 - `server/services/claude.ts` and `server/services/openai-script.ts` shims
 - `server/services/storyboard.ts`
 - `server/services/seedance-storyboard-rd.ts`

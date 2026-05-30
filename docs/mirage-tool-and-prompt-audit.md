@@ -117,7 +117,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 | `list_candidates` | looks | Lists previously-generated candidates | DB read | — |
 | `lock_reference` | looks | Sets canonical character/env reference | DB only | — |
 | `generate_storyboard` | storyboard | Renders one storyboard image from saved prompt | image model | ● |
-| `bulk_generate_storyboards` | storyboard | Renders many storyboards (per shot) | image model | ● |
+| `bulk_generate_storyboards` | storyboard | Renders many storyboards (per shot); hidden from materialized agent action files until async batch fan-out exists | image model | ● |
 | `apply_storyboard_prompts` | storyboard | Saves Codex-written storyboard prompt + cut plan | DB only | — |
 | `refine_storyboard_image` | storyboard | Edits existing storyboard with narrow instruction | image edit | ● |
 | `import_storyboard_image` | storyboard | Imports an uploaded/native image as a storyboard version | DB only | — |
@@ -217,9 +217,10 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 
 #### bulk_generate_storyboards
 
-**Notes:** _blank_
+**Notes:** Live registry action, but hidden from materialized agent action files. Agents should use per-shot `start_job(generate_storyboard)` until async batch fan-out exists.
 
-**Pass log:** none
+**Pass log:**
+- 2026-05-30: Hidden from materialized agent surface after smoke showed blocking/sequential bulk calls were the wrong director-session primitive.
 
 #### apply_storyboard_prompts
 
@@ -677,11 +678,11 @@ That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; t
 Scannable view of everything ahead. Detailed entries with the same IDs follow below.
 
 **A · Finish current round (smoke stabilization P0s) → then thorough test**
-- ✅ Reliable sync (isolated cache + lean receipts + CLI 0.1.2 changed-only/conflict/lock-TTL)
+- ✅ Reliable sync (isolated cache + lean receipts + CLI 0.1.3 two-tier workspace sync)
 - ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
 - ✅ Local/native storyboard import — `purpose=storyboard_image` upload + `import_storyboard_image` action
 - ✅ Versioned notebook skills — skills as hashed synced artifacts, stale-aware (mechanism for single-source skills)
-- ✅ **Skill content audit** (item 17) — mirage-director rewritten (legacy tools + "Opening IT SAID OH" corruption gone), all skills de-Bhakti'd + de-jargoned, render-triage trigger tightened. `npm run check:notebook` guards packaged/local pair identity; content quality remains a read-and-review responsibility, not a regex gate.
+- ✅ **Skill content audit** (item 17) — old skill set replaced by 8 node skills (concept/script/art/casting/sound/audio/storyboarding/video), all behavior claims code-verified. `npm run check:notebook` guards packaged/local pair identity; content quality remains a read-and-review responsibility, not a regex gate.
 - ☐ **Thorough test** of the full agent-native chain (skills now clean — measures the system, not skill rot)
 
 **B · Post-test friction wins (P1, small/high-ROI)**
@@ -805,11 +806,12 @@ Pass log:
 - 2026-05-30 Codex: `mint_cli_token` commands isolate npm cache from ambient `~/.npm` (slice 1, 1954f50). Fallback wording tightened — sync command is the trusted path, retried once on error; MCP file reads only when no shell/npx exists, not on recoverable failures (cc7aa31).
 - 2026-05-30 Codex: lean receipts — action responses return changed paths + hashes, never file bodies, uniformly at the MCP boundary (slice 2, 471b297).
 - 2026-05-30 Codex: CLI `0.1.2` shipped (62c7fb7) — changed-only sync via manifest hash-diff (skips unchanged files), local-vs-server conflict + untracked-file + removed-remote detection, sync-lock owner metadata + 15-min TTL + stale-lock move-aside, lock release on recoverable errors. Published, Railway `MIRAGE_CLI_PACKAGE` pinned to `0.1.2`, live `mint_cli_token` verified.
+- 2026-05-30 Claude+Codex: CLI `0.1.3` completed the two-tier workspace split (9f5d11a, c21f5f1) — workspace-shared files live at root and are tracked in `.mirage-workspace-state.json`; project files stay under `mirage/projects/<projectId>/` with per-project `.sync-state.json`; old per-project `config/actions/*` and `config/skills.json` are pruned; `mint_cli_token` now defaults to `@ssaulgoodman420/mirage-cli@0.1.3`.
 
 Net: isolated cache + changed-only diff + conflict-awareness + lock safety + lean receipts are all in. The CLI bridge is now confident enough to re-smoke and operate on. The only remaining sync work is the durable shape (item below), which is no longer blocking.
 
 **Deferred (durable shape, no longer smoke-blocking): replace npx bridge with HTTP data plane + local plugin bridge.**
-The CLI 0.1.2 is robust but still depends on `npx` per session. The durable shape is a Codex-plugin local bridge over plain HTTPS read endpoints (`GET notebook manifest`, `GET file?path=`) so sync never touches npx/npm at all — the same binary-boundary pattern as `/api/agent/uploads`. The HTTP read endpoints are also the substrate the plugin bridge sits on, so they are not wasted work. Build this when the CLI bridge proves insufficient under real use, or alongside the plugin packaging milestone — not as a smoke blocker now that 0.1.2 holds.
+The CLI 0.1.3 is robust but still depends on `npx` per session. The durable shape is a Codex-plugin local bridge over plain HTTPS read endpoints (`GET notebook manifest`, `GET file?path=`) so sync never touches npx/npm at all — the same binary-boundary pattern as `/api/agent/uploads`. The HTTP read endpoints are also the substrate the plugin bridge sits on, so they are not wasted work. Build this when the CLI bridge proves insufficient under real use, or alongside the plugin packaging milestone — not as a smoke blocker now that 0.1.3 holds.
 
 **P0 before Studio smoke continues: local/native storyboard import.**
 Codex can create or edit a stronger storyboard image with native imagegen, but Mirage has no way to upload that PNG as a storyboard version and lock it. Add `purpose=storyboard_image` to `/api/agent/uploads`, then an `import_storyboard_image({ shotId, sourceAssetId, lock? })` action that creates the storyboard asset/version, updates the shot, and optionally locks it.

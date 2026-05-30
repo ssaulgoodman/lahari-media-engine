@@ -20,7 +20,7 @@ Renderer validation:
 cd remotion-renderer && npm run build
 ```
 
-Useful checks: `npm run build`, `npx tsc --noEmit`, `git diff --check`. There is no `npm run check`.
+Useful checks: `npm run build`, `npx tsc --noEmit --pretty false`, `npm run check:notebook`, `npm run smoke:agent-contract -- --repeat=1`, `git diff --check`. There is no broad `npm run check`.
 
 ## Env Vars
 
@@ -43,12 +43,16 @@ Production Mirage app: https://mirage-platform-production-05ca.up.railway.app
 
 Auth and ownership: Supabase Auth via `requireAuth`. Project route params verify `user_id === req.userId`. Child params and body IDs must stay scoped through route params and `scope-helpers.ts`. No null-owner bypass.
 
-Simple mutations usually return `{ ok: true }` and frontend applies optimistic updates. AI/generate/refine/fork/analyze/fetch-style actions still return full project snapshots. Do not casually convert one shape to the other without checking frontend expectations.
+Do not casually change response shapes without checking frontend expectations. The agent/MCP path now uses lean receipts: changed notebook artifacts are returned as paths + hashes, not full bodies. Full project/notebook payloads are off-path debug/fallback surfaces, not routine reads.
 
-Artist director work happens through deployed Mirage remote MCP, not inside this engine repo. `write_project_notebook` materializes an artist workspace with `state/`, editable artifacts, `config/`, `journal.md`, AGENTS/CLAUDE files, and skills under `mirage/projects/<projectId>/`. `state/` is read-only Supabase snapshots. `script.md` is editable for pre-visual scripts and topology rebuilds; apply it with `run_action(apply_script)` using markdown. Once refs, boards, or videos exist, use `run_action(apply_text_edits)` for wording-only scene title, shot direction, or dialogue edits so visual groundwork survives.
+Artist director work happens through deployed Mirage remote MCP, not inside this engine repo. Artist workspaces use a two-tier notebook:
+- Workspace root: `AGENTS.md`, `CLAUDE.md`, `.agents/skills/`, `.claude/skills/`, `config/actions/*`, `config/skills.json`.
+- Per project: `mirage/projects/<projectId>/state/`, `script.md`, `audio-plan.md`, `storyboards/*.md`, project `config/`, `notebook.json`, `journal.md`.
+
+Sync with `mint_cli_token` and the returned `@ssaulgoodman420/mirage-cli@0.1.3` command. `write_project_notebook` is a heavy fallback for no-shell harnesses. `state/` is read-only Supabase snapshots. `script.md` is editable for pre-visual scripts and topology rebuilds; apply it with `run_action(apply_script)` using markdown. Once refs, boards, or videos exist, use `run_action(apply_text_edits)` for wording-only scene title, shot direction, or dialogue edits so visual groundwork survives.
 
 Prompt source-of-truth discipline:
-- Runtime prompt changes must keep the registry/composer/tool-recipe surfaces aligned: `server/tools/registry.ts`, `server/prompts/*`, `/api/prompts`, `components/PromptsLibrary.tsx`, and the secondary reference `server/prompts/catalog.ts`.
+- Runtime prompt/action changes must keep the registry/composer/tool-recipe surfaces aligned: `server/services/actionRegistry.ts` for agent-visible actions, `server/tools/registry.ts` for web availability, `server/prompts/*`, `/api/prompts`, `components/PromptsLibrary.tsx`, and the secondary reference `server/prompts/catalog.ts`.
 - Agent-native intent is not a raw `userNote` pipe. Codex/Claude must translate artist chat into exact graph/spec edits, `contextOverrides`, precise `promptOverride`, `callInstruction`, `editInstruction`, or a project override before calling Mirage actions. `userNote` is legacy/web-direct only.
 - Pipeline behavior changes must update `docs/pipeline-anatomy.md`.
 - Keep `CLAUDE.md` short; do not paste full prompt bodies or long endpoint inventories here.
@@ -97,7 +101,7 @@ Text-provider routing does **not** include script writing. `planScenes`, `refine
 
 The current architecture is registry + composer, not a pile of fat prompt templates.
 
-- `server/tools/registry.ts` is the cross-surface contract for what tools exist, what they need/read/produce, and where they appear.
+- `server/services/actionRegistry.ts` is the agent-visible action contract. `server/tools/registry.ts` is the older web/tool-availability registry. Keep both truthful when capability or availability changes.
 - `server/prompts/*` and `server/prompts/_composer.ts` build worker-call context from explicit sources: task, selected project data, selected references, project override, call override, and output contract. Raw artist notes are for legacy web-direct helpers, not the agent-preferred path.
 - `components/PromptsLibrary.tsx` is the Tool Recipes UI. It should show artist-readable tool behavior first; raw prompt/template references are secondary/debug.
 - Avoid injecting workflow/preset enum labels into LLM prompt bodies. Logs may carry keys; prompts should receive human production language.
@@ -110,7 +114,7 @@ This is a two-step pipeline.
 2. `POST /generate-storyboard` renders exactly the saved `storyboard_prompt` with `project.storyboard_provider` and locked refs. It does not re-plan.
 3. `refine-storyboard` has two modes:
    - `replan` rewrites saved text only; artist clicks Generate afterward.
-   - `edit_image` renders from current board + current prompt + artist instruction; text fields stay untouched.
+   - `edit_image` renders from current board + refs + a focused edit instruction; text fields stay untouched.
 
 Storyboard prompt rules:
 - Keep prompts short and image-native.
@@ -185,11 +189,11 @@ Phase unlocks are pure navigation. They rewind status and do not delete data.
 
 Individual look unlocks clear one cast/env reference, expose persisted candidates, and mark dependent shots stale.
 
-Reference-image bridge tools: in materialized artist notebooks, read `config/actions/index.json` first, then the relevant surface file such as `config/actions/looks.json`; use `list_actions` only if those files are missing/stale or you need live server truth. Use `run_action` with `generate_candidates`, `list_candidates`, and `lock_reference` for cast/env references. For paid image generation, use `start_job` after artist approval. Looks/style/storyboard generation supports `contextOverrides` so agents can unplug or swap default context per call (for example `includeStyleImage: false`, `styleAssetId`, `excludeCastRefs`, `includeProjectStyleDescription: false`, or `styleNoteSections: { exclude: ["storyboard"] }`) before resorting to a full `promptOverride`. For style images, use `generate_style_candidates`, `identify_style`, and `apply_style_direction`. For local/native images, POST multipart to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy MCP tools are hidden by default; set `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1` only for compatibility debugging.
+Reference-image bridge tools: in materialized artist notebooks, read root `config/actions/index.json` first, then the relevant surface file such as `config/actions/looks.json`; use `list_actions` only if those files are missing/stale or you need live server truth. Use `run_action` with `generate_candidates`, `list_candidates`, and `lock_reference` for cast/env references. For paid image generation, use `start_job` after artist approval. Style/look/storyboard generation supports different `contextOverrides` by handler: style and looks honor style/guide/style-note controls such as `includeStyleImage`, `styleAssetId`, `includeProjectStyleDescription`, and `styleNoteSections`; storyboard generation also honors cast/env/previous-board controls such as `excludeCastRefs`, `excludeEnvironmentRefs`, and `includePreviousStoryboard`. Video generation does not take `contextOverrides`. For style images, use `generate_style_candidates` and `apply_style_direction`; `identify_style` is hidden from the materialized agent surface and is only for live-MCP confirmation cases. For local/native images, POST multipart to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` as `sourceAssetId` for use-as-is or `guideAssetId` for upload-as-guide. Legacy MCP tools are hidden by default; set `MIRAGE_MCP_INCLUDE_LEGACY_TOOLS=1` only for compatibility debugging.
 
-Concept/script/style action bridge: prefer `run_action` for `apply_concept`, `apply_script`, `apply_text_edits`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, `identify_style`, and `apply_style_direction`. `apply_script` accepts either structured `script` JSON or markdown from `script.md`; use it for fresh topology, not post-visual wording cleanup. `apply_text_edits` only edits existing text fields and preserves refs/boards/videos while marking affected outputs stale. For uploaded style images, use `apply_style_direction({ style: { sourceAssetId } })` to lock the asset; Mirage auto-identifies style text when the project style description is empty/weak. Use `identify_style` first only when you need artist confirmation before locking.
+Concept/script/style action bridge: prefer `run_action` for `apply_concept`, `apply_script`, `apply_text_edits`, `apply_shot_prompts`, `apply_shot_workflow_modes`, `generate_style_candidates`, and `apply_style_direction`. `apply_script` accepts either structured `script` JSON or markdown from `script.md`; use it for fresh topology, not post-visual wording cleanup. `apply_text_edits` only edits existing text fields and preserves refs/boards/videos while marking affected outputs stale. For uploaded style images, use `apply_style_direction({ style: { sourceAssetId } })` to lock the asset; Mirage auto-identifies style text when the project style description is empty/weak. Use hidden `identify_style` only through live MCP when you need artist confirmation before locking.
 
-Storyboard action bridge: prefer `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. For local/native storyboard PNGs created by Codex imagegen, POST to `/api/agent/uploads` with `purpose=storyboard_image`, then call `import_storyboard_image({ shotId, sourceAssetId, lock: true })` to attach and approve that exact board. For paid storyboard generation/refine, use `start_job` with `generate_storyboard`, `bulk_generate_storyboards`, or `refine_storyboard_image` after artist approval. Use `contextOverrides` on storyboard generation when the agent needs a one-off ref bundle rather than the shot's default style/cast/env/previous-board refs.
+Storyboard action bridge: prefer `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. For local/native storyboard PNGs created by Codex imagegen, POST to `/api/agent/uploads` with `purpose=storyboard_image`, then call `import_storyboard_image({ shotId, sourceAssetId, lock: true })` to attach and approve that exact board. For paid storyboard generation/refine, use `start_job` with `generate_storyboard` or `refine_storyboard_image` after artist approval. `bulk_generate_storyboards` is hidden from the materialized agent surface until proper async batch fan-out exists. Use `contextOverrides` on storyboard generation when the agent needs a one-off ref bundle rather than the shot's default style/cast/env/previous-board refs.
 
 Video action bridge: use `run_action(generate_video, dryRun: true)` for requirements/cost, then `start_job(generate_video)` after approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.
 
@@ -198,8 +202,8 @@ Audio action bridge: prefer `run_action` for `apply_audio_plan` and `apply_cast_
 System config action bridge: prefer `run_action` for `apply_project_preferences`, `apply_project_style_notes`, `apply_project_prompt_override`, and `revert_project_prompt_override`. If the same phrasing/technique keeps improving outputs, suggest promoting it to the relevant project style-note bucket; if the same complete recipe keeps working, suggest a project prompt override.
 
 Destructive events happen on active mutation:
-- `lock-concept` with changed concept and existing scenes can wipe downstream data or fork.
-- `generate-script` rerun can wipe cast/scenes/prompts or fork.
+- `apply_script` is the topology rebuild path. After visual work exists, downstream wipes require the explicit `allowDownstreamVisualWipe` flag.
+- `apply_concept` updates concept state and marks shot prompts stale; it is not a wipe/fork operation.
 
 Forks deep-copy project DB rows while sharing asset file paths. `forkProject()` lives in `server/routes/projects.ts`.
 
