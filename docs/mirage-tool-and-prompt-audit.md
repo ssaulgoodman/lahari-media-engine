@@ -94,7 +94,7 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 
 ---
 
-## Layer 2 — Actions (28 live registry actions; 26 materialized for agents)
+## Layer 2 — Actions (29 live registry actions; 27 materialized for agents)
 
 Every action is agent-callable via `run_action` / `start_job`. Quick index table first, then per-action Notes blocks for audit findings.
 
@@ -117,6 +117,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 | `bulk_generate_storyboards` | storyboard | Renders many storyboards (per shot) | image model | ● |
 | `apply_storyboard_prompts` | storyboard | Saves Codex-written storyboard prompt + cut plan | DB only | — |
 | `refine_storyboard_image` | storyboard | Edits existing storyboard with narrow instruction | image edit | ● |
+| `import_storyboard_image` | storyboard | Imports an uploaded/native image as a storyboard version | DB only | — |
 | `lock_storyboard` | storyboard | Approves a storyboard version for video gen | DB only | — |
 | `unlock_storyboard` | storyboard | Clears storyboard approval | DB only | — |
 | `generate_video` | video | Renders the video clip for one shot | video model | ● |
@@ -693,14 +694,15 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ☐ Director orchestration pattern — one agent fans out to N workers, synthesizes
 
 **E · Deferred architecture (durable, demand-driven, not smoke-blocking)**
-- ☐ HTTP data plane + plugin/local bridge — kill `npx` entirely (item 15 deferred entry)
+- ☐ HTTP data plane + plugin/local bridge (sync facet) — kill `npx` entirely; HTTPS read endpoints (manifest, file-by-path) under a local bridge (item 15 deferred entry)
+- ☐ Plugin packaging / distribution (product facet) — ship Mirage as a Codex plugin: stable generic skills + MCP config + onboarding glue; "artist installs once." Production bundles stay server data, NOT plugin payload (api-architecture Phase 5)
+- ☐ Production bundles — user/team/project/public-scoped package of style notes + prompt overrides + reusable skills + examples/model phrases + optional reusable refs/assets, applied as editable `config/` + `.agents/skills/` copies, via `save_project_as_bundle` / `list_production_bundles` / `apply_production_bundle` (item 16; downstream of versioned skills + style notes stable)
 - ☐ Diff-by-ID topology apply — the "add/remove one shot without wiping the rest" middle case
 - ☐ `workflow_key` cleanup (item 2)
 - ☐ Per-project filtering of materialized action schemas (item 4)
 - ☐ Fallback strategy when agents unavailable (item 7)
 - ☐ Web UI audit (item 13)
 - ☐ Durable issue capture (item 14)
-- ☐ Production bundles — user/team-scoped package of style notes + prompt overrides + reusable skills + refs, with `save_project_as_bundle` / `list_production_bundles` / `apply_production_bundle` (item 16; downstream of versioned skills + style notes stable)
 
 **F · Polish (P2/P3, later)**
 - ☐ Reference remap/relock workflow
@@ -808,6 +810,9 @@ The CLI 0.1.2 is robust but still depends on `npx` per session. The durable shap
 **P0 before Studio smoke continues: local/native storyboard import.**
 Codex can create or edit a stronger storyboard image with native imagegen, but Mirage has no way to upload that PNG as a storyboard version and lock it. Add `purpose=storyboard_image` to `/api/agent/uploads`, then an `import_storyboard_image({ shotId, sourceAssetId, lock? })` action that creates the storyboard asset/version, updates the shot, and optionally locks it.
 
+Pass log:
+- 2026-05-30 Codex: `purpose=storyboard_image` + `import_storyboard_image` shipped locally. Native imagegen outputs can now be uploaded over HTTP, attached as storyboard versions, optionally locked, and used without rerendering through Mirage.
+
 **P0 before Studio smoke continues: versioned notebook skills.**
 Bad local skill guidance directly caused bad storyboard prompting during smoke. Treat materialized skills as first-class synced artifacts with versions/hashes. When server guidance changes, the workbench should know it is stale and refresh skills through the same changed-artifact path as project files.
 
@@ -836,7 +841,7 @@ Useful workers: visual triage, continuity check, scene-level prompt drafting, is
 
 Local images do not go through MCP. POST multipart to `/api/agent/uploads` with the Mirage bearer token; pass the returned `assetId` as `sourceAssetId` (lock as-is) or `guideAssetId` (use as visual guide).
 
-Purposes: `style_guide`, `style_reference`, `cast_guide`, `cast_reference`, `env_guide`, `env_reference`, `audio_source`.
+Purposes: `style_guide`, `style_reference`, `cast_guide`, `cast_reference`, `env_guide`, `env_reference`, `storyboard_image`, `audio_source`.
 
 ### Async jobs
 
