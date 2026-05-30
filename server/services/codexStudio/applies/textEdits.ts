@@ -33,6 +33,12 @@ const findScene = (project: Project, sceneId: string): { scene: SceneRef; sceneI
   return { scene: project.scenes[sceneIndex], sceneIndex };
 };
 
+const findSceneForShot = (project: Project, shotId: string): { scene: SceneRef; sceneIndex: number } | null => {
+  const sceneIndex = project.scenes.findIndex((scene) => scene.shots.some((shot) => shot.id === shotId));
+  if (sceneIndex < 0) return null;
+  return { scene: project.scenes[sceneIndex], sceneIndex };
+};
+
 const trimText = (value: string) => value.trim();
 
 const resetDialogueLineAudio = (line: AudioPlanDialogueLine, text: string): AudioPlanDialogueLine => ({
@@ -70,6 +76,7 @@ export const applyTextEdits = async (project: Project, edits: TextEditInput[]) =
     sceneId?: string;
     fieldsChanged: string[];
     stale: string[];
+    warnings?: string[];
     audioPlanHash?: string;
   }> = [];
   const rejected: ApplyError[] = [];
@@ -98,8 +105,12 @@ export const applyTextEdits = async (project: Project, edits: TextEditInput[]) =
       rejected.push(applyError('shot_not_found', `Shot not found in project: ${edit.shotId}`, { shotId: edit.shotId }));
       continue;
     }
-    const sceneId = edit.sceneId || (shotTarget ? project.scenes[shotTarget.sceneIndex - 1]?.id : undefined);
-    const sceneTarget = sceneId ? findScene(project, sceneId) : null;
+    const sceneTarget = edit.sceneId
+      ? findScene(project, edit.sceneId)
+      : shotTarget
+        ? findSceneForShot(project, shotTarget.shot.id)
+        : null;
+    const sceneId = edit.sceneId || sceneTarget?.scene.id;
     if ((edit.sceneId || edit.sceneTitle !== undefined) && (!sceneId || !sceneTarget)) {
       rejected.push(applyError('validation_failed', `Scene not found in project: ${sceneId || edit.sceneId || '(missing)'}`, { field: 'sceneId' }));
       continue;
@@ -144,6 +155,7 @@ export const applyTextEdits = async (project: Project, edits: TextEditInput[]) =
 
     const fieldsChanged: string[] = [];
     const stale: string[] = [];
+    const warnings: string[] = [];
 
     if (sceneTarget && edit.sceneTitle !== undefined) {
       const nextTitle = trimText(edit.sceneTitle);
@@ -178,8 +190,14 @@ export const applyTextEdits = async (project: Project, edits: TextEditInput[]) =
         storyboardShotIds.add(shotTarget.shot.id);
         fieldsChanged.push('direction');
         stale.push('shot_prompts');
-        if (shotTarget.shot.storyboardUrl) stale.push('storyboard');
-        if (shotTarget.shot.videoUrl) stale.push('video');
+        if (shotTarget.shot.storyboardUrl) {
+          stale.push('storyboard');
+          if (shotTarget.shot.storyboardLocked) warnings.push('storyboard_locked_but_stale');
+        }
+        if (shotTarget.shot.videoUrl) {
+          stale.push('video');
+          if (shotTarget.shot.locked) warnings.push('shot_locked_video_stale');
+        }
         scriptChanged = true;
         shotPromptStateChanged = true;
       }
@@ -215,12 +233,13 @@ export const applyTextEdits = async (project: Project, edits: TextEditInput[]) =
     }
 
     if (fieldsChanged.length) {
-      const receipt: { shotId?: string; sceneId?: string; fieldsChanged: string[]; stale: string[]; audioPlanHash?: string } = {
+      const receipt: { shotId?: string; sceneId?: string; fieldsChanged: string[]; stale: string[]; warnings?: string[]; audioPlanHash?: string } = {
         shotId: shotTarget?.shot.id,
         sceneId: sceneTarget?.scene.id,
         fieldsChanged,
         stale,
       };
+      if (warnings.length) receipt.warnings = warnings;
       if (shotTarget && fieldsChanged.includes('dialogue')) {
         receipt.audioPlanHash = audioPlanHash(nextShotsById.get(shotTarget.shot.id) || shotTarget.shot);
       }
@@ -237,9 +256,10 @@ export const applyTextEdits = async (project: Project, edits: TextEditInput[]) =
           sceneId: sceneTarget?.scene.id,
           fieldsChanged,
           stale,
+          warnings,
         },
       });
-      appendApplyJournal(project, 'applied text edits', `${shotTarget ? `${shotApplyLabel(shotTarget)}\nShot ID: ${shotTarget.shot.id}` : `Scene ID: ${sceneTarget?.scene.id}`}\nFields: ${fieldsChanged.join(', ')}\nStale: ${stale.join(', ') || 'none'}\nWeb: ${webStudioUrl(project.id, { step: shotTarget ? 'studio' : 'blueprint', shotId: shotTarget?.shot.id })}`);
+      appendApplyJournal(project, 'applied text edits', `${shotTarget ? `${shotApplyLabel(shotTarget)}\nShot ID: ${shotTarget.shot.id}` : `Scene ID: ${sceneTarget?.scene.id}`}\nFields: ${fieldsChanged.join(', ')}\nStale: ${stale.join(', ') || 'none'}\nWarnings: ${warnings.join(', ') || 'none'}\nWeb: ${webStudioUrl(project.id, { step: shotTarget ? 'studio' : 'blueprint', shotId: shotTarget?.shot.id })}`);
     }
   }
 
