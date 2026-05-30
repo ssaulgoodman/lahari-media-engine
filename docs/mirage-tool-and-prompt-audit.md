@@ -677,8 +677,9 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ✅ Reliable sync (isolated cache + lean receipts + CLI 0.1.2 changed-only/conflict/lock-TTL)
 - ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
 - ✅ Local/native storyboard import — `purpose=storyboard_image` upload + `import_storyboard_image` action
-- ✅ Versioned notebook skills — skills as hashed synced artifacts, stale-aware
-- ☐ **Thorough test** of the full agent-native chain
+- ✅ Versioned notebook skills — skills as hashed synced artifacts, stale-aware (mechanism for single-source skills)
+- ☐ **Skill content audit** (item 17) — the skills were never re-audited after the surface redesign: mirage-director teaches legacy tools + has `"Opening IT SAID OH"` corruption; storyboard-prompt-craft shipped copy fights the ref-binding contract; Lahari/Bhakti examples leaked across most skills. Execute on the clean single-source state once versioning is verified.
+- ☐ **Thorough test** of the full agent-native chain (after skill content is clean — bad skills = bad output regardless of harness)
 
 **B · Post-test friction wins (P1, small/high-ROI)**
 - ☐ Stronger action examples (make `entityIds[]` impossible to miss)
@@ -835,6 +836,32 @@ Useful workers: visual triage, continuity check, scene-level prompt drafting, is
 **Slice:** add a `production_bundles` product object and actions such as `save_project_as_bundle`, `list_production_bundles`, and `apply_production_bundle`. A bundle should be scoped to user/team/project/public and include selected style-note buckets, prompt overrides, reusable skills, examples/model phrases, and optional reusable refs/assets. Applying a bundle seeds the new project's editable `config/` and `.agents/skills/` copies; it does not make the bundle hidden runtime doctrine.
 
 **Why deferred:** this is downstream of versioned notebook skills, style notes, and prompt overrides all being stable. Build after smoke proves the loop and after we see one real "episode 1 worked, make episode 2" harvest case. This is the clean home for reusable artist taste; it should not block current Studio stabilization.
+
+### 17. Skill system content audit (2026-05-30) — execute AFTER versioned-skills lands
+
+The 7 skills (`mirage-director`, `storyboard-prompt-craft`, `render-triage`, `script-doctor`, `style-ref-critic`, `continuity-auditor`, `audio-director`) were written ~May 15–21 for the pre-cockpit surface and **never re-audited after the cockpit+registry+actions redesign or the composer/style-notes/text-edits work.** They're the highest-leverage artifact in the system — they shape every agent decision before any tool fires — and they were the one surface we never reviewed. Do NOT patch the shipped copies until versioned-skills gives a single source of truth (today `.agents/skills/` and `server/resources/skills/` have drifted; fixes land in one and miss the other — that's why the storyboard graph-names fix never reached artists).
+
+**Systemic findings:**
+
+1. **Two-copy drift.** `.agents/skills/` (engine Codex) vs `server/resources/skills/` (ships to artists). `storyboard-prompt-craft` (114 vs 102 lines) and `mirage-director` (176 vs 154) have drifted; shipped copies are stale. Versioned-skills (the P0) must make these one hashed source.
+
+2. **Lahari/Bhakti domain leak — a whole class, not one line.** Devotional-music examples are scattered through the skills: "Shantamma, elderly Tamil grandmother… faded cotton sari," lamps, blessings, temple thresholds, "if the song is meditative let shots breathe." Same Lahari-domain leak we ripped out of runtime prompts (isMeditative/songType/devotional), survived here because we never looked. General-machine skills need generic or example-light guidance.
+
+3. **Written for the OLD surface.** Legacy/renamed tools throughout, especially `mirage-director`.
+
+4. **Internal jargon leaked into artist-facing skills:** "Saul's existing instinct," "R28," "Doctrine §4/§5," "since 2026-05-12 fix," and a corrupted placeholder `"Opening IT SAID OH…"`.
+
+**Per-skill execute list (post-versioning):**
+
+- **`mirage-director` — ❌ rewrite (ship-stopper, loads first every session):** rip out legacy tools (`resolve_project`, `attach_director_session`, `get_director_session`, `get_project_packet` → `list_projects`/`open_project`/`get_project_state`); legacy reference flow (`list_character_look_candidates`, `apply_cast_reference`, `mirage upload-cast-reference` CLI → `generate_candidates`/`lock_reference`/`/api/agent/uploads`); **delete the `"Opening IT SAID OH…"` corruption (line 41)**; fix "mirrors are read-only" → `state/`; complete the shard table (missing `audio-director`); update apply-tool table (add `apply_text_edits`, etc.).
+- **`storyboard-prompt-craft` — ⚠️ sync + fix:** push the graph-names fix into the shipped copy; **delete the contradicting "restate appearance" guidance** (line 32 — fights the ref-binding contract); strip leaks (Saul/2026-05-12/R28); de-Bhakti the examples.
+- **`render-triage` — 🟡 reframe:** content is good but it's a judge/worker rubric over-deployed as an always-on director shard (over-triggers — Saul observed the model loading it constantly). Move to an on-demand worker-agent skill (the "visual triage worker" from Group D) OR tighten the trigger hard. Strip hardcoded dollar costs + "Doctrine §5."
+- **`script-doctor` — 🟡 light:** point at `apply_text_edits` for wording-only (predates it); drop "Doctrine §4"; de-Bhakti examples.
+- **`style-ref-critic` — 🟡 light:** drop "R28," "Doctrine §4."
+- **`continuity-auditor` — 🟡 light:** dedup cost-ladder with render-triage; drop hardcoded costs.
+- **`audio-director` — ✅ best-maintained:** minimal; verify `delivery`/`paceHint` match the live audio-plan schema.
+
+**Discipline going forward:** every skill is an artist-facing product surface. No internal jargon, no legacy tool names, no Lahari/devotional examples, no placeholder text. Re-audit skills whenever the tool/action surface changes — they drifted because nobody did.
 
 ---
 
