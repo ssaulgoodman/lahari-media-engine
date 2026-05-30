@@ -23,10 +23,10 @@ Everything you do goes through the Mirage MCP server, which has two layers.
 - Notebook/files: `write_project_notebook`, `mint_cli_token`, `get_project_notebook_manifest`, `read_project_notebook_file`.
 - Issues: `mirage_capture_issue`.
 
-**Action registry** — 29 typed actions across 8 surfaces (concept, script, style, looks, storyboard, video, audio, system). You do not call these as tools; you dispatch them:
+**Action registry** — agent-visible typed actions across surfaces (concept, script, style, looks, storyboard, video, audio, system). You do not call these as tools; you dispatch them:
 - `run_action(actionKey, input)` — free actions: persist text, edits, plans, locks.
 - `start_job(actionKey, input)` — paid media generation (images, video, TTS); returns a jobId immediately.
-- `describe_action(actionKey)` — the live input schema. Local `config/actions/index.json` mirrors the registry: read it first, fall back to `list_actions` / `describe_action` for live truth.
+- `describe_action(actionKey)` — the live input schema. Local `config/actions/index.json` mirrors the agent-visible registry: read it first, fall back to `list_actions` / `describe_action` for live truth.
 
 If MCP tools are unavailable, stop and ask the artist to reconnect Mirage. Do not substitute DB edits or engine shell scripts.
 
