@@ -668,7 +668,47 @@ That's 13 prompts queued for deprecation. The 7 `[agent]`-tagged prompts stay; t
 
 **This is the single canonical work queue.** Forward plans in `docs/mirage-agent-platform-api-architecture.md` (Phase 0.5) and `docs/mirage-platform-v1-ledger.md` checkpoints reference this list; they do not restate it. When an item ships, move its findings into the relevant Layer 2 action's Pass log and delete the item here.
 
-Numbering is stable IDs, not sequential — gaps (1, 3, 5, 6, 8–12) are items that already shipped during Tier 1–3; their history lives in the Pass logs above. Two clusters remain:
+### Open work — grouped index
+
+Scannable view of everything ahead. Detailed entries with the same IDs follow below.
+
+**A · Finish current round (smoke stabilization P0s) → then thorough test**
+- ✅ Reliable sync (isolated cache + lean receipts + CLI 0.1.2 changed-only/conflict/lock-TTL)
+- ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
+- ☐ Local/native storyboard import — `purpose=storyboard_image` + `import_storyboard_image`
+- ☐ Versioned notebook skills — skills as hashed synced artifacts, stale-aware
+- ☐ **Thorough test** of the full agent-native chain
+
+**B · Post-test friction wins (P1, small/high-ROI)**
+- ☐ Stronger action examples (make `entityIds[]` impossible to miss)
+- ☐ `get_project_state({ detail: "agent_working_set" })` — compact loop state
+- ☐ `rename_project` / title sync (shell title vs concept title divergence)
+
+**C · Product quality (the real lever — currently unmeasured)**
+- ☐ Output quality harness — generate N candidates → judge → surface weak (style drift, ref intrusion, bad blocking) → feed fixes back into prompts/refs/style-notes. Doubles as the first parallel/sub-agent workflow.
+
+**D · Use Codex/Claude power (orchestration)**
+- ☐ Fan-out generation — concurrent looks/storyboards/candidates instead of sequential
+- ☐ Worker sub-agents — visual triage, continuity check, audit sweep (promote item 16 / P3)
+- ☐ Director orchestration pattern — one agent fans out to N workers, synthesizes
+
+**E · Deferred architecture (durable, demand-driven, not smoke-blocking)**
+- ☐ HTTP data plane + plugin/local bridge — kill `npx` entirely (item 15 deferred entry)
+- ☐ Diff-by-ID topology apply — the "add/remove one shot without wiping the rest" middle case
+- ☐ `workflow_key` cleanup (item 2)
+- ☐ Per-project filtering of materialized action schemas (item 4)
+- ☐ Fallback strategy when agents unavailable (item 7)
+- ☐ Web UI audit (item 13)
+- ☐ Durable issue capture (item 14)
+- ☐ Harvest reusable presets — `codify_project_as_preset` (composer-architecture step 8)
+
+**F · Polish (P2/P3, later)**
+- ☐ Reference remap/relock workflow
+- ☐ Shorten skill entry blocks (5-line "do this now" header per skill)
+
+---
+
+Numbering below is stable IDs, not sequential — gaps (1, 3, 5, 6, 8–12) are items that already shipped during Tier 1–3; their history lives in the Pass logs above. Two clusters of detailed entries remain:
 
 - **Original audit backlog** (items 2, 4, 7, 13, 14): deferred-after-smoke architectural cleanups. Take when the abstraction earns it.
 - **Smoke feedback queue** (item 15): the active P0–P3 list from the first agent-native Blueprint smoke. This is what the current round of fixes pulls from. Work P0s first.
