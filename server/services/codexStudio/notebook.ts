@@ -35,6 +35,11 @@ export type NotebookFile = {
   content: string;
   mode: 'state' | 'draft' | 'config' | 'journal' | 'instructions' | 'skill';
   writePolicy: 'overwrite' | 'create_if_missing' | 'review_before_overwrite';
+  // 'workspace' = Mirage-wide shared file at the workspace root (AGENTS/CLAUDE,
+  // skills, config/actions, config/skills.json). Sync should hash-gate these and
+  // not churn them per project. 'project' (default) = lives under
+  // mirage/projects/<projectId>/ and syncs with that project.
+  scope?: 'workspace' | 'project';
   description: string;
 };
 
@@ -99,10 +104,8 @@ const renderTemplate = (template: string, values: Record<string, string>): strin
   }, template);
 };
 
-const buildWorkspaceInstructions = (project: Project): string => {
+const buildWorkspaceInstructions = (): string => {
   return renderTemplate(readResourceText('notebook/AGENTS.template.md'), {
-    PROJECT_TITLE: project.title,
-    PROJECT_ID: project.id,
     NOTEBOOK_VERSION,
   });
 };
@@ -153,11 +156,12 @@ const buildSkillsManifest = (skillResources: NotebookSkillResource[]): NotebookS
   };
 };
 
-const buildSkillsManifestFile = (project: Pick<Project, 'id'>, manifest: NotebookSkillsManifest): NotebookFile => ({
-  path: `${normalizedProjectDir(project)}/config/skills.json`,
+const buildSkillsManifestFile = (manifest: NotebookSkillsManifest): NotebookFile => ({
+  path: `config/skills.json`,
   mode: 'config',
+  scope: 'workspace',
   writePolicy: 'overwrite',
-  description: 'Server-owned Mirage skill manifest. If hashes differ from notebook.json, sync and restart/open a fresh harness session.',
+  description: 'Workspace-shared Mirage skill manifest. If hashes differ from a project notebook.json, sync and restart/open a fresh harness session.',
   content: `${JSON.stringify(manifest, null, 2)}\n`,
 });
 
@@ -166,15 +170,17 @@ const buildSkillFiles = (skillResources: NotebookSkillResource[]): NotebookFile[
     {
       path: `.agents/skills/${skillName}/SKILL.md`,
       mode: 'skill',
+      scope: 'workspace',
       writePolicy: 'overwrite',
-      description: `Codex project-local Mirage skill: ${skillName}. Restart/open a fresh session after first write.`,
+      description: `Workspace-shared Mirage skill (Codex): ${skillName}. Restart/open a fresh session after it changes.`,
       content,
     },
     {
       path: `.claude/skills/${skillName}/SKILL.md`,
       mode: 'skill',
+      scope: 'workspace',
       writePolicy: 'overwrite',
-      description: `Claude Code project-local Mirage skill: ${skillName}. Restart/open a fresh session after first write.`,
+      description: `Workspace-shared Mirage skill (Claude Code): ${skillName}. Restart/open a fresh session after it changes.`,
       content,
     },
   ];
@@ -190,7 +196,7 @@ export const buildNotebookSkillArtifacts = (project: Pick<Project, 'id'>): {
     manifest,
     files: [
       ...buildSkillFiles(skillResources),
-      buildSkillsManifestFile(project, manifest),
+      buildSkillsManifestFile(manifest),
     ],
   };
 };
@@ -521,38 +527,39 @@ const buildNotebookMeta = (
   diagnosis: actions.diagnosis,
 });
 
-const buildActionsArtifacts = (project: Project): NotebookFile[] => {
-  const baseDir = normalizedProjectDir(project);
+// Action schemas are workspace-global (the registry is the same for every
+// project), so they materialize at the workspace root, not under a project dir.
+// TODO: When availableTools/blockedTools become hard runtime gating for registry
+// actions, add a per-project availability overlay inside the project notebook
+// rather than re-stamping the shared index. Today these mirror the full registry.
+const buildActionsArtifacts = (): NotebookFile[] => {
   const actionsHash = buildActionsHash();
   const generatedAt = new Date().toISOString();
-  // TODO: When availableTools/blockedTools become hard runtime gating for
-  // registry actions, filter these materialized specs by project before
-  // writing. Today they intentionally mirror the full action registry.
   const agentActions = actionSpecsForSurface().filter(isMaterializedAgentActionSpec);
   const index = {
     kind: 'mirage.actions.index',
-    projectId: project.id,
     generatedAt,
     version: actionsHash,
     ...buildActionSchemaIndex(agentActions),
   };
   const files: NotebookFile[] = [{
-    path: `${baseDir}/config/actions/index.json`,
+    path: `config/actions/index.json`,
     mode: 'config',
+    scope: 'workspace',
     writePolicy: 'overwrite',
-    description: 'Scan-only action index. Read this first, then the surface-specific file you need.',
+    description: 'Workspace-shared scan-only action index. Read this first, then the surface-specific file you need.',
     content: `${JSON.stringify(index, null, 2)}\n`,
   }];
   for (const surface of ACTION_SURFACES) {
     const actions = actionSpecsForSurface(surface).filter(isMaterializedAgentActionSpec);
     files.push({
-      path: `${baseDir}/config/actions/${surface}.json`,
+      path: `config/actions/${surface}.json`,
       mode: 'config',
+      scope: 'workspace',
       writePolicy: 'overwrite',
-      description: `Full Mirage action specs for the ${surface} surface.`,
+      description: `Workspace-shared Mirage action specs for the ${surface} surface.`,
       content: `${JSON.stringify({
         kind: 'mirage.actions.surface',
-        projectId: project.id,
         surface,
         generatedAt,
         version: actionsHash,
@@ -730,8 +737,8 @@ export const buildNotebookConfigArtifacts = async (
       content: `${JSON.stringify(await buildHashes(project), null, 2)}\n`,
     });
   }
-  if (opts.actions) files.push(...buildActionsArtifacts(project));
-  if (opts.skills) files.push(buildSkillsManifestFile(project, buildSkillsManifest(loadSkillResources())));
+  if (opts.actions) files.push(...buildActionsArtifacts());
+  if (opts.skills) files.push(buildSkillsManifestFile(buildSkillsManifest(loadSkillResources())));
   return files;
 };
 
@@ -745,16 +752,18 @@ export const buildProjectNotebook = async (project: Project) => {
     {
       path: 'AGENTS.md',
       mode: 'instructions',
+      scope: 'workspace',
       writePolicy: 'overwrite',
-      description: 'Workspace-local Mirage notebook instructions.',
-      content: buildWorkspaceInstructions(project),
+      description: 'Workspace-shared Mirage operating instructions (Mirage-wide, not project-specific).',
+      content: buildWorkspaceInstructions(),
     },
     {
       path: 'CLAUDE.md',
       mode: 'instructions',
+      scope: 'workspace',
       writePolicy: 'overwrite',
-      description: 'Claude Code workspace-local Mirage notebook instructions.',
-      content: buildWorkspaceInstructions(project),
+      description: 'Workspace-shared Mirage operating instructions for Claude Code (Mirage-wide, not project-specific).',
+      content: buildWorkspaceInstructions(),
     },
     ...buildSkillFiles(skillResources),
     {
@@ -836,8 +845,8 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Editable per-surface project style notes. Apply with apply_project_style_notes.',
       content: `${JSON.stringify(config.styleNotes.styleNotes, null, 2)}\n`,
     },
-    ...buildActionsArtifacts(project),
-    buildSkillsManifestFile(project, skillsManifest),
+    ...buildActionsArtifacts(),
+    buildSkillsManifestFile(skillsManifest),
     ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
       path: `${baseDir}/config/prompts/${kind}.md`,
       mode: 'config' as const,
@@ -887,6 +896,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific isolated-cache sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell/npx capability. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, state/, hashes, config/actions, and config/skills.json. Create journal.md only if missing. Before overwriting editable artifacts or config/, check whether the file has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and config files are editable project overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(apply_script) only for pre-visual scripts or topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After skills change or first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific isolated-cache sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell/npx capability. If using this full payload manually, write each file to its path relative to the current workspace. Each file carries a scope. Workspace-shared files (scope=workspace: AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, config/actions, config/skills.json) are Mirage-wide at the workspace root — only overwrite them when their hash changed; do not rewrite them per project. Project files (scope=project, default) live under mirage/projects/<projectId>/ (state/, script.md, audio-plan.md, storyboards/, config/style-notes.json, config/preferences.json, config/prompts/, hashes.json, notebook.json, journal.md). Create journal.md only if missing. Before overwriting editable artifacts or a project config/ file, check whether it has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and project config files are editable overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(apply_script) only for pre-visual scripts or topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After the skills hash changes or the first notebook write, restart/open a fresh Codex or Claude session in the workspace so skills reload. Append concise decisions to the project journal.md.',
   };
 };

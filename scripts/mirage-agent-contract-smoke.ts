@@ -73,7 +73,10 @@ const runChecks = (): SmokeResult[] => {
     const first = buildNotebookSkillArtifacts({ id: 'smoke-project' });
     const second = buildNotebookSkillArtifacts({ id: 'smoke-project' });
     assert.equal(first.manifest.version, second.manifest.version, 'skill manifest version should be stable across repeated builds');
-    assert.ok(first.files.some((file) => file.path === 'mirage/projects/smoke-project/config/skills.json'), 'config/skills.json missing');
+    const skillsManifestFile = first.files.find((file) => file.path === 'config/skills.json');
+    assert.ok(skillsManifestFile, 'config/skills.json should materialize at the workspace root, not under a project folder');
+    assert.equal(skillsManifestFile.scope, 'workspace', 'config/skills.json must be scope=workspace');
+    assert.ok(first.files.every((file) => !file.path.startsWith('.agents/skills/') || file.scope === 'workspace'), 'skill files must be scope=workspace');
     assert.equal(first.manifest.skills.length > 0, true, 'skill manifest must include skills');
     for (const skill of first.manifest.skills) {
       assert.equal(skill.paths.length, 2, `${skill.name} should materialize for Codex and Claude`);
