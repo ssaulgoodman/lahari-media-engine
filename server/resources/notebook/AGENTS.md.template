@@ -1,40 +1,29 @@
 # Mirage Workspace
 
-This folder is the local notebook for Mirage project "{{PROJECT_TITLE}}" ({{PROJECT_ID}}).
+Local notebook for Mirage project "{{PROJECT_TITLE}}" ({{PROJECT_ID}}).
 
 Notebook version: {{NOTEBOOK_VERSION}}
 
-Project mode:
+Project metadata:
 - Seed kind: {{SEED_KIND}}
-- Workflow: {{WORKFLOW_KEY}} — {{WORKFLOW_SUMMARY}}
-- Preset: {{PRESET_KEY}} — {{PRESET_LABEL}}
+- Workflow label: {{WORKFLOW_KEY}}
+- Preset label: {{PRESET_KEY}}
 
-These three fields are the operating contract for the agent. Seed kind says what the artist started with. Workflow says which planner/source spine applies. Preset says taste/model/default prompt rules. Available and blocked tools in the project packet are the source of truth for what can run next. Do not assume songs, lyrics, religious subjects, fixed locations, or audio analysis unless this project's seed/workflow/preset/tool list says so.
+Supabase/Mirage is canonical truth. This folder is a desk copy for reading, editing, and handoff. The working contract is the project graph: source material, concept, script, cast, environments, locked assets, style notes, stale flags, and action schemas. Seed/workflow/preset are orientation labels and compatibility metadata, not instructions to inject into prompts.
 
-Supabase is canonical. This is an artist notebook, not the engine source checkout. Use Mirage MCP tools for project reads, applies, generation, locks, and issue capture. If those tools are unavailable, stop and reconnect Mirage instead of substituting shell commands.
+Use Mirage MCP for project state, applies, generation, locks, and issue capture. If the MCP tools are missing, stop and reconnect Mirage; do not substitute engine-repo shell commands.
 
-If the MCP server returns a newer notebookVersion than the one shown here or in mirage/projects/{{PROJECT_ID}}/notebook.json, refresh before continuing. Preferred path: call mint_cli_token, then run the returned command for the active shell in this workspace. Use commands.posix on macOS/Linux. Use commands.powershell on Windows; the returned commands isolate npm's cache in a temp Mirage directory, and Windows wraps npx through cmd /c to avoid PowerShell npx.ps1 policy blocks. The returned command is the reliable path; if it errors, retry it once. Only fall back to get_project_notebook_manifest + read_project_notebook_file when there is no shell/npx capability at all, such as a sandboxed harness, not on a recoverable sync error. Mutating action receipts list changed paths and hashes, not file bodies; run the sync command after important mutations to refresh changed files. Last fallback: call write_project_notebook and write the returned files manually only when the payload is small enough.
+Sync path: call `mint_cli_token`, then run the returned isolated-cache sync command in this workspace. Retry once on error. Only use MCP file reads when the harness has no shell/npx capability. Action receipts return changed paths and hashes; run sync after important mutations.
 
-Files under state/ are read-only desk copies written from Mirage state. Do not hand-edit state files; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
+Files:
+- `state/` is read-only DB state. Do not edit it.
+- `script.md`, `audio-plan.md`, and `storyboards/*.md` are editable drafts. Persist them with the matching apply action.
+- `config/actions/` has project action schemas. Read `index.json` first, then the surface file you need.
+- `config/style-notes.json`, `config/preferences.json`, and `config/prompts/*.md` are editable project config. Persist with `apply_project_*` actions.
+- `.agents/skills/` and `.claude/skills/` are project-local Mirage skills. If `config/skills.json` or `notebook.json.skillsHash` changes, sync and open a fresh harness session so skills reload.
 
-Editable production artifacts live at the project root. Before visual work exists, edit script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with run_action(apply_script) using markdown. Once references, storyboards, or videos exist, use run_action(apply_text_edits) for wording-only changes to existing scene titles, shot directions, or dialogue lines; reserve apply_script for real topology rebuilds. For audio work, edit audio-plan.md and apply with run_action(apply_audio_plan) using markdown. For storyboard prompt work, edit storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with run_action(apply_storyboard_prompts) using markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+Safe edit rule: before visual assets exist, `apply_script` can apply script topology. After refs, boards, or videos exist, use `apply_text_edits` for wording-only changes to existing scene titles, shot directions, or dialogue. Reserve `apply_script` for topology rebuilds.
 
-Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
-Use config/style-notes.json for project-learned visual, storyboard, motion, script, dialogue, and audio style notes; persist with apply_project_style_notes.
-Action schemas are materialized under config/actions/. Read config/actions/index.json first, then only the surface file you need (for example config/actions/looks.json). Use MCP list_actions only when these files are missing, stale, or you need live server truth.
+Bytes stay outside MCP. Upload local images/audio with `/api/agent/uploads` using the Mirage bearer token, then use the returned `assetId` in actions. For native storyboard images: `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 
-For Looks work, use the action schemas, then call run_action or start_job as appropriate. Use generate_candidates for character/environment candidate batches, list_candidates or list_results to recover asset IDs/URLs, and lock_reference to set the canonical reference.
-
-For local image/audio files, keep bytes outside MCP: POST multipart to /api/agent/uploads with the Mirage bearer token, projectId, purpose, entityId, and file. For images, use the returned assetId as sourceAssetId for use-as-is or guideAssetId for upload-as-guide. For native storyboard images, upload with purpose=storyboard_image, then run_action(import_storyboard_image) with shotId, sourceAssetId, and optional lock=true. For audio, use purpose=audio_source; upload only attaches the source file, then you decide whether to run analyze_audio_transcribe/analyze_audio_structure. Legacy base64 upload tools are fallback only when the HTTPS upload path is blocked.
-
-Project-local Mirage skills live under .agents/skills/ for Codex and .claude/skills/ for Claude Code. config/skills.json lists the server-owned skill hashes and notebook.json carries the aggregate skillsHash. If skill hashes differ from server state or skill behavior seems stale, run the returned sync command and restart/open a fresh harness session so native skill discovery reloads them.
-
-Use journal.md for your own concise operator notes: what changed, why, and what to inspect next.
-
-Default ritual:
-1. Open or inspect the project through Mirage MCP: open_project when you have the projectId; use list_projects only when you need to find a project.
-2. Read get_project_state or local state files to understand the current checkpoint, refs, stale flags, and next safe action.
-3. Call mint_cli_token, then run the returned isolated-cache sync command; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file only when the harness has no shell/npx capability.
-4. For local reference images use /api/agent/uploads with the Mirage bearer token, then run_action(lock_reference), run_action(generate_candidates with guideAssetId), or run_action(import_storyboard_image) for storyboard images.
-5. Apply approved changes through typed MCP actions.
-6. Refresh affected notebook files with the sync command after important mutations.
+Default loop: inspect state, choose the smallest relevant action schema, make the change, apply through typed MCP actions, sync changed files, and leave concise notes in `journal.md`.

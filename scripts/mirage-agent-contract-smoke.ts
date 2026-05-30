@@ -116,7 +116,8 @@ const runChecks = (): SmokeResult[] => {
     assert.match(mcpRoute, /returned command is the reliable path/, 'MCP instructions must trust the returned sync command');
     assert.match(mcpRoute, /Only fall back to MCP file reads when there is no shell\/npx capability/, 'MCP instructions must not invite eager fallback');
     const notebook = readFileSync('server/resources/notebook/AGENTS.md.template', 'utf8');
-    assert.match(notebook, /config\/skills\.json lists the server-owned skill hashes/, 'workspace instructions must mention skill hashes');
+    assert.match(notebook, /config\/skills\.json/, 'workspace instructions must mention skill manifest');
+    assert.match(notebook, /notebook\.json\.skillsHash/, 'workspace instructions must mention aggregate skill hash');
   });
 
   return results;
