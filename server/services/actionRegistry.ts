@@ -301,6 +301,26 @@ export const SCRIPT_ACTION_SPECS = {
     },
     examples: [{ projectId: 'project_uuid', markdown: '---\\nformat: mirage-script-v1\\n...' }],
   },
+  apply_text_edits: {
+    key: 'apply_text_edits',
+    title: 'Apply text edits',
+    surface: 'script',
+    mutates: true,
+    paid: false,
+    description: 'Persist low-blast-radius wording edits on existing scenes/shots only. Use after references, boards, or videos exist. Cannot add/delete/re-ID topology; direction changes mark board/video stale, dialogue changes mark audio stale.',
+    input: {
+      projectId: 'string',
+      edits: 'array of {shotId?, sceneId?, sceneTitle?, direction?, dialogue?: [{dialogueId, text}]} keyed only by existing IDs',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      edits: [{
+        shotId: 'shot_uuid',
+        direction: 'The Boss crosses the red room slowly, keeping her knife hand hidden.',
+        dialogue: [{ dialogueId: 'dialogue_uuid', text: 'You should have stayed gone.' }],
+      }],
+    }],
+  },
   apply_shot_prompts: {
     key: 'apply_shot_prompts',
     title: 'Apply shot prompts',

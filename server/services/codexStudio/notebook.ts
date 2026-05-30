@@ -78,7 +78,7 @@ If the MCP server returns a newer notebookVersion than the one shown here or in 
 
 Files under state/ are read-only desk copies written from Mirage state. Do not hand-edit state files; refresh them with CLI sync, manifest + per-file MCP fallback, or write_project_notebook after attach or after major mutations.
 
-Editable production artifacts live at the project root. For script changes, edit script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with run_action(apply_script) using markdown. For audio work, edit audio-plan.md and apply with run_action(apply_audio_plan) using markdown. For storyboard prompt work, edit storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with run_action(apply_storyboard_prompts) using markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
+Editable production artifacts live at the project root. Before visual work exists, edit script.md surgically, preserve IDs unless intentionally replacing an entity, then apply with run_action(apply_script) using markdown. Once references, storyboards, or videos exist, use run_action(apply_text_edits) for wording-only changes to existing scene titles, shot directions, or dialogue lines; reserve apply_script for real topology rebuilds. For audio work, edit audio-plan.md and apply with run_action(apply_audio_plan) using markdown. For storyboard prompt work, edit storyboards/<scene>.md scene-by-scene, preserving shot IDs and base hashes, then apply with run_action(apply_storyboard_prompts) using markdown. If apply reports drift_detected, refresh the notebook and reconcile before retrying.
 
 Files under config/ are the editable project layer. Edit config/prompts/*.md or config/preferences.json when you want project-specific runtime behavior, then persist through the matching apply_project_* MCP tool.
 Use config/style-notes.json for project-learned visual, storyboard, motion, script, dialogue, and audio style notes; persist with apply_project_style_notes.
@@ -551,7 +551,7 @@ export const buildNotebookMirrorArtifacts = (
       path: `${baseDir}/script.md`,
       mode: 'draft',
       writePolicy: 'review_before_overwrite',
-      description: 'Editable script artifact. Edit surgically and apply with run_action(apply_script) using markdown.',
+      description: 'Editable script artifact. Use apply_text_edits for post-visual wording changes; use apply_script only for pre-visual scripts or topology rebuilds.',
       content: buildScriptMarkdownDraft(project),
     });
   }
@@ -709,7 +709,7 @@ export const buildProjectNotebook = async (project: Project) => {
       path: `${baseDir}/script.md`,
       mode: 'draft',
       writePolicy: 'review_before_overwrite',
-      description: 'Editable script artifact. Edit surgically and apply with run_action(apply_script) using markdown.',
+      description: 'Editable script artifact. Use apply_text_edits for post-visual wording changes; use apply_script only for pre-visual scripts or topology rebuilds.',
       content: buildScriptMarkdownDraft(project),
     },
     ...project.scenes.map((scene, sceneIndex) => buildStoryboardSceneDraftFile(project, sceneIndex, scene)),
@@ -813,6 +813,6 @@ Opened project and wrote the initial local notebook.
     },
     baseDir,
     files,
-    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific isolated-cache sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell/npx capability. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, state/, and hashes. Create journal.md only if missing. Before overwriting editable artifacts or config/, check whether the file has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and config files are editable project overrides. Apply script edits with run_action(apply_script) using markdown. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
+    writeInstructions: 'Last fallback path only. Prefer mint_cli_token + the returned shell-specific isolated-cache sync command so file bodies do not travel through chat; retry it once on error. Use get_project_notebook_manifest + read_project_notebook_file path-by-path only when the harness has no shell/npx capability. If using this full payload manually, write each file to path relative to the current workspace. Overwrite AGENTS.md, CLAUDE.md, .agents/skills, .claude/skills, state/, and hashes. Create journal.md only if missing. Before overwriting editable artifacts or config/, check whether the file has unsaved local edits; script.md, audio-plan.md, and storyboards/*.md are editable working copies and config files are editable project overrides. Apply post-visual wording edits with run_action(apply_text_edits); use run_action(apply_script) only for pre-visual scripts or topology rebuilds. Apply scene storyboard edits with run_action(apply_storyboard_prompts) using markdown. After the first notebook write, restart/open a fresh Codex or Claude session in this folder so project-local skills are discovered. Append concise decisions to journal.md.',
   };
 };

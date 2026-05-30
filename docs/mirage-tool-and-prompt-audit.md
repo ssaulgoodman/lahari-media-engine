@@ -94,7 +94,7 @@ Prompt (e.g. character-look) — or no prompt for pure persistence
 
 ---
 
-## Layer 2 — Actions (27 live registry actions; 26 materialized for agents)
+## Layer 2 — Actions (28 live registry actions; 26 materialized for agents)
 
 Every action is agent-callable via `run_action` / `start_job`. Quick index table first, then per-action Notes blocks for audit findings.
 
@@ -104,6 +104,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 |---|---|---|---|:-:|
 | `apply_concept` | concept | Saves Codex-written concept JSON to DB | DB only | — |
 | `apply_script` | script | Saves Codex-written script (JSON or markdown) to DB | DB only | — |
+| `apply_text_edits` | script | Safely edits existing scene title / shot direction / dialogue text without topology changes | DB only | — |
 | `apply_shot_prompts` | script | Saves Codex-written visual/motion/direction text per shot | DB only | — |
 | `apply_shot_workflow_modes` | script | Sets per-shot path: `auto` / `storyboard` / `keyframe` | DB only | — |
 | `generate_style_candidates` | style | Renders style reference candidate batch | image model | ● |
@@ -730,8 +731,11 @@ Ranked findings from the first real agent-native Blueprint smoke. These are prod
 
 **Design law for this round:** one confident path per operation. Fallbacks are automatic/invisible or explicitly off-path. Do not make agents choose between happy-path forks during creative work.
 
-**P0 before deeper smoke: preserve locked references across `apply_script`.**
-First guard landed: `force` no longer authorizes a downstream visual wipe by itself. Remaining product behavior: script edits should preserve visual groundwork when cast/environment IDs survive. Preflight should report whether IDs are preserved, replaced, or dropped. Apply should clear refs only for removed/replaced entities, not unchanged IDs. Eventual target: diff-based script apply by stable entity/scene/shot IDs, not wholesale topology replacement.
+**P0 before deeper smoke: safe post-visual script text edits.**
+First guard landed: `force` no longer authorizes a downstream visual wipe by itself. Product decision after smoke: do not make `apply_script` smart-preserve every case yet. Add a narrow `apply_text_edits` action that edits only existing scene titles, shot directions, and dialogue line text keyed by existing IDs. It cannot add/delete/re-ID topology. Direction changes mark shot prompts/storyboard/video stale; dialogue changes mark audio stale. `apply_script` stays the rare topology rebuild path guarded by `allowDownstreamVisualWipe`. Eventual target, if needed: diff-based script apply by stable entity/scene/shot IDs for middle cases like "add one shot without wiping the rest."
+
+Pass log:
+- 2026-05-30 Codex: `apply_text_edits` shipped. Agents now have a low-blast-radius wording path for existing scene titles, shot directions, and dialogue lines; `apply_script` remains topology-only after visual work exists.
 
 **P1 soon: project-visible title sync.**
 The shell title and concept title can diverge (`Neon Afterimage` vs `Beautiful Killers`) with no obvious agent action to rename the visible project. Add `rename_project`, or let `apply_concept` optionally sync the shell title.

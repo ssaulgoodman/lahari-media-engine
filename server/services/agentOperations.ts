@@ -113,6 +113,7 @@ const labelTool = (tool: string, args: Record<string, any>) => {
   if (tool.includes('generate_video') || tool.includes('generate.video')) return `Generating video${shot}`;
   if (tool.includes('storyboard_scene_markdown')) return 'Updating storyboard scene prompts';
   if (tool.includes('apply_storyboard_prompt') || tool.includes('storyboard_prompt')) return `Updating storyboard prompt${shot}`;
+  if (action === 'apply_text_edits' || tool.includes('apply_text_edits')) return 'Applying text edits';
   if (tool.includes('apply_script') || tool.includes('apply.script')) return 'Updating script';
   if (tool.includes('apply_concept') || tool.includes('apply.concept')) return 'Updating concept';
   if (tool.includes('apply_shot_prompts') || tool.includes('shot_prompts')) return 'Updating shot prompts';
