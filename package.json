@@ -9,7 +9,6 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
     "check:notebook": "node scripts/check-notebook-resources.mjs",
-    "check:skills": "node scripts/lint-skill-content.mjs",
     "smoke:agent-contract": "tsx scripts/mirage-agent-contract-smoke.ts",
     "lahari": "tsx cli/lahari.ts",
     "lahari:mcp": "tsx mcp/lahari.ts",

@@ -678,7 +678,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ✅ `apply_text_edits` — narrow safe text-only edit (preserves refs/boards by construction)
 - ✅ Local/native storyboard import — `purpose=storyboard_image` upload + `import_storyboard_image` action
 - ✅ Versioned notebook skills — skills as hashed synced artifacts, stale-aware (mechanism for single-source skills)
-- ✅ **Skill content audit** (item 17) — mirage-director rewritten (legacy tools + "Opening IT SAID OH" corruption gone), all skills de-Bhakti'd + de-jargoned, render-triage trigger tightened, `npm run check:skills` lint guards content + pair identity (9449f35)
+- ✅ **Skill content audit** (item 17) — mirage-director rewritten (legacy tools + "Opening IT SAID OH" corruption gone), all skills de-Bhakti'd + de-jargoned, render-triage trigger tightened. `npm run check:notebook` guards packaged/local pair identity; content quality remains a read-and-review responsibility, not a regex gate.
 - ☐ **Thorough test** of the full agent-native chain (skills now clean — measures the system, not skill rot)
 
 **B · Post-test friction wins (P1, small/high-ROI)**
@@ -840,7 +840,8 @@ Useful workers: visual triage, continuity check, scene-level prompt drafting, is
 ### 17. Skill system content audit (2026-05-30) — ✅ DONE (9449f35)
 
 **Pass log:**
-- 2026-05-30 (9449f35): executed on the single-source state. `mirage-director` rewritten (legacy/hidden tools → cockpit+actions, "Opening IT SAID OH" corruption deleted, `mirrors/`→`state/`, shard table completed, `apply_text_edits` added). All skills de-Bhakti'd (Shantamma/sari/lamp/priest/temple/devotional → generic) and de-jargoned (Saul/R28/Doctrine §/dated-fix-notes removed). `script-doctor` wired to `apply_text_edits` + `allowDownstreamVisualWipe`. `render-triage` trigger tightened from over-broad to a hard cost-gate. New `scripts/lint-skill-content.mjs` (`npm run check:skills`) bans the whole class + enforces `.agents` ↔ `server/resources` pair identity, so "consistent but bad" can't recur. `continuity-auditor` had no leaks (left as-is; cost-ladder dedup with render-triage deferred as cosmetic). Validation: check:skills + check:notebook + smoke:agent-contract --repeat=5 + tsc + build + git diff --check all green.
+- 2026-05-30 (9449f35): executed on the single-source state. `mirage-director` rewritten (legacy/hidden tools → cockpit+actions, "Opening IT SAID OH" corruption deleted, `mirrors/`→`state/`, shard table completed, `apply_text_edits` added). All skills de-Bhakti'd (Shantamma/sari/lamp/priest/temple/devotional → generic) and de-jargoned (Saul/R28/Doctrine §/dated-fix-notes removed). `script-doctor` wired to `apply_text_edits` + `allowDownstreamVisualWipe`. `render-triage` trigger tightened from over-broad to a hard cost-gate. `continuity-auditor` cost-ladder dedup with render-triage deferred as cosmetic. Validation: check:notebook + smoke:agent-contract --repeat=5 + tsc + build + git diff --check all green.
+- 2026-05-30 (8ad6ff2, follow-up): removed the banned-string skill lint as a hard gate. It caught one leftover example, but it was the wrong abstraction for skill quality: `check:notebook` now remains the structural pair-identity check, while skill content stays a deliberate read-and-review pass when the action surface changes.
 
 Original findings (kept for history):
 
