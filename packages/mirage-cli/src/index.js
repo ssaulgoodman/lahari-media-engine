@@ -410,7 +410,7 @@ const sync = async (opts) => {
       },
     },
   });
-  process.exit(conflicts.length ? 3 : 0);
+  process.exitCode = conflicts.length ? 3 : 0;
   } finally {
     releaseLock();
   }
