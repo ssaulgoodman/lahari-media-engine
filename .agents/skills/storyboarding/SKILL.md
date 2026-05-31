@@ -11,11 +11,31 @@ Storyboards stage each shot as a static image. The prompt is image-native blocki
 
 - `storyboards/<scene>.md` are the editable prompt/cut-plan drafts; `state/storyboards/<shot>.md` shows the current board, lock, and status.
 
-## Prompt rules
+## Write the prompt
 
-- Use canonical graph names (`The Boss`, `Red Den Room`); do **not** restate locked appearance, costume, or style — the refs and locked style carry that.
-- Write decisive moments as panels, left-to-right then top-to-bottom. No visible panel numbers, captions, arrows, labels, or readable text; thin borders are fine.
-- The cut plan is for later video motion and may be empty.
+A storyboard prompt has a fixed shape. The image model reads text, so build it in this order — this is literally what produces the board:
+
+1. **Layout line.** State the grid: a 2×2 grid of four 16:9 panels (or a single row of 3), thin borders, read left-to-right then top-to-bottom. The borders only separate panels; nothing else should read as a graphic element.
+2. **One-line setup.** Where we are and who's present, in canonical graph names — `The Boss enters the Red Den Room; The Knife Orchid is already seated.` Do **not** restate appearance, costume, or style — the locked refs carry that.
+3. **Per-panel beats, inline, one short sentence each, in reading order.** Panels are moments in *time*: panel 1 is the first beat, the last panel the final beat; the action happens *between* panels and each panel is a decisive still. Write each exactly as `Panel 1: <framing/staging> — <visible action>`.
+4. **Continuity.** Note what carries across panels — position, screen direction, light — so the four read as one moment, not four unrelated shots.
+5. **No text in panels.** End with the rule: no captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks. Storyboard models render those literally, and the board ends up looking like a teaching diagram.
+
+Keep the whole prompt under ~220 words. No character/environment/style design prose, no "cinematic film still" language.
+
+Example:
+
+> A 2×2 grid of four 16:9 storyboard panels, thin borders, read left-to-right then top-to-bottom.
+> Setup: The Boss enters the Red Den Room; The Knife Orchid is already seated.
+> Panel 1: wide, low angle — The Boss stops in the doorway, one hand on the frame.
+> Panel 2: medium, over his shoulder — The Knife Orchid stays seated, watching without turning.
+> Panel 3: close on The Boss — his eyes find the empty desk.
+> Panel 4: wide, reverse — he crosses toward the desk; she has not moved.
+> No captions, numbers, labels, arrows, or readable text.
+
+## Cut plan
+
+The cut plan is for the video model that animates the board later, not the image model. Same panel beats, one line per panel, exactly `Panel N — <action>` (e.g. `Panel 1 — slow lean into the doorway, breath held`). It may be empty — then the video model uses board order alone.
 
 ## Repair ladder (when a board is wrong, climb from cheapest)
 
@@ -42,4 +62,5 @@ The default storyboard provider handles most boards; switch provider (`nano-bana
 
 - Re-describing wardrobe/face/style after refs are locked → fights the binding contract.
 - Cinematic jargon (dolly, rack focus, lens size) or generic VFX (glowing particles) the source did not ask for.
-- Four centered portraits with no change in blocking.
+- Four centered portraits with no change in blocking — vary the framing panel to panel.
+- Cramming more than ~4 beats into one board → the panels blur together; split the shot instead.
