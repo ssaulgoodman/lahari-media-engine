@@ -35,7 +35,7 @@ const parseArgs = (argv) => {
   const optionArgs = (command === 'upload-cast-reference' || command === 'upload-environment-reference')
     ? rest
     : argv.slice(2);
-  const opts = { command, projectId, cwd: process.cwd(), force: false };
+  const opts = { command, projectId, cwd: process.cwd(), force: false, recoverLock: false };
   if (command === 'upload-cast-reference' || command === 'upload-environment-reference') {
     opts.entityId = maybeEntityId;
     opts.filePath = maybeFilePath ? path.resolve(maybeFilePath) : undefined;
@@ -47,6 +47,8 @@ const parseArgs = (argv) => {
       i += 1;
     } else if (arg === '--force') {
       opts.force = true;
+    } else if (arg === '--recover-lock') {
+      opts.recoverLock = true;
     } else if (arg === '--api-url') {
       opts.apiUrl = optionArgs[i + 1];
       i += 1;
@@ -65,7 +67,7 @@ const parseArgs = (argv) => {
 const help = () => `Mirage CLI ${pkg.version}
 
 Usage:
-  mirage sync <projectId> [--cwd <dir>] [--force] [--api-url <url>]
+  mirage sync <projectId> [--cwd <dir>] [--force] [--recover-lock] [--api-url <url>]
   mirage upload-cast-reference <projectId> <castMemberId> <imagePath> [--note <text>] [--api-url <url>]
   mirage upload-environment-reference <projectId> <environmentId> <imagePath> [--note <text>] [--api-url <url>]
 
@@ -73,6 +75,10 @@ Environment:
   MIRAGE_CLI_TOKEN  Short-lived token from Mirage MCP mint_cli_token
   MIRAGE_TOKEN      Alias for MIRAGE_CLI_TOKEN
   MIRAGE_API_URL    Defaults to ${DEFAULT_API_URL}
+
+Notes:
+  sync automatically recovers dead-owner locks. Use --recover-lock only after
+  confirming another sync is not actively running.
 `;
 
 const safeJoin = (root, relativePath) => {
@@ -156,6 +162,19 @@ const readLockOwner = (lockPath) => {
   };
 };
 
+const pidStatus = (pid) => {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return 'unknown';
+  try {
+    process.kill(n, 0);
+    return 'alive';
+  } catch (error) {
+    if (error?.code === 'ESRCH') return 'dead';
+    if (error?.code === 'EPERM') return 'alive';
+    return 'unknown';
+  }
+};
+
 const moveStaleLockAside = (lockPath, owner) => {
   const suffix = safeTimestamp(owner?.createdAt ? new Date(owner.createdAt) : new Date());
   let target = `${lockPath}.stale-${suffix}`;
@@ -164,7 +183,7 @@ const moveStaleLockAside = (lockPath, owner) => {
   return target;
 };
 
-const acquireLock = (lockPath) => {
+const acquireLock = (lockPath, opts = {}) => {
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
   try {
     fs.mkdirSync(lockPath);
@@ -178,7 +197,15 @@ const acquireLock = (lockPath) => {
     if (error?.code === 'EEXIST') {
       const owner = readLockOwner(lockPath);
       const ttlMs = lockTtlMs();
-      if (owner.ageMs != null && owner.ageMs > ttlMs) {
+      const ownerPidStatus = pidStatus(owner.pid);
+      const recoveryReason = opts.recoverLock
+        ? 'forced'
+        : ownerPidStatus === 'dead'
+          ? 'dead_pid'
+          : owner.ageMs != null && owner.ageMs > ttlMs
+            ? 'ttl_expired'
+            : null;
+      if (recoveryReason) {
         const movedTo = moveStaleLockAside(lockPath, owner);
         try {
           fs.mkdirSync(lockPath);
@@ -189,6 +216,7 @@ const acquireLock = (lockPath) => {
             cwd: process.cwd(),
             replacedStaleLock: {
               movedTo,
+              reason: recoveryReason,
               previousOwner: owner,
             },
           }, null, 2)}\n`);
@@ -202,7 +230,9 @@ const acquireLock = (lockPath) => {
         fail('sync_already_running', 'Another Mirage notebook sync appears to be running for this project. Wait for it to finish, then retry.', {
           lockPath,
           owner,
+          ownerPidStatus,
           lockTtlMs: ttlMs,
+          recovery: 'If you have confirmed no sync is running, retry with --recover-lock.',
         }, 4);
       }
     } else {
@@ -255,7 +285,7 @@ const sync = async (opts) => {
   const workspace = path.resolve(opts.cwd);
   const statePath = safeJoin(workspace, `mirage/projects/${opts.projectId}/${STATE_FILE}`);
   const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
-  const releaseLock = acquireLock(safeJoin(workspace, `mirage/projects/${opts.projectId}/${LOCK_DIR}`));
+  const releaseLock = acquireLock(safeJoin(workspace, `mirage/projects/${opts.projectId}/${LOCK_DIR}`), { recoverLock: opts.recoverLock });
   try {
   const previousProjectState = readJson(statePath, { files: {} });
   const previousWorkspaceState = readJson(workspaceStatePath, { files: {} });

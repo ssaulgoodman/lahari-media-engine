@@ -1,6 +1,6 @@
 {
   "name": "@ssaulgoodman420/mirage-cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Mirage artist workspace sync CLI.",
   "type": "module",
   "bin": {

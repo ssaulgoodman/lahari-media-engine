@@ -37,7 +37,7 @@ If MCP tools are unavailable, stop and ask the artist to reconnect Mirage. Do no
 - **Ask before** paid generation, locks/unlocks, prompt overwrites, topology rebuilds, publishing, or anything that stales or wipes downstream work.
 - **Edit text the safe way.** After refs/boards/videos exist, use `apply_text_edits` for wording-only changes to existing scene titles, shot directions, or dialogue. Reserve `apply_script` for fresh scripts or topology rebuilds.
 - **Bytes stay out of MCP.** Upload local images/audio to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` into actions. For native storyboards: `purpose=storyboard_image`, then `import_storyboard_image`.
-- **Sync after mutations.** Action receipts return changed paths + hashes only, never file bodies. Call `mint_cli_token` and run the returned isolated-cache sync command; retry once on error. Use MCP file reads only when the harness has no shell.
+- **Sync after mutations.** Action receipts return changed paths + hashes only, never file bodies. Call `mint_cli_token` and run the returned sync command. On Windows/Codex, prefer the installed-CLI path if `npx` is blocked: run `commands.installCli` once outside the live-token flow, then use `commands.powershellInstalled`. The CLI auto-recovers dead-owner locks; if it reports a live lock, retry once after checking no sync is running. Use MCP file reads only when the harness has no shell.
 - **Capture problems.** If the surface misbehaves or the web studio disagrees with MCP state, call `mirage_capture_issue` with a short, concrete report, then continue on the safest path.
 
 ## Files

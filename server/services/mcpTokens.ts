@@ -125,10 +125,12 @@ export const createCliToken = async (
     .single();
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
   const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production-05ca.up.railway.app').replace(/\/+$/, '');
-  const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.3';
+  const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.5';
   const uploadEndpoint = `${apiUrl}/api/agent/uploads`;
   const posixCommand = `${posixCliCacheEnv} MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
   const powershellCommand = `${powershellCliCacheCommand}; $env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
+  const posixInstalledCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} mirage sync ${opts.projectId}`;
+  const powershellInstalledCommand = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; mirage sync ${opts.projectId}`;
   const posixUploadExample = `curl -sS -H "Authorization: Bearer ${token}" -F projectId=${opts.projectId} -F purpose=cast_reference -F entityId=<castMemberId> -F file=@<imagePath> ${uploadEndpoint}`;
   const powershellUploadExample = `curl.exe -sS -H "Authorization: Bearer ${token}" -F "projectId=${opts.projectId}" -F "purpose=cast_reference" -F "entityId=<castMemberId>" -F "file=@<imagePath>" "${uploadEndpoint}"`;
   return {
@@ -142,8 +144,11 @@ export const createCliToken = async (
     ttlMinutes,
     command: posixCommand,
     commands: {
+      installCli: `npm install -g ${cliPackage}`,
       posix: posixCommand,
       powershell: powershellCommand,
+      posixInstalled: posixInstalledCommand,
+      powershellInstalled: powershellInstalledCommand,
     },
     upload: {
       endpoint: uploadEndpoint,
@@ -162,7 +167,7 @@ export const createCliToken = async (
       },
       next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction/import_storyboard_image, as guideAssetId for generation, or leave audio_source attached to the project.',
     },
-    note: 'Short-lived project-scoped token. Do not store it. Use commands.posix/commands.powershell for notebook sync. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
+    note: 'Short-lived project-scoped token. Do not store it. Use commands.posix/commands.powershell for one-shot notebook sync. On Windows/Codex, if npx is blocked because it downloads code while holding a live token, run commands.installCli once outside the token flow, then use commands.powershellInstalled for sync. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
     sync: {
       npmCache: {
         posix: posixCliCacheDir,

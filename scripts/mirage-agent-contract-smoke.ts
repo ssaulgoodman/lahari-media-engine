@@ -119,7 +119,8 @@ const runChecks = (): SmokeResult[] => {
     assert.match(mcpRoute, /operate from AGENTS\.md/, 'MCP instructions must hand off to AGENTS.md');
     assert.doesNotMatch(mcpRoute, /Append concise decisions to journal\.md/, 'file-workflow detail must not live in the MCP payload');
     const notebook = readFileSync('server/resources/notebook/AGENTS.template.md', 'utf8');
-    assert.match(notebook, /run the returned isolated-cache sync command/, 'AGENTS.md owns the sync command guidance');
+    assert.match(notebook, /run the returned sync command/, 'AGENTS.md owns the sync command guidance');
+    assert.match(notebook, /commands\.powershellInstalled/, 'AGENTS.md must teach the Windows installed-CLI sync path');
     assert.match(notebook, /Use MCP file reads only when the harness has no shell/, 'AGENTS.md must not invite eager fallback');
     assert.match(notebook, /config\/skills\.json/, 'workspace instructions must mention skill manifest');
     assert.match(notebook, /notebook\.json\.skillsHash/, 'workspace instructions must mention aggregate skill hash');
