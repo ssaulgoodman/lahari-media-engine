@@ -1,31 +1,44 @@
 ---
 name: sound-director
-description: Use when deciding how to treat a project's uploaded source audio — whether a music/audio file is just a soundtrack bed or source material that should drive understanding, pacing, and structure, and when to run transcription or structure analysis.
+description: Use when deciding how to treat uploaded source audio — soundtrack bed vs source material, transcription, structure analysis, pacing influence, and when audio analysis is worth paid work.
 ---
 
 # Sound Director
 
-This is about the *input* audio a project was seeded with — a song or recording — not character speech. The job is deciding what that audio should *do* for the project, and only spending on analysis when it changes the plan.
+This is about audio the project starts from: a song, recording, voice memo, or soundtrack. It is not character dialogue/TTS; use audio-director for produced speech.
 
-## Inspect first
+## Do this now
 
-- `state/audio-analysis.md` for any existing meaning/structure/lyrics; `state/brief.md` for how the project was seeded.
+Read `state/audio-analysis.md`, `state/brief.md`, and the project intent. Classify the uploaded audio:
+
+- **Soundtrack bed:** it only plays under the video. Do not analyze unless the artist asks.
+- **Structural source:** timing, sections, energy, or beat drops should shape scenes/shots.
+- **Meaning source:** lyrics/spoken content should guide interpretation or on-screen content.
+- **Reference mood:** the sound informs tone but does not need detailed analysis.
+
+Only spend on analysis if the result changes script, pacing, or production choices.
 
 ## Maneuvers
 
-- **Attach only:** if the file is just a soundtrack bed, leave it attached as `audio_source` and move on. Upload alone never implies analysis.
-- **Transcribe:** `start_job(analyze_audio_transcribe)` (paid) when lyrics or spoken content should drive meaning or on-screen interpretation.
-- **Structure:** `start_job(analyze_audio_structure)` (paid) when section boundaries, energy, or timing should drive pacing and scene mapping.
+- **Attach only:** upload/keep `audio_source`; move on.
+- **Transcribe:** `start_job(analyze_audio_transcribe)` when lyrics/spoken words matter.
+- **Structure:** `start_job(analyze_audio_structure)` when sections, pacing, energy, or timing matter.
+- **Use in script:** after analysis, route findings into concept/script decisions, not random descriptive prose.
 
-## When analysis is worth it
+## Decision guide
 
-Run transcription or structure **only when it changes the plan** — lyrics, timing, section boundaries, beat mapping, or source interpretation. A soundtrack the video merely plays over does not need either.
+Run transcription if the artist cares about words, story meaning, slogans, speech, or lip/phrase timing.
+
+Run structure if the video needs to hit intro/drop/chorus/bridge, match energy changes, or map scenes to music sections.
+
+Run neither if the track is just ambience or the project is already scripted independently.
 
 ## Ask before
 
-- Both analyses are paid. Confirm, and say *why* it changes the plan, before running.
+Both analysis jobs are paid. Say what question the analysis answers before running it.
 
 ## Failure modes
 
-- Analyzing a plain soundtrack bed → spend with no planning payoff.
-- Skipping structure analysis on a music-led project that needs section-accurate pacing → scenes that ignore the song.
+- Analyzing everything because audio exists.
+- Ignoring structure on a music-led piece, producing scenes that fight the song.
+- Treating transcription as script. Lyrics/source words inform the plan; they do not automatically become dialogue.

@@ -1,32 +1,57 @@
 ---
 name: audio-director
-description: Use when writing, reviewing, or producing Mirage dialogue and narration — spoken lines, delivery cues, voice assignment, lipsync vs overlay, and TTS generation. For uploaded source-audio analysis, use sound-director instead.
+description: Use when writing, reviewing, or producing Mirage dialogue and narration — spoken lines, delivery cues, voice assignment, lipsync vs overlay, and TTS generation. For uploaded source-audio analysis, use sound-director.
 ---
 
 # Audio Director
 
-This is about the speech the project *produces*: dialogue and narration per shot. Keep the plan small and actionable — it's production data, not a prose rewrite of the script.
+This is about speech the project produces: dialogue, narration, delivery, voices, and generated audio. It should be clean production data, not prose commentary on the script.
 
-## Inspect first
+## Do this now
 
-- `audio-plan.md` is the editable plan; `state/cast.md` shows which characters have assigned voices.
+Read `audio-plan.md`, `state/cast.md`, and the relevant script shots. Decide:
+
+- Which shots actually need speech?
+- Is each line on-screen lipsync, off-screen, narration, or overlay?
+- Does every speaking cast member have a voice?
+- Would silence, music, or reaction staging be stronger than words?
+
+Then edit `audio-plan.md` and persist with `run_action(apply_audio_plan)`.
+
+## Writing the plan
+
+Each line should have:
+
+- speaker or narrator
+- exact spoken text
+- shot mapping
+- delivery cue
+- strategy: lipsync or overlay
+
+Keep lines short and actable. Dialogue should reveal choice, pressure, or relationship. Narration should clarify structure or tone, not describe what the viewer already sees.
 
 ## Maneuvers
 
-- **Plan dialogue:** edit `audio-plan.md`, persist with `run_action(apply_audio_plan)` (structured or markdown). Per spoken line: speaker/narrator, exact text, delivery cue, and lipsync vs overlay.
-- **Assign voices:** `run_action(apply_cast_voice)` to map a character to a TTS voice. Do this *before* generating dialogue audio.
-- **Generate:** run `generate_dialogue_audio` with `dryRun: true` first for cost and missing-voice checks, then `start_job(generate_dialogue_audio)` after approval.
+- **Plan speech:** `run_action(apply_audio_plan)` with markdown or structured data.
+- **Assign voices:** `run_action(apply_cast_voice)` before generation.
+- **Dry run:** `run_action(generate_dialogue_audio, { dryRun: true })` for cost and missing voices.
+- **Generate:** `start_job(generate_dialogue_audio)` after approval.
 
-## Decisions
+## Lipsync vs overlay
 
-- **Lipsync vs overlay per shot:** lipsync when the speaker is on-screen and mouth accuracy matters; overlay for narration, off-screen, or reaction shots.
-- **Silence is valid.** Don't add dialogue to fill space — music, ambience, and reaction beats carry weight too.
+Use **lipsync** when the speaker is visibly talking and mouth accuracy matters. Use **overlay** for narration, off-screen speech, memory, commentary, or reaction shots. If a line does not need a visible mouth, overlay is usually safer.
+
+## Judgment
+
+Good speech is sparse and timed to the shot. It should not fight the storyboard or fill every quiet beat. If the visual beat already communicates the point, cut the line.
 
 ## Ask before
 
-- `generate_dialogue_audio` is paid. Confirm after a `dryRun`, and never generate with unassigned voices.
+TTS is paid. Always dry-run first, then confirm. Never generate with missing or uncertain voices.
 
 ## Failure modes
 
-- Generating TTS before voices are assigned → silent reuse of the wrong voice. Stop and assign first.
-- Dialogue written as prose paragraphs instead of per-line plan data → can't map to shots or timing.
+- Generating before voice assignment.
+- Writing paragraphs instead of line-level production data.
+- Using dialogue to explain an emotion the shot should stage.
+- Choosing lipsync for shots where the mouth is hidden or irrelevant.
