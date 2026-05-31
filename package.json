@@ -10,6 +10,8 @@
     "build": "vite build",
     "check:notebook": "node scripts/check-notebook-resources.mjs",
     "smoke:agent-contract": "tsx scripts/mirage-agent-contract-smoke.ts",
+    "release:mirage-cli": "node scripts/release-mirage-cli.mjs",
+    "deploy:mirage": "node scripts/deploy-mirage.mjs",
     "lahari": "tsx cli/lahari.ts",
     "lahari:mcp": "tsx mcp/lahari.ts",
     "start": "NODE_ENV=production tsx server/index.ts",
