@@ -121,7 +121,7 @@ const runChecks = (): SmokeResult[] => {
     const notebook = readFileSync('server/resources/notebook/AGENTS.template.md', 'utf8');
     assert.match(notebook, /run the returned sync command/, 'AGENTS.md owns the sync command guidance');
     assert.match(notebook, /commands\.powershellInstalled/, 'AGENTS.md must teach the Windows installed-CLI sync path');
-    assert.match(notebook, /Use MCP file reads only when the harness has no shell/, 'AGENTS.md must not invite eager fallback');
+    assert.match(notebook, /Use `get_project_notebook_manifest` \+ `read_project_notebook_file` only when the harness has no shell/, 'AGENTS.md must not invite eager fallback');
     assert.match(notebook, /config\/skills\.json/, 'workspace instructions must mention skill manifest');
     assert.match(notebook, /notebook\.json\.skillsHash/, 'workspace instructions must mention aggregate skill hash');
   });
