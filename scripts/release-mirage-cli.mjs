@@ -39,17 +39,23 @@ if (existing.status === 0 && existing.stdout.trim() === pkg.version) {
   process.exit(0);
 }
 
+const viewPublishedVersion = () => run('npm', ['view', `${pkg.name}@${pkg.version}`, 'version'], {
+  cwd: cliDir,
+  env: npmEnv,
+  capture: true,
+});
+
 console.log(`Publishing ${pkg.name}@${pkg.version} with isolated npm cache...`);
 run('npm', ['publish', '--access', 'public'], {
   cwd: cliDir,
   env: npmEnv,
 });
 
-const verify = run('npm', ['view', `${pkg.name}@${pkg.version}`, 'version'], {
-  cwd: cliDir,
-  env: npmEnv,
-  capture: true,
-});
+let verify = viewPublishedVersion();
+for (let attempt = 0; (verify.status !== 0 || verify.stdout.trim() !== pkg.version) && attempt < 5; attempt += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  verify = viewPublishedVersion();
+}
 
 if (verify.status !== 0 || verify.stdout.trim() !== pkg.version) {
   console.error(`Publish verification failed for ${pkg.name}@${pkg.version}.`);
@@ -57,4 +63,3 @@ if (verify.status !== 0 || verify.stdout.trim() !== pkg.version) {
 }
 
 console.log(`Published ${pkg.name}@${pkg.version}.`);
-
