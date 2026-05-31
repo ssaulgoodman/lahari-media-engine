@@ -51,6 +51,7 @@ Two tiers — shared across the workspace, and per project.
 
 **Per project, under `mirage/projects/<projectId>/`:**
 - `state/` — read-only DB snapshots. Do not edit.
+- `state/generation-traces/` — recent server-recorded model calls: final prompt sent, refs, model, outputs, duration, and cost. Read these before guessing why a generation drifted.
 - `script.md`, `audio-plan.md`, `storyboards/*.md` — editable drafts. Persist with the matching apply action.
 - `config/style-notes.json`, `config/preferences.json`, `config/prompts/*.md` — editable project config. `config/prompts/` contains optional project prompt overrides, not a log of every prompt sent to a model. Persist with `apply_project_*` actions.
 - `notebook.json` — project metadata and hashes. `journal.md` — append concise decisions here.

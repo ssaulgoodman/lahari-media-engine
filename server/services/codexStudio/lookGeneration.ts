@@ -18,7 +18,7 @@ import {
   shouldIncludeStyleImage,
   type ContextOverrides,
 } from '../contextOverrides.js';
-import { compactText, webStudioUrl, type Project } from './core.js';
+import { webStudioUrl, type Project } from './core.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
 
 type GenerateLooksOptions = {
@@ -208,7 +208,7 @@ export const generateCharacterLooksForDirector = async (
       projectId: project.id,
       stage: 'generate-looks',
       model,
-      prompt: `MCP generate ${looks.length} character looks for "${member.name}" | ${compactText(renderPrompt, 500)}`,
+      prompt: renderPrompt,
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
         ...(guideImagePath ? [{ type: 'image' as const, label: `${member.name} guide`, url: storageUrl(guideImagePath) }] : []),
@@ -371,7 +371,7 @@ export const generateEnvironmentLooksForDirector = async (
       projectId: project.id,
       stage: 'generate-environment-look',
       model,
-      prompt: `MCP generate ${looks.length} environment looks for "${environment.name}" | ${compactText(renderPrompt, 500)}`,
+      prompt: renderPrompt,
       referenceInputs: [
         ...(styleImagePath ? [{ type: 'image' as const, label: 'Style reference', url: storageUrl(styleImagePath) }] : []),
         ...(guideImagePath ? [{ type: 'image' as const, label: `${environment.name} guide`, url: storageUrl(guideImagePath) }] : []),

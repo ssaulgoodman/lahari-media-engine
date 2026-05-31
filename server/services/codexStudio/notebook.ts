@@ -18,6 +18,7 @@ import {
 } from './core.js';
 import { buildProjectActionList } from './plans.js';
 import { getProjectConfigState, PROJECT_PROMPT_OVERRIDE_KINDS, type ProjectPromptOverrideKind } from '../projectConfig.js';
+import { getCalls, type XRayEntry, type XRayReference } from '../../xray.js';
 import { buildScriptMarkdownDraft } from './scriptMarkdown.js';
 import { buildAudioPlanMarkdownDraft } from './audioPlanMarkdown.js';
 import { buildStoryboardSceneMarkdownDraft, storyboardSceneDraftPath } from './storyboardMarkdown.js';
@@ -192,6 +193,116 @@ const buildPromptOverridesReadme = (baseDir: string): NotebookFile => ({
     'Persist changes with `run_action(apply_project_prompt_override)`. Revert with `run_action(revert_project_prompt_override)`.',
   ].join('\n'),
 });
+
+const traceFileName = (call: XRayEntry): string => {
+  const timestamp = (call.createdAt || new Date().toISOString())
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+  const stage = (call.stage || 'generation')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'generation';
+  return `${timestamp}-${stage}-${call.id.slice(0, 8)}.md`;
+};
+
+const fenced = (value: string, language = ''): string => {
+  const body = value || '';
+  const ticks = body.match(/`{3,}/g)?.reduce((max, match) => Math.max(max, match.length), 3) || 3;
+  const fence = '`'.repeat(ticks + 1);
+  return `${fence}${language}\n${body}\n${fence}`;
+};
+
+const formatTraceReference = (ref: XRayReference): string => {
+  const suffix = [
+    ref.url ? `url=${ref.url}` : null,
+    ref.preview ? `preview=${JSON.stringify(compactText(ref.preview, 220))}` : null,
+  ].filter(Boolean).join(' ');
+  return `- ${ref.type}: ${ref.label}${suffix ? ` — ${suffix}` : ''}`;
+};
+
+const buildGenerationTraceIndex = (baseDir: string, calls: XRayEntry[]): NotebookFile => ({
+  path: `${baseDir}/state/generation-traces/index.md`,
+  mode: 'state',
+  writePolicy: 'overwrite',
+  description: 'Index of recent AI/media generation traces.',
+  content: [
+    '# Generation Traces',
+    '',
+    'Recent model calls captured from Mirage server truth. Use these files to inspect what prompt, refs, outputs, model, and cost were actually sent for paid generation/debuggable model calls.',
+    '',
+    calls.length
+      ? calls.map((call) => [
+        `- [${call.createdAt} — ${call.stage}](${traceFileName(call)})`,
+        `  - model: ${call.model}`,
+        `  - outputs: ${call.outputAssetIds.length ? call.outputAssetIds.join(', ') : 'none recorded'}`,
+        `  - refs: ${call.referenceInputs.length}`,
+        `  - cost: $${Number(call.costEstimate || 0).toFixed(4)}; duration: ${call.durationMs || 0}ms${call.error ? `; error: ${call.error}` : ''}`,
+      ].join('\n')).join('\n')
+      : 'No generation traces recorded yet.',
+    '',
+  ].join('\n'),
+});
+
+const buildGenerationTraceFile = (baseDir: string, call: XRayEntry): NotebookFile => ({
+  path: `${baseDir}/state/generation-traces/${traceFileName(call)}`,
+  mode: 'state',
+  writePolicy: 'overwrite',
+  description: `Generation trace for ${call.stage}.`,
+  content: [
+    `# ${call.stage}`,
+    '',
+    `- Call ID: ${call.id}`,
+    `- Created: ${call.createdAt}`,
+    `- Model: ${call.model}`,
+    `- Duration: ${call.durationMs || 0}ms`,
+    `- Estimated cost: $${Number(call.costEstimate || 0).toFixed(4)}`,
+    `- Output asset IDs: ${call.outputAssetIds.length ? call.outputAssetIds.join(', ') : 'none recorded'}`,
+    call.error ? `- Error: ${call.error}` : null,
+    '',
+    '## References Sent',
+    '',
+    call.referenceInputs.length ? call.referenceInputs.map(formatTraceReference).join('\n') : 'No reference inputs recorded.',
+    '',
+    '## Response Summary',
+    '',
+    call.responseSummary || 'No response summary recorded.',
+    '',
+    '## Final Prompt Sent',
+    '',
+    fenced(call.prompt || '', 'text'),
+    '',
+    '## Context Chain',
+    '',
+    fenced(JSON.stringify(call.contextChain || {}, null, 2), 'json'),
+    '',
+  ].filter((part): part is string => part !== null).join('\n'),
+});
+
+const buildGenerationTraceFiles = async (project: Project, limit = 50): Promise<NotebookFile[]> => {
+  try {
+    const calls = (await getCalls(project.id)).slice(0, limit);
+    return [
+      buildGenerationTraceIndex(normalizedProjectDir(project), calls),
+      ...calls.map((call) => buildGenerationTraceFile(normalizedProjectDir(project), call)),
+    ];
+  } catch (error: any) {
+    return [{
+      path: `${normalizedProjectDir(project)}/state/generation-traces/index.md`,
+      mode: 'state',
+      writePolicy: 'overwrite',
+      description: 'Index of recent AI/media generation traces.',
+      content: [
+        '# Generation Traces',
+        '',
+        'Generation trace sync is unavailable for this project right now.',
+        '',
+        `Error: ${error?.message || error}`,
+        '',
+      ].join('\n'),
+    }];
+  }
+};
 
 const buildSkillFiles = (skillResources: NotebookSkillResource[]): NotebookFile[] => skillResources.flatMap(({ name: skillName, content }) => {
   return [
@@ -777,6 +888,7 @@ export const buildProjectNotebook = async (project: Project) => {
   const config = await getProjectConfigState(project);
   const skillResources = loadSkillResources();
   const skillsManifest = buildSkillsManifest(skillResources);
+  const generationTraceFiles = await buildGenerationTraceFiles(project);
   const files: NotebookFile[] = [
     {
       path: 'AGENTS.md',
@@ -852,6 +964,7 @@ export const buildProjectNotebook = async (project: Project) => {
       description: 'Per-shot prompt state snapshot.',
       content: buildShotPrompts(project),
     },
+    ...generationTraceFiles,
     {
       path: `${baseDir}/audio-plan.md`,
       mode: 'draft',
