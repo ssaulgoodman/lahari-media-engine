@@ -136,6 +136,41 @@ const removeEmptyDirsUpTo = (dirPath, stopDir) => {
   }
 };
 
+const pruneTree = (workspace, relativePath, reason, pruned) => {
+  const absolutePath = safeJoin(workspace, relativePath);
+  if (!fs.existsSync(absolutePath)) return;
+  fs.rmSync(absolutePath, { recursive: true, force: true });
+  pruned.push({ path: relativePath, reason });
+};
+
+const pruneSyncLockArchives = (workspace, projectId, pruned) => {
+  const projectDir = safeJoin(workspace, `mirage/projects/${projectId}`);
+  if (!fs.existsSync(projectDir)) return;
+  for (const name of fs.readdirSync(projectDir)) {
+    if (!name.startsWith(`${LOCK_DIR}.stale-`) && !name.startsWith(`${LOCK_DIR}.orphan-`)) continue;
+    pruneTree(workspace, `mirage/projects/${projectId}/${name}`, 'old_sync_lock_archive', pruned);
+  }
+};
+
+const pruneLegacySkillDirs = (workspace, manifestByPath, pruned) => {
+  const legacySkillNames = [
+    'continuity-auditor',
+    'mirage-director',
+    'render-triage',
+    'script-doctor',
+    'storyboard-prompt-craft',
+    'style-ref-critic',
+  ];
+  for (const root of ['.agents/skills', '.claude/skills']) {
+    for (const skillName of legacySkillNames) {
+      const relativePath = `${root}/${skillName}`;
+      const stillManifested = [...manifestByPath.keys()].some((filePath) => filePath.startsWith(`${relativePath}/`));
+      if (stillManifested) continue;
+      pruneTree(workspace, relativePath, 'old_workspace_skill', pruned);
+    }
+  }
+};
+
 const lockTtlMs = () => {
   const n = Number(process.env.MIRAGE_SYNC_LOCK_TTL_MS || DEFAULT_LOCK_TTL_MS);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_LOCK_TTL_MS;
@@ -383,7 +418,12 @@ const sync = async (opts) => {
       removeEmptyDirsUpTo(path.dirname(filePath), path.dirname(absolutePath));
       pruned.push({ path: fileRelativePath, reason: 'old_project_scoped_workspace_file' });
     }
+    if (fs.existsSync(absolutePath)) {
+      pruneTree(workspace, relativePath, 'old_project_scoped_workspace_file', pruned);
+    }
   }
+  pruneLegacySkillDirs(workspace, manifestByPath, pruned);
+  pruneSyncLockArchives(workspace, opts.projectId, pruned);
 
   const nextWorkspaceFiles = {};
   const nextProjectFiles = {};

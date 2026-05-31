@@ -165,6 +165,34 @@ const buildSkillsManifestFile = (manifest: NotebookSkillsManifest): NotebookFile
   content: `${JSON.stringify(manifest, null, 2)}\n`,
 });
 
+const buildPromptOverridesReadme = (baseDir: string): NotebookFile => ({
+  path: `${baseDir}/config/prompts/README.md`,
+  mode: 'config',
+  writePolicy: 'overwrite',
+  description: 'Explains project prompt override files.',
+  content: [
+    '# Project Prompt Overrides',
+    '',
+    'This folder contains optional project-level prompt recipes. It is not a log of every prompt Mirage sends to a model.',
+    '',
+    'Most projects should leave these files empty. Use them only when a complete repeatable recipe keeps improving one prompt kind across the project. For lighter taste, prefer `config/style-notes.json`. For one shot or one call, prefer the action input, `contextOverrides`, `promptOverride`, or the shot/storyboard/audio draft itself.',
+    '',
+    'Overrides can affect text, image, storyboard, audio, and video worker calls. They are not limited to paid calls. The code-owned action contract and worker invariants still apply: Codex can shape the recipe, but it cannot remove required output formats, validation rules, or provider constraints.',
+    '',
+    'Supported override files:',
+    '- `concept.md` — concept direction recipe.',
+    '- `script.md` — script topology/planning recipe. Use with care after visual work exists.',
+    '- `shot_prompts.md` — shot-level visual/motion prompt writing recipe.',
+    '- `storyboard.md` — storyboard prompt-writing recipe. Per-shot storyboard prompts live in `storyboards/*.md`.',
+    '- `video.md` — video prompt assembly recipe. Per-shot motion prompts live on the shot.',
+    '- `character_looks.md` — character/entity reference prompt recipe. Per-character descriptions stay on cast entries.',
+    '- `environment_looks.md` — environment/location reference prompt recipe. Per-environment descriptions stay on environment entries.',
+    '- `audio_plan.md` — dialogue, narration, sound-note, and lipsync/overlay planning recipe.',
+    '',
+    'Persist changes with `run_action(apply_project_prompt_override)`. Revert with `run_action(revert_project_prompt_override)`.',
+  ].join('\n'),
+});
+
 const buildSkillFiles = (skillResources: NotebookSkillResource[]): NotebookFile[] => skillResources.flatMap(({ name: skillName, content }) => {
   return [
     {
@@ -728,6 +756,7 @@ export const buildNotebookConfigArtifacts = async (
       content: ensureNewline(config.prompts[kind].body),
     });
   }
+  if (opts.promptKinds?.length) files.push(buildPromptOverridesReadme(baseDir));
   if (opts.hashes) {
     files.push({
       path: `${baseDir}/config/hashes.json`,
@@ -847,6 +876,7 @@ export const buildProjectNotebook = async (project: Project) => {
     },
     ...buildActionsArtifacts(),
     buildSkillsManifestFile(skillsManifest),
+    buildPromptOverridesReadme(baseDir),
     ...PROJECT_PROMPT_OVERRIDE_KINDS.map((kind) => ({
       path: `${baseDir}/config/prompts/${kind}.md`,
       mode: 'config' as const,
