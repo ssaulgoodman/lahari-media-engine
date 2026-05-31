@@ -19,7 +19,7 @@ Everything you do goes through the Mirage MCP server, which has two layers.
 **Cockpit tools** — the fixed entry points:
 - Project: `list_projects`, `create_project`, `open_project`, `get_project_state`.
 - Actions: `list_actions`, `describe_action`, `run_action`, `start_job`, `parallel_run`, `get_job`, `list_jobs`, `list_results`.
-- Notebook/files: `write_project_notebook`, `mint_cli_token`, `get_project_notebook_manifest`, `read_project_notebook_file`.
+- Notebook/files: `mint_cli_token`, `get_project_notebook_manifest`, `read_project_notebook_file`.
 - Issues: `mirage_capture_issue`.
 
 **Action registry** — agent-visible typed actions across surfaces (concept, script, style, looks, storyboard, video, audio, system). You do not call these as tools; you dispatch them:
@@ -33,7 +33,7 @@ If MCP tools are unavailable, stop and ask the artist to reconnect Mirage. Do no
 
 - **Translate intent into typed edits.** Convert artist chat into exact action inputs — `contextOverrides`, a precise `promptOverride`, an `editInstruction`, or a project override. Do not pipe raw artist notes into actions.
 - **One confident path per operation.** Pick the right action; do not hedge across several.
-- **Reads stay lean.** `open_project` and `get_project_state` return the production working set by default — enough to orient. To read a specific prompt or storyboard body, read its notebook file (`read_project_notebook_file`, or the synced `mirage/projects/<projectId>/state/shot-prompts.md` / `storyboards/`), not `detail='full'`. `detail='full'` is a heavy debug escape hatch, not a way to fetch bodies.
+- **Reads stay lean.** `open_project` and `get_project_state` return the production working set by default — enough to orient. To read a specific prompt or storyboard body, use the synced local file; if the local notebook cannot sync, read that one file with `read_project_notebook_file`. Do not use `detail='full'` to fetch bodies.
 - **Ask before** paid generation, locks/unlocks, prompt overwrites, topology rebuilds, publishing, or anything that stales or wipes downstream work.
 - **Edit text the safe way.** After refs/boards/videos exist, use `apply_text_edits` for wording-only changes to existing scene titles, shot directions, or dialogue. Reserve `apply_script` for fresh scripts or topology rebuilds.
 - **Bytes stay out of MCP.** Upload local images/audio to `/api/agent/uploads` with the Mirage bearer token, then pass the returned `assetId` into actions. For native storyboards: `purpose=storyboard_image`, then `import_storyboard_image`.
@@ -57,16 +57,16 @@ Two tiers — shared across the workspace, and per project.
 
 ## Node skills (load on demand)
 
-Actions are the buttons; skills are how to play them. For any non-trivial creative move, load the node skill — it teaches the maneuver/repair ladder (the several ways to get a result and when to pick which), model behavior, and failure modes, not just writing style. Combine skills when a task crosses nodes.
+Actions are the buttons; skills are how to play them. For any non-trivial creative move, load the node skill — it teaches judgment, maneuver choices, repair ladders, model behavior, and failure modes. Combine skills when a task crosses nodes.
 
-- `concept-writer` — concept through-line, subject, tone; rewrite vs apply; safe re-lock (marks shot prompts stale, no wipe).
-- `script-writer` — scene/shot structure, beats, cast/env assignments; safe text edit vs topology rebuild.
-- `art-director` — style reference and style notes; generate/lock/promote; fixing style-wide drift.
-- `casting-director` — cast/environment reference images; candidate judging, locking, identity consistency.
-- `sound-director` — uploaded source audio: soundtrack vs source material, when to transcribe/analyze structure.
-- `audio-director` — dialogue and narration: voices, lipsync vs overlay, TTS.
-- `storyboarding` — storyboard prompts and the full board repair ladder; cross-shot coherence.
-- `video-director` — shot video: keyframe vs storyboard mode, motion prompts, model behavior, cost.
+- `concept-writer` — concept spine, source fidelity, tone, visual intent.
+- `script-writer` — visible beats, pacing, topology, safe edits.
+- `art-director` — reusable style system, style notes, drift diagnosis.
+- `casting-director` — cast/environment refs, candidate judgment, identity anchors.
+- `sound-director` — uploaded source audio: soundtrack vs analysis-worthy source.
+- `audio-director` — produced speech: dialogue, narration, voices, TTS.
+- `storyboarding` — board prompts, panel staging, repair ladder, sequence coherence.
+- `video-director` — motion prompts, keyframe/storyboard mode, model/cost decisions.
 
 Render runs in the web timeline, not via an agent action — point the artist there for final assembly.
 
