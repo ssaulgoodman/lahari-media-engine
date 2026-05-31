@@ -7,9 +7,9 @@ loadReleaseEnv();
 
 const cliPkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'packages', 'mirage-cli', 'package.json'), 'utf8'));
 const cliPackage = `${cliPkg.name}@${cliPkg.version}`;
-const railwayToken = process.env.RAILWAY_TOKEN || process.env.RAILWAY_TOKEN_LAHARI;
+const railwayToken = process.env.RAILWAY_TOKEN_MIRAGE || process.env.RAILWAY_TOKEN || process.env.RAILWAY_TOKEN_LAHARI;
 if (!railwayToken) {
-  requireEnv('RAILWAY_TOKEN', 'Add it to .env.release.local from Railway project/account token settings, or expose RAILWAY_TOKEN_LAHARI.');
+  requireEnv('RAILWAY_TOKEN', 'Add it to .env.release.local from Railway project/account token settings, or expose RAILWAY_TOKEN_MIRAGE / RAILWAY_TOKEN_LAHARI.');
 }
 const env = { ...process.env, RAILWAY_TOKEN: railwayToken };
 
