@@ -7,7 +7,10 @@ loadReleaseEnv();
 
 const cliPkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'packages', 'mirage-cli', 'package.json'), 'utf8'));
 const cliPackage = `${cliPkg.name}@${cliPkg.version}`;
-const railwayToken = requireEnv('RAILWAY_TOKEN', 'Add it to .env.release.local from Railway project/account token settings.');
+const railwayToken = process.env.RAILWAY_TOKEN || process.env.RAILWAY_TOKEN_LAHARI;
+if (!railwayToken) {
+  requireEnv('RAILWAY_TOKEN', 'Add it to .env.release.local from Railway project/account token settings, or expose RAILWAY_TOKEN_LAHARI.');
+}
 const env = { ...process.env, RAILWAY_TOKEN: railwayToken };
 
 console.log(`Setting Railway MIRAGE_CLI_PACKAGE=${cliPackage}`);
@@ -47,4 +50,3 @@ while (Date.now() < deadline) {
 
 console.error('Timed out waiting for Railway deployment to finish.');
 process.exit(1);
-
