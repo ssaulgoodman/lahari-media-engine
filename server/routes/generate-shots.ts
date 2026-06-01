@@ -17,6 +17,7 @@ import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
 import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
+import { beginInFlightGeneration } from '../services/inFlightGeneration.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
 import { paramStr } from './scope-helpers.js';
@@ -231,6 +232,11 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     }
   }
 
+  const release = beginInFlightGeneration(`image:${project.id}:${shot.id}`);
+  if (!release) {
+    return res.status(409).json({ error: 'Image generation is already running for this shot. Wait for it to finish before starting another.' });
+  }
+
   try {
     await updateRows('shots', { id: shot.id }, { image_status: 'loading' });
     const t0 = Date.now();
@@ -307,6 +313,8 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     });
     await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status((err as any).statusCode || 500).json({ error: err.message });
+  } finally {
+    release();
   }
 });
 
@@ -346,6 +354,10 @@ router.post('/:id/shots/:shotId/write-storyboard-prompt', async (req, res) => {
 router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
+  const release = beginInFlightGeneration(`storyboard:${projectId}:${shotId}`);
+  if (!release) {
+    return res.status(409).json({ error: 'Storyboard generation is already running for this shot. Wait for it to finish before starting another.' });
+  }
 
   try {
     const result = await generateStoryboardVersion({
@@ -370,6 +382,8 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard generation failed:`, err);
     res.status((err as any).statusCode || 500).json({ error: err.message });
+  } finally {
+    release();
   }
 });
 
@@ -696,6 +710,11 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     if (project.style_asset_id) styleImagePath = await resolveAsset(project.style_asset_id);
   }
 
+  const release = beginInFlightGeneration(`end-frame:${projectId}:${shotId}`);
+  if (!release) {
+    return res.status(409).json({ error: 'End-frame generation is already running for this shot. Wait for it to finish before starting another.' });
+  }
+
   try {
     await updateRows('shots', { id: shotId }, { end_image_status: 'loading' });
     const t0 = Date.now();
@@ -742,6 +761,8 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
   } catch (err: any) {
     await updateRows('shots', { id: shotId }, { end_image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     res.status(500).json({ error: `End frame generation failed: ${err.message}` });
+  } finally {
+    release();
   }
 });
 
