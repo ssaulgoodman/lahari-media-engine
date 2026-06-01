@@ -76,7 +76,7 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 - `CORS_ORIGINS` - comma-separated in prod.
 - `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` - sibling renderer service URL and `x-renderer-secret`.
 - `RENDER_ENGINE` (optional, default `ffmpeg`) - Modal renderer engine. `ffmpeg` uses the fast FFmpeg concat path for eligible timelines and falls back to Remotion. `remotion` forces Remotion for everything. `FFMPEG_PRESET` default `veryfast`, `FFMPEG_CRF` default `23`, `FFMPEG_AUDIO_BITRATE` default `192k`.
-- Vertex fallback: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Used only as Veo fallback and by last-frame extraction paths that still need GCP config.
+- Vertex Veo fallback is unplugged. Video generation must go through Segmind; `VIDEO_PROVIDER=vertex` / GCP creds must not route Lahari video calls to Vertex.
 
 Production app: https://lahari-media-engine-production.up.railway.app
 

@@ -52,6 +52,7 @@ router.get('/usage', auth, async (req, res) => {
 router.get('/env', auth, (_req, res) => {
   const keys = [
     'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'SEGMIND_API_KEY', 'FAL_KEY',
+    'VIDEO_PROVIDER',
     'GCP_PROJECT_ID', 'GCP_LOCATION',
     'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_APPLICATION_CREDENTIALS_JSON',
     'SUPABASE_URL', 'SUPABASE_SERVICE_KEY',
