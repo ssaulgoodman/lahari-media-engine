@@ -29,27 +29,6 @@ const parseJson = <T,>(value: any, fallback: T): T => {
   if (typeof value === 'object') return value as T;
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
-const isHttpUrl = (value: string | null | undefined): value is string =>
-  typeof value === 'string' && /^https?:\/\//i.test(value);
-
-const resolveProjectAudioUrl = async (project: any): Promise<string | null> => {
-  if (project.audio_path) {
-    return isHttpUrl(project.audio_path) ? project.audio_path : storageUrl(project.audio_path);
-  }
-  if (!project.source_queue_id) return null;
-
-  const { data, error } = await getSB()
-    .from('music_video_queue')
-    .select('songs(audio_storage_url, drive_audio_url)')
-    .eq('id', project.source_queue_id)
-    .single();
-  if (error) {
-    console.warn(`[project ${project.id}] failed to resolve queue audio fallback:`, error.message);
-    return null;
-  }
-  const song = Array.isArray((data as any)?.songs) ? (data as any).songs[0] : (data as any)?.songs;
-  return song?.audio_storage_url || song?.drive_audio_url || null;
-};
 
 // Ownership check for all /:id/* routes — verify user owns the project
 router.param('id', async (req, res, next, id) => {
@@ -474,13 +453,12 @@ const getFullProject = async (projectId: string) => {
     env.referenceImageUrl = resolveUrl(env.reference_asset_id);
   }
   const styleAssetUrl = resolveUrl(project.style_asset_id);
-  const audioPath = await resolveProjectAudioUrl(project);
 
   return {
     id: project.id,
     title: project.title,
     status: project.status,
-    audioPath,
+    audioPath: project.audio_path ? storageUrl(project.audio_path) : null,
     lyrics: project.lyrics,
     meaning: project.meaning,
     musicalStructure: project.musical_structure ? JSON.parse(project.musical_structure) : [],
