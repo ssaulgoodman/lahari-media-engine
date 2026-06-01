@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { selectOne, updateRows } from '../database.js';
 import { generateShotVideo } from '../services/videoGeneration.js';
 import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
+import { beginInFlightGeneration } from '../services/inFlightGeneration.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
 
@@ -61,25 +62,33 @@ export const mountVideoRoutes = (router: Router) => {
     try {
       const projectId = paramStr(req.params.id);
       const shotId = paramStr(req.params.shotId);
-      const result = await generateShotVideo(projectId, shotId, {
-        promptOverride: req.body?.promptOverride,
-        refs: req.body?.refs,
-      });
-      await recordDirectorEvent({
-        projectId,
-        userId: req.userId,
-        source: 'web',
-        eventType: 'video_generated',
-        entityType: 'shot',
-        entityId: shotId,
-        summary: 'Artist generated a shot video in the web studio.',
-        payload: {
-          promptOverride: req.body?.promptOverride || null,
-          refs: req.body?.refs || null,
-          result: eventResultPointers(result),
-        },
-      });
-      res.json(await getFullProject(projectId));
+      const release = beginInFlightGeneration(`video:${projectId}:${shotId}`);
+      if (!release) {
+        return res.status(409).json({ error: 'Video generation is already running for this shot. Wait for it to finish before starting another.' });
+      }
+      try {
+        const result = await generateShotVideo(projectId, shotId, {
+          promptOverride: req.body?.promptOverride,
+          refs: req.body?.refs,
+        });
+        await recordDirectorEvent({
+          projectId,
+          userId: req.userId,
+          source: 'web',
+          eventType: 'video_generated',
+          entityType: 'shot',
+          entityId: shotId,
+          summary: 'Artist generated a shot video in the web studio.',
+          payload: {
+            promptOverride: req.body?.promptOverride || null,
+            refs: req.body?.refs || null,
+            result: eventResultPointers(result),
+          },
+        });
+        res.json(await getFullProject(projectId));
+      } finally {
+        release();
+      }
     } catch (err: any) {
       res.status(err.statusCode || 500).json({ error: err.message });
     }

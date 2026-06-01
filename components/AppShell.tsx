@@ -155,6 +155,12 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     opsRef.current[key] = ctrl;
     return ctrl.signal;
   }, []);
+  const startExclusiveOp = useCallback((key: string): AbortSignal | null => {
+    if (opsRef.current[key]) return null;
+    const ctrl = new AbortController();
+    opsRef.current[key] = ctrl;
+    return ctrl.signal;
+  }, []);
   const abortOp = useCallback((key: string) => {
     opsRef.current[key]?.abort();
     delete opsRef.current[key];
@@ -527,13 +533,22 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   const handleGenerateEndFrame = async (shotId: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
+    const opKey = `end-frame:${shotId}`;
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.LOADING });
     try {
-      const p = await api.generateEndFrame(project.id, shotId, refs);
+      const p = await api.generateEndFrame(project.id, shotId, refs, signal);
       setProject(p);
     } catch (err: any) {
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.IDLE });
+        return;
+      }
       updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.ERROR });
       setError(`End frame generation failed: ${err.message}`);
+    } finally {
+      endOp(opKey);
     }
   };
 
@@ -632,7 +647,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const handleGenerateImage = async (sceneId: string, shotId: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     const opKey = `image:${shotId}`;
-    const signal = startOp(opKey);
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -807,7 +823,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const handleGenerateVideo = async (sceneId: string, shotId: string, promptOverride?: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     const opKey = `video:${shotId}`;
-    const signal = startOp(opKey);
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -856,7 +873,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const handleGenerateStoryboard = async (shotId: string) => {
     if (!project) return;
     updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING });
-    const signal = startOp(`storyboard:${shotId}`);
+    const signal = startExclusiveOp(`storyboard:${shotId}`);
+    if (!signal) return;
     try {
       const result = await api.generateStoryboard(project.id, shotId, signal);
       setProject(result.project);
