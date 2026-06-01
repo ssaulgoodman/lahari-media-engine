@@ -99,28 +99,6 @@ const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<num
     el.src = src;
   });
 
-const sameSrcSet = (a: string[] = [], b: string[] = []) =>
-  a.length === b.length && a.every((src, i) => src === b[i]);
-
-const makeAudioItem = (clip: InitialClip, duration: number, trackId: string) => {
-  const itemId = generateId();
-  return {
-    itemId,
-    item: {
-      id: itemId,
-      type: 'audio',
-      display: { from: 0, to: duration },
-      details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
-      metadata: { resourceId: itemId, ...(clip.name ? { displayName: clip.name } : {}) },
-      trackId,
-      isMain: false,
-      duration,
-      playbackRate: 1,
-      trim: { from: 0, to: duration },
-    },
-  };
-};
-
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
 // creates one when the timeline is empty). Used by the manual-upload button
 // and the MediaLibraryDrawer (any external surface adding a clip).
@@ -515,54 +493,11 @@ const TimelineEditor: React.FC<Props> = ({
           transitionsMap: Record<string, any>;
           duration: number;
           savedAt: number;
-          initialAudioSrcs?: string[];
         } | null = null;
         if (snap && snap.trackItemIds.length > 0) {
           restored = { ...snap };
         }
         if (restored) {
-          const currentAudioSrcs = (initialAudioClips ?? []).map((c) => c.src);
-          const snapshotAudioSrcs = restored.initialAudioSrcs ?? [];
-          const snapshotMatchesCurrentAudio = sameSrcSet(snapshotAudioSrcs, currentAudioSrcs);
-          const restoredAudioSrcs = new Set(
-            Object.values(restored.trackItemsMap)
-              .filter((item: any) => item?.type === 'audio' && typeof item?.details?.src === 'string')
-              .map((item: any) => item.details.src as string),
-          );
-          const missingAudioClips = snapshotMatchesCurrentAudio
-            ? []
-            : (initialAudioClips ?? []).filter((clip) => !restoredAudioSrcs.has(clip.src));
-          if (missingAudioClips.length > 0) {
-            const audioTrackId = restored.tracks.find((track: any) => track.type === 'audio')?.id || generateId();
-            const audioDurations = await Promise.all(missingAudioClips.map((clip) => probeMediaDurationMs(clip.src, 'audio')));
-            const trackItemsMap: Record<string, any> = { ...restored.trackItemsMap };
-            const trackItemIds = [...restored.trackItemIds];
-            const newAudioIds: string[] = [];
-            let maxAudioEnd = 0;
-            missingAudioClips.forEach((clip, i) => {
-              const dur = audioDurations[i] || 5000;
-              const { itemId, item } = makeAudioItem(clip, dur, audioTrackId);
-              newAudioIds.push(itemId);
-              trackItemIds.push(itemId);
-              trackItemsMap[itemId] = item;
-              if (dur > maxAudioEnd) maxAudioEnd = dur;
-            });
-            const tracks = restored.tracks.some((track: any) => track.id === audioTrackId)
-              ? restored.tracks.map((track: any) =>
-                  track.id === audioTrackId
-                    ? { ...track, items: [...(track.items || []), ...newAudioIds], accepts: track.accepts || ['audio'] }
-                    : track,
-                )
-              : [...restored.tracks, { id: audioTrackId, type: 'audio', items: newAudioIds, accepts: ['audio'] }];
-            restored = {
-              ...restored,
-              initialAudioSrcs: currentAudioSrcs,
-              trackItemIds,
-              trackItemsMap,
-              tracks,
-              duration: Math.max(restored.duration || 0, maxAudioEnd) || restored.duration,
-            };
-          }
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
           (stateManager as any).updateState(
@@ -651,10 +586,21 @@ const TimelineEditor: React.FC<Props> = ({
       let maxAudioEnd = 0;
       (initialAudioClips ?? []).forEach((clip, i) => {
         const dur = audioDurations[i] || 5000;
-        const { itemId, item } = makeAudioItem(clip, dur, audioTrackId);
+        const itemId = generateId();
         audioItemIds.push(itemId);
         trackItemIds.push(itemId);
-        trackItemsMap[itemId] = item;
+        trackItemsMap[itemId] = {
+          id: itemId,
+          type: 'audio',
+          display: { from: 0, to: dur },
+          details: { src: clip.src, volume: 100, ...(clip.name ? { name: clip.name } : {}) },
+          metadata: { resourceId: itemId, ...(clip.name ? { displayName: clip.name } : {}) },
+          trackId: audioTrackId,
+          isMain: false,
+          duration: dur,
+          playbackRate: 1,
+          trim: { from: 0, to: dur },
+        };
         if (dur > maxAudioEnd) maxAudioEnd = dur;
       });
 
