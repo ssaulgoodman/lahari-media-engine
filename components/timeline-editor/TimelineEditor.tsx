@@ -498,6 +498,27 @@ const TimelineEditor: React.FC<Props> = ({
           restored = { ...snap };
         }
         if (restored) {
+          // If the project no longer exposes a valid song audio source, do not
+          // keep a stale audio bed captured in localStorage. This protects
+          // projects whose catalog audio was discovered to be wrong after a
+          // previous render-page visit saved it into the timeline snapshot.
+          if ((initialAudioClips ?? []).length === 0) {
+            const audioIds = new Set(
+              Object.entries(restored.trackItemsMap)
+                .filter(([, item]: [string, any]) => item?.type === 'audio')
+                .map(([id]) => id),
+            );
+            if (audioIds.size > 0) {
+              const trackItemsMap = Object.fromEntries(
+                Object.entries(restored.trackItemsMap).filter(([id]) => !audioIds.has(id)),
+              );
+              const trackItemIds = restored.trackItemIds.filter((id) => !audioIds.has(id));
+              const tracks = restored.tracks
+                .map((track: any) => ({ ...track, items: (track.items || []).filter((id: string) => !audioIds.has(id)) }))
+                .filter((track: any) => track.items.length > 0 || track.type !== 'audio');
+              restored = { ...restored, trackItemsMap, trackItemIds, tracks };
+            }
+          }
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
           (stateManager as any).updateState(
