@@ -32,6 +32,51 @@ const writeCsv = (filePath, rows, columns) => {
 
 const money = (value) => Number(Number(value || 0).toFixed(4));
 
+const parseCsvLine = (line) => {
+  const values = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    const next = line[i + 1];
+    if (ch === '"' && quoted && next === '"') {
+      current += '"';
+      i += 1;
+    } else if (ch === '"') {
+      quoted = !quoted;
+    } else if (ch === ',' && !quoted) {
+      values.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  values.push(current);
+  return values;
+};
+
+const readGoogleBillingCsv = (filePath) => {
+  if (!filePath) return [];
+  const text = fs.readFileSync(filePath, 'utf8').trim();
+  const [headerLine, ...lines] = text.split(/\r?\n/);
+  const headers = parseCsvLine(headerLine);
+  const rows = [];
+  for (const line of lines) {
+    const values = parseCsvLine(line);
+    const record = Object.fromEntries(headers.map((header, idx) => [header, values[idx] ?? '']));
+    const service = record['Service description'];
+    if (!service) continue;
+    rows.push({
+      service,
+      service_id: record['Service ID'] || '',
+      cost_inr: money(record['Cost (₹)']),
+      subtotal_inr: money(record['Subtotal (₹)']),
+      percent_change: record['Percent change in subtotal compared to previous period'] || '',
+    });
+  }
+  return rows;
+};
+
 const weekStartUtc = (iso) => {
   const d = new Date(iso);
   const day = d.getUTCDay() || 7;
@@ -105,6 +150,7 @@ const main = async () => {
   const since = arg('since', '2026-01-01T00:00:00Z');
   const until = arg('until', new Date(Date.now() + 24 * 3600 * 1000).toISOString());
   const reportDate = arg('date', todayIso());
+  const googleBillingCsv = arg('google-billing-csv');
   const providers = (arg('providers', DEFAULT_PROVIDERS.join(',')) || '')
     .split(',')
     .map((p) => p.trim())
@@ -135,6 +181,7 @@ const main = async () => {
       error: row.error || '',
     }))
     .filter((row) => providers.includes(row.provider));
+  const googleBillingRows = readGoogleBillingCsv(googleBillingCsv);
 
   const datedDir = path.join(OUT_ROOT, reportDate);
   const latestDir = path.join(OUT_ROOT, 'latest');
@@ -198,6 +245,37 @@ const main = async () => {
 
   const totals = groupBy(rows, ['provider']);
   const modelTotals = groupBy(rows, ['provider', 'model']);
+  const providerTotals = new Map(totals.map((row) => [row.provider, row]));
+  const googleGeminiInvoice = googleBillingRows.find((row) => row.service === 'Gemini API');
+  const googleVertexInvoice = googleBillingRows.find((row) => row.service === 'Vertex AI');
+  const reconciliationRows = [
+    {
+      provider: 'google',
+      invoice_service: 'Gemini API',
+      invoice_inr: googleGeminiInvoice?.subtotal_inr ?? '',
+      app_calls: providerTotals.get('google')?.calls ?? 0,
+      app_errors: providerTotals.get('google')?.errors ?? 0,
+      app_estimate_usd: providerTotals.get('google')?.cost_usd ?? 0,
+      notes: 'Google invoice truth. App-side Gemini estimates are rough and currently undercount provider billing.',
+    },
+    {
+      provider: 'vertex',
+      invoice_service: 'Vertex AI',
+      invoice_inr: googleVertexInvoice?.subtotal_inr ?? '',
+      app_calls: providerTotals.get('vertex')?.calls ?? 0,
+      app_errors: providerTotals.get('vertex')?.errors ?? 0,
+      app_estimate_usd: providerTotals.get('vertex')?.cost_usd ?? 0,
+      notes: 'Vertex bill roughly matches Lahari logged Veo fallback calls.',
+    },
+  ].filter((row) => row.invoice_inr !== '' || row.app_calls);
+
+  if (googleBillingRows.length) {
+    for (const dir of [datedDir, latestDir]) {
+      writeCsv(path.join(dir, 'google_billing_services.csv'), googleBillingRows, ['service', 'service_id', 'cost_inr', 'subtotal_inr', 'percent_change']);
+      writeCsv(path.join(dir, 'provider_reconciliation.csv'), reconciliationRows, ['provider', 'invoice_service', 'invoice_inr', 'app_calls', 'app_errors', 'app_estimate_usd', 'notes']);
+    }
+  }
+
   const readme = `# Lahari Inference Cost Report
 
 Generated: ${new Date().toISOString()}
@@ -209,6 +287,15 @@ Providers included: ${providers.join(', ')}
 Source: Supabase \`lahari_ai_calls.cost_estimate\` joined with \`lahari_projects.title\`.
 
 Note: this is the app-side inference ledger. Google/Segmind invoices can differ if provider-side billing includes retries, taxes, minimums, manual console calls, or calls outside this app.
+${googleBillingRows.length ? `
+Google billing CSV imported: ${googleBillingCsv}
+
+Invoice service totals:
+
+${googleBillingRows.map((r) => `- ${r.service}: ₹${r.subtotal_inr.toFixed(2)}`).join('\n')}
+
+Reconciliation note: treat \`google_billing_services.csv\` as invoice truth. Treat Lahari \`cost_estimate\` as operational allocation; Gemini app estimates are known to undercount the attached Google bill.
+` : ''}
 
 ## Totals
 
@@ -227,6 +314,7 @@ ${modelTotals.map((r) => `- ${r.provider} / ${r.model}: ${r.calls} calls, ${r.er
 - \`song_by_provider.csv\`
 - \`song_by_provider_model.csv\`
 - \`call_detail.csv\`
+${googleBillingRows.length ? '- `google_billing_services.csv`\n- `provider_reconciliation.csv`' : ''}
 `;
   fs.writeFileSync(path.join(datedDir, 'README.md'), readme);
   fs.writeFileSync(path.join(latestDir, 'README.md'), readme);
