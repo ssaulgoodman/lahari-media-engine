@@ -226,6 +226,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
     start: itemsWithAction.filter(x => x.filterKey === 'start').length,
     continue: itemsWithAction.filter(x => x.filterKey === 'continue').length,
     open: itemsWithAction.filter(x => x.filterKey === 'open').length,
+    needsAudio: itemsWithAction.filter(x => x.filterKey === 'needs-audio').length,
   };
 
   const filtered = (search
@@ -264,6 +265,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
           { key: 'start',    label: 'Start',    count: counts.start },
           { key: 'continue', label: 'Continue', count: counts.continue },
           { key: 'open',     label: 'Done',     count: counts.open },
+          { key: 'needs-audio', label: 'Needs audio', count: counts.needsAudio },
         ] as const).map(chip => {
           const isActive = actionFilter === chip.key;
           return (
