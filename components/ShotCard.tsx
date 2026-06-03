@@ -125,6 +125,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const [storyboardSubTab, setStoryboardSubTab] = useState<StoryboardSubTab>(
     shot.videoUrl ? 'video' : 'storyboard',
   );
+  const [storyboardLockRequestToken, setStoryboardLockRequestToken] = useState(0);
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
   const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
@@ -135,7 +136,9 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   const hasVideo = !!shot.videoUrl;
   const hasStoryboard = !!shot.storyboardUrl;
   const canGenerateVideo = isStoryboardMode ? !!shot.storyboardLocked && hasStoryboard && !isGenerating : hasStartFrame && !isGenerating;
-  const canLock = isStoryboardMode ? !!shot.storyboardLocked && hasVideo && !shot.locked : hasStartFrame && hasVideo && !shot.locked;
+  const canLockShot = !isStoryboardMode && hasStartFrame && hasVideo && !shot.locked;
+  const canLockStoryboard = isStoryboardMode && hasStoryboard && !shot.storyboardLocked && !isGenerating;
+  const visibleLocked = isStoryboardMode ? !!shot.storyboardLocked : !!shot.locked;
   // In storyboard mode the storyboard image stands in for the start frame —
   // show it as soon as it exists, alongside any video that gets generated.
   const showMediaSection = isStoryboardMode ? (hasStoryboard || hasVideo || shot.storyboardStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING) : true;
@@ -162,7 +165,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
       transition={{ delay: shotIdx * 0.03 }}
       className={`rounded-xl overflow-hidden border transition-all scroll-mt-20 ${
         !actionable ? 'opacity-40 border-white/[0.03]'
-          : shot.locked ? 'border-white/[0.08]'
+          : visibleLocked ? 'border-white/[0.08]'
           : 'border-white/[0.05]'
       }`}
     >
@@ -293,11 +296,31 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
           </button>
-          <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo && !shot.locked || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>
+          <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
           </button>
-          <button onClick={() => onLockShot(scene.id, shot.id)} disabled={isGenerating || (!shot.locked && !canLock)} className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${shot.locked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : canLock ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-30`} title={shot.locked ? 'Unlock shot' : canLock ? 'Lock shot' : isStoryboardMode ? 'Lock storyboard + generate video first to lock' : 'Generate start frame + video first to lock'} aria-label={shot.locked ? 'Unlock shot' : 'Lock shot'}>
-            {shot.locked ? (
+          <button
+            onClick={() => {
+              if (isStoryboardMode) {
+                if (shot.storyboardLocked) {
+                  onUnlockStoryboard(shot.id);
+                } else if (isExpanded) {
+                  setStoryboardLockRequestToken((n) => n + 1);
+                } else {
+                  onLockStoryboard(shot.id, shot.storyboardVersionId);
+                }
+                return;
+              }
+              onLockShot(scene.id, shot.id);
+            }}
+            disabled={isGenerating || (isStoryboardMode ? (!shot.storyboardLocked && !canLockStoryboard) : (!shot.locked && !canLockShot))}
+            className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${visibleLocked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : (isStoryboardMode ? canLockStoryboard : canLockShot) ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-30`}
+            title={isStoryboardMode
+              ? (shot.storyboardLocked ? 'Unlock storyboard' : canLockStoryboard ? 'Lock storyboard for video' : 'Generate storyboard image first')
+              : (shot.locked ? 'Unlock shot' : canLockShot ? 'Lock shot' : 'Generate start frame + video first to lock')}
+            aria-label={isStoryboardMode ? (shot.storyboardLocked ? 'Unlock storyboard' : 'Lock storyboard') : (shot.locked ? 'Unlock shot' : 'Lock shot')}
+          >
+            {visibleLocked ? (
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
@@ -571,6 +594,8 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               setModalImage={setModalImage}
               subTab={storyboardSubTab}
               onSubTabChange={setStoryboardSubTab}
+              lockRequestToken={storyboardLockRequestToken}
+              hideLockControls
             />
           ) : (() => {
             const autoVeoPrompt = buildAutoVeoPrompt();
