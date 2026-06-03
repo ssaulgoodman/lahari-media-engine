@@ -81,7 +81,7 @@ router.post('/callback/:renderId', async (req, res) => {
 
   // Already finalized — treat as idempotent success so the renderer doesn't
   // retry. Covers duplicate callbacks from a flaky network or a renderer retry.
-  if (render.status === 'completed' || render.status === 'failed') {
+  if (render.status === 'completed' || render.status === 'failed' || render.status === 'cancelled') {
     return res.json({ ok: true, alreadyFinalized: true });
   }
 

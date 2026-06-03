@@ -203,13 +203,25 @@ router.post('/:id/render', async (req, res) => {
         const body = await response.text().catch(() => '');
         const message = `renderer rejected render request: HTTP ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`;
         console.error(`[render ${renderId}] ${message}`);
-        await updateRows('renders', { id: renderId }, {
-          status: 'failed',
-          error: message,
-          error_code: 'renderer_rejected',
-          stage: 'failed',
-          updated_at: new Date().toISOString(),
-        }).catch(() => {});
+        const failedAt = new Date().toISOString();
+        const { data: failedRow, error: failedUpdateError } = await getSB()
+          .from('lahari_renders')
+          .update({
+            status: 'failed',
+            error: message,
+            error_code: 'renderer_rejected',
+            stage: 'failed',
+            updated_at: failedAt,
+          })
+          .eq('id', renderId)
+          .eq('status', 'rendering')
+          .select('id')
+          .maybeSingle();
+        if (failedUpdateError) {
+          console.error(`[render ${renderId}] failed to mark renderer rejection:`, failedUpdateError.message);
+          return;
+        }
+        if (!failedRow) return;
         await recordDirectorEvent({
           projectId,
           source: 'system',
@@ -235,13 +247,26 @@ router.post('/:id/render', async (req, res) => {
       }
     } catch (err: any) {
       console.error(`[render ${renderId}] upstream fetch threw:`, err?.message || err);
-      await updateRows('renders', { id: renderId }, {
-        status: 'failed',
-        error: err?.message || 'renderer unreachable',
-        error_code: 'renderer_unreachable',
-        stage: 'failed',
-        updated_at: new Date().toISOString(),
-      }).catch(() => {});
+      const message = err?.message || 'renderer unreachable';
+      const failedAt = new Date().toISOString();
+      const { data: failedRow, error: failedUpdateError } = await getSB()
+        .from('lahari_renders')
+        .update({
+          status: 'failed',
+          error: message,
+          error_code: 'renderer_unreachable',
+          stage: 'failed',
+          updated_at: failedAt,
+        })
+        .eq('id', renderId)
+        .eq('status', 'rendering')
+        .select('id')
+        .maybeSingle();
+      if (failedUpdateError) {
+        console.error(`[render ${renderId}] failed to mark renderer unreachable:`, failedUpdateError.message);
+        return;
+      }
+      if (!failedRow) return;
       await recordDirectorEvent({
         projectId,
         source: 'system',
@@ -249,12 +274,72 @@ router.post('/:id/render', async (req, res) => {
         entityType: 'render',
         entityId: renderId,
         summary: 'Render request could not reach the renderer.',
-        payload: { renderId, errorCode: 'renderer_unreachable', error: String(err?.message || 'renderer unreachable').slice(0, 500) },
+        payload: { renderId, errorCode: 'renderer_unreachable', error: String(message).slice(0, 500) },
       });
     }
   })();
 
   return res.status(202).json({ renderId, status: 'rendering' });
+});
+
+router.post('/:id/renders/:renderId/cancel', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const renderId = paramStr(req.params.renderId);
+  const render = await selectOne('renders', { id: renderId });
+  if (!render || render.project_id !== projectId) {
+    return res.status(404).json({ error: 'Render not found' });
+  }
+
+  if (render.status === 'cancelled') {
+    return res.json({ ok: true, renderId, status: 'cancelled' });
+  }
+  if (render.status === 'completed') {
+    return res.status(409).json({ error: 'Render is already completed.', renderId, status: render.status });
+  }
+  if (render.status === 'failed') {
+    return res.status(409).json({ error: 'Render has already failed.', renderId, status: render.status });
+  }
+  if (render.status !== 'rendering' && render.status !== 'pending_finalize') {
+    return res.status(409).json({ error: 'Render is not cancellable.', renderId, status: render.status });
+  }
+
+  const { data, error } = await getSB()
+    .from('lahari_renders')
+    .update({
+      status: 'cancelled',
+      error: 'Render cancelled by artist.',
+      error_code: 'user_cancelled',
+      progress: render.progress ?? null,
+      stage: 'cancelled',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', renderId)
+    .eq('project_id', projectId)
+    .in('status', ['rendering', 'pending_finalize'])
+    .select('id')
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) {
+    const latest = await selectOne('renders', { id: renderId });
+    return res.status(409).json({
+      error: 'Render changed state before it could be cancelled.',
+      renderId,
+      status: latest?.status || 'unknown',
+    });
+  }
+
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'render_cancelled',
+    entityType: 'render',
+    entityId: renderId,
+    summary: 'Artist cancelled a final render.',
+    payload: { renderId },
+  });
+
+  return res.json({ ok: true, renderId, status: 'cancelled' });
 });
 
 // Frontend polls this — returns the most recent render row for the project.
