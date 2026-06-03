@@ -6,6 +6,7 @@ import { loadSnapshot } from './timeline-editor/persistence';
 import { MediaLibraryDrawer } from './MediaLibraryDrawer';
 import {
   startRender,
+  cancelRender,
   getRenderStatus,
   listRenders,
   deleteRender,
@@ -25,7 +26,8 @@ type RenderPhase =
   | { kind: 'idle' }
   | { kind: 'rendering' }
   | { kind: 'done'; videoUrl: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  | { kind: 'cancelled' };
 
 const POLL_MS = 4000;
 
@@ -98,6 +100,7 @@ const renderErrorHint = (code?: string | null) => {
 export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
   const [renderMeta, setRenderMeta] = useState<RenderStatusResponse | null>(null);
+  const [cancelingRender, setCancelingRender] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
   const [mediaNoticeDismissedFor, setMediaNoticeDismissedFor] = useState('');
@@ -255,6 +258,9 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         } else if (s.status === 'failed') {
           stopPolling();
           setPhase({ kind: 'error', message: s.error || 'Render failed' });
+        } else if (s.status === 'cancelled') {
+          stopPolling();
+          setPhase({ kind: 'cancelled' });
         }
         // 'rendering' / 'idle' → keep waiting
       } catch (err: any) {
@@ -333,6 +339,29 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     }
   };
 
+  const handleCancelRender = async () => {
+    const renderId = renderMeta?.renderId;
+    if (!renderId || cancelingRender) return;
+    if (!confirm('Cancel this render? The renderer may finish in the background, but Lahari will ignore its result and let you start another render.')) return;
+    setCancelingRender(true);
+    try {
+      await cancelRender(project.id, renderId);
+      stopPolling();
+      setRenderMeta((cur) => cur ? {
+        ...cur,
+        status: 'cancelled',
+        stage: 'cancelled',
+        error: 'Render cancelled by artist.',
+        errorCode: 'user_cancelled',
+      } : cur);
+      setPhase({ kind: 'cancelled' });
+    } catch (err: any) {
+      alert(err?.message || 'Cancel failed');
+    } finally {
+      setCancelingRender(false);
+    }
+  };
+
   const isBusy = phase.kind === 'rendering';
   const progress = (renderMeta?.status === 'rendering' || renderMeta?.status === 'pending_finalize') && renderMeta.progress !== null
     ? Math.max(0, Math.min(1, renderMeta.progress))
@@ -396,6 +425,15 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           >
             {phase.kind === 'done' ? 'Render again' : 'Render'}
           </button>
+          {isBusy && (
+            <button
+              onClick={handleCancelRender}
+              disabled={!renderMeta?.renderId || cancelingRender}
+              className="px-2 py-1 rounded-md border border-red-400/30 text-red-200 text-xs hover:bg-red-500/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {cancelingRender ? 'Cancelling…' : 'Cancel'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -549,6 +587,18 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             </button>
           </div>
         )}
+        {phase.kind === 'cancelled' && (
+          <div className="absolute bottom-4 right-4 max-w-sm bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl px-3 py-2 text-xs text-zinc-200 flex items-start justify-between gap-3">
+            <span>Render cancelled. You can adjust the timeline and start a new render.</span>
+            <button
+              onClick={() => setPhase({ kind: 'idle' })}
+              className="text-zinc-500 hover:text-white leading-none"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {phase.kind === 'rendering' && (
           <div className="absolute bottom-4 right-4 w-72 bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl px-3 py-2 backdrop-blur-sm">
             <div className="flex items-center justify-between gap-3">
@@ -581,6 +631,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
               <span>{renderMeta?.renderId ? renderMeta.renderId.slice(0, 8) : 'starting'}</span>
               {heartbeatAgeSeconds !== null && <span>heartbeat {heartbeatAgeSeconds}s ago</span>}
             </div>
+            <button
+              type="button"
+              onClick={handleCancelRender}
+              disabled={!renderMeta?.renderId || cancelingRender}
+              className="mt-2 w-full rounded-md border border-red-400/25 px-2 py-1 text-[11px] text-red-200 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {cancelingRender ? 'Cancelling render…' : 'Cancel render'}
+            </button>
           </div>
         )}
       </div>

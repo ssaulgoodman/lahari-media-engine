@@ -974,7 +974,7 @@ export const clearProjectTimeline = async (
   return handleResponse(res);
 };
 
-export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed';
+export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed' | 'cancelled';
 
 export interface RenderStatusResponse {
   renderId: string | null;
@@ -1005,6 +1005,14 @@ export const startRender = async (
     body: JSON.stringify({ timeline }),
     signal,
   });
+  return handleResponse(res);
+};
+
+export const cancelRender = async (
+  projectId: string,
+  renderId: string,
+): Promise<{ ok: true; renderId: string; status: 'cancelled' }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/renders/${renderId}/cancel`, { method: 'POST' });
   return handleResponse(res);
 };
 
