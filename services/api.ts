@@ -925,6 +925,55 @@ export interface TimelineRenderState {
   durationMs: number;
 }
 
+export interface TimelineDraftSnapshot {
+  initialVideoSrcs?: string[];
+  initialAudioSrcs?: string[];
+  trackItemIds: string[];
+  trackItemsMap: Record<string, any>;
+  transitionIds: string[];
+  transitionsMap: Record<string, any>;
+  tracks: any[];
+  duration: number;
+  fps: number;
+  size: { width: number; height: number };
+}
+
+export interface TimelineDraftResponse {
+  timeline: null | {
+    snapshot: TimelineDraftSnapshot;
+    version: number;
+    updatedAt: string;
+  };
+}
+
+export const getProjectTimeline = async (
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<TimelineDraftResponse> => {
+  const res = await authFetch(`${API}/projects/${projectId}/timeline`, { signal });
+  return handleResponse(res);
+};
+
+export const saveProjectTimeline = async (
+  projectId: string,
+  snapshot: TimelineDraftSnapshot,
+  baseVersion: number | null,
+): Promise<{ version: number; updatedAt: string }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/timeline`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ snapshot, baseVersion }),
+  });
+  return handleResponse(res);
+};
+
+export const clearProjectTimeline = async (
+  projectId: string,
+): Promise<{ ok: true }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/timeline`, { method: 'DELETE' });
+  return handleResponse(res);
+};
+
 export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed';
 
 export interface RenderStatusResponse {

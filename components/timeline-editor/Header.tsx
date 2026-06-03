@@ -22,6 +22,7 @@ import {
 import useStore from './store';
 import { useCurrentPlayerFrame } from './use-current-frame';
 import { saveSnapshot, clearSnapshot } from './persistence';
+import { clearProjectTimeline, saveProjectTimeline } from '../../services/api';
 import {
   frameToTimeString,
   timeToString,
@@ -75,11 +76,16 @@ const Header: React.FC = () => {
   const performUndo = useStore((s) => s.performUndo);
   const performRedo = useStore((s) => s.performRedo);
   const lastSavedAt = useStore((s) => s.lastSavedAt);
+  const timelineVersion = useStore((s) => s.timelineVersion);
+  const timelineSaveState = useStore((s) => s.timelineSaveState);
+  const timelineSaveMessage = useStore((s) => s.timelineSaveMessage);
   const projectId = useStore((s) => s.projectId);
   const initialVideoSrcs = useStore((s) => s.initialVideoSrcs);
   const initialAudioSrcs = useStore((s) => s.initialAudioSrcs);
   const bumpResetToken = useStore((s) => s.bumpResetToken);
   const setLastSavedAt = useStore((s) => s.setLastSavedAt);
+  const setTimelineVersion = useStore((s) => s.setTimelineVersion);
+  const setTimelineSaveState = useStore((s) => s.setTimelineSaveState);
   const deleteActiveItems = useStore((s) => s.deleteActiveItems);
   const splitActiveAtPlayhead = useStore((s) => s.splitActiveAtPlayhead);
   const trackItemsMap = useStore((s) => s.trackItemsMap);
@@ -134,11 +140,11 @@ const Header: React.FC = () => {
     return () => window.clearInterval(id);
   }, [lastSavedAt]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!projectId) return;
     const s = useStore.getState();
     if (s.trackItemIds.length === 0) return;
-    const savedAt = saveSnapshot(projectId, {
+    const snapshot = {
       initialVideoSrcs,
       initialAudioSrcs,
       trackItemIds: s.trackItemIds,
@@ -149,14 +155,33 @@ const Header: React.FC = () => {
       duration: s.duration,
       fps: s.fps,
       size: s.size,
-    });
+    };
+    setTimelineSaveState('saving');
+    try {
+      const result = await saveProjectTimeline(projectId, snapshot, timelineVersion);
+      setTimelineVersion(result.version);
+      setTimelineSaveState('saved');
+    } catch (err: any) {
+      const message = err?.message || 'Timeline save failed';
+      setTimelineSaveState(message.includes('changed elsewhere') ? 'conflict' : 'error', message);
+      return;
+    }
+    const savedAt = saveSnapshot(projectId, snapshot);
     if (savedAt != null) setLastSavedAt(savedAt);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!projectId) return;
-    if (!confirm('Reset timeline to the original shot videos? Unsaved edits will be lost.'))
+    if (!confirm('Reset the shared timeline to the original shot videos? Everyone using this project will lose the current timeline draft.'))
       return;
+    try {
+      await clearProjectTimeline(projectId);
+      setTimelineVersion(null);
+      setTimelineSaveState('idle');
+    } catch (err: any) {
+      setTimelineSaveState('error', err?.message || 'Timeline reset failed');
+      return;
+    }
     clearSnapshot(projectId);
     setLastSavedAt(null);
     bumpResetToken();
@@ -278,17 +303,26 @@ const Header: React.FC = () => {
           <button style={btn} onClick={handleReset} title="Reset to original shot videos">
             <RotateCcw size={14} />
           </button>
-          {lastSavedAt != null && (
+          {timelineSaveState === 'saving' && (
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#71717a', marginLeft: 4 }}>
+              Saving…
+            </span>
+          )}
+          {timelineSaveState !== 'saving' && lastSavedAt != null && (
             <span
               style={{
                 fontSize: 11,
                 fontFamily: 'monospace',
-                color: '#52525b',
+                color: timelineSaveState === 'conflict' || timelineSaveState === 'error' ? '#f87171' : '#52525b',
                 marginLeft: 4,
               }}
-              title={`Saved at ${new Date(lastSavedAt).toLocaleString()}`}
+              title={timelineSaveMessage || `Saved to project at ${new Date(lastSavedAt).toLocaleString()}`}
             >
-              {formatSavedAgo(lastSavedAt, nowTs)}
+              {timelineSaveState === 'conflict'
+                ? 'Updated elsewhere'
+                : timelineSaveState === 'error'
+                  ? 'Save failed'
+                  : formatSavedAgo(lastSavedAt, nowTs)}
             </span>
           )}
           <div style={{ width: 1, height: 18, background: '#27272a', margin: '0 6px' }} />

@@ -12,7 +12,7 @@
  */
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
+import { getSB, insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 
 const router = Router();
@@ -33,6 +33,102 @@ router.param('id', async (req, res, next, id) => {
     return res.status(403).json({ error: 'Access denied' });
   (req as any).project = row;
   next();
+});
+
+router.get('/:id/timeline', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { data, error } = await getSB()
+    .from('lahari_project_timelines')
+    .select('snapshot, version, updated_at')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.json({ timeline: null });
+  res.json({
+    timeline: {
+      snapshot: data.snapshot,
+      version: data.version,
+      updatedAt: data.updated_at,
+    },
+  });
+});
+
+router.put('/:id/timeline', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const snapshot = req.body?.snapshot;
+  const baseVersion = req.body?.baseVersion;
+  if (!snapshot || typeof snapshot !== 'object') {
+    return res.status(400).json({ error: 'snapshot is required' });
+  }
+
+  const sb = getSB();
+  const { data: existing, error: readErr } = await sb
+    .from('lahari_project_timelines')
+    .select('version')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (readErr) return res.status(500).json({ error: readErr.message });
+
+  if (existing) {
+    if (baseVersion !== existing.version) {
+      return res.status(409).json({
+        error: 'Timeline changed elsewhere. Reload the latest timeline before saving.',
+        code: 'timeline_conflict',
+        currentVersion: existing.version,
+      });
+    }
+    const nextVersion = existing.version + 1;
+    const { data, error } = await sb
+      .from('lahari_project_timelines')
+      .update({
+        snapshot,
+        version: nextVersion,
+        updated_by: req.userId || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('project_id', projectId)
+      .eq('version', existing.version)
+      .select('version, updated_at')
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) {
+      return res.status(409).json({
+        error: 'Timeline changed elsewhere. Reload the latest timeline before saving.',
+        code: 'timeline_conflict',
+      });
+    }
+    return res.json({ version: data.version, updatedAt: data.updated_at });
+  }
+
+  if (baseVersion !== null && baseVersion !== undefined) {
+    return res.status(409).json({
+      error: 'Timeline changed elsewhere. Reload the latest timeline before saving.',
+      code: 'timeline_conflict',
+    });
+  }
+
+  const { data, error } = await sb
+    .from('lahari_project_timelines')
+    .insert({
+      project_id: projectId,
+      snapshot,
+      version: 1,
+      updated_by: req.userId || null,
+    })
+    .select('version, updated_at')
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ version: data.version, updatedAt: data.updated_at });
+});
+
+router.delete('/:id/timeline', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { error } = await getSB()
+    .from('lahari_project_timelines')
+    .delete()
+    .eq('project_id', projectId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 router.post('/:id/render', async (req, res) => {
