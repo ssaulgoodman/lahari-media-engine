@@ -13,6 +13,7 @@ import EffectsPanel from './EffectsPanel';
 import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot } from './persistence';
+import { getProjectTimeline, saveProjectTimeline } from '../../services/api';
 
 export type InitialClip = { src: string; name?: string };
 
@@ -138,6 +139,8 @@ const TimelineEditor: React.FC<Props> = ({
     stateManager,
     setHistory,
     setLastSavedAt,
+    setTimelineVersion,
+    setTimelineSaveState,
     setProjectId,
     setInitialSources,
     setHistoryHandlers,
@@ -479,12 +482,30 @@ const TimelineEditor: React.FC<Props> = ({
       );
 
       // Snapshot restore path: when a projectId is provided and a saved
-      // timeline exists in localStorage, hydrate from it and skip the
-      // initialClips seeding entirely. Reset flow calls clearSnapshot before
-      // bumping resetToken, so after a reset this returns null and we fall
-      // through to the fresh-clips path below.
+      // shared timeline exists on the server, hydrate from it and skip the
+      // initialClips seeding entirely. localStorage is only a fallback cache.
+      // Reset flow clears both server + local snapshots before bumping
+      // resetToken, so after a reset we fall through to fresh-clips seeding.
       if (projectId) {
-        const snap = loadSnapshot(projectId);
+        let snap: ReturnType<typeof loadSnapshot> | null = null;
+        let serverVersion: number | null = null;
+        try {
+          const remote = await getProjectTimeline(projectId);
+          if (remote.timeline?.snapshot?.trackItemIds?.length) {
+            snap = {
+              ...remote.timeline.snapshot,
+              version: 1,
+              savedAt: new Date(remote.timeline.updatedAt).getTime(),
+            };
+            serverVersion = remote.timeline.version;
+          }
+        } catch (err) {
+          console.warn('[timeline-load-server]', err);
+        }
+        if (!snap) {
+          snap = loadSnapshot(projectId);
+          serverVersion = null;
+        }
         let restored: {
           tracks: any[];
           trackItemIds: string[];
@@ -533,6 +554,8 @@ const TimelineEditor: React.FC<Props> = ({
             { kind: 'update', updateHistory: false },
           );
           setLastSavedAt(restored.savedAt);
+          setTimelineVersion(serverVersion);
+          setTimelineSaveState('saved');
           seededKeyRef.current = key;
           hasSeededRef.current = true;
           captureBaselineRef.current?.();
@@ -552,6 +575,8 @@ const TimelineEditor: React.FC<Props> = ({
         }
         // No snapshot (or empty) — ensure stale "Saved X ago" pill clears.
         setLastSavedAt(null);
+        setTimelineVersion(null);
+        setTimelineSaveState('idle');
       }
 
       if (!initialClips?.length && !initialAudioClips?.length) {
@@ -671,15 +696,52 @@ const TimelineEditor: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, setLastSavedAt]);
+  }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, setLastSavedAt, setTimelineSaveState, setTimelineVersion]);
 
   // Auto-save: debounced writer that mirrors the render-authoritative subset
-  // of the store into localStorage whenever the user edits the timeline.
+  // of the store into the shared project timeline, with localStorage as a
+  // fallback cache. This preserves the key Render invariant: once a saved
+  // timeline exists, newly generated clips enter the media library instead of
+  // reseeding and wiping the edit.
   // Gated by hasSeededRef so the seed effect's own commits don't immediately
   // overwrite the snapshot we may have just loaded.
   useEffect(() => {
     if (!projectId || !stateManager) return;
     let timer: number | null = null;
+    let saveInFlight = false;
+    let pendingSnapshot: any | null = null;
+    const runSave = (snapshot: any) => {
+      if (saveInFlight) {
+        pendingSnapshot = snapshot;
+        return;
+      }
+      saveInFlight = true;
+      const baseVersion = useStore.getState().timelineVersion;
+      useStore.getState().setTimelineSaveState('saving');
+      void saveProjectTimeline(projectId, snapshot, baseVersion)
+        .then((result) => {
+          const latest = useStore.getState();
+          latest.setTimelineVersion(result.version);
+          latest.setTimelineSaveState('saved');
+          const savedAt = saveSnapshot(projectId, snapshot);
+          if (savedAt != null) latest.setLastSavedAt(savedAt);
+        })
+        .catch((err: any) => {
+          const latest = useStore.getState();
+          const message = err?.message || 'Timeline save failed';
+          latest.setTimelineSaveState(message.includes('changed elsewhere') ? 'conflict' : 'error', message);
+          saveSnapshot(projectId, snapshot);
+          pendingSnapshot = null;
+        })
+        .finally(() => {
+          saveInFlight = false;
+          if (pendingSnapshot) {
+            const next = pendingSnapshot;
+            pendingSnapshot = null;
+            runSave(next);
+          }
+        });
+    };
     const unsub = useStore.subscribe((state, prev) => {
       if (!hasSeededRef.current) return;
       // Only save when the render-authoritative subset actually changed.
@@ -696,7 +758,7 @@ const TimelineEditor: React.FC<Props> = ({
       timer = window.setTimeout(() => {
         const s = useStore.getState();
         if (s.trackItemIds.length === 0) return;
-        const savedAt = saveSnapshot(projectId, {
+        const snapshot = {
           initialVideoSrcs: s.initialVideoSrcs,
           initialAudioSrcs: s.initialAudioSrcs,
           trackItemIds: s.trackItemIds,
@@ -707,9 +769,9 @@ const TimelineEditor: React.FC<Props> = ({
           duration: s.duration,
           fps: s.fps,
           size: s.size,
-        });
-        if (savedAt != null) s.setLastSavedAt(savedAt);
-      }, 500);
+        };
+        runSave(snapshot);
+      }, 1200);
     });
     return () => {
       if (timer !== null) window.clearTimeout(timer);

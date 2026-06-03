@@ -7,6 +7,7 @@ interface QueueItem {
   priority: number;
   status: string;
   lahari_project_id: string | null;
+  video_url: string | null;
   song_name: string;
   deity: string;
   original_language: string;
@@ -34,6 +35,7 @@ interface Props {
 }
 
 type ActionKey = 'start' | 'continue' | 'open' | 'needs-audio';
+type FilterKey = 'all' | 'start' | 'continue' | 'open' | 'needs-audio';
 
 /** Action button vocabulary — one verb per row, derived from per-user fork
  *  state. Filter chips at the top filter by this same vocabulary so what an
@@ -49,6 +51,14 @@ const getAction = (item: QueueItem): ActionKey => {
   if (item.has_done_fork) return 'open';
   if (!item.audio_uploaded) return 'needs-audio';
   return 'start';
+};
+
+// Filter vocabulary is queue-centric, not per-user-fork-centric. "Open" means
+// the queue row is done/published. A row inside that filter may still show a
+// per-user action like Continue if this account also has an active variation.
+const getFilterKey = (item: QueueItem, action: ActionKey): Exclude<FilterKey, 'all'> => {
+  if (item.status === 'completed' && !!item.video_url) return 'open';
+  return action === 'open' ? 'start' : action;
 };
 
 const FILTER_KEY = 'lahari-queue-filters';
@@ -155,7 +165,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
 
   // Persisted filters — actionFilter replaces the old statusFilter so the
   // chip vocabulary matches the action button on each row.
-  const [actionFilter, setActionFilter] = useState<'all' | ActionKey>(() => {
+  const [actionFilter, setActionFilter] = useState<FilterKey>(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem(FILTER_KEY) || '{}').action;
       return v === 'start' || v === 'continue' || v === 'open' || v === 'needs-audio' ? v : 'all';
@@ -203,13 +213,16 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
   };
 
   // Compute action per item once; reuse for filter + render.
-  const itemsWithAction = items.map(i => ({ item: i, action: getAction(i) }));
+  const itemsWithAction = items.map(i => {
+    const action = getAction(i);
+    return { item: i, action, filterKey: getFilterKey(i, action) };
+  });
 
   const counts = {
     all: itemsWithAction.length,
-    start: itemsWithAction.filter(x => x.action === 'start').length,
-    continue: itemsWithAction.filter(x => x.action === 'continue').length,
-    open: itemsWithAction.filter(x => x.action === 'open').length,
+    start: itemsWithAction.filter(x => x.filterKey === 'start').length,
+    continue: itemsWithAction.filter(x => x.filterKey === 'continue').length,
+    open: itemsWithAction.filter(x => x.filterKey === 'open').length,
   };
 
   const filtered = (search
@@ -220,7 +233,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
       )
     : itemsWithAction
   )
-    .filter(x => actionFilter === 'all' || x.action === actionFilter)
+    .filter(x => actionFilter === 'all' || x.filterKey === actionFilter)
     .sort((a, b) => {
       if (sortBy === 'duration_asc') return a.item.duration_seconds - b.item.duration_seconds;
       if (sortBy === 'duration_desc') return b.item.duration_seconds - a.item.duration_seconds;

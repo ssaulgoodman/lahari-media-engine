@@ -103,6 +103,10 @@ export const useRealtimePresence = (
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_assets', filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_storyboard_versions', filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_renders', filter: `project_id=eq.${projectId}` }, handleProjectChange)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_timelines', filter: `project_id=eq.${projectId}` }, () => {
+        setRealtimeNotice({ tone: 'updated', message: 'Timeline updated' });
+        clearRealtimeNoticeLater();
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_config', filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_prompt_overrides', filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'lahari_director_events', filter: `project_id=eq.${projectId}` }, handleProjectChange);

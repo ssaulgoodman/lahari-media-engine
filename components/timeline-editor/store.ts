@@ -41,9 +41,12 @@ interface ITimelineStore {
   canUndo: boolean;
   canRedo: boolean;
   // Timestamp (ms) of the most recent successful localStorage snapshot write,
-  // or null if nothing is saved for the current project. Drives the "Saved"
-  // pill (tooltip exposes the exact time — no per-second ticker).
+  // or shared server snapshot write, or null if nothing is saved for the
+  // current project. Drives the "Saved" pill.
   lastSavedAt: number | null;
+  timelineVersion: number | null;
+  timelineSaveState: 'idle' | 'saving' | 'saved' | 'conflict' | 'error';
+  timelineSaveMessage: string | null;
   // Project id published by TimelineEditor on mount so the Header (which is
   // several layers down) can save/clear snapshots without prop-drilling.
   projectId: string | null;
@@ -62,6 +65,8 @@ interface ITimelineStore {
   setState: (partial: Partial<ITimelineStore>) => void;
   setHistory: (canUndo: boolean, canRedo: boolean) => void;
   setLastSavedAt: (ts: number | null) => void;
+  setTimelineVersion: (version: number | null) => void;
+  setTimelineSaveState: (state: ITimelineStore['timelineSaveState'], message?: string | null) => void;
   setProjectId: (id: string | null) => void;
   setInitialSources: (videoSrcs: string[], audioSrcs: string[]) => void;
   bumpResetToken: () => void;
@@ -110,6 +115,9 @@ const useStore = create<ITimelineStore>((set, get) => ({
   canUndo: false,
   canRedo: false,
   lastSavedAt: null,
+  timelineVersion: null,
+  timelineSaveState: 'idle',
+  timelineSaveMessage: null,
   projectId: null,
   initialVideoSrcs: [],
   initialAudioSrcs: [],
@@ -121,6 +129,9 @@ const useStore = create<ITimelineStore>((set, get) => ({
   setState: (partial) => set(partial as any),
   setHistory: (canUndo, canRedo) => set({ canUndo, canRedo }),
   setLastSavedAt: (lastSavedAt) => set({ lastSavedAt }),
+  setTimelineVersion: (timelineVersion) => set({ timelineVersion }),
+  setTimelineSaveState: (timelineSaveState, timelineSaveMessage = null) =>
+    set({ timelineSaveState, timelineSaveMessage }),
   setProjectId: (projectId) => set({ projectId }),
   setInitialSources: (initialVideoSrcs, initialAudioSrcs) =>
     set({ initialVideoSrcs, initialAudioSrcs }),
