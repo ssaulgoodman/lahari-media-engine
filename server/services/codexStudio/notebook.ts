@@ -105,9 +105,20 @@ const renderTemplate = (template: string, values: Record<string, string>): strin
   }, template);
 };
 
-const buildWorkspaceInstructions = (): string => {
+const buildWorkspaceInstructions = (opts?: {
+  generatedAt?: string;
+  skillsVersion?: string;
+  actionsVersion?: string;
+  sessionReloadNeeded?: boolean;
+}): string => {
   return renderTemplate(readResourceText('notebook/AGENTS.template.md'), {
     NOTEBOOK_VERSION,
+    GENERATED_AT: opts?.generatedAt || new Date().toISOString(),
+    SKILLS_VERSION: opts?.skillsVersion || buildSkillsManifest(loadSkillResources()).version,
+    ACTIONS_VERSION: opts?.actionsVersion || buildActionsHash(),
+    SESSION_RELOAD_NEEDED: opts?.sessionReloadNeeded
+      ? 'follow the CLI receipt; if instructions, skills, or action schemas changed, open a new chat in this workspace so they reload'
+      : 'follow the CLI receipt',
   });
 };
 
@@ -889,6 +900,14 @@ export const buildProjectNotebook = async (project: Project) => {
   const skillResources = loadSkillResources();
   const skillsManifest = buildSkillsManifest(skillResources);
   const generationTraceFiles = await buildGenerationTraceFiles(project);
+  const generatedAt = new Date().toISOString();
+  const actionsHash = buildActionsHash();
+  const workspaceInstructions = buildWorkspaceInstructions({
+    generatedAt,
+    skillsVersion: skillsManifest.version,
+    actionsVersion: actionsHash,
+    sessionReloadNeeded: true,
+  });
   const files: NotebookFile[] = [
     {
       path: 'AGENTS.md',
@@ -896,7 +915,7 @@ export const buildProjectNotebook = async (project: Project) => {
       scope: 'workspace',
       writePolicy: 'overwrite',
       description: 'Workspace-shared Mirage operating instructions (Mirage-wide, not project-specific).',
-      content: buildWorkspaceInstructions(),
+      content: workspaceInstructions,
     },
     {
       path: 'CLAUDE.md',
@@ -904,7 +923,7 @@ export const buildProjectNotebook = async (project: Project) => {
       scope: 'workspace',
       writePolicy: 'overwrite',
       description: 'Workspace-shared Mirage operating instructions for Claude Code (Mirage-wide, not project-specific).',
-      content: buildWorkspaceInstructions(),
+      content: workspaceInstructions,
     },
     ...buildSkillFiles(skillResources),
     {
@@ -1031,7 +1050,9 @@ Opened project and wrote the initial local notebook.
   return {
     kind: 'mirage.project.notebook',
     notebookVersion: NOTEBOOK_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
+    actionsHash,
+    skillsHash: skillsManifest.version,
     project: {
       id: project.id,
       title: project.title,

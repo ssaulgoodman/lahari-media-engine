@@ -112,6 +112,54 @@ const writeText = (filePath, content) => {
   fs.writeFileSync(filePath, content);
 };
 
+const isWorkspaceOperatingFile = (relativePath) =>
+  relativePath === 'AGENTS.md'
+  || relativePath === 'CLAUDE.md'
+  || relativePath === 'config/skills.json'
+  || relativePath.startsWith('config/actions/')
+  || relativePath.startsWith('.agents/skills/')
+  || relativePath.startsWith('.claude/skills/');
+
+const workspaceOperatingKind = (relativePath) => {
+  if (relativePath === 'AGENTS.md' || relativePath === 'CLAUDE.md') return 'instructions';
+  if (relativePath === 'config/skills.json' || relativePath.startsWith('.agents/skills/') || relativePath.startsWith('.claude/skills/')) return 'skills';
+  if (relativePath.startsWith('config/actions/')) return 'actions';
+  return 'workspace';
+};
+
+const canWritePath = (absolutePath) => {
+  try {
+    if (fs.existsSync(absolutePath)) {
+      fs.accessSync(absolutePath, fs.constants.W_OK);
+      return true;
+    }
+    let dir = path.dirname(absolutePath);
+    while (!fs.existsSync(dir)) {
+      const next = path.dirname(dir);
+      if (next === dir) break;
+      dir = next;
+    }
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const preflightWorkspaceOperatingWrites = (workspace, entries) => {
+  const blocked = [];
+  for (const entry of entries) {
+    if (entry.scope !== 'workspace' || !isWorkspaceOperatingFile(entry.path)) continue;
+    const absolutePath = safeJoin(workspace, entry.path);
+    if (!canWritePath(absolutePath)) blocked.push({ path: entry.path, kind: workspaceOperatingKind(entry.path) });
+  }
+  if (!blocked.length) return;
+  fail('workspace_operating_files_need_write_access', 'This sync needs to update Mirage operating files. Retry the returned sync command with elevated local write approval, then open a new chat in this workspace so skills/actions reload.', {
+    blocked,
+    userAction: 'Approve/elevate the same sync command locally; do not use MCP file reads for this case.',
+  }, 5);
+};
+
 const collectFiles = (dirPath) => {
   if (!fs.existsSync(dirPath)) return [];
   const stat = fs.statSync(dirPath);
@@ -169,6 +217,43 @@ const pruneLegacySkillDirs = (workspace, manifestByPath, pruned) => {
       pruneTree(workspace, relativePath, 'old_workspace_skill', pruned);
     }
   }
+};
+
+const summarizeSyncForOperator = (manifest, written, skipped) => {
+  const currentByPath = new Map(skipped.map((item) => [item.path, item.reason]));
+  const writtenPaths = new Set(written.map((item) => item.path));
+  const statusFor = (path) => {
+    if (writtenPaths.has(path)) return 'updated';
+    const reason = currentByPath.get(path);
+    if (reason === 'local_matches_server' || reason === 'unchanged') return 'current';
+    if (reason) return reason;
+    return 'not_present';
+  };
+  const wroteOperating = written.some((item) => isWorkspaceOperatingFile(item.path));
+  const wroteSkills = written.some((item) => workspaceOperatingKind(item.path) === 'skills');
+  const wroteActions = written.some((item) => workspaceOperatingKind(item.path) === 'actions');
+  const wroteInstructions = written.some((item) => workspaceOperatingKind(item.path) === 'instructions');
+  const manifestHasSkills = manifest.some((entry) => entry.path === 'config/skills.json' || entry.path.startsWith('.agents/skills/') || entry.path.startsWith('.claude/skills/'));
+  const manifestHasActions = manifest.some((entry) => entry.path.startsWith('config/actions/'));
+  return {
+    instructions: {
+      agentsMd: statusFor('AGENTS.md'),
+      claudeMd: statusFor('CLAUDE.md'),
+    },
+    skills: manifestHasSkills ? (wroteSkills ? 'updated' : 'current') : 'not_present',
+    actions: manifestHasActions ? (wroteActions ? 'updated' : 'current') : 'not_present',
+    sessionReloadNeeded: wroteOperating,
+    sessionReloadReason: wroteOperating
+      ? [
+        wroteInstructions ? 'instructions changed' : null,
+        wroteSkills ? 'skills changed on disk' : null,
+        wroteActions ? 'action schemas changed on disk' : null,
+      ].filter(Boolean).join('; ')
+      : null,
+    userAction: wroteOperating
+      ? 'User should open a new chat/session in this same workspace so Codex/Claude reload updated Mirage instructions, skills, and action schemas.'
+      : 'No session reload needed from this sync.',
+  };
 };
 
 const lockTtlMs = () => {
@@ -341,6 +426,7 @@ const sync = async (opts) => {
   const manifest = remote.manifest || [];
   const manifestByPath = new Map(manifest.map((entry) => [entry.path, entry]));
   const contentByPath = new Map((remote.files || []).map((entry) => [entry.path, entry]));
+  preflightWorkspaceOperatingWrites(workspace, remote.files || []);
   const written = [];
   const skipped = [];
   const removed = [];
@@ -382,7 +468,17 @@ const sync = async (opts) => {
       }
     }
 
-    writeText(absolutePath, incoming.content);
+    try {
+      writeText(absolutePath, incoming.content);
+    } catch (error) {
+      if ((error?.code === 'EACCES' || error?.code === 'EPERM') && isWorkspaceOperatingFile(entry.path)) {
+        fail('workspace_operating_files_need_write_access', 'This sync needs to update Mirage operating files. Retry the returned sync command with elevated local write approval, then open a new chat in this workspace so skills/actions reload.', {
+          blocked: [{ path: entry.path, kind: workspaceOperatingKind(entry.path), error: error.code }],
+          userAction: 'Approve/elevate the same sync command locally; do not use MCP file reads for this case.',
+        }, 5);
+      }
+      throw error;
+    }
     written.push({ path: entry.path, bytes: Buffer.byteLength(incoming.content, 'utf8') });
   }
 
@@ -461,7 +557,10 @@ const sync = async (opts) => {
     ok: conflicts.length === 0,
     kind: 'mirage.cli.sync',
     projectId: opts.projectId,
-    notebookVersion: remote.notebookVersion,
+    notebookSchemaVersion: remote.notebookVersion,
+    generatedAt: remote.generatedAt,
+    skillsHash: remote.skillsHash,
+    actionsHash: remote.actionsHash,
     syncedAt: new Date().toISOString(),
     written: written.length,
     skipped: skipped.length,
@@ -469,6 +568,7 @@ const sync = async (opts) => {
     pruned: pruned.length,
     conflicted: conflicts.length,
     conflicts,
+    summary: summarizeSyncForOperator(manifest, written, skipped),
     details: {
       written,
       skipped,

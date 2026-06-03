@@ -1,6 +1,12 @@
 # Mirage Workspace
 
-Workspace notebook version: {{NOTEBOOK_VERSION}}
+Notebook schema version: {{NOTEBOOK_VERSION}}
+
+Notebook freshness:
+- Generated at: {{GENERATED_AT}}
+- Skills version: {{SKILLS_VERSION}}
+- Actions version: {{ACTIONS_VERSION}}
+- Session reload rule: {{SESSION_RELOAD_NEEDED}}
 
 Mirage is an AI video studio for building projects from source material into concepts, scripts, styles, references, storyboards, videos, and final renders.
 

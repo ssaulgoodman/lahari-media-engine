@@ -83,6 +83,8 @@ router.post('/projects/:projectId/notebook', async (req, res) => {
         kind: 'mirage.notebook.sync',
         notebookVersion: notebook.notebookVersion,
         generatedAt: notebook.generatedAt,
+        actionsHash: notebook.actionsHash,
+        skillsHash: notebook.skillsHash,
         project: notebook.project,
         baseDir: notebook.baseDir,
         manifest,
