@@ -38,8 +38,9 @@ type ActionKey = 'start' | 'continue' | 'open' | 'needs-audio';
 type FilterKey = 'all' | 'start' | 'continue' | 'open' | 'needs-audio';
 
 /** Action button vocabulary — one verb per row, derived from per-user fork
- *  state. Filter chips at the top filter by this same vocabulary so what an
- *  artist sees on a row matches what the filter promises.
+ *  state. This is intentionally separate from the top filter chips: a queue
+ *  row can be globally in progress while this user still sees Start, or
+ *  globally queued while this user has an older completed fork they can open.
  *
  *  Priority: active beats done. If the user somehow has both an active fork
  *  AND a completed fork for the same queue row (edge case — e.g. they
@@ -53,12 +54,14 @@ const getAction = (item: QueueItem): ActionKey => {
   return 'start';
 };
 
-// Filter vocabulary is queue-centric, not per-user-fork-centric. "Open" means
-// the queue row is done/published. A row inside that filter may still show a
-// per-user action like Continue if this account also has an active variation.
-const getFilterKey = (item: QueueItem, action: ActionKey): Exclude<FilterKey, 'all'> => {
-  if (item.status === 'completed' && !!item.video_url) return 'open';
-  return action === 'open' ? 'start' : action;
+// Filter vocabulary is queue-centric, not per-user-fork-centric. "Done" means
+// the queue row itself is completed, not merely that this account has a done
+// fork. This keeps the dashboard buckets stable across shared-account work.
+const getFilterKey = (item: QueueItem): Exclude<FilterKey, 'all'> => {
+  if (item.status === 'completed') return 'open';
+  if (!item.audio_uploaded) return 'needs-audio';
+  if (item.status === 'in_progress') return 'continue';
+  return 'start';
 };
 
 const FILTER_KEY = 'lahari-queue-filters';
@@ -215,7 +218,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
   // Compute action per item once; reuse for filter + render.
   const itemsWithAction = items.map(i => {
     const action = getAction(i);
-    return { item: i, action, filterKey: getFilterKey(i, action) };
+    return { item: i, action, filterKey: getFilterKey(i) };
   });
 
   const counts = {
@@ -260,7 +263,7 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
           { key: 'all',      label: 'All',      count: counts.all },
           { key: 'start',    label: 'Start',    count: counts.start },
           { key: 'continue', label: 'Continue', count: counts.continue },
-          { key: 'open',     label: 'Open',     count: counts.open },
+          { key: 'open',     label: 'Done',     count: counts.open },
         ] as const).map(chip => {
           const isActive = actionFilter === chip.key;
           return (
