@@ -166,7 +166,7 @@ Renders the storyboard image for one shot from the saved storyboard prompt.
 - Model: `project.storyboard_provider` (nano-banana-2 / nano-banana-pro / gpt-image-2)
 - Inputs: storyboardPrompt (saved), locked style/cast/env refs, optional artist edit instruction in refine mode
 - Contract: image-only render. Sends saved `storyboardPrompt` text plus attached refs to the storyboard image provider. Cut plan is NOT sent — that's for the downstream Seedance video step.
-- Output: storyboard image (typically 2×2 or 2×3 panel grid)
+- Output: storyboard image (2×2, 2×3, or 3×3 grid; 4, 6, or 9 panels)
 
 #### shot-video-assembly `[agent]`
 

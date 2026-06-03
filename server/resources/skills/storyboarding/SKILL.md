@@ -1,76 +1,75 @@
 ---
 name: storyboarding
-description: Use when creating or fixing Mirage storyboards — writing storyboard prompts and cut plans, generating or refining boards, importing native images, and keeping adjacent shots coherent. Covers the full repair ladder, not just prompt writing.
+description: Use when writing, generating, repairing, or importing Mirage storyboards. Covers multi-panel board prompts, cut plans, reference-aware staging, context fixes, image refine, native image import, and cross-shot coherence.
 ---
 
 # Storyboarding
 
-Storyboards stage each shot as a static image. The prompt is image-native blocking — who is where, what changes, what the viewer sees — not a character bible, style bible, or camera-school note. Mirage binds graph names to attached reference images at render, so you name, you don't re-describe.
+You write multi-panel storyboard prompts for one Mirage shot. A board is a visual plan for video generation: blocking, geography, character positions, and action beats.
 
-## Inspect first
+Mirage renders the prompt with locked style, character, and environment references. Use exact project names for those references; Mirage binds those names to the attached images at render time. Describe what happens in the shot; only add appearance/style detail when correcting a specific failure.
 
-- `storyboards/<scene>.md` are the editable prompt/cut-plan drafts; `state/storyboards/<shot>.md` shows the current board, lock, and status.
+## First Move
 
-## Write the prompt
+Read the shot direction, assigned cast/environment, locked refs, and adjacent shots. If no draft exists, write from the shot. If fixing a generated board, read the current board state and the relevant generation trace before guessing.
 
-A storyboard prompt has a fixed shape. The image model reads text, so build it in this order — this is literally what produces the board:
+## Prompt Pattern
 
-1. **Layout line.** State the grid: a 2×2 grid of four 16:9 panels (or a single row of 3), thin borders, read left-to-right then top-to-bottom. The borders only separate panels; nothing else should read as a graphic element.
-2. **One-line setup.** Where we are and who's present, in canonical graph names — `The Boss enters the Red Den Room; The Knife Orchid is already seated.` Do **not** restate appearance, costume, or style — the locked refs carry that.
-3. **Per-panel beats, inline, one short sentence each, in reading order.** Panels are moments in *time*: panel 1 is the first beat, the last panel the final beat; the action happens *between* panels and each panel is a decisive still. Write each exactly as `Panel 1: <framing/staging> — <visible action>`.
-4. **Continuity.** Note what carries across panels — position, screen direction, light — so the four read as one moment, not four unrelated shots.
-5. **No text in panels.** End with the rule: no captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks. Storyboard models render those literally, and the board ends up looking like a teaching diagram.
+1. **Layout:** choose a 2×2, 2×3, or 3×3 grid. Use 2×2 (4 panels) for most shots, 2×3 (6 panels) for a longer beat, and 3×3 (9 panels) only for dense action. Use 16:9 panels, thin borders, and a neutral background. Panels read left-to-right, top-to-bottom.
+2. **Setup:** one sentence naming the location and present characters by project name.
+3. **Panels:** one clear action moment per panel. Format: `Panel 1: <framing/staging> — <visible action>`.
+4. **Continuity:** one sentence naming what must stay consistent: positions, screen direction, light, prop placement, doorway, or room geography.
+5. **No text:** end with no captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks.
 
-Keep the whole prompt under ~220 words. No character/environment/style design prose, no "cinematic film still" language.
+Style wording should come from the locked style reference. Use at most one short style phrase when it helps the image model read the board; do not invent a separate genre, palette, lighting scheme, or finish that could fight the reference.
+
+Keep the prompt under ~220 words. Make the board easy to understand at a glance: clear staging, visible action, readable positions, and sensible geography.
 
 Example:
 
 > A 2×2 grid of four 16:9 storyboard panels, thin borders, read left-to-right then top-to-bottom.
 > Setup: The Boss enters the Red Den Room; The Knife Orchid is already seated.
-> Panel 1: wide, low angle — The Boss stops in the doorway, one hand on the frame.
-> Panel 2: medium, over his shoulder — The Knife Orchid stays seated, watching without turning.
+> Panel 1: wide doorway view — The Boss stops at the threshold, one hand on the frame.
+> Panel 2: medium over his shoulder — The Knife Orchid stays seated, watching without turning.
 > Panel 3: close on The Boss — his eyes find the empty desk.
-> Panel 4: wide, reverse — he crosses toward the desk; she has not moved.
-> No captions, numbers, labels, arrows, or readable text.
+> Panel 4: wide reverse — he crosses toward the desk; she has not moved.
+> The doorway, desk, and seated position stay consistent across all panels.
+> No captions, numbers, labels, arrows, speech bubbles, subtitles, readable text, logos, or watermarks.
 
-Bad version:
+## Cut Plan
 
-> A cinematic noir shot of The Boss, a sharp-dressed man with intense eyes, entering a moody red room in dramatic lighting, dolly in, tense atmosphere, beautiful premium anime style.
+The cut plan guides video motion after the board exists. Use the same beats, one line per panel:
 
-Why bad: it restates identity/style, gives one vague shot instead of panel beats, uses camera words the image model will not stage, and gives no temporal change.
+`Panel 1 — slow lean into the doorway, breath held`
 
-## Cut plan
+It can be empty when the board order is enough.
 
-The cut plan is for the video model that animates the board later, not the image model. Same panel beats, one line per panel, exactly `Panel N — <action>` (e.g. `Panel 1 — slow lean into the doorway, breath held`). It may be empty — then the video model uses board order alone.
+## Check The Board
 
-## Repair ladder (when a board is wrong, climb from cheapest)
+Before locking, check whether the board actually stages the shot:
 
-1. **Prompt/spec wrong** → edit `storyboards/<scene>.md`, re-apply with `run_action(apply_storyboard_prompts)`. Free.
-2. **Close, needs a visual tweak** → `start_job(refine_storyboard_image)` with an edit instruction — keeps the current board, no re-plan.
-3. **Refs are causing drift** → regenerate with `contextOverrides` to exclude/swap the offending cast/env/style refs (`excludeCastRefs`, `includeStyleImage: false`, etc.).
-4. **Native image is faster/better** → make it with your own imagegen, upload via `/api/agent/uploads` (`purpose=storyboard_image`), then `run_action(import_storyboard_image)` to attach that exact board.
-5. **A phrase/recipe keeps working** → promote it: `apply_project_style_notes` (storyboard bucket) or a project prompt override.
-- **Generate from scratch:** `start_job(generate_storyboard)` (paid); lock with `run_action(lock_storyboard)`.
+- each panel shows a distinct moment
+- action progresses logically from panel to panel
+- character positions and room geography make sense
+- adjacent shots preserve screen direction and handoff state
+- framing varies enough that the scene does not become repeated centered portraits
 
-Use the ladder precisely. If the board has wrong geography, rewrite prompt/cut plan. If the board is almost right but the hand position is off, refine image. If the board keeps changing a character's identity, stop and inspect the locked ref. If the model cannot follow the style after two tries, try provider/context change rather than adding prose.
+## Repair Ladder
 
-## Cross-shot coherence (check before locking a sequence)
+1. **Written beat is wrong** → edit `storyboards/<scene>.md`, then `run_action(apply_storyboard_prompts)`. Free.
+2. **No board exists yet** → `start_job(generate_storyboard)` after approval; lock after review.
+3. **The board premise is wrong** → fix the saved prompt first with `apply_storyboard_prompts`, then regenerate after approval.
+4. **Board is close, one visual detail is wrong** → `start_job(refine_storyboard_image)` with a narrow edit instruction.
+5. **Wrong refs/context are attached** → regenerate with `contextOverrides` to exclude/swap refs, style image, or previous-board context.
+6. **Native or artist image is better** → upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
+7. **A repeatable phrasing works** → promote it with `apply_project_style_notes` in the storyboard bucket or a project prompt override.
 
-Adjacent boards should preserve geography, screen direction, and the 180-degree line, and the run should read as one world. If shot N+1 jumps despite each board being fine on its own, the fix is staging/continuity, not a better single prompt.
+Switch storyboard provider only after the prompt and attached context are sound and the same failure repeats.
 
-Scene-level habit: write or review a whole scene's boards together when possible. Vary framing across adjacent shots; do not make every board a centered confrontation. Carry handoff state forward: who was seated, who crossed the room, which doorway they used, where the light source is.
+## Avoid
 
-## Model behavior
-
-The default storyboard provider handles most boards; switch provider (`nano-banana-pro` / `nano-banana-2` / `gpt-image-2`) only if the same prompt fails the same way twice.
-
-## Ask before
-
-- `generate_storyboard` and `refine_storyboard_image` are paid. Confirm before generating. For a batch, run `parallel_run` over per-shot `generate_storyboard` calls.
-
-## Failure modes
-
-- Re-describing wardrobe/face/style after refs are locked → fights the binding contract.
-- Cinematic jargon (dolly, rack focus, lens size) or generic VFX (glowing particles) the source did not ask for.
-- Four centered portraits with no change in blocking — vary the framing panel to panel.
-- Cramming more than ~4 beats into one board → the panels blur together; split the shot instead.
+- 3-panel boards or any layout other than 2×2, 2×3, or 3×3.
+- Visible panel numbers, labels, captions, arrows, speech bubbles, subtitles, readable text, logos, or watermarks.
+- Rewriting faces, outfits, environments, or style when locked references already carry them.
+- Vague mood/style language without visible staging.
+- Overpacking one board; use 9 panels only when the action genuinely needs it.

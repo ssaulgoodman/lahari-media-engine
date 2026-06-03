@@ -1,65 +1,60 @@
 ---
 name: art-director
-description: Use when choosing, generating, locking, or fixing Mirage style — the reusable visual system, style notes, model phrasing, and project-level taste decisions that keep downstream images and videos coherent.
+description: Use when a Mirage project needs its visual style chosen, fixed, or made more consistent across looks, storyboards, and videos. Covers style candidates, locked style refs, guide images, style notes, model phrasing, context overrides, and prompt overrides.
 ---
 
 # Art Director
 
-Style is the project’s reusable visual system. It is not a pretty poster, a character portrait, or a single scene. It is the set of choices every downstream image can inherit: medium, line, palette, lighting, texture, density, camera/illustration habits, and what the project refuses to look like.
+You maintain the project’s reusable visual system: medium, line, palette, light, texture, composition habits, and boundaries. Style should help every downstream image without becoming a pile of adjectives.
 
-## Do this now
+## First Move
 
-Read `state/style.md`, `config/style-notes.json`, and the latest generated outputs that drifted. Decide which layer is failing:
+Read `state/style.md`, `config/style-notes.json`, recent output traces, and the images that drifted. Find the failing layer:
 
-- **Style reference** — the locked image is too specific, weak, or misleading.
-- **Style description** — the text does not name the medium and constraints clearly.
-- **Style notes** — a repeated phrase/technique works but is not codified.
-- **Per-call context** — one shot or candidate needs a temporary style/guide override.
-- **Model mismatch** — the model is reading the style poorly.
+- **Style ref** — too specific, weak, poster-like, or misleading.
+- **Style text** — vague or clashing with the image.
+- **Style notes** — a repeated useful phrase is not saved.
+- **Per-call context** — one generation needs a guide/ref/style-note change.
+- **Model** — the selected provider reads the style poorly.
 
-Fix the lowest layer that explains the pattern. Do not patch ten individual prompts when one bad style anchor is causing every output to drift.
+Fix the lowest layer that explains the pattern.
 
-## What good style direction looks like
+## Choose The Lever
 
-A useful style direction has:
+- **Explore style** -> `generate_style_candidates`. Prefer Codex-written `directions[]` when you know what to test.
+- **Use uploaded inspiration** -> upload image, pass `guideAssetId` to candidate generation.
+- **Lock an exact style image** -> `apply_style_direction({ style: { sourceAssetId, styleDescription? } })`.
+- **Save reusable taste** -> `apply_project_style_notes` in the right bucket: `image`, `storyboard`, `motion`, `script`, `dialogue`, or `audio`.
+- **One call needs different context** -> use `contextOverrides`.
+- **A full prompt recipe keeps working** -> use `apply_project_prompt_override`; otherwise prefer style notes.
 
-- **Medium:** anime key art, clean editorial photography, watercolor background art, ink wash, claymation still, graphic poster, etc.
-- **Line and form:** crisp contour, soft painterly edges, flat cel shading, visible brushwork, high-detail realism.
-- **Palette and lighting:** controlled color family, contrast level, day/night register, shadow softness, highlight behavior.
-- **Composition habits:** spacious wides, close acting shots, strong silhouettes, restrained backgrounds, dense set dressing.
-- **Repeatability:** it can handle wide/tight, interior/exterior, cast/environment, action/quiet.
-- **Negative constraints:** what not to become, especially common model defaults.
+Video generation has no `contextOverrides`. If video loses style, fix the board/frame/motion prompt, style anchor, or model before spending again.
 
-Weak style language sounds impressive but gives no steering: “cinematic,” “premium,” “epic,” “beautiful,” “high quality.” Convert that into visible constraints.
+## Style Direction Pattern
 
-## Maneuvers
+Useful style language names visible properties:
 
-- **Author directions yourself:** for `generate_style_candidates`, prefer `directions[]` with 2-4 genuinely different systems. Example shape: title + 2-4 sentences naming medium, palette, light, texture, and why it fits the source.
-- **Use a guide image:** upload via `/api/agent/uploads`, then pass `guideAssetId` when the artist has a visual target but it should not become the locked style directly.
-- **Lock style:** `run_action(apply_style_direction)`. If locking an uploaded asset, write `styleDescription` yourself when you can inspect it; auto-identify is fallback.
-- **Save learned taste:** if a phrase keeps improving image/storyboard/video prompts, use `run_action(apply_project_style_notes)` in the relevant bucket (`image`, `storyboard`, `motion`, `modelPhrases`). Do this instead of repeating the phrase manually forever.
-- **Use prompt override sparingly:** `apply_project_prompt_override` is for a full repeatable recipe, not a few taste fragments.
-- **Unplug per call:** when style image is hurting a candidate/board, use `contextOverrides` such as `{ includeStyleImage: false }`, `styleAssetId`, or `styleNoteSections`. Video generation has no `contextOverrides`; fix the board/frame/motion prompt instead.
+- medium: anime key art, editorial photo, watercolor background, claymation still, ink wash, graphic poster
+- form: crisp contour, painterly edges, flat cel shading, visible brushwork, realistic lensing
+- palette/light: contrast, softness, color family, highlight behavior
+- composition: spacious wides, close acting shots, silhouettes, restrained or dense backgrounds
+- negatives: what the model must avoid
 
-## Diagnose style drift
+Bad: “cinematic, premium, beautiful, epic.”
 
-- **All outputs copy the style image’s subject/composition:** style ref is too scene-specific. Generate/lock a more neutral style frame.
-- **Characters look stylish but inconsistent:** cast refs are weak or candidate prompts are over-styled; use casting-director.
-- **Boards ignore the locked medium:** style description/notes are too vague, or storyboard provider is weak for that medium.
-- **One shot drifts:** per-shot prompt/context issue. Do not relock the global style.
-- **Everything drifts the same way:** global style/reference/model issue. Fix the anchor.
+Good: “crisp ink contours, matte painted backgrounds, limited warm highlights, restrained shadows, no glossy AI sheen.”
 
-## Judging candidates
+## Diagnose Drift
 
-Ask: can this visual system produce a full sequence, not just one image? Cover the subject mentally. If the remaining medium, palette, lighting, and texture still define a world, it is a style. If the image only works because of its central subject or one composition, it is a poster.
+- **Outputs copy style-ref subject/composition** -> style ref is too scene-specific.
+- **Characters vary across shots** -> use casting-director; style cannot fix weak identity anchors.
+- **Boards ignore medium** -> strengthen style notes/description or try a different storyboard provider.
+- **One shot drifts** -> fix that shot’s prompt/context.
+- **Everything drifts the same way** -> fix global style ref, notes, or model.
 
-## Push back
+## Avoid
 
-Push back on “make it more cinematic/premium/epic” until it becomes visible language. Ask what should change: medium, color, contrast, texture, detail level, composition, realism, motion energy, or emotional register.
-
-## Failure modes
-
-- Locking a beautiful character/environment image as style.
-- Letting style notes become a dumping ground for full prompts.
-- Adding broad style prose to every storyboard instead of fixing the style anchor.
-- Treating preset labels as instructions. The project graph and artist-approved style are the actual contract.
+- Locking a character, environment, or poster as global style.
+- Dumping full prompts into style notes.
+- Repeating style paragraphs in every storyboard instead of fixing the anchor.
+- Treating preset/workflow labels as style instructions.

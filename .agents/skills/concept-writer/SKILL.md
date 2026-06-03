@@ -1,52 +1,48 @@
 ---
 name: concept-writer
-description: Use when writing, refining, or locking a Mirage concept — the project spine, source interpretation, tone, visual intent, and downstream direction before script, style, and production assets.
+description: Use when writing, refining, or locking a Mirage concept — the project spine, source interpretation, tone, visual intent, and boundaries before script, style, and production assets.
 ---
 
 # Concept Writer
 
-The concept is the project’s spine: what the piece is about, what it commits to emotionally, and what kind of production it wants to become. It should steer script and style without becoming a shot list.
+You define the project spine. A Mirage concept should make the source usable for production without becoming a script, style bible, or shot list.
 
-## Do this now
+## First Move
 
-Read `state/brief.md`, `state/concept.md`, and the source material. Then decide whether the concept needs:
+Read `state/brief.md`, `state/concept.md`, and the source. Decide what is missing:
 
-- **clarity** — the subject/through-line is vague
-- **focus** — it tries to be too many projects
-- **permission** — it boxes downstream into over-specific visuals
-- **taste** — tone/visual intent is missing
-- **source fidelity** — it invented meaning not present in the input
+- **Subject** — who or what the project follows.
+- **Through-line** — the central movement, question, contrast, or promise.
+- **Tone** — the emotional register and restraint level.
+- **Visual intent** — the kind of world this should become.
+- **Boundaries** — what the project will not do.
+- **Source fidelity** — what is actually in the source versus an assumption.
 
-Draft the concept yourself, then `run_action(apply_concept)`.
+Draft the concept yourself, then persist it with `run_action(apply_concept)`.
 
-## What a strong concept contains
+## Shape
 
-- **Subject:** who/what the project is actually following.
-- **Through-line:** the central movement, question, contrast, or promise.
-- **Tone:** restrained, playful, tense, elegiac, absurd, intimate, etc.
-- **Visual intent:** the kind of world it should become, without locking exact shots.
-- **Boundaries:** what the project is not doing.
+Use clear production language:
 
-Good concepts are specific but breathable. They let style, script, and references make decisions without re-litigating the premise.
+> A restrained crime miniature about two killers negotiating control in quiet rooms. Tension comes from stillness, glances, and small shifts of power, not spectacle. The visual world should feel controlled, graphic, and intimate. Avoid broad action-movie escalation.
 
-Weak: “A stylish anime video about two assassins.”
-Better: “A cool, restrained crime miniature about two killers negotiating control in quiet rooms; the tension lives in stillness, glances, and small shifts of power rather than spectacle.”
+Good concepts are specific but breathable. They help script, style, references, and storyboards make decisions without locking exact shots.
 
 ## Maneuvers
 
-- **Write from source:** if source is thin, state assumptions plainly instead of inventing false certainty.
-- **Tighten:** if downstream feels generic, add tone and intent.
-- **Broaden:** if downstream feels trapped, remove over-specific visual/plot constraints.
-- **Re-anchor style:** if style candidates are scattered, concept may lack visual direction.
-- **Re-anchor script:** if the script wanders, concept may lack through-line.
+- **Source is thin** -> state the assumption plainly.
+- **Downstream feels generic** -> add tone, stakes, and visual intent.
+- **Downstream feels trapped** -> remove over-specific plot/visual constraints.
+- **Style candidates scatter** -> strengthen visual intent or boundaries.
+- **Script wanders** -> sharpen through-line and subject.
 
-## Side effects
+## Side Effects
 
-`apply_concept` is safe. It saves concept text and may mark shot prompts stale if a script exists. It does not delete script rows, refs, boards, videos, or locks. Tell the artist it creates a review flag, not a wipe.
+`apply_concept` saves concept text. It may mark downstream prompts stale, but it does not delete script rows, refs, boards, videos, or locks. Treat it as a review flag, not a wipe.
 
-## What not to do
+## Avoid
 
-- Do not turn concept into a full script.
-- Do not stuff style bible language here; style lives with art-director/style notes.
-- Do not preserve source ambiguity if the project needs a production decision — name your assumption and ask if needed.
-- Do not over-warn about downstream wipe. Concept edits are cheap.
+- Full script beats.
+- Style-bible paragraphs.
+- Invented lore or meaning not supported by the source.
+- Vague prestige language like cinematic, premium, epic, beautiful.

@@ -1,90 +1,74 @@
 ---
 name: casting-director
-description: Use when generating, judging, locking, or fixing Mirage cast and environment references — identity anchors, reference candidates, uploaded guides, and downstream consistency for characters, objects, and locations.
+description: Use when generating, judging, locking, or fixing Mirage character, object, or environment references. Covers reusable identity anchors, uploaded guides, candidate prompts, relocking, and downstream continuity.
 ---
 
 # Casting Director
 
-Cast and environment refs are continuity anchors. Storyboards and videos bind graph names to these images. If a locked ref is vague, off-style, over-composed, or beautiful-but-wrong, every downstream shot inherits the problem.
+You create and protect the visual anchors that storyboards and videos will bind to later. A good ref is not just attractive; it is reusable, readable, and stable when later prompts say only the graph name.
 
-## Do this now
+## First Move
 
-Read `state/cast.md`, `state/environments.md`, and candidate URLs from `run_action(list_candidates)`. Judge candidates for production usability, not gallery appeal.
+Read `state/cast.md`, `state/environments.md`, locked refs, candidate URLs, and any recent generation trace. For each entity, ask:
 
-For each entity, decide:
-
-- Is the identity readable from one image?
-- Does it match the script description and locked style?
+- Can the model recognize this character, object, or space from one image?
+- Does it match the script and the locked style reference?
 - Is it neutral enough to reuse across many shots?
-- Does it avoid scene-specific action, dramatic props, extra characters, or one-off lighting?
-- Will the image model bind this consistently when the prompt later says only the graph name?
+- Does it avoid action poses, scene-specific props, extra people, symbolic clutter, or one-off lighting?
+- Would a storyboard/video prompt using only the graph name bind to this ref cleanly?
 
-If not, regenerate or upload a better anchor before spending on downstream boards/videos.
+Fix weak anchors before spending on boards or videos.
 
-## Generate and lock
+## Choose The Move
 
-- **Generate candidates:** `start_job(generate_candidates)` after approval. Use `entityIds[]`; `promptOverride` may target only one entity.
-- **List candidates:** `run_action(list_candidates)` before locking; never lock blind.
-- **Lock:** `run_action(lock_reference)` with `sourceAssetId`.
-- **Upload use-as-is:** upload via `/api/agent/uploads`, then lock with `sourceAssetId`.
-- **Upload as guide:** upload and pass `guideAssetId` to `generate_candidates` when the artist image should steer but not be used directly.
-- **Tune context:** use `contextOverrides` to include/exclude style image, style description, style-note buckets, or swap style asset. Candidate generation does not include other cast/env refs by default.
+- **Need fresh candidates** -> `start_job(generate_candidates)` after approval. Use `entityIds[]`.
+- **Need to inspect options** -> `run_action(list_candidates)`. Never lock blind.
+- **Good existing candidate** -> `run_action(lock_reference)` with `sourceAssetId`.
+- **Artist image should become the ref** -> upload through `/api/agent/uploads`, then lock that returned `assetId`.
+- **Artist image should guide generation** -> upload it, pass `guideAssetId` to `generate_candidates`, then choose from the new candidates.
+- **One exact idea is needed** -> use `promptOverride` for one entity only.
+- **Small soft correction** -> use `note`; Mirage rewrites the saved generation prompt before rendering.
+- **Wrong style/context attached** -> use `contextOverrides` to include/exclude style image, style description, guide image, or style-note sections.
 
-## Writing better candidate prompts
+Mirage saves the generated prompt on the cast/environment row and logs the exact render prompt. Use that trail when diagnosing drift.
 
-Use `promptOverride` only when you can state the full final prompt. It should be compact and reference-oriented:
+## Prompt Pattern
 
-- Character/object: name, stable identity cues, age/build/material, wardrobe or object-state invariants, neutral pose/presentation, plain background, no action.
-- Environment: geography/layout, architectural logic, key landmarks, lighting register, scale, readable whole space, no characters unless tiny scale figures are needed.
+Use the normal generated prompt unless you can write the whole final reference prompt better. A good `promptOverride` is compact and reference-oriented.
 
-Do not ask for a shot, scene, poster, action beat, or dramatic moment. These refs are reusable production plates.
+Character or object:
 
-## Judging character/object refs
+> Create one isolated reusable reference for The Boss. Stable identity: severe older strategist, compact build, controlled posture, charcoal suit with no decorative props. Neutral standing pose, plain soft background, full readable silhouette and face. Follow the locked style reference for medium, palette, lighting, and finish. No action, scene, poster, text, collage, or extra people.
 
-Strong:
+Environment:
 
-- face/body/silhouette or object shape is distinctive
-- wardrobe/material/status details match the script
-- neutral pose lets later shots animate or restage the character
-- style matches the locked project style without copying its subject
-- no second person/object steals attention
+> Create one reusable environment reference for Red Den Room. Show the whole room layout: entrance, desk, red window, seating zone, wall texture, and clear walking space. Follow the locked style reference for medium, palette, lighting, and finish. No dramatic action, no main characters, no captions, no poster composition.
 
-Weak:
+If a guide image is attached, name its role in plain language: “Use the uploaded guide for face identity only” or “Use the guide for room layout only.” Style still comes from the locked style reference unless the artist says otherwise.
 
-- attractive portrait but wrong age/costume/body
-- action pose that becomes hard to reuse
-- dramatic lighting that defines identity poorly
-- generated prop/object differs from the script’s role
-- style ref subject bleeds into the character
+## Judge Candidates
 
-## Judging environment refs
+Strong character/object refs have a distinctive silhouette, readable face or form, stable wardrobe/material details, neutral pose, and no competing subject.
 
-Strong:
+Weak character/object refs are pretty portraits with the wrong age/body/costume, action poses, heavy scene lighting, props that change the role, or style-reference subject bleed.
 
-- whole space is understandable
-- entrances, scale, zones, and landmarks are clear
-- lighting and palette match the style
-- no one-off action locks the location into a single scene
-- later boards can stage different beats inside it
+Strong environment refs show a usable space: entrances, scale, zones, landmarks, and lighting that can support many shots.
 
-Weak:
+Weak environment refs are mood paintings, generic backdrops, copied style-ref settings, crowded scenes, or images with no staging geography.
 
-- mood painting with no usable layout
-- copied from style image’s setting
-- too generic to bind continuity
-- crowded with characters or symbolic clutter
+## Repair Ladder
 
-## Repair ladder
+1. **One board/video missed the entity** -> fix that shot's prompt or context first.
+2. **Same entity misses repeatedly** -> inspect the locked ref, saved generation prompt, and candidates.
+3. **Better candidate already exists** -> relock it.
+4. **Artist has the right image** -> upload and lock use-as-is, or upload as `guideAssetId` and regenerate.
+5. **Prompt is the issue** -> regenerate one entity with a tighter `promptOverride`.
+6. **Everything is off-style** -> return to art-director; the style anchor or style notes are probably failing.
 
-1. **One downstream shot wrong:** fix storyboard/shot prompt first.
-2. **Same entity wrong across shots:** inspect locked ref and candidates.
-3. **Locked ref weak:** relock a better existing candidate or upload use-as-is.
-4. **No good candidate:** regenerate with a tighter prompt or guide image.
-5. **All refs off-style:** return to art-director; style anchor is probably failing.
+## Avoid
 
-## Failure modes
-
-- Locking for beauty instead of identity.
+- Locking for beauty instead of continuity.
+- Asking for a shot, scene, poster, dramatic mood, or action beat when generating refs.
 - Re-describing characters in storyboard prompts because the ref is weak.
-- Using environment refs as mood boards instead of spaces.
-- Regenerating boards/videos before fixing a bad anchor.
+- Using environment refs as mood boards instead of usable spaces.
+- Batch `promptOverride`; it only works for one entity at a time.

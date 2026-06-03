@@ -77,17 +77,17 @@ const LEGACY_MCP_TOOLS = new Set([
   'lahari_capture_issue',
 ]);
 const promptOverrideKindSchema = z.enum(['concept', 'script', 'shot_prompts', 'storyboard', 'video', 'character_looks', 'environment_looks', 'audio_plan']);
-const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as the director. Mirage is an agent-native AI video studio: each project runs source material -> concept -> script -> style -> cast & environments -> storyboards or keyframes -> video -> render.
+const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as the director. Mirage is an AI video studio for building projects from source material into concepts, scripts, styles, references, storyboards, videos, and final renders.
 
-Supabase is canonical project truth. Act only through these tools; never invent direct database writes. Translate artist intent into exact typed inputs (contextOverrides, a precise promptOverride, an editInstruction) — never pipe raw artist notes into actions. Ask before paid generation, locks, prompt overwrites, topology rebuilds, or anything that stales downstream work.
+Use Mirage tools to read project state and save changes. Write creative text yourself, then persist it through typed actions. Translate artist intent into exact edits: a prompt change, context override, style note, image edit instruction, lock, import, or generation request. Ask before paid generation, locks/unlocks, prompt overrides, topology rebuilds, or anything that stales approved work.
 
-Getting started: when the artist names a project or asks to continue, call list_projects then open_project. To start fresh, call create_project then open_project; for an audio seed, create the shell, POST the file to /api/agent/uploads with purpose=audio_source, then ask whether it is soundtrack-only or source material before any analysis (none runs automatically).
+To continue work, call list_projects if needed, then open_project. To start fresh, call create_project, then open_project. For uploaded audio, create the project shell, upload with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analysis.
 
-Acting: the action registry holds the typed operations across concept, script, style, looks, storyboard, video, audio, and system surfaces. Dispatch with run_action (free: text, edits, plans, locks) or start_job (paid media: images, video, TTS — returns a jobId); call describe_action for a live schema. Text is harness-native: you write the concepts, scripts, and prompts; tools persist them and generate media. Bring local images/audio in by POSTing to /api/agent/uploads, then pass the returned assetId into actions — never send bytes through MCP.
+Use run_action for free changes such as text edits, plans, locks, imports, and config updates. Use start_job for paid media generation such as images, storyboards, videos, and TTS; it returns a jobId. Use describe_action when you need one live input schema. Upload local images/audio with /api/agent/uploads, then pass the returned assetId into actions. Do not send bytes through MCP.
 
-Use production language with artists; the web app is the visual studio, so share returned web links for review. If a tool misbehaves or the studio disagrees with MCP state, call mirage_capture_issue before guessing.
+Use clear artist-facing language. The Mirage web app is the visual studio, so share returned web links for review. If a tool misbehaves or the studio disagrees with project state, call mirage_capture_issue with a short report.
 
-Filesystem harness: materialize the local notebook with mint_cli_token and operate from AGENTS.md — the full desk-copy operator manual. No filesystem: work entirely through these tools and read project state with get_project_state.`;
+If the harness has a filesystem, call mint_cli_token to sync the local workspace and then operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.`;
 
 type HostedAuth = {
   userId: string;
@@ -208,10 +208,10 @@ const audioPlanSchema = z.object({
 });
 
 const MCP_LIMITS = {
-  requestPerMinute: envInt('MIRAGE_MCP_REQUESTS_PER_MINUTE', envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 120)),
-  mutatingPerHour: envInt('MIRAGE_MCP_MUTATIONS_PER_HOUR', envInt('LAHARI_MCP_MUTATIONS_PER_HOUR', 180)),
-  paidPerDay: envInt('MIRAGE_MCP_PAID_CALLS_PER_DAY', envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 30)),
-  issuesPerHour: envInt('MIRAGE_MCP_ISSUES_PER_HOUR', envInt('LAHARI_MCP_ISSUES_PER_HOUR', 20)),
+  requestPerMinute: envInt('MIRAGE_MCP_REQUESTS_PER_MINUTE', envInt('LAHARI_MCP_REQUESTS_PER_MINUTE', 600)),
+  mutatingPerHour: envInt('MIRAGE_MCP_MUTATIONS_PER_HOUR', envInt('LAHARI_MCP_MUTATIONS_PER_HOUR', 5000)),
+  paidPerDay: envInt('MIRAGE_MCP_PAID_CALLS_PER_DAY', envInt('LAHARI_MCP_PAID_CALLS_PER_DAY', 500)),
+  issuesPerHour: envInt('MIRAGE_MCP_ISSUES_PER_HOUR', envInt('LAHARI_MCP_ISSUES_PER_HOUR', 200)),
 };
 
 const PAID_TOOLS = new Set([

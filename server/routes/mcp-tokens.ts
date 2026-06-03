@@ -3,7 +3,7 @@ import { createMcpToken, listMcpTokens, revokeMcpToken } from '../services/mcpTo
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 
 const router = Router();
-const TOKEN_CREATE_LIMIT_PER_HOUR = envInt('LAHARI_MCP_TOKEN_CREATES_PER_HOUR', 10);
+const TOKEN_CREATE_LIMIT_PER_HOUR = envInt('MIRAGE_MCP_TOKEN_CREATES_PER_HOUR', envInt('LAHARI_MCP_TOKEN_CREATES_PER_HOUR', 100));
 
 const ok = (data: unknown) => ({ ok: true, data });
 

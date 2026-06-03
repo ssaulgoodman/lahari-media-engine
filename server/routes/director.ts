@@ -11,9 +11,9 @@ import { statusForStructuredError, structuredError } from '../services/structure
 const router = Router();
 const DIRECTOR_API_VERSION = '2026-05-14.r17-first-pass';
 const DIRECTOR_LIMITS = {
-  mutatingPerHour: envInt('LAHARI_DIRECTOR_API_MUTATIONS_PER_HOUR', 180),
-  paidPerDay: envInt('LAHARI_DIRECTOR_API_PAID_CALLS_PER_DAY', 30),
-  issuesPerHour: envInt('LAHARI_DIRECTOR_API_ISSUES_PER_HOUR', 20),
+  mutatingPerHour: envInt('MIRAGE_DIRECTOR_API_MUTATIONS_PER_HOUR', envInt('LAHARI_DIRECTOR_API_MUTATIONS_PER_HOUR', 5000)),
+  paidPerDay: envInt('MIRAGE_DIRECTOR_API_PAID_CALLS_PER_DAY', envInt('LAHARI_DIRECTOR_API_PAID_CALLS_PER_DAY', 500)),
+  issuesPerHour: envInt('MIRAGE_DIRECTOR_API_ISSUES_PER_HOUR', envInt('LAHARI_DIRECTOR_API_ISSUES_PER_HOUR', 200)),
 };
 const PAID_TOOLS = new Set([
   'director.generate.storyboard',

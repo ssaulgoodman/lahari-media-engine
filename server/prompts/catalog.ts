@@ -603,11 +603,11 @@ USER NOTE POLICY
 OUTPUT CONTRACT
 Return only JSON:
 {
-  "storyboardPrompt": "complete image-model prompt with panel layout, one-line shot setup using canonical cast/environment names, per-panel blocking/action descriptions inline, continuity between panels, and no-text-in-panels rule",
+  "storyboardPrompt": "complete image-model prompt with 2x2, 2x3, or 3x3 grid layout (4, 6, or 9 panels), one-line shot setup using canonical cast/environment names, per-panel blocking/action descriptions inline, continuity between panels, and no-text-in-panels rule",
   "cutPlanText": "Panel N — <action> per panel, one line each"
 }
 
-storyboardPrompt stays lean, roughly under 220 words. No character design prose, environment design prose, contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
+storyboardPrompt stays lean, roughly under 220 words. Use a 2x2, 2x3, or 3x3 grid with 16:9 panels and borders/background. Do not use 3-panel boards. No character design prose, environment design prose, contract bullet lists, animation rules, emotional-arc prose, quality boilerplate, readable text, captions, logos, or watermarks.`,
     source: { file: 'server/prompts/storyboard.ts + server/services/seedance-storyboard-rd.ts', lines: 'buildStoryboardPlannerPrompt / buildStoryboardPrompt' },
   },
   {
@@ -957,8 +957,8 @@ Keep the shot intent. Rewrite so the first moment matches the frame — same cha
     variables: [
       { name: 'storyboardImage', description: '@image1, the locked storyboard grid' },
       { name: 'referenceImages', description: '@image2+ locked style, character, and environment identity anchors' },
-      { name: 'rows', description: 'Storyboard grid rows (2 for both sizes today)' },
-      { name: 'cols', description: 'Storyboard grid columns (2 for clips <10s, 3 for clips ≥10s)' },
+      { name: 'rows', description: 'Storyboard grid rows inferred from the locked board; common layouts are 2x2, 2x3, or 3x3' },
+      { name: 'cols', description: 'Storyboard grid columns inferred from the locked board; common layouts are 2x2, 2x3, or 3x3' },
       { name: 'cutPlanText', description: 'Saved shot progression text from the active storyboard version' },
       { name: 'clipDuration', description: 'Seedance clip duration, 4-15s' },
       { name: 'mood', description: 'Mood word from the project (e.g. contemplative)' },

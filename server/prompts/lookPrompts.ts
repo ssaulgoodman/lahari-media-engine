@@ -45,7 +45,7 @@ const formatStyleReference = (input: LookPromptInput): string => {
   ];
   const styleIntent = clip(input.styleDescription, 360);
   if (styleIntent) {
-    lines.push(`Style intent note: ${styleIntent}`);
+    lines.push(`Style intent note (supplementary; use only when it agrees with the style reference image): ${styleIntent}`);
   }
   return lines.join('\n');
 };

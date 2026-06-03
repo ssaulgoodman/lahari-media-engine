@@ -1,7 +1,8 @@
 import { getSB, T } from '../database.js';
 import { type ByokProvider } from './byok/resolver.js';
+import { envInt } from './rateLimit.js';
 
-export const TTS_DAILY_CAP_USD = 20;
+export const TTS_DAILY_CAP_USD = envInt('MIRAGE_TTS_DAILY_CAP_USD', envInt('LAHARI_TTS_DAILY_CAP_USD', 200));
 
 export class DailyCapExceededError extends Error {
   code = 'daily_cap_exceeded';
