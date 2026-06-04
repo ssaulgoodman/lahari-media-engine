@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { generateStoryboardVersion, lockStoryboardVersion, planStoryboardPrompt, unlockStoryboardVersion, writeStoryboardPrompt } from '../storyboard.js';
-import { insertRow, selectOne, updateRows } from '../../database.js';
+import { insertRow, selectAll, selectOne, updateRows } from '../../database.js';
 import { storageUrl } from '../../storage.js';
 import type { ContextOverrides } from '../contextOverrides.js';
 import { generateShotVideo } from '../videoGeneration.js';
@@ -1086,10 +1086,42 @@ export const revertProjectPromptOverrideConfig = async (
   };
 };
 
-export const applyGenerateVideo = async (project: Project, shotId: string, promptOverride?: string, modelOverride: ModelOverride = {}) => {
+const latestUnknownChargeVideoFailure = async (projectId: string, shotId: string) => {
+  const rows = await selectAll('agent_operations', {
+    project_id: projectId,
+    tool: 'job:generate_video',
+    scope_id: shotId,
+    status: 'error',
+  }, { orderBy: 'started_at', ascending: false, limit: 1 });
+  const row = rows[0];
+  if (!row || row.result?.chargeStatus !== 'charge_unknown') return null;
+  return row;
+};
+
+export const applyGenerateVideo = async (
+  project: Project,
+  shotId: string,
+  promptOverride?: string,
+  modelOverride: ModelOverride = {},
+  opts: { acknowledgePreviousChargeRisk?: boolean } = {},
+) => {
   const plan = planGenerateVideo(project, shotId, modelOverride);
   if (!plan.canRun) {
     throw new Error(`Cannot generate video: ${plan.prerequisites.join(' ')}`);
+  }
+  const priorUnknownCharge = await latestUnknownChargeVideoFailure(project.id, shotId);
+  if (priorUnknownCharge && !opts.acknowledgePreviousChargeRisk) {
+    const estimated = Number(priorUnknownCharge.result?.estimatedCostUsd || plan.estimatedCost || 0);
+    throw new Error(JSON.stringify({
+      code: 'previous_video_charge_unknown',
+      message: 'The previous video attempt for this shot failed after the provider request outcome became unknown. Retrying may spend again.',
+      projectId: project.id,
+      shotId,
+      previousJobId: priorUnknownCharge.id,
+      previousError: priorUnknownCharge.error || null,
+      estimatedCostUsd: estimated,
+      requiredInput: { acknowledgePreviousChargeRisk: true },
+    }));
   }
 
   const result = await generateShotVideo(project.id, shotId, { promptOverride, modelOverride: { videoModel: modelOverride.videoModel } });

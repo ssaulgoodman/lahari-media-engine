@@ -183,6 +183,7 @@ export const VIDEO_ACTION_SPECS = {
       dryRun: 'optional boolean',
       promptOverride: 'optional exact final video prompt',
       modelOverride: 'optional videoModel override',
+      acknowledgePreviousChargeRisk: 'required true only after a prior attempt failed with charge_unknown; retry may spend again',
     },
     examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
   },

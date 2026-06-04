@@ -125,10 +125,11 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
   const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
   const storyboardSentRefs: { label: string; filePath: string }[] = [];
   const storyboardAudioRefs: XRayReference[] = [];
+  const t0 = Date.now();
+  let finalVideoPromptForTrace = shot.motion_prompt || 'Cinematic camera movement';
 
   try {
     await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
-    const t0 = Date.now();
 
     const veoPromptParts: string[] = [];
     if (shot.motion_prompt && shot.motion_prompt !== 'Cinematic camera movement') {
@@ -279,6 +280,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const veoPrompt = useStoryboardMode
       ? [storyboardPrompt, visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n')
       : keyframePrompt;
+    finalVideoPromptForTrace = veoPrompt || finalVideoPromptForTrace;
     console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
     const legacySongLipsync = useStoryboardMode && shot.lipsync_enabled && !planWantsLipsync;
@@ -461,11 +463,26 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     };
   } catch (err: any) {
     console.error(`[shot ${shot.id}] Video gen failed:`, err);
+    const durationMs = Date.now() - t0;
+    const chargeStatus = err?.chargeStatus || 'not_recorded';
+    const provider = err?.provider || 'segmind';
+    const errorModel = err?.modelId || videoModelKey;
+    const estimatedCostUsd = Number(err?.estimatedCostUsd || 0);
+    const retryWarning = err?.retryWarning || (chargeStatus === 'charge_unknown'
+      ? 'Retry may spend again because the provider request outcome is unknown.'
+      : null);
+    if (chargeStatus) {
+      (err as any).chargeStatus = chargeStatus;
+      (err as any).provider = provider;
+      (err as any).modelId = errorModel;
+      (err as any).estimatedCostUsd = estimatedCostUsd;
+      if (retryWarning) (err as any).retryWarning = retryWarning;
+    }
     await logCall({
       projectId: project.id,
       stage: 'generate-shot-video',
-      model: videoModelKey,
-      prompt: shot.motion_prompt || 'Cinematic camera movement',
+      model: errorModel,
+      prompt: finalVideoPromptForTrace,
       referenceInputs: useStoryboardMode && storyboardAsset
         ? [
           { type: 'image' as const, label: 'Locked numbered storyboard', url: storageUrl(storyboardAsset.file_path) },
@@ -479,7 +496,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
           ]
           : [],
       contextChain: await buildContextChain(project.id),
-      durationMs: 0,
+      responseSummary: `Video generation failed. Provider: ${provider}. Charge status: ${chargeStatus}. Estimated risk: $${estimatedCostUsd.toFixed(3)}.${retryWarning ? ` ${retryWarning}` : ''}`,
+      durationMs,
+      costEstimate: chargeStatus === 'charge_unknown' ? estimatedCostUsd : 0,
       error: err.message,
     });
     await updateRows('shots', { id: shot.id }, { video_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });

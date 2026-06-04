@@ -43,6 +43,10 @@ const compactResult = (value: unknown) => {
     'webUrl',
     'costUsd',
     'estimatedCostUsd',
+    'chargeStatus',
+    'provider',
+    'model',
+    'retryWarning',
   ]) {
     if (result[key] !== undefined) compact[key] = result[key];
   }

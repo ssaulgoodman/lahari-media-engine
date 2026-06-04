@@ -399,6 +399,7 @@ router.post('/generate/video', audited('director.generate.video', async (req) =>
   req.body.shotId,
   req.body.promptOverride,
   req.body.modelOverride || {},
+  { acknowledgePreviousChargeRisk: !!req.body.acknowledgePreviousChargeRisk },
 )));
 
 router.get('/projects/:projectId/audio-plan-cost', audited('director.audio_plan.cost', async (req) => studio.getAudioPlanCost(

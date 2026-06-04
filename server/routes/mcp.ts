@@ -301,6 +301,7 @@ const generateVideoInputSchema = z.object({
   dryRun: z.boolean().optional(),
   promptOverride: optionalPromptText,
   modelOverride: modelOverrideSchema,
+  acknowledgePreviousChargeRisk: z.boolean().optional(),
 });
 const applyVideoPromptInputSchema = z.object({
   projectId,
@@ -862,7 +863,9 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       const project = await fullProjectForUser(input.projectId, auth.userId);
       return input.dryRun
         ? studio.planGenerateVideo(project, input.shotId, input.modelOverride || {})
-        : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {});
+        : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {}, {
+          acknowledgePreviousChargeRisk: input.acknowledgePreviousChargeRisk,
+        });
     }
     if (actionKey === 'apply_video_prompt') {
       const input = applyVideoPromptInputSchema.parse(rawInput);
@@ -919,6 +922,17 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     return value;
   };
 
+  const compactErrorResult = (error: any) => {
+    const result: Record<string, any> = {};
+    for (const key of ['chargeStatus', 'estimatedCostUsd', 'provider', 'modelId', 'model', 'retryWarning']) {
+      if (error?.[key] !== undefined) result[key === 'modelId' ? 'model' : key] = error[key];
+    }
+    if (result.chargeStatus === 'charge_unknown' && !result.retryWarning) {
+      result.retryWarning = 'Retry may spend again because the provider request outcome is unknown.';
+    }
+    return result;
+  };
+
   const startRegistryJob = async (actionKey: ActionKey, rawInput: Record<string, unknown> = {}) => {
     const spec = actionSpec(actionKey);
     if (!spec) throw new Error(`Unsupported actionKey: ${actionKey}`);
@@ -940,7 +954,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         await finishAgentOperation(jobId, 'success', { result });
       })
       .catch(async (error) => {
-        await finishAgentOperation(jobId, 'error', { error });
+        await finishAgentOperation(jobId, 'error', { error, result: compactErrorResult(error) });
       });
 
     return {

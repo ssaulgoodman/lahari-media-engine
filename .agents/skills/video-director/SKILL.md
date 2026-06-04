@@ -49,6 +49,7 @@ Weak:
 - **Save keyframe motion text** -> `run_action(apply_video_prompt)`. It does not generate.
 - **Check requirements/cost** -> `run_action(generate_video, { dryRun: true })`.
 - **Generate** -> `start_job(generate_video)` after approval.
+- **Previous charge unknown** -> do not retry until the artist acknowledges the risk; pass `acknowledgePreviousChargeRisk: true` only after that approval.
 - **One exact final prompt needed** -> use `promptOverride` on `generate_video`.
 - **Board/frame wrong** -> return to storyboarding/keyframe tools before video.
 - **Same failure twice** -> change model or upstream input, not just the same retry.

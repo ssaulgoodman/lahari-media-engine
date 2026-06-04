@@ -151,14 +151,27 @@ export const generateSegmindVideo = async (
   const bodyKeys = Object.keys(body).sort().join(',');
   console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, audioRefs=${refAudioUrls.length}, generateAudio=${!!opts?.generateAudio}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
-  const res = await fetch(model.endpoint, {
-    method: 'POST',
-    headers: {
-      'x-api-key': await requireProviderApiKey('segmind'),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  const apiKey = await requireProviderApiKey('segmind');
+  let res: Response;
+  try {
+    res = await fetch(model.endpoint, {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error: any) {
+    const err = new Error(`Segmind ${modelKey} request outcome unknown: ${error?.message || error}`);
+    (err as any).provider = 'segmind';
+    (err as any).modelId = modelKey;
+    (err as any).chargeStatus = 'charge_unknown';
+    (err as any).providerRequestStatus = 'sent_unknown';
+    (err as any).estimatedCostUsd = Number((model.costPerSec * durationSec).toFixed(3));
+    (err as any).retryWarning = 'The provider request may have reached Segmind before the network/fetch failure. Retrying may spend again.';
+    throw err;
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -202,6 +215,11 @@ export const generateSegmindVideo = async (
     const err = new Error(userMessage);
     (err as any).segmindStatus = res.status;
     (err as any).segmindRaw = errText.slice(0, 4000);
+    (err as any).provider = 'segmind';
+    (err as any).modelId = modelKey;
+    (err as any).chargeStatus = 'provider_rejected_no_output';
+    (err as any).providerRequestStatus = 'responded_error';
+    (err as any).estimatedCostUsd = 0;
     (err as any).errorCategory = lower.includes('safety') || lower.includes('blocked')
       ? 'safety'
       : isCreditsError

@@ -63,7 +63,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Cast/environment refs: use `generate_candidates`, `list_results`, `lock_reference`, or upload an image through `/api/agent/uploads`.
 - Native storyboard image: upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
-- Video: use `run_action(generate_video, dryRun: true)` for requirements/cost, then `start_job(generate_video)` after approval.
+- Video: use `run_action(generate_video, dryRun: true)` for requirements/cost, then `start_job(generate_video)` after approval. If a prior video attempt says charge status is unknown, retry only after the artist accepts `acknowledgePreviousChargeRisk: true`.
 - Audio: use `apply_audio_plan`, `apply_cast_voice`, and `generate_dialogue_audio` when producing dialogue/narration. Use audio-analysis actions only when uploaded source audio actually needs transcription or structure analysis.
 
 ## Choosing The Lever
