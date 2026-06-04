@@ -38,6 +38,7 @@ export interface QueueItem {
   // Per-user fork stats — computed when `currentUserId` is passed to listQueue.
   others_done?: number;          // Other users who have published a render for this queue row.
   others_wip?: number;           // Other users with an in-progress fork.
+  other_workers?: QueueWorker[];  // Other users with forks for this queue row, email-labeled for dashboard coordination.
   has_active_fork?: boolean;     // Current user has a fork that isn't `completed`.
   has_done_fork?: boolean;       // Current user has a fork that is `completed`.
   // Per-user mnemonic label for this song (e.g. "the sculptor video"). Set via
@@ -46,6 +47,30 @@ export interface QueueItem {
   // are never exposed here — single SELECT scoped to currentUserId.
   user_note?: string | null;
 }
+
+export interface QueueWorker {
+  user_id: string;
+  email: string | null;
+  status: 'done' | 'wip';
+}
+
+const fetchAuthEmails = async (supabase: ReturnType<typeof getClient>, userIds: string[]) => {
+  const uniqueIds = [...new Set(userIds.filter(Boolean))];
+  const emails = new Map<string, string | null>();
+  await Promise.all(uniqueIds.map(async (userId) => {
+    try {
+      const { data, error } = await supabase.auth.admin.getUserById(userId);
+      if (error) {
+        emails.set(userId, null);
+        return;
+      }
+      emails.set(userId, data.user?.email || null);
+    } catch {
+      emails.set(userId, null);
+    }
+  }));
+  return emails;
+};
 
 export const listQueue = async (filters?: {
   status?: string;
@@ -103,6 +128,7 @@ export const listQueue = async (filters?: {
   const forkStats = new Map<string, {
     othersDone: number;
     othersWip: number;
+    otherWorkers: QueueWorker[];
     hasActiveFork: boolean;
     hasDoneFork: boolean;
   }>();
@@ -112,18 +138,35 @@ export const listQueue = async (filters?: {
       .select('source_queue_id, user_id, status')
       .in('source_queue_id', queueIds);
     if (pErr) throw new Error(`Supabase error: ${pErr.message}`);
+    const emailByUserId = await fetchAuthEmails(
+      supabase,
+      ((projectRows as any[]) || [])
+        .map((p) => p.user_id as string)
+        .filter((userId) => userId && userId !== filters.currentUserId),
+    );
     for (const p of (projectRows as any[]) || []) {
       const qid = p.source_queue_id as string;
       if (!qid) continue;
       const isCurrent = p.user_id === filters.currentUserId;
       const isDone = p.status === 'completed';
-      const slot = forkStats.get(qid) || { othersDone: 0, othersWip: 0, hasActiveFork: false, hasDoneFork: false };
+      const slot = forkStats.get(qid) || {
+        othersDone: 0,
+        othersWip: 0,
+        otherWorkers: [],
+        hasActiveFork: false,
+        hasDoneFork: false,
+      };
       if (isCurrent) {
         if (isDone) slot.hasDoneFork = true;
         else slot.hasActiveFork = true;
       } else {
         if (isDone) slot.othersDone++;
         else slot.othersWip++;
+        slot.otherWorkers.push({
+          user_id: p.user_id,
+          email: emailByUserId.get(p.user_id) ?? null,
+          status: isDone ? 'done' : 'wip',
+        });
       }
       forkStats.set(qid, slot);
     }
@@ -165,6 +208,7 @@ export const listQueue = async (filters?: {
       render_count: row.lahari_project_id ? (renderCounts.get(row.lahari_project_id) || 0) : 0,
       others_done: stats?.othersDone ?? 0,
       others_wip: stats?.othersWip ?? 0,
+      other_workers: stats?.otherWorkers ?? [],
       has_active_fork: stats?.hasActiveFork ?? false,
       has_done_fork: stats?.hasDoneFork ?? false,
       user_note: notesBySong.get(row.song_id) ?? null,
