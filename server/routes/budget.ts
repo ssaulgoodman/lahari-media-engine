@@ -6,9 +6,16 @@ const router = Router();
 const parseList = (value?: string) =>
   (value || '').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
 
-const isAllowedDevBudgetEmail = (email: string | null | undefined) => {
+const isAllowedViewerEmail = (email: string | null | undefined) => {
   const normalized = (email || '').toLowerCase();
-  const configured = parseList(process.env.DEV_BUDGET_EMAILS);
+  const configured = parseList(process.env.DEV_BUDGET_VIEWER_EMAILS);
+  if (configured.length === 0) return true;
+  return configured.includes(normalized);
+};
+
+const isTargetDevEmail = (email: string | null | undefined) => {
+  const normalized = (email || '').toLowerCase();
+  const configured = parseList(process.env.DEV_BUDGET_TARGET_EMAILS || process.env.DEV_BUDGET_EMAILS);
   if (configured.length > 0) return configured.includes(normalized);
   return normalized.startsWith('dev@companionms');
 };
@@ -41,18 +48,38 @@ const addAgg = <T extends { calls: number; errors: number; cost: number; duratio
 
 const sortByCost = <T extends { cost: number }>(rows: T[]) => rows.sort((a, b) => b.cost - a.cost);
 
+const listAuthUsers = async () => {
+  const sb = getSB();
+  const users: any[] = [];
+  for (let page = 1; page < 100; page += 1) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) throw new Error(error.message);
+    const batch = data.users || [];
+    users.push(...batch);
+    if (batch.length < 1000) break;
+  }
+  return users;
+};
+
 router.get('/dev', async (req, res) => {
-  const userId = req.userId;
-  if (!userId) return res.status(401).json({ error: 'Auth required' });
+  const viewerUserId = req.userId;
+  if (!viewerUserId) return res.status(401).json({ error: 'Auth required' });
 
   try {
     const sb = getSB();
-    const { data: authUser, error: userError } = await sb.auth.admin.getUserById(userId);
+    const { data: authUser, error: userError } = await sb.auth.admin.getUserById(viewerUserId);
     if (userError) throw new Error(userError.message);
-    const email = authUser.user?.email || null;
-    if (!isAllowedDevBudgetEmail(email)) {
-      return res.status(403).json({ error: 'Budget dashboard is only enabled for the dev Companions account.' });
+    const viewerEmail = authUser.user?.email || null;
+    if (!isAllowedViewerEmail(viewerEmail)) {
+      return res.status(403).json({ error: 'Budget dashboard viewer is not allowlisted.', viewerEmail });
     }
+
+    const allUsers = await listAuthUsers();
+    const targetUsers = allUsers.filter((user) => isTargetDevEmail(user.email));
+    if (targetUsers.length === 0) {
+      return res.status(404).json({ error: 'No dev Companions account matched DEV_BUDGET_TARGET_EMAILS/dev@companionms.' });
+    }
+    const targetUserIds = targetUsers.map((user) => user.id);
 
     const rawDays = String(req.query.days || '30');
     const days = rawDays === 'all' ? null : Math.min(Math.max(parseInt(rawDays, 10) || 30, 1), 365);
@@ -61,7 +88,7 @@ router.get('/dev', async (req, res) => {
     const { data: projects, error: projectError } = await sb
       .from(T.projects)
       .select('id,title,song_type,source_queue_id,created_at,cost_estimate')
-      .eq('user_id', userId);
+      .in('user_id', targetUserIds);
     if (projectError) throw new Error(projectError.message);
 
     const projectRows = (projects || []) as any[];
@@ -142,7 +169,11 @@ router.get('/dev', async (req, res) => {
     }
 
     res.json({
-      account: { userId, email },
+      account: {
+        userIds: targetUserIds,
+        emails: targetUsers.map((user) => user.email || user.id),
+        viewerEmail,
+      },
       window: { days: days || 'all', sinceIso, generatedAt: new Date().toISOString() },
       totals,
       daily: [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date)),

@@ -12,7 +12,7 @@ type AggRow = {
 };
 
 type BudgetData = {
-  account: { userId: string; email: string | null };
+  account: { userIds: string[]; emails: string[]; viewerEmail: string | null };
   window: { days: WindowKey | 'all'; sinceIso: string | null; generatedAt: string };
   totals: { cost: number; calls: number; errors: number; durationMs: number; projects: number; songs: number };
   daily: AggRow[];
@@ -139,7 +139,9 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
           <span className="text-sm text-zinc-300">Dev budget</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[11px] text-zinc-500">{user.email || data?.account.email}</span>
+          <span className="text-[11px] text-zinc-500">
+            {data?.account.emails?.join(', ') || user.email}
+          </span>
           <button onClick={signOut} className="text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06]">
             Sign out
           </button>
