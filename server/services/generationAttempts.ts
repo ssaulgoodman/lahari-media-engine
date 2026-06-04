@@ -3,7 +3,9 @@ import { insertRow, updateRows } from '../database.js';
 export type GenerationAttemptStatus =
   | 'prepared'
   | 'sent'
+  | 'provider_accepted'
   | 'provider_rejected'
+  | 'provider_failed'
   | 'provider_completed'
   | 'provider_outcome_unknown'
   | 'ingest_failed';

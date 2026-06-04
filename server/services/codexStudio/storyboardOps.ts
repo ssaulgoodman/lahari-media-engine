@@ -1094,7 +1094,8 @@ const latestUnknownChargeVideoFailure = async (projectId: string, shotId: string
     status: 'error',
   }, { orderBy: 'started_at', ascending: false, limit: 1 });
   const row = rows[0];
-  if (!row || row.result?.chargeStatus !== 'charge_unknown') return null;
+  const chargeStatus = row?.result?.chargeStatus;
+  if (!row || !['charge_unknown', 'provider_outcome_unknown', 'provider_accepted_pending'].includes(chargeStatus)) return null;
   return row;
 };
 

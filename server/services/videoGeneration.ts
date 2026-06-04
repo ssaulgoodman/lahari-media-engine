@@ -506,9 +506,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const provider = err?.provider || 'segmind';
     const errorModel = err?.modelId || videoModelKey;
     const estimatedCostUsd = Number(err?.estimatedCostUsd || (
-      chargeStatus === 'provider_completed_ingest_failed' ? estimatedVideoCost : 0
+      ['provider_completed_ingest_failed', 'provider_outcome_unknown', 'provider_accepted_pending'].includes(chargeStatus) ? estimatedVideoCost : 0
     ));
-    const retryWarning = err?.retryWarning || (chargeStatus === 'charge_unknown'
+    const retryWarning = err?.retryWarning || (['charge_unknown', 'provider_outcome_unknown', 'provider_accepted_pending'].includes(chargeStatus)
       ? 'Retry may spend again because the provider request outcome is unknown.'
       : null);
     if (chargeStatus) {
@@ -538,7 +538,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       contextChain: await buildContextChain(project.id),
       responseSummary: `Video generation failed. Provider: ${provider}. Charge status: ${chargeStatus}. Estimated risk: $${estimatedCostUsd.toFixed(3)}.${retryWarning ? ` ${retryWarning}` : ''}`,
       durationMs,
-      costEstimate: ['charge_unknown', 'provider_completed_ingest_failed'].includes(chargeStatus) ? estimatedCostUsd : 0,
+      costEstimate: ['charge_unknown', 'provider_outcome_unknown', 'provider_accepted_pending', 'provider_completed_ingest_failed'].includes(chargeStatus) ? estimatedCostUsd : 0,
       error: err.message,
     });
     await updateRows('shots', { id: shot.id }, { video_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
