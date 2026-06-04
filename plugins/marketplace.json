@@ -1,0 +1,20 @@
+{
+  "name": "mirage-local",
+  "interface": {
+    "displayName": "Mirage Local"
+  },
+  "plugins": [
+    {
+      "name": "mirage",
+      "source": {
+        "source": "local",
+        "path": "./mirage"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Video"
+    }
+  ]
+}

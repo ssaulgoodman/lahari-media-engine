@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mirage": {
+      "type": "http",
+      "url": "https://mirage-platform-production-05ca.up.railway.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${MIRAGE_MCP_TOKEN}"
+      },
+      "note": "Get a Mirage MCP token from the deployed /connect flow. The beta plugin should eventually own this auth handoff."
+    }
+  }
+}

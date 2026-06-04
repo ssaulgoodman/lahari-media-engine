@@ -1,0 +1,42 @@
+{
+  "name": "mirage",
+  "version": "0.1.0",
+  "description": "Operate Mirage video projects from Codex with project sync, production actions, and craft skills.",
+  "author": {
+    "name": "Mothership",
+    "email": "saul@companions.gg",
+    "url": "https://mirage-platform-production-05ca.up.railway.app"
+  },
+  "homepage": "https://mirage-platform-production-05ca.up.railway.app",
+  "repository": "https://github.com/ssaulgoodman/lahari-media-engine",
+  "license": "UNLICENSED",
+  "keywords": [
+    "mirage",
+    "video",
+    "ai-video",
+    "storyboards",
+    "production",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Mirage",
+    "shortDescription": "Agent-operated AI video studio",
+    "longDescription": "Use Mirage from Codex to create and operate AI video projects: concepts, scripts, style, cast and environment references, storyboards, video generation, audio, render prep, local workbench sync, and production issue capture.",
+    "developerName": "Mothership",
+    "category": "Video",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "websiteURL": "https://mirage-platform-production-05ca.up.railway.app",
+    "defaultPrompt": [
+      "Open my latest Mirage project",
+      "Start a new Mirage video from this idea",
+      "Refresh this Mirage workspace"
+    ],
+    "brandColor": "#101827"
+  }
+}

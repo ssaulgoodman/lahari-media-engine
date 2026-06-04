@@ -47,6 +47,9 @@ skills/
 !.agents/skills/
 !.agents/skills/*/
 !.agents/skills/*/SKILL.md
+!plugins/*/skills/
+!plugins/*/skills/*/
+!plugins/*/skills/*/SKILL.md
 skills-lock.json
 .lahari/
 .npm-cache/
