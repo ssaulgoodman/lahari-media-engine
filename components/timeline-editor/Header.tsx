@@ -187,6 +187,15 @@ const Header: React.FC = () => {
     bumpResetToken();
   };
 
+  const handleLoadLatest = () => {
+    if (!projectId) return;
+    if (!confirm('Discard your local timeline edits and load the latest shared timeline?'))
+      return;
+    setTimelineSaveState('idle');
+    clearSnapshot(projectId);
+    bumpResetToken();
+  };
+
   const togglePlay = () => {
     const p = playerRef?.current;
     if (!p) return;
@@ -322,8 +331,17 @@ const Header: React.FC = () => {
                 ? 'Updated elsewhere'
                 : timelineSaveState === 'error'
                   ? 'Save failed'
-                  : formatSavedAgo(lastSavedAt, nowTs)}
+                : formatSavedAgo(lastSavedAt, nowTs)}
             </span>
+          )}
+          {timelineSaveState === 'conflict' && (
+            <button
+              style={{ ...btn, width: 'auto', padding: '0 7px', fontSize: 11, color: '#fbbf24' }}
+              onClick={handleLoadLatest}
+              title="Discard local edits and load the latest shared timeline"
+            >
+              Load latest
+            </button>
           )}
           <div style={{ width: 1, height: 18, background: '#27272a', margin: '0 6px' }} />
         </div>
