@@ -1,6 +1,6 @@
 # Mirage MCP Payload Reference
 
-Last audited: 2026-05-31  
+Last audited: 2026-06-04
 Source of truth: `server/routes/mcp.ts`, `server/services/actionRegistry.ts`, `server/resources/notebook/AGENTS.template.md`
 
 This doc answers one narrow question: **what language and schemas does a director agent actually ingest from Mirage MCP?**
@@ -55,6 +55,7 @@ These are the main hosted artist-facing tools an agent should use.
 | Tool | Direct card language | Input payload | Runtime result shape |
 |---|---|---|---|
 | `list_projects` | Lists recent Mirage projects for the authenticated artist. | `limit?` | Lean project rows: ids, titles, status, model/provider labels, timestamps. |
+| `mirage_doctor` | Coherence oracle for onboarding and deploy checks. The headline verdict is the thing to act on. | Optional raw local `mirage status` / `mirage doctor` JSON. | Read-only verdict comparing live MCP version, production-served CLI pin, npm latest CLI, canonical skills/actions hashes, and optional local status. |
 | `create_project` | Creates a project shell. No paid call runs. Audio seeds require upload/analysis opt-in. | title, workflow/preset/seed hints, source asset/script/brief/runtime fields | Created project plus initial project object. |
 | `open_project` | Opens a project session and returns production working set. `detail=full` is heavy debug only. | `projectId`, `detail?`, `sinceSeq?`, `note?` | Production working set, actions, recent events, web URL. |
 | `get_project_state` | Compact state by default; `full` is debug. Prompt bodies should come from notebook files. | `projectId`, `detail?` | Summary, production, or full project packet depending on detail. |

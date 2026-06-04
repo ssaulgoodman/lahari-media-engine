@@ -168,6 +168,16 @@ const buildSkillsManifest = (skillResources: NotebookSkillResource[]): NotebookS
   };
 };
 
+export const buildNotebookResourceVersions = () => {
+  const skillsManifest = buildSkillsManifest(loadSkillResources());
+  return {
+    notebookSchemaVersion: NOTEBOOK_VERSION,
+    skillsHash: skillsManifest.version,
+    actionsHash: buildActionsHash(),
+    skills: skillsManifest.skills.map(({ name, version, hash }) => ({ name, version, hash })),
+  };
+};
+
 const buildSkillsManifestFile = (manifest: NotebookSkillsManifest): NotebookFile => ({
   path: `config/skills.json`,
   mode: 'config',

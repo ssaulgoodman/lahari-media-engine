@@ -45,6 +45,7 @@ const normalizeTtlMinutes = (ttlMinutes?: number | null) => {
 const posixCliCacheDir = '${TMPDIR:-/tmp}/mirage-npm-cache';
 const posixCliCacheEnv = `NPM_CONFIG_CACHE="${posixCliCacheDir}" npm_config_cache="${posixCliCacheDir}"`;
 const powershellCliCacheCommand = `$env:NPM_CONFIG_CACHE=(Join-Path ([System.IO.Path]::GetTempPath()) 'mirage-npm-cache'); $env:npm_config_cache=$env:NPM_CONFIG_CACHE`;
+export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.9';
 
 export const createMcpToken = async (
   userId: string,
@@ -125,7 +126,7 @@ export const createCliToken = async (
     .single();
   if (error) throw new Error(`DB insert cli token: ${error.message}`);
   const apiUrl = (process.env.MIRAGE_API_URL || process.env.LAHARI_API_URL || 'https://mirage-platform-production-05ca.up.railway.app').replace(/\/+$/, '');
-  const cliPackage = process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.9';
+  const cliPackage = getConfiguredMirageCliPackage();
   const uploadEndpoint = `${apiUrl}/api/agent/uploads`;
   const posixCommand = `${posixCliCacheEnv} MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} npx -y ${cliPackage} sync ${opts.projectId}`;
   const powershellCommand = `${powershellCliCacheCommand}; $env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;

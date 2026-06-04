@@ -8,7 +8,7 @@ import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureMirageIssue, recordMcpAudit, summarizeAgentTiming } from '../services/mirageAudit.js';
-import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
+import { createCliToken, getConfiguredMirageCliPackage, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, getAgentOperation, listAgentOperations, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
@@ -17,9 +17,10 @@ import { runWithRequestContext } from '../requestContext.js';
 import { structuredError } from '../services/structuredErrors.js';
 import { normalizeWorkflowKey } from '../presets.js';
 import { ACTION_KEYS, ACTION_SURFACES, actionSpec, actionSpecsForSurface, buildActionSchemaIndex, isMaterializedAgentActionSpec, type ActionKey } from '../services/actionRegistry.js';
+import { buildNotebookResourceVersions } from '../services/codexStudio/notebook.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.15';
+const HOSTED_MCP_VERSION = '0.1.16';
 const SHOW_LEGACY_MCP_TOOLS = process.env.MIRAGE_MCP_INCLUDE_LEGACY_TOOLS === '1';
 const LEGACY_MCP_TOOLS = new Set([
   'list_queue',
@@ -170,6 +171,7 @@ const lookEntityTypeSchema = z.enum(['cast', 'environment', 'env']);
 const actionKeySchema = z.enum(ACTION_KEYS);
 const actionSurfaceSchema = z.enum(ACTION_SURFACES);
 const projectStateDetailSchema = z.enum(['summary', 'production', 'full']);
+const localDoctorStatusSchema = z.record(z.string(), z.unknown()).optional();
 const actionInputSchema = z.record(z.string(), z.unknown()).optional();
 const jobStatusSchema = z.enum(['running', 'success', 'error']);
 const contextOverrideListSchema = z.union([z.boolean(), maxArray(idString, 80)]);
@@ -515,6 +517,161 @@ const assertProjectAccess = async (projectId: string, userId: string) => {
   return row;
 };
 
+const parsePackageVersion = (pkg: string): string | null => {
+  const at = pkg.lastIndexOf('@');
+  if (at <= 0 || at === pkg.length - 1) return null;
+  return pkg.slice(at + 1);
+};
+
+const compareVersions = (a: string, b: string): number => {
+  const parse = (value: string) => value.split(/[.-]/).map((part) => Number.parseInt(part, 10)).map((part) => Number.isFinite(part) ? part : 0);
+  const left = parse(a);
+  const right = parse(b);
+  const length = Math.max(left.length, right.length);
+  for (let i = 0; i < length; i += 1) {
+    const delta = (left[i] || 0) - (right[i] || 0);
+    if (delta !== 0) return delta;
+  }
+  return 0;
+};
+
+const npmLatestVersion = async (pkgName: string): Promise<{ version: string | null; ok: boolean; error?: string }> => {
+  const url = `https://registry.npmjs.org/${encodeURIComponent(pkgName).replace('%40', '@')}/latest`;
+  try {
+    const res = await fetch(url, { headers: { accept: 'application/json' } });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      return { version: null, ok: false, error: `npm registry ${res.status}` };
+    }
+    const version = typeof json?.version === 'string' ? json.version : null;
+    return { version, ok: !!version, error: version ? undefined : 'npm registry response missing version' };
+  } catch (error: any) {
+    return { version: null, ok: false, error: error?.message || String(error) };
+  }
+};
+
+const stringAt = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value : null;
+const booleanAt = (value: unknown): boolean | null => typeof value === 'boolean' ? value : null;
+const objectAt = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+const normalizeLocalDoctorStatus = (raw?: z.infer<typeof localDoctorStatusSchema>) => {
+  const root = objectAt(raw);
+  const cli = objectAt(root.cli);
+  const freshness = objectAt(root.freshness);
+  const versions = objectAt(root.versions);
+  const config = objectAt(root.config);
+  const project = objectAt(root.project);
+  const verdict = objectAt(root.verdict);
+
+  const cliVersion = stringAt(root.cliVersion) || stringAt(cli.version) || stringAt(versions.cli);
+  const skillsHash = stringAt(root.skillsHash) || stringAt(freshness.skillsHash) || stringAt(config.skillsHash) || stringAt(project.skillsHash);
+  const actionsHash = stringAt(root.actionsHash) || stringAt(freshness.actionsHash) || stringAt(config.actionsHash) || stringAt(project.actionsHash);
+  const configSkillsVersion = stringAt(root.configSkillsVersion) || stringAt(freshness.configSkillsVersion) || stringAt(config.skillsVersion);
+  const configActionsVersion = stringAt(root.configActionsVersion) || stringAt(freshness.configActionsVersion) || stringAt(config.actionsVersion);
+  const workspaceReady = booleanAt(root.workspaceReady) ?? booleanAt(verdict.workspaceReady) ?? booleanAt(verdict.operatingReady);
+  const projectReady = booleanAt(root.projectReady) ?? booleanAt(verdict.projectReady);
+
+  return {
+    cliVersion,
+    skillsHash,
+    actionsHash,
+    configSkillsVersion,
+    configActionsVersion,
+    workspaceReady,
+    projectReady,
+  };
+};
+
+const buildRemoteDoctor = async (localStatus?: z.infer<typeof localDoctorStatusSchema>) => {
+  const cliPackage = getConfiguredMirageCliPackage();
+  const servedCliVersion = parsePackageVersion(cliPackage);
+  const npm = await npmLatestVersion('@ssaulgoodman420/mirage-cli');
+  const resources = buildNotebookResourceVersions();
+  const local = normalizeLocalDoctorStatus(localStatus);
+  const issues: string[] = [];
+
+  if (!servedCliVersion) issues.push('production_cli_pin_unversioned');
+  if (!npm.ok) issues.push('npm_latest_unavailable');
+  if (servedCliVersion && npm.version && servedCliVersion !== npm.version) {
+    issues.push(compareVersions(servedCliVersion, npm.version) > 0 ? 'served_cli_unpublished' : 'production_pin_stale');
+  }
+  if (local.cliVersion && servedCliVersion && local.cliVersion !== servedCliVersion) {
+    issues.push('local_cli_version_mismatch');
+  }
+  const localSkillsHash = local.skillsHash || local.configSkillsVersion || null;
+  const localActionsHash = local.actionsHash || local.configActionsVersion || null;
+  if (localSkillsHash && localSkillsHash !== resources.skillsHash) issues.push('local_skills_hash_mismatch');
+  if (localActionsHash && localActionsHash !== resources.actionsHash) issues.push('local_actions_hash_mismatch');
+  if (local.workspaceReady === false) issues.push('local_workspace_not_ready');
+  if (local.projectReady === false) issues.push('local_project_not_ready');
+
+  const status = issues.length === 0
+    ? 'coherent'
+    : issues.includes('production_pin_stale')
+      ? 'production_pin_stale'
+      : issues.includes('served_cli_unpublished')
+        ? 'served_cli_unpublished'
+        : issues.some((issue) => issue.includes('hash_mismatch'))
+          ? 'local_workspace_stale'
+          : 'needs_attention';
+
+  const userAction = (() => {
+    if (issues.includes('production_pin_stale')) {
+      return `Production serves ${cliPackage}, but npm latest is ${npm.version}. Deploy Mirage with the current CLI pin before friend testing.`;
+    }
+    if (issues.includes('served_cli_unpublished')) {
+      return `Mirage is configured to serve ${cliPackage}, but npm latest is ${npm.version}. Publish the pinned CLI or lower the served pin before deploy.`;
+    }
+    if (issues.includes('production_cli_pin_unversioned')) {
+      return 'Set MIRAGE_CLI_PACKAGE to an explicit @ssaulgoodman420/mirage-cli@version pin.';
+    }
+    if (issues.includes('npm_latest_unavailable')) {
+      return 'Could not reach npm latest; retry doctor before declaring the release coherent.';
+    }
+    if (issues.includes('local_cli_version_mismatch')) {
+      return `Run the returned mint_cli_token sync command so local CLI ${local.cliVersion} updates to served pin ${servedCliVersion}.`;
+    }
+    if (issues.includes('local_skills_hash_mismatch') || issues.includes('local_actions_hash_mismatch')) {
+      return 'Run mirage sync for the active project, then open a fresh chat/session if skills or actions changed on disk.';
+    }
+    if (issues.includes('local_workspace_not_ready') || issues.includes('local_project_not_ready')) {
+      return 'Run local mirage status for file-level details, then sync the active project.';
+    }
+    return 'Remote Mirage, npm CLI, and provided local status are coherent.';
+  })();
+
+  return {
+    kind: 'mirage.doctor.remote',
+    checkedAt: new Date().toISOString(),
+    verdict: {
+      status,
+      ok: status === 'coherent',
+      issues,
+      userAction,
+    },
+    server: {
+      mcpVersion: HOSTED_MCP_VERSION,
+      hostedMcpInstructionsWords: HOSTED_MCP_INSTRUCTIONS.split(/\s+/).filter(Boolean).length,
+    },
+    cli: {
+      servedPackage: cliPackage,
+      servedVersion: servedCliVersion,
+      npmPackage: '@ssaulgoodman420/mirage-cli',
+      npmLatestVersion: npm.version,
+      npmLatestOk: npm.ok,
+      npmLatestError: npm.error || null,
+    },
+    notebook: {
+      notebookSchemaVersion: resources.notebookSchemaVersion,
+      skillsHash: resources.skillsHash,
+      actionsHash: resources.actionsHash,
+      skillCount: resources.skills.length,
+    },
+    local: localStatus ? local : null,
+    note: 'This is the remote coherence check. For file-level readiness, run local `mirage status` in the workspace and optionally pass its summary back here.',
+  };
+};
+
 const fullProjectForUser = async (projectId: string, userId: string) => {
   await assertProjectAccess(projectId, userId);
   const project = await getFullProject(projectId);
@@ -587,7 +744,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'write_project_sheets',
       'hydrate_project_workbench',
     ];
-    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project' || name === 'open_project' || name === 'describe_action' || name === 'get_job' || name === 'list_jobs') {
+    if (readOnlyPrefixes.some((prefix) => name.startsWith(prefix)) || name === 'attach_director_session' || name === 'resolve_project' || name === 'open_project' || name === 'describe_action' || name === 'get_job' || name === 'list_jobs' || name === 'mirage_doctor') {
       return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     }
     if (name === 'add_director_note' || name === 'lahari_capture_issue' || name === 'mirage_capture_issue') {
@@ -967,6 +1124,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       note: 'Job started. Visual Studio will update through realtime; call get_job only when you need status or results.',
     };
   };
+
+  registerTool('mirage_doctor', {
+    title: 'Mirage doctor',
+    description: 'Read-only coherence oracle for onboarding and deploy checks. Compares the live MCP server, the CLI package production serves from mint_cli_token, npm latest, canonical notebook skill/action hashes, and optional local `mirage status` JSON. The headline verdict is the thing to act on.',
+    inputSchema: {
+      localStatus: localDoctorStatusSchema.describe('Optional raw JSON/object from local `mirage status` or `mirage doctor`. Pass it through when available; omit it on first contact.'),
+    },
+  }, async ({ localStatus }) => buildRemoteDoctor(localStatus));
 
   registerTool('list_projects', {
     title: 'List Mirage projects',
