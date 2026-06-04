@@ -8,16 +8,9 @@ const parseList = (value?: string) =>
 
 const isAllowedViewerEmail = (email: string | null | undefined) => {
   const normalized = (email || '').toLowerCase();
-  const configured = parseList(process.env.DEV_BUDGET_VIEWER_EMAILS);
-  if (configured.length === 0) return true;
+  const configured = parseList(process.env.DEV_BUDGET_VIEWER_EMAILS || process.env.DEV_BUDGET_ADMIN_EMAILS);
+  if (configured.length === 0) return normalized === 'dev@companions.gg';
   return configured.includes(normalized);
-};
-
-const isTargetDevEmail = (email: string | null | undefined) => {
-  const normalized = (email || '').toLowerCase();
-  const configured = parseList(process.env.DEV_BUDGET_TARGET_EMAILS || process.env.DEV_BUDGET_EMAILS);
-  if (configured.length > 0) return configured.includes(normalized);
-  return normalized === 'dev@companions.gg';
 };
 
 const dayKey = (iso: string) => iso.slice(0, 10);
@@ -74,12 +67,16 @@ router.get('/dev', async (req, res) => {
       return res.status(403).json({ error: 'Budget dashboard viewer is not allowlisted.', viewerEmail });
     }
 
-    const allUsers = await listAuthUsers();
-    const targetUsers = allUsers.filter((user) => isTargetDevEmail(user.email));
-    if (targetUsers.length === 0) {
-      return res.status(404).json({ error: 'No dev Companions account matched DEV_BUDGET_TARGET_EMAILS/dev@companions.gg.' });
+    const authUsers = await listAuthUsers();
+    const userById = new Map(authUsers.map((user) => [user.id, user]));
+    const accountParam = String(req.query.account || 'all');
+    let selectedUserId: string | null = null;
+    if (accountParam !== 'all') {
+      const normalizedAccount = accountParam.toLowerCase();
+      const matched = authUsers.find((user) => user.id === accountParam || (user.email || '').toLowerCase() === normalizedAccount);
+      if (!matched) return res.status(400).json({ error: `Unknown budget account: ${accountParam}` });
+      selectedUserId = matched.id;
     }
-    const targetUserIds = targetUsers.map((user) => user.id);
 
     const rawDays = String(req.query.days || '30');
     const days = rawDays === 'all' ? null : Math.min(Math.max(parseInt(rawDays, 10) || 30, 1), 365);
@@ -87,14 +84,14 @@ router.get('/dev', async (req, res) => {
 
     const { data: projects, error: projectError } = await sb
       .from(T.projects)
-      .select('id,title,song_type,source_queue_id,created_at,cost_estimate')
-      .in('user_id', targetUserIds);
+      .select('id,user_id,title,song_type,source_queue_id,created_at,cost_estimate');
     if (projectError) throw new Error(projectError.message);
 
-    const projectRows = (projects || []) as any[];
-    const projectIds = projectRows.map(p => p.id).filter(Boolean);
-    const projectById = new Map(projectRows.map(p => [p.id, p]));
-    const queueIds = [...new Set(projectRows.map(p => p.source_queue_id).filter(Boolean))];
+    const allProjectRows = (projects || []) as any[];
+    const projectRows = selectedUserId ? allProjectRows.filter(p => p.user_id === selectedUserId) : allProjectRows;
+    const allProjectIds = allProjectRows.map(p => p.id).filter(Boolean);
+    const projectById = new Map(allProjectRows.map(p => [p.id, p]));
+    const queueIds = [...new Set(allProjectRows.map(p => p.source_queue_id).filter(Boolean))];
 
     const queueSongById = new Map<string, any>();
     if (queueIds.length > 0) {
@@ -106,23 +103,26 @@ router.get('/dev', async (req, res) => {
       for (const row of (queueRows as any[]) || []) queueSongById.set(row.id, row.songs || {});
     }
 
-    const calls: any[] = [];
-    if (projectIds.length > 0) {
+    const allCalls: any[] = [];
+    if (allProjectIds.length > 0) {
       for (let from = 0; from < 20000; from += 1000) {
         let query = sb
           .from(T.ai_calls)
           .select('project_id,stage,model,cost_estimate,duration_ms,error,created_at')
-          .in('project_id', projectIds)
+          .in('project_id', allProjectIds)
           .order('created_at', { ascending: false })
           .range(from, from + 999);
         if (sinceIso) query = query.gte('created_at', sinceIso);
         const { data, error } = await query;
         if (error) throw new Error(error.message);
         const batch = (data || []) as any[];
-        calls.push(...batch);
+        allCalls.push(...batch);
         if (batch.length < 1000) break;
       }
     }
+    const calls = selectedUserId
+      ? allCalls.filter(call => projectById.get(call.project_id)?.user_id === selectedUserId)
+      : allCalls;
 
     const totals = {
       cost: 0,
@@ -138,9 +138,51 @@ router.get('/dev', async (req, res) => {
     const byStage = new Map<string, any>();
     const bySongType = new Map<string, any>();
     const bySong = new Map<string, any>();
+    const byAccount = new Map<string, any>();
+    const accountProjects = new Map<string, Set<string>>();
+    const accountSongs = new Map<string, Set<string>>();
+
+    for (const project of allProjectRows) {
+      const userId = project.user_id || 'unknown';
+      if (!accountProjects.has(userId)) accountProjects.set(userId, new Set());
+      if (!accountSongs.has(userId)) accountSongs.set(userId, new Set());
+      accountProjects.get(userId)!.add(project.id);
+      accountSongs.get(userId)!.add(project.source_queue_id || project.id);
+      if (!byAccount.has(userId)) {
+        const accountUser = userById.get(userId);
+        byAccount.set(userId, {
+          userId,
+          email: accountUser?.email || userId,
+          calls: 0,
+          errors: 0,
+          cost: 0,
+          durationMs: 0,
+          projects: 0,
+          songs: 0,
+        });
+      }
+    }
+
+    for (const call of allCalls) {
+      const project = projectById.get(call.project_id) || {};
+      const accountUserId = project.user_id || 'unknown';
+      const accountUser = userById.get(accountUserId);
+      addAgg(byAccount, accountUserId, call, () => ({
+        userId: accountUserId,
+        email: accountUser?.email || accountUserId,
+        calls: 0,
+        errors: 0,
+        cost: 0,
+        durationMs: 0,
+        projects: 0,
+        songs: 0,
+      }));
+    }
 
     for (const call of calls) {
       const project = projectById.get(call.project_id) || {};
+      const accountUserId = project.user_id || 'unknown';
+      const accountUser = userById.get(accountUserId);
       const song = project.source_queue_id ? queueSongById.get(project.source_queue_id) : null;
       const songName = song?.song_name || project.title || 'Untitled';
       const songType = project.song_type || 'unknown';
@@ -156,6 +198,8 @@ router.get('/dev', async (req, res) => {
       addAgg(bySongType, songType, call, () => ({ songType, calls: 0, errors: 0, cost: 0, durationMs: 0 }));
       addAgg(bySong, call.project_id, call, () => ({
         projectId: call.project_id,
+        userId: accountUserId,
+        accountEmail: accountUser?.email || accountUserId,
         title: songName,
         isrc: song?.isrc || null,
         album: song?.album || null,
@@ -168,10 +212,19 @@ router.get('/dev', async (req, res) => {
       }));
     }
 
+    for (const [userId, row] of byAccount) {
+      row.projects = accountProjects.get(userId)?.size || 0;
+      row.songs = accountSongs.get(userId)?.size || 0;
+    }
+
+    const accounts = sortByCost([...byAccount.values()]);
+    const selectedUser = selectedUserId ? userById.get(selectedUserId) : null;
+
     res.json({
       account: {
-        userIds: targetUserIds,
-        emails: targetUsers.map((user) => user.email || user.id),
+        selectedUserId,
+        selectedEmail: selectedUser?.email || null,
+        accounts: accounts.map(({ userId, email, cost, calls, projects, songs }) => ({ userId, email, cost, calls, projects, songs })),
         viewerEmail,
       },
       window: { days: days || 'all', sinceIso, generatedAt: new Date().toISOString() },
@@ -181,6 +234,7 @@ router.get('/dev', async (req, res) => {
       byModel: sortByCost([...byModel.values()]),
       byStage: sortByCost([...byStage.values()]),
       bySongType: sortByCost([...bySongType.values()]),
+      byAccount: accounts,
       bySong: sortByCost([...bySong.values()]),
       note: 'Estimated app spend from lahari_ai_calls.cost_estimate, not the provider invoice.',
     });

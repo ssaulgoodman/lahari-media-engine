@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as api from '../services/api';
+import { Dropdown } from './Dropdown';
 
 type WindowKey = '7' | '30' | '90' | 'all';
 
@@ -12,7 +13,12 @@ type AggRow = {
 };
 
 type BudgetData = {
-  account: { userIds: string[]; emails: string[]; viewerEmail: string | null };
+  account: {
+    selectedUserId: string | null;
+    selectedEmail: string | null;
+    viewerEmail: string | null;
+    accounts: Array<{ userId: string; email: string; cost: number; calls: number; projects: number; songs: number }>;
+  };
   window: { days: WindowKey | 'all'; sinceIso: string | null; generatedAt: string };
   totals: { cost: number; calls: number; errors: number; durationMs: number; projects: number; songs: number };
   daily: AggRow[];
@@ -20,6 +26,7 @@ type BudgetData = {
   byModel: AggRow[];
   byStage: AggRow[];
   bySongType: AggRow[];
+  byAccount: AggRow[];
   bySong: AggRow[];
   note: string;
 };
@@ -93,7 +100,7 @@ const SongTable: React.FC<{ rows: AggRow[] }> = ({ rows }) => (
         <div key={row.projectId} className="grid grid-cols-[1fr_100px_90px_80px_80px] px-4 py-2.5 text-xs items-center hover:bg-white/[0.02]">
           <div className="min-w-0">
             <div className="text-zinc-300 truncate" title={row.title}>{row.title}</div>
-            <div className="text-[11px] text-zinc-600 truncate">{[row.album, row.isrc, row.deity].filter(Boolean).join(' · ')}</div>
+            <div className="text-[11px] text-zinc-600 truncate">{[row.accountEmail, row.album, row.isrc, row.deity].filter(Boolean).join(' · ')}</div>
           </div>
           <span className="text-zinc-500 truncate">{row.songType || 'unknown'}</span>
           <span className="text-right font-mono text-zinc-200">{money(row.cost)}</span>
@@ -107,6 +114,7 @@ const SongTable: React.FC<{ rows: AggRow[] }> = ({ rows }) => (
 
 export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOut: () => Promise<void> }> = ({ user, signOut }) => {
   const [days, setDays] = useState<WindowKey>('30');
+  const [account, setAccount] = useState('all');
   const [data, setData] = useState<BudgetData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,19 +123,30 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
     setLoading(true);
     setError(null);
     try {
-      setData(await api.getDevBudget(days));
+      setData(await api.getDevBudget(days, account));
     } catch (err: any) {
       setError(err?.message || 'Failed to load budget dashboard');
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, account]);
 
   useEffect(() => { load(); }, [load]);
 
   const avgCost = useMemo(() => {
     if (!data || data.totals.calls === 0) return 0;
     return data.totals.cost / data.totals.calls;
+  }, [data]);
+
+  const accountOptions = useMemo(() => {
+    const rows = data?.account.accounts || [];
+    return [
+      { value: 'all', label: `All artists${rows.length ? ` (${rows.length})` : ''}` },
+      ...rows.map((row) => ({
+        value: row.userId,
+        label: `${row.email} · ${money(row.cost)}`,
+      })),
+    ];
   }, [data]);
 
   return (
@@ -140,7 +159,7 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-zinc-500">
-            {data?.account.emails?.join(', ') || user.email}
+            {data?.account.viewerEmail || user.email}
           </span>
           <button onClick={signOut} className="text-[11px] text-zinc-400 hover:text-white px-2 py-1 rounded-md hover:bg-white/[0.06]">
             Sign out
@@ -151,10 +170,20 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
       <main className="max-w-7xl mx-auto px-6 py-7 space-y-6">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-display text-white">Dev Account Budget</h1>
+            <h1 className="text-2xl font-display text-white">Artist Budget</h1>
             <p className="text-sm text-zinc-500 mt-1">Estimated spend from logged Lahari AI calls. Not the provider invoice.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="surface-inset rounded-md px-3 py-1.5 min-w-[240px]">
+              <Dropdown
+                value={account}
+                options={accountOptions}
+                onChange={setAccount}
+                size="xs"
+                title="Account"
+                disabled={loading && !data}
+              />
+            </div>
             {(['7', '30', '90', 'all'] as const).map((key) => (
               <button
                 key={key}
@@ -185,6 +214,7 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
             </div>
 
             <div className="grid lg:grid-cols-2 gap-4">
+              <SimpleTable title="By Account" rows={data.byAccount} primaryKeyName="email" primaryLabel="Account" />
               <SimpleTable title="Daily" rows={data.daily} primaryKeyName="date" primaryLabel="Date" />
               <SimpleTable title="Weekly" rows={data.weekly} primaryKeyName="week" primaryLabel="Week" />
               <SimpleTable title="By Model" rows={data.byModel} primaryKeyName="model" primaryLabel="Model" />
