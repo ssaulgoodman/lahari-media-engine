@@ -859,8 +859,8 @@ export const getXRayCalls = async (projectId: string) => {
   return handleResponse(res);
 };
 
-export const getDevBudget = async (days: '7' | '30' | '90' | 'all' = '30') => {
-  const params = new URLSearchParams({ days });
+export const getDevBudget = async (days: '7' | '30' | '90' | 'all' = '30', account = 'all') => {
+  const params = new URLSearchParams({ days, account });
   const res = await authFetch(`${API}/budget/dev?${params}`);
   return handleResponse(res);
 };
