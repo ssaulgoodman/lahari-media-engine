@@ -9,17 +9,18 @@ Use Mirage as an agent-operated video studio. Your job is to help the artist mov
 
 ## Do This Now
 
-1. Confirm Mirage MCP is connected. If it is missing or auth fails, ask the artist to reconnect Mirage from the Mirage `/connect` page or set the plugin's `MIRAGE_MCP_TOKEN`.
-2. Choose or create one project with Mirage tools.
-3. Call `mint_cli_token` and run the returned sync command exactly in the artist's workspace.
-4. Read the sync receipt. Trust `generatedAt`, `skillsHash`, `actionsHash`, and `summary`; do not treat the notebook schema version as freshness.
-5. If the receipt says `sessionReloadNeeded: true`, tell the artist to open a new chat in the same workspace after sync so Codex reloads instructions, skills, and action schemas.
+1. Confirm Mirage MCP is connected. If auth fails, ask the artist to connect Mirage from `/connect` and set the plugin's `MIRAGE_MCP_TOKEN`.
+2. Call `mirage_doctor` on first contact or after a deploy. If it says production/plugin state is not coherent, report the verdict plainly and stop before paid work.
+3. Choose or create one project with Mirage tools.
+4. Call `mint_cli_token` and run the returned sync command exactly in the artist's workspace.
+5. Read the sync receipt. Trust `generatedAt`, `skillsHash`, `actionsHash`, and the receipt summary; do not treat the notebook schema version as freshness.
+6. If the receipt says a fresh session is recommended, tell the artist to open a new chat in the same workspace so Codex reloads instructions, skills, and action schemas.
 
 ## Operating Contract
 
 Mirage server/Supabase is canonical truth. Local files are the workbench: useful for reading, editing, diffing, and handoff. A local file becomes production only when a Mirage apply action persists it.
 
-Use Mirage MCP for project state, actions, paid jobs, locks, imports, uploads, and issue capture. Bytes stay outside MCP: upload local images/audio through `/api/agent/uploads` with the Mirage bearer token, then pass returned asset IDs into actions.
+Use Mirage MCP for project state, actions, paid jobs, locks, imports, uploads, issue capture, and coherence checks. Bytes stay outside MCP: upload local images/audio through `/api/agent/uploads` with the Mirage bearer token, then pass returned asset IDs into actions.
 
 ## Local Workspace Shape
 
@@ -55,6 +56,8 @@ The returned CLI sync command is the normal path. Retry it once if it fails.
 If sync reports workspace operating files need write access, retry the same command with elevated local write approval. Do not switch to MCP notebook file reads for local file permission errors.
 
 Use MCP file reads only when the harness has no shell or no local file-write capability.
+
+For local debugging, `mirage status` / `mirage doctor` is the file-level check. `mirage_doctor` is the remote coherence check. They answer different questions; use both when onboarding feels stuck.
 
 ## Media Uploads
 

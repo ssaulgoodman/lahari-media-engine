@@ -1,6 +1,6 @@
 {
   "name": "mirage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Operate Mirage video projects from Codex with project sync, production actions, and craft skills.",
   "author": {
     "name": "Mothership",
@@ -33,6 +33,7 @@
     ],
     "websiteURL": "https://mirage-platform-production-05ca.up.railway.app",
     "defaultPrompt": [
+      "Check Mirage status and open my latest project",
       "Open my latest Mirage project",
       "Start a new Mirage video from this idea",
       "Refresh this Mirage workspace"

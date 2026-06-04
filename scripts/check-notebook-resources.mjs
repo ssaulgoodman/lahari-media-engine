@@ -15,6 +15,7 @@ if (!match) {
 const expected = [...match[1].matchAll(/'([^']+)'/g)].map((item) => item[1]);
 const agentDir = path.join(root, '.agents/skills');
 const resourceDir = path.join(root, 'server/resources/skills');
+const pluginDir = path.join(root, 'plugins/mirage/skills');
 const failures = [];
 
 if (!fs.existsSync(workspaceTemplatePath)) {
@@ -37,6 +38,16 @@ for (const skill of expected) {
   if (agentBody !== resourceBody) {
     failures.push(`packaged skill drifted from .agents source: ${skill}`);
   }
+
+  const pluginPath = path.join(pluginDir, skill, 'SKILL.md');
+  if (!fs.existsSync(pluginPath)) {
+    failures.push(`missing Mirage plugin skill: ${skill}`);
+    continue;
+  }
+  const pluginBody = fs.readFileSync(pluginPath, 'utf8');
+  if (pluginBody !== resourceBody) {
+    failures.push(`Mirage plugin skill drifted from packaged skill: ${skill}`);
+  }
 }
 
 const expectedSet = new Set(expected);
@@ -52,4 +63,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`Notebook resource check passed: ${expected.length} skills packaged`);
+console.log(`Notebook resource check passed: ${expected.length} skills packaged and plugin-synced`);
