@@ -17,6 +17,7 @@ export type VideoGenerationOptions = {
   aspectRatio?: '16:9' | '9:16';
   durationSec?: number;
   modelKey?: SegmindModelKey;
+  generationAttemptId?: string;
 };
 
 export type VideoGenerationResult = {
@@ -24,6 +25,7 @@ export type VideoGenerationResult = {
   modelId: string;
   durationSec: number;
   provider: VideoProvider;
+  providerRequestId?: string | null;
 };
 
 const shouldFallbackToVertex = (err: any): boolean => {

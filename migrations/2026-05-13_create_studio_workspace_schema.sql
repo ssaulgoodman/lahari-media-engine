@@ -299,6 +299,39 @@ create index if not exists studio_agent_operations_project_started_idx
 create index if not exists studio_agent_operations_project_status_idx
   on studio_agent_operations(project_id, status, started_at desc);
 
+create table if not exists studio_generation_attempts (
+  id text primary key,
+  project_id text references studio_projects(id) on delete cascade,
+  shot_id text,
+  user_id uuid references auth.users(id) on delete set null,
+  stage text not null default 'generate-shot-video',
+  provider text not null,
+  model text not null,
+  estimated_cost float4 not null default 0,
+  status text not null,
+  charge_status text,
+  provider_request_status text,
+  provider_request_id text,
+  request_started_at timestamptz,
+  response_received_at timestamptz,
+  duration_ms int4,
+  request_summary jsonb not null default '{}'::jsonb,
+  response_summary jsonb not null default '{}'::jsonb,
+  output_asset_ids jsonb not null default '[]'::jsonb,
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists studio_generation_attempts_project_created_idx
+  on studio_generation_attempts(project_id, created_at desc);
+
+create index if not exists studio_generation_attempts_shot_created_idx
+  on studio_generation_attempts(shot_id, created_at desc);
+
+create index if not exists studio_generation_attempts_status_created_idx
+  on studio_generation_attempts(status, created_at desc);
+
 create table if not exists studio_mcp_tokens (
   id uuid primary key default gen_random_uuid(),
   user_id text not null,
@@ -471,6 +504,7 @@ alter table studio_chat_messages enable row level security;
 alter table studio_ai_calls enable row level security;
 alter table studio_director_events enable row level security;
 alter table studio_agent_operations enable row level security;
+alter table studio_generation_attempts enable row level security;
 alter table studio_mcp_tokens enable row level security;
 alter table studio_tenant_api_keys enable row level security;
 alter table studio_provider_usage_daily enable row level security;

@@ -6,6 +6,7 @@
  */
 import { saveBuffer, storageUrl } from '../storage.js';
 import { requireProviderApiKey } from './byok/providerKeys.js';
+import { updateGenerationAttempt } from './generationAttempts.js';
 
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
 type SegmindResolution = '480p' | '720p' | '1080p';
@@ -76,8 +77,9 @@ export const generateSegmindVideo = async (
     aspectRatio?: '16:9' | '9:16';
     durationSec?: number;
     modelKey?: SegmindModelKey;
+    generationAttemptId?: string;
   }
-): Promise<{ videoPath: string; modelId: string; durationSec: number }> => {
+): Promise<{ videoPath: string; modelId: string; durationSec: number; providerRequestId?: string | null }> => {
   // Default aligned with constants/videoModels.ts first entry. Was veo-3.1-fast.
   const modelKey: SegmindModelKey = opts?.modelKey || 'seedance-2.0-fast';
   const model = SEGMIND_MODELS[modelKey];
@@ -152,6 +154,12 @@ export const generateSegmindVideo = async (
   console.log(`[segmind] model=${modelKey}, endpoint=${model.endpoint}, duration=${durationSec}s, resolution=${resolution}, refs=${refUrls.length}, audioRefs=${refAudioUrls.length}, generateAudio=${!!opts?.generateAudio}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   const apiKey = await requireProviderApiKey('segmind');
+  const requestStartedAt = new Date().toISOString();
+  await updateGenerationAttempt(opts?.generationAttemptId, {
+    status: 'sent',
+    providerRequestStatus: 'sent',
+    requestStartedAt,
+  });
   let res: Response;
   try {
     res = await fetch(model.endpoint, {
@@ -163,6 +171,17 @@ export const generateSegmindVideo = async (
       body: JSON.stringify(body),
     });
   } catch (error: any) {
+    await updateGenerationAttempt(opts?.generationAttemptId, {
+      status: 'provider_outcome_unknown',
+      chargeStatus: 'charge_unknown',
+      providerRequestStatus: 'sent_unknown',
+      responseReceivedAt: new Date().toISOString(),
+      error: error?.message || String(error),
+      responseSummary: {
+        errorClass: error?.name || 'FetchError',
+        message: error?.message || String(error),
+      },
+    });
     const err = new Error(`Segmind ${modelKey} request outcome unknown: ${error?.message || error}`);
     (err as any).provider = 'segmind';
     (err as any).modelId = modelKey;
@@ -173,8 +192,26 @@ export const generateSegmindVideo = async (
     throw err;
   }
 
+  const providerRequestId = extractProviderRequestId(res.headers);
+  const responseHeaders = summarizeHeaders(res.headers);
+  const responseReceivedAt = new Date().toISOString();
+
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
+    await updateGenerationAttempt(opts?.generationAttemptId, {
+      status: 'provider_rejected',
+      chargeStatus: 'provider_rejected_no_output',
+      providerRequestStatus: 'responded_error',
+      providerRequestId,
+      responseReceivedAt,
+      responseSummary: {
+        httpStatus: res.status,
+        statusText: res.statusText,
+        headers: responseHeaders,
+        bodyPreview: errText.slice(0, 1000),
+      },
+      error: errText.slice(0, 500),
+    });
     console.error(`[segmind] ${res.status} ${res.statusText}: ${errText.slice(0, 4000)}`);
     console.error(`[segmind] request body: ${JSON.stringify(body).slice(0, 2000)}`);
     const errDetails = (() => {
@@ -219,6 +256,7 @@ export const generateSegmindVideo = async (
     (err as any).modelId = modelKey;
     (err as any).chargeStatus = 'provider_rejected_no_output';
     (err as any).providerRequestStatus = 'responded_error';
+    (err as any).providerRequestId = providerRequestId;
     (err as any).estimatedCostUsd = 0;
     (err as any).errorCategory = lower.includes('safety') || lower.includes('blocked')
       ? 'safety'
@@ -236,13 +274,100 @@ export const generateSegmindVideo = async (
     // Suspiciously small — might be an error JSON
     const text = buffer.toString('utf-8');
     if (text.startsWith('{')) {
+      await updateGenerationAttempt(opts?.generationAttemptId, {
+        status: 'provider_rejected',
+        chargeStatus: 'provider_rejected_no_output',
+        providerRequestStatus: 'responded_json_error',
+        providerRequestId,
+        responseReceivedAt,
+        responseSummary: {
+          httpStatus: res.status,
+          statusText: res.statusText,
+          headers: responseHeaders,
+          bodyPreview: text.slice(0, 1000),
+        },
+        error: text.slice(0, 500),
+      });
       console.error(`[segmind] Got JSON instead of video: ${text.slice(0, 500)}`);
-      throw new Error(`Segmind ${modelKey} returned error: ${text.slice(0, 200)}`);
+      const err = new Error(`Segmind ${modelKey} returned error: ${text.slice(0, 200)}`);
+      (err as any).provider = 'segmind';
+      (err as any).modelId = modelKey;
+      (err as any).chargeStatus = 'provider_rejected_no_output';
+      (err as any).providerRequestStatus = 'responded_json_error';
+      (err as any).providerRequestId = providerRequestId;
+      (err as any).estimatedCostUsd = 0;
+      throw err;
     }
   }
 
-  const videoPath = await saveBuffer(buffer, 'videos', 'mp4');
+  let videoPath: string;
+  try {
+    videoPath = await saveBuffer(buffer, 'videos', 'mp4');
+  } catch (error: any) {
+    await updateGenerationAttempt(opts?.generationAttemptId, {
+      status: 'ingest_failed',
+      chargeStatus: 'provider_completed_ingest_failed',
+      providerRequestStatus: 'responded_success',
+      providerRequestId,
+      responseReceivedAt,
+      responseSummary: {
+        httpStatus: res.status,
+        statusText: res.statusText,
+        headers: responseHeaders,
+        outputBytes: buffer.length,
+      },
+      error: error?.message || String(error),
+    });
+    (error as any).provider = 'segmind';
+    (error as any).modelId = modelKey;
+    (error as any).chargeStatus = 'provider_completed_ingest_failed';
+    (error as any).providerRequestStatus = 'responded_success';
+    (error as any).providerRequestId = providerRequestId;
+    (error as any).estimatedCostUsd = Number((model.costPerSec * durationSec).toFixed(3));
+    (error as any).retryWarning = 'Segmind returned video bytes, but Mirage failed while saving them. Do not regenerate; recover or inspect the failed ingest.';
+    throw error;
+  }
+  await updateGenerationAttempt(opts?.generationAttemptId, {
+    status: 'provider_completed',
+    chargeStatus: 'provider_completed',
+    providerRequestStatus: 'responded_success',
+    providerRequestId,
+    responseReceivedAt,
+    responseSummary: {
+      httpStatus: res.status,
+      statusText: res.statusText,
+      headers: responseHeaders,
+      outputBytes: buffer.length,
+      outputPath: videoPath,
+    },
+  });
   console.log(`[segmind] Video saved: ${videoPath} (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`);
 
-  return { videoPath, modelId: modelKey, durationSec };
+  return { videoPath, modelId: modelKey, durationSec, providerRequestId };
+};
+
+const summarizeHeaders = (headers: Headers): Record<string, string> => {
+  const keep = [
+    'content-type',
+    'content-length',
+    'x-request-id',
+    'x-segmind-request-id',
+    'x-trace-id',
+    'cf-ray',
+    'server',
+  ];
+  const out: Record<string, string> = {};
+  for (const key of keep) {
+    const value = headers.get(key);
+    if (value) out[key] = value.slice(0, 240);
+  }
+  return out;
+};
+
+const extractProviderRequestId = (headers: Headers): string | null => {
+  for (const key of ['x-request-id', 'x-segmind-request-id', 'x-trace-id', 'cf-ray']) {
+    const value = headers.get(key);
+    if (value) return value.slice(0, 240);
+  }
+  return null;
 };

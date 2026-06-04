@@ -11,6 +11,7 @@ import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
 import { parseTimestamp } from '../routes/scope-helpers.js';
 import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
+import { createGenerationAttempt, updateGenerationAttempt } from './generationAttempts.js';
 
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
@@ -23,6 +24,12 @@ const formatTimecode = (seconds: number): string => {
   const m = Math.floor(safe / 60);
   const s = safe % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
+};
+
+const selectProviderDuration = (durations: readonly number[], requestedRaw: any): number => {
+  const sorted = [...durations].sort((a, b) => a - b);
+  const requested = Number(requestedRaw || sorted[0] || 4);
+  return sorted.find(d => d >= requested) ?? sorted[sorted.length - 1] ?? requested;
 };
 
 type VideoGenerationRef = {
@@ -83,6 +90,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
   const projectPreferences = await getProjectPreferencesState(project as any);
   const videoModelKey = (opts.modelOverride?.videoModel || projectPreferences.preferences.videoModel || 'veo-3.1-fast') as SegmindModelKey;
   const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
+  const estimatedProviderDuration = selectProviderDuration(modelSpec.durations, shot.duration);
+  const estimatedVideoCost = Number((modelSpec.costPerSec * estimatedProviderDuration).toFixed(3));
+  const generationAttemptId = uuidv4();
   const forcedKeyframe = shot.workflow_mode === 'keyframe';
   const forcedStoryboard = shot.workflow_mode === 'storyboard';
   const useStoryboardMode = !forcedKeyframe && modelSpec.family === 'seedance' && !!shot.storyboard_locked && !!shot.storyboard_asset_id;
@@ -330,6 +340,29 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       });
     }
 
+    await createGenerationAttempt({
+      id: generationAttemptId,
+      projectId: project.id,
+      shotId: shot.id,
+      userId: project.user_id || null,
+      stage: 'generate-shot-video',
+      provider: 'segmind',
+      model: videoModelKey in SEGMIND_MODELS ? videoModelKey : 'veo-3.1-fast',
+      estimatedCost: estimatedVideoCost,
+      requestSummary: {
+        mode: useStoryboardMode ? 'storyboard' : 'keyframe',
+        durationSec: estimatedProviderDuration,
+        resolution,
+        aspectRatio: aspect,
+        hasPromptOverride: !!opts.promptOverride?.trim(),
+        referenceImageCount: modelSpec.supportsRefs ? referenceImagePaths.length : 0,
+        referenceAudioCount: modelSpec.family === 'seedance' ? referenceAudioPaths.length : 0,
+        generateAudio: seedanceNativeAudio,
+        storyboardAssetId: useStoryboardMode ? shot.storyboard_asset_id : null,
+        startImageAssetId: useStoryboardMode ? null : shot.image_asset_id,
+      },
+    });
+
     const result = await generateVideoWithFallback(useStoryboardMode ? undefined : imageAsset!.file_path, veoPrompt, {
       endImagePath: useStoryboardMode ? undefined : endImagePath,
       referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
@@ -339,6 +372,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       resolution,
       durationSec: shot.duration,
       modelKey: videoModelKey in SEGMIND_MODELS ? videoModelKey : 'veo-3.1-fast',
+      generationAttemptId,
     });
     const videoPath = result.videoPath;
     const costEstimate = modelSpec.costPerSec * result.durationSec;
@@ -366,6 +400,10 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       native_audio_generated: seedanceNativeAudio,
     });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
+    await updateGenerationAttempt(generationAttemptId, {
+      outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
+      durationMs: Date.now() - t0,
+    });
 
     const shotNow = await selectOne('shots', { id: shot.id });
     const clearVideoError = shotNow?.image_status !== 'error' && shotNow?.end_image_status !== 'error';
@@ -467,7 +505,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const chargeStatus = err?.chargeStatus || 'not_recorded';
     const provider = err?.provider || 'segmind';
     const errorModel = err?.modelId || videoModelKey;
-    const estimatedCostUsd = Number(err?.estimatedCostUsd || 0);
+    const estimatedCostUsd = Number(err?.estimatedCostUsd || (
+      chargeStatus === 'provider_completed_ingest_failed' ? estimatedVideoCost : 0
+    ));
     const retryWarning = err?.retryWarning || (chargeStatus === 'charge_unknown'
       ? 'Retry may spend again because the provider request outcome is unknown.'
       : null);
@@ -498,7 +538,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       contextChain: await buildContextChain(project.id),
       responseSummary: `Video generation failed. Provider: ${provider}. Charge status: ${chargeStatus}. Estimated risk: $${estimatedCostUsd.toFixed(3)}.${retryWarning ? ` ${retryWarning}` : ''}`,
       durationMs,
-      costEstimate: chargeStatus === 'charge_unknown' ? estimatedCostUsd : 0,
+      costEstimate: ['charge_unknown', 'provider_completed_ingest_failed'].includes(chargeStatus) ? estimatedCostUsd : 0,
       error: err.message,
     });
     await updateRows('shots', { id: shot.id }, { video_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });

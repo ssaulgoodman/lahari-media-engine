@@ -924,7 +924,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   const compactErrorResult = (error: any) => {
     const result: Record<string, any> = {};
-    for (const key of ['chargeStatus', 'estimatedCostUsd', 'provider', 'modelId', 'model', 'retryWarning']) {
+    for (const key of ['chargeStatus', 'providerRequestStatus', 'providerRequestId', 'estimatedCostUsd', 'provider', 'modelId', 'model', 'retryWarning']) {
       if (error?.[key] !== undefined) result[key === 'modelId' ? 'model' : key] = error[key];
     }
     if (result.chargeStatus === 'charge_unknown' && !result.retryWarning) {

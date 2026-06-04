@@ -44,6 +44,8 @@ const compactResult = (value: unknown) => {
     'costUsd',
     'estimatedCostUsd',
     'chargeStatus',
+    'providerRequestStatus',
+    'providerRequestId',
     'provider',
     'model',
     'retryWarning',
