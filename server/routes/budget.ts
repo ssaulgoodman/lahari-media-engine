@@ -17,7 +17,7 @@ const isTargetDevEmail = (email: string | null | undefined) => {
   const normalized = (email || '').toLowerCase();
   const configured = parseList(process.env.DEV_BUDGET_TARGET_EMAILS || process.env.DEV_BUDGET_EMAILS);
   if (configured.length > 0) return configured.includes(normalized);
-  return normalized.startsWith('dev@companionms');
+  return normalized === 'dev@companions.gg';
 };
 
 const dayKey = (iso: string) => iso.slice(0, 10);
@@ -77,7 +77,7 @@ router.get('/dev', async (req, res) => {
     const allUsers = await listAuthUsers();
     const targetUsers = allUsers.filter((user) => isTargetDevEmail(user.email));
     if (targetUsers.length === 0) {
-      return res.status(404).json({ error: 'No dev Companions account matched DEV_BUDGET_TARGET_EMAILS/dev@companionms.' });
+      return res.status(404).json({ error: 'No dev Companions account matched DEV_BUDGET_TARGET_EMAILS/dev@companions.gg.' });
     }
     const targetUserIds = targetUsers.map((user) => user.id);
 
