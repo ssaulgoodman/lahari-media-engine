@@ -35,8 +35,13 @@ const parseArgs = (argv) => {
   const [command, projectId, maybeEntityId, maybeFilePath, ...rest] = argv;
   const optionArgs = (command === 'upload-cast-reference' || command === 'upload-environment-reference')
     ? rest
-    : argv.slice(2);
+    : command === 'status' || command === 'doctor'
+      ? (projectId && !projectId.startsWith('-') ? argv.slice(2) : argv.slice(1))
+      : argv.slice(2);
   const opts = { command, projectId, cwd: process.cwd(), force: false, recoverLock: false };
+  if ((command === 'status' || command === 'doctor') && projectId?.startsWith('-')) {
+    opts.projectId = undefined;
+  }
   if (command === 'upload-cast-reference' || command === 'upload-environment-reference') {
     opts.entityId = maybeEntityId;
     opts.filePath = maybeFilePath ? path.resolve(maybeFilePath) : undefined;
@@ -69,6 +74,7 @@ const help = () => `Mirage CLI ${pkg.version}
 
 Usage:
   mirage sync <projectId> [--cwd <dir>] [--force] [--recover-lock] [--api-url <url>]
+  mirage status [projectId] [--cwd <dir>]
   mirage upload-cast-reference <projectId> <castMemberId> <imagePath> [--note <text>] [--api-url <url>]
   mirage upload-environment-reference <projectId> <environmentId> <imagePath> [--note <text>] [--api-url <url>]
 
@@ -272,6 +278,8 @@ const lockTtlMs = () => {
 
 const safeTimestamp = (date = new Date()) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
 
+const relativeFromWorkspace = (workspace, absolutePath) => normalizeSlash(path.relative(workspace, absolutePath));
+
 const readLockOwner = (lockPath) => {
   const owner = readJson(path.join(lockPath, 'owner.json'), null);
   let stat = null;
@@ -288,6 +296,29 @@ const readLockOwner = (lockPath) => {
     createdAt,
     ageMs,
     lockPath,
+  };
+};
+
+const describeLock = (lockPath) => {
+  if (!fs.existsSync(lockPath)) {
+    return { present: false, state: 'clear', path: lockPath };
+  }
+  const owner = readLockOwner(lockPath);
+  const ownerPidStatus = pidStatus(owner.pid);
+  const ttlMs = lockTtlMs();
+  const staleReason = ownerPidStatus === 'dead'
+    ? 'dead_pid'
+    : owner.ageMs != null && owner.ageMs > ttlMs
+      ? 'ttl_expired'
+      : null;
+  return {
+    present: true,
+    state: staleReason ? 'stale' : 'active',
+    staleReason,
+    ownerPidStatus,
+    lockTtlMs: ttlMs,
+    owner,
+    path: lockPath,
   };
 };
 
@@ -411,6 +442,219 @@ const postNotebookSync = async (opts, knownHashes) => {
     fail(err.code || 'notebook_sync_failed', err.message || 'Notebook sync failed', err.details || err, response.status === 401 ? 2 : 1);
   }
   return json.data;
+};
+
+const fileStatusFromState = (workspace, files = {}) => {
+  const rows = [];
+  let missing = 0;
+  let modified = 0;
+  let current = 0;
+  let local = 0;
+  for (const [relativePath, entry] of Object.entries(files)) {
+    let status = 'unknown';
+    try {
+      const absolutePath = safeJoin(workspace, relativePath);
+      const content = readTextIfExists(absolutePath);
+      if (content == null) {
+        status = 'missing';
+        missing += 1;
+      } else if (sha256(content) === entry.hash) {
+        status = 'current';
+        current += 1;
+      } else if (entry.writePolicy === 'create_if_missing') {
+        status = 'local';
+        local += 1;
+      } else {
+        status = 'modified';
+        modified += 1;
+      }
+    } catch {
+      status = 'unsafe_path';
+      modified += 1;
+    }
+    rows.push({ path: relativePath, scope: entry.scope || 'project', status, kind: workspaceOperatingKind(relativePath) });
+  }
+  return {
+    current,
+    local,
+    modified,
+    missing,
+    total: rows.length,
+    files: rows,
+    modifiedFiles: rows.filter((row) => row.status === 'modified').map((row) => row.path).slice(0, 20),
+    missingFiles: rows.filter((row) => row.status === 'missing').map((row) => row.path).slice(0, 20),
+  };
+};
+
+const discoverProjectIds = (workspace) => {
+  const projectsDir = safeJoin(workspace, 'mirage/projects');
+  if (!fs.existsSync(projectsDir)) return [];
+  return fs.readdirSync(projectsDir)
+    .filter((name) => {
+      try {
+        return fs.statSync(path.join(projectsDir, name)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+};
+
+const readProjectNotebookSummary = (workspace, projectId) => {
+  const notebookPath = safeJoin(workspace, `mirage/projects/${projectId}/notebook.json`);
+  const notebook = readJson(notebookPath, null);
+  if (!notebook) return null;
+  return {
+    path: relativeFromWorkspace(workspace, notebookPath),
+    project: notebook.project || null,
+    generatedAt: notebook.generatedAt || null,
+    syncedAt: notebook.syncedAt || null,
+    notebookSchemaVersion: notebook.notebookSchemaVersion || notebook.notebookVersion || null,
+    skillsHash: notebook.skillsHash || null,
+    actionsHash: notebook.actionsHash || null,
+  };
+};
+
+const status = async (opts) => {
+  const workspace = path.resolve(opts.cwd);
+  const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
+  const workspaceState = readJson(workspaceStatePath, null);
+  const workspaceFiles = fileStatusFromState(workspace, workspaceState?.files || {});
+  const projectIds = discoverProjectIds(workspace);
+  const projectSummaries = projectIds.map((projectId) => {
+    const statePath = safeJoin(workspace, `mirage/projects/${projectId}/${STATE_FILE}`);
+    const state = readJson(statePath, null);
+    const files = fileStatusFromState(workspace, state?.files || {});
+    const notebook = readProjectNotebookSummary(workspace, projectId);
+    return {
+      projectId,
+      title: notebook?.project?.title || state?.project?.title || null,
+      statePath: relativeFromWorkspace(workspace, statePath),
+      initialized: !!state,
+      syncedAt: state?.syncedAt || notebook?.syncedAt || null,
+      generatedAt: notebook?.generatedAt || null,
+      notebookSchemaVersion: notebook?.notebookSchemaVersion || state?.notebookVersion || null,
+      skillsHash: notebook?.skillsHash || null,
+      actionsHash: notebook?.actionsHash || null,
+      files: {
+        current: files.current,
+        local: files.local,
+        modified: files.modified,
+        missing: files.missing,
+        total: files.total,
+        modifiedFiles: files.modifiedFiles,
+        missingFiles: files.missingFiles,
+      },
+      lock: describeLock(safeJoin(workspace, `mirage/projects/${projectId}/${LOCK_DIR}`)),
+    };
+  });
+  const selectedProjectId = opts.projectId || workspaceState?.lastProject?.id || projectSummaries[0]?.projectId || null;
+  const selectedProject = selectedProjectId
+    ? projectSummaries.find((project) => project.projectId === selectedProjectId) || {
+      projectId: selectedProjectId,
+      initialized: false,
+      files: { current: 0, local: 0, modified: 0, missing: 0, total: 0, modifiedFiles: [], missingFiles: [] },
+      lock: describeLock(safeJoin(workspace, `mirage/projects/${selectedProjectId}/${LOCK_DIR}`)),
+    }
+    : null;
+  const workspaceLock = describeLock(safeJoin(workspace, WORKSPACE_LOCK_DIR));
+  const skillsManifest = readJson(safeJoin(workspace, 'config/skills.json'), null);
+  const actionsIndex = readJson(safeJoin(workspace, 'config/actions/index.json'), null);
+  const rootIssues = [
+    !workspaceState ? 'workspace_not_synced' : null,
+    workspaceFiles.modified ? 'workspace_files_modified_since_sync' : null,
+    workspaceFiles.missing ? 'workspace_files_missing_since_sync' : null,
+    workspaceLock.state === 'active' ? 'workspace_sync_running' : null,
+    workspaceLock.state === 'stale' ? 'stale_workspace_lock' : null,
+  ].filter(Boolean);
+  const projectIssues = selectedProject ? [
+    !selectedProject.initialized ? 'project_not_synced' : null,
+    selectedProject.files.modified ? 'project_files_modified_since_sync' : null,
+    selectedProject.files.missing ? 'project_files_missing_since_sync' : null,
+    selectedProject.lock.state === 'active' ? 'project_sync_running' : null,
+    selectedProject.lock.state === 'stale' ? 'stale_project_lock' : null,
+  ].filter(Boolean) : ['no_project_selected'];
+  const issues = [...rootIssues, ...projectIssues];
+  const operatingReady = !!workspaceState
+    && !!skillsManifest
+    && !!actionsIndex
+    && workspaceFiles.missing === 0
+    && workspaceFiles.modified === 0;
+  const projectReady = !!selectedProject?.initialized
+    && selectedProject.files.missing === 0
+    && selectedProject.files.modified === 0;
+  const staleLocks = [workspaceLock, selectedProject?.lock].filter((lock) => lock?.state === 'stale');
+  const verdict = issues.length === 0
+    ? 'ready'
+    : staleLocks.length && issues.every((issue) => issue.startsWith('stale_'))
+      ? 'recover_lock_then_sync'
+      : 'needs_attention';
+  const userAction = (() => {
+    if (!workspaceState) return 'Run mint_cli_token from Mirage MCP, then run the returned mirage sync command in this workspace.';
+    if (staleLocks.length) return 'Run the same sync command with --recover-lock only after confirming no sync is active.';
+    if (!selectedProject?.initialized) return selectedProjectId ? `Run mirage sync ${selectedProjectId}.` : 'Open or create a Mirage project, then sync it.';
+    if (workspaceFiles.modified || workspaceFiles.missing || selectedProject.files.modified || selectedProject.files.missing) return 'Run mirage sync for the active project. Review conflicts if the sync reports local edits.';
+    return 'Workspace is ready. Continue with Mirage MCP actions; sync after important mutations.';
+  })();
+
+  output({
+    ok: verdict === 'ready',
+    kind: 'mirage.cli.status',
+    checkedAt: new Date().toISOString(),
+    cli: {
+      package: pkg.name,
+      version: pkg.version,
+    },
+    workspace: {
+      cwd: workspace,
+      initialized: !!workspaceState,
+      statePath: WORKSPACE_STATE_FILE,
+      syncedAt: workspaceState?.syncedAt || null,
+      notebookSchemaVersion: workspaceState?.notebookVersion || null,
+      lastProject: workspaceState?.lastProject || null,
+      files: {
+        current: workspaceFiles.current,
+        local: workspaceFiles.local,
+        modified: workspaceFiles.modified,
+        missing: workspaceFiles.missing,
+        total: workspaceFiles.total,
+        modifiedFiles: workspaceFiles.modifiedFiles,
+        missingFiles: workspaceFiles.missingFiles,
+      },
+      operatingFiles: {
+        agentsMd: fs.existsSync(safeJoin(workspace, 'AGENTS.md')),
+        claudeMd: fs.existsSync(safeJoin(workspace, 'CLAUDE.md')),
+        skillsManifest: !!skillsManifest,
+        actionsIndex: !!actionsIndex,
+      },
+      lock: workspaceLock,
+    },
+    project: selectedProject,
+    projects: projectSummaries.map((project) => ({
+      projectId: project.projectId,
+      title: project.title,
+      syncedAt: project.syncedAt,
+      generatedAt: project.generatedAt,
+      ready: project.initialized && project.files.modified === 0 && project.files.missing === 0 && project.lock.state === 'clear',
+    })),
+    freshness: {
+      skillsHash: selectedProject?.skillsHash || null,
+      actionsHash: selectedProject?.actionsHash || null,
+      configSkillsVersion: skillsManifest?.version || null,
+      configActionsVersion: actionsIndex?.version || null,
+      freshChatRecommended: skillsManifest?.restartRequired === true,
+      note: skillsManifest?.restartRequired === true
+        ? 'After skills or action schemas update on disk, open a fresh chat/session in this workspace so the harness reloads them.'
+        : 'No explicit skill reload flag found.',
+    },
+    verdict: {
+      status: verdict,
+      operatingReady,
+      projectReady,
+      issues,
+      userAction,
+    },
+  });
 };
 
 const sync = async (opts) => {
@@ -670,6 +914,8 @@ try {
   }
   if (opts.command === 'sync') {
     await sync(opts);
+  } else if (opts.command === 'status' || opts.command === 'doctor') {
+    await status(opts);
   } else if (opts.command === 'upload-cast-reference' || opts.command === 'upload-environment-reference') {
     await uploadReference(opts);
   } else {
