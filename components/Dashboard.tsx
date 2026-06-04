@@ -20,12 +20,19 @@ interface QueueItem {
   // Per-user fork stats from listQueue() — see server/services/supabase.ts.
   others_done: number;
   others_wip: number;
+  other_workers?: QueueWorker[];
   has_active_fork: boolean;
   has_done_fork: boolean;
   // Current user's mnemonic label for this song. Edited inline on the
   // dashboard via setSongNote. Server-scoped to the auth user — never
   // contains another user's note.
   user_note: string | null;
+}
+
+interface QueueWorker {
+  user_id: string;
+  email: string | null;
+  status: 'done' | 'wip';
 }
 
 interface Props {
@@ -70,6 +77,50 @@ const formatDuration = (secs: number) => {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+const workerLabel = (worker: QueueWorker) =>
+  worker.email || `Artist ${worker.user_id.slice(0, 6)}`;
+
+const workerInitial = (worker: QueueWorker) => {
+  const label = worker.email?.split('@')[0] || worker.user_id || '?';
+  return (label.match(/[a-z0-9]/i)?.[0] || '?').toUpperCase();
+};
+
+const QueueWorkerAvatars: React.FC<{ workers: QueueWorker[]; doneCount: number; wipCount: number }> = ({
+  workers,
+  doneCount,
+  wipCount,
+}) => {
+  if (!workers.length) return null;
+  const visible = workers.slice(0, 4);
+  const remaining = Math.max(0, workers.length - visible.length);
+  const title = [
+    wipCount > 0 ? `WIP: ${workers.filter(w => w.status === 'wip').map(workerLabel).join(', ')}` : '',
+    doneCount > 0 ? `Done: ${workers.filter(w => w.status === 'done').map(workerLabel).join(', ')}` : '',
+  ].filter(Boolean).join('\n');
+
+  return (
+    <span className="flex items-center -space-x-1 ml-1" title={title}>
+      {visible.map((worker) => (
+        <span
+          key={`${worker.user_id}-${worker.status}`}
+          className={`w-5 h-5 rounded-full border border-[#121216] text-[10px] font-semibold flex items-center justify-center ${
+            worker.status === 'done'
+              ? 'bg-emerald-500/20 text-emerald-200'
+              : 'bg-amber-400/20 text-amber-100'
+          }`}
+        >
+          {workerInitial(worker)}
+        </span>
+      ))}
+      {remaining > 0 && (
+        <span className="w-5 h-5 rounded-full border border-[#121216] bg-white/[0.08] text-[9px] text-zinc-300 flex items-center justify-center">
+          +{remaining}
+        </span>
+      )}
+    </span>
+  );
 };
 
 /** Inline mnemonic note next to the song name. Click to edit, blur or
@@ -407,23 +458,11 @@ export const Dashboard: React.FC<Props> = ({ onStartProduction, onOpenProject, o
                   item.render_count > 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-zinc-400'
                 }`}>Video</span>
                 {hasOthers && (
-                  <span
-                    className="flex items-center gap-1 ml-1 text-[11px]"
-                    title={`${item.others_done} other artist${item.others_done === 1 ? '' : 's'} published · ${item.others_wip} still WIP`}
-                  >
-                    {item.others_done > 0 && (
-                      <span className="flex items-center gap-0.5 text-emerald-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span className="font-mono tabular-nums">{item.others_done}</span>
-                      </span>
-                    )}
-                    {item.others_wip > 0 && (
-                      <span className="flex items-center gap-0.5 text-amber-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                        <span className="font-mono tabular-nums">{item.others_wip}</span>
-                      </span>
-                    )}
-                  </span>
+                  <QueueWorkerAvatars
+                    workers={item.other_workers || []}
+                    doneCount={item.others_done}
+                    wipCount={item.others_wip}
+                  />
                 )}
               </div>
 
