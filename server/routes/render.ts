@@ -25,6 +25,33 @@ const activeRenderWindowMs = () => {
   return Math.max(1, minutes) * 60 * 1000;
 };
 
+const insertTimelineVersion = async ({
+  projectId,
+  version,
+  snapshot,
+  userId,
+  source,
+}: {
+  projectId: string;
+  version: number;
+  snapshot: any;
+  userId?: string | null;
+  source: string;
+}) => {
+  const { error } = await getSB()
+    .from('lahari_project_timeline_versions')
+    .insert({
+      project_id: projectId,
+      version,
+      snapshot,
+      saved_by: userId || null,
+      source,
+      item_count: Array.isArray(snapshot?.trackItemIds) ? snapshot.trackItemIds.length : 0,
+      duration_ms: Number.isFinite(Number(snapshot?.duration)) ? Number(snapshot.duration) : null,
+    });
+  return error;
+};
+
 router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
   const row = await selectOne('projects', { id: projectId });
@@ -53,10 +80,34 @@ router.get('/:id/timeline', async (req, res) => {
   });
 });
 
+router.get('/:id/timeline/versions', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 100);
+  const { data, error } = await getSB()
+    .from('lahari_project_timeline_versions')
+    .select('id, version, created_at, saved_by, source, item_count, duration_ms')
+    .eq('project_id', projectId)
+    .order('version', { ascending: false })
+    .limit(limit);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({
+    versions: (data || []).map((row: any) => ({
+      id: row.id,
+      version: row.version,
+      savedAt: row.created_at,
+      savedBy: row.saved_by,
+      source: row.source,
+      itemCount: row.item_count ?? 0,
+      duration: row.duration_ms ?? null,
+    })),
+  });
+});
+
 router.put('/:id/timeline', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const snapshot = req.body?.snapshot;
   const baseVersion = req.body?.baseVersion;
+  const source = typeof req.body?.source === 'string' ? req.body.source : 'save';
   if (!snapshot || typeof snapshot !== 'object') {
     return res.status(400).json({ error: 'snapshot is required' });
   }
@@ -97,6 +148,14 @@ router.put('/:id/timeline', async (req, res) => {
         code: 'timeline_conflict',
       });
     }
+    const versionErr = await insertTimelineVersion({
+      projectId,
+      version: data.version,
+      snapshot,
+      userId: req.userId,
+      source,
+    });
+    if (versionErr) return res.status(500).json({ error: versionErr.message });
     return res.json({ version: data.version, updatedAt: data.updated_at });
   }
 
@@ -118,7 +177,97 @@ router.put('/:id/timeline', async (req, res) => {
     .select('version, updated_at')
     .single();
   if (error) return res.status(500).json({ error: error.message });
+  const versionErr = await insertTimelineVersion({
+    projectId,
+    version: data.version,
+    snapshot,
+    userId: req.userId,
+    source,
+  });
+  if (versionErr) return res.status(500).json({ error: versionErr.message });
   res.json({ version: data.version, updatedAt: data.updated_at });
+});
+
+router.post('/:id/timeline/restore', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const restoreVersion = Number(req.body?.version);
+  const baseVersion = req.body?.baseVersion;
+  if (!Number.isInteger(restoreVersion) || restoreVersion <= 0) {
+    return res.status(400).json({ error: 'version is required' });
+  }
+
+  const sb = getSB();
+  const { data: versionRow, error: versionReadErr } = await sb
+    .from('lahari_project_timeline_versions')
+    .select('snapshot, version')
+    .eq('project_id', projectId)
+    .eq('version', restoreVersion)
+    .maybeSingle();
+  if (versionReadErr) return res.status(500).json({ error: versionReadErr.message });
+  if (!versionRow) return res.status(404).json({ error: 'Timeline version not found' });
+
+  const { data: existing, error: readErr } = await sb
+    .from('lahari_project_timelines')
+    .select('version')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (readErr) return res.status(500).json({ error: readErr.message });
+
+  if (existing && baseVersion !== existing.version) {
+    return res.status(409).json({
+      error: 'Timeline changed elsewhere. Reload the latest timeline before restoring.',
+      code: 'timeline_conflict',
+      currentVersion: existing.version,
+    });
+  }
+
+  const nextVersion = existing ? existing.version + 1 : 1;
+  let saved: any;
+  if (existing) {
+    const { data, error } = await sb
+      .from('lahari_project_timelines')
+      .update({
+        snapshot: versionRow.snapshot,
+        version: nextVersion,
+        updated_by: req.userId || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('project_id', projectId)
+      .eq('version', existing.version)
+      .select('version, updated_at')
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!data) {
+      return res.status(409).json({
+        error: 'Timeline changed elsewhere. Reload the latest timeline before restoring.',
+        code: 'timeline_conflict',
+      });
+    }
+    saved = data;
+  } else {
+    const { data, error } = await sb
+      .from('lahari_project_timelines')
+      .insert({
+        project_id: projectId,
+        snapshot: versionRow.snapshot,
+        version: nextVersion,
+        updated_by: req.userId || null,
+      })
+      .select('version, updated_at')
+      .single();
+    if (error) return res.status(500).json({ error: error.message });
+    saved = data;
+  }
+
+  const historyErr = await insertTimelineVersion({
+    projectId,
+    version: saved.version,
+    snapshot: versionRow.snapshot,
+    userId: req.userId,
+    source: `restore:${restoreVersion}`,
+  });
+  if (historyErr) return res.status(500).json({ error: historyErr.message });
+  res.json({ version: saved.version, updatedAt: saved.updated_at, restoredFromVersion: restoreVersion });
 });
 
 router.delete('/:id/timeline', async (req, res) => {

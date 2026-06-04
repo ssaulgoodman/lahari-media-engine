@@ -952,6 +952,16 @@ export interface TimelineDraftResponse {
   };
 }
 
+export interface TimelineVersionSummary {
+  id: string;
+  version: number;
+  savedAt: string;
+  savedBy: string | null;
+  source: string;
+  itemCount: number;
+  duration: number | null;
+}
+
 export const getProjectTimeline = async (
   projectId: string,
   signal?: AbortSignal,
@@ -964,11 +974,32 @@ export const saveProjectTimeline = async (
   projectId: string,
   snapshot: TimelineDraftSnapshot,
   baseVersion: number | null,
+  source = 'save',
 ): Promise<{ version: number; updatedAt: string }> => {
   const res = await authFetch(`${API}/projects/${projectId}/timeline`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ snapshot, baseVersion }),
+    body: JSON.stringify({ snapshot, baseVersion, source }),
+  });
+  return handleResponse(res);
+};
+
+export const listProjectTimelineVersions = async (
+  projectId: string,
+): Promise<{ versions: TimelineVersionSummary[] }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/timeline/versions`);
+  return handleResponse(res);
+};
+
+export const restoreProjectTimelineVersion = async (
+  projectId: string,
+  version: number,
+  baseVersion: number | null,
+): Promise<{ version: number; updatedAt: string; restoredFromVersion: number }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/timeline/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ version, baseVersion }),
   });
   return handleResponse(res);
 };

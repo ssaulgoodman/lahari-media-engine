@@ -870,7 +870,7 @@ const TimelineEditor: React.FC<Props> = ({
       saveInFlight = true;
       const baseVersion = useStore.getState().timelineVersion;
       useStore.getState().setTimelineSaveState('saving');
-      void saveProjectTimeline(projectId, snapshot, baseVersion)
+      void saveProjectTimeline(projectId, snapshot, baseVersion, 'autosave')
         .then((result) => {
           const latest = useStore.getState();
           latest.setTimelineVersion(result.version);
