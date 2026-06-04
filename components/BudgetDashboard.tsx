@@ -25,7 +25,6 @@ type BudgetData = {
   weekly: AggRow[];
   byModel: AggRow[];
   byStage: AggRow[];
-  bySongType: AggRow[];
   byAccount: AggRow[];
   bySong: AggRow[];
   note: string;
@@ -54,10 +53,10 @@ const SimpleTable: React.FC<{
     <section className="rounded-xl border border-white/[0.06] overflow-hidden">
       <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
         <h2 className="text-sm font-medium text-white">{title}</h2>
-        <span className="text-[11px] text-zinc-500">{rows.length} rows</span>
+        <span className="text-xs text-zinc-500">{rows.length} rows</span>
       </div>
       <div className="divide-y divide-white/[0.04]">
-        <div className="grid grid-cols-[1fr_90px_80px_80px_80px] px-4 py-2 text-[11px] uppercase tracking-wide text-zinc-500 bg-white/[0.01]">
+        <div className="grid grid-cols-[1fr_100px_90px_90px_90px] px-4 py-2.5 text-xs uppercase tracking-wide text-zinc-500 bg-white/[0.01]">
           <span>{primaryLabel}</span>
           <span className="text-right">Spend</span>
           <span className="text-right">Calls</span>
@@ -65,9 +64,9 @@ const SimpleTable: React.FC<{
           <span className="text-right">Time</span>
         </div>
         {shown.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-zinc-500">No calls in this window</div>
+          <div className="px-4 py-8 text-center text-sm text-zinc-500">No calls in this window</div>
         ) : shown.map((row) => (
-          <div key={`${title}-${row[primaryKeyName]}`} className="grid grid-cols-[1fr_90px_80px_80px_80px] px-4 py-2.5 text-xs items-center hover:bg-white/[0.02]">
+          <div key={`${title}-${row[primaryKeyName]}`} className="grid grid-cols-[1fr_100px_90px_90px_90px] px-4 py-3 text-sm items-center hover:bg-white/[0.02]">
             <span className="text-zinc-300 truncate" title={String(row[primaryKeyName] || '')}>
               {row[primaryKeyName] || 'unknown'}
             </span>
@@ -86,10 +85,10 @@ const SongTable: React.FC<{ rows: AggRow[] }> = ({ rows }) => (
   <section className="rounded-xl border border-white/[0.06] overflow-hidden">
     <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
       <h2 className="text-sm font-medium text-white">Top Songs</h2>
-      <span className="text-[11px] text-zinc-500">{rows.length} songs</span>
+      <span className="text-xs text-zinc-500">{rows.length} songs</span>
     </div>
     <div className="divide-y divide-white/[0.04]">
-      <div className="grid grid-cols-[1fr_100px_90px_80px_80px] px-4 py-2 text-[11px] uppercase tracking-wide text-zinc-500 bg-white/[0.01]">
+      <div className="grid grid-cols-[1fr_120px_100px_90px_90px] px-4 py-2.5 text-xs uppercase tracking-wide text-zinc-500 bg-white/[0.01]">
         <span>Song</span>
         <span>Type</span>
         <span className="text-right">Spend</span>
@@ -97,10 +96,10 @@ const SongTable: React.FC<{ rows: AggRow[] }> = ({ rows }) => (
         <span className="text-right">Errors</span>
       </div>
       {rows.slice(0, 20).map((row) => (
-        <div key={row.projectId} className="grid grid-cols-[1fr_100px_90px_80px_80px] px-4 py-2.5 text-xs items-center hover:bg-white/[0.02]">
+        <div key={row.projectId} className="grid grid-cols-[1fr_120px_100px_90px_90px] px-4 py-3 text-sm items-center hover:bg-white/[0.02]">
           <div className="min-w-0">
             <div className="text-zinc-300 truncate" title={row.title}>{row.title}</div>
-            <div className="text-[11px] text-zinc-600 truncate">{[row.accountEmail, row.album, row.isrc, row.deity].filter(Boolean).join(' · ')}</div>
+            <div className="text-xs text-zinc-600 truncate">{[row.accountEmail, row.album, row.isrc, row.deity].filter(Boolean).join(' · ')}</div>
           </div>
           <span className="text-zinc-500 truncate">{row.songType || 'unknown'}</span>
           <span className="text-right font-mono text-zinc-200">{money(row.cost)}</span>
@@ -218,7 +217,6 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
               <SimpleTable title="Daily" rows={data.daily} primaryKeyName="date" primaryLabel="Date" />
               <SimpleTable title="Weekly" rows={data.weekly} primaryKeyName="week" primaryLabel="Week" />
               <SimpleTable title="By Model" rows={data.byModel} primaryKeyName="model" primaryLabel="Model" />
-              <SimpleTable title="By Song Type" rows={data.bySongType} primaryKeyName="songType" primaryLabel="Song Type" />
             </div>
 
             <SongTable rows={data.bySong} />
