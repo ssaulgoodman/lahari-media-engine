@@ -92,26 +92,44 @@ const QueueWorkerAvatars: React.FC<{ workers: QueueWorker[]; doneCount: number; 
   doneCount,
   wipCount,
 }) => {
-  if (!workers.length) return null;
-  const visible = workers.slice(0, 4);
+  if (!workers.length) {
+    return (
+      <span className="flex items-center gap-1 ml-1 text-[11px]">
+        {doneCount > 0 && (
+          <span className="flex items-center gap-0.5 text-emerald-400" title={`${doneCount} other artist${doneCount === 1 ? '' : 's'} published`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span className="font-mono tabular-nums">{doneCount}</span>
+          </span>
+        )}
+        {wipCount > 0 && (
+          <span className="flex items-center gap-0.5 text-amber-400" title={`${wipCount} other artist${wipCount === 1 ? '' : 's'} still WIP`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span className="font-mono tabular-nums">{wipCount}</span>
+          </span>
+        )}
+      </span>
+    );
+  }
+  const visible = workers.slice(0, 3);
   const remaining = Math.max(0, workers.length - visible.length);
-  const title = [
-    wipCount > 0 ? `WIP: ${workers.filter(w => w.status === 'wip').map(workerLabel).join(', ')}` : '',
-    doneCount > 0 ? `Done: ${workers.filter(w => w.status === 'done').map(workerLabel).join(', ')}` : '',
-  ].filter(Boolean).join('\n');
 
   return (
-    <span className="flex items-center -space-x-1 ml-1" title={title}>
+    <span className="flex items-center gap-1 ml-1">
       {visible.map((worker) => (
         <span
           key={`${worker.user_id}-${worker.status}`}
-          className={`w-5 h-5 rounded-full border border-[#121216] text-[10px] font-semibold flex items-center justify-center ${
+          tabIndex={0}
+          className={`group/worker relative z-10 h-5 min-w-5 max-w-5 hover:max-w-[190px] focus:max-w-[190px] rounded-full border border-[#121216] text-[10px] font-semibold flex items-center overflow-hidden transition-all duration-150 ${
             worker.status === 'done'
               ? 'bg-emerald-500/20 text-emerald-200'
               : 'bg-amber-400/20 text-amber-100'
           }`}
+          aria-label={`${worker.status === 'done' ? 'Done' : 'WIP'}: ${workerLabel(worker)}`}
         >
-          {workerInitial(worker)}
+          <span className="w-5 flex-shrink-0 text-center">{workerInitial(worker)}</span>
+          <span className="pr-2 whitespace-nowrap opacity-0 group-hover/worker:opacity-100 group-focus/worker:opacity-100 transition-opacity">
+            {workerLabel(worker)}
+          </span>
         </span>
       ))}
       {remaining > 0 && (
