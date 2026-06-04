@@ -17,6 +17,7 @@ import {
 interface Props {
   project: ApiProject;
   onBack: () => void;
+  timelineRefreshToken?: number;
 }
 
 // Backend is authoritative for render state — the frontend just reflects what
@@ -97,7 +98,7 @@ const renderErrorHint = (code?: string | null) => {
   }
 };
 
-export const StepRender: React.FC<Props> = ({ project, onBack }) => {
+export const StepRender: React.FC<Props> = ({ project, onBack, timelineRefreshToken = 0 }) => {
   const [phase, setPhase] = useState<RenderPhase>({ kind: 'idle' });
   const [renderMeta, setRenderMeta] = useState<RenderStatusResponse | null>(null);
   const [cancelingRender, setCancelingRender] = useState(false);
@@ -445,6 +446,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           initialClips={previewClips}
           initialAudioClips={previewAudioClips}
           projectId={project.id}
+          remoteRefreshToken={timelineRefreshToken}
           onOpenMediaLibrary={openMediaLibrary}
           mediaLibraryBadgeCount={newMediaCount}
         />

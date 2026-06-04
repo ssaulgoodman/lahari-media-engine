@@ -115,7 +115,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     setCurrentStep(step);
   }, []);
 
-  const { agentOperations, realtimeNotice } = useRealtimePresence(project?.id, activeProjectId, setProject);
+  const { agentOperations, realtimeNotice, timelineRefreshToken } = useRealtimePresence(project?.id, activeProjectId, setProject);
 
   const { restoring: projectRestoring } = usePersistedProject({
     currentStep,
@@ -1533,6 +1533,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                   <StepRender
                     project={project}
                     onBack={() => setCurrentStep(AppStep.STUDIO)}
+                    timelineRefreshToken={timelineRefreshToken}
                   />
                 </motion.div>
               )}
