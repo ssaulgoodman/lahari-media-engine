@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppShell } from './components/AppShell';
+import { BudgetDashboard } from './components/BudgetDashboard';
 import { ConnectPage } from './components/ConnectPage';
 import { SignIn } from './components/SignIn';
 import { useAuth } from './contexts/AuthContext';
@@ -20,6 +21,10 @@ const App: React.FC = () => {
   }
 
   if (!user) return <SignIn signInWithGoogle={signInWithGoogle} />;
+
+  if (window.location.pathname === '/budget') {
+    return <BudgetDashboard user={user} signOut={signOut} />;
+  }
 
   return <AppShell user={user} signOut={signOut} />;
 };
