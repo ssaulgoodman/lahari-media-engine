@@ -119,10 +119,10 @@ const QueueWorkerAvatars: React.FC<{ workers: QueueWorker[]; doneCount: number; 
         <span
           key={`${worker.user_id}-${worker.status}`}
           tabIndex={0}
-          className={`group/worker relative z-10 h-5 min-w-5 max-w-5 hover:max-w-[190px] focus:max-w-[190px] rounded-full border border-[#121216] text-[10px] font-semibold flex items-center overflow-hidden transition-all duration-150 ${
+          className={`group/worker relative z-10 h-5 min-w-5 max-w-5 hover:max-w-[190px] focus:max-w-[190px] rounded-full border text-[10px] font-semibold flex items-center overflow-hidden shadow-sm transition-all duration-150 ${
             worker.status === 'done'
-              ? 'bg-emerald-500/20 text-emerald-200'
-              : 'bg-amber-400/20 text-amber-100'
+              ? 'border-emerald-300/20 bg-emerald-950 text-emerald-100 hover:bg-emerald-900 focus:bg-emerald-900'
+              : 'border-amber-300/25 bg-amber-950 text-amber-100 hover:bg-amber-900 focus:bg-amber-900'
           }`}
           aria-label={`${worker.status === 'done' ? 'Done' : 'WIP'}: ${workerLabel(worker)}`}
         >
