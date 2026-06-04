@@ -11,6 +11,7 @@ const DEFAULT_API_URL = 'https://mirage-platform-production-05ca.up.railway.app'
 const STATE_FILE = '.sync-state.json';
 const WORKSPACE_STATE_FILE = '.mirage-workspace-state.json';
 const LOCK_DIR = '.sync-state.lock';
+const WORKSPACE_LOCK_DIR = '.mirage-workspace-state.lock';
 const DEFAULT_LOCK_TTL_MS = 15 * 60 * 1000;
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
@@ -200,6 +201,14 @@ const pruneSyncLockArchives = (workspace, projectId, pruned) => {
   }
 };
 
+const pruneWorkspaceSyncLockArchives = (workspace, pruned) => {
+  if (!fs.existsSync(workspace)) return;
+  for (const name of fs.readdirSync(workspace)) {
+    if (!name.startsWith(`${WORKSPACE_LOCK_DIR}.stale-`) && !name.startsWith(`${WORKSPACE_LOCK_DIR}.orphan-`)) continue;
+    pruneTree(workspace, name, 'old_workspace_sync_lock_archive', pruned);
+  }
+};
+
 const pruneLegacySkillDirs = (workspace, manifestByPath, pruned) => {
   const legacySkillNames = [
     'continuity-auditor',
@@ -304,6 +313,7 @@ const moveStaleLockAside = (lockPath, owner) => {
 };
 
 const acquireLock = (lockPath, opts = {}) => {
+  const scopeLabel = opts.scopeLabel || 'project';
   fs.mkdirSync(path.dirname(lockPath), { recursive: true });
   try {
     fs.mkdirSync(lockPath);
@@ -312,6 +322,7 @@ const acquireLock = (lockPath, opts = {}) => {
       createdAt: new Date().toISOString(),
       cliVersion: pkg.version,
       cwd: process.cwd(),
+      scope: scopeLabel,
     }, null, 2)}\n`);
   } catch (error) {
     if (error?.code === 'EEXIST') {
@@ -334,6 +345,7 @@ const acquireLock = (lockPath, opts = {}) => {
             createdAt: new Date().toISOString(),
             cliVersion: pkg.version,
             cwd: process.cwd(),
+            scope: scopeLabel,
             replacedStaleLock: {
               movedTo,
               reason: recoveryReason,
@@ -342,13 +354,14 @@ const acquireLock = (lockPath, opts = {}) => {
           }, null, 2)}\n`);
         } catch (retryError) {
           if (retryError?.code === 'EEXIST') {
-            fail('sync_already_running', 'Another Mirage notebook sync started while replacing a stale lock. Retry once.', { lockPath, movedTo }, 4);
+            fail('sync_already_running', `Another Mirage notebook sync started while replacing a stale ${scopeLabel} lock. Retry once.`, { lockPath, scope: scopeLabel, movedTo }, 4);
           }
           throw retryError;
         }
       } else {
-        fail('sync_already_running', 'Another Mirage notebook sync appears to be running for this project. Wait for it to finish, then retry.', {
+        fail('sync_already_running', `Another Mirage notebook sync appears to be running for this ${scopeLabel}. Wait for it to finish, then retry.`, {
           lockPath,
+          scope: scopeLabel,
           owner,
           ownerPidStatus,
           lockTtlMs: ttlMs,
@@ -405,8 +418,17 @@ const sync = async (opts) => {
   const workspace = path.resolve(opts.cwd);
   const statePath = safeJoin(workspace, `mirage/projects/${opts.projectId}/${STATE_FILE}`);
   const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
-  const releaseLock = acquireLock(safeJoin(workspace, `mirage/projects/${opts.projectId}/${LOCK_DIR}`), { recoverLock: opts.recoverLock });
+  let releaseWorkspaceLock = null;
+  let releaseProjectLock = null;
+  const lockReceipt = {
+    workspace: { path: WORKSPACE_LOCK_DIR, acquired: false },
+    project: { path: `mirage/projects/${opts.projectId}/${LOCK_DIR}`, acquired: false },
+  };
   try {
+  releaseWorkspaceLock = acquireLock(safeJoin(workspace, WORKSPACE_LOCK_DIR), { recoverLock: opts.recoverLock, scopeLabel: 'workspace' });
+  lockReceipt.workspace.acquired = true;
+  releaseProjectLock = acquireLock(safeJoin(workspace, `mirage/projects/${opts.projectId}/${LOCK_DIR}`), { recoverLock: opts.recoverLock, scopeLabel: 'project' });
+  lockReceipt.project.acquired = true;
   const previousProjectState = readJson(statePath, { files: {} });
   const previousWorkspaceState = readJson(workspaceStatePath, { files: {} });
   const previousProjectFiles = previousProjectState.files || {};
@@ -519,6 +541,7 @@ const sync = async (opts) => {
     }
   }
   pruneLegacySkillDirs(workspace, manifestByPath, pruned);
+  pruneWorkspaceSyncLockArchives(workspace, pruned);
   pruneSyncLockArchives(workspace, opts.projectId, pruned);
 
   const nextWorkspaceFiles = {};
@@ -570,6 +593,7 @@ const sync = async (opts) => {
     conflicts,
     summary: summarizeSyncForOperator(manifest, written, skipped),
     details: {
+      locks: lockReceipt,
       written,
       skipped,
       removed,
@@ -582,7 +606,8 @@ const sync = async (opts) => {
   });
   process.exitCode = conflicts.length ? 3 : 0;
   } finally {
-    releaseLock();
+    releaseProjectLock?.();
+    releaseWorkspaceLock?.();
   }
 };
 
