@@ -12,7 +12,7 @@ import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
 import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
-import { loadSnapshot, saveSnapshot } from './persistence';
+import { clearSnapshot, loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
 import { getProjectTimeline, saveProjectTimeline } from '../../services/api';
 
 export type InitialClip = { src: string; name?: string };
@@ -38,6 +38,7 @@ interface Props {
   projectId?: string;
   onOpenMediaLibrary?: () => void;
   mediaLibraryBadgeCount?: number;
+  remoteRefreshToken?: number;
 }
 
 const toolbarBtn: React.CSSProperties = {
@@ -100,6 +101,36 @@ const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<num
     el.src = src;
   });
 
+const timelineSignature = (snapshot: SnapshotPayload) =>
+  JSON.stringify({
+    initialVideoSrcs: snapshot.initialVideoSrcs,
+    initialAudioSrcs: snapshot.initialAudioSrcs,
+    trackItemIds: snapshot.trackItemIds,
+    trackItemsMap: snapshot.trackItemsMap,
+    transitionIds: snapshot.transitionIds,
+    transitionsMap: snapshot.transitionsMap,
+    tracks: snapshot.tracks,
+    duration: snapshot.duration,
+    fps: snapshot.fps,
+    size: snapshot.size,
+  });
+
+const snapshotFromStore = (): SnapshotPayload => {
+  const s = useStore.getState();
+  return {
+    initialVideoSrcs: s.initialVideoSrcs,
+    initialAudioSrcs: s.initialAudioSrcs,
+    trackItemIds: s.trackItemIds,
+    trackItemsMap: s.trackItemsMap,
+    transitionIds: s.transitionIds,
+    transitionsMap: s.transitionsMap,
+    tracks: s.tracks,
+    duration: s.duration,
+    fps: s.fps,
+    size: s.size,
+  };
+};
+
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
 // creates one when the timeline is empty). Used by the manual-upload button
 // and the MediaLibraryDrawer (any external surface adding a clip).
@@ -130,6 +161,7 @@ const TimelineEditor: React.FC<Props> = ({
   projectId,
   onOpenMediaLibrary,
   mediaLibraryBadgeCount = 0,
+  remoteRefreshToken = 0,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -174,6 +206,8 @@ const TimelineEditor: React.FC<Props> = ({
   // subscribeToState wiring as user edits, and we don't want the first
   // post-seed fire to immediately rewrite the very snapshot we just loaded.
   const hasSeededRef = useRef(false);
+  const savedSignatureRef = useRef<string | null>(null);
+  const suppressAutoSaveRef = useRef(false);
 
   // Init the StateManager once.
   useEffect(() => {
@@ -205,6 +239,7 @@ const TimelineEditor: React.FC<Props> = ({
       transitionsMap: {},
       activeIds: [],
     });
+    savedSignatureRef.current = null;
 
     // Session-only undo/redo. Whole-snapshot replay (vs. designcombo's
     // diff-based history) sidesteps the regrowth bug where a trim diff is
@@ -558,6 +593,18 @@ const TimelineEditor: React.FC<Props> = ({
           setTimelineSaveState('saved');
           seededKeyRef.current = key;
           hasSeededRef.current = true;
+          savedSignatureRef.current = timelineSignature({
+            initialVideoSrcs: (snap as any).initialVideoSrcs || [],
+            initialAudioSrcs: (snap as any).initialAudioSrcs || [],
+            trackItemIds: restored.trackItemIds,
+            trackItemsMap: restored.trackItemsMap,
+            transitionIds: restored.transitionIds,
+            transitionsMap: restored.transitionsMap,
+            tracks: restored.tracks,
+            duration: restored.duration,
+            fps: (snap as any).fps || 30,
+            size: (snap as any).size || { width: 1920, height: 1080 },
+          });
           captureBaselineRef.current?.();
           if (restored.duration > 0) {
             requestAnimationFrame(() => {
@@ -577,11 +624,13 @@ const TimelineEditor: React.FC<Props> = ({
         setLastSavedAt(null);
         setTimelineVersion(null);
         setTimelineSaveState('idle');
+        savedSignatureRef.current = null;
       }
 
       if (!initialClips?.length && !initialAudioClips?.length) {
         seededKeyRef.current = key;
         hasSeededRef.current = true;
+        savedSignatureRef.current = null;
         captureBaselineRef.current?.();
         return;
       }
@@ -674,6 +723,18 @@ const TimelineEditor: React.FC<Props> = ({
       );
       seededKeyRef.current = key;
       hasSeededRef.current = true;
+      savedSignatureRef.current = timelineSignature({
+        initialVideoSrcs: (initialClips ?? []).map((clip) => clip.src),
+        initialAudioSrcs: (initialAudioClips ?? []).map((clip) => clip.src),
+        trackItemIds,
+        trackItemsMap,
+        transitionIds: [],
+        transitionsMap: {},
+        tracks,
+        duration: totalDuration,
+        fps: 30,
+        size: { width: 1920, height: 1080 },
+      });
       captureBaselineRef.current?.();
 
       // Fit-to-screen after the timeline canvas has rendered. getFitZoomLevel
@@ -697,6 +758,97 @@ const TimelineEditor: React.FC<Props> = ({
       cancelled = true;
     };
   }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, setLastSavedAt, setTimelineSaveState, setTimelineVersion]);
+
+  // Cross-tab / cross-user sync: Supabase realtime tells AppShell that the
+  // shared project timeline changed, but the render editor owns the actual
+  // Zustand/StateManager state. Pull the latest timeline here and apply it
+  // only when this tab has no unsaved local edits. If Sid is also editing,
+  // we surface a conflict instead of overwriting his local timeline draft.
+  useEffect(() => {
+    if (!projectId || !stateManager || remoteRefreshToken <= 0) return;
+    let cancelled = false;
+    (async () => {
+      const current = snapshotFromStore();
+      const currentSignature = current.trackItemIds.length > 0 ? timelineSignature(current) : null;
+      const savedSignature = savedSignatureRef.current;
+      if (savedSignature && currentSignature && currentSignature !== savedSignature) {
+        setTimelineSaveState('conflict', 'Timeline changed elsewhere. Save or reload before applying remote changes.');
+        return;
+      }
+
+      let remote: any;
+      try {
+        remote = await getProjectTimeline(projectId);
+      } catch (err: any) {
+        if (!cancelled) setTimelineSaveState('error', err?.message || 'Timeline refresh failed');
+        return;
+      }
+      if (cancelled) return;
+      if (useStore.getState().stateManager !== stateManager) return;
+
+      if (!remote.timeline?.snapshot?.trackItemIds?.length) {
+        suppressAutoSaveRef.current = true;
+        try {
+          (stateManager as any).updateState(
+            {
+              tracks: [],
+              trackItemIds: [],
+              trackItemsMap: {},
+              transitionIds: [],
+              transitionsMap: {},
+              duration: 5000,
+            },
+            { kind: 'update', updateHistory: false },
+          );
+        } finally {
+          queueMicrotask(() => {
+            suppressAutoSaveRef.current = false;
+          });
+        }
+        clearSnapshot(projectId);
+        setTimelineVersion(null);
+        setLastSavedAt(null);
+        setTimelineSaveState('idle');
+        savedSignatureRef.current = null;
+        captureBaselineRef.current?.();
+        return;
+      }
+
+      const remoteSnapshot = remote.timeline.snapshot as SnapshotPayload;
+      const remoteSignature = timelineSignature(remoteSnapshot);
+      const localVersion = useStore.getState().timelineVersion;
+      if (localVersion === remote.timeline.version && savedSignature === remoteSignature) return;
+
+      suppressAutoSaveRef.current = true;
+      try {
+        (stateManager as any).updateState(
+          {
+            tracks: remoteSnapshot.tracks,
+            trackItemIds: remoteSnapshot.trackItemIds,
+            trackItemsMap: remoteSnapshot.trackItemsMap,
+            transitionIds: remoteSnapshot.transitionIds,
+            transitionsMap: remoteSnapshot.transitionsMap,
+            duration: remoteSnapshot.duration,
+          },
+          { kind: 'update', updateHistory: false },
+        );
+      } finally {
+        queueMicrotask(() => {
+          suppressAutoSaveRef.current = false;
+        });
+      }
+
+      const savedAt = saveSnapshot(projectId, remoteSnapshot);
+      setTimelineVersion(remote.timeline.version);
+      setTimelineSaveState('saved');
+      setLastSavedAt(savedAt ?? new Date(remote.timeline.updatedAt).getTime());
+      savedSignatureRef.current = remoteSignature;
+      captureBaselineRef.current?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, remoteRefreshToken, stateManager, setLastSavedAt, setTimelineSaveState, setTimelineVersion]);
 
   // Auto-save: debounced writer that mirrors the render-authoritative subset
   // of the store into the shared project timeline, with localStorage as a
@@ -723,6 +875,7 @@ const TimelineEditor: React.FC<Props> = ({
           const latest = useStore.getState();
           latest.setTimelineVersion(result.version);
           latest.setTimelineSaveState('saved');
+          savedSignatureRef.current = timelineSignature(snapshot);
           const savedAt = saveSnapshot(projectId, snapshot);
           if (savedAt != null) latest.setLastSavedAt(savedAt);
         })
@@ -744,6 +897,7 @@ const TimelineEditor: React.FC<Props> = ({
     };
     const unsub = useStore.subscribe((state, prev) => {
       if (!hasSeededRef.current) return;
+      if (suppressAutoSaveRef.current) return;
       // Only save when the render-authoritative subset actually changed.
       if (
         state.trackItemIds === prev.trackItemIds &&

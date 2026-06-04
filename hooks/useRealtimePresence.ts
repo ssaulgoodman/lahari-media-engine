@@ -32,6 +32,7 @@ export const useRealtimePresence = (
 ) => {
   const [agentOperations, setAgentOperations] = useState<Record<string, AgentOperationRow>>({});
   const [realtimeNotice, setRealtimeNotice] = useState<RealtimeNotice | null>(null);
+  const [timelineRefreshToken, setTimelineRefreshToken] = useState(0);
   const realtimeRefreshTimer = useRef<number | null>(null);
   const realtimeNoticeTimer = useRef<number | null>(null);
 
@@ -104,6 +105,7 @@ export const useRealtimePresence = (
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_storyboard_versions', filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_renders', filter: `project_id=eq.${projectId}` }, handleProjectChange)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'lahari_project_timelines', filter: `project_id=eq.${projectId}` }, () => {
+        setTimelineRefreshToken((token) => token + 1);
         setRealtimeNotice({ tone: 'updated', message: 'Timeline updated' });
         clearRealtimeNoticeLater();
       })
@@ -120,5 +122,5 @@ export const useRealtimePresence = (
     };
   }, [projectId, scheduleRealtimeProjectRefresh]);
 
-  return { agentOperations, realtimeNotice };
+  return { agentOperations, realtimeNotice, timelineRefreshToken };
 };
