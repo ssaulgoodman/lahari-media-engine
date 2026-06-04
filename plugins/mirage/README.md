@@ -17,6 +17,17 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 - Local notebook sync still uses `mint_cli_token` and the returned Mirage CLI command.
 - A future plugin/local bridge should own sync and uploads directly instead of asking the agent to reason about shell commands.
 
+## Local Install Test
+
+From this repo:
+
+```bash
+codex plugin marketplace add ./plugins
+codex plugin add mirage@mirage-local
+```
+
+Then start a new Codex thread. Plugin skills and MCP config are loaded at session start.
+
 ## Beta Onboarding Goal
 
 The artist experience should become:

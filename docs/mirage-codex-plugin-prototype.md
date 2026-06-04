@@ -43,6 +43,19 @@ The plugin does not yet include a custom local bridge or native auth flow. The M
 
 The agent should then use Mirage MCP, sync the workbench, and follow the packaged skills.
 
+## Local Install Test
+
+From the repo root:
+
+```bash
+codex plugin marketplace add ./plugins
+codex plugin add mirage@mirage-local
+```
+
+Then start a new Codex thread. Plugin skills and MCP config are loaded at session start, so the install is not a live-thread hot reload.
+
+If Codex asks for MCP auth, use the deployed Mirage `/connect` flow and set the plugin's `MIRAGE_MCP_TOKEN` value from the issued token. Native plugin-owned auth is a later slice.
+
 ## Next Plugin Slice
 
 After this prototype is validated locally:
