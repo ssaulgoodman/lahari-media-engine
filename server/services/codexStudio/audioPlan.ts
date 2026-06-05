@@ -271,8 +271,8 @@ export const applyCastVoice = async (
     voice_provider: input.voiceProvider,
     voice_id: input.voiceId.trim(),
     voice_name: input.voiceName?.trim() || null,
-    updated_at: new Date().toISOString(),
   });
+  await updateRows('projects', { id: project.id }, { updated_at: new Date().toISOString() });
   const updatedMember = {
     ...member,
     voiceProvider: input.voiceProvider,
