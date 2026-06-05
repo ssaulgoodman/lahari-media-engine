@@ -175,13 +175,12 @@ router.post('/:queueId/start', async (req, res) => {
       is_narrative: cached.cached_is_narrative ?? null,
       is_meditative: cached.cached_is_meditative ?? null,
       // Defaults aligned with constants/*.ts first-entry conventions.
-      // Image: Nano Banana Pro (gemini-3-pro) — strongest ref-image
-      // conditioning. Storyboard: Nano Banana 2 — cheapest board renderer.
-      // Video: Seedance 2.0 Fast — storyboard-mode workhorse. Pacing:
+      // Image + storyboard: Segmind Nano Banana 2. Video: Seedance 2.0
+      // Fast — storyboard-mode workhorse. Pacing:
       // 15s — matches Seedance's typical clip length so the script
       // planner generates one storyboard-controlled shot per scene
       // segment instead of fragmenting into short cuts.
-      image_model: 'gemini-3-pro',
+      image_model: 'nano-banana-2',
       storyboard_provider: 'nano-banana-2',
       video_model: 'seedance-2.0-fast',
       target_duration: 15,

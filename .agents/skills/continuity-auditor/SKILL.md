@@ -74,7 +74,7 @@ If you spot continuity drift in a generated video, decide:
 - **Prompt issue (cheap to fix)** — rewrite the visual_prompt or motion_prompt, regenerate. ~$0.05-0.80 per shot.
 - **Reference issue (medium cost)** — unlock and regenerate the character/env look, then regenerate dependent shots. Per look ~$0.02, per shot ~$0.05-0.80.
 - **Style issue (medium cost)** — if every shot drifts in the same way, the locked style is the cause. Unlock style, pick a different preset or generate a better visualization, then regenerate downstream.
-- **Model issue (cheap to test)** — try a different image model (nano-banana-pro vs nano-banana-2 vs gpt-image-2). One shot's worth of cost.
+- **Video model issue (cheap to test)** — if the still board/frame is right but motion keeps drifting, compare a different video model on one shot. Image generation is Segmind Nano Banana 2 only; fix image problems through prompt/reference changes.
 
 Don't immediately regenerate the video. Diagnose first — `render-triage` skill walks through this.
 

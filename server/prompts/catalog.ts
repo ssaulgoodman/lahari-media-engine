@@ -2,7 +2,7 @@
  * Prompt catalog — the read-only reference for every AI prompt in the pipeline.
  *
  * NOTE FOR FUTURE CHANGES: this file is hand-synced with the actual prompt
- * strings in services/claude.ts, services/imagen.ts, services/gemini.ts,
+ * strings in services/claude.ts, services/imagePrompts.ts, services/gemini.ts,
  * services/openai-script.ts, services/storyboard.ts,
  * services/seedance-storyboard-rd.ts, and routes/generate-video.ts. When you
  * tweak a prompt in the service, update its `template` here so the Prompts page
@@ -421,8 +421,8 @@ Use the refine_direction tool.`,
     id: 'character-look',
     name: 'Character look',
     stage: 'looks',
-    model: 'gemini-3-pro-image-preview',
-    modelLabel: 'Gemini 3 Pro Image',
+    model: 'nano-banana-2',
+    modelLabel: 'Segmind Nano Banana 2',
     triggeredBy: "Fires 3× in parallel when you click 'Generate look' on a character.",
     summary: 'Generates 3 reusable neutral character reference portraits — no props, no actions, plain background for reuse across shots.',
     variables: [
@@ -444,18 +444,18 @@ This is a REUSABLE CHARACTER REFERENCE — used across many different shots and 
 - Focus on: face, skin, expression, costume, ornaments, jewelry, crown, hair
 - Plain or softly blurred background — character isolated for reuse
 
-(Style DNA text REMOVED — Gemini matches the style image directly.)
+(Style DNA text removed — the renderer matches the style image directly.)
 
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
 Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
-    source: { file: 'server/services/imagen.ts', lines: '177-194' },
+    source: { file: 'server/services/segmind-image.ts', lines: 'generateNanoBanana2' },
   },
   {
     id: 'environment-look',
     name: 'Environment look',
     stage: 'looks',
-    model: 'gemini-3-pro-image-preview',
-    modelLabel: 'Gemini 3 Pro Image',
+    model: 'nano-banana-2',
+    modelLabel: 'Segmind Nano Banana 2',
     triggeredBy: "Fires 3× in parallel when you click 'Generate look' on an environment.",
     summary: 'Generates 3 wide establishing shots of the environment — empty, no characters.',
     variables: [
@@ -473,11 +473,11 @@ Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
 
 Wide establishing shot, full environment visible, empty scene.
 
-(Style DNA text REMOVED — Gemini matches the style image directly.)
+(Style DNA text removed — the renderer matches the style image directly.)
 
 One single image. No collage, no grid, no multiple panels. No text, no watermark.
 Avoid: overly AI/CGI look, excessive intricate detail, generic fantasy.`,
-    source: { file: 'server/services/imagen.ts', lines: '272-288' },
+    source: { file: 'server/services/segmind-image.ts', lines: 'generateNanoBanana2' },
   },
 
   // ─── Studio ───────────────────────────────────────────────────────
@@ -645,13 +645,13 @@ Panel 2 ...`,
     id: 'render-seedance-storyboard-image',
     name: 'Render Seedance storyboard image',
     stage: 'studio',
-    model: 'nano-banana-2 / nano-banana-pro / gpt-image-2',
+    model: 'nano-banana-2',
     modelLabel: 'Storyboard image provider (project storyboard_provider)',
     triggeredBy: "Fires when you click 'Board images' or per-shot 'Generate storyboard' after a saved prompt exists. Bulk button regenerates already-rendered (unlocked) boards too — only locked shots are skipped.",
-    summary: 'Image-only render step. Sends the saved storyboardPrompt to the selected storyboard provider with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Three provider options: nano-banana-2 (Segmind, default), nano-banana-pro (Google gemini-3-pro-image-preview), gpt-image-2 (OpenAI).',
+    summary: 'Image-only render step. Sends the saved storyboardPrompt to Segmind Nano Banana 2 with locked style/cast/environment refs. Cut plan is NOT sent — it is for the downstream Seedance video step only. Legacy stored provider keys normalize to nano-banana-2.',
     variables: [
       { name: 'storyboardPrompt', description: 'Saved image-render prompt on the shot. Only field required for image gen.' },
-      { name: 'storyboardProvider', description: 'Project storyboard provider: nano-banana-2 | nano-banana-pro | gpt-image-2' },
+      { name: 'storyboardProvider', description: 'Project storyboard provider, normalized to nano-banana-2' },
       { name: 'referenceImages', description: 'Locked style, cast, environment refs (filtered by shot.excluded_refs.storyboard). When shot.use_prev_storyboard_ref is true, the prev shot\'s locked storyboard is also attached. In edit_image refine mode, the previous storyboard image is prepended; an artist-attached refinement ref is appended last.' },
       { name: 'artistNote', description: 'Only used in edit_image mode as an image edit instruction.' },
     ],
@@ -706,8 +706,8 @@ Artist image edit note:
     id: 'shot-start-frame',
     name: 'Shot start frame',
     stage: 'studio',
-    model: 'gemini-3-pro-image-preview',
-    modelLabel: 'Gemini 3 Pro Image',
+    model: 'nano-banana-2',
+    modelLabel: 'Segmind Nano Banana 2',
     triggeredBy: "Fires when you click the frame icon on a shot or 'Generate all frames'.",
     summary: "Generates the shot's start frame using the full reference chain: characters → style → environment → continuity.",
     variables: [
@@ -724,7 +724,7 @@ Artist image edit note:
 
 Preserve character identity from character references. Match environment from environment reference. Match the visual style EXACTLY from the style reference image — the style image is the ground truth.
 
-(Style DNA text REMOVED — Gemini matches style image directly.)
+(Style DNA text removed — the renderer matches style image directly.)
 
 Reference chain (numbered images):
   Image 1..N = Character: {name}
@@ -734,7 +734,7 @@ Reference chain (numbered images):
   Image N+4 = PREVIOUS ATTEMPT (if regen with feedback)
 
 Priority: character identity > continuity > environment > style.`,
-    source: { file: 'server/services/imagen.ts', lines: '366-435' },
+    source: { file: 'server/services/segmind-image.ts', lines: 'generateShotStartFrame' },
   },
   {
     id: 'refine-frame-prompt',

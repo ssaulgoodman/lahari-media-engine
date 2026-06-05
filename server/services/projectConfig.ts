@@ -3,8 +3,8 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { getSB, T } from '../database.js';
 import type { getFullProject } from '../routes/projects.js';
-import { IMAGE_MODELS } from '../../constants/imageModels.js';
-import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { IMAGE_MODELS, getImageModel } from '../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS, getStoryboardProvider } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
@@ -152,8 +152,8 @@ const projectField = (project: any, camelKey: string, snakeKey: string): string 
 
 const basePreferences = (project: Project): Required<ProjectPreferences> => ({
   textProvider: projectField(project, 'textProvider', 'text_provider') || TEXT_PROVIDERS[0].key,
-  imageModel: projectField(project, 'imageModel', 'image_model') || IMAGE_MODELS[0].key,
-  storyboardProvider: projectField(project, 'storyboardProvider', 'storyboard_provider') || STORYBOARD_PROVIDERS[0].key,
+  imageModel: getImageModel(projectField(project, 'imageModel', 'image_model')).key,
+  storyboardProvider: getStoryboardProvider(projectField(project, 'storyboardProvider', 'storyboard_provider')).key,
   videoModel: projectField(project, 'videoModel', 'video_model') || VIDEO_MODELS[0].key,
 });
 

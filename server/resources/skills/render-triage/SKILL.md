@@ -46,7 +46,7 @@ Climb only as high as you need to. Each step costs more.
 
 **Step 2: Add/remove refs (cheap).** Adjust which references the shot pulls. Toggle `useNextAsEndFrame`, attach a manual reference image. Regenerate. Same cost.
 
-**Step 3: Switch the model (one shot's worth).** Try a different image model (nano-banana-2 vs nano-banana-pro vs gpt-image-2) or video model (veo-3.1 vs seedance-2.0-fast). Run one shot to compare. Same cost.
+**Step 3: Switch the video model when motion is the problem (one shot's worth).** Image generation is Segmind Nano Banana 2 only, so image failures should be fixed through prompt/reference changes. If the still board/frame is right but motion keeps drifting, compare a different video model on one shot.
 
 **Step 4: Refine the locked reference (medium).** Unlock the character/environment/style. Generate a better candidate. Lock the new one. Mark dependent shots stale. Regenerate dependents. Per-look ~$0.02, per dependent shot ~$0.05-0.80.
 
@@ -58,7 +58,7 @@ Climb only as high as you need to. Each step costs more.
 
 **Refining the prompt when the problem is the reference.** If the character's face is wrong in 5 shots, refining the per-shot prompt won't fix it. The reference is wrong.
 
-**Refining the reference when the problem is the model.** If you've regenerated the reference 3 times and it still looks generic, try a different image model for the reference generation.
+**Refining the reference when the prompt/reference is the problem.** If you've regenerated the reference 3 times and it still looks generic, tighten the generation prompt, remove confusing refs, or pick a stronger locked style before spending again.
 
 **Calling it a taste issue when it's a prompt issue.** If you haven't tried a more specific prompt, you don't know yet that the taste is wrong. Refine first, judge second.
 

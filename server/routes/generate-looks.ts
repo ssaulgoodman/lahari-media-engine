@@ -9,7 +9,7 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { buildCharacterPrompt, buildEnvironmentPrompt } from '../services/imagen.js';
+import { buildCharacterPrompt, buildEnvironmentPrompt } from '../services/imagePrompts.js';
 import { refineFramePrompt } from '../services/claude.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';

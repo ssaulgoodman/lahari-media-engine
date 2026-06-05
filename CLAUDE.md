@@ -24,16 +24,16 @@ Useful checks: `npm run build`, `npx tsc --noEmit`, `git diff --check`. There is
 
 ## Env Vars
 
-- `GEMINI_API_KEY` - Gemini image/audio/vision and Gemini text-provider option.
+- `GEMINI_API_KEY` - Gemini audio/vision and Gemini text-provider option. Not used for active image/video generation.
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` - GPT-5.5 text-provider option, `gpt-image-2` storyboard provider, optional GPT script-writer experiment.
+- `OPENAI_API_KEY` - GPT-5.5 text-provider option and optional GPT script-writer experiment. Not used for active image/video generation.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces script generation to GPT-5.5 globally. The normal text-provider picker does not route script writing.
-- `SEGMIND_API_KEY` - video generation and Nano Banana 2 image renderer.
+- `SEGMIND_API_KEY` - all active image/video generation: Nano Banana 2 images/storyboards/looks/frames and Seedance/Veo video.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` - sibling renderer service and `x-renderer-secret`.
 - `RENDER_ENGINE` (optional, default `ffmpeg`) - renderer engine. FFmpeg fast path falls back to Remotion when ineligible. Defaults: `FFMPEG_PRESET=veryfast`, `FFMPEG_CRF=23`, `FFMPEG_AUDIO_BITRATE=192k`.
-- Vertex fallback: `GCP_PROJECT_ID=turiya-462513`, `GCP_LOCATION=us-central1`, `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Only Veo fallback / legacy extraction paths need this.
+- `GCP_PROJECT_ID`, `GCP_LOCATION`, `GOOGLE_APPLICATION_CREDENTIALS_JSON` - legacy only. Vertex video fallback is removed from the active path.
 
 Production: https://lahari-media-engine-production.up.railway.app
 
@@ -83,10 +83,9 @@ Render: `StepRender.tsx` posts the render-authoritative timeline snapshot to `/a
 | Audio transcription / structure | Gemini 3 Pro | `gemini.ts` |
 | Concept/style/meaning/refines/storyboard planner | project `text_provider`: `claude-opus`, `gpt-5.5`, `gemini-3-pro` | `text-provider.ts` |
 | Script writer | Claude Opus direct; optional GPT env/body experiment | `claude.ts`, `openai-script.ts` |
-| Image default | Gemini 3 Pro Image ("Nano Banana Pro") with flash fallback | `imagen.ts` |
-| Image alternates | `nano-banana-2`, `gpt-image-2` | `segmind-image.ts`, `openai-image.ts` |
-| Storyboard image | project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, `gpt-image-2` | `storyboard.ts` |
-| Video | Segmind Seedance/Veo variants, with Vertex fallback for Veo infra/billing only | `video-provider.ts`, `segmind.ts` |
+| Image generation | Segmind Nano Banana 2 for style refs, character/env looks, start/end frames | `segmind-image.ts`, `image-provider.ts` |
+| Storyboard image | Segmind Nano Banana 2; legacy stored provider keys normalize to `nano-banana-2` | `storyboard.ts` |
+| Video | Segmind Seedance/Veo variants | `video-provider.ts`, `segmind.ts` |
 
 Text-provider routing does **not** include script writing. `planScenes`, `refineScript`, and `writeShotPrompts` stay on Claude Opus because they rely on extended thinking and validation/retry semantics.
 
@@ -111,7 +110,7 @@ Storyboard mode ignores the old extracted-frame continuity chain and does not bl
 
 ## Video Generation
 
-All video generation tries Segmind first. Veo may fall back to Vertex for infra/billing failures when configured. Seedance never falls back to Vertex.
+All active video generation goes through Segmind. There is no active Vertex fallback; Segmind credit, rate-limit, model, or safety failures should surface honestly for the artist/operator to fix.
 
 Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
 

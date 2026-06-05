@@ -198,11 +198,11 @@ Claude receives explicit structural guidance based on the chosen mode:
 
 ### 4b: Visualize
 
-**Source:** [`server/services/imagen.ts:149`](../server/services/imagen.ts#L149) (buildStylePrompt) · [`server/services/imagen.ts:153`](../server/services/imagen.ts#L153) (generateSingleStyleImage) · Route: `server/routes/generate-style.ts` → `POST /:id/visualize-style`
+**Source:** [`server/services/imagePrompts.ts`](../server/services/imagePrompts.ts) (prompt builder) · [`server/services/segmind-image.ts`](../server/services/segmind-image.ts) (generateSingleStyleImage) · Route: `server/routes/generate-style.ts` → `POST /:id/visualize-style`
 
 | | |
 |---|---|
-| **Model** | Gemini 3 Pro Image (imagen.ts → `generateSingleStyleImage`) |
+| **Model** | Segmind Nano Banana 2 (`segmind-image.ts` → `generateSingleStyleImage`) |
 | **Input** | style description + subject |
 | **Output** | Style reference image |
 | **Artist control** | `style_generation_prompt` — visible and editable |
@@ -269,11 +269,11 @@ The old `enrichStyleDNA` Claude vision call was deleted on 2026-04-24 — it was
 
 ## Step 5: Characters
 
-**Source:** [`server/services/imagen.ts:177`](../server/services/imagen.ts#L177) (buildCharacterPrompt) · [`server/services/imagen.ts:196`](../server/services/imagen.ts#L196) (generateCharacterLooks) · Route: `server/routes/generate-looks.ts` → `POST /:id/generate-looks`
+**Source:** [`server/services/imagePrompts.ts`](../server/services/imagePrompts.ts) (prompt builder) · [`server/services/segmind-image.ts`](../server/services/segmind-image.ts) (generateCharacterLooks) · Route: `server/routes/generate-looks.ts` → `POST /:id/generate-looks`
 
 | | |
 |---|---|
-| **Model** | Gemini 3 Pro Image (imagen.ts → `generateCharacterLooks`), fallback Nano Banana 2 on 503 |
+| **Model** | Segmind Nano Banana 2 (`segmind-image.ts` → `generateCharacterLooks`) |
 | **Input** | description + style image (no style DNA text) + optional user ref image |
 | **Output** | 3 reusable neutral reference portraits → pick one → locked reference image |
 | **Key design** | Portraits are REUSABLE — neutral pose, no props in hands, no actions, plain/blurred background. Focus on identity: face, costume, ornaments, crown. |
@@ -286,7 +286,7 @@ The old `enrichStyleDNA` Claude vision call was deleted on 2026-04-24 — it was
 - Prompt textarea (editable, saves on blur)
 - Explicit Generate/Regenerate button
 - Refine section (plain text feedback → Claude rewrites prompt → artist reviews → then generates)
-- Style image is ground truth — no style DNA text in Gemini prompts
+- Style image is ground truth — no style DNA text in image prompts
 
 **Status: DONE**
 
@@ -294,11 +294,11 @@ The old `enrichStyleDNA` Claude vision call was deleted on 2026-04-24 — it was
 
 ## Step 6: Environments
 
-**Source:** [`server/services/imagen.ts:272`](../server/services/imagen.ts#L272) (buildEnvironmentPrompt) · [`server/services/imagen.ts:291`](../server/services/imagen.ts#L291) (generateEnvironmentLooks) · Route: `server/routes/generate-looks.ts` → `POST /:id/generate-environment-look`
+**Source:** [`server/services/imagePrompts.ts`](../server/services/imagePrompts.ts) (prompt builder) · [`server/services/segmind-image.ts`](../server/services/segmind-image.ts) (generateEnvironmentLooks) · Route: `server/routes/generate-looks.ts` → `POST /:id/generate-environment-look`
 
 | | |
 |---|---|
-| **Model** | Gemini 3 Pro Image (imagen.ts → `generateEnvironmentLooks`) |
+| **Model** | Segmind Nano Banana 2 (`segmind-image.ts` → `generateEnvironmentLooks`) |
 | **Input** | description + style image (no style DNA text) + optional user ref image |
 | **Output** | 3 look variants → pick one → locked reference image |
 | **Artist control** | Same unified toolkit as characters |
@@ -354,7 +354,7 @@ The prompt now stays intentionally lean:
 | | |
 |---|---|
 | **Planner model** | Routes through `project.text_provider` (refine tier) — Claude Sonnet 4.6 (default), GPT-5.5, or Gemini 3.1 Flash. Was hardcoded to OpenAI Responses + `gpt-5.5` before the text-provider picker shipped (2026-05-12). |
-| **Renderer model** | Project `storyboard_provider`: `nano-banana-2` (Segmind, default), `nano-banana-pro` (Google `gemini-3-pro-image-preview`), or `gpt-image-2` (OpenAI). |
+| **Renderer model** | Segmind Nano Banana 2. Legacy stored `storyboard_provider` keys normalize to `nano-banana-2`. |
 | **Input** | Exact shot direction + duration + scene context + musical cue + locked style/cast/environment refs. **Per-shot continuity (opt-in):** when `shot.use_prev_storyboard_ref` is true the prev shot's locked storyboard is attached as vision input to the planner AND as `@imageN` to the renderer. Separate `shot.include_prev_cut_plan` checkbox (nullable; smart-default checked when `continuity_from === 'prev_shot'`) prepends prev shot's cut plan as text context to the planner. |
 | **Saved outputs before image** | `shot.storyboard_prompt` (image-render prompt with per-panel actions baked INLINE — the image model knows what to draw per panel from this field alone) + `shot.storyboard_cut_plan` (text motion/cut guide for Seedance) + `storyboard_prompt_status` |
 | **Rendered output** | Ordered storyboard image/version in `lahari_storyboard_versions`, with provider/model metadata |
@@ -383,13 +383,13 @@ The prompt now stays intentionally lean:
 
 ## Step 8: Frame Generation (per shot)
 
-**Source:** [`server/services/imagen.ts` → `generateShotStartFrame`](../server/services/imagen.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
+**Source:** [`server/services/segmind-image.ts` → `generateShotStartFrame`](../server/services/segmind-image.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-image`
 
 Refine: [`server/services/claude.ts`](../server/services/claude.ts) (`refineFramePrompt`) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-prompt`
 
 | | |
 |---|---|
-| **Model** | Gemini 3 Pro Image (imagen.ts → `generateShotStartFrame`) |
+| **Model** | Segmind Nano Banana 2 (`segmind-image.ts` → `generateShotStartFrame`) |
 | **Input** | visual_prompt + character refs + style image + env ref + continuity frame + feedback |
 | **Output** | Start frame image |
 | **Artist control** | Full — edit visual_prompt in "First frame" tab, @mention cast/env/style, refine with plain text feedback |
@@ -405,13 +405,13 @@ Refine: [`server/services/claude.ts`](../server/services/claude.ts) (`refineFram
 
 ## Step 9: End Frame (per shot)
 
-**Source:** [`server/services/imagen.ts` → `generateShotEndFrame`](../server/services/imagen.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-end-frame`
+**Source:** [`server/services/segmind-image.ts` → `generateShotEndFrame`](../server/services/segmind-image.ts) · Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/generate-end-frame`
 
 Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/refine-end-frame-prompt`
 
 | | |
 |---|---|
-| **Model** | Gemini 3 Pro Image (imagen.ts → `generateShotEndFrame`) |
+| **Model** | Segmind Nano Banana 2 (`segmind-image.ts` → `generateShotEndFrame`) |
 | **Input** | start frame + end_visual_prompt + motion_prompt + style image + optional refs + feedback |
 | **Output** | End frame image (target for video gen) |
 | **Artist control** | `end_visual_prompt` — visible/editable in "Last frame" tab, AI refine with feedback |

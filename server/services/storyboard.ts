@@ -2,9 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import { incrementColumn, insertRow, selectAll, selectOne, updateRows } from '../database.js';
 import { storageUrl } from '../storage.js';
-import { generateOpenAIImageFromPrompt, OpenAIRefImage } from './openai-image.js';
 import { generateNanoBanana2 } from './segmind-image.js';
-import { generateImageWithRefs, imagePartFromPath, type ContentPart } from './imagen.js';
 import { generateText } from './text-provider.js';
 import { getTextProvider, type TextProviderKey } from '../../constants/textProviders.js';
 import { buildStoryboardPrompt, StoryboardPromptVariant, StoryboardRdInput } from './seedance-storyboard-rd.js';
@@ -24,16 +22,22 @@ type StoryboardRefMeta = {
 };
 export type { StoryboardRefMeta };
 
+type StoryboardRefImage = {
+  label: string;
+  imagePath?: string;
+  inlineData?: { mimeType: string; data: string };
+};
+
 /** Filter parallel refs + refMeta arrays by the shot's per-tab exclusion list.
  *  Excluded keys correspond to refMeta.excludableKey; non-excludable refs
  *  (artist-uploaded refine refs etc.) always pass through. */
 export const applyRefExclusion = (
-  refs: OpenAIRefImage[],
+  refs: StoryboardRefImage[],
   refMeta: StoryboardRefMeta[],
   excludedKeys: string[],
-): { refs: OpenAIRefImage[]; refMeta: StoryboardRefMeta[] } => {
+): { refs: StoryboardRefImage[]; refMeta: StoryboardRefMeta[] } => {
   if (!excludedKeys.length) return { refs, refMeta };
-  const filteredRefs: OpenAIRefImage[] = [];
+  const filteredRefs: StoryboardRefImage[] = [];
   const filteredMeta: StoryboardRefMeta[] = [];
   for (let i = 0; i < refs.length; i++) {
     const key = refMeta[i]?.excludableKey;
@@ -62,7 +66,7 @@ type StoryboardContext = {
   scene: any;
   shot: any;
   input: StoryboardRdInput;
-  refs: OpenAIRefImage[];
+  refs: StoryboardRefImage[];
   refMeta: StoryboardRefMeta[];
 };
 
@@ -117,7 +121,7 @@ const buildMusicalCue = (project: any, scene: any): string | undefined => {
 };
 
 const addRef = (
-  refs: OpenAIRefImage[],
+  refs: StoryboardRefImage[],
   refMeta: StoryboardRefMeta[],
   label: string,
   asset: any,
@@ -126,12 +130,6 @@ const addRef = (
   if (!asset?.file_path) return;
   refs.push({ label, imagePath: asset.file_path });
   refMeta.push({ label, assetId: asset.id, filePath: asset.file_path, excludableKey });
-};
-
-const estimateStoryboardCost = (imageCount: number): number => {
-  const configured = Number(process.env.OPENAI_STORYBOARD_RENDER_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0);
-  if (configured > 0) return configured * Math.max(1, imageCount);
-  return 0.12 * Math.max(1, imageCount);
 };
 
 const estimateStoryboardPlanCost = (): number => {
@@ -155,7 +153,7 @@ const extractJsonObject = (text: string): any => {
 };
 
 const withArtistRef = (
-  refs: OpenAIRefImage[],
+  refs: StoryboardRefImage[],
   refMeta: StoryboardRefMeta[],
   artistReferenceImagePath?: string,
 ) => {
@@ -210,7 +208,7 @@ export const loadStoryboardContext = async (projectId: string, shotId: string): 
   const activeCast = cast.filter((member: any) => castIds.includes(member.id));
   const environment = shot.environment_id ? await selectOne('environments', { id: shot.environment_id }) : null;
 
-  const refs: OpenAIRefImage[] = [];
+  const refs: StoryboardRefImage[] = [];
   const refMeta: StoryboardRefMeta[] = [];
 
   if (project.style_asset_id) {
@@ -475,53 +473,9 @@ const renderWithProvider = async (
   providerKey: string | undefined,
   prompt: string,
   aspectRatio: string,
-  refs: OpenAIRefImage[],
+  refs: StoryboardRefImage[],
 ): Promise<{ storagePath: string; model: string; provider: string; costEstimate: number; size?: string }> => {
   const provider = getStoryboardProvider(providerKey);
-
-  if (provider.provider === 'openai') {
-    const [storagePath] = await generateOpenAIImageFromPrompt(prompt, { aspectRatio, refs, count: 1 });
-    return {
-      storagePath,
-      model: provider.runtimeModel,
-      provider: provider.key,
-      costEstimate: estimateStoryboardCost(1),
-      size: aspectRatio === '9:16' ? '1024x1536' : aspectRatio === '1:1' ? '1024x1024' : '1536x1024',
-    };
-  }
-
-  if (provider.provider === 'google') {
-    // Nano Banana Pro (gemini-3-pro-image-preview) — multimodal API. The
-    // existing generateImageWithRefs helper consumes a `parts` array of
-    // text + inlineData segments. Translate the storyboard ref shape (text
-    // label + filepath or inlineData) into that protocol. Numbered labels
-    // ("Image N = ...") match the convention the keyframe pipeline uses so
-    // the model interprets refs the same way across stages.
-    const parts: ContentPart[] = [{ text: prompt }];
-    for (let i = 0; i < refs.length; i++) {
-      const ref = refs[i];
-      parts.push({ text: `Image ${i + 1} = ${ref.label}` });
-      if (ref.imagePath) {
-        parts.push(await imagePartFromPath(ref.imagePath));
-      } else if (ref.inlineData) {
-        parts.push({ inlineData: { mimeType: ref.inlineData.mimeType, data: ref.inlineData.data } });
-      }
-    }
-    // Pass the spec's runtimeModel so the artist's exact pick runs (no
-    // Pro→Flash auto-fallback in explicit-model mode). When the registry
-    // flips a model between providers — e.g. `nano-banana-2` was Segmind,
-    // now Google `gemini-3.1-flash-image-preview` — this guarantees the
-    // dispatched model matches the label.
-    const storagePath = await generateImageWithRefs(parts, aspectRatio, provider.runtimeModel);
-    return {
-      storagePath,
-      model: provider.runtimeModel,
-      provider: provider.key,
-      // Gemini image gen is per-image priced; matches the rough cost band
-      // we use for shot frame gen.
-      costEstimate: Number(process.env.GEMINI_STORYBOARD_RENDER_COST_ESTIMATE || 0.04),
-    };
-  }
 
   const imagePath = await generateNanoBanana2(prompt, aspectRatio, refs);
   return {

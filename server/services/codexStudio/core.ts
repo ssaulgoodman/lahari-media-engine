@@ -3,8 +3,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { selectAll, selectColumns } from '../../database.js';
 import type { getFullProject } from '../../routes/projects.js';
-import { IMAGE_MODELS } from '../../../constants/imageModels.js';
-import { STORYBOARD_PROVIDERS } from '../../../constants/storyboardProviders.js';
+import { IMAGE_MODELS, getImageModel } from '../../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS, getStoryboardProvider } from '../../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../../constants/textProviders.js';
 import { VIDEO_MODELS } from '../../../constants/videoModels.js';
 
@@ -221,8 +221,8 @@ export const listProjects = async (limitArg?: string) => {
       songType: row.song_type || null,
       isNarrative: row.is_narrative ?? null,
       isMeditative: row.is_meditative ?? null,
-      imageModel: row.image_model || IMAGE_MODELS[0].key,
-      storyboardProvider: row.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
+      imageModel: getImageModel(row.image_model).key,
+      storyboardProvider: getStoryboardProvider(row.storyboard_provider).key,
       videoModel: row.video_model || VIDEO_MODELS[0].key,
       textProvider: row.text_provider || TEXT_PROVIDERS[0].key,
       createdAt: row.created_at,
