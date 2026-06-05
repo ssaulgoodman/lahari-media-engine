@@ -28,6 +28,8 @@ const baseProject = async (project: Project) => {
     workflowKey: workflow.key,
     workflowLabel: workflow.label,
     seedKind: project.seedKind || workflow.primarySeed,
+    aspectRatio: project.aspectRatio || '16:9',
+    videoResolution: project.videoResolution || '720p',
     effectivePreferences: {
       textProvider: preferences.textProvider,
       imageModel: preferences.imageModel,
