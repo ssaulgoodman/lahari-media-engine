@@ -83,10 +83,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         {PIPELINE_STEPS.map((step) => {
           const isActive = currentStep === step.id;
           const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
+          const hasShotPlan = !!project && project.scenes.some(s => s.shots.length > 0);
           const isAccessible =
             step.id === AppStep.UPLOAD ||
             (project && step.id === AppStep.BLUEPRINT) ||
-            (project && step.id === AppStep.STUDIO && project.scenes.length > 0 && ['characters_locked', 'environments_locked', 'in_production', 'completed'].includes(project.status)) ||
+            (project && step.id === AppStep.STUDIO && hasShotPlan) ||
             (project && step.id === AppStep.RENDER && hasRenderableContent);
 
           return (

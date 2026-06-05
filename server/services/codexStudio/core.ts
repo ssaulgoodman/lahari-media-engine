@@ -297,17 +297,20 @@ export const missingReferenceNames = (project: Project) => {
 };
 
 export const usesStoryboardWorkflow = (project: Project): boolean => {
-  if (project.scenes.some((scene) => scene.shots.some((shot) => shot.workflowMode === 'storyboard'))) {
+  const shots = project.scenes.flatMap((scene) => scene.shots);
+  if (shots.some((shot) => shot.workflowMode === 'storyboard')) {
     return true;
   }
+  const nonKeyframeShots = shots.filter((shot) => shot.workflowMode !== 'keyframe');
+  if (!nonKeyframeShots.length && shots.length > 0) return false;
   return project.videoModel?.startsWith('seedance')
-    || project.scenes.some((scene) => scene.shots.some((shot) => (
+    || nonKeyframeShots.some((shot) => (
       !!shot.storyboardPrompt
       || !!shot.storyboardUrl
       || !!shot.storyboardLocked
       || shot.storyboardPromptStatus === 'loading'
       || shot.storyboardStatus === 'loading'
-    )));
+    ));
 };
 
 export const shotWorkflowMode = (project: Project, shot: ProjectShot): 'storyboard' | 'keyframe' => {
