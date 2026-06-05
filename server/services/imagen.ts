@@ -289,10 +289,10 @@ export const generateCharacterLooks = async (
 
   parts.push({ text: prompt });
 
-  const singleCall = async (): Promise<string | null> => {
+  const singleCall = async (modelName: string): Promise<string | null> => {
     try {
       const response = await ai.models.generateContent({
-        model,
+        model: modelName,
         contents: [{ role: 'user', parts }],
         config: {
           responseModalities: ['IMAGE'],
@@ -303,14 +303,27 @@ export const generateCharacterLooks = async (
       const paths = await extractImages(response);
       return paths[0] || null;
     } catch (err) {
-      console.error('[imagen] Character variant failed:', err);
+      console.error(`[imagen] Character variant failed (${modelName}):`, err);
       return null;
     }
   };
 
-  const results = await Promise.all(Array.from({ length: N }, () => singleCall()));
-  const paths = results.filter((p): p is string => p !== null);
-  console.log(`[imagen] Character looks (${model}): got ${paths.length}/${N} images via parallel calls`);
+  let activeModel = model;
+  let results = await Promise.all(Array.from({ length: N }, () => singleCall(activeModel)));
+  let paths = results.filter((p): p is string => p !== null);
+  if (paths.length === 0) {
+    const fallback = DEFAULT_IMAGE_MODELS.find((candidate) => candidate !== activeModel);
+    if (fallback) {
+      console.warn(`[imagen] Character looks (${activeModel}) returned 0/${N}; retrying with ${fallback}`);
+      activeModel = fallback;
+      results = await Promise.all(Array.from({ length: N }, () => singleCall(activeModel)));
+      paths = results.filter((p): p is string => p !== null);
+    }
+  }
+  console.log(`[imagen] Character looks (${activeModel}): got ${paths.length}/${N} images via parallel calls`);
+  if (paths.length === 0) {
+    throw new Error(`Image provider returned zero character look images after ${N} attempts.`);
+  }
   return paths;
 };
 
@@ -383,10 +396,10 @@ export const generateEnvironmentLooks = async (
 
   parts.push({ text: prompt });
 
-  const singleCall = async (): Promise<string | null> => {
+  const singleCall = async (modelName: string): Promise<string | null> => {
     try {
       const response = await ai.models.generateContent({
-        model,
+        model: modelName,
         contents: [{ role: 'user', parts }],
         config: {
           responseModalities: ['IMAGE'],
@@ -397,14 +410,27 @@ export const generateEnvironmentLooks = async (
       const paths = await extractImages(response);
       return paths[0] || null;
     } catch (err) {
-      console.error('[imagen] Environment variant failed:', err);
+      console.error(`[imagen] Environment variant failed (${modelName}):`, err);
       return null;
     }
   };
 
-  const results = await Promise.all(Array.from({ length: N }, () => singleCall()));
-  const paths = results.filter((p): p is string => p !== null);
-  console.log(`[imagen] Environment looks (${model}): got ${paths.length}/${N} images via parallel calls`);
+  let activeModel = model;
+  let results = await Promise.all(Array.from({ length: N }, () => singleCall(activeModel)));
+  let paths = results.filter((p): p is string => p !== null);
+  if (paths.length === 0) {
+    const fallback = DEFAULT_IMAGE_MODELS.find((candidate) => candidate !== activeModel);
+    if (fallback) {
+      console.warn(`[imagen] Environment looks (${activeModel}) returned 0/${N}; retrying with ${fallback}`);
+      activeModel = fallback;
+      results = await Promise.all(Array.from({ length: N }, () => singleCall(activeModel)));
+      paths = results.filter((p): p is string => p !== null);
+    }
+  }
+  console.log(`[imagen] Environment looks (${activeModel}): got ${paths.length}/${N} images via parallel calls`);
+  if (paths.length === 0) {
+    throw new Error(`Image provider returned zero environment look images after ${N} attempts.`);
+  }
   return paths;
 };
 

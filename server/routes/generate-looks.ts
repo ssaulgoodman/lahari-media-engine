@@ -20,6 +20,13 @@ import { getProjectPromptOverride } from '../services/projectConfig.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+const assertGeneratedLooks = (paths: string[], label: string) => {
+  if (paths.length > 0) return;
+  const err: any = new Error(`${label} generated zero image candidates. Try again or switch the Image model.`);
+  err.statusCode = 502;
+  throw err;
+};
+
 // Mark shots stale when a character or environment reference changes
 const markDependentShotsStale = async (projectId: string, type: 'cast' | 'env', entityId: string) => {
   const scenes = await selectAll('scenes', { project_id: projectId });
@@ -154,6 +161,7 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       renderPrompt,
       getImageGenerationModelName(project.image_model),
     );
+    assertGeneratedLooks(imagePaths, `Character look generation for ${member.name}`);
     const durationMs = Date.now() - t0;
 
     // Save as assets and return URLs
@@ -449,6 +457,7 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       renderPrompt,
       getImageGenerationModelName(project.image_model),
     );
+    assertGeneratedLooks(imagePaths, `Environment look generation for ${env.name}`);
     const durationMs = Date.now() - t0;
 
     const looks: { id: string; url: string }[] = [];

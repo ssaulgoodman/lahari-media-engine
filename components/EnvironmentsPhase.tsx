@@ -44,6 +44,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
     onSetEnvGenerating(prev => new Set(prev).add(envId));
     try {
       const result = await api.generateEnvironmentLook(project.id, envId, undefined, refImage, note);
+      if (!result.looks?.length) throw new Error('No environment look candidates were returned.');
       onSetEnvLooks(prev => ({ ...prev, [envId]: result.looks || [] }));
       onSetProject?.(result.project);
     } catch (err: any) {

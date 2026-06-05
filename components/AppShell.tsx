@@ -326,6 +326,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     setError(null);
     try {
       const result = await api.generateLooks(project.id, castMemberId, feedback, undefined, refImage);
+      if (!result.looks?.length) throw new Error('No character look candidates were returned.');
       setLookCandidates(prev => ({ ...prev, [castMemberId]: result.looks }));
       setProject(result.project);
     } catch (err: any) {
