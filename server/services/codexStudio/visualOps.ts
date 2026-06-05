@@ -18,6 +18,13 @@ const projectImageModel = (project: Project, modelOverride?: ImageModelOverride)
   modelOverride?.imageModel || project.imageModel
 );
 
+const assertGeneratedLooks = (paths: string[], label: string) => {
+  if (paths.length > 0) return;
+  const err: any = new Error(`${label} generated zero image candidates. Try again or switch the Image model.`);
+  err.statusCode = 502;
+  throw err;
+};
+
 const requireAsset = async (projectId: string, assetId: string) => {
   const asset = await selectOne('assets', { id: assetId });
   if (!asset || asset.project_id !== projectId) throw new Error('Asset not found or does not belong to this project');
@@ -214,6 +221,7 @@ export const generateCharacterLook = async (
     renderPrompt,
     modelName,
   );
+  assertGeneratedLooks(imagePaths, `Character look generation for ${member.name}`);
 
   const looks: { id: string; url: string }[] = [];
   for (let i = 0; i < imagePaths.length; i += 1) {
@@ -350,6 +358,7 @@ export const generateEnvironmentLook = async (
     renderPrompt,
     modelName,
   );
+  assertGeneratedLooks(imagePaths, `Environment look generation for ${environment.name}`);
 
   const looks: { id: string; url: string }[] = [];
   for (let i = 0; i < imagePaths.length; i += 1) {
