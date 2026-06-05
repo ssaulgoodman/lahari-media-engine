@@ -89,11 +89,7 @@ export const planGenerateStoryboard = (project: Project, shotId: string, modelOv
     'Set video_status=stale so video is reviewed/regenerated against the new board.',
     willOverwrite ? 'Replace the active storyboard pointer; old board remains in version history.' : null,
   ].filter(Boolean) as string[];
-  const costEstimate = roundCost(provider.provider === 'segmind'
-    ? Number(process.env.SEGMIND_STORYBOARD_RENDER_COST_ESTIMATE || 0.03)
-    : provider.provider === 'google'
-    ? Number(process.env.GEMINI_STORYBOARD_RENDER_COST_ESTIMATE || 0.04)
-    : Number(process.env.OPENAI_STORYBOARD_RENDER_COST_ESTIMATE || process.env.OPENAI_STORYBOARD_COST_ESTIMATE || 0.12));
+  const costEstimate = roundCost(Number(process.env.SEGMIND_STORYBOARD_RENDER_COST_ESTIMATE || 0.03));
 
   return {
     kind: 'lahari.generation_plan.storyboard',

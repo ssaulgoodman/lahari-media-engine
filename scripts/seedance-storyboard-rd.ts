@@ -9,7 +9,7 @@ import OpenAI from 'openai';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { downloadToTmp, uploadFromTmp, storageUrl, saveBuffer } from '../server/storage.js';
-import { generateOpenAIImageWithResponses, OpenAIRefImage } from '../server/services/openai-image.js';
+import { generateNanoBanana2 } from '../server/services/segmind-image.js';
 import { planScenes } from '../server/services/claude.js';
 import { getModelMinDuration } from '../server/services/segmind.js';
 import {
@@ -25,6 +25,11 @@ import {
 } from '../server/services/seedance-storyboard-rd.js';
 
 type Args = Record<string, string | boolean>;
+type StoryboardRefImage = {
+  label: string;
+  imagePath?: string;
+  inlineData?: { mimeType: string; data: string };
+};
 
 const OUT_DIR = '.lahari/seedance-rd';
 const SEGMIND_BASE = 'https://api.segmind.com/v1';
@@ -230,8 +235,8 @@ const extractAudioSegment = async (project: any, startSec: number, durationSec: 
   return uploadFromTmp(localOut, 'audio', 'mp3');
 };
 
-const buildStoryboardRefs = (ctx: Awaited<ReturnType<typeof loadShotContext>>): OpenAIRefImage[] => {
-  const refs: OpenAIRefImage[] = [];
+const buildStoryboardRefs = (ctx: Awaited<ReturnType<typeof loadShotContext>>): StoryboardRefImage[] => {
+  const refs: StoryboardRefImage[] = [];
   if (ctx.refs.style) refs.push({ label: 'Locked style reference', imagePath: ctx.refs.style });
   for (const c of ctx.refs.cast) refs.push({ label: `Character reference: ${c.name}`, imagePath: c.path });
   if (ctx.refs.environment) refs.push({ label: `Environment reference: ${ctx.refs.environment.name}`, imagePath: ctx.refs.environment.path });
@@ -582,17 +587,10 @@ ${JSON.stringify({ cast: result.cast, environments: result.environments, scenes:
     const variant = String(args.variant || 'four_panel_clean') as StoryboardPromptVariant;
     const prompt = buildStoryboardPrompt(ctx.input, variant);
     writeText(path.join(outDir, `storyboard-${variant}.prompt.txt`), prompt);
-    const result = await generateOpenAIImageWithResponses(prompt, {
-      aspectRatio: ctx.project.aspect_ratio || '16:9',
-      refs: buildStoryboardRefs(ctx),
-      action: 'generate',
-    });
-    const [storyboardPath] = result.imagePaths;
+    const storyboardPath = await generateNanoBanana2(prompt, ctx.project.aspect_ratio || '16:9', buildStoryboardRefs(ctx));
     writeText(path.join(outDir, `storyboard-${variant}.response.json`), JSON.stringify({
-      responseId: result.responseId,
-      imageGenerationCallIds: result.imageGenerationCallIds,
-      reasoningModel: result.reasoningModel,
-      imageModel: result.imageModel,
+      provider: 'segmind',
+      imageModel: 'nano-banana-2',
       storyboardPath,
     }, null, 2));
     console.log(storyboardPath);

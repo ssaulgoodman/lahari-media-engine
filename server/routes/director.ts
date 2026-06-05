@@ -7,6 +7,8 @@ import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.j
 import { finishAgentOperation, startAgentOperation } from '../services/agentOperations.js';
 import { recordMcpCallTrace } from '../services/mcpCallTraces.js';
 import * as studio from '../services/codexStudio.js';
+import { getImageModel } from '../../constants/imageModels.js';
+import { getStoryboardProvider } from '../../constants/storyboardProviders.js';
 
 const router = Router();
 const DIRECTOR_API_VERSION = '2026-05-14.r17-first-pass';
@@ -266,8 +268,8 @@ router.get('/projects', audited('director.projects.list', async (req) => {
       songType: row.song_type || null,
       isNarrative: row.is_narrative ?? null,
       isMeditative: row.is_meditative ?? null,
-      imageModel: row.image_model,
-      storyboardProvider: row.storyboard_provider,
+      imageModel: getImageModel(row.image_model).key,
+      storyboardProvider: getStoryboardProvider(row.storyboard_provider).key,
       videoModel: row.video_model,
       textProvider: row.text_provider,
       createdAt: row.created_at,

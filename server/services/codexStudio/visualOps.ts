@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { insertRow, selectAll, selectOne, updateRows } from '../../database.js';
 import { storageUrl } from '../../storage.js';
-import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from '../imagen.js';
+import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from '../imagePrompts.js';
 import { refineFramePrompt } from '../claude.js';
 import { getImageGenerationModelName, getImageService } from '../image-provider.js';
 import { getProjectPromptOverride } from '../projectConfig.js';

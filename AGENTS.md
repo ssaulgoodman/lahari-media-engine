@@ -66,11 +66,11 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit`, `git diff --che
 
 ## Env Vars
 
-- `GEMINI_API_KEY` - Gemini 3 Pro Image (`imagen.ts`), Gemini audio/vision (`gemini.ts`), and Gemini text when the artist picks Gemini in the text-provider picker.
+- `GEMINI_API_KEY` - Gemini audio/vision (`gemini.ts`) and Gemini text when the artist picks Gemini in the text-provider picker. Not used for active image/video generation.
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` - GPT-5.5 text-provider option, `gpt-image-2` storyboard/image provider, and optional GPT script-writer experiment.
+- `OPENAI_API_KEY` - GPT-5.5 text-provider option and optional GPT script-writer experiment. Not used for active image/video generation.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces `generate-script` to GPT-5.5 globally. Script writing is otherwise Claude Opus and is intentionally not routed through the text-provider picker.
-- `SEGMIND_API_KEY` - all video generation through Segmind; also Nano Banana 2 image renderer.
+- `SEGMIND_API_KEY` - all active image/video generation: Nano Banana 2 images/storyboards/looks/frames and Seedance/Veo video.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `CORS_ORIGINS` - comma-separated in prod.
@@ -213,9 +213,8 @@ Generate router modules:
 | Audio transcription / structure | Gemini 3 Pro | `gemini.ts` |
 | Concept/style/meaning/refines/storyboard planner | Project `text_provider`: `claude-opus`, `gpt-5.5`, `gemini-3-pro` | `claude.ts` -> `text-provider.ts` |
 | Script writer | Claude Opus 4.7 direct; optional GPT via env/body experiment | `claude.ts`, `openai-script.ts` |
-| Image gen default | Gemini 3 Pro Image ("Nano Banana Pro") with flash fallback | `imagen.ts` |
-| Image alternates | `nano-banana-2`, `gpt-image-2` | `segmind-image.ts`, `openai-image.ts` |
-| Storyboard image | Project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, `gpt-image-2` | `storyboard.ts` |
+| Image generation | Segmind Nano Banana 2 for style refs, character/env looks, start/end frames | `segmind-image.ts`, `image-provider.ts` |
+| Storyboard image | Segmind Nano Banana 2; legacy stored provider keys normalize to `nano-banana-2` | `storyboard.ts` |
 | Video | Segmind: Seedance 2.0 / Veo 3.1 variants | `segmind.ts`, `video-provider.ts` |
 
 ### Text Provider Routing
@@ -258,7 +257,7 @@ Continuity:
 
 ## Video Generation
 
-All video generation goes through Segmind first. Veo requests may fall back to Vertex when Segmind fails for infra/billing reasons and Vertex is configured. Seedance never falls back to Vertex.
+All active video generation goes through Segmind. There is no active Vertex fallback; Segmind credit, rate-limit, model, or safety failures should surface honestly for the artist/operator to fix.
 
 Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
 

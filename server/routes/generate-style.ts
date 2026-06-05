@@ -7,7 +7,7 @@ import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectColumns, insertRow, updateRows, selectAll } from '../database.js';
 import { saveBuffer, storageUrl } from '../storage.js';
-import { buildStylePrompt } from '../services/imagen.js';
+import { buildStylePrompt } from '../services/imagePrompts.js';
 import { brainstormStyleDirections, refineStyleDirection, analyzeImageStyle } from '../services/claude.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { getFullProject } from './projects.js';

@@ -1,5 +1,5 @@
 import { saveBase64, saveBuffer, storageUrl } from '../storage.js';
-import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from './imagen.js';
+import { buildCharacterPrompt, buildEnvironmentPrompt, buildStylePrompt } from './imagePrompts.js';
 
 type ContentPart = { text: string } | { inlineData: { mimeType: string; data: string } };
 

@@ -16,8 +16,8 @@ import { logCall, getCalls, buildContextChain } from '../xray.js';
 // auto-propagates to getFullProject hydration. Old projects with null columns
 // (pre-queue.ts-default-fill) get the current default instead of a stale
 // hardcoded one.
-import { IMAGE_MODELS } from '../../constants/imageModels.js';
-import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
+import { IMAGE_MODELS, getImageModel } from '../../constants/imageModels.js';
+import { STORYBOARD_PROVIDERS, getStoryboardProvider } from '../../constants/storyboardProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
@@ -174,7 +174,7 @@ const forkProject = async (
     meaning: src.meaning,
     video_mode: src.video_mode,
     image_model: src.image_model,
-    storyboard_provider: src.storyboard_provider || 'gpt-image-2',
+    storyboard_provider: src.storyboard_provider || 'nano-banana-2',
     target_duration: src.target_duration,
     cost_estimate: src.cost_estimate,
     style_exploration: (() => {
@@ -486,8 +486,8 @@ const getFullProject = async (projectId: string) => {
     })(),
     colorPalette: project.color_palette,
     videoMode: project.video_mode,
-    imageModel: project.image_model || IMAGE_MODELS[0].key,
-    storyboardProvider: project.storyboard_provider || STORYBOARD_PROVIDERS[0].key,
+    imageModel: getImageModel(project.image_model).key,
+    storyboardProvider: getStoryboardProvider(project.storyboard_provider).key,
     videoModel: project.video_model || VIDEO_MODELS[0].key,
     textProvider: project.text_provider || TEXT_PROVIDERS[0].key,
     aspectRatio: project.aspect_ratio || '16:9',
@@ -681,7 +681,7 @@ router.post('/', upload.single('audio'), async (req, res) => {
     status: 'analyzing',
     audio_path: audioPath,
     image_model: 'nano-banana-2',
-    storyboard_provider: 'gpt-image-2',
+    storyboard_provider: 'nano-banana-2',
     user_id: req.userId,
   });
 

@@ -224,7 +224,7 @@ export const planScenesOpenAI = async (
   // previous_response_id so the model retains its reasoning state on
   // server-side. Each retry sends just the corrective text — much cheaper
   // than rebuilding the full prompt and re-reasoning from scratch. Mirrors
-  // the pattern in openai-image.ts edit mode.
+  // the same image+instruction pattern used by image-editing providers.
   let previousResponseId: string | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
