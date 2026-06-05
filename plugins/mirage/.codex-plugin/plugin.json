@@ -1,6 +1,6 @@
 {
   "name": "mirage",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Operate Mirage video projects from Codex with project sync, production actions, and craft skills.",
   "author": {
     "name": "Mothership",

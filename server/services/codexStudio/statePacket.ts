@@ -35,6 +35,7 @@ const baseProject = async (project: Project) => {
       imageModel: preferences.imageModel,
       storyboardProvider: preferences.storyboardProvider,
       videoModel: preferences.videoModel,
+      ttsModel: preferences.ttsModel,
     },
     styleNotes: projectConfig.styleNotes.styleNotes,
     styleNotesHash: projectConfig.styleNotes.hash,

@@ -7,6 +7,7 @@ export type GenerateSpeechInput = {
   userId: string;
   provider: string;
   voiceId: string;
+  modelId?: string;
   text: string;
 };
 

@@ -1,8 +1,10 @@
 import { requireTenantApiKey } from '../byok/resolver.js';
+import { DEFAULT_ELEVENLABS_TTS_MODEL, normalizeElevenLabsTtsModel } from '../../../constants/ttsModels.js';
 
 export type ElevenLabsSpeechInput = {
   userId: string;
   voiceId: string;
+  modelId?: string;
   text: string;
 };
 
@@ -13,7 +15,6 @@ export type ElevenLabsSpeechResult = {
 };
 
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
-const DEFAULT_MODEL_ID = process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2';
 
 const buildError = async (res: Response, voiceId: string) => {
   const body = await res.text().catch(() => '');
@@ -41,6 +42,7 @@ const buildError = async (res: Response, voiceId: string) => {
 export const generateElevenLabsSpeech = async ({
   userId,
   voiceId,
+  modelId,
   text,
 }: ElevenLabsSpeechInput): Promise<ElevenLabsSpeechResult> => {
   const apiKey = await requireTenantApiKey(userId, 'elevenlabs');
@@ -57,7 +59,7 @@ export const generateElevenLabsSpeech = async ({
     },
     body: JSON.stringify({
       text: cleanText,
-      model_id: DEFAULT_MODEL_ID,
+      model_id: modelId ? normalizeElevenLabsTtsModel(modelId) : DEFAULT_ELEVENLABS_TTS_MODEL,
       voice_settings: {
         stability: 0.45,
         similarity_boost: 0.75,

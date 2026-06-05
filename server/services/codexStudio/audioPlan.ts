@@ -3,7 +3,9 @@ import { updateRows, insertRow } from '../../database.js';
 import { saveBuffer, storageUrl } from '../../storage.js';
 import { recordDirectorEvent } from '../directorEvents.js';
 import { assertDailyCapAvailable, incrementProviderUsageDaily } from '../providerUsage.js';
+import { getProjectPreferencesState } from '../projectConfig.js';
 import { generateSpeech } from '../tts/index.js';
+import { normalizeElevenLabsTtsModel } from '../../../constants/ttsModels.js';
 import { audioPlanHash, castVoiceHash, webStudioUrl, type Project, type ProjectShot } from './core.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
 import {
@@ -345,7 +347,10 @@ export const generateDialogueAudio = async (
   project: Project,
   userId: string,
   filters: { shotIds?: string[]; dialogueIds?: string[]; characterIds?: string[] } = {},
+  opts: { voiceModel?: string } = {},
 ) => {
+  const preferences = await getProjectPreferencesState(project);
+  const voiceModel = normalizeElevenLabsTtsModel(opts.voiceModel || preferences.preferences.ttsModel);
   const castById = new Map(project.cast.map((member) => [member.id, member]));
   const targets = collectDialogueTargets(project, filters);
   const pendingTargets = targets.filter(({ line }) => line.ttsStatus !== 'success' || !line.ttsAssetId);
@@ -382,6 +387,7 @@ export const generateDialogueAudio = async (
         userId,
         provider: member.voiceProvider,
         voiceId: member.voiceId,
+        modelId: voiceModel,
         text: target.line.text,
       });
       const ext = extForMime(speech.mimeType);
@@ -399,6 +405,7 @@ export const generateDialogueAudio = async (
           dialogueId: target.line.id,
           characterId: target.line.characterId,
           provider: member.voiceProvider,
+          model: voiceModel,
           voiceId: member.voiceId,
           voiceName: member.voiceName || null,
           mimeType: speech.mimeType,

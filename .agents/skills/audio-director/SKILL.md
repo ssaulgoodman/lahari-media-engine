@@ -34,6 +34,7 @@ Keep lines short and actable. Dialogue should reveal choice, pressure, or relati
 
 - **Plan or revise speech** -> `run_action(apply_audio_plan)`.
 - **Assign voice** -> `run_action(apply_cast_voice)`.
+- **Choose ElevenLabs model** -> set project default with `run_action(apply_project_preferences, { preferences: { ttsModel: "eleven_multilingual_v2" | "eleven_v3" } })`, or pass `voiceModel` on one `generate_dialogue_audio` run.
 - **Check cost/missing voices** -> `run_action(generate_dialogue_audio, { dryRun: true })`.
 - **Generate TTS** -> `start_job(generate_dialogue_audio)` after approval.
 - **Use Seedance native speech/lipsync** -> write the audio plan and choose video settings/model accordingly; the video generator reads dialogue/sound cues for eligible Seedance shots.

@@ -144,7 +144,7 @@ export const TtsGenerateModal: React.FC<Props> = ({
         )}
 
         <p className="text-[10px] text-zinc-500 leading-relaxed mb-4">
-          Pricing: ElevenLabs Multilingual v2 ($0.30 per 1,000 characters). Daily cap is $20 per user.
+          Pricing: ElevenLabs TTS estimate is $0.30 per 1,000 characters. Daily cap is $20 per user.
         </p>
 
         <div className="flex justify-end gap-3">

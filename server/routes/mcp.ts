@@ -318,6 +318,7 @@ const dialogueAudioInputSchema = z.object({
   shotIds: maxArray(idString, 100).optional(),
   dialogueIds: maxArray(idString, 200).optional(),
   characterIds: maxArray(idString, 100).optional(),
+  voiceModel: z.enum(['eleven_multilingual_v2', 'eleven_v3']).optional(),
 });
 const analyzeAudioTranscribeInputSchema = z.object({
   projectId,
@@ -450,6 +451,7 @@ const projectPreferencesInputSchema = z.object({
     imageModel: idString.optional(),
     storyboardProvider: idString.optional(),
     videoModel: idString.optional(),
+    ttsModel: z.enum(['eleven_multilingual_v2', 'eleven_v3']).optional(),
   }),
   baseHash: idString.optional(),
 });
@@ -1054,7 +1056,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       };
       return input.dryRun
         ? studio.getAudioPlanCost(project, selection)
-        : studio.generateDialogueAudio(project, auth.userId, selection);
+        : studio.generateDialogueAudio(project, auth.userId, selection, { voiceModel: input.voiceModel });
     }
     if (actionKey === 'analyze_audio_transcribe') {
       const input = analyzeAudioTranscribeInputSchema.parse(rawInput);
@@ -1693,6 +1695,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         imageModel: idString.optional(),
         storyboardProvider: idString.optional(),
         videoModel: idString.optional(),
+        ttsModel: z.enum(['eleven_multilingual_v2', 'eleven_v3']).optional(),
       }),
       baseHash: z.string().optional(),
     },
@@ -2094,18 +2097,19 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('generate_dialogue_audio', {
     title: 'Generate dialogue audio',
-    description: 'Mutating and paid. Generates ElevenLabs TTS for selected pending/error dialogue lines with assigned voices.',
+    description: 'Mutating and paid. Generates ElevenLabs TTS for selected pending/error dialogue lines with assigned voices. Optional voiceModel overrides the project TTS model for this run.',
     inputSchema: {
       projectId,
       shotIds: maxArray(idString, 100).optional(),
       dialogueIds: maxArray(idString, 200).optional(),
       characterIds: maxArray(idString, 100).optional(),
+      voiceModel: z.enum(['eleven_multilingual_v2', 'eleven_v3']).optional(),
     },
-  }, async ({ projectId, shotIds, dialogueIds, characterIds }) => studio.generateDialogueAudio(await fullProjectForUser(projectId, auth.userId), auth.userId, {
+  }, async ({ projectId, shotIds, dialogueIds, characterIds, voiceModel }) => studio.generateDialogueAudio(await fullProjectForUser(projectId, auth.userId), auth.userId, {
     shotIds,
     dialogueIds,
     characterIds,
-  }));
+  }, { voiceModel }));
 
   registerTool('apply_project_prompt_override', {
     title: 'Apply project prompt override',

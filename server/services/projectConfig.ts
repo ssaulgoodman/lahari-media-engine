@@ -6,6 +6,7 @@ import type { FullProjectCore } from '../routes/projects.js';
 import { IMAGE_MODELS } from '../../constants/imageModels.js';
 import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { TEXT_PROVIDERS } from '../../constants/textProviders.js';
+import { DEFAULT_ELEVENLABS_TTS_MODEL, ELEVENLABS_TTS_MODELS } from '../../constants/ttsModels.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 
 // Match codexStudio/core.ts: derive from the core shape so the registry
@@ -26,6 +27,7 @@ export interface ProjectPreferences {
   imageModel?: string;
   storyboardProvider?: string;
   videoModel?: string;
+  ttsModel?: string;
 }
 
 export interface ProjectPreferencesState {
@@ -73,6 +75,7 @@ const allowedTextProviders = new Set(TEXT_PROVIDERS.map((provider) => provider.k
 const allowedImageModels = new Set(IMAGE_MODELS.map((model) => model.key));
 const allowedStoryboardProviders = new Set(STORYBOARD_PROVIDERS.map((provider) => provider.key));
 const allowedVideoModels = new Set(VIDEO_MODELS.map((model) => model.key));
+const allowedTtsModels = new Set(ELEVENLABS_TTS_MODELS);
 
 export const hashText = (value: string): string => (
   createHash('sha256').update(value, 'utf8').digest('hex')
@@ -183,6 +186,7 @@ const basePreferences = (project: Project): Required<ProjectPreferences> => ({
   imageModel: projectField(project, 'imageModel', 'image_model') || IMAGE_MODELS[0].key,
   storyboardProvider: projectField(project, 'storyboardProvider', 'storyboard_provider') || STORYBOARD_PROVIDERS[0].key,
   videoModel: projectField(project, 'videoModel', 'video_model') || VIDEO_MODELS[0].key,
+  ttsModel: DEFAULT_ELEVENLABS_TTS_MODEL,
 });
 
 const cleanPreferences = (
@@ -219,6 +223,7 @@ const cleanPreferences = (
   assignKey('imageModel', allowedImageModels, 'imageModel');
   assignKey('storyboardProvider', allowedStoryboardProviders, 'storyboardProvider');
   assignKey('videoModel', allowedVideoModels, 'videoModel');
+  assignKey('ttsModel', allowedTtsModels, 'ttsModel');
 
   return { preferences: next, stored, warnings };
 };
