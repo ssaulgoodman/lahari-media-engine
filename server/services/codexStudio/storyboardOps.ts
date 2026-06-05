@@ -964,22 +964,19 @@ export const applyProjectSettingsConfig = async (
   const warnings: string[] = [];
 
   if (settings.aspectRatio !== undefined && settings.aspectRatio !== project.aspectRatio) {
-    const hasVisuals = Boolean(project.styleAssetId)
-      || project.cast.some((member) => Boolean(member.referenceAssetId || member.referenceImageUrl))
-      || project.environments.some((environment) => Boolean(environment.referenceAssetId || environment.referenceImageUrl))
-      || project.scenes.some((scene) => scene.shots.some((shot) => Boolean(
+    const hasShotMedia = project.scenes.some((scene) => scene.shots.some((shot) => Boolean(
         shot.imageUrl
         || shot.endImageUrl
         || shot.storyboardUrl
         || shot.storyboardAssetId
         || shot.videoUrl
       )));
-    if (hasVisuals && !opts.allowExistingVisualsStale) {
-      throw new Error('Project aspect ratio is locked once visual assets exist. Pass allowExistingVisualsStale only after the artist accepts that existing visuals may no longer match.');
+    if (hasShotMedia && !opts.allowExistingVisualsStale) {
+      throw new Error('Project aspect ratio is locked once shot images, storyboards, or videos exist. Pass allowExistingVisualsStale only after the artist accepts that existing shot media may no longer match.');
     }
     updates.aspect_ratio = settings.aspectRatio;
     changed.aspectRatio = { previous: project.aspectRatio || '16:9', next: settings.aspectRatio };
-    if (hasVisuals) warnings.push('existing_visuals_may_no_longer_match_aspect_ratio');
+    if (hasShotMedia) warnings.push('existing_shot_media_may_no_longer_match_aspect_ratio');
   }
 
   if (!Object.keys(updates).length) {
