@@ -6,7 +6,7 @@ import {
   isMaterializedAgentActionSpec,
 } from '../server/services/actionRegistry.js';
 import { normalizeLeanActionReceipt } from '../server/services/codexStudio/leanReceipt.js';
-import { buildNotebookSkillArtifacts } from '../server/services/codexStudio/notebook.js';
+import { buildNotebookResourceVersions, buildNotebookSkillArtifacts } from '../server/services/codexStudio/notebook.js';
 
 type SmokeResult = {
   name: string;
@@ -37,15 +37,15 @@ const assertNoChangedArtifactBodies = (value: unknown) => {
   for (const child of Object.values(obj)) assertNoChangedArtifactBodies(child);
 };
 
-const runChecks = (): SmokeResult[] => {
+const runChecks = async (): Promise<SmokeResult[]> => {
   const results: SmokeResult[] = [];
 
-  const check = (name: string, fn: () => void, detail?: string) => {
-    fn();
+  const check = async (name: string, fn: () => void | Promise<void>, detail?: string) => {
+    await fn();
     results.push({ name, ok: true, detail });
   };
 
-  check('agent action surface is focused and current', () => {
+  await check('agent action surface is focused and current', () => {
     const keys = new Set(materializedActions().map((spec) => spec.key));
     assert.ok(keys.has('apply_text_edits'), 'apply_text_edits must be materialized for agents');
     assert.ok(keys.has('import_storyboard_image'), 'import_storyboard_image must be materialized for agents');
@@ -53,7 +53,7 @@ const runChecks = (): SmokeResult[] => {
     assert.ok(!keys.has('bulk_generate_storyboards'), 'blocking bulk storyboard generation should stay hidden from agent materialization');
   }, `${materializedActions().length} materialized actions`);
 
-  check('action examples guard known input-shape footguns', () => {
+  await check('action examples guard known input-shape footguns', () => {
     const generateCandidates = actionSpecsForSurface().find((spec) => spec.key === 'generate_candidates');
     assert.ok(generateCandidates, 'generate_candidates action missing');
     assert.equal('entityIds' in generateCandidates.input, true, 'generate_candidates must document entityIds[]');
@@ -63,31 +63,32 @@ const runChecks = (): SmokeResult[] => {
     assert.match(storyboardImport.description, /storyboard_image/, 'storyboard import should mention purpose=storyboard_image');
   });
 
-  check('action index stays scan-sized', () => {
+  await check('action index stays scan-sized', () => {
     const index = buildActionSchemaIndex(materializedActions());
     const bytes = Buffer.byteLength(JSON.stringify(index), 'utf8');
     assert.ok(bytes < 25000, `action index too large for scan-first use: ${bytes} bytes`);
   }, `${Buffer.byteLength(JSON.stringify(buildActionSchemaIndex(materializedActions())), 'utf8')} bytes`);
 
-  check('versioned notebook skills are stable and complete', () => {
-    const first = buildNotebookSkillArtifacts({ id: 'smoke-project' });
-    const second = buildNotebookSkillArtifacts({ id: 'smoke-project' });
-    assert.equal(first.manifest.version, second.manifest.version, 'skill manifest version should be stable across repeated builds');
-    const skillsManifestFile = first.files.find((file) => file.path === 'config/skills.json');
-    assert.ok(skillsManifestFile, 'config/skills.json should materialize at the workspace root, not under a project folder');
-    assert.equal(skillsManifestFile.scope, 'workspace', 'config/skills.json must be scope=workspace');
-    assert.ok(first.files.every((file) => !file.path.startsWith('.agents/skills/') || file.scope === 'workspace'), 'skill files must be scope=workspace');
-    assert.equal(first.manifest.skills.length > 0, true, 'skill manifest must include skills');
-    for (const skill of first.manifest.skills) {
-      assert.equal(skill.paths.length, 2, `${skill.name} should materialize for Codex and Claude`);
-      assert.ok(skill.paths.some((path) => path.startsWith('.agents/skills/')), `${skill.name} missing Codex path`);
-      assert.ok(skill.paths.some((path) => path.startsWith('.claude/skills/')), `${skill.name} missing Claude path`);
+  await check('notebook resource hashes are stable while operating files stay out of project sync', () => {
+    const first = buildNotebookResourceVersions();
+    const second = buildNotebookResourceVersions();
+    assert.equal(first.skillsHash, second.skillsHash, 'skill resource hash should be stable across repeated builds');
+    assert.equal(first.actionsHash, second.actionsHash, 'action resource hash should be stable across repeated builds');
+    assert.equal(first.skills.length > 0, true, 'resource manifest must include Mirage skills for doctor/version checks');
+    for (const skill of first.skills) {
       assert.equal(typeof skill.hash, 'string');
       assert.equal(skill.version, skill.hash.slice(0, 12));
     }
   });
 
-  check('lean receipts strip artifact bodies recursively', () => {
+  await check('skill artifacts keep version metadata but do not sync operating files', () => {
+    const artifacts = buildNotebookSkillArtifacts({ id: 'smoke-project' });
+    assert.equal(artifacts.files.length, 0, 'project sync must not materialize plugin-owned skill files');
+    assert.equal(artifacts.manifest.skills.length > 0, true, 'manifest must still exist for doctor/version checks');
+    assert.equal(artifacts.manifest.refresh.command, 'update Mirage plugin');
+  });
+
+  await check('lean receipts strip artifact bodies recursively', () => {
     const receipt = normalizeLeanActionReceipt({
       kind: 'smoke',
       changedArtifacts: [{
@@ -114,16 +115,15 @@ const runChecks = (): SmokeResult[] => {
     assertNoChangedArtifactBodies(receipt);
   });
 
-  check('MCP payload is a thin starter; file workflow + sync guidance live in AGENTS.md', () => {
+  await check('MCP payload is a thin starter; file workflow + sync guidance live in AGENTS.md', () => {
     const mcpRoute = readFileSync('server/routes/mcp.ts', 'utf8');
     assert.match(mcpRoute, /operate from AGENTS\.md/, 'MCP instructions must hand off to AGENTS.md');
     assert.doesNotMatch(mcpRoute, /Append concise decisions to journal\.md/, 'file-workflow detail must not live in the MCP payload');
     const notebook = readFileSync('server/resources/notebook/AGENTS.template.md', 'utf8');
-    assert.match(notebook, /run the returned sync command/, 'AGENTS.md owns the sync command guidance');
-    assert.match(notebook, /commands\.powershellInstalled/, 'AGENTS.md must teach the Windows installed-CLI sync path');
-    assert.match(notebook, /Use `get_project_notebook_manifest` \+ `read_project_notebook_file` only when the harness has no shell/, 'AGENTS.md must not invite eager fallback');
-    assert.match(notebook, /config\/skills\.json/, 'workspace instructions must mention skill manifest');
-    assert.match(notebook, /notebook\.json\.skillsHash/, 'workspace instructions must mention aggregate skill hash');
+    assert.match(notebook, /run `mirage init` once/, 'AGENTS.md must teach token-free workspace init');
+    assert.match(notebook, /Action schemas are live in MCP/, 'AGENTS.md must route schemas through MCP');
+    assert.match(notebook, /Project sync is project-data only/, 'AGENTS.md must say sync does not rewrite operating files');
+    assert.doesNotMatch(notebook, /commands\.powershellInstalled|config\/skills\.json|Workspace-shared files live/, 'AGENTS.md must not teach the old workspace-sync operating files model');
   });
 
   return results;
@@ -131,7 +131,7 @@ const runChecks = (): SmokeResult[] => {
 
 let total = 0;
 for (let i = 1; i <= repeat; i += 1) {
-  const results = runChecks();
+  const results = await runChecks();
   total += results.length;
   if (verbose || repeat > 1) {
     console.log(`\nRun ${i}/${repeat}`);

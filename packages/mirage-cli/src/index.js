@@ -35,11 +35,14 @@ const parseArgs = (argv) => {
   const [command, projectId, maybeEntityId, maybeFilePath, ...rest] = argv;
   const optionArgs = (command === 'upload-cast-reference' || command === 'upload-environment-reference')
     ? rest
-    : command === 'status' || command === 'doctor'
+    : command === 'status' || command === 'doctor' || command === 'init'
       ? (projectId && !projectId.startsWith('-') ? argv.slice(2) : argv.slice(1))
       : argv.slice(2);
   const opts = { command, projectId, cwd: process.cwd(), force: false, recoverLock: false };
-  if ((command === 'status' || command === 'doctor') && projectId?.startsWith('-')) {
+  if ((command === 'status' || command === 'doctor' || command === 'init') && projectId?.startsWith('-')) {
+    opts.projectId = undefined;
+  }
+  if (command === 'init') {
     opts.projectId = undefined;
   }
   if (command === 'upload-cast-reference' || command === 'upload-environment-reference') {
@@ -73,6 +76,7 @@ const parseArgs = (argv) => {
 const help = () => `Mirage CLI ${pkg.version}
 
 Usage:
+  mirage init [--cwd <dir>] [--force]
   mirage sync <projectId> [--cwd <dir>] [--force] [--recover-lock] [--api-url <url>]
   mirage status [projectId] [--cwd <dir>]
   mirage upload-cast-reference <projectId> <castMemberId> <imagePath> [--note <text>] [--api-url <url>]
@@ -84,8 +88,84 @@ Environment:
   MIRAGE_API_URL    Defaults to ${DEFAULT_API_URL}
 
 Notes:
-  sync automatically recovers dead-owner locks. Use --recover-lock only after
-  confirming another sync is not actively running.
+  init writes token-free workspace instructions once.
+  sync refreshes project files only and automatically recovers dead-owner locks.
+  Use --recover-lock only after confirming another sync is not actively running.
+`;
+
+const workspaceInstructions = () => `# Mirage Workspace
+
+Mirage is an agent-operated AI video studio. This folder is a local workbench for one or more Mirage projects under \`mirage/projects/<projectId>/\`.
+
+Your job is to move one Mirage project forward: read the current state, make smart creative decisions, choose the smallest safe Mirage action, and keep project files synced with what Mirage saves.
+
+Mirage server state is canonical. Local files are for reading, drafting, review, generation traces, and handoff. A local edit becomes real only when you persist it with a Mirage action.
+
+## Start Here
+
+1. Confirm Mirage MCP is connected.
+2. Call \`mirage_doctor\` on first contact.
+3. Choose or create one project with \`list_projects\`, \`open_project\`, or \`create_project\`.
+4. If project files are missing or stale, call \`mint_cli_token\` and run the returned \`mirage sync <projectId>\` command from this folder.
+5. Use synced files for long bodies and traces. Use MCP for live state and actions.
+
+## Tools
+
+Use cockpit tools to orient: \`mirage_doctor\`, \`list_projects\`, \`open_project\`, \`get_project_state\`, \`mint_cli_token\`, \`get_job\`, and \`mirage_capture_issue\`.
+
+Use action tools to change things: \`run_action(actionKey, input)\` for free/persistence actions, \`start_job(actionKey, input)\` for paid media generation, and \`describe_action(actionKey)\` for the one live schema you are about to use.
+
+Action schemas are live in MCP. Do not expect local \`config/actions/*\` files in this workspace.
+
+## Common Moves
+
+- Concept: write the project spine, then \`run_action(apply_concept)\`.
+- Script topology: before visual work exists, use \`run_action(apply_script)\`.
+- Script wording after refs/boards/videos exist: use \`run_action(apply_text_edits)\`.
+- Storyboard prompt work: edit \`storyboards/*.md\`, then \`run_action(apply_storyboard_prompts)\`.
+- Style: use \`generate_style_candidates\`, \`apply_style_direction\`, style notes, or project prompt overrides.
+- Cast/environment refs: use \`generate_candidates\`, \`list_results\`, \`lock_reference\`, or upload an artist image.
+- Native storyboard image: upload with \`purpose=storyboard_image\`, then \`run_action(import_storyboard_image)\`.
+- Video: dry-run first with \`run_action(generate_video, { dryRun: true })\`, then \`start_job(generate_video)\` after approval.
+- Audio: use \`apply_audio_plan\`, \`apply_cast_voice\`, and \`generate_dialogue_audio\` when producing dialogue/narration.
+
+## Choosing The Lever
+
+Do not solve every problem by regenerating. Use the smallest lever that addresses the failure.
+
+- Use \`contextOverrides\` for one call's input bundle: include an extra guide/ref, exclude a wrong ref, drop the style image, include previous storyboard, or change style-note sections.
+- Use \`promptOverride\` when one paid call needs an exact final model prompt.
+- Use style notes for reusable taste or model phrasing.
+- Use image edit/refine when the asset is mostly right. Regenerate when staging, premise, panel structure, or reference use is wrong.
+- Use native imagegen plus \`import_storyboard_image\` when outside image work beats Mirage generation.
+- Add extra uploaded refs for unusual shot needs such as a painting, product, logo, prop, or special environment detail.
+
+Reference language should stay clean. The renderer receives attached images with explicit roles; prompt text should use graph names and object roles, not long wardrobe/style re-descriptions.
+
+## Files
+
+Project files live under \`mirage/projects/<projectId>/\`:
+
+- \`state/\` — read-only snapshots from Mirage. Do not edit.
+- \`state/generation-traces/\` — recent model calls with final prompt, refs, model, outputs, duration, and cost.
+- \`script.md\`, \`audio-plan.md\`, \`storyboards/*.md\` — editable drafts. Persist them with apply actions.
+- \`config/style-notes.json\` — reusable per-surface taste notes.
+- \`config/preferences.json\` — model/provider preferences.
+- \`config/prompts/*.md\` — optional project prompt overrides. This is not a prompt log.
+- \`notebook.json\` — project metadata and hashes.
+- \`journal.md\` — local handoff notes. Helpful, not canonical truth.
+
+Skills come from the installed Mirage plugin. Load the relevant skill for non-trivial creative work: concept-writer, script-writer, art-director, casting-director, sound-director, audio-director, storyboarding, or video-director.
+
+## Working Rules
+
+- Ask before paid generation, locks/unlocks, replacing approved assets, prompt override changes, publishing, or script topology rebuilds.
+- Preserve downstream work. Once refs, boards, videos, or audio exist, prefer narrow edits that mark affected outputs stale instead of wiping them.
+- Use generation traces before guessing why a look, board, or video drifted.
+- Sync after important mutations.
+- Capture product/tool bugs with \`mirage_capture_issue\`.
+
+Be concise and specific. Name the artifact, the issue, why it matters, and the next action.
 `;
 
 const safeJoin = (root, relativePath) => {
@@ -119,52 +199,29 @@ const writeText = (filePath, content) => {
   fs.writeFileSync(filePath, content);
 };
 
-const isWorkspaceOperatingFile = (relativePath) =>
-  relativePath === 'AGENTS.md'
-  || relativePath === 'CLAUDE.md'
-  || relativePath === 'config/skills.json'
-  || relativePath.startsWith('config/actions/')
-  || relativePath.startsWith('.agents/skills/')
-  || relativePath.startsWith('.claude/skills/');
+const workspaceInitFiles = () => {
+  const content = workspaceInstructions();
+  return [
+    {
+      path: 'AGENTS.md',
+      content,
+      mode: 'instructions',
+      writePolicy: 'create_if_missing',
+      scope: 'workspace',
+    },
+    {
+      path: 'CLAUDE.md',
+      content,
+      mode: 'instructions',
+      writePolicy: 'create_if_missing',
+      scope: 'workspace',
+    },
+  ];
+};
 
-const workspaceOperatingKind = (relativePath) => {
+const workspaceFileKind = (relativePath) => {
   if (relativePath === 'AGENTS.md' || relativePath === 'CLAUDE.md') return 'instructions';
-  if (relativePath === 'config/skills.json' || relativePath.startsWith('.agents/skills/') || relativePath.startsWith('.claude/skills/')) return 'skills';
-  if (relativePath.startsWith('config/actions/')) return 'actions';
   return 'workspace';
-};
-
-const canWritePath = (absolutePath) => {
-  try {
-    if (fs.existsSync(absolutePath)) {
-      fs.accessSync(absolutePath, fs.constants.W_OK);
-      return true;
-    }
-    let dir = path.dirname(absolutePath);
-    while (!fs.existsSync(dir)) {
-      const next = path.dirname(dir);
-      if (next === dir) break;
-      dir = next;
-    }
-    fs.accessSync(dir, fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const preflightWorkspaceOperatingWrites = (workspace, entries) => {
-  const blocked = [];
-  for (const entry of entries) {
-    if (entry.scope !== 'workspace' || !isWorkspaceOperatingFile(entry.path)) continue;
-    const absolutePath = safeJoin(workspace, entry.path);
-    if (!canWritePath(absolutePath)) blocked.push({ path: entry.path, kind: workspaceOperatingKind(entry.path) });
-  }
-  if (!blocked.length) return;
-  fail('workspace_operating_files_need_write_access', 'This sync needs to update Mirage operating files. Retry the returned sync command with elevated local write approval, then open a new chat in this workspace so skills/actions reload.', {
-    blocked,
-    userAction: 'Approve/elevate the same sync command locally; do not use MCP file reads for this case.',
-  }, 5);
 };
 
 const collectFiles = (dirPath) => {
@@ -207,33 +264,6 @@ const pruneSyncLockArchives = (workspace, projectId, pruned) => {
   }
 };
 
-const pruneWorkspaceSyncLockArchives = (workspace, pruned) => {
-  if (!fs.existsSync(workspace)) return;
-  for (const name of fs.readdirSync(workspace)) {
-    if (!name.startsWith(`${WORKSPACE_LOCK_DIR}.stale-`) && !name.startsWith(`${WORKSPACE_LOCK_DIR}.orphan-`)) continue;
-    pruneTree(workspace, name, 'old_workspace_sync_lock_archive', pruned);
-  }
-};
-
-const pruneLegacySkillDirs = (workspace, manifestByPath, pruned) => {
-  const legacySkillNames = [
-    'continuity-auditor',
-    'mirage-director',
-    'render-triage',
-    'script-doctor',
-    'storyboard-prompt-craft',
-    'style-ref-critic',
-  ];
-  for (const root of ['.agents/skills', '.claude/skills']) {
-    for (const skillName of legacySkillNames) {
-      const relativePath = `${root}/${skillName}`;
-      const stillManifested = [...manifestByPath.keys()].some((filePath) => filePath.startsWith(`${relativePath}/`));
-      if (stillManifested) continue;
-      pruneTree(workspace, relativePath, 'old_workspace_skill', pruned);
-    }
-  }
-};
-
 const summarizeSyncForOperator = (manifest, written, skipped) => {
   const currentByPath = new Map(skipped.map((item) => [item.path, item.reason]));
   const writtenPaths = new Set(written.map((item) => item.path));
@@ -244,30 +274,21 @@ const summarizeSyncForOperator = (manifest, written, skipped) => {
     if (reason) return reason;
     return 'not_present';
   };
-  const wroteOperating = written.some((item) => isWorkspaceOperatingFile(item.path));
-  const wroteSkills = written.some((item) => workspaceOperatingKind(item.path) === 'skills');
-  const wroteActions = written.some((item) => workspaceOperatingKind(item.path) === 'actions');
-  const wroteInstructions = written.some((item) => workspaceOperatingKind(item.path) === 'instructions');
-  const manifestHasSkills = manifest.some((entry) => entry.path === 'config/skills.json' || entry.path.startsWith('.agents/skills/') || entry.path.startsWith('.claude/skills/'));
-  const manifestHasActions = manifest.some((entry) => entry.path.startsWith('config/actions/'));
   return {
-    instructions: {
-      agentsMd: statusFor('AGENTS.md'),
-      claudeMd: statusFor('CLAUDE.md'),
+    projectFiles: {
+      total: manifest.length,
+      written: written.length,
+      skipped: skipped.length,
     },
-    skills: manifestHasSkills ? (wroteSkills ? 'updated' : 'current') : 'not_present',
-    actions: manifestHasActions ? (wroteActions ? 'updated' : 'current') : 'not_present',
-    sessionReloadNeeded: wroteOperating,
-    sessionReloadReason: wroteOperating
-      ? [
-        wroteInstructions ? 'instructions changed' : null,
-        wroteSkills ? 'skills changed on disk' : null,
-        wroteActions ? 'action schemas changed on disk' : null,
-      ].filter(Boolean).join('; ')
-      : null,
-    userAction: wroteOperating
-      ? 'User should open a new chat/session in this same workspace so Codex/Claude reload updated Mirage instructions, skills, and action schemas.'
-      : 'No session reload needed from this sync.',
+    operatingFiles: {
+      source: 'plugin_or_init',
+      touchedBySync: false,
+      skills: 'plugin',
+      actions: 'mcp',
+    },
+    sessionReloadNeeded: false,
+    sessionReloadReason: null,
+    userAction: 'Project files are synced. No fresh chat is needed from project sync; update/restart only after installing or updating the Mirage plugin.',
   };
 };
 
@@ -472,7 +493,7 @@ const fileStatusFromState = (workspace, files = {}) => {
       status = 'unsafe_path';
       modified += 1;
     }
-    rows.push({ path: relativePath, scope: entry.scope || 'project', status, kind: workspaceOperatingKind(relativePath) });
+    rows.push({ path: relativePath, scope: entry.scope || 'project', status, kind: workspaceFileKind(relativePath) });
   }
   return {
     current,
@@ -515,11 +536,101 @@ const readProjectNotebookSummary = (workspace, projectId) => {
   };
 };
 
+const init = async (opts) => {
+  const workspace = path.resolve(opts.cwd);
+  const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
+  const previousWorkspaceState = readJson(workspaceStatePath, { files: {} });
+  const written = [];
+  const skipped = [];
+  const conflicts = [];
+  const files = workspaceInitFiles();
+
+  for (const entry of files) {
+    const absolutePath = safeJoin(workspace, entry.path);
+    const localContent = readTextIfExists(absolutePath);
+    const localHash = localContent == null ? null : sha256(localContent);
+    const incomingHash = sha256(entry.content);
+    const lastKnownHash = previousWorkspaceState.files?.[entry.path]?.hash || null;
+
+    if (localHash === incomingHash) {
+      skipped.push({ path: entry.path, reason: 'local_matches_init_template' });
+      continue;
+    }
+
+    if (localContent != null && !opts.force) {
+      const localChanged = lastKnownHash ? localHash !== lastKnownHash : true;
+      if (localChanged) {
+        conflicts.push({ path: entry.path, reason: 'local_file_exists', localHash, templateHash: incomingHash });
+        continue;
+      }
+    }
+
+    writeText(absolutePath, entry.content);
+    written.push({ path: entry.path, bytes: Buffer.byteLength(entry.content, 'utf8') });
+  }
+
+  const nextFiles = {
+    ...(previousWorkspaceState.files || {}),
+  };
+  for (const entry of files) {
+    if (conflicts.some((conflict) => conflict.path === entry.path)) continue;
+    nextFiles[entry.path] = {
+      hash: sha256(entry.content),
+      mode: entry.mode,
+      scope: entry.scope,
+      writePolicy: entry.writePolicy,
+      size: Buffer.byteLength(entry.content, 'utf8'),
+      source: 'mirage_cli_init',
+    };
+  }
+
+  writeText(workspaceStatePath, `${JSON.stringify({
+    kind: 'mirage.notebook.workspace_state',
+    workspaceInitializedAt: previousWorkspaceState.workspaceInitializedAt || new Date().toISOString(),
+    workspaceUpdatedAt: new Date().toISOString(),
+    cliVersion: pkg.version,
+    operatingSource: 'mirage_cli_init',
+    lastProject: previousWorkspaceState.lastProject || null,
+    files: nextFiles,
+  }, null, 2)}\n`);
+
+  output({
+    ok: conflicts.length === 0,
+    kind: 'mirage.cli.init',
+    cwd: workspace,
+    initializedAt: new Date().toISOString(),
+    written: written.length,
+    skipped: skipped.length,
+    conflicted: conflicts.length,
+    conflicts,
+    summary: {
+      operatingFiles: written.length ? 'updated' : 'current',
+      tokenRequired: false,
+      next: conflicts.length
+        ? 'Review existing AGENTS.md/CLAUDE.md, then rerun with --force only if you want Mirage to replace them.'
+        : 'Workspace is initialized. Use Mirage MCP to open a project, then run mirage sync <projectId> with a minted token.',
+    },
+    details: { written, skipped },
+  });
+  process.exitCode = conflicts.length ? 3 : 0;
+};
+
 const status = async (opts) => {
   const workspace = path.resolve(opts.cwd);
   const workspaceStatePath = safeJoin(workspace, WORKSPACE_STATE_FILE);
   const workspaceState = readJson(workspaceStatePath, null);
-  const workspaceFiles = fileStatusFromState(workspace, workspaceState?.files || {});
+  const expectedWorkspaceFiles = Object.fromEntries(workspaceInitFiles().map((entry) => [
+    entry.path,
+    {
+      hash: sha256(entry.content),
+      mode: entry.mode,
+      scope: entry.scope,
+      writePolicy: entry.writePolicy,
+      size: Buffer.byteLength(entry.content, 'utf8'),
+      source: 'mirage_cli_init',
+    },
+  ]));
+  const workspaceFiles = fileStatusFromState(workspace, expectedWorkspaceFiles);
   const projectIds = discoverProjectIds(workspace);
   const projectSummaries = projectIds.map((projectId) => {
     const statePath = safeJoin(workspace, `mirage/projects/${projectId}/${STATE_FILE}`);
@@ -558,10 +669,10 @@ const status = async (opts) => {
     }
     : null;
   const workspaceLock = describeLock(safeJoin(workspace, WORKSPACE_LOCK_DIR));
-  const skillsManifest = readJson(safeJoin(workspace, 'config/skills.json'), null);
-  const actionsIndex = readJson(safeJoin(workspace, 'config/actions/index.json'), null);
+  const hasAgentsMd = fs.existsSync(safeJoin(workspace, 'AGENTS.md'));
+  const hasClaudeMd = fs.existsSync(safeJoin(workspace, 'CLAUDE.md'));
   const rootIssues = [
-    !workspaceState ? 'workspace_not_synced' : null,
+    !workspaceState ? 'workspace_not_initialized' : null,
     workspaceFiles.modified ? 'workspace_files_modified_since_sync' : null,
     workspaceFiles.missing ? 'workspace_files_missing_since_sync' : null,
     workspaceLock.state === 'active' ? 'workspace_sync_running' : null,
@@ -576,8 +687,8 @@ const status = async (opts) => {
   ].filter(Boolean) : ['no_project_selected'];
   const issues = [...rootIssues, ...projectIssues];
   const operatingReady = !!workspaceState
-    && !!skillsManifest
-    && !!actionsIndex
+    && hasAgentsMd
+    && hasClaudeMd
     && workspaceFiles.missing === 0
     && workspaceFiles.modified === 0;
   const projectReady = !!selectedProject?.initialized
@@ -590,7 +701,7 @@ const status = async (opts) => {
       ? 'recover_lock_then_sync'
       : 'needs_attention';
   const userAction = (() => {
-    if (!workspaceState) return 'Run mint_cli_token from Mirage MCP, then run the returned mirage sync command in this workspace.';
+    if (!workspaceState || !hasAgentsMd || !hasClaudeMd) return 'Run mirage init in this workspace, then open or sync a Mirage project.';
     if (staleLocks.length) return 'Run the same sync command with --recover-lock only after confirming no sync is active.';
     if (!selectedProject?.initialized) return selectedProjectId ? `Run mirage sync ${selectedProjectId}.` : 'Open or create a Mirage project, then sync it.';
     if (workspaceFiles.modified || workspaceFiles.missing || selectedProject.files.modified || selectedProject.files.missing) return 'Run mirage sync for the active project. Review conflicts if the sync reports local edits.';
@@ -622,10 +733,10 @@ const status = async (opts) => {
         missingFiles: workspaceFiles.missingFiles,
       },
       operatingFiles: {
-        agentsMd: fs.existsSync(safeJoin(workspace, 'AGENTS.md')),
-        claudeMd: fs.existsSync(safeJoin(workspace, 'CLAUDE.md')),
-        skillsManifest: !!skillsManifest,
-        actionsIndex: !!actionsIndex,
+        agentsMd: hasAgentsMd,
+        claudeMd: hasClaudeMd,
+        skillsSource: 'plugin',
+        actionsSource: 'mcp',
       },
       lock: workspaceLock,
     },
@@ -640,12 +751,10 @@ const status = async (opts) => {
     freshness: {
       skillsHash: selectedProject?.skillsHash || null,
       actionsHash: selectedProject?.actionsHash || null,
-      configSkillsVersion: skillsManifest?.version || null,
-      configActionsVersion: actionsIndex?.version || null,
-      freshChatRecommended: skillsManifest?.restartRequired === true,
-      note: skillsManifest?.restartRequired === true
-        ? 'After skills or action schemas update on disk, open a fresh chat/session in this workspace so the harness reloads them.'
-        : 'No explicit skill reload flag found.',
+      skillsSource: 'plugin',
+      actionsSource: 'mcp',
+      freshChatRecommended: false,
+      note: 'Skills come from the installed Mirage plugin. Action schemas come from live MCP list_actions/describe_action.',
     },
     verdict: {
       status: verdict,
@@ -676,8 +785,7 @@ const sync = async (opts) => {
   const previousProjectState = readJson(statePath, { files: {} });
   const previousWorkspaceState = readJson(workspaceStatePath, { files: {} });
   const previousProjectFiles = previousProjectState.files || {};
-  const previousWorkspaceFiles = previousWorkspaceState.files || {};
-  const previousFiles = { ...previousWorkspaceFiles, ...previousProjectFiles };
+  const previousFiles = { ...previousProjectFiles };
   const knownHashes = {};
   for (const [relativePath, entry] of Object.entries(previousFiles)) {
     try {
@@ -689,10 +797,12 @@ const sync = async (opts) => {
   }
 
   const remote = await postNotebookSync(opts, knownHashes);
-  const manifest = remote.manifest || [];
+  const remoteManifest = remote.manifest || [];
+  const manifest = remoteManifest.filter((entry) => (entry.scope || 'project') !== 'workspace');
   const manifestByPath = new Map(manifest.map((entry) => [entry.path, entry]));
-  const contentByPath = new Map((remote.files || []).map((entry) => [entry.path, entry]));
-  preflightWorkspaceOperatingWrites(workspace, remote.files || []);
+  const contentByPath = new Map((remote.files || [])
+    .filter((entry) => (entry.scope || 'project') !== 'workspace')
+    .map((entry) => [entry.path, entry]));
   const written = [];
   const skipped = [];
   const removed = [];
@@ -734,23 +844,16 @@ const sync = async (opts) => {
       }
     }
 
-    try {
-      writeText(absolutePath, incoming.content);
-    } catch (error) {
-      if ((error?.code === 'EACCES' || error?.code === 'EPERM') && isWorkspaceOperatingFile(entry.path)) {
-        fail('workspace_operating_files_need_write_access', 'This sync needs to update Mirage operating files. Retry the returned sync command with elevated local write approval, then open a new chat in this workspace so skills/actions reload.', {
-          blocked: [{ path: entry.path, kind: workspaceOperatingKind(entry.path), error: error.code }],
-          userAction: 'Approve/elevate the same sync command locally; do not use MCP file reads for this case.',
-        }, 5);
-      }
-      throw error;
-    }
+    writeText(absolutePath, incoming.content);
     written.push({ path: entry.path, bytes: Buffer.byteLength(incoming.content, 'utf8') });
   }
 
   const removedCandidates = new Set([
     ...Object.keys(previousFiles).filter((filePath) => !manifestByPath.has(filePath)),
-    ...(remote.removedFiles || []),
+    ...(remote.removedFiles || []).filter((filePath) => {
+      const entry = remoteManifest.find((row) => row.path === filePath);
+      return (entry?.scope || 'project') !== 'workspace' && filePath.startsWith(`mirage/projects/${opts.projectId}/`);
+    }),
   ]);
   for (const relativePath of removedCandidates) {
     const entry = previousFiles[relativePath];
@@ -784,20 +887,15 @@ const sync = async (opts) => {
       pruneTree(workspace, relativePath, 'old_project_scoped_workspace_file', pruned);
     }
   }
-  pruneLegacySkillDirs(workspace, manifestByPath, pruned);
-  pruneWorkspaceSyncLockArchives(workspace, pruned);
   pruneSyncLockArchives(workspace, opts.projectId, pruned);
 
-  const nextWorkspaceFiles = {};
   const nextProjectFiles = {};
   for (const entry of manifest) {
-    const nextFiles = entry.scope === 'workspace' ? nextWorkspaceFiles : nextProjectFiles;
-    const scopedPreviousFiles = entry.scope === 'workspace' ? previousWorkspaceFiles : previousProjectFiles;
     if (conflicts.some((conflict) => conflict.path === entry.path)) {
-      if (scopedPreviousFiles[entry.path]) nextFiles[entry.path] = scopedPreviousFiles[entry.path];
+      if (previousProjectFiles[entry.path]) nextProjectFiles[entry.path] = previousProjectFiles[entry.path];
       continue;
     }
-    nextFiles[entry.path] = {
+    nextProjectFiles[entry.path] = {
       hash: entry.hash,
       mode: entry.mode,
       scope: entry.scope || 'project',
@@ -806,11 +904,15 @@ const sync = async (opts) => {
     };
   }
   writeText(workspaceStatePath, `${JSON.stringify({
-    kind: 'mirage.notebook.workspace_sync_state',
+    kind: previousWorkspaceState.kind || 'mirage.notebook.workspace_state',
     notebookVersion: remote.notebookVersion,
+    workspaceInitializedAt: previousWorkspaceState.workspaceInitializedAt || null,
+    workspaceUpdatedAt: previousWorkspaceState.workspaceUpdatedAt || previousWorkspaceState.syncedAt || null,
     lastProject: remote.project,
     syncedAt: new Date().toISOString(),
-    files: nextWorkspaceFiles,
+    operatingSource: previousWorkspaceState.operatingSource || 'plugin_or_init',
+    files: Object.fromEntries(Object.entries(previousWorkspaceState.files || {})
+      .filter(([relativePath]) => workspaceInitFiles().some((entry) => entry.path === relativePath))),
   }, null, 2)}\n`);
   writeText(statePath, `${JSON.stringify({
     kind: 'mirage.notebook.sync_state',
@@ -843,7 +945,7 @@ const sync = async (opts) => {
       removed,
       pruned,
       scopes: {
-        workspace: Object.keys(nextWorkspaceFiles).length,
+        workspace: 0,
         project: Object.keys(nextProjectFiles).length,
       },
     },
@@ -912,7 +1014,9 @@ try {
     process.stdout.write(help());
     process.exit(0);
   }
-  if (opts.command === 'sync') {
+  if (opts.command === 'init') {
+    await init(opts);
+  } else if (opts.command === 'sync') {
     await sync(opts);
   } else if (opts.command === 'status' || opts.command === 'doctor') {
     await status(opts);

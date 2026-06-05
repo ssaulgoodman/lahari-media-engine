@@ -88,7 +88,7 @@ Use run_action for free changes such as text edits, plans, locks, imports, and c
 
 Use clear artist-facing language. The Mirage web app is the visual studio, so share returned web links for review. If a tool misbehaves or the studio disagrees with project state, call mirage_capture_issue with a short report.
 
-If the harness has a filesystem, call mint_cli_token to sync the local workspace and then operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.`;
+If the harness has a filesystem, initialize the folder once with Mirage CLI init if needed, then call mint_cli_token to sync project files and operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.`;
 
 type HostedAuth = {
   userId: string;
@@ -629,10 +629,10 @@ const buildRemoteDoctor = async (localStatus?: z.infer<typeof localDoctorStatusS
       return 'Could not reach npm latest; retry doctor before declaring the release coherent.';
     }
     if (issues.includes('local_cli_version_mismatch')) {
-      return `Run the returned mint_cli_token sync command so local CLI ${local.cliVersion} updates to served pin ${servedCliVersion}.`;
+      return `Install/update the Mirage CLI to ${servedCliVersion}, then rerun the fresh mint_cli_token sync command.`;
     }
     if (issues.includes('local_skills_hash_mismatch') || issues.includes('local_actions_hash_mismatch')) {
-      return 'Run mirage sync for the active project, then open a fresh chat/session if skills or actions changed on disk.';
+      return 'Run mirage status for file-level details, update the Mirage plugin if skills are stale, then sync the active project.';
     }
     if (issues.includes('local_workspace_not_ready') || issues.includes('local_project_not_ready')) {
       return 'Run local mirage status for file-level details, then sync the active project.';
@@ -1200,7 +1200,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('list_actions', {
     title: 'List Mirage actions',
-    description: "Read-only cockpit tool. Returns a lean index of registry actions (key, surface, paid, summary, and the local detail path) across all surfaces or one. For an action's full input schema call describe_action; for full specs offline read config/actions/<surface>.json.",
+    description: "Read-only cockpit tool. Returns a lean index of registry actions (key, surface, paid, summary, and how to fetch details) across all surfaces or one. For an action's full input schema call describe_action.",
     inputSchema: {
       projectId,
       surface: actionSurfaceSchema.optional(),
@@ -1437,7 +1437,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('write_project_notebook', {
     title: 'Write project notebook',
-    description: 'Read-only final fallback. Returns deterministic local notebook file payloads in one response. Prefer CLI sync; if npx is blocked, use get_project_notebook_manifest + read_project_notebook_file path-by-path.',
+    description: 'Read-only final fallback. Returns deterministic local notebook file payloads in one response. Prefer CLI sync; if the harness has no shell or local file-write capability, use get_project_notebook_manifest + read_project_notebook_file path-by-path.',
     inputSchema: { projectId },
   }, async ({ projectId }) => studio.buildProjectNotebook(await fullProjectForUser(projectId, auth.userId)));
 
@@ -1504,7 +1504,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   registerTool('mint_cli_token', {
     title: 'Mint short-lived CLI sync token',
-    description: 'Mutating security surface. Issues a short-lived project-scoped token for Mirage CLI notebook sync and direct HTTPS uploads so file bodies do not travel through MCP.',
+    description: 'Mutating security surface. Issues a short-lived project-scoped token for Mirage CLI project-file sync and direct HTTPS uploads so file bodies do not travel through MCP.',
     inputSchema: {
       projectId,
       ttlMinutes: z.number().int().min(5).max(180).optional(),

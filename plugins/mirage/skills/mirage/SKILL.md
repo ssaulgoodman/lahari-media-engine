@@ -1,47 +1,49 @@
 ---
 name: mirage
-description: Use when connecting Codex to Mirage, opening or refreshing a Mirage workspace, choosing a project, syncing the local notebook, uploading media, or explaining the Mirage operating loop.
+description: Use when connecting Codex to Mirage, opening or refreshing a Mirage workspace, choosing a project, syncing project files, uploading media, or explaining the Mirage operating loop.
 ---
 
 # Mirage
 
-Use Mirage as an agent-operated video studio. Your job is to help the artist move one Mirage project through concept, script, style, references, storyboards, video, audio, and render prep.
+Use Mirage as an agent-operated video studio. Help the artist move one Mirage project through concept, script, style, references, storyboards, video, audio, and render prep.
 
 ## Do This Now
 
-1. Confirm Mirage MCP is connected. If auth fails, ask the artist to connect Mirage from `/connect` and set the plugin's `MIRAGE_MCP_TOKEN`.
+1. Confirm Mirage MCP is connected. If auth fails, ask the artist to reconnect Mirage from `/connect`.
 2. Call `mirage_doctor` on first contact or after a deploy. If it says production/plugin state is not coherent, report the verdict plainly and stop before paid work.
 3. Choose or create one project with Mirage tools.
-4. Call `mint_cli_token` and run the returned sync command exactly in the artist's workspace.
-5. Read the sync receipt. Trust `generatedAt`, `skillsHash`, `actionsHash`, and the receipt summary; do not treat the notebook schema version as freshness.
-6. If the receipt says a fresh session is recommended, tell the artist to open a new chat in the same workspace so Codex reloads instructions, skills, and action schemas.
+4. If the workspace lacks `AGENTS.md` / `CLAUDE.md`, run `mirage init` once. This is token-free and writes stable workspace instructions.
+5. Call `mint_cli_token` and run the returned installed-CLI sync command to refresh project files.
+6. Read the sync receipt. Trust `generatedAt`, file counts, and receipt status; do not treat the notebook schema version as freshness.
 
 ## Operating Contract
 
-Mirage server/Supabase is canonical truth. Local files are the workbench: useful for reading, editing, diffing, and handoff. A local file becomes production only when a Mirage apply action persists it.
+Mirage server/Supabase is canonical truth. Local files are the workbench: useful for reading, editing, diffing, generation traces, and handoff. A local file becomes production only when a Mirage apply action persists it.
 
-Use Mirage MCP for project state, actions, paid jobs, locks, imports, uploads, issue capture, and coherence checks. Bytes stay outside MCP: upload local images/audio through `/api/agent/uploads` with the Mirage bearer token, then pass returned asset IDs into actions.
+Use Mirage MCP for project state, actions, paid jobs, locks, imports, uploads, issue capture, and coherence checks.
+
+Bytes stay outside MCP. Upload local images/audio through `/api/agent/uploads` with the Mirage bearer token, then pass returned asset IDs into actions.
 
 ## Local Workspace Shape
 
-Workspace-shared files live at the workspace root:
+Workspace root:
 
-- `AGENTS.md`
-- `.agents/skills/`
-- `.claude/skills/`
-- `config/actions/`
-- `config/skills.json`
+- `AGENTS.md` and `CLAUDE.md` from `mirage init`
+- `.mirage-workspace-state.json`
+- no local `config/actions/*` requirement
+- no synced `.agents/skills/*` requirement
 
 Project files live under `mirage/projects/<projectId>/`:
 
 - `state/` read-only snapshots
+- `state/generation-traces/`
 - `script.md`
 - `audio-plan.md`
 - `storyboards/*.md`
 - project `config/`
 - `journal.md`
 
-Read root `config/actions/index.json` first, then the surface file you need. Use live `list_actions` or `describe_action` when local files are missing, stale, or unclear.
+Skills come from the installed Mirage plugin. Action schemas come from live MCP: call `describe_action(actionKey)` for the schema you are about to use.
 
 ## Safe Edit Rule
 
@@ -51,13 +53,13 @@ After references, storyboards, or videos exist, use `apply_text_edits` for wordi
 
 ## Sync And Permissions
 
-The returned CLI sync command is the normal path. Retry it once if it fails.
+Project sync writes project files only. It should not rewrite skills, action schemas, `AGENTS.md`, or `CLAUDE.md`.
 
-If sync reports workspace operating files need write access, retry the same command with elevated local write approval. Do not switch to MCP notebook file reads for local file permission errors.
+Install/update the Mirage CLI without a live project token, then run the fresh `mint_cli_token` command with the installed CLI. Avoid downloading new code while carrying a live token.
 
-Use MCP file reads only when the harness has no shell or no local file-write capability.
+Use MCP file reads only when the harness has no shell or local file-write capability.
 
-For local debugging, `mirage status` / `mirage doctor` is the file-level check. `mirage_doctor` is the remote coherence check. They answer different questions; use both when onboarding feels stuck.
+For local debugging, `mirage status` / `mirage doctor` is the file-level check. `mirage_doctor` is the remote coherence check. Use both when onboarding feels stuck.
 
 ## Media Uploads
 

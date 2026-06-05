@@ -28,7 +28,7 @@ Use run_action for free changes such as text edits, plans, locks, imports, and c
 
 Use clear artist-facing language. The Mirage web app is the visual studio, so share returned web links for review. If a tool misbehaves or the studio disagrees with project state, call mirage_capture_issue with a short report.
 
-If the harness has a filesystem, call mint_cli_token to sync the local workspace and then operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.
+If the harness has a filesystem, initialize the folder once with Mirage CLI init if needed, then call mint_cli_token to sync project files and operate from AGENTS.md. If there is no filesystem, work through these tools and use get_project_state for compact state reads.
 ```
 
 Payload intent:
@@ -59,7 +59,7 @@ These are the main hosted artist-facing tools an agent should use.
 | `create_project` | Creates a project shell. No paid call runs. Audio seeds require upload/analysis opt-in. | title, workflow/preset/seed hints, source asset/script/brief/runtime fields | Created project plus initial project object. |
 | `open_project` | Opens a project session and returns production working set. `detail=full` is heavy debug only. | `projectId`, `detail?`, `sinceSeq?`, `note?` | Production working set, actions, recent events, web URL. |
 | `get_project_state` | Compact state by default; `full` is debug. Prompt bodies should come from notebook files. | `projectId`, `detail?` | Summary, production, or full project packet depending on detail. |
-| `list_actions` | Lean index of registry actions. Full schema is `describe_action` or local `config/actions/<surface>.json`. | `projectId`, `surface?` | Key/surface/paid/mutates/summary/detail path, not full schemas. |
+| `list_actions` | Lean index of registry actions. Full schema is `describe_action`. | `projectId`, `surface?` | Key/surface/paid/mutates/summary/detail tool, not full schemas. |
 | `describe_action` | Returns one action's input contract, examples, and semantics. | `actionKey` | One full action spec from `actionRegistry.ts`. |
 | `run_action` | Runs a registry action by key. | `actionKey`, `input` | Lean normalized receipt. `changedArtifacts` bodies are stripped to paths/hashes. |
 | `start_job` | Starts one paid action in background and returns `jobId`. | `actionKey`, `input` | Job start receipt; result is polled with `get_job`. |
@@ -121,10 +121,9 @@ Current surfaces:
 
 How the agent should ingest action details:
 
-1. In a filesystem harness, read local `config/actions/index.json`.
-2. Then read the relevant `config/actions/<surface>.json`.
-3. Use `list_actions` when local action files are missing, stale, or live truth is needed.
-4. Use `describe_action(actionKey)` for one full live schema.
+1. Use `list_actions` for a scan-sized index.
+2. Use `describe_action(actionKey)` for the one full live schema you are about to call.
+3. Do not expect local `config/actions/*` files in the workbench; actions are control-plane truth served by MCP.
 
 This keeps full action schemas out of the initial MCP payload.
 
@@ -146,7 +145,8 @@ This keeps full action schemas out of the initial MCP payload.
       "paid": true,
       "mutates": true,
       "summary": "Render a storyboard board for one shot from its saved storyboard prompt...",
-      "detailPath": "config/actions/storyboard.json"
+      "detailTool": "describe_action",
+      "detailInput": { "actionKey": "generate_storyboard" }
     }
   ]
 }

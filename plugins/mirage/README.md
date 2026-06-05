@@ -15,7 +15,8 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 ## Still Manual In This Beta
 
 - Authentication still comes from Mirage `/connect`. The plugin MCP config expects `MIRAGE_MCP_TOKEN` until Codex supports a native plugin-owned auth handoff.
-- Local notebook sync still uses `mint_cli_token` and the returned Mirage CLI command.
+- Project-file sync still uses `mint_cli_token` and the installed Mirage CLI command.
+- Workspace instructions are initialized once with `mirage init`; skills come from this plugin; action schemas come from live MCP.
 - A future plugin/local bridge should own sync and uploads directly instead of asking the agent to reason about shell commands.
 
 ## Install Test
@@ -39,7 +40,7 @@ The first useful prompt after install is:
 Check Mirage status and open my latest project.
 ```
 
-Codex should call `mirage_doctor`, choose or create a project, sync the local workbench with the returned `mint_cli_token` command, and tell the artist if a fresh chat is needed because skills or action schemas changed on disk.
+Codex should call `mirage_doctor`, run `mirage init` if the folder is new, choose or create a project, and sync project files with the returned `mint_cli_token` command. Project sync should not require a fresh chat; a fresh chat is only needed after installing or updating the plugin.
 
 If a paid provider call returns outcome unknown, Codex should inspect the generation trace/attempt before retrying. Do not spend again until the prior provider request is reconciled or the artist explicitly accepts the charge risk.
 

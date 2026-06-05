@@ -521,7 +521,8 @@ export const summarizeActionSpec = (spec: MirageActionSpec) => ({
   paid: spec.paid,
   mutates: spec.mutates,
   summary: spec.description,
-  detailPath: `config/actions/${spec.surface}.json`,
+  detailTool: 'describe_action',
+  detailInput: { actionKey: spec.key },
 });
 
 export const buildActionSchemaPayload = (actions = actionSpecsForSurface()) => ({
