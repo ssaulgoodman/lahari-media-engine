@@ -24,8 +24,8 @@ From macOS with Codex Desktop:
 
 ```bash
 launchctl setenv MIRAGE_MCP_TOKEN '<token-from-connect>'
-codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
-codex plugin add mirage@mirage-local
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url https://mirage-platform-production-05ca.up.railway.app/mcp --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json

@@ -1,14 +1,14 @@
 {
-  "name": "mirage-local",
+  "name": "mirage",
   "interface": {
-    "displayName": "Mirage Local"
+    "displayName": "Mirage"
   },
   "plugins": [
     {
       "name": "mirage",
       "source": {
         "source": "local",
-        "path": "./mirage"
+        "path": "./plugins/mirage"
       },
       "policy": {
         "installation": "AVAILABLE",

@@ -16,10 +16,31 @@ const expected = [...match[1].matchAll(/'([^']+)'/g)].map((item) => item[1]);
 const agentDir = path.join(root, '.agents/skills');
 const resourceDir = path.join(root, 'server/resources/skills');
 const pluginDir = path.join(root, 'plugins/mirage/skills');
+const pluginMarketplacePath = path.join(root, '.agents/plugins/marketplace.json');
+const pluginManifestPath = path.join(root, 'plugins/mirage/.codex-plugin/plugin.json');
 const failures = [];
 
 if (!fs.existsSync(workspaceTemplatePath)) {
   failures.push('missing packaged notebook workspace template: server/resources/notebook/AGENTS.template.md');
+}
+
+if (!fs.existsSync(pluginMarketplacePath)) {
+  failures.push('missing Codex plugin marketplace: .agents/plugins/marketplace.json');
+} else {
+  const marketplace = JSON.parse(fs.readFileSync(pluginMarketplacePath, 'utf8'));
+  if (marketplace.name !== 'mirage') {
+    failures.push('Codex plugin marketplace name must be mirage');
+  }
+  const mirageEntry = marketplace.plugins?.find((entry) => entry?.name === 'mirage');
+  if (!mirageEntry) {
+    failures.push('Codex plugin marketplace missing mirage entry');
+  } else if (mirageEntry.source?.path !== './plugins/mirage') {
+    failures.push('Codex plugin marketplace mirage source must be ./plugins/mirage');
+  }
+}
+
+if (!fs.existsSync(pluginManifestPath)) {
+  failures.push('missing Mirage plugin manifest: plugins/mirage/.codex-plugin/plugin.json');
 }
 
 for (const skill of expected) {
@@ -63,4 +84,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`Notebook resource check passed: ${expected.length} skills packaged and plugin-synced`);
+console.log(`Notebook resource check passed: ${expected.length} skills packaged, plugin-synced, and marketplace-ready`);

@@ -12,7 +12,7 @@ Plugin source:
 
 Local marketplace:
 
-`plugins/marketplace.json`
+`.agents/plugins/marketplace.json`
 
 Contents:
 - `.codex-plugin/plugin.json` — Mirage plugin manifest and Codex UI metadata.
@@ -48,8 +48,8 @@ The agent should then use Mirage MCP, sync the workbench, and follow the package
 From the repo root:
 
 ```bash
-codex plugin marketplace add ./plugins
-codex plugin add mirage@mirage-local
+codex plugin marketplace add .
+codex plugin add mirage@mirage
 ```
 
 Then start a new Codex thread. Plugin skills and MCP config are loaded at session start, so the install is not a live-thread hot reload.

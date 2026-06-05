@@ -214,12 +214,37 @@ export const ConnectPage: React.FC<{
   };
 
   const copy = async (text: string) => {
+    const fallbackCopy = () => {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (!ok) throw new Error('copy command failed');
+    };
+
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        fallbackCopy();
+      }
       setMessage('Copied');
       window.setTimeout(() => setMessage(null), 1600);
     } catch {
-      setMessage('Select and copy manually');
+      try {
+        fallbackCopy();
+        setMessage('Copied');
+        window.setTimeout(() => setMessage(null), 1600);
+      } catch {
+        setMessage('Copy failed. Select the text manually.');
+      }
     }
   };
 
@@ -264,20 +289,20 @@ export const ConnectPage: React.FC<{
   const canMintToken = anyLaneReady;
 
   const codexPluginMacInstall = `launchctl setenv MIRAGE_MCP_TOKEN '${tokenPlaceholder}'
-codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
-codex plugin add mirage@mirage-local
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
   const codexPluginLinuxInstall = `export MIRAGE_MCP_TOKEN=${tokenPlaceholder}
-codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
-codex plugin add mirage@mirage-local
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
   const codexPluginWindowsInstall = `[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${tokenPlaceholder}", "User")
-codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
-codex plugin add mirage@mirage-local
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json
@@ -637,7 +662,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
                 <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
                   <li>Fully <span className="text-zinc-300">quit</span> the harness — closing the window isn't enough.</li>
                   <li>Open a new chat (existing chats may not pick up newly-registered MCP servers).</li>
-                  <li>For Codex, run <span className="font-mono text-zinc-300">codex mcp get mirage --json</span> and <span className="font-mono text-zinc-300">codex plugin add mirage@mirage-local</span> again if needed.</li>
+                  <li>For Codex, run <span className="font-mono text-zinc-300">codex mcp get mirage --json</span> and <span className="font-mono text-zinc-300">codex plugin add mirage@mirage</span> again if needed.</li>
                   <li>If the server is listed but tools fail, your token may be expired. Mint a new one.</li>
                 </ul>
               </div>
