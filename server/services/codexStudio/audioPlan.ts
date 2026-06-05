@@ -26,6 +26,8 @@ export type AudioPlanDialogueLine = {
   characterId: string;
   text: string;
   order: number;
+  startMs?: number;
+  endMs?: number;
   targetSec?: number;
   ttsAssetId: string | null;
   ttsStatus: TtsStatus;
@@ -103,11 +105,20 @@ const validateAudioPlanInput = (project: Project, shotId: string, raw: any): { a
       return { error: applyError('validation_failed', `Dialogue line ${index + 1} needs text.`, { shotId, field: 'text' }) };
     }
     const targetSec = Number(line?.targetSec);
+    const startMs = Number(line?.startMs);
+    const endMs = Number(line?.endMs);
+    const hasStartMs = Number.isFinite(startMs) && startMs >= 0;
+    const hasEndMs = Number.isFinite(endMs) && endMs > 0;
+    if (hasStartMs && hasEndMs && endMs <= startMs) {
+      return { error: applyError('validation_failed', `Dialogue line ${index + 1} endMs must be greater than startMs.`, { shotId, field: 'endMs' }) };
+    }
     dialogue.push({
       id,
       characterId,
       text,
       order: Number.isFinite(Number(line?.order)) ? Number(line.order) : index + 1,
+      startMs: hasStartMs ? Math.min(Math.round(startMs), 120000) : undefined,
+      endMs: hasEndMs ? Math.min(Math.round(endMs), 120000) : undefined,
       targetSec: Number.isFinite(targetSec) && targetSec > 0 ? Math.min(targetSec, 30) : undefined,
       ttsAssetId: typeof line?.ttsAssetId === 'string' ? line.ttsAssetId : null,
       ttsStatus: line?.ttsStatus === 'success' || line?.ttsStatus === 'generating' || line?.ttsStatus === 'error' ? line.ttsStatus : 'pending',

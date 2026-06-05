@@ -199,6 +199,8 @@ const audioPlanSchema = z.object({
     characterId: idString,
     text: z.string().min(1).max(500),
     order: z.number().positive().max(200),
+    startMs: z.number().int().nonnegative().max(120000).optional(),
+    endMs: z.number().int().positive().max(120000).optional(),
     targetSec: z.number().positive().max(30).optional(),
     ttsAssetId: idString.nullable().default(null),
     ttsStatus: ttsStatusSchema.default('pending'),
@@ -309,6 +311,7 @@ const generateVideoInputSchema = z.object({
   dryRun: z.boolean().optional(),
   promptOverride: optionalPromptText,
   modelOverride: modelOverrideSchema,
+  nativeAudioMode: z.enum(['auto', 'off', 'on']).optional(),
   acknowledgePreviousChargeRisk: z.boolean().optional(),
 });
 const applyVideoPromptInputSchema = z.object({
@@ -1051,6 +1054,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         ? studio.planGenerateVideo(project, input.shotId, input.modelOverride || {})
         : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {}, {
           acknowledgePreviousChargeRisk: input.acknowledgePreviousChargeRisk,
+          nativeAudioMode: input.nativeAudioMode,
         });
     }
     if (actionKey === 'apply_video_prompt') {

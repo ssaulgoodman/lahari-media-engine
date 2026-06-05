@@ -31,6 +31,8 @@ const summarizeAudioPlan = (audioPlan: any) => {
         characterId: line.characterId,
         text: compactText(line.text, 350),
         order: line.order,
+        startMs: line.startMs,
+        endMs: line.endMs,
         targetSec: line.targetSec,
         ttsAssetId: line.ttsAssetId || null,
         ttsAssetUrl: line.ttsAssetUrl || null,

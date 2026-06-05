@@ -90,7 +90,11 @@ const enableNativeVideoAudio = async (projectId: string, timeline: any) => {
 const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: any) => {
   const project = await selectOne('projects', { id: projectId });
   const brief = parseJson<Record<string, any>>(project?.project_brief, {});
-  if (brief.dialogueVideoMode === 'lipsync') return enableNativeVideoAudio(projectId, timeline);
+  if (brief.dialogueVideoMode === 'lipsync') {
+    const nativeTimeline = await enableNativeVideoAudio(projectId, timeline);
+    if (nativeTimeline?.metadata?.nativeVideoAudioEnabled) return nativeTimeline;
+    timeline = nativeTimeline;
+  }
 
   const trackItemIds = Array.isArray(timeline.trackItemIds) ? [...timeline.trackItemIds] : [];
   const trackItemsMap = timeline.trackItemsMap && typeof timeline.trackItemsMap === 'object'
@@ -149,12 +153,19 @@ const enrichTimelineWithOverlayDialogue = async (projectId: string, timeline: an
     for (const line of dialogue) {
       const ttsAsset = assetMap.get(line.ttsAssetId);
       if (!ttsAsset?.file_path) continue;
+      const explicitStartMs = Number(line.startMs);
+      const explicitEndMs = Number(line.endMs);
       const lineMs = Math.max(
         500,
-        Math.round(Number(line.ttsDurationSec || line.targetSec || 0) * 1000) || fallbackLineMs,
+        Number.isFinite(explicitStartMs) && Number.isFinite(explicitEndMs) && explicitEndMs > explicitStartMs
+          ? Math.round(explicitEndMs - explicitStartMs)
+          : Math.round(Number(line.ttsDurationSec || line.targetSec || 0) * 1000) || fallbackLineMs,
       );
       const itemId = `dialogue-${shot.id}-${line.id || uuidv4()}`;
-      const from = cursorMs;
+      const desiredFrom = Number.isFinite(explicitStartMs) && explicitStartMs >= 0
+        ? shotStartMs + explicitStartMs
+        : cursorMs;
+      const from = Math.max(shotStartMs, Math.min(desiredFrom, shotEndMs - 500));
       const to = Math.max(from + 500, Math.min(from + lineMs, shotEndMs));
       if (to <= from) continue;
       trackItemIds.push(itemId);

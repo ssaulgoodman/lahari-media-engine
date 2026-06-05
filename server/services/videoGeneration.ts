@@ -42,8 +42,12 @@ type DialogueLine = {
   characterId?: string;
   text?: string;
   order?: number;
+  startMs?: number;
+  endMs?: number;
+  targetSec?: number;
   ttsAssetId?: string | null;
   ttsStatus?: string;
+  ttsDurationSec?: number;
 };
 
 type AudioPlan = {
@@ -61,6 +65,7 @@ const dialogueVideoMode = (project: any): DialogueVideoMode => {
 export type GenerateShotVideoOptions = {
   promptOverride?: string;
   refs?: VideoGenerationRef[];
+  nativeAudioMode?: 'auto' | 'off' | 'on';
   modelOverride?: {
     videoModel?: string;
   };
@@ -70,6 +75,21 @@ const structuredVideoError = (code: string, message: string, details: Record<str
   const error = new Error(JSON.stringify({ code, message, ...details })) as Error & { statusCode?: number };
   error.statusCode = statusCode;
   return error;
+};
+
+const lineTimingPhrase = (line: DialogueLine): string => {
+  const startMs = Number(line.startMs);
+  const endMs = Number(line.endMs);
+  const durationMs = Number(line.ttsDurationSec || line.targetSec || 0) * 1000;
+  const hasStart = Number.isFinite(startMs) && startMs >= 0;
+  const computedEnd = Number.isFinite(endMs) && endMs > startMs
+    ? endMs
+    : hasStart && Number.isFinite(durationMs) && durationMs > 0
+      ? startMs + durationMs
+      : null;
+  if (!hasStart) return '';
+  const fmt = (ms: number) => `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
+  return computedEnd ? ` from ${fmt(startMs)} to ${fmt(computedEnd)}` : ` starting at ${fmt(startMs)}`;
 };
 
 export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
@@ -227,7 +247,10 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const hasDialogue = dialogueLines.length > 0;
     const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
-    const seedanceNativeAudio = modelSpec.family === 'seedance' && (hasDialogue || !!soundNotes);
+    const nativeAudioMode = opts.nativeAudioMode || 'auto';
+    const seedanceNativeAudio = modelSpec.family === 'seedance'
+      && nativeAudioMode !== 'off'
+      && (nativeAudioMode === 'on' || hasDialogue || !!soundNotes);
     const visibleSoundCue = soundNotes
       ? seedanceNativeAudio
         ? `Native audio cue: generate synchronized sound only for this explicit cue: ${soundNotes}`
@@ -242,7 +265,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       const dialogueBrief = dialogueLines
         .map((line) => {
           const speaker = castNameById.get(line.characterId || '') || 'Speaker';
-          return `${speaker}: "${String(line.text || '').trim()}"`;
+          return `${speaker}${lineTimingPhrase(line)}: "${String(line.text || '').trim()}"`;
         })
         .filter(Boolean)
         .join(' ');
@@ -258,7 +281,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       const dialogueBrief = dialogueLines
         .map((line) => {
           const speaker = castNameById.get(line.characterId || '') || 'Speaker';
-          return `${speaker}: "${String(line.text || '').trim()}"`;
+          return `${speaker}${lineTimingPhrase(line)}: "${String(line.text || '').trim()}"`;
         })
         .filter(Boolean)
         .join(' ');
@@ -357,6 +380,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         hasPromptOverride: !!opts.promptOverride?.trim(),
         referenceImageCount: modelSpec.supportsRefs ? referenceImagePaths.length : 0,
         referenceAudioCount: modelSpec.family === 'seedance' ? referenceAudioPaths.length : 0,
+        nativeAudioMode,
         generateAudio: seedanceNativeAudio,
         storyboardAssetId: useStoryboardMode ? shot.storyboard_asset_id : null,
         startImageAssetId: useStoryboardMode ? null : shot.image_asset_id,

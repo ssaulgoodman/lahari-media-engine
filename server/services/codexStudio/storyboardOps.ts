@@ -1290,7 +1290,7 @@ export const applyGenerateVideo = async (
   shotId: string,
   promptOverride?: string,
   modelOverride: ModelOverride = {},
-  opts: { acknowledgePreviousChargeRisk?: boolean } = {},
+  opts: { acknowledgePreviousChargeRisk?: boolean; nativeAudioMode?: 'auto' | 'off' | 'on' } = {},
 ) => {
   const plan = planGenerateVideo(project, shotId, modelOverride);
   if (!plan.canRun) {
@@ -1311,7 +1311,11 @@ export const applyGenerateVideo = async (
     }));
   }
 
-  const result = await generateShotVideo(project.id, shotId, { promptOverride, modelOverride: { videoModel: modelOverride.videoModel } });
+  const result = await generateShotVideo(project.id, shotId, {
+    promptOverride,
+    nativeAudioMode: opts.nativeAudioMode,
+    modelOverride: { videoModel: modelOverride.videoModel },
+  });
   await recordDirectorEvent({
     projectId: project.id,
     source: 'codex',
@@ -1321,6 +1325,7 @@ export const applyGenerateVideo = async (
     summary: `Codex generated a video for ${shotLabel(plan.shot.sceneIndex - 1, plan.shot.shotIndex - 1)}.`,
     payload: {
       promptOverride: promptOverride || null,
+      nativeAudioMode: opts.nativeAudioMode || null,
       mode: plan.mode,
       model: plan.model,
       modelOverride: modelOverride.videoModel ? { videoModel: modelOverride.videoModel } : null,

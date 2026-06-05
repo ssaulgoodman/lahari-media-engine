@@ -198,6 +198,7 @@ export const VIDEO_ACTION_SPECS = {
       dryRun: 'optional boolean',
       promptOverride: 'optional exact final video prompt',
       modelOverride: 'optional videoModel override',
+      nativeAudioMode: 'optional "auto" | "off" | "on"; use "off" for silent lipsync video when final audio will be overlaid in render',
       acknowledgePreviousChargeRisk: 'required true only after a prior video attempt has an unknown or pending provider outcome; retry may spend again',
     },
     examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
@@ -269,7 +270,7 @@ export const AUDIO_ACTION_SPECS = {
     surface: 'audio',
     mutates: true,
     paid: false,
-    description: 'Persist Codex-written per-shot dialogue lines, sound notes, and lipsync/overlay strategy. Accepts structured shots[] or one audio-plan markdown draft.',
+    description: 'Persist Codex-written per-shot dialogue lines, optional line timing (startMs/endMs), sound notes, and lipsync/overlay strategy. Accepts structured shots[] or one audio-plan markdown draft.',
     input: {
       projectId: 'string',
       shots: 'optional array of {shotId, audioPlan, baseHash?}',
