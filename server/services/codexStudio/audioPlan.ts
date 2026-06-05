@@ -192,7 +192,6 @@ export const applyAudioPlan = async (
     await updateRows('shots', { id: input.shotId }, {
       audio_plan: validation.audioPlan,
       audio_plan_stale: false,
-      updated_at: new Date().toISOString(),
     });
     const newHash = audioPlanHash({ ...target.shot, audioPlan: validation.audioPlan, audioPlanStale: false });
     applied.push({ shotId: input.shotId, newHash });
@@ -211,6 +210,10 @@ export const applyAudioPlan = async (
       },
     });
     appendApplyJournal(project, 'applied audio plan', `${shotApplyLabel(target)}\nShot ID: ${input.shotId}\nDialogue lines: ${validation.audioPlan.dialogue.length}\nStrategy: ${validation.audioPlan.dialogueStrategy}\nNew hash: ${newHash}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint', shotId: input.shotId, action: 'audio-plan' })}`);
+  }
+
+  if (applied.length) {
+    await updateRows('projects', { id: project.id }, { updated_at: new Date().toISOString() });
   }
 
   const notebookProject = nextPlansByShot.size ? nextProjectWithAudioPlans(project, nextPlansByShot) : project;
