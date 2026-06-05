@@ -167,9 +167,12 @@ create table if not exists studio_shots (
   use_prev_storyboard_ref boolean not null default false,
   include_prev_cut_plan boolean default null,
   excluded_refs jsonb not null default '{"storyboard":[],"video":[]}'::jsonb,
+  workflow_mode text default 'auto',
   lipsync_enabled boolean default false,
   audio_plan jsonb,
-  audio_plan_stale boolean not null default false
+  audio_plan_stale boolean not null default false,
+  constraint studio_shots_workflow_mode_check
+    check (workflow_mode in ('auto', 'storyboard', 'keyframe'))
 );
 
 create index if not exists studio_shots_scene_idx

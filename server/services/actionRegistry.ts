@@ -170,6 +170,21 @@ export const STORYBOARD_ACTION_SPECS = {
 } as const;
 
 export const VIDEO_ACTION_SPECS = {
+  import_keyframe_image: {
+    key: 'import_keyframe_image',
+    title: 'Import keyframe image',
+    surface: 'video',
+    mutates: true,
+    paid: false,
+    description: 'Attach an uploaded/native image as the shot start keyframe for keyframe-mode video. Use after /api/agent/uploads purpose=keyframe_image, or reuse any existing image asset in this project.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      sourceAssetId: 'uploaded or existing image asset id',
+      note: 'optional short reason/source note',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', sourceAssetId: 'asset_uuid', note: 'Use artist-approved podcast still as the start keyframe.' }],
+  },
   generate_video: {
     key: 'generate_video',
     title: 'Generate video',

@@ -184,14 +184,14 @@ export const createCliToken = async (
       fileField: 'file',
       fields: {
         projectId: opts.projectId,
-        purpose: 'cast_reference | env_reference | style_reference | cast_guide | env_guide | style_guide | storyboard_image | audio_source',
+        purpose: 'cast_reference | env_reference | style_reference | cast_guide | env_guide | style_guide | storyboard_image | keyframe_image | audio_source',
         entityId: 'required for cast_reference, env_reference, cast_guide, and env_guide',
       },
       examples: {
         posix: posixUploadExample,
         powershell: powershellUploadExample,
       },
-      next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction/import_storyboard_image, as guideAssetId for generation, or leave audio_source attached to the project.',
+      next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction/import_storyboard_image/import_keyframe_image, as guideAssetId for generation, or leave audio_source attached to the project.',
     },
     note: 'Short-lived project-scoped token. Do not store it. Install/update the Mirage CLI once with commands.installCli outside the token flow, initialize the workspace once with commands.init, then use commands.posix/commands.powershell for project-file sync. Project sync writes only mirage/projects/<projectId>/ plus small workspace metadata; skills come from the installed Mirage plugin and action schemas come from live MCP. Use npx fallback commands only when the installed CLI is unavailable and the artist accepts that npm will download code while carrying a live short-lived token. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
     sync: {

@@ -871,6 +871,89 @@ export const importStoryboardImage = async (
   };
 };
 
+export const importKeyframeImage = async (
+  project: Project,
+  input: { shotId: string; sourceAssetId: string; note?: string },
+) => {
+  const target = findProjectShot(project, input.shotId);
+  if (!target) throw new Error(`Shot not found in project: ${input.shotId}`);
+  const sourceAsset = await selectOne('assets', { id: input.sourceAssetId, project_id: project.id });
+  if (!sourceAsset) throw new Error(`Keyframe source asset not found in this project: ${input.sourceAssetId}`);
+  if (!sourceAsset.file_path) throw new Error(`Keyframe source asset has no file_path: ${input.sourceAssetId}`);
+  if (String(sourceAsset.category || '').includes('audio')) throw new Error('Keyframe imports require an image asset, not an audio asset.');
+
+  const importedAt = new Date().toISOString();
+  const keyframeAssetId = crypto.randomUUID();
+  const prompt = target.shot.visualPrompt || target.shot.direction || `Agent-imported start keyframe for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}`;
+  await insertRow('assets', {
+    id: keyframeAssetId,
+    project_id: project.id,
+    shot_id: input.shotId,
+    category: 'shot_image',
+    file_path: sourceAsset.file_path,
+    prompt,
+    metadata: JSON.stringify({
+      variant: 'agent_imported_keyframe_image',
+      sourceAssetId: input.sourceAssetId,
+      importedAt,
+      importedBy: 'agent',
+      note: input.note || null,
+    }),
+  });
+
+  await updateRows('shots', { id: input.shotId }, {
+    image_asset_id: keyframeAssetId,
+    image_status: 'success',
+    video_status: 'stale',
+    user_feedback: input.note || null,
+    last_error: null,
+  });
+
+  const imageUrl = storageUrl(sourceAsset.file_path);
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'keyframe_imported',
+    entityType: 'shot',
+    entityId: input.shotId,
+    summary: `Codex imported a start keyframe for ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}.`,
+    payload: {
+      sourceAssetId: input.sourceAssetId,
+      keyframeAssetId,
+      webUrl: webStudioUrl(project.id, { step: 'studio', shotId: input.shotId, action: 'review-frame' }),
+      note: input.note || null,
+    },
+  });
+  appendSessionJournalEntry(
+    project,
+    'imported start keyframe image',
+    `${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)}\nShot ID: ${input.shotId}\nSource asset ID: ${input.sourceAssetId}\nKeyframe asset ID: ${keyframeAssetId}\nWeb: ${webStudioUrl(project.id, { step: 'studio', shotId: input.shotId, action: 'review-frame' })}`,
+  );
+
+  const notebookProject = withShotPatch(project, input.shotId, {
+    imageUrl,
+    videoStatus: 'stale',
+  });
+
+  return {
+    kind: 'mirage.apply.import_keyframe_image',
+    generatedAt: importedAt,
+    project: { id: project.id, title: project.title },
+    shot: {
+      id: input.shotId,
+      label: shotLabel(target.sceneIndex - 1, target.shotIndex - 1),
+      sourceAssetId: input.sourceAssetId,
+      keyframeAssetId,
+      imageUrl,
+    },
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      shotPrompts: true,
+    }),
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId: input.shotId, action: 'review-frame' }),
+    note: 'Imported the provided image as the shot start keyframe. Keyframe-mode video generation can now use it; existing storyboard boards are unchanged.',
+  };
+};
+
 export const unlockStoryboardBoard = async (project: Project, shotId: string) => {
   const target = findProjectShot(project, shotId);
   if (!target) throw new Error(`Shot not found in project: ${shotId}`);

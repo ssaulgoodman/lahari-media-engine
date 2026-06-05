@@ -52,6 +52,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Style direction: use `generate_style_candidates`, `apply_style_direction`, style notes, or project prompt overrides depending on scope.
 - Cast/environment refs: use `generate_candidates`, `list_results`, `lock_reference`, or upload an image through `/api/agent/uploads`.
 - Native storyboard image: upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
+- Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
 - Video: use `run_action(generate_video, { dryRun: true })` for requirements/cost, then `start_job(generate_video)` after approval.
 - Audio: use `apply_audio_plan`, `apply_cast_voice`, and `generate_dialogue_audio` when producing dialogue/narration.
@@ -64,7 +65,7 @@ Do not solve every problem by regenerating. Pick the smallest lever that address
 - Use `promptOverride` when one paid call needs an exact final model prompt. If the same phrasing keeps working, suggest promoting it to a project prompt override or style note.
 - Use style notes for reusable taste, model phrasing, or project language that should influence future prompts without replacing them.
 - Use image edit/refine when identity and composition are mostly right but one visual axis is wrong. Regenerate when staging, premise, panel structure, or reference use is wrong.
-- Use native imagegen plus `import_storyboard_image` when outside image work beats Mirage generation.
+- Use native imagegen plus `import_storyboard_image` for storyboard boards, or `import_keyframe_image` for start frames, when outside image work beats Mirage generation.
 - Add extra uploaded refs when the scene needs something not normally attached to the shot, such as a painting, product, prop, logo, or special environment detail.
 
 Reference language should stay clean. The renderer receives attached images with explicit roles; prompt text should use graph names and object roles, not long wardrobe/style re-descriptions. For unusual refs, name the role directly: "use the guide image as the painting on the wall."

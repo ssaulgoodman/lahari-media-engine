@@ -292,6 +292,12 @@ const importStoryboardImageInputSchema = z.object({
   lock: z.boolean().optional(),
   note: mediumText.optional(),
 });
+const importKeyframeImageInputSchema = z.object({
+  projectId,
+  shotId,
+  sourceAssetId: idString,
+  note: mediumText.optional(),
+});
 const storyboardLockInputSchema = z.object({
   projectId,
   shotId,
@@ -1019,6 +1025,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         shotId: input.shotId,
         sourceAssetId: input.sourceAssetId,
         lock: input.lock,
+        note: input.note,
+      });
+    }
+    if (actionKey === 'import_keyframe_image') {
+      const input = importKeyframeImageInputSchema.parse(rawInput);
+      return studio.importKeyframeImage(await fullProjectForUser(input.projectId, auth.userId), {
+        shotId: input.shotId,
+        sourceAssetId: input.sourceAssetId,
         note: input.note,
       });
     }

@@ -17,6 +17,7 @@ const PURPOSES = [
   'style_guide',
   'audio_source',
   'storyboard_image',
+  'keyframe_image',
 ] as const;
 
 type UploadPurpose = typeof PURPOSES[number];
@@ -41,6 +42,7 @@ const extFromMime = (mimeType?: string) => {
 const categoryForPurpose = (purpose: UploadPurpose) => {
   if (purpose === 'audio_source') return 'audio_source';
   if (purpose === 'storyboard_image') return 'storyboard_user_import';
+  if (purpose === 'keyframe_image') return 'keyframe_user_import';
   if (purpose.startsWith('cast_')) return 'character_user_ref';
   if (purpose.startsWith('env_')) return 'environment_user_ref';
   return 'style_user_ref';
@@ -78,6 +80,9 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
     if (purpose === 'storyboard_image' && !String(req.file.mimetype || '').toLowerCase().startsWith('image/')) {
       return res.status(400).json({ code: 'validation_failed', message: 'storyboard_image uploads require an image/* file.' });
+    }
+    if (purpose === 'keyframe_image' && !String(req.file.mimetype || '').toLowerCase().startsWith('image/')) {
+      return res.status(400).json({ code: 'validation_failed', message: 'keyframe_image uploads require an image/* file.' });
     }
 
     const filePath = await saveBuffer(req.file.buffer, storageCategoryForPurpose(purpose), extFromMime(req.file.mimetype));
@@ -123,9 +128,11 @@ router.post('/', upload.single('file'), async (req, res) => {
         ? 'Use this assetId as sourceAssetId in run_action(apply_style_direction). If styleDescription is empty, Mirage will auto-identify style text when the asset is locked.'
         : purpose === 'storyboard_image'
           ? 'Use this assetId as sourceAssetId in run_action(import_storyboard_image) with shotId and optional lock=true.'
-        : purpose.endsWith('_guide')
-          ? 'Use this assetId as guideAssetId in run_action(generate_candidates).'
-          : 'Use this assetId as sourceAssetId in run_action(lock_reference).';
+          : purpose === 'keyframe_image'
+            ? 'Use this assetId as sourceAssetId in run_action(import_keyframe_image) with shotId. Then use run_action(apply_shot_workflow_modes) if the shot must force keyframe mode.'
+            : purpose.endsWith('_guide')
+              ? 'Use this assetId as guideAssetId in run_action(generate_candidates).'
+              : 'Use this assetId as sourceAssetId in run_action(lock_reference).';
 
     return res.json({
       kind: 'mirage.agent.upload',

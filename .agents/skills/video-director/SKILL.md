@@ -24,6 +24,8 @@ Do not generate video to discover what a bad still already tells you.
 
 **Storyboard mode:** the locked board is primary; style/cast/environment refs are sent with it. If the board is wrong, fix storyboard first.
 
+If an uploaded/native image should be the start frame, upload with `purpose=keyframe_image`, then call `run_action(import_keyframe_image)`. Use `apply_shot_workflow_modes` only when the shot must force keyframe or storyboard instead of auto.
+
 Seedance cannot use `first_frame_url` and `reference_images` together. Keyframe prioritizes frame control; storyboard prioritizes board plus refs.
 
 ## Motion Prompt Pattern
@@ -47,6 +49,7 @@ Weak:
 ## Choose The Lever
 
 - **Save keyframe motion text** -> `run_action(apply_video_prompt)`. It does not generate.
+- **Use an existing/native image as start frame** -> `run_action(import_keyframe_image)`.
 - **Check requirements/cost** -> `run_action(generate_video, { dryRun: true })`.
 - **Generate** -> `start_job(generate_video)` after approval.
 - **Previous provider outcome unknown/pending** -> do not retry until the artist acknowledges the risk; pass `acknowledgePreviousChargeRisk: true` only after that approval.
