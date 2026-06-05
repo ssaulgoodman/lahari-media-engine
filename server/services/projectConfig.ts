@@ -541,11 +541,12 @@ export const applyProjectPreferences = async (
     throw driftError('Project preferences changed since this desk copy was written. Re-attach or refresh config before applying.', current.hash, baseHash);
   }
   const cleaned = cleanPreferences(preferencesInput, basePreferences(project));
+  const nextStored = { ...current.storedPreferences, ...cleaned.stored };
   const { error } = await getSB()
     .from(T.project_config)
     .upsert({
       project_id: project.id,
-      preferences: cleaned.stored,
+      preferences: nextStored,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'project_id' });
   if (error) throw new Error(`DB upsert project_config: ${error.message}`);
