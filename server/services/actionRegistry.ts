@@ -418,6 +418,20 @@ export const STYLE_ACTION_SPECS = {
 } as const;
 
 export const SYSTEM_ACTION_SPECS = {
+  apply_project_settings: {
+    key: 'apply_project_settings',
+    title: 'Apply project settings',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Persist project-level format settings such as aspectRatio before visual generation. Use this for portrait/landscape/square project format, not model/provider preferences.',
+    input: {
+      projectId: 'string',
+      settings: '{ aspectRatio?: "16:9" | "9:16" | "1:1" }',
+      allowExistingVisualsStale: 'optional boolean; required to change format after visual assets exist',
+    },
+    examples: [{ projectId: 'project_uuid', settings: { aspectRatio: '9:16' } }],
+  },
   apply_project_preferences: {
     key: 'apply_project_preferences',
     title: 'Apply project preferences',

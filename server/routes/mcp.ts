@@ -453,6 +453,13 @@ const projectPreferencesInputSchema = z.object({
   }),
   baseHash: idString.optional(),
 });
+const projectSettingsInputSchema = z.object({
+  projectId,
+  settings: z.object({
+    aspectRatio: z.enum(['16:9', '9:16', '1:1']).optional(),
+  }),
+  allowExistingVisualsStale: z.boolean().optional(),
+});
 const projectStyleNotesInputSchema = z.object({
   projectId,
   styleNotes: z.object({
@@ -916,6 +923,12 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (actionKey === 'apply_project_preferences') {
       const input = projectPreferencesInputSchema.parse(rawInput);
       return studio.applyProjectPreferencesConfig(await fullProjectForUser(input.projectId, auth.userId), input.preferences, input.baseHash);
+    }
+    if (actionKey === 'apply_project_settings') {
+      const input = projectSettingsInputSchema.parse(rawInput);
+      return studio.applyProjectSettingsConfig(await fullProjectForUser(input.projectId, auth.userId), input.settings, {
+        allowExistingVisualsStale: input.allowExistingVisualsStale,
+      });
     }
     if (actionKey === 'apply_project_style_notes') {
       const input = projectStyleNotesInputSchema.parse(rawInput);
@@ -1684,6 +1697,22 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       baseHash: z.string().optional(),
     },
   }, async ({ projectId, preferences, baseHash }) => studio.applyProjectPreferencesConfig(await fullProjectForUser(projectId, auth.userId), preferences, baseHash));
+
+  registerTool('apply_project_settings', {
+    title: 'Apply project settings',
+    description: 'Mutating. Persists project format settings such as aspect ratio before visual generation.',
+    inputSchema: {
+      projectId,
+      settings: z.object({
+        aspectRatio: z.enum(['16:9', '9:16', '1:1']).optional(),
+      }),
+      allowExistingVisualsStale: z.boolean().optional(),
+    },
+  }, async ({ projectId, settings, allowExistingVisualsStale }) => studio.applyProjectSettingsConfig(
+    await fullProjectForUser(projectId, auth.userId),
+    settings,
+    { allowExistingVisualsStale },
+  ));
 
   registerTool('apply_shot_prompts', {
     title: 'Apply shot prompts',

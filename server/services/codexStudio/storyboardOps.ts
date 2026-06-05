@@ -953,6 +953,112 @@ export const applyProjectPreferencesConfig = async (
   };
 };
 
+export const applyProjectSettingsConfig = async (
+  project: Project,
+  settings: { aspectRatio?: '16:9' | '9:16' | '1:1' },
+  opts: { allowExistingVisualsStale?: boolean } = {},
+) => {
+  const updates: Record<string, unknown> = {};
+  const changed: Record<string, { previous: unknown; next: unknown }> = {};
+  const staleShotIds = new Set<string>();
+  const warnings: string[] = [];
+
+  if (settings.aspectRatio !== undefined && settings.aspectRatio !== project.aspectRatio) {
+    const hasVisuals = Boolean(project.styleAssetId)
+      || project.cast.some((member) => Boolean(member.referenceAssetId || member.referenceImageUrl))
+      || project.environments.some((environment) => Boolean(environment.referenceAssetId || environment.referenceImageUrl))
+      || project.scenes.some((scene) => scene.shots.some((shot) => Boolean(
+        shot.imageUrl
+        || shot.endImageUrl
+        || shot.storyboardUrl
+        || shot.storyboardAssetId
+        || shot.videoUrl
+      )));
+    if (hasVisuals && !opts.allowExistingVisualsStale) {
+      throw new Error('Project aspect ratio is locked once visual assets exist. Pass allowExistingVisualsStale only after the artist accepts that existing visuals may no longer match.');
+    }
+    updates.aspect_ratio = settings.aspectRatio;
+    changed.aspectRatio = { previous: project.aspectRatio || '16:9', next: settings.aspectRatio };
+    if (hasVisuals) warnings.push('existing_visuals_may_no_longer_match_aspect_ratio');
+  }
+
+  if (!Object.keys(updates).length) {
+    return {
+      kind: 'mirage.apply.project_settings',
+      generatedAt: new Date().toISOString(),
+      project: { id: project.id, title: project.title },
+      changed,
+      staleShotIds: [],
+      warnings,
+      changedArtifacts: [],
+      webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+      note: 'No project settings changed.',
+    };
+  }
+
+  updates.updated_at = new Date().toISOString();
+  await updateRows('projects', { id: project.id }, updates);
+
+  if (changed.aspectRatio) {
+    for (const scene of project.scenes) {
+      for (const shot of scene.shots) {
+        if (shot.storyboardUrl || shot.videoUrl || shot.imageUrl || shot.endImageUrl) staleShotIds.add(shot.id);
+      }
+    }
+    for (const shotId of staleShotIds) {
+      await updateRows('shots', { id: shotId }, {
+        prompts_stale: true,
+        storyboard_status: 'stale',
+        video_status: 'stale',
+      });
+    }
+  }
+
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_settings_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Codex applied project settings: ${Object.keys(changed).join(', ')}.`,
+    payload: { changed, staleShotIds: [...staleShotIds], warnings },
+  });
+  appendSessionJournalEntry(
+    project,
+    'applied project settings',
+    `Changed: ${Object.keys(changed).join(', ')}\nStale shots: ${staleShotIds.size || 0}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`,
+  );
+
+  const notebookProject: Project = {
+    ...project,
+    aspectRatio: settings.aspectRatio || project.aspectRatio,
+    scenes: project.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => (
+        staleShotIds.has(shot.id)
+          ? { ...shot, promptsStale: true, storyboardStatus: 'stale', videoStatus: 'stale' }
+          : shot
+      )),
+    })),
+  };
+
+  return {
+    kind: 'mirage.apply.project_settings',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    changed,
+    staleShotIds: [...staleShotIds],
+    warnings,
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, {
+      brief: true,
+      style: true,
+      shotPrompts: Boolean(staleShotIds.size),
+    }),
+    webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+    note: 'Applied project settings. Future generation will use the updated project format.',
+  };
+};
+
 export const applyProjectStyleNotesConfig = async (
   project: Project,
   styleNotes: unknown,
