@@ -47,14 +47,16 @@ const posixCliCacheEnv = `NPM_CONFIG_CACHE="${posixCliCacheDir}" npm_config_cach
 const powershellCliCacheCommand = `$env:NPM_CONFIG_CACHE=(Join-Path ([System.IO.Path]::GetTempPath()) 'mirage-npm-cache'); $env:npm_config_cache=$env:NPM_CONFIG_CACHE`;
 export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.10';
 
-const codexPluginInstallCommand = (token: string, endpoint: string) => `launchctl setenv MIRAGE_MCP_TOKEN '${token}'
+const codexPluginInstallCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+launchctl setenv MIRAGE_MCP_TOKEN '${token}'
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
 codex mcp remove mirage
 codex mcp add mirage --url ${endpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
 
-const codexPluginInstallWindowsCommand = (token: string, endpoint: string) => `[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${token}", "User")
+const codexPluginInstallWindowsCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${token}", "User")
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
 codex mcp remove mirage
