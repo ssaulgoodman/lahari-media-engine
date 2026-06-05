@@ -6,7 +6,7 @@
       "headers": {
         "Authorization": "Bearer ${MIRAGE_MCP_TOKEN}"
       },
-      "note": "Get a Mirage MCP token from the deployed /connect flow. The beta plugin should eventually own this auth handoff."
+      "note": "Get a Mirage MCP token from the deployed /connect flow and set MIRAGE_MCP_TOKEN before starting Codex."
     }
   }
 }

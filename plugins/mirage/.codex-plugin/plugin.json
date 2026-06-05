@@ -1,6 +1,6 @@
 {
   "name": "mirage",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Operate Mirage video projects from Codex with project sync, production actions, and craft skills.",
   "author": {
     "name": "Mothership",
@@ -38,6 +38,8 @@
       "Start a new Mirage video from this idea",
       "Refresh this Mirage workspace"
     ],
-    "brandColor": "#101827"
+    "brandColor": "#101827",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/logo.svg"
   }
 }

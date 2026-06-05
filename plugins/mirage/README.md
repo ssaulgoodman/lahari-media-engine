@@ -10,23 +10,28 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 - Mirage operator skill for connect/open/sync habits.
 - Node skills for concept, script, style, casting, sound, audio, storyboarding, and video.
 - Starter prompts for opening a project, creating a video, refreshing a workspace, and checking coherence.
+- Mirage icon and app metadata for the Codex plugin UI.
 
 ## Still Manual In This Beta
 
-- Authentication still comes from Mirage `/connect`. The plugin MCP config expects `MIRAGE_MCP_TOKEN` until the plugin owns the auth handoff.
+- Authentication still comes from Mirage `/connect`. The plugin MCP config expects `MIRAGE_MCP_TOKEN` until Codex supports a native plugin-owned auth handoff.
 - Local notebook sync still uses `mint_cli_token` and the returned Mirage CLI command.
 - A future plugin/local bridge should own sync and uploads directly instead of asking the agent to reason about shell commands.
 
-## Local Install Test
+## Install Test
 
-From this repo:
+From macOS with Codex Desktop:
 
 ```bash
-codex plugin marketplace add ./plugins
+launchctl setenv MIRAGE_MCP_TOKEN '<token-from-connect>'
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
 codex plugin add mirage@mirage-local
+codex mcp remove mirage
+codex mcp add mirage --url https://mirage-platform-production-05ca.up.railway.app/mcp --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp get mirage --json
 ```
 
-Then start a new Codex thread. Plugin skills and MCP config are loaded at session start.
+Then fully restart Codex and start a new thread in an empty Mirage workspace folder. Plugin skills and MCP config are loaded at session start.
 
 The first useful prompt after install is:
 
@@ -35,6 +40,8 @@ Check Mirage status and open my latest project.
 ```
 
 Codex should call `mirage_doctor`, choose or create a project, sync the local workbench with the returned `mint_cli_token` command, and tell the artist if a fresh chat is needed because skills or action schemas changed on disk.
+
+If a paid provider call returns outcome unknown, Codex should inspect the generation trace/attempt before retrying. Do not spend again until the prior provider request is reconciled or the artist explicitly accepts the charge risk.
 
 ## Beta Onboarding Goal
 

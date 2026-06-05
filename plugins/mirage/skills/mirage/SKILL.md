@@ -72,3 +72,5 @@ For native storyboard images, upload with `purpose=storyboard_image`, then call 
 ## Paid Work
 
 Ask before paid generation. Prefer `dryRun` where available for cost and missing-requirement checks. Use `start_job` for paid image, storyboard, video, and audio generation, then poll with `get_job`.
+
+If video generation returns provider outcome unknown, pending, or fetch/poll failed, do not retry immediately. Read the generation trace or attempt record, preserve the provider request ID if present, and ask the artist before acknowledging prior charge risk or starting another paid attempt.

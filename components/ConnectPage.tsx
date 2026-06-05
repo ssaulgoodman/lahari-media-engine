@@ -263,6 +263,25 @@ export const ConnectPage: React.FC<{
   const tokenMaskedSuffix = token ? token.slice(-6) : '';
   const canMintToken = anyLaneReady;
 
+  const codexPluginMacInstall = `launchctl setenv MIRAGE_MCP_TOKEN '${tokenPlaceholder}'
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
+codex plugin add mirage@mirage-local
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp get mirage --json`;
+  const codexPluginLinuxInstall = `export MIRAGE_MCP_TOKEN=${tokenPlaceholder}
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
+codex plugin add mirage@mirage-local
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp get mirage --json`;
+  const codexPluginWindowsInstall = `[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${tokenPlaceholder}", "User")
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse plugins
+codex plugin add mirage@mirage-local
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp get mirage --json
+Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
   const codexAppFields = `Name: mirage
 Type: Streamable HTTP
 URL: ${mcpEndpoint}
@@ -305,18 +324,28 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
 
   const codexContent = (() => {
     if (codexPlatform === 'mac' || codexPlatform === 'linux') {
+      const installCommand = codexPlatform === 'mac' ? codexPluginMacInstall : codexPluginLinuxInstall;
       return (
         <div className="space-y-5">
-          <Step n={1} title="Open Codex Desktop → Settings → MCP Servers → Add server">
-            <CodeBlock value={codexAppFields} copyLabel="Copy fields" />
+          <Step n={1} title="Install the Mirage plugin and connection">
+            <CodeBlock value={installCommand} copyLabel="Copy commands" />
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Select <span className="text-zinc-300">Streamable HTTP</span>. Leave bearer-token env var blank — the Authorization header carries it directly.
+              This installs the Mirage plugin from the Mirage branch, stores this token for Codex, registers the Mirage MCP server, and verifies the connection.
             </p>
           </Step>
-          <Step n={2} title="Save and fully restart Codex Desktop">
+          <Step n={2} title="Fully restart Codex Desktop">
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Quit completely (not just close the window). Reopen and start a new chat.
+              Quit completely, reopen Codex, open an empty Mirage workspace folder, and start a new chat.
             </p>
+            <details className="surface-inset rounded-md p-3">
+              <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 select-none">Manual MCP fallback</summary>
+              <div className="mt-3 space-y-2">
+                <CodeBlock value={codexAppFields} copyLabel="Copy fields" small />
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Use only if plugin install is blocked. The plugin path is preferred because it also installs Mirage skills.
+                </p>
+              </div>
+            </details>
           </Step>
         </div>
       );
@@ -325,15 +354,24 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
       return (
         <div className="space-y-5">
           <Step n={1} title="Open PowerShell and run">
-            <CodeBlock value={codexWindowsInstall} copyLabel="Copy script" />
+            <CodeBlock value={codexPluginWindowsInstall} copyLabel="Copy script" />
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Stores the token in your Windows user environment, registers the MCP server, then stops Codex so the reopened app inherits the token.
+              Installs the Mirage plugin, stores this token in your Windows user environment, registers the Mirage MCP server, then stops Codex so the reopened app inherits the token.
             </p>
           </Step>
           <Step n={2} title="Reopen Codex Desktop">
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Start a new chat. The Mirage tools should appear when triggered.
+              Open an empty Mirage workspace folder and start a new chat. The Mirage plugin skills and tools should appear when triggered.
             </p>
+            <details className="surface-inset rounded-md p-3">
+              <summary className="cursor-pointer text-[11px] text-zinc-400 hover:text-zinc-200 select-none">Manual MCP fallback</summary>
+              <div className="mt-3 space-y-2">
+                <CodeBlock value={codexWindowsInstall} copyLabel="Copy MCP script" small />
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  Use only if plugin install is blocked. The plugin path is preferred because it also installs Mirage skills.
+                </p>
+              </div>
+            </details>
           </Step>
         </div>
       );
@@ -509,7 +547,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
             <div className="mb-6">
               <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 2</p>
               <h2 className="text-xl font-display text-white tracking-tight">Install in your harness</h2>
-              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Pick the harness you use. Restart it once after install.</p>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Pick the harness you use. Codex gets the Mirage plugin; Claude Code uses the direct MCP connection for now.</p>
             </div>
 
             {/* Harness tabs */}
@@ -571,12 +609,12 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
               <div className="flex-1 min-w-0">
                 <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-300/80 mb-1.5">Step 3 — Verify</p>
                 <h2 className="text-lg font-display text-white tracking-tight mb-3">You're connected when this works</h2>
-                <p className="text-sm text-zinc-300 leading-relaxed mb-3">In your harness chat, ask:</p>
+                <p className="text-sm text-zinc-300 leading-relaxed mb-3">In a fresh harness chat, ask:</p>
                 <div className="surface-inset rounded-md px-4 py-3 mb-3">
-                  <p className="text-sm text-white font-mono">List my Mirage projects</p>
+                  <p className="text-sm text-white font-mono">Check Mirage status and open my latest project.</p>
                 </div>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  If you see your projects, you're connected. Then try: <span className="text-zinc-300">"Start a new anime project"</span> — your agent will guide you through intake.
+                  The agent should run <span className="font-mono text-zinc-300">mirage_doctor</span>, open or create a project, sync the workspace, and tell you if a fresh chat is needed.
                 </p>
               </div>
             </div>
@@ -599,7 +637,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
                 <ul className="text-xs text-zinc-400 leading-relaxed space-y-1 ml-4 list-disc">
                   <li>Fully <span className="text-zinc-300">quit</span> the harness — closing the window isn't enough.</li>
                   <li>Open a new chat (existing chats may not pick up newly-registered MCP servers).</li>
-                  <li>Ask the agent: <span className="text-zinc-300">"What MCP servers do you have access to?"</span></li>
+                  <li>For Codex, run <span className="font-mono text-zinc-300">codex mcp get mirage --json</span> and <span className="font-mono text-zinc-300">codex plugin add mirage@mirage-local</span> again if needed.</li>
                   <li>If the server is listed but tools fail, your token may be expired. Mint a new one.</li>
                 </ul>
               </div>

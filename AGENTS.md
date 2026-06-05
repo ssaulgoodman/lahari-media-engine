@@ -29,7 +29,7 @@ This checkout is the **Mirage platform lane**.
 
 Do Mirage platform work here. Do not switch the main checkout away from `main` for Lahari work, and do not use this checkout for urgent Lahari production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
-Artists do not use this repo. They mint a token at the deployed Mirage `/connect` page, paste the install snippet into Codex Desktop or Claude Code, restart their harness, open any empty folder, and ask to open a project. The agent attaches via remote MCP and syncs the notebook with `mint_cli_token` → returned `@ssaulgoodman420/mirage-cli@0.1.5` command. On Windows/Codex, prefer installing the CLI once, then use the returned installed-CLI command so `npx` is not downloading code while holding a live token. No engine code on the artist's machine.
+Artists do not use this repo. They mint a token at the deployed Mirage `/connect` page, install the Codex plugin or direct Claude Code MCP connection from the shown snippet, restart their harness, open any empty folder, and ask to open a project. The agent attaches via remote MCP and syncs the notebook with `mint_cli_token` → the returned Mirage CLI command. On Windows/Codex, prefer installing the CLI once, then use the returned installed-CLI command so `npx` is not downloading code while holding a live token. No engine code on the artist's machine.
 
 Current notebook contract:
 - Workspace-shared files are hash-gated and tracked in root `.mirage-workspace-state.json`; project files are tracked in `mirage/projects/<projectId>/.sync-state.json`. Existing old per-project `config/actions/*` and `config/skills.json` are pruned by CLI sync.
@@ -207,7 +207,7 @@ Generated local artifacts from current internal debug commands live under `.mira
 
 Durable artist/operator decisions are written to Supabase director events (`lahari_director_events` in legacy mode, prefix-mapped for studio mode where applicable). Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.mirage/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
 
-Remote artist notebooks use the two-tier layout: shared Mirage files at the workspace root, project files under `mirage/projects/<projectId>/`. The preferred path is `mint_cli_token` plus the returned `@ssaulgoodman420/mirage-cli@0.1.5 sync <projectId>` command; `write_project_notebook` is the heavy MCP fallback for no-shell harnesses.
+Remote artist notebooks use the two-tier layout: shared Mirage files at the workspace root, project files under `mirage/projects/<projectId>/`. The preferred path is `mint_cli_token` plus the returned Mirage CLI sync command; `write_project_notebook` is the heavy MCP fallback for no-shell harnesses.
 
 **Realtime transport is shipped (R36):** prefix-mapped `agent_operations` tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across project-relevant tables for cascade refresh.
 
