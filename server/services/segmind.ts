@@ -800,7 +800,6 @@ const resolveCompletedSegmindOutput = async (
   if (responseUrl) {
     const res = await fetch(responseUrl, {
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'x-api-key': apiKey,
       },
     });
@@ -852,7 +851,6 @@ const pollSegmindRequest = async (params: {
     try {
       res = await fetch(params.pollUrl, {
         headers: {
-          Authorization: `Bearer ${params.apiKey}`,
           'x-api-key': params.apiKey,
         },
       });
