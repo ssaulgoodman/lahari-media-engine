@@ -533,6 +533,7 @@ const TimelineEditor: React.FC<Props> = ({
       // resetToken, so after a reset we fall through to fresh-clips seeding.
       if (projectId) {
         const localSnap = loadSnapshot(projectId);
+        let serverSnap: ReturnType<typeof loadSnapshot> | null = null;
         let snap: ReturnType<typeof loadSnapshot> | null = null;
         let serverVersion: number | null = null;
         let serverUpdatedAt: number | null = null;
@@ -540,20 +541,22 @@ const TimelineEditor: React.FC<Props> = ({
         try {
           const remote = await getProjectTimeline(projectId);
           if (remote.timeline?.snapshot?.trackItemIds?.length) {
-            snap = {
+            serverSnap = {
               ...remote.timeline.snapshot,
               version: 1,
               savedAt: new Date(remote.timeline.updatedAt).getTime(),
             };
             serverVersion = remote.timeline.version;
-            serverUpdatedAt = snap.savedAt;
+            serverUpdatedAt = serverSnap.savedAt;
           }
         } catch (err) {
           console.warn('[timeline-load-server]', err);
         }
         if (localSnap?.trackItemIds?.length) {
           snap = localSnap;
-          restoredLocalDraft = true;
+          restoredLocalDraft = !serverSnap || timelineSignature(localSnap) !== timelineSignature(serverSnap);
+        } else if (serverSnap) {
+          snap = serverSnap;
         }
         let restored: {
           tracks: any[];
