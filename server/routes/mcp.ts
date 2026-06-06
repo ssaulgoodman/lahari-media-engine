@@ -1742,22 +1742,6 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     },
   }, async ({ projectId, preferences, baseHash }) => studio.applyProjectPreferencesConfig(await fullProjectForUser(projectId, auth.userId), preferences, baseHash));
 
-  registerTool('apply_project_settings', {
-    title: 'Apply project settings',
-    description: 'Mutating. Persists project format settings such as aspect ratio before visual generation.',
-    inputSchema: {
-      projectId,
-      settings: z.object({
-        aspectRatio: z.enum(['16:9', '9:16', '1:1']).optional(),
-      }),
-      allowExistingVisualsStale: z.boolean().optional(),
-    },
-  }, async ({ projectId, settings, allowExistingVisualsStale }) => studio.applyProjectSettingsConfig(
-    await fullProjectForUser(projectId, auth.userId),
-    settings,
-    { allowExistingVisualsStale },
-  ));
-
   registerTool('apply_shot_prompts', {
     title: 'Apply shot prompts',
     description: 'Mutating. Persists Codex-written visual/motion/direction/continuity updates.',
