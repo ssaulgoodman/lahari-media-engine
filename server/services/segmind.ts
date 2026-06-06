@@ -148,7 +148,7 @@ const prepareSegmindRequest = (
       duration: durationSec,
       resolution,
       aspect_ratio: opts?.aspectRatio || '16:9',
-      generate_audio: false,
+      generate_audio: !!opts?.generateAudio,
       seed: Math.floor(Math.random() * 1000000),
     };
     if (endUrl && model.supportsLastFrame) body.last_frame = endUrl;

@@ -92,6 +92,29 @@ const lineTimingPhrase = (line: DialogueLine): string => {
   return computedEnd ? ` from ${fmt(startMs)} to ${fmt(computedEnd)}` : ` starting at ${fmt(startMs)}`;
 };
 
+const compactPromptText = (value: string): string =>
+  String(value || '')
+    .normalize('NFKC')
+    .replace(/[\s"'“”‘’.,!?;:…\-—–]+/g, '')
+    .toLowerCase();
+
+const promptAlreadyContainsDialogue = (prompt: string, lines: DialogueLine[]): boolean => {
+  const promptKey = compactPromptText(prompt);
+  if (!promptKey) return false;
+  return lines.some((line) => {
+    const lineKey = compactPromptText(String(line.text || ''));
+    if (lineKey.length < 16) return false;
+    return promptKey.includes(lineKey.slice(0, Math.min(80, lineKey.length)));
+  });
+};
+
+const promptRequestsSilence = (prompt: string): boolean =>
+  /\b(silent video|no audible speech|no audible dialogue|no speech|no audio|generate no audible speech|visual mouth performance only)\b/i.test(prompt);
+
+const promptRequestsNativeAudio = (prompt: string): boolean =>
+  !promptRequestsSilence(prompt)
+  && /\b(native synchronized dialogue audio|native dialogue audio|native audio|audible synchronized speech|audible speech|generate audible|dialogue audio)\b/i.test(prompt);
+
 export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
   const project = await selectOne('projects', { id: projectId });
   if (!project) {
@@ -243,26 +266,35 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       if (refLabels.length) veoPromptParts.push(refLabels.join('. '));
     }
 
+    const promptOverrideText = opts.promptOverride?.trim() || '';
+    const baseKeyframePromptText = promptOverrideText || shot.motion_prompt || '';
     const audioPlan = parseJson<AudioPlan | null>(shot.audio_plan, null);
     const projectDialogueMode = dialogueVideoMode(project);
     const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
     const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const hasDialogue = dialogueLines.length > 0;
     const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
+    const keyframePromptHasDialogue = promptAlreadyContainsDialogue(baseKeyframePromptText, dialogueLines);
     const nativeAudioMode = opts.nativeAudioMode || 'auto';
-    const seedanceNativeAudio = modelSpec.family === 'seedance'
+    const canGenerateNativeAudio = modelSpec.family === 'seedance' || modelSpec.family === 'veo';
+    const nativeVideoAudio = canGenerateNativeAudio
       && nativeAudioMode !== 'off'
-      && (nativeAudioMode === 'on' || hasDialogue || !!soundNotes);
+      && (
+        nativeAudioMode === 'on'
+        || (modelSpec.family === 'seedance' && (hasDialogue || !!soundNotes))
+        || promptRequestsNativeAudio(baseKeyframePromptText)
+      );
     const visibleSoundCue = soundNotes
-      ? seedanceNativeAudio
+      ? nativeVideoAudio
         ? `Native audio cue: generate synchronized sound only for this explicit cue: ${soundNotes}`
         : `Visible sound cue to imply through action only, not generated audio: ${soundNotes}`
       : '';
-    if (visibleSoundCue) {
+    if (visibleSoundCue && !promptOverrideText && !(hasDialogue && keyframePromptHasDialogue)) {
       veoPromptParts.push(visibleSoundCue);
     }
     let dialoguePerformanceCue = '';
-    if (planWantsLipsync && !useStoryboardMode) {
+    const shouldAppendDialogueCue = !promptOverrideText && !keyframePromptHasDialogue;
+    if (planWantsLipsync && !useStoryboardMode && shouldAppendDialogueCue) {
       const castNameById = new Map(activeCast.map((c: any) => [c.id, c.name || 'Speaker']));
       const dialogueBrief = dialogueLines
         .map((line) => {
@@ -272,13 +304,13 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         .filter(Boolean)
         .join(' ');
       if (dialogueBrief) {
-        dialoguePerformanceCue = seedanceNativeAudio
+        dialoguePerformanceCue = nativeVideoAudio
           ? `Native audio + lip-sync performance: generate audible synchronized speech for these exact lines, with visible speakers naturally speaking them using believable mouth movement and acting timed to the shot. Do not add subtitles or readable text. ${dialogueBrief}`
           : `Native lip-sync performance: visible speakers should naturally speak these lines with believable mouth movement and acting timed to the shot. Do not add subtitles or readable text. ${dialogueBrief}`;
         veoPromptParts.push(dialoguePerformanceCue);
       }
     }
-    if (projectDialogueMode === 'overlay' && hasDialogue) {
+    if (projectDialogueMode === 'overlay' && hasDialogue && shouldAppendDialogueCue) {
       const castNameById = new Map(activeCast.map((c: any) => [c.id, c.name || 'Speaker']));
       const dialogueBrief = dialogueLines
         .map((line) => {
@@ -288,7 +320,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         .filter(Boolean)
         .join(' ');
       if (dialogueBrief) {
-        dialoguePerformanceCue = seedanceNativeAudio
+        dialoguePerformanceCue = nativeVideoAudio
           ? `Native audio performance: generate audible synchronized speech for these exact lines, with visible speakers naturally saying them using believable mouth movement and acting timed to the shot. The final edit may overlay generated TTS, so keep the native voice clean and natural. Do not add subtitles or readable text. ${dialogueBrief}`
           : `Dialogue performance: visible speakers should naturally say these lines with mouth movement and acting timed to the shot. The final edit may overlay generated TTS, so do not add subtitles or readable text. ${dialogueBrief}`;
         veoPromptParts.push(dialoguePerformanceCue);
@@ -300,7 +332,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         cutPlanText: storyboardCutPlanText,
         refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
         lipsyncEnabled: !!shot.lipsync_enabled && !planWantsLipsync,
-        nativeAudioEnabled: seedanceNativeAudio,
+        nativeAudioEnabled: nativeVideoAudio,
       })
       : '';
     const projectVideoOverride = useStoryboardMode
@@ -309,8 +341,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     const storyboardPrompt = projectVideoOverride
       ? `${projectVideoOverride.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
       : storyboardPromptBase;
-    const keyframePrompt = opts.promptOverride?.trim()
-      ? [opts.promptOverride.trim(), visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n')
+    const keyframePrompt = promptOverrideText
+      ? promptOverrideText
       : veoPromptParts.join('. ');
     const veoPrompt = useStoryboardMode
       ? [storyboardPrompt, visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n')
@@ -384,7 +416,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         skippedReferenceImageCount: referenceImagePaths.length - (sendReferenceImages ? referenceImagePaths.length : 0),
         referenceAudioCount: modelSpec.family === 'seedance' ? referenceAudioPaths.length : 0,
         nativeAudioMode,
-        generateAudio: seedanceNativeAudio,
+        generateAudio: nativeVideoAudio,
         storyboardAssetId: useStoryboardMode ? shot.storyboard_asset_id : null,
         startImageAssetId: useStoryboardMode ? null : shot.image_asset_id,
       },
@@ -394,7 +426,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       endImagePath: useStoryboardMode ? undefined : endImagePath,
       referenceImagePaths: sendReferenceImages ? referenceImagePaths : undefined,
       referenceAudioPaths: modelSpec.family === 'seedance' ? referenceAudioPaths : undefined,
-      generateAudio: seedanceNativeAudio,
+      generateAudio: nativeVideoAudio,
       aspectRatio: aspect,
       resolution,
       durationSec: shot.duration,
@@ -424,7 +456,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       reference_audio_asset_id: referenceAudioAssetId,
       reference_audio_mode: referenceAudioMode,
       dialogue_strategy: projectDialogueMode,
-      native_audio_generated: seedanceNativeAudio,
+      native_audio_generated: nativeVideoAudio,
     });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
     await updateGenerationAttempt(generationAttemptId, {

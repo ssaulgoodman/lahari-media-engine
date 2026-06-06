@@ -39,6 +39,12 @@ const findProjectShot = (project: Project, shotId: string): { shot: ProjectShot;
 
 const roundCost = (cost: number): number => Number(cost.toFixed(3));
 
+const selectProviderDuration = (durations: readonly number[], requestedRaw: any): number => {
+  const sorted = [...durations].sort((a, b) => a - b);
+  const requested = Number(requestedRaw || sorted[0] || 4);
+  return sorted.find((duration) => duration >= requested) ?? sorted[sorted.length - 1] ?? requested;
+};
+
 const allProjectShots = (project: Project) => {
   const items: { shot: ProjectShot; sceneIndex: number; shotIndex: number }[] = [];
   for (const [sceneIndex, scene] of project.scenes.entries()) {
@@ -423,7 +429,8 @@ export const planGenerateVideo = (project: Project, shotId: string, modelOverrid
     shot.locked ? 'Shot is locked; unlock before regenerating video.' : null,
   ].filter(Boolean) as string[];
   const duration = Number(shot.duration || model.durations[0] || 5);
-  const estimatedCost = roundCost(duration * model.costPerSec);
+  const providerDuration = selectProviderDuration(model.durations, duration);
+  const estimatedCost = roundCost(providerDuration * model.costPerSec);
   const willOverwrite = !!shot.videoUrl;
   const willChange = [
     'Create a new shot_video asset.',
@@ -431,6 +438,7 @@ export const planGenerateVideo = (project: Project, shotId: string, modelOverrid
     'Attempt to extract and store the real last frame.',
     'Set video_status=success on completion.',
     storyboardMode ? 'Use locked storyboard board as the primary Seedance reference.' : 'Use start keyframe as the primary video reference.',
+    providerDuration !== duration ? `Provider duration will be ${providerDuration}s for this ${duration}s shot.` : null,
     willOverwrite ? 'Replace the active video pointer; old video remains in asset history.' : null,
   ].filter(Boolean) as string[];
 
@@ -457,6 +465,7 @@ export const planGenerateVideo = (project: Project, shotId: string, modelOverrid
       locked: !!shot.locked,
       videoStatus: shot.videoStatus,
     },
+    providerDuration,
     mode: storyboardMode ? 'storyboard' : 'keyframe',
     model: {
       key: model.key,
@@ -472,7 +481,7 @@ export const planGenerateVideo = (project: Project, shotId: string, modelOverrid
     prerequisites,
     willOverwrite,
     willChange,
-    approval: `Generate a ${duration}s ${model.label} video for ${project.title} ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)} in ${storyboardMode ? 'storyboard' : 'keyframe'} mode. Estimated cost: $${estimatedCost.toFixed(3)}. ${willOverwrite ? 'This will replace the active video pointer and keep the old video in history.' : 'This will create the first active video for this shot.'}`,
+    approval: `Generate a ${providerDuration}s ${model.label} video for ${project.title} ${shotLabel(target.sceneIndex - 1, target.shotIndex - 1)} in ${storyboardMode ? 'storyboard' : 'keyframe'} mode${providerDuration !== duration ? ` (shot duration: ${duration}s)` : ''}. Estimated cost: $${estimatedCost.toFixed(3)}. ${willOverwrite ? 'This will replace the active video pointer and keep the old video in history.' : 'This will create the first active video for this shot.'}`,
   };
 };
 
