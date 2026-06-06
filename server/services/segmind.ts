@@ -47,7 +47,8 @@ export const SEGMIND_MODELS = {
     durations: [8],
     costPerSec: 0.10,
     supportsLastFrame: true,
-    supportsRefs: true, // reference_images[] for consistency
+    supportsRefs: true, // reference_images[] only when no start frame is sent
+    refsWithFrames: false,
   },
   'veo-3.1': {
     path: 'veo-3.1',
@@ -57,7 +58,8 @@ export const SEGMIND_MODELS = {
     durations: [4, 6, 8],
     costPerSec: 0.20,
     supportsLastFrame: true,
-    supportsRefs: true, // reference_images[] for consistency
+    supportsRefs: true, // reference_images[] only when no start frame is sent
+    refsWithFrames: false,
   },
   'seedance-2.0-fast': {
     path: 'seedance-2.0-fast',
@@ -68,6 +70,7 @@ export const SEGMIND_MODELS = {
     costPerSec: 0.146,
     supportsLastFrame: true,
     supportsRefs: true, // up to 9 reference images
+    refsWithFrames: false,
   },
   'seedance-2.0': {
     path: 'seedance-2.0',
@@ -78,6 +81,7 @@ export const SEGMIND_MODELS = {
     costPerSec: 0.182,
     supportsLastFrame: true,
     supportsRefs: true,
+    refsWithFrames: false,
   },
 } as const;
 
@@ -105,7 +109,8 @@ export const generateSegmindVideo = async (
     ? `${SEGMIND_V2_BASE}/${prepared.model.path}`
     : prepared.model.endpoint;
   const bodyKeys = Object.keys(prepared.body).sort().join(',');
-  console.log(`[segmind] mode=${mode}, model=${prepared.modelKey}, endpoint=${endpoint}, duration=${prepared.durationSec}s, resolution=${prepared.resolution}, refs=${prepared.refUrls.length}, audioRefs=${prepared.refAudioUrls.length}, generateAudio=${!!opts?.generateAudio}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
+  const sentRefCount = Array.isArray(prepared.body.reference_images) ? prepared.body.reference_images.length : 0;
+  console.log(`[segmind] mode=${mode}, model=${prepared.modelKey}, endpoint=${endpoint}, duration=${prepared.durationSec}s, resolution=${prepared.resolution}, refs=${sentRefCount}/${prepared.refUrls.length}, audioRefs=${prepared.refAudioUrls.length}, generateAudio=${!!opts?.generateAudio}, keys=${bodyKeys}, prompt=${(motionPrompt || '').substring(0, 80)}...`);
 
   return mode === 'v2_async'
     ? await generateSegmindVideoV2(prepared, opts)
@@ -147,7 +152,7 @@ const prepareSegmindRequest = (
       seed: Math.floor(Math.random() * 1000000),
     };
     if (endUrl && model.supportsLastFrame) body.last_frame = endUrl;
-    if (refUrls.length && model.supportsRefs) body.reference_images = refUrls;
+    if ((!startUrl || model.refsWithFrames) && refUrls.length && model.supportsRefs) body.reference_images = refUrls;
   } else {
     const useFrameMode = !!startUrl;
     body = {

@@ -230,7 +230,9 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       if (endAsset) endImagePath = endAsset.file_path;
     }
 
-    if (!useStoryboardMode && referenceImagePaths.length > 0 && modelSpec.supportsRefs) {
+    const sendReferenceImages = modelSpec.supportsRefs && (useStoryboardMode || modelSpec.refsWithFrames);
+
+    if (!useStoryboardMode && referenceImagePaths.length > 0 && sendReferenceImages) {
       const refLabels: string[] = [];
       const castWithRefs = activeCast.filter((c: any) => c.reference_asset_id);
       castWithRefs.forEach((c: any) => refLabels.push(`Maintain ${c.name}'s appearance from reference`));
@@ -378,7 +380,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
         resolution,
         aspectRatio: aspect,
         hasPromptOverride: !!opts.promptOverride?.trim(),
-        referenceImageCount: modelSpec.supportsRefs ? referenceImagePaths.length : 0,
+        referenceImageCount: sendReferenceImages ? referenceImagePaths.length : 0,
+        skippedReferenceImageCount: referenceImagePaths.length - (sendReferenceImages ? referenceImagePaths.length : 0),
         referenceAudioCount: modelSpec.family === 'seedance' ? referenceAudioPaths.length : 0,
         nativeAudioMode,
         generateAudio: seedanceNativeAudio,
@@ -389,7 +392,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
 
     const result = await generateVideoWithFallback(useStoryboardMode ? undefined : imageAsset!.file_path, veoPrompt, {
       endImagePath: useStoryboardMode ? undefined : endImagePath,
-      referenceImagePaths: modelSpec.supportsRefs ? referenceImagePaths : undefined,
+      referenceImagePaths: sendReferenceImages ? referenceImagePaths : undefined,
       referenceAudioPaths: modelSpec.family === 'seedance' ? referenceAudioPaths : undefined,
       generateAudio: seedanceNativeAudio,
       aspectRatio: aspect,

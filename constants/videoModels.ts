@@ -16,7 +16,7 @@ export interface VideoModelSpec {
   supportsLastFrame: boolean;
   /** Whether this model accepts reference images for consistency. */
   supportsRefs: boolean;
-  /** Whether refs work alongside start/end frames (Veo=true, Seedance=false due to mutual exclusivity). */
+  /** Whether refs work alongside start/end frames. Keep false unless provider proof exists. */
   refsWithFrames: boolean;
   /** Resolutions accepted by this provider/model endpoint. */
   resolutions: Array<'720p' | '1080p'>;
@@ -63,7 +63,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     costPerSec: 0.10,
     supportsLastFrame: true,
     supportsRefs: true,
-    refsWithFrames: true,
+    refsWithFrames: false,
     resolutions: ['720p', '1080p'],
   },
   {
@@ -74,7 +74,7 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     costPerSec: 0.20,
     supportsLastFrame: true,
     supportsRefs: true,
-    refsWithFrames: true,
+    refsWithFrames: false,
     resolutions: ['720p', '1080p'],
   },
 ];
