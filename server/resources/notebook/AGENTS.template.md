@@ -55,7 +55,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
 - Video: use `run_action(generate_video, { dryRun: true })` for requirements/cost, then `start_job(generate_video)` after approval.
-- Audio: use `apply_audio_plan`, `apply_cast_voice`, and `generate_dialogue_audio` when producing dialogue/narration.
+- Audio: use `apply_audio_plan` and `apply_cast_voice` for speech plans/voices; use `generate_dialogue_audio` for TTS; use `voice_change_video` after native-dialogue video when mouth timing works but the voice needs the assigned cast voice.
 
 ## Choosing The Lever
 

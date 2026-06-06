@@ -197,7 +197,7 @@ Storyboard action bridge: prefer `run_action` for `apply_storyboard_prompts`, `i
 
 Video action bridge: use `run_action(generate_video, dryRun: true)` for requirements/cost, then `start_job(generate_video)` after approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.
 
-Audio action bridge: prefer `run_action` for `apply_audio_plan` and `apply_cast_voice`. Use `run_action(generate_dialogue_audio, dryRun: true)` for TTS cost/missing voices, then `start_job(generate_dialogue_audio)` after approval. `apply_audio_plan` accepts either structured `shots[]` or markdown from `audio-plan.md`.
+Audio action bridge: prefer `run_action` for `apply_audio_plan` and `apply_cast_voice`. Use `run_action(generate_dialogue_audio, { dryRun: true })` for TTS cost/missing voices, then `start_job(generate_dialogue_audio)` after approval. For native-dialogue video whose mouth timing works but voice is wrong, review the raw clip, run `run_action(voice_change_video, { dryRun: true })`, then `start_job(voice_change_video)` after approval; pass one whole-clip segment or explicit speaker cut ranges. `apply_audio_plan` accepts either structured `shots[]` or markdown from `audio-plan.md`.
 
 System config action bridge: prefer `run_action` for `apply_project_preferences`, `apply_project_style_notes`, `apply_project_prompt_override`, and `revert_project_prompt_override`. If the same phrasing/technique keeps improving outputs, suggest promoting it to the relevant project style-note bucket; if the same complete recipe keeps working, suggest a project prompt override.
 
