@@ -525,17 +525,17 @@ const TimelineEditor: React.FC<Props> = ({
       );
 
       // Snapshot restore path: when a projectId is provided and a local draft
-      // or saved shared timeline exists, hydrate from the newest one and skip
-      // initialClips seeding. Browser reload should preserve same-device edits
-      // that are newer than server canonical; explicit Save is the only action
-      // that promotes a local edit to canonical.
+      // exists, hydrate from that browser-local draft first. Server canonical
+      // is only auto-loaded when this browser has no local draft. If someone
+      // else saved a newer canonical timeline, we show "Load latest" without
+      // applying it over the artist's local workspace.
       // Reset flow clears both server + local snapshots before bumping
       // resetToken, so after a reset we fall through to fresh-clips seeding.
       if (projectId) {
         const localSnap = loadSnapshot(projectId);
         let snap: ReturnType<typeof loadSnapshot> | null = null;
         let serverVersion: number | null = null;
-        let serverSavedAt = 0;
+        let serverUpdatedAt: number | null = null;
         let restoredLocalDraft = false;
         try {
           const remote = await getProjectTimeline(projectId);
@@ -546,12 +546,12 @@ const TimelineEditor: React.FC<Props> = ({
               savedAt: new Date(remote.timeline.updatedAt).getTime(),
             };
             serverVersion = remote.timeline.version;
-            serverSavedAt = snap.savedAt;
+            serverUpdatedAt = snap.savedAt;
           }
         } catch (err) {
           console.warn('[timeline-load-server]', err);
         }
-        if (localSnap?.trackItemIds?.length && (!snap || localSnap.savedAt > serverSavedAt)) {
+        if (localSnap?.trackItemIds?.length) {
           snap = localSnap;
           restoredLocalDraft = true;
         }
@@ -603,11 +603,18 @@ const TimelineEditor: React.FC<Props> = ({
             { kind: 'update', updateHistory: false },
           );
           setLastSavedAt(restored.savedAt);
-          setTimelineVersion(serverVersion);
-          setTimelineSaveState(
-            restoredLocalDraft ? 'local' : 'saved',
-            restoredLocalDraft ? 'Draft restored from this browser. Press Save to make it shared.' : null,
-          );
+          setTimelineVersion(restoredLocalDraft ? null : serverVersion);
+          if (restoredLocalDraft && serverVersion && serverUpdatedAt && serverUpdatedAt > restored.savedAt) {
+            setTimelineSaveState(
+              'remote',
+              'Local draft restored from this browser. A newer saved timeline also exists; use Load latest only if you want to replace this local draft.',
+            );
+          } else {
+            setTimelineSaveState(
+              restoredLocalDraft ? 'local' : 'saved',
+              restoredLocalDraft ? 'Draft restored from this browser. Press Save to make it shared.' : null,
+            );
+          }
           seededKeyRef.current = key;
           seededProjectRef.current = projectId ?? null;
           seededResetTokenRef.current = resetKey;
