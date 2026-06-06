@@ -47,7 +47,7 @@ const insertTimelineVersion = async ({
       saved_by: userId || null,
       source,
       item_count: Array.isArray(snapshot?.trackItemIds) ? snapshot.trackItemIds.length : 0,
-      duration_ms: Number.isFinite(Number(snapshot?.duration)) ? Number(snapshot.duration) : null,
+      duration_ms: Number.isFinite(Number(snapshot?.duration)) ? Math.round(Number(snapshot.duration)) : null,
     });
   return error;
 };
@@ -117,7 +117,12 @@ const saveCanonicalTimeline = async ({
     });
     if (versionErr) {
       if (isUniqueConflict(versionErr)) continue;
-      return { error: versionErr };
+      console.error('[timeline-history-save]', {
+        projectId,
+        version: write.data.version,
+        source,
+        error: versionErr.message || String(versionErr),
+      });
     }
 
     return { version: write.data.version, updatedAt: write.data.updated_at };

@@ -150,7 +150,7 @@ const Header: React.FC = () => {
   const [versions, setVersions] = useState<TimelineVersionSummary[]>([]);
   const firstSavedSeenRef = React.useRef<number | null>(null);
   useEffect(() => {
-    if (lastSavedAt == null) return;
+    if (lastSavedAt == null || timelineSaveState !== 'saved') return;
     setNowTs(Date.now());
     // Skip the flash on the initial hydration from disk — only flash when
     // lastSavedAt advances past the first value we saw in this mount.
@@ -168,7 +168,7 @@ const Header: React.FC = () => {
     }
     const id = window.setInterval(() => setNowTs(Date.now()), 30_000);
     return () => window.clearInterval(id);
-  }, [lastSavedAt]);
+  }, [lastSavedAt, timelineSaveState]);
 
   const handleSave = async () => {
     if (!projectId) return;
