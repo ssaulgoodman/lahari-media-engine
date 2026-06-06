@@ -497,12 +497,19 @@ const Header: React.FC = () => {
                 color: timelineSaveState === 'remote' ? '#fbbf24' : timelineSaveState === 'error' ? '#f87171' : '#52525b',
                 marginLeft: 4,
               }}
-              title={timelineSaveMessage || `Saved to project at ${new Date(lastSavedAt).toLocaleString()}`}
+              title={
+                timelineSaveMessage ||
+                (timelineSaveState === 'local'
+                  ? `Draft saved locally at ${new Date(lastSavedAt).toLocaleString()}`
+                  : `Saved to project at ${new Date(lastSavedAt).toLocaleString()}`)
+              }
             >
               {timelineSaveState === 'remote'
                 ? 'New saved version'
                 : timelineSaveState === 'error'
                   ? 'Save failed'
+                : timelineSaveState === 'local'
+                  ? 'Local draft'
                 : formatSavedAgo(lastSavedAt, nowTs)}
             </span>
           )}

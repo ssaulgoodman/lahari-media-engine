@@ -40,12 +40,11 @@ interface ITimelineStore {
   // header) can drive disabled state on Undo/Redo buttons reactively.
   canUndo: boolean;
   canRedo: boolean;
-  // Timestamp (ms) of the most recent successful localStorage snapshot write,
-  // or shared server snapshot write, or null if nothing is saved for the
-  // current project. Drives the "Saved" pill.
+  // Timestamp (ms) of the most recent successful localStorage draft write or
+  // explicit shared server snapshot write. Drives the save/draft pill.
   lastSavedAt: number | null;
   timelineVersion: number | null;
-  timelineSaveState: 'idle' | 'saving' | 'saved' | 'remote' | 'error';
+  timelineSaveState: 'idle' | 'saving' | 'saved' | 'local' | 'remote' | 'error';
   timelineSaveMessage: string | null;
   // Project id published by TimelineEditor on mount so the Header (which is
   // several layers down) can save/clear snapshots without prop-drilling.

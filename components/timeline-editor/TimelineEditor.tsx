@@ -13,7 +13,7 @@ import EffectsPanel from './EffectsPanel';
 import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
-import { getProjectTimeline, saveProjectTimeline } from '../../services/api';
+import { getProjectTimeline } from '../../services/api';
 
 export type InitialClip = { src: string; name?: string };
 
@@ -114,6 +114,19 @@ const timelineSignature = (snapshot: SnapshotPayload) =>
     fps: snapshot.fps,
     size: snapshot.size,
   });
+
+const snapshotFromTimelineState = (s: ReturnType<typeof useStore.getState>): SnapshotPayload => ({
+  initialVideoSrcs: s.initialVideoSrcs,
+  initialAudioSrcs: s.initialAudioSrcs,
+  trackItemIds: s.trackItemIds,
+  trackItemsMap: s.trackItemsMap,
+  transitionIds: s.transitionIds,
+  transitionsMap: s.transitionsMap,
+  tracks: s.tracks,
+  duration: s.duration,
+  fps: s.fps,
+  size: s.size,
+});
 
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
 // creates one when the timeline is empty). Used by the manual-upload button
@@ -511,14 +524,19 @@ const TimelineEditor: React.FC<Props> = ({
         { kind: 'update', updateHistory: false },
       );
 
-      // Snapshot restore path: when a projectId is provided and a saved
-      // shared timeline exists on the server, hydrate from it and skip the
-      // initialClips seeding entirely. localStorage is only a fallback cache.
+      // Snapshot restore path: when a projectId is provided and a local draft
+      // or saved shared timeline exists, hydrate from the newest one and skip
+      // initialClips seeding. Browser reload should preserve same-device edits
+      // that are newer than server canonical; explicit Save is the only action
+      // that promotes a local edit to canonical.
       // Reset flow clears both server + local snapshots before bumping
       // resetToken, so after a reset we fall through to fresh-clips seeding.
       if (projectId) {
+        const localSnap = loadSnapshot(projectId);
         let snap: ReturnType<typeof loadSnapshot> | null = null;
         let serverVersion: number | null = null;
+        let serverSavedAt = 0;
+        let restoredLocalDraft = false;
         try {
           const remote = await getProjectTimeline(projectId);
           if (remote.timeline?.snapshot?.trackItemIds?.length) {
@@ -528,13 +546,14 @@ const TimelineEditor: React.FC<Props> = ({
               savedAt: new Date(remote.timeline.updatedAt).getTime(),
             };
             serverVersion = remote.timeline.version;
+            serverSavedAt = snap.savedAt;
           }
         } catch (err) {
           console.warn('[timeline-load-server]', err);
         }
-        if (!snap) {
-          snap = loadSnapshot(projectId);
-          serverVersion = null;
+        if (localSnap?.trackItemIds?.length && (!snap || localSnap.savedAt > serverSavedAt)) {
+          snap = localSnap;
+          restoredLocalDraft = true;
         }
         let restored: {
           tracks: any[];
@@ -585,7 +604,10 @@ const TimelineEditor: React.FC<Props> = ({
           );
           setLastSavedAt(restored.savedAt);
           setTimelineVersion(serverVersion);
-          setTimelineSaveState('saved');
+          setTimelineSaveState(
+            restoredLocalDraft ? 'local' : 'saved',
+            restoredLocalDraft ? 'Draft restored from this browser. Press Save to make it shared.' : null,
+          );
           seededKeyRef.current = key;
           seededProjectRef.current = projectId ?? null;
           seededResetTokenRef.current = resetKey;
@@ -789,51 +811,29 @@ const TimelineEditor: React.FC<Props> = ({
     };
   }, [projectId, remoteRefreshToken, stateManager, setLastSavedAt, setTimelineSaveState, setTimelineVersion]);
 
-  // Auto-save: debounced writer that mirrors the render-authoritative subset
-  // of the store into the shared project timeline, with localStorage as a
-  // fallback cache. This preserves the key Render invariant: once a saved
-  // timeline exists, newly generated clips enter the media library instead of
-  // reseeding and wiping the edit.
+  // Local draft persistence only. Network persistence is explicit: Save,
+  // Restore, or Reset. This keeps the editor git-like: each browser can work
+  // locally; pressing Save promotes that browser's timeline to canonical.
   // Gated by hasSeededRef so the seed effect's own commits don't immediately
   // overwrite the snapshot we may have just loaded.
   useEffect(() => {
     if (!projectId || !stateManager) return;
     let timer: number | null = null;
-    let saveInFlight = false;
-    let pendingSnapshot: any | null = null;
-    const runSave = (snapshot: any) => {
-      if (saveInFlight) {
-        pendingSnapshot = snapshot;
-        return;
+    const flushLocalSnapshot = () => {
+      const s = useStore.getState();
+      if (s.trackItemIds.length === 0) return;
+      const snapshot = snapshotFromTimelineState(s);
+      const savedAt = saveSnapshot(projectId, snapshot);
+      savedSignatureRef.current = timelineSignature(snapshot);
+      if (savedAt != null) {
+        s.setLastSavedAt(savedAt);
+        if (s.timelineSaveState !== 'remote') {
+          s.setTimelineSaveState('local', 'Draft saved locally on this browser. Press Save to make it shared.');
+        }
       }
-      saveInFlight = true;
-      const baseVersion = useStore.getState().timelineVersion;
-      useStore.getState().setTimelineSaveState('saving');
-      void saveProjectTimeline(projectId, snapshot, baseVersion, 'autosave')
-        .then((result) => {
-          const latest = useStore.getState();
-          latest.setTimelineVersion(result.version);
-          latest.setTimelineSaveState('saved');
-          savedSignatureRef.current = timelineSignature(snapshot);
-          const savedAt = saveSnapshot(projectId, snapshot);
-          if (savedAt != null) latest.setLastSavedAt(savedAt);
-        })
-        .catch((err: any) => {
-          const latest = useStore.getState();
-          const message = err?.message || 'Timeline save failed';
-          latest.setTimelineSaveState('error', message);
-          saveSnapshot(projectId, snapshot);
-          pendingSnapshot = null;
-        })
-        .finally(() => {
-          saveInFlight = false;
-          if (pendingSnapshot) {
-            const next = pendingSnapshot;
-            pendingSnapshot = null;
-            runSave(next);
-          }
-        });
     };
+    window.addEventListener('pagehide', flushLocalSnapshot);
+    window.addEventListener('beforeunload', flushLocalSnapshot);
     const unsub = useStore.subscribe((state, prev) => {
       if (!hasSeededRef.current) return;
       // Only save when the render-authoritative subset actually changed.
@@ -848,25 +848,14 @@ const TimelineEditor: React.FC<Props> = ({
         return;
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        const s = useStore.getState();
-        if (s.trackItemIds.length === 0) return;
-        const snapshot = {
-          initialVideoSrcs: s.initialVideoSrcs,
-          initialAudioSrcs: s.initialAudioSrcs,
-          trackItemIds: s.trackItemIds,
-          trackItemsMap: s.trackItemsMap,
-          transitionIds: s.transitionIds,
-          transitionsMap: s.transitionsMap,
-          tracks: s.tracks,
-          duration: s.duration,
-          fps: s.fps,
-          size: s.size,
-        };
-        runSave(snapshot);
-      }, 1200);
+        flushLocalSnapshot();
+      }, 150);
     });
     return () => {
       if (timer !== null) window.clearTimeout(timer);
+      flushLocalSnapshot();
+      window.removeEventListener('pagehide', flushLocalSnapshot);
+      window.removeEventListener('beforeunload', flushLocalSnapshot);
       unsub();
     };
   }, [projectId, stateManager]);
