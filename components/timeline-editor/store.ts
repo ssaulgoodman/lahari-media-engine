@@ -45,7 +45,7 @@ interface ITimelineStore {
   // current project. Drives the "Saved" pill.
   lastSavedAt: number | null;
   timelineVersion: number | null;
-  timelineSaveState: 'idle' | 'saving' | 'saved' | 'conflict' | 'error';
+  timelineSaveState: 'idle' | 'saving' | 'saved' | 'remote' | 'error';
   timelineSaveMessage: string | null;
   // Project id published by TimelineEditor on mount so the Header (which is
   // several layers down) can save/clear snapshots without prop-drilling.

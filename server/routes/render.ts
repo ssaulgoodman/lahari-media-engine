@@ -52,6 +52,80 @@ const insertTimelineVersion = async ({
   return error;
 };
 
+const isUniqueConflict = (error: any): boolean =>
+  error?.code === '23505' || String(error?.message || '').toLowerCase().includes('duplicate key');
+
+const saveCanonicalTimeline = async ({
+  projectId,
+  snapshot,
+  userId,
+  source,
+}: {
+  projectId: string;
+  snapshot: any;
+  userId?: string | null;
+  source: string;
+}): Promise<{ version: number; updatedAt: string } | { error: any }> => {
+  const sb = getSB();
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: existing, error: readErr } = await sb
+      .from('lahari_project_timelines')
+      .select('version')
+      .eq('project_id', projectId)
+      .maybeSingle();
+    if (readErr) return { error: readErr };
+
+    const nextVersion = existing ? Number(existing.version || 0) + 1 : 1;
+    const now = new Date().toISOString();
+
+    const write = existing
+      ? await sb
+          .from('lahari_project_timelines')
+          .update({
+            snapshot,
+            version: nextVersion,
+            updated_by: userId || null,
+            updated_at: now,
+          })
+          .eq('project_id', projectId)
+          .select('version, updated_at')
+          .single()
+      : await sb
+          .from('lahari_project_timelines')
+          .insert({
+            project_id: projectId,
+            snapshot,
+            version: nextVersion,
+            updated_by: userId || null,
+            updated_at: now,
+          })
+          .select('version, updated_at')
+          .single();
+
+    if (write.error) {
+      if (isUniqueConflict(write.error)) continue;
+      return { error: write.error };
+    }
+
+    const versionErr = await insertTimelineVersion({
+      projectId,
+      version: write.data.version,
+      snapshot,
+      userId,
+      source,
+    });
+    if (versionErr) {
+      if (isUniqueConflict(versionErr)) continue;
+      return { error: versionErr };
+    }
+
+    return { version: write.data.version, updatedAt: write.data.updated_at };
+  }
+
+  return { error: new Error('Timeline save raced too many times; retry save.') };
+};
+
 router.param('id', async (req, res, next, id) => {
   const projectId = Array.isArray(id) ? id[0] : id;
   const row = await selectOne('projects', { id: projectId });
@@ -106,92 +180,24 @@ router.get('/:id/timeline/versions', async (req, res) => {
 router.put('/:id/timeline', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const snapshot = req.body?.snapshot;
-  const baseVersion = req.body?.baseVersion;
   const source = typeof req.body?.source === 'string' ? req.body.source : 'save';
   if (!snapshot || typeof snapshot !== 'object') {
     return res.status(400).json({ error: 'snapshot is required' });
   }
 
-  const sb = getSB();
-  const { data: existing, error: readErr } = await sb
-    .from('lahari_project_timelines')
-    .select('version')
-    .eq('project_id', projectId)
-    .maybeSingle();
-  if (readErr) return res.status(500).json({ error: readErr.message });
-
-  if (existing) {
-    if (baseVersion !== existing.version) {
-      return res.status(409).json({
-        error: 'Timeline changed elsewhere. Reload the latest timeline before saving.',
-        code: 'timeline_conflict',
-        currentVersion: existing.version,
-      });
-    }
-    const nextVersion = existing.version + 1;
-    const { data, error } = await sb
-      .from('lahari_project_timelines')
-      .update({
-        snapshot,
-        version: nextVersion,
-        updated_by: req.userId || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('project_id', projectId)
-      .eq('version', existing.version)
-      .select('version, updated_at')
-      .maybeSingle();
-    if (error) return res.status(500).json({ error: error.message });
-    if (!data) {
-      return res.status(409).json({
-        error: 'Timeline changed elsewhere. Reload the latest timeline before saving.',
-        code: 'timeline_conflict',
-      });
-    }
-    const versionErr = await insertTimelineVersion({
-      projectId,
-      version: data.version,
-      snapshot,
-      userId: req.userId,
-      source,
-    });
-    if (versionErr) return res.status(500).json({ error: versionErr.message });
-    return res.json({ version: data.version, updatedAt: data.updated_at });
-  }
-
-  if (baseVersion !== null && baseVersion !== undefined) {
-    return res.status(409).json({
-      error: 'Timeline changed elsewhere. Reload the latest timeline before saving.',
-      code: 'timeline_conflict',
-    });
-  }
-
-  const { data, error } = await sb
-    .from('lahari_project_timelines')
-    .insert({
-      project_id: projectId,
-      snapshot,
-      version: 1,
-      updated_by: req.userId || null,
-    })
-    .select('version, updated_at')
-    .single();
-  if (error) return res.status(500).json({ error: error.message });
-  const versionErr = await insertTimelineVersion({
+  const result = await saveCanonicalTimeline({
     projectId,
-    version: data.version,
     snapshot,
     userId: req.userId,
     source,
   });
-  if (versionErr) return res.status(500).json({ error: versionErr.message });
-  res.json({ version: data.version, updatedAt: data.updated_at });
+  if ('error' in result) return res.status(500).json({ error: result.error.message || String(result.error) });
+  res.json(result);
 });
 
 router.post('/:id/timeline/restore', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const restoreVersion = Number(req.body?.version);
-  const baseVersion = req.body?.baseVersion;
   if (!Number.isInteger(restoreVersion) || restoreVersion <= 0) {
     return res.status(400).json({ error: 'version is required' });
   }
@@ -206,68 +212,14 @@ router.post('/:id/timeline/restore', async (req, res) => {
   if (versionReadErr) return res.status(500).json({ error: versionReadErr.message });
   if (!versionRow) return res.status(404).json({ error: 'Timeline version not found' });
 
-  const { data: existing, error: readErr } = await sb
-    .from('lahari_project_timelines')
-    .select('version')
-    .eq('project_id', projectId)
-    .maybeSingle();
-  if (readErr) return res.status(500).json({ error: readErr.message });
-
-  if (existing && baseVersion !== existing.version) {
-    return res.status(409).json({
-      error: 'Timeline changed elsewhere. Reload the latest timeline before restoring.',
-      code: 'timeline_conflict',
-      currentVersion: existing.version,
-    });
-  }
-
-  const nextVersion = existing ? existing.version + 1 : 1;
-  let saved: any;
-  if (existing) {
-    const { data, error } = await sb
-      .from('lahari_project_timelines')
-      .update({
-        snapshot: versionRow.snapshot,
-        version: nextVersion,
-        updated_by: req.userId || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('project_id', projectId)
-      .eq('version', existing.version)
-      .select('version, updated_at')
-      .maybeSingle();
-    if (error) return res.status(500).json({ error: error.message });
-    if (!data) {
-      return res.status(409).json({
-        error: 'Timeline changed elsewhere. Reload the latest timeline before restoring.',
-        code: 'timeline_conflict',
-      });
-    }
-    saved = data;
-  } else {
-    const { data, error } = await sb
-      .from('lahari_project_timelines')
-      .insert({
-        project_id: projectId,
-        snapshot: versionRow.snapshot,
-        version: nextVersion,
-        updated_by: req.userId || null,
-      })
-      .select('version, updated_at')
-      .single();
-    if (error) return res.status(500).json({ error: error.message });
-    saved = data;
-  }
-
-  const historyErr = await insertTimelineVersion({
+  const result = await saveCanonicalTimeline({
     projectId,
-    version: saved.version,
     snapshot: versionRow.snapshot,
     userId: req.userId,
     source: `restore:${restoreVersion}`,
   });
-  if (historyErr) return res.status(500).json({ error: historyErr.message });
-  res.json({ version: saved.version, updatedAt: saved.updated_at, restoredFromVersion: restoreVersion });
+  if ('error' in result) return res.status(500).json({ error: result.error.message || String(result.error) });
+  res.json({ ...result, restoredFromVersion: restoreVersion });
 });
 
 router.delete('/:id/timeline', async (req, res) => {
