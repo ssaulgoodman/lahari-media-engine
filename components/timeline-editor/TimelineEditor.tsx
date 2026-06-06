@@ -487,9 +487,13 @@ const TimelineEditor: React.FC<Props> = ({
   // (double-mount) would leak dispatches from sm1's IIFE into sm2's state and
   // throw "Target track not found" because sm2 doesn't know sm1's track IDs.
   //
-  // Re-seed trigger: URL signature change (regen, project switch). seededKeyRef
-  // prevents a stable prop reference from re-triggering on every render.
+  // Re-seed trigger: project switch or explicit reset. Do NOT re-seed just
+  // because initialClips changed inside the same project: generated clips
+  // belong in the media library, and replacing the live editor from a saved
+  // snapshot while the artist is working can destroy unsaved timeline edits.
   const seededKeyRef = useRef<string>('');
+  const seededProjectRef = useRef<string | null>(null);
+  const seededResetTokenRef = useRef<number | null>(null);
   useEffect(() => {
     if (!stateManager) return;
     const videoKey = (initialClips ?? []).map((c) => c.src).join('|');
@@ -498,6 +502,14 @@ const TimelineEditor: React.FC<Props> = ({
     // re-seed even when the clip URLs are identical.
     const key = `${videoKey}#${audioKey}#${resetToken ?? 0}#${projectId ?? ''}`;
     if (seededKeyRef.current === key) return;
+    const resetKey = resetToken ?? 0;
+    if (
+      hasSeededRef.current &&
+      seededProjectRef.current === (projectId ?? null) &&
+      seededResetTokenRef.current === resetKey
+    ) {
+      return;
+    }
 
     hasSeededRef.current = false;
     let cancelled = false;
@@ -592,6 +604,8 @@ const TimelineEditor: React.FC<Props> = ({
           setTimelineVersion(serverVersion);
           setTimelineSaveState('saved');
           seededKeyRef.current = key;
+          seededProjectRef.current = projectId ?? null;
+          seededResetTokenRef.current = resetKey;
           hasSeededRef.current = true;
           savedSignatureRef.current = timelineSignature({
             initialVideoSrcs: (snap as any).initialVideoSrcs || [],
@@ -629,6 +643,8 @@ const TimelineEditor: React.FC<Props> = ({
 
       if (!initialClips?.length && !initialAudioClips?.length) {
         seededKeyRef.current = key;
+        seededProjectRef.current = projectId ?? null;
+        seededResetTokenRef.current = resetKey;
         hasSeededRef.current = true;
         savedSignatureRef.current = null;
         captureBaselineRef.current?.();
@@ -722,6 +738,8 @@ const TimelineEditor: React.FC<Props> = ({
         { kind: 'update', updateHistory: false },
       );
       seededKeyRef.current = key;
+      seededProjectRef.current = projectId ?? null;
+      seededResetTokenRef.current = resetKey;
       hasSeededRef.current = true;
       savedSignatureRef.current = timelineSignature({
         initialVideoSrcs: (initialClips ?? []).map((clip) => clip.src),
