@@ -14,9 +14,25 @@ export type ElevenLabsSpeechResult = {
   characterCount: number;
 };
 
-const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
+export type ElevenLabsVoiceChangeInput = {
+  userId: string;
+  voiceId: string;
+  modelId?: string;
+  audioBuffer: Buffer;
+  mimeType?: string;
+  filename?: string;
+  removeBackgroundNoise?: boolean;
+};
 
-const buildError = async (res: Response, voiceId: string) => {
+export type ElevenLabsVoiceChangeResult = {
+  audioBuffer: Buffer;
+  mimeType: string;
+};
+
+const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1';
+const DEFAULT_ELEVENLABS_STS_MODEL = 'eleven_multilingual_sts_v2';
+
+const buildError = async (res: Response, voiceId: string, label = 'TTS') => {
   const body = await res.text().catch(() => '');
   const lower = body.toLowerCase();
   if (res.status === 404 || lower.includes('voice')) {
@@ -34,7 +50,7 @@ const buildError = async (res: Response, voiceId: string) => {
     (err as any).statusCode = 429;
     return err;
   }
-  const err = new Error(`ElevenLabs TTS failed (${res.status}): ${body || res.statusText}`);
+  const err = new Error(`ElevenLabs ${label} failed (${res.status}): ${body || res.statusText}`);
   (err as any).statusCode = res.status >= 400 && res.status < 600 ? res.status : 502;
   return err;
 };
@@ -73,5 +89,40 @@ export const generateElevenLabsSpeech = async ({
     audioBuffer: Buffer.from(arrayBuffer),
     mimeType: res.headers.get('content-type') || 'audio/mpeg',
     characterCount: cleanText.length,
+  };
+};
+
+export const changeElevenLabsVoice = async ({
+  userId,
+  voiceId,
+  modelId,
+  audioBuffer,
+  mimeType = 'audio/mpeg',
+  filename = 'source.mp3',
+  removeBackgroundNoise = false,
+}: ElevenLabsVoiceChangeInput): Promise<ElevenLabsVoiceChangeResult> => {
+  const apiKey = await requireTenantApiKey(userId, 'elevenlabs');
+  if (!voiceId.trim()) throw new Error('ElevenLabs voiceId is required.');
+  if (!audioBuffer.length) throw new Error('Voice changer input audio is empty.');
+
+  const form = new FormData();
+  form.append('audio', new Blob([new Uint8Array(audioBuffer)], { type: mimeType }), filename);
+  form.append('model_id', modelId || DEFAULT_ELEVENLABS_STS_MODEL);
+  if (removeBackgroundNoise) form.append('remove_background_noise', 'true');
+
+  const res = await fetch(`${ELEVENLABS_BASE_URL}/speech-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      Accept: 'audio/mpeg',
+    },
+    body: form,
+  });
+
+  if (!res.ok) throw await buildError(res, voiceId, 'voice changer');
+  const arrayBuffer = await res.arrayBuffer();
+  return {
+    audioBuffer: Buffer.from(arrayBuffer),
+    mimeType: res.headers.get('content-type') || 'audio/mpeg',
   };
 };

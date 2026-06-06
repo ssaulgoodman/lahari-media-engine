@@ -81,6 +81,7 @@ export { applyVideoPrompt } from './codexStudio/applies/videoPrompt.js';
 export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.js';
 export { applyTextEdits } from './codexStudio/applies/textEdits.js';
 export { applyAudioPlan, applyAudioPlanMarkdown, applyCastVoice, generateDialogueAudio, getAudioPlanCost } from './codexStudio/audioPlan.js';
+export { voiceChangeVideo } from './codexStudio/voiceChange.js';
 export { analyzeAudioTranscribe, analyzeAudioStructure } from './codexStudio/audioAnalysis.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';
 export { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';

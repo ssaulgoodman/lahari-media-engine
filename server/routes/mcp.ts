@@ -20,7 +20,7 @@ import { ACTION_KEYS, ACTION_SURFACES, actionSpec, actionSpecsForSurface, buildA
 import { buildNotebookResourceVersions } from '../services/codexStudio/notebook.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.16';
+const HOSTED_MCP_VERSION = '0.1.17';
 const SHOW_LEGACY_MCP_TOOLS = process.env.MIRAGE_MCP_INCLUDE_LEGACY_TOOLS === '1';
 const LEGACY_MCP_TOOLS = new Set([
   'list_queue',
@@ -229,6 +229,7 @@ const PAID_TOOLS = new Set([
   'generate_environment_looks',
   'apply_generate_video',
   'generate_dialogue_audio',
+  'voice_change_video',
 ]);
 
 const normalizeLookEntityType = (value: string) => value === 'env' ? 'environment' : value;
@@ -328,6 +329,23 @@ const dialogueAudioInputSchema = z.object({
   dialogueIds: maxArray(idString, 200).optional(),
   characterIds: maxArray(idString, 100).optional(),
   voiceModel: z.enum(['eleven_multilingual_v2', 'eleven_v3']).optional(),
+});
+const voiceChangeVideoInputSchema = z.object({
+  projectId,
+  shotId,
+  dryRun: z.boolean().optional(),
+  sourceVideoAssetId: idString.optional(),
+  segments: maxArray(z.object({
+    startMs: z.number().int().nonnegative().max(120000).optional(),
+    endMs: z.number().int().positive().max(120000).optional(),
+    speakerId: idString.optional(),
+    voiceId: idString.optional(),
+    label: shortText.optional(),
+  }), 12).min(1),
+  modelId: z.enum(['eleven_multilingual_sts_v2', 'eleven_english_sts_v2']).optional(),
+  removeBackgroundNoise: z.boolean().optional(),
+  makeCanonical: z.boolean().optional(),
+  note: mediumText.optional(),
 });
 const analyzeAudioTranscribeInputSchema = z.object({
   projectId,
@@ -1075,6 +1093,11 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       return input.dryRun
         ? studio.getAudioPlanCost(project, selection)
         : studio.generateDialogueAudio(project, auth.userId, selection, { voiceModel: input.voiceModel });
+    }
+    if (actionKey === 'voice_change_video') {
+      const input = voiceChangeVideoInputSchema.parse(rawInput);
+      const project = await fullProjectForUser(input.projectId, auth.userId);
+      return studio.voiceChangeVideo(project, auth.userId, input);
     }
     if (actionKey === 'analyze_audio_transcribe') {
       const input = analyzeAudioTranscribeInputSchema.parse(rawInput);

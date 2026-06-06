@@ -264,6 +264,38 @@ export const AUDIO_ACTION_SPECS = {
     },
     examples: [{ projectId: 'project_uuid', dryRun: true, shotIds: ['shot_uuid'] }, { projectId: 'project_uuid', voiceModel: 'eleven_v3' }],
   },
+  voice_change_video: {
+    key: 'voice_change_video',
+    title: 'Voice-change video',
+    surface: 'audio',
+    mutates: true,
+    paid: true,
+    description: 'Post-process a native-dialogue video through ElevenLabs voice changer. Takes the active shot video or sourceVideoAssetId, cuts one or more timestamped speaker segments, voice-changes each segment, muxes a final MP4, and optionally makes it the active/canonical shot video. Use after native video dialogue generation, not instead of video generation.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+      dryRun: 'optional boolean; returns duration/segment/cost estimate without spending',
+      sourceVideoAssetId: 'optional raw video asset id; defaults to the active shot video',
+      segments: 'array of {startMs?, endMs?, speakerId?, voiceId?, label?}; one segment may omit start/end to mean the whole clip',
+      modelId: 'optional ElevenLabs speech-to-speech model; defaults to eleven_multilingual_sts_v2',
+      removeBackgroundNoise: 'optional boolean',
+      makeCanonical: 'optional boolean; default true updates the shot active video to the voice-changed MP4',
+      note: 'optional short reason/cut-map note',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      shotId: 'shot_uuid',
+      dryRun: true,
+      segments: [{ speakerId: 'cast_member_uuid' }],
+    }, {
+      projectId: 'project_uuid',
+      shotId: 'shot_uuid',
+      segments: [
+        { startMs: 0, endMs: 5200, speakerId: 'host_cast_uuid' },
+        { startMs: 5400, endMs: 9800, speakerId: 'guest_cast_uuid' },
+      ],
+    }],
+  },
   apply_audio_plan: {
     key: 'apply_audio_plan',
     title: 'Apply audio plan',

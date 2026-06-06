@@ -54,6 +54,7 @@ Weak:
 - **Generate** -> `start_job(generate_video)` after approval.
 - **Previous provider outcome unknown/pending** -> do not retry until the artist acknowledges the risk; pass `acknowledgePreviousChargeRisk: true` only after that approval.
 - **One exact final prompt needed** -> use `promptOverride` on `generate_video`.
+- **Native dialogue voice needs character match** -> generate the raw native-audio clip first, review it, then use `voice_change_video` from the audio surface. Do not solve this with TTS unless the artist wants overlay.
 - **Board/frame wrong** -> return to storyboarding/keyframe tools before video.
 - **Same failure twice** -> change model or upstream input, not just the same retry.
 
@@ -63,8 +64,9 @@ Weak:
 2. **Board/frame wrong** -> fix storyboard or keyframe.
 3. **Identity/location drift** -> fix locked refs.
 4. **Audio/lipsync issue** -> inspect audio plan and model family.
-5. **Model artifact/physics failure** -> one model switch test.
-6. **Shot intent wrong** -> return to script/storyboard.
+5. **Native voice wrong but mouth timing works** -> voice-change the video; for two speakers, pass explicit segment cut ranges.
+6. **Model artifact/physics failure** -> one model switch test.
+7. **Shot intent wrong** -> return to script/storyboard.
 
 ## Ask Before
 
@@ -76,3 +78,4 @@ Always dry-run, state requirements/cost, then ask before `start_job(generate_vid
 - Long motion prompts that invent new styling.
 - Retrying same model/prompt/refs after the same failure.
 - Video-tuning a bad beat.
+- Generating TTS before native-dialogue tests when the goal is visible regional-language lipsync.
