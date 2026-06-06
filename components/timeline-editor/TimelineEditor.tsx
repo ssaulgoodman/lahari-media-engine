@@ -12,7 +12,7 @@ import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
 import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
-import { clearSnapshot, loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
+import { loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
 import { getProjectTimeline, saveProjectTimeline } from '../../services/api';
 
 export type InitialClip = { src: string; name?: string };
@@ -115,22 +115,6 @@ const timelineSignature = (snapshot: SnapshotPayload) =>
     size: snapshot.size,
   });
 
-const snapshotFromStore = (): SnapshotPayload => {
-  const s = useStore.getState();
-  return {
-    initialVideoSrcs: s.initialVideoSrcs,
-    initialAudioSrcs: s.initialAudioSrcs,
-    trackItemIds: s.trackItemIds,
-    trackItemsMap: s.trackItemsMap,
-    transitionIds: s.transitionIds,
-    transitionsMap: s.transitionsMap,
-    tracks: s.tracks,
-    duration: s.duration,
-    fps: s.fps,
-    size: s.size,
-  };
-};
-
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
 // creates one when the timeline is empty). Used by the manual-upload button
 // and the MediaLibraryDrawer (any external surface adding a clip).
@@ -207,7 +191,6 @@ const TimelineEditor: React.FC<Props> = ({
   // post-seed fire to immediately rewrite the very snapshot we just loaded.
   const hasSeededRef = useRef(false);
   const savedSignatureRef = useRef<string | null>(null);
-  const suppressAutoSaveRef = useRef(false);
 
   // Init the StateManager once.
   useEffect(() => {
@@ -778,22 +761,14 @@ const TimelineEditor: React.FC<Props> = ({
   }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, setLastSavedAt, setTimelineSaveState, setTimelineVersion]);
 
   // Cross-tab / cross-user sync: Supabase realtime tells AppShell that the
-  // shared project timeline changed, but the render editor owns the actual
-  // Zustand/StateManager state. Pull the latest timeline here and apply it
-  // only when this tab has no unsaved local edits. If Sid is also editing,
-  // we surface a conflict instead of overwriting his local timeline draft.
+  // shared project timeline changed. Treat that like git history, not Google
+  // Docs: never auto-apply over the live editor. Just tell the artist a newer
+  // saved version exists. Their local cut remains editable and can still be
+  // saved as the newest canonical version.
   useEffect(() => {
     if (!projectId || !stateManager || remoteRefreshToken <= 0) return;
     let cancelled = false;
     (async () => {
-      const current = snapshotFromStore();
-      const currentSignature = current.trackItemIds.length > 0 ? timelineSignature(current) : null;
-      const savedSignature = savedSignatureRef.current;
-      if (savedSignature && currentSignature && currentSignature !== savedSignature) {
-        setTimelineSaveState('conflict', 'Timeline changed elsewhere. Save or reload before applying remote changes.');
-        return;
-      }
-
       let remote: any;
       try {
         remote = await getProjectTimeline(projectId);
@@ -803,65 +778,11 @@ const TimelineEditor: React.FC<Props> = ({
       }
       if (cancelled) return;
       if (useStore.getState().stateManager !== stateManager) return;
-
-      if (!remote.timeline?.snapshot?.trackItemIds?.length) {
-        suppressAutoSaveRef.current = true;
-        try {
-          (stateManager as any).updateState(
-            {
-              tracks: [],
-              trackItemIds: [],
-              trackItemsMap: {},
-              transitionIds: [],
-              transitionsMap: {},
-              duration: 5000,
-            },
-            { kind: 'update', updateHistory: false },
-          );
-        } finally {
-          queueMicrotask(() => {
-            suppressAutoSaveRef.current = false;
-          });
-        }
-        clearSnapshot(projectId);
-        setTimelineVersion(null);
-        setLastSavedAt(null);
-        setTimelineSaveState('idle');
-        savedSignatureRef.current = null;
-        captureBaselineRef.current?.();
-        return;
-      }
-
-      const remoteSnapshot = remote.timeline.snapshot as SnapshotPayload;
-      const remoteSignature = timelineSignature(remoteSnapshot);
       const localVersion = useStore.getState().timelineVersion;
-      if (localVersion === remote.timeline.version && savedSignature === remoteSignature) return;
-
-      suppressAutoSaveRef.current = true;
-      try {
-        (stateManager as any).updateState(
-          {
-            tracks: remoteSnapshot.tracks,
-            trackItemIds: remoteSnapshot.trackItemIds,
-            trackItemsMap: remoteSnapshot.trackItemsMap,
-            transitionIds: remoteSnapshot.transitionIds,
-            transitionsMap: remoteSnapshot.transitionsMap,
-            duration: remoteSnapshot.duration,
-          },
-          { kind: 'update', updateHistory: false },
-        );
-      } finally {
-        queueMicrotask(() => {
-          suppressAutoSaveRef.current = false;
-        });
-      }
-
-      const savedAt = saveSnapshot(projectId, remoteSnapshot);
-      setTimelineVersion(remote.timeline.version);
-      setTimelineSaveState('saved');
-      setLastSavedAt(savedAt ?? new Date(remote.timeline.updatedAt).getTime());
-      savedSignatureRef.current = remoteSignature;
-      captureBaselineRef.current?.();
+      const remoteVersion = remote.timeline?.version ?? null;
+      if (!remoteVersion || remoteVersion === localVersion) return;
+      if (localVersion != null && remoteVersion < localVersion) return;
+      setTimelineSaveState('remote', 'A newer saved timeline version exists. Save yours to make it latest, or load latest to discard local edits.');
     })();
     return () => {
       cancelled = true;
@@ -900,7 +821,7 @@ const TimelineEditor: React.FC<Props> = ({
         .catch((err: any) => {
           const latest = useStore.getState();
           const message = err?.message || 'Timeline save failed';
-          latest.setTimelineSaveState(message.includes('changed elsewhere') ? 'conflict' : 'error', message);
+          latest.setTimelineSaveState('error', message);
           saveSnapshot(projectId, snapshot);
           pendingSnapshot = null;
         })
@@ -915,7 +836,6 @@ const TimelineEditor: React.FC<Props> = ({
     };
     const unsub = useStore.subscribe((state, prev) => {
       if (!hasSeededRef.current) return;
-      if (suppressAutoSaveRef.current) return;
       // Only save when the render-authoritative subset actually changed.
       if (
         state.trackItemIds === prev.trackItemIds &&

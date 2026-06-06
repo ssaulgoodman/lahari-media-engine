@@ -193,7 +193,7 @@ const Header: React.FC = () => {
       setTimelineSaveState('saved');
     } catch (err: any) {
       const message = err?.message || 'Timeline save failed';
-      setTimelineSaveState(message.includes('changed elsewhere') ? 'conflict' : 'error', message);
+      setTimelineSaveState('error', message);
       return;
     }
     const savedAt = saveSnapshot(projectId, snapshot);
@@ -265,7 +265,7 @@ const Header: React.FC = () => {
       bumpResetToken();
     } catch (err: any) {
       const message = err?.message || 'Timeline restore failed';
-      setTimelineSaveState(message.includes('changed elsewhere') ? 'conflict' : 'error', message);
+      setTimelineSaveState('error', message);
       setHistoryError(message);
     }
   };
@@ -494,23 +494,23 @@ const Header: React.FC = () => {
               style={{
                 fontSize: 11,
                 fontFamily: 'monospace',
-                color: timelineSaveState === 'conflict' || timelineSaveState === 'error' ? '#f87171' : '#52525b',
+                color: timelineSaveState === 'remote' ? '#fbbf24' : timelineSaveState === 'error' ? '#f87171' : '#52525b',
                 marginLeft: 4,
               }}
               title={timelineSaveMessage || `Saved to project at ${new Date(lastSavedAt).toLocaleString()}`}
             >
-              {timelineSaveState === 'conflict'
-                ? 'Updated elsewhere'
+              {timelineSaveState === 'remote'
+                ? 'New saved version'
                 : timelineSaveState === 'error'
                   ? 'Save failed'
                 : formatSavedAgo(lastSavedAt, nowTs)}
             </span>
           )}
-          {timelineSaveState === 'conflict' && (
+          {timelineSaveState === 'remote' && (
             <button
               style={{ ...btn, width: 'auto', padding: '0 7px', fontSize: 11, color: '#fbbf24' }}
               onClick={handleLoadLatest}
-              title="Discard local edits and load the latest shared timeline"
+              title="Discard local edits and load the latest saved timeline"
             >
               Load latest
             </button>
