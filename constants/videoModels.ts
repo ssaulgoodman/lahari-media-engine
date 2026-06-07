@@ -102,6 +102,18 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     refsWithFrames: false,
     resolutions: ['1080p'],
   },
+  {
+    key: 'kie-gemini-omni-video',
+    label: 'Gemini Omni Video (Kie)',
+    provider: 'kie',
+    durations: [4, 6, 8, 10],
+    costPerSec: 0.1125,
+    note: 'Experimental Gemini Omni route via Kie. Accepts start frame plus multiple image refs.',
+    supportsLastFrame: false,
+    supportsRefs: true,
+    refsWithFrames: true,
+    resolutions: ['1080p'],
+  },
 ];
 
 export const getVideoModel = (key: string | undefined): VideoModelSpec =>

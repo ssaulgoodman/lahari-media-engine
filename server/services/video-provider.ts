@@ -126,6 +126,9 @@ export const generateVideoWithFallback = async (
     const result = await generateKieVideo(publicStorageUrl(startImagePath), motionPrompt, {
       modelKey,
       endImageUrl: publicStorageUrl(opts?.endImagePath),
+      referenceImageUrls: (opts?.referenceImagePaths || [])
+        .map((path) => publicStorageUrl(path))
+        .filter((url): url is string => !!url),
       aspectRatio: opts?.aspectRatio,
       durationSec: opts?.durationSec,
       generationAttemptId: opts?.generationAttemptId,

@@ -1,4 +1,4 @@
-// Kie.ai video provider (alternate to Segmind for Veo models).
+// Kie.ai video provider (alternate to Segmind for Veo/Gemini Omni models).
 //
 // Kie is a durable-async-job API: submit returns a taskId, you poll record-info
 // until successFlag flips. This mirrors the Segmind v2 async path so it plugs
@@ -6,11 +6,16 @@
 // reads. Segmind stays the stable default; Kie is selected by a `kie-*` model
 // key and must pass real smoke tests before becoming a default anywhere.
 //
-// Contract (docs.kie.ai/veo3-api):
+// Veo contract (docs.kie.ai/veo3-api):
 //   POST https://api.kie.ai/api/v1/veo/generate    -> { code, data: { taskId } }
 //   GET  https://api.kie.ai/api/v1/veo/record-info?taskId=<id>
 //        -> { data: { successFlag: 0|1|2|3, response: { resultUrls: string[] } } }
 //   successFlag: 0 generating, 1 complete, 2/3 failed. Bearer auth.
+//
+// Market/Gemini Omni contract (docs.kie.ai/market/gemini-omni-video):
+//   POST https://api.kie.ai/api/v1/jobs/createTask -> { code: 200, data: { taskId } }
+//   GET  https://api.kie.ai/api/v1/jobs/recordInfo?taskId=<id>
+//        -> { data: { state: waiting|queuing|generating|success|fail, resultJson } }
 
 import { saveBuffer } from '../storage.js';
 import { requireProviderApiKey } from './byok/providerKeys.js';
@@ -26,6 +31,7 @@ const KIE_POLL_TIMEOUT_MS = 8 * 60 * 1000;
 export const KIE_MODELS = {
   'kie-veo3': {
     provider: 'kie',
+    api: 'veo',
     kieModel: 'veo3',
     label: 'Veo 3 (Kie)',
     family: 'veo',
@@ -36,9 +42,11 @@ export const KIE_MODELS = {
     supportsLastFrame: true,
     supportsRefs: false,
     refsWithFrames: false,
+    maxImageUrls: 2,
   },
   'kie-veo3-fast': {
     provider: 'kie',
+    api: 'veo',
     kieModel: 'veo3_fast',
     label: 'Veo 3 Fast (Kie)',
     family: 'veo',
@@ -48,6 +56,23 @@ export const KIE_MODELS = {
     supportsLastFrame: true,
     supportsRefs: false,
     refsWithFrames: false,
+    maxImageUrls: 2,
+  },
+  'kie-gemini-omni-video': {
+    provider: 'kie',
+    api: 'market',
+    kieModel: 'gemini-omni-video',
+    label: 'Gemini Omni Video (Kie)',
+    family: 'gemini_omni',
+    durations: [4, 6, 8, 10],
+    // Kie pricing: 4s $0.45, 6s $0.60, 8s $0.75, 10s $0.90.
+    // This linear estimate intentionally matches 4s and slightly overestimates longer clips.
+    costPerSec: 0.1125,
+    aspectRatios: ['16:9', '9:16'] as const,
+    supportsLastFrame: false,
+    supportsRefs: true,
+    refsWithFrames: true,
+    maxImageUrls: 7,
   },
 } as const;
 
@@ -58,6 +83,7 @@ export const isKieModelKey = (key?: string | null): key is KieModelKey =>
 export type KieVideoOptions = {
   modelKey?: KieModelKey;
   endImageUrl?: string;
+  referenceImageUrls?: string[];
   aspectRatio?: '16:9' | '9:16';
   durationSec?: number;
   generationAttemptId?: string;
@@ -80,12 +106,19 @@ const parseMaybeJson = (text: string): any => {
   }
 };
 
+const validHttpUrl = (url?: string | null): url is string =>
+  typeof url === 'string' && /^https?:\/\//i.test(url);
+
 const resultUrlsFrom = (data: any): string[] => {
   const response = typeof data?.response === 'string' ? parseMaybeJson(data.response) : data?.response;
   const info = typeof data?.info === 'string' ? parseMaybeJson(data.info) : data?.info;
+  const resultJson = typeof data?.resultJson === 'string' ? parseMaybeJson(data.resultJson) : data?.resultJson;
   const raw = data?.resultUrls
     ?? data?.result_urls
     ?? data?.videoUrls
+    ?? resultJson?.resultUrls
+    ?? resultJson?.result_urls
+    ?? resultJson?.videoUrls
     ?? response?.resultUrls
     ?? response?.result_urls
     ?? response?.videoUrls
@@ -99,6 +132,56 @@ const resultUrlsFrom = (data: any): string[] => {
     if (/^https?:\/\//i.test(raw.trim())) return [raw.trim()];
   }
   return [];
+};
+
+const buildSubmitRequest = (
+  modelKey: KieModelKey,
+  motionPrompt: string,
+  aspectRatio: '16:9' | '9:16',
+  durationSec: number,
+  startImageUrl?: string,
+  opts?: KieVideoOptions,
+): { url: string; body: Record<string, any>; imageUrls: string[] } => {
+  const model = KIE_MODELS[modelKey];
+
+  if (model.api === 'market') {
+    const imageUrls = [
+      startImageUrl,
+      ...(opts?.referenceImageUrls || []),
+    ].filter(validHttpUrl).slice(0, model.maxImageUrls);
+
+    return {
+      url: `${KIE_BASE}/jobs/createTask`,
+      imageUrls,
+      body: {
+        model: model.kieModel,
+        input: {
+          prompt: motionPrompt || 'Cinematic camera movement',
+          image_urls: imageUrls,
+          audio_ids: [],
+          video_list: [],
+          duration: String(durationSec),
+          aspect_ratio: aspectRatio,
+        },
+      },
+    };
+  }
+
+  const imageUrls = [startImageUrl, opts?.endImageUrl]
+    .filter(validHttpUrl)
+    .slice(0, model.maxImageUrls);
+
+  return {
+    url: `${KIE_BASE}/veo/generate`,
+    imageUrls,
+    body: {
+      prompt: motionPrompt,
+      model: model.kieModel,
+      aspect_ratio: aspectRatio,
+      ...(imageUrls.length ? { imageUrls } : {}),
+      generationType: imageUrls.length ? 'FIRST_AND_LAST_FRAMES_2_VIDEO' : 'TEXT_2_VIDEO',
+    },
+  };
 };
 
 const attachKieError = (
@@ -147,11 +230,10 @@ export const generateKieVideo = async (
   const requestedDuration = opts?.durationSec || durations[0];
   const durationSec = durations.find((d) => d >= requestedDuration) ?? durations[durations.length - 1];
   const aspectRatio = opts?.aspectRatio || '9:16';
-  const imageUrls = [startImageUrl, opts?.endImageUrl]
-    .filter((url): url is string => typeof url === 'string' && /^https?:\/\//i.test(url));
   const estimatedCostUsd = Number((model.costPerSec * durationSec).toFixed(3));
   const apiKey = await requireProviderApiKey('kie');
   const requestStartedAt = new Date().toISOString();
+  const submitRequest = buildSubmitRequest(modelKey, motionPrompt, aspectRatio, durationSec, startImageUrl, opts);
 
   await updateGenerationAttempt(opts?.generationAttemptId, {
     status: 'sent',
@@ -162,16 +244,10 @@ export const generateKieVideo = async (
   // ── Submit ────────────────────────────────────────────────────────────────
   let submit: Response;
   try {
-    submit = await fetch(`${KIE_BASE}/veo/generate`, {
+    submit = await fetch(submitRequest.url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: motionPrompt,
-        model: model.kieModel,
-        aspect_ratio: aspectRatio,
-        ...(imageUrls.length ? { imageUrls } : {}),
-        generationType: imageUrls.length ? 'FIRST_AND_LAST_FRAMES_2_VIDEO' : 'TEXT_2_VIDEO',
-      }),
+      body: JSON.stringify(submitRequest.body),
     });
   } catch (error: any) {
     // Network failure before we know if Kie accepted the job → outcome unknown.
@@ -239,7 +315,13 @@ export const generateKieVideo = async (
     providerRequestStatus: 'accepted',
     providerRequestId: taskId,
     responseReceivedAt,
-    responseSummary: { phase: 'submit', httpStatus: submit.status, taskId },
+    responseSummary: {
+      phase: 'submit',
+      httpStatus: submit.status,
+      taskId,
+      api: model.api,
+      imageUrlCount: submitRequest.imageUrls.length,
+    },
   });
 
   // ── Poll ──────────────────────────────────────────────────────────────────
@@ -266,7 +348,10 @@ export const generateKieVideo = async (
     }
     await sleep(KIE_POLL_INTERVAL_MS);
 
-    const poll = await fetch(`${KIE_BASE}/veo/record-info?taskId=${encodeURIComponent(taskId)}`, {
+    const pollUrl = model.api === 'market'
+      ? `${KIE_BASE}/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`
+      : `${KIE_BASE}/veo/record-info?taskId=${encodeURIComponent(taskId)}`;
+    const poll = await fetch(pollUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },
     }).catch(() => null);
     if (!poll) continue; // transient poll error — keep polling until deadline
@@ -295,7 +380,7 @@ export const generateKieVideo = async (
       continue;
     }
     const pollBodyCode = pollJson?.code === undefined ? null : Number(pollJson.code);
-    if (pollBodyCode !== null && pollBodyCode !== 200) {
+    if (model.api === 'veo' && pollBodyCode !== null && pollBodyCode !== 200) {
       await updateGenerationAttempt(opts?.generationAttemptId, {
         status: 'provider_failed',
         chargeStatus: 'provider_failed_no_output',
@@ -313,6 +398,41 @@ export const generateKieVideo = async (
         errorCategory: 'provider_failed',
       });
     }
+
+    if (model.api === 'market') {
+      const state = String(pollJson?.data?.state || '').toLowerCase();
+      if (state === 'success') {
+        resultUrls = resultUrlsFrom(pollJson?.data);
+        break;
+      }
+      if (state === 'fail') {
+        const providerMessage = pollJson?.data?.failMsg || pollJson?.msg || 'unknown provider error';
+        await updateGenerationAttempt(opts?.generationAttemptId, {
+          status: 'provider_failed',
+          chargeStatus: 'provider_failed_no_output',
+          providerRequestStatus: 'failed',
+          providerRequestId: taskId,
+          responseReceivedAt: new Date().toISOString(),
+          responseSummary: {
+            phase: 'poll',
+            state,
+            failCode: pollJson?.data?.failCode || null,
+            message: providerMessage,
+          },
+          error: `Kie market generation failed: ${providerMessage}.`,
+        });
+        throw attachKieError(new Error(`Kie ${modelKey} generation failed for task ${taskId}: ${providerMessage}`), modelKey, {
+          chargeStatus: 'provider_failed_no_output',
+          providerRequestStatus: 'failed',
+          providerRequestId: taskId,
+          estimatedCostUsd: 0,
+          errorCategory: 'provider_failed',
+        });
+      }
+      // waiting / queuing / generating / unknown -> keep polling
+      continue;
+    }
+
     const flag = Number(pollJson?.data?.successFlag ?? pollJson?.data?.success_flag);
     if (flag === 1) {
       resultUrls = resultUrlsFrom(pollJson?.data);
@@ -397,5 +517,6 @@ export const generateKieVideo = async (
 };
 
 export const __kieVideoTest = {
+  buildSubmitRequest,
   resultUrlsFrom,
 };
