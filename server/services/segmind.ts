@@ -1,8 +1,8 @@
 /**
  * Segmind video generation service — unified provider for all video models.
- * Segmind v2 async API is the Mirage default: submit, poll by provider request
- * id, then ingest the final asset. The old v1 binary response path remains as
- * an env escape hatch for compatibility debugging.
+ * Veo uses Segmind v1 by default because the v2 async route intermittently
+ * fails upstream with "Failed to get the token" after accepting valid requests.
+ * Other model families keep the async route in platform mode unless overridden.
  *
  * Models: Veo 3.1 Fast, Veo 3.1, Seedance 2.0 Fast, Seedance 2.0
  */
@@ -106,7 +106,7 @@ export const generateSegmindVideo = async (
   opts?: SegmindVideoOptions
 ): Promise<{ videoPath: string; modelId: string; durationSec: number; providerRequestId?: string | null }> => {
   const prepared = prepareSegmindRequest(startImagePath, motionPrompt, opts);
-  const mode = getSegmindVideoApiMode();
+  const mode = getSegmindVideoApiMode(prepared.modelKey);
   const endpoint = mode === 'v2_async'
     ? `${SEGMIND_V2_BASE}/${prepared.model.path}`
     : prepared.model.endpoint;
@@ -180,10 +180,12 @@ const prepareSegmindRequest = (
   return { modelKey, model, body, durationSec, resolution, refUrls, refAudioUrls };
 };
 
-const getSegmindVideoApiMode = (): 'v1_sync' | 'v2_async' => {
+const getSegmindVideoApiMode = (modelKey?: SegmindModelKey): 'v1_sync' | 'v2_async' => {
   const explicit = String(process.env.SEGMIND_VIDEO_API_MODE || '').trim().toLowerCase();
   if (explicit === 'v1_sync') return 'v1_sync';
   if (explicit === 'v2_async') return 'v2_async';
+  const model = modelKey ? SEGMIND_MODELS[modelKey] : null;
+  if (model?.family === 'veo') return 'v1_sync';
   return supportsPlatformColumns() ? 'v2_async' : 'v1_sync';
 };
 
@@ -1119,6 +1121,7 @@ const pollSegmindRequest = async (params: {
 };
 
 export const __segmindVideoTest = {
+  getSegmindVideoApiMode,
   inferMediaMime,
   isSegmindAssetUrl,
   prepareSegmindRequest,

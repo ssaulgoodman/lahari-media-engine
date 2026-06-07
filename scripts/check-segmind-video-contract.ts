@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { __segmindVideoTest } from '../server/services/segmind.js';
 
 const {
+  getSegmindVideoApiMode,
   inferMediaMime,
   isSegmindAssetUrl,
   prepareSegmindRequest,
@@ -33,6 +34,8 @@ assert.equal(veo.body.aspect_ratio, '9:16');
 assert.equal(veo.body.generate_audio, true);
 assert.ok(veo.body.image);
 assert.equal(veo.body.reference_images, undefined);
+assert.equal(getSegmindVideoApiMode('veo-3.1'), 'v1_sync');
+assert.equal(getSegmindVideoApiMode('seedance-2.0'), 'v2_async');
 
 assert.equal(inferMediaMime(Buffer.from([0xff, 0xd8, 0xff, 0xdb])), 'image/jpeg');
 assert.equal(inferMediaMime(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'image/png');
