@@ -24,6 +24,13 @@ type SegmindVideoOptions = {
   durationSec?: number;
   modelKey?: SegmindModelKey;
   generationAttemptId?: string;
+  apiMode?: 'v1_sync' | 'v2_async';
+  transportFallbackFrom?: {
+    mode: 'v2_async';
+    providerRequestId?: string | null;
+    reason: string;
+    chargeStatus?: string | null;
+  };
 };
 
 type SegmindPreparedRequest = {
@@ -104,7 +111,7 @@ export const generateSegmindVideo = async (
   opts?: SegmindVideoOptions
 ): Promise<{ videoPath: string; modelId: string; durationSec: number; providerRequestId?: string | null }> => {
   const prepared = prepareSegmindRequest(startImagePath, motionPrompt, opts);
-  const mode = getSegmindVideoApiMode();
+  const mode = opts?.apiMode || getSegmindVideoApiMode();
   const endpoint = mode === 'v2_async'
     ? `${SEGMIND_V2_BASE}/${prepared.model.path}`
     : prepared.model.endpoint;
@@ -377,6 +384,8 @@ const generateSegmindVideoV1 = async (
       headers: responseHeaders,
       outputBytes: buffer.length,
       outputPath: videoPath,
+      transportMode: 'v1_sync',
+      transportFallbackFrom: opts?.transportFallbackFrom || null,
     },
   });
   console.log(`[segmind] Video saved: ${videoPath} (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`);
