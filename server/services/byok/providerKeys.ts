@@ -7,6 +7,7 @@ const ENV_BY_PROVIDER: Record<ByokProvider, string> = {
   gemini: 'GEMINI_API_KEY',
   segmind: 'SEGMIND_API_KEY',
   elevenlabs: 'ELEVENLABS_API_KEY',
+  kie: 'KIE_API_KEY',
 };
 
 export const requireProviderApiKey = async (provider: ByokProvider): Promise<string> => {

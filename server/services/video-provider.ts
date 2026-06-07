@@ -1,4 +1,5 @@
-import { generateSegmindVideo, SegmindModelKey } from './segmind.js';
+import { generateSegmindVideo, SEGMIND_MODELS, SegmindModelKey } from './segmind.js';
+import { generateKieVideo, isKieModelKey, KIE_MODELS, type KieModelKey } from './kie-video.js';
 import {
   generateVertexVideo,
   hasVertexVideoConfig,
@@ -6,7 +7,9 @@ import {
 } from './vertex-video.js';
 import { supportsPlatformColumns } from '../database.js';
 
-type VideoProvider = 'segmind' | 'vertex';
+type VideoProvider = 'segmind' | 'vertex' | 'kie';
+
+export type VideoModelKey = SegmindModelKey | KieModelKey;
 
 export type VideoGenerationOptions = {
   endImagePath?: string;
@@ -16,7 +19,7 @@ export type VideoGenerationOptions = {
   resolution?: '720p' | '1080p';
   aspectRatio?: '16:9' | '9:16';
   durationSec?: number;
-  modelKey?: SegmindModelKey;
+  modelKey?: VideoModelKey;
   generationAttemptId?: string;
 };
 
@@ -26,6 +29,43 @@ export type VideoGenerationResult = {
   durationSec: number;
   provider: VideoProvider;
   providerRequestId?: string | null;
+};
+
+// Provider-owned model spec resolution: returns the shape callers need
+// (duration options, cost, family, owning provider) for any video model key,
+// regardless of which provider owns it. Defaults to the stable Segmind Veo.
+export const resolveVideoModelSpec = (modelKey?: string | null): {
+  provider: VideoProvider;
+  durations: readonly number[];
+  costPerSec: number;
+  family: string;
+  supportsLastFrame: boolean;
+  supportsRefs: boolean;
+  refsWithFrames: boolean;
+} => {
+  if (modelKey && isKieModelKey(modelKey)) {
+    const m = KIE_MODELS[modelKey];
+    return {
+      provider: 'kie',
+      durations: m.durations,
+      costPerSec: m.costPerSec,
+      family: m.family,
+      supportsLastFrame: m.supportsLastFrame,
+      supportsRefs: m.supportsRefs,
+      refsWithFrames: m.refsWithFrames,
+    };
+  }
+  const key = (modelKey && modelKey in SEGMIND_MODELS ? modelKey : 'veo-3.1-fast') as SegmindModelKey;
+  const m = SEGMIND_MODELS[key];
+  return {
+    provider: 'segmind',
+    durations: m.durations,
+    costPerSec: m.costPerSec,
+    family: m.family,
+    supportsLastFrame: m.supportsLastFrame,
+    supportsRefs: m.supportsRefs,
+    refsWithFrames: m.refsWithFrames,
+  };
 };
 
 const shouldFallbackToVertex = (err: any): boolean => {
@@ -73,7 +113,22 @@ export const generateVideoWithFallback = async (
   opts?: VideoGenerationOptions
 ): Promise<VideoGenerationResult> => {
   const modelKey = opts?.modelKey || 'veo-3.1-fast';
-  const canUseVertexModel = isVertexVeoModelKey(modelKey);
+
+  // Kie provider: routed by a kie-* model key. The Segmind/Vertex path below is
+  // untouched, so Kie is purely additive and Segmind stays the default.
+  if (isKieModelKey(modelKey)) {
+    const result = await generateKieVideo(startImagePath, motionPrompt, {
+      modelKey,
+      aspectRatio: opts?.aspectRatio,
+      durationSec: opts?.durationSec,
+      generationAttemptId: opts?.generationAttemptId,
+    });
+    return { ...result, provider: 'kie' };
+  }
+
+  // From here, modelKey is a Segmind/Vertex key.
+  const segmindModelKey = modelKey as SegmindModelKey;
+  const canUseVertexModel = isVertexVeoModelKey(segmindModelKey);
   const studioSchema = supportsPlatformColumns();
 
   // Env override: VIDEO_PROVIDER=vertex skips Segmind entirely for Veo models.
@@ -81,11 +136,11 @@ export const generateVideoWithFallback = async (
   // Segmind (Vertex doesn't have them).
   if (!studioSchema && process.env.VIDEO_PROVIDER === 'vertex' && canUseVertexModel && hasVertexVideoConfig()) {
     console.log(`[video-provider] VIDEO_PROVIDER=vertex — going direct to Vertex for ${modelKey}`);
-    return await generateVertexVideo(startImagePath, motionPrompt, { ...opts, modelKey });
+    return await generateVertexVideo(startImagePath, motionPrompt, { ...opts, modelKey: segmindModelKey });
   }
 
   try {
-    const result = await generateSegmindVideo(startImagePath, motionPrompt, opts);
+    const result = await generateSegmindVideo(startImagePath, motionPrompt, opts ? { ...opts, modelKey: segmindModelKey } : undefined);
     return { ...result, provider: 'segmind' };
   } catch (segmindErr: any) {
 
@@ -103,7 +158,7 @@ export const generateVideoWithFallback = async (
     try {
       return await generateVertexVideo(startImagePath, motionPrompt, {
         ...opts,
-        modelKey,
+        modelKey: segmindModelKey,
       });
     } catch (vertexErr: any) {
       const err = new Error(`Segmind failed (${summarizeError(segmindErr)}). Vertex fallback also failed (${summarizeError(vertexErr)}).`);

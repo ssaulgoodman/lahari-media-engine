@@ -1,7 +1,7 @@
 import { getSB, T } from '../../database.js';
 import { decryptKey, encryptKey } from './crypto.js';
 
-export const BYOK_PROVIDERS = ['anthropic', 'openai', 'gemini', 'segmind', 'elevenlabs'] as const;
+export const BYOK_PROVIDERS = ['anthropic', 'openai', 'gemini', 'segmind', 'elevenlabs', 'kie'] as const;
 export type ByokProvider = typeof BYOK_PROVIDERS[number];
 
 export type ApiKeySummary = {

@@ -1,8 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn } from '../database.js';
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { SEGMIND_MODELS, SegmindModelKey } from './segmind.js';
-import { generateVideoWithFallback } from './video-provider.js';
+import { generateVideoWithFallback, resolveVideoModelSpec, type VideoModelKey } from './video-provider.js';
 import { extractAudioSegment, extractLastFrame } from './ffmpeg.js';
 import { refreshChainedShotPrompt } from './claude.js';
 import { buildSeedanceStoryboardVideoPrompt } from './seedance-storyboard-rd.js';
@@ -178,8 +177,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
   }
 
   const projectPreferences = await getProjectPreferencesState(project as any);
-  const videoModelKey = (opts.modelOverride?.videoModel || projectPreferences.preferences.videoModel || 'veo-3.1-fast') as SegmindModelKey;
-  const modelSpec = SEGMIND_MODELS[videoModelKey] || SEGMIND_MODELS['veo-3.1-fast'];
+  const videoModelKey = (opts.modelOverride?.videoModel || projectPreferences.preferences.videoModel || 'veo-3.1-fast') as VideoModelKey;
+  const modelSpec = resolveVideoModelSpec(videoModelKey);
   const estimatedProviderDuration = selectProviderDuration(modelSpec.durations, shot.duration);
   const estimatedVideoCost = Number((modelSpec.costPerSec * estimatedProviderDuration).toFixed(3));
   const generationAttemptId = uuidv4();
@@ -468,8 +467,8 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       shotId: shot.id,
       userId: project.user_id || null,
       stage: 'generate-shot-video',
-      provider: 'segmind',
-      model: videoModelKey in SEGMIND_MODELS ? videoModelKey : 'veo-3.1-fast',
+      provider: modelSpec.provider,
+      model: videoModelKey,
       estimatedCost: estimatedVideoCost,
       requestSummary: {
         mode: useStoryboardMode ? 'storyboard' : 'keyframe',
@@ -495,7 +494,7 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
       aspectRatio: aspect,
       resolution,
       durationSec: shot.duration,
-      modelKey: videoModelKey in SEGMIND_MODELS ? videoModelKey : 'veo-3.1-fast',
+      modelKey: videoModelKey,
       generationAttemptId,
     });
     const videoPath = result.videoPath;
