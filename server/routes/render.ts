@@ -42,6 +42,18 @@ const itemSrc = (item: any) => {
   return typeof src === 'string' && src.trim() ? src.trim() : null;
 };
 
+const renderCanvasSize = (project: any) => {
+  const base = project?.video_resolution === '1080p' ? 1080 : 720;
+  if (project?.aspect_ratio === '9:16') return { width: base, height: Math.round((base * 16) / 9) };
+  if (project?.aspect_ratio === '1:1') return { width: base, height: base };
+  return { width: Math.round((base * 16) / 9), height: base };
+};
+
+const normalizeTimelineCanvas = (project: any, timeline: any) => ({
+  ...timeline,
+  size: renderCanvasSize(project),
+});
+
 const enableNativeVideoAudio = async (projectId: string, timeline: any) => {
   const scenes = await selectAll('scenes', { project_id: projectId }, { orderBy: 'sort_order' });
   const sceneIds = scenes.map((scene: any) => scene.id);
@@ -255,7 +267,9 @@ router.post('/:id/render', async (req, res) => {
     }
   }
 
-  const renderTimeline = await enrichTimelineWithOverlayDialogue(projectId, timeline);
+  const project = await selectOne('projects', { id: projectId });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const renderTimeline = await enrichTimelineWithOverlayDialogue(projectId, normalizeTimelineCanvas(project, timeline));
 
   const renderId = uuidv4();
   await insertRow('renders', {

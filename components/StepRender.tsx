@@ -18,6 +18,13 @@ interface Props {
   onBack: () => void;
 }
 
+const renderCanvasSize = (project: ApiProject) => {
+  const base = project.videoResolution === '1080p' ? 1080 : 720;
+  if (project.aspectRatio === '9:16') return { width: base, height: Math.round((base * 16) / 9) };
+  if (project.aspectRatio === '1:1') return { width: base, height: base };
+  return { width: Math.round((base * 16) / 9), height: base };
+};
+
 // Backend is authoritative for render state — the frontend just reflects what
 // /render-status reports. Polling while the job is 'rendering' lets the user
 // navigate away, come back, and still see progress/result.
@@ -176,6 +183,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     () => (project.audioPath ? [{ src: project.audioPath, name: 'song' }] : []),
     [project.audioPath],
   );
+  const canvasSize = useMemo(() => renderCanvasSize(project), [project.aspectRatio, project.videoResolution]);
 
   const newMediaUrls = useMemo(() => {
     if (!lastSavedAt || timelineItemIds.length === 0) return new Set<string>();
@@ -399,6 +407,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             initialClips={previewClips}
             initialAudioClips={previewAudioClips}
             projectId={project.id}
+            canvasSize={canvasSize}
             onOpenMediaLibrary={openMediaLibrary}
             mediaLibraryBadgeCount={newMediaCount}
           />

@@ -15,6 +15,9 @@ import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot } from './persistence';
 
 export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean };
+export type TimelineCanvasSize = { width: number; height: number };
+
+const DEFAULT_CANVAS_SIZE: TimelineCanvasSize = { width: 1920, height: 1080 };
 
 interface Props {
   onExit?: () => void;
@@ -35,6 +38,7 @@ interface Props {
   // mirrored into the store so the Header's Reset/Save buttons can act on
   // it without prop-drilling.
   projectId?: string;
+  canvasSize?: TimelineCanvasSize;
   onOpenMediaLibrary?: () => void;
   mediaLibraryBadgeCount?: number;
 }
@@ -238,6 +242,7 @@ const TimelineEditor: React.FC<Props> = ({
   initialAudioClips,
   embedded,
   projectId,
+  canvasSize = DEFAULT_CANVAS_SIZE,
   onOpenMediaLibrary,
   mediaLibraryBadgeCount = 0,
 }) => {
@@ -278,7 +283,7 @@ const TimelineEditor: React.FC<Props> = ({
   useEffect(() => {
     const sm = new StateManager(
       {
-        size: { width: 1920, height: 1080 },
+        size: canvasSize,
         fps: 30,
         duration: 5000,
         scale: { unit: 60, zoom: 1 / 90, segments: 5, index: 10 },
@@ -303,6 +308,7 @@ const TimelineEditor: React.FC<Props> = ({
       transitionIds: [],
       transitionsMap: {},
       activeIds: [],
+      size: canvasSize,
     });
 
     // Session-only undo/redo. Whole-snapshot replay (vs. designcombo's
@@ -543,7 +549,7 @@ const TimelineEditor: React.FC<Props> = ({
       setHistoryHandlers(null, null);
       captureBaselineRef.current = null;
     };
-  }, [setStateManager, setState, setHistory, setHistoryHandlers]);
+  }, [canvasSize.width, canvasSize.height, setStateManager, setState, setHistory, setHistoryHandlers]);
 
   // Seed with initialClips + initialAudioClips by probing durations ourselves
   // and committing the full state via stateManager.updateState. This bypasses
@@ -560,7 +566,7 @@ const TimelineEditor: React.FC<Props> = ({
     const audioKey = (initialAudioClips ?? []).map((c) => c.src).join('|');
     // resetToken is folded into the key so bumping it in the parent forces a
     // re-seed even when the clip URLs are identical.
-    const key = `${videoKey}#${audioKey}#${resetToken ?? 0}#${projectId ?? ''}`;
+    const key = `${videoKey}#${audioKey}#${resetToken ?? 0}#${projectId ?? ''}#${canvasSize.width}x${canvasSize.height}`;
     if (seededKeyRef.current === key) return;
 
     hasSeededRef.current = false;
@@ -611,9 +617,11 @@ const TimelineEditor: React.FC<Props> = ({
               transitionIds: restored.transitionIds,
               transitionsMap: restored.transitionsMap,
               duration: restored.duration,
+              size: canvasSize,
             },
             { kind: 'update', updateHistory: false },
           );
+          setState({ size: canvasSize });
           setLastSavedAt(restored.savedAt);
           seededKeyRef.current = key;
           hasSeededRef.current = true;
@@ -730,9 +738,11 @@ const TimelineEditor: React.FC<Props> = ({
           transitionIds: [],
           transitionsMap: {},
           duration: totalDuration,
+          size: canvasSize,
         },
         { kind: 'update', updateHistory: false },
       );
+      setState({ size: canvasSize });
       seededKeyRef.current = key;
       hasSeededRef.current = true;
       captureBaselineRef.current?.();
@@ -757,7 +767,7 @@ const TimelineEditor: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, setLastSavedAt]);
+  }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, canvasSize.width, canvasSize.height, setLastSavedAt, setState]);
 
   // Auto-save: debounced writer that mirrors the render-authoritative subset
   // of the store into localStorage whenever the user edits the timeline.
@@ -775,7 +785,8 @@ const TimelineEditor: React.FC<Props> = ({
         state.transitionsMap === prev.transitionsMap &&
         state.transitionIds === prev.transitionIds &&
         state.tracks === prev.tracks &&
-        state.duration === prev.duration
+        state.duration === prev.duration &&
+        state.size === prev.size
       )
         return;
       if (timer !== null) window.clearTimeout(timer);
