@@ -52,7 +52,7 @@ Artist director work happens through deployed Mirage remote MCP, not inside this
 Sync with `mint_cli_token` and the returned Mirage CLI command. On Windows/Codex, install the CLI once and use the returned installed-CLI sync command if `npx` is blocked. `write_project_notebook` is a heavy fallback for no-shell harnesses. `state/` is read-only Supabase snapshots. `script.md` is editable for pre-visual scripts and topology rebuilds; apply it with `run_action(apply_script)` using markdown. Once refs, boards, or videos exist, use `run_action(apply_text_edits)` for wording-only scene title, shot direction, or dialogue edits so visual groundwork survives.
 
 Prompt source-of-truth discipline:
-- Runtime prompt/action changes must keep the registry/composer/tool-recipe surfaces aligned: `server/services/actionRegistry.ts` for agent-visible actions, `server/tools/registry.ts` for web availability, `server/prompts/*`, `/api/prompts`, `components/PromptsLibrary.tsx`, and the secondary reference `server/prompts/catalog.ts`.
+- Runtime prompt/action changes must keep the registry/composer/tool-recipe surfaces aligned: `server/services/actionRegistry.ts` for agent-visible actions, `server/resources/workflows/*` for named workflow recipes, `server/tools/registry.ts` for web availability, `server/prompts/*`, `/api/prompts`, `components/PromptsLibrary.tsx`, and the secondary reference `server/prompts/catalog.ts`.
 - Agent-native intent is not a raw `userNote` pipe. Codex/Claude must translate artist chat into exact graph/spec edits, `contextOverrides`, precise `promptOverride`, `callInstruction`, `editInstruction`, or a project override before calling Mirage actions. `userNote` is legacy/web-direct only.
 - Pipeline behavior changes must update `docs/pipeline-anatomy.md`.
 - Keep `CLAUDE.md` short; do not paste full prompt bodies or long endpoint inventories here.
@@ -105,6 +105,7 @@ The current architecture is registry + composer, not a pile of fat prompt templa
 - `server/prompts/*` and `server/prompts/_composer.ts` build worker-call context from explicit sources: task, selected project data, selected references, project override, call override, and output contract. Raw artist notes are for legacy web-direct helpers, not the agent-preferred path.
 - `components/PromptsLibrary.tsx` is the Tool Recipes UI. It should show artist-readable tool behavior first; raw prompt/template references are secondary/debug.
 - Avoid injecting workflow/preset enum labels into LLM prompt bodies. Logs may carry keys; prompts should receive human production language.
+- Named workflow recipes live under `server/resources/workflows/*`. `list_workflows` / `apply_project_workflow` apply those recipes to a project; prompt overrides remain the under-the-hood save slot, not the workflow library.
 
 ## Seedance Storyboard Mode
 

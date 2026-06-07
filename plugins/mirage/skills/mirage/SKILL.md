@@ -45,6 +45,8 @@ Project files live under `mirage/projects/<projectId>/`:
 
 Skills come from the installed Mirage plugin. Action schemas come from live MCP: call `describe_action(actionKey)` for the schema you are about to use.
 
+For repeatable production formats, call `list_workflows` and apply the matching recipe with `apply_project_workflow`. The recipe is project data; fill its slots during generation instead of rewriting the wrapper from memory.
+
 ## Safe Edit Rule
 
 Before visual assets exist, `apply_script` can create or rebuild topology.

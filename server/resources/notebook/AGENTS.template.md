@@ -54,6 +54,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Native storyboard image: upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 - Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
+- Repeatable formats: use `run_action(list_workflows)` to discover named recipes, then `run_action(apply_project_workflow)` to apply one such as Yapper. After that, fill the stored recipe's slots instead of rewriting its wrapper.
 - Video: use `run_action(generate_video, { dryRun: true })` for requirements/cost, then `start_job(generate_video)` after approval.
 - Audio: use `apply_audio_plan` and `apply_cast_voice` for speech plans/voices; use `generate_dialogue_audio` for TTS; use `voice_change_video` after native-dialogue video when mouth timing works but the voice needs the assigned cast voice.
 
@@ -63,6 +64,7 @@ Do not solve every problem by regenerating. Pick the smallest lever that address
 
 - Use `contextOverrides` for one call's input bundle: include an extra guide/ref, exclude a wrong ref, drop the style image, include previous storyboard, or change style-note sections.
 - Use `promptOverride` when one paid call needs an exact final model prompt. If the same phrasing keeps working, suggest promoting it to a project prompt override or style note.
+- Use workflow recipes for repeated production formats. The recipe owns the risky wrapper; the agent fills data/judgment slots such as dialogue, pace, performance, and ending.
 - Use style notes for reusable taste, model phrasing, or project language that should influence future prompts without replacing them.
 - Use image edit/refine when identity and composition are mostly right but one visual axis is wrong. Regenerate when staging, premise, panel structure, or reference use is wrong.
 - Use native imagegen plus `import_storyboard_image` for storyboard boards, or `import_keyframe_image` for start frames, when outside image work beats Mirage generation.
@@ -98,7 +100,7 @@ Project files under `mirage/projects/<projectId>/`:
 - `script.md`, `audio-plan.md`, `storyboards/*.md` — editable drafts. Persist them with apply actions.
 - `config/style-notes.json` — reusable per-surface taste notes.
 - `config/preferences.json` — model/provider preferences.
-- `config/prompts/*.md` — optional project prompt overrides. This is not a prompt log.
+- `config/prompts/*.md` — optional project prompt overrides and applied workflow recipes. This is not a prompt log.
 - `notebook.json` — project metadata and hashes.
 - `journal.md` — local handoff notes. Helpful, not canonical truth.
 
