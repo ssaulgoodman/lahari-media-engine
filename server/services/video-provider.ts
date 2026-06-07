@@ -18,13 +18,6 @@ export type VideoGenerationOptions = {
   durationSec?: number;
   modelKey?: SegmindModelKey;
   generationAttemptId?: string;
-  apiMode?: 'v1_sync' | 'v2_async';
-  transportFallbackFrom?: {
-    mode: 'v2_async';
-    providerRequestId?: string | null;
-    reason: string;
-    chargeStatus?: string | null;
-  };
 };
 
 export type VideoGenerationResult = {
@@ -74,19 +67,6 @@ const summarizeError = (err: any): string => {
   return message.length > 180 ? `${message.slice(0, 180)}...` : message;
 };
 
-const shouldFallbackToSegmindV1 = (err: any, modelKey: SegmindModelKey): boolean => {
-  if (!isVertexVeoModelKey(modelKey)) return false;
-  const message = String(err?.message || err || '').toLowerCase();
-  const raw = String(err?.segmindRaw || '').toLowerCase();
-  const chargeStatus = String(err?.chargeStatus || '').toLowerCase();
-  const requestStatus = String(err?.providerRequestStatus || '').toLowerCase();
-  const text = `${message} ${raw}`;
-
-  return chargeStatus === 'provider_failed_no_output'
-    && requestStatus === 'failed'
-    && text.includes('failed to get the token');
-};
-
 export const generateVideoWithFallback = async (
   startImagePath: string | undefined,
   motionPrompt: string,
@@ -108,28 +88,6 @@ export const generateVideoWithFallback = async (
     const result = await generateSegmindVideo(startImagePath, motionPrompt, opts);
     return { ...result, provider: 'segmind' };
   } catch (segmindErr: any) {
-    if (shouldFallbackToSegmindV1(segmindErr, modelKey)) {
-      console.warn(`[video-provider] Segmind async token failure for ${modelKey}; retrying once through v1 sync. Cause: ${summarizeError(segmindErr)}`);
-      try {
-        const result = await generateSegmindVideo(startImagePath, motionPrompt, {
-          ...opts,
-          apiMode: 'v1_sync',
-          transportFallbackFrom: {
-            mode: 'v2_async',
-            providerRequestId: segmindErr?.providerRequestId || null,
-            reason: 'segmind_async_token_failure',
-            chargeStatus: segmindErr?.chargeStatus || null,
-          },
-        });
-        return { ...result, provider: 'segmind' };
-      } catch (v1Err: any) {
-        const err = new Error(`Segmind async failed (${summarizeError(segmindErr)}). Segmind v1 fallback also failed (${summarizeError(v1Err)}).`);
-        (err as any).primaryError = segmindErr;
-        (err as any).fallbackError = v1Err;
-        (err as any).errorCategory = v1Err?.errorCategory || segmindErr?.errorCategory || 'unknown';
-        throw err;
-      }
-    }
 
     if (studioSchema || !canUseVertexModel || !shouldFallbackToVertex(segmindErr)) {
       throw segmindErr;
