@@ -9,7 +9,7 @@
 // Contract (docs.kie.ai/veo3-api):
 //   POST https://api.kie.ai/api/v1/veo/generate    -> { code, data: { taskId } }
 //   GET  https://api.kie.ai/api/v1/veo/record-info?taskId=<id>
-//        -> { data: { successFlag: 0|1|2|3, resultUrls: "[...]" | string[] } }
+//        -> { data: { successFlag: 0|1|2|3, response: { resultUrls: string[] } } }
 //   successFlag: 0 generating, 1 complete, 2/3 failed. Bearer auth.
 
 import { saveBuffer } from '../storage.js';
@@ -32,8 +32,8 @@ export const KIE_MODELS = {
     durations: [8],
     costPerSec: 0.20,
     aspectRatios: ['16:9', '9:16'] as const,
-    // Kie submit sends a single start image only — no last-frame, no refs.
-    supportsLastFrame: false,
+    // Kie imageUrls supports one image, or first+last frame as two images.
+    supportsLastFrame: true,
     supportsRefs: false,
     refsWithFrames: false,
   },
@@ -45,7 +45,7 @@ export const KIE_MODELS = {
     durations: [8],
     costPerSec: 0.10,
     aspectRatios: ['16:9', '9:16'] as const,
-    supportsLastFrame: false,
+    supportsLastFrame: true,
     supportsRefs: false,
     refsWithFrames: false,
   },
@@ -57,6 +57,7 @@ export const isKieModelKey = (key?: string | null): key is KieModelKey =>
 
 export type KieVideoOptions = {
   modelKey?: KieModelKey;
+  endImageUrl?: string;
   aspectRatio?: '16:9' | '9:16';
   durationSec?: number;
   generationAttemptId?: string;
@@ -80,7 +81,17 @@ const parseMaybeJson = (text: string): any => {
 };
 
 const resultUrlsFrom = (data: any): string[] => {
-  const raw = data?.resultUrls ?? data?.result_urls ?? data?.videoUrls;
+  const response = typeof data?.response === 'string' ? parseMaybeJson(data.response) : data?.response;
+  const info = typeof data?.info === 'string' ? parseMaybeJson(data.info) : data?.info;
+  const raw = data?.resultUrls
+    ?? data?.result_urls
+    ?? data?.videoUrls
+    ?? response?.resultUrls
+    ?? response?.result_urls
+    ?? response?.videoUrls
+    ?? info?.resultUrls
+    ?? info?.result_urls
+    ?? info?.videoUrls;
   if (Array.isArray(raw)) return raw.filter((u: any) => typeof u === 'string');
   if (typeof raw === 'string') {
     const parsed = parseMaybeJson(raw);
@@ -132,8 +143,12 @@ export const generateKieVideo = async (
 ): Promise<KieVideoResult> => {
   const modelKey: KieModelKey = (opts?.modelKey && isKieModelKey(opts.modelKey)) ? opts.modelKey : 'kie-veo3-fast';
   const model = KIE_MODELS[modelKey];
-  const durationSec = opts?.durationSec || model.durations[0];
+  const durations = [...model.durations].sort((a, b) => a - b);
+  const requestedDuration = opts?.durationSec || durations[0];
+  const durationSec = durations.find((d) => d >= requestedDuration) ?? durations[durations.length - 1];
   const aspectRatio = opts?.aspectRatio || '9:16';
+  const imageUrls = [startImageUrl, opts?.endImageUrl]
+    .filter((url): url is string => typeof url === 'string' && /^https?:\/\//i.test(url));
   const estimatedCostUsd = Number((model.costPerSec * durationSec).toFixed(3));
   const apiKey = await requireProviderApiKey('kie');
   const requestStartedAt = new Date().toISOString();
@@ -154,7 +169,8 @@ export const generateKieVideo = async (
         prompt: motionPrompt,
         model: model.kieModel,
         aspect_ratio: aspectRatio,
-        ...(startImageUrl ? { imageUrls: [startImageUrl] } : {}),
+        ...(imageUrls.length ? { imageUrls } : {}),
+        generationType: imageUrls.length ? 'FIRST_AND_LAST_FRAMES_2_VIDEO' : 'TEXT_2_VIDEO',
       }),
     });
   } catch (error: any) {
@@ -179,19 +195,20 @@ export const generateKieVideo = async (
   const responseReceivedAt = new Date().toISOString();
   const submitText = await submit.text().catch(() => '');
   const submitJson = parseMaybeJson(submitText);
+  const submitBodyCode = submitJson?.code === undefined ? null : Number(submitJson.code);
   const taskId = String(submitJson?.data?.taskId || submitJson?.data?.task_id || '').trim();
 
-  if (!submit.ok) {
+  if (!submit.ok || (submitBodyCode !== null && submitBodyCode !== 200)) {
     await updateGenerationAttempt(opts?.generationAttemptId, {
       status: 'provider_rejected',
-      chargeStatus: 'provider_rejected',
+      chargeStatus: 'provider_rejected_no_output',
       providerRequestStatus: 'submit_error',
       responseReceivedAt,
-      responseSummary: { phase: 'submit', httpStatus: submit.status, bodyPreview: submitText.slice(0, 1000) },
-      error: `Kie submit HTTP ${submit.status}`,
+      responseSummary: { phase: 'submit', httpStatus: submit.status, code: submitBodyCode, message: submitJson?.msg || null, bodyPreview: submitText.slice(0, 1000) },
+      error: `Kie submit rejected (${submitBodyCode ?? submit.status}).`,
     });
-    throw attachKieError(new Error(`Kie ${modelKey} submit rejected (${submit.status} ${submit.statusText}): ${submitText.slice(0, 240)}`), modelKey, {
-      chargeStatus: 'provider_rejected',
+    throw attachKieError(new Error(`Kie ${modelKey} submit rejected (${submitBodyCode ?? submit.status} ${submit.statusText}): ${submitText.slice(0, 240)}`), modelKey, {
+      chargeStatus: 'provider_rejected_no_output',
       providerRequestStatus: 'submit_error',
       estimatedCostUsd: 0,
       errorCategory: 'submit_error',
@@ -252,9 +269,50 @@ export const generateKieVideo = async (
     const poll = await fetch(`${KIE_BASE}/veo/record-info?taskId=${encodeURIComponent(taskId)}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     }).catch(() => null);
-    if (!poll || !poll.ok) continue; // transient poll error — keep polling until deadline
+    if (!poll) continue; // transient poll error — keep polling until deadline
 
-    const pollJson = parseMaybeJson(await poll.text().catch(() => ''));
+    const pollText = await poll.text().catch(() => '');
+    const pollJson = parseMaybeJson(pollText);
+    if (!poll.ok) {
+      if ([400, 401, 404, 422, 451].includes(poll.status)) {
+        await updateGenerationAttempt(opts?.generationAttemptId, {
+          status: 'provider_failed',
+          chargeStatus: 'provider_failed_no_output',
+          providerRequestStatus: 'failed',
+          providerRequestId: taskId,
+          responseReceivedAt: new Date().toISOString(),
+          responseSummary: { phase: 'poll', httpStatus: poll.status, message: pollJson?.msg || null, bodyPreview: pollText.slice(0, 1000) },
+          error: `Kie poll HTTP ${poll.status}.`,
+        });
+        throw attachKieError(new Error(`Kie ${modelKey} poll rejected for task ${taskId} (${poll.status} ${poll.statusText}): ${pollText.slice(0, 240)}`), modelKey, {
+          chargeStatus: 'provider_failed_no_output',
+          providerRequestStatus: 'failed',
+          providerRequestId: taskId,
+          estimatedCostUsd: 0,
+          errorCategory: 'provider_failed',
+        });
+      }
+      continue;
+    }
+    const pollBodyCode = pollJson?.code === undefined ? null : Number(pollJson.code);
+    if (pollBodyCode !== null && pollBodyCode !== 200) {
+      await updateGenerationAttempt(opts?.generationAttemptId, {
+        status: 'provider_failed',
+        chargeStatus: 'provider_failed_no_output',
+        providerRequestStatus: 'failed',
+        providerRequestId: taskId,
+        responseReceivedAt: new Date().toISOString(),
+        responseSummary: { phase: 'poll', code: pollBodyCode, message: pollJson?.msg || null },
+        error: `Kie poll returned code ${pollBodyCode}.`,
+      });
+      throw attachKieError(new Error(`Kie ${modelKey} poll failed for task ${taskId}: ${pollJson?.msg || `code ${pollBodyCode}`}`), modelKey, {
+        chargeStatus: 'provider_failed_no_output',
+        providerRequestStatus: 'failed',
+        providerRequestId: taskId,
+        estimatedCostUsd: 0,
+        errorCategory: 'provider_failed',
+      });
+    }
     const flag = Number(pollJson?.data?.successFlag ?? pollJson?.data?.success_flag);
     if (flag === 1) {
       resultUrls = resultUrlsFrom(pollJson?.data);
@@ -263,7 +321,7 @@ export const generateKieVideo = async (
     if (flag === 2 || flag === 3) {
       await updateGenerationAttempt(opts?.generationAttemptId, {
         status: 'provider_failed',
-        chargeStatus: 'provider_failed',
+        chargeStatus: 'provider_failed_no_output',
         providerRequestStatus: 'failed',
         providerRequestId: taskId,
         responseReceivedAt: new Date().toISOString(),
@@ -271,10 +329,10 @@ export const generateKieVideo = async (
         error: `Kie generation failed (successFlag=${flag}).`,
       });
       throw attachKieError(new Error(`Kie ${modelKey} generation failed (successFlag=${flag}) for task ${taskId}.`), modelKey, {
-        chargeStatus: 'provider_failed',
+        chargeStatus: 'provider_failed_no_output',
         providerRequestStatus: 'failed',
         providerRequestId: taskId,
-        estimatedCostUsd,
+        estimatedCostUsd: 0,
         errorCategory: 'provider_failed',
       });
     }
@@ -336,4 +394,8 @@ export const generateKieVideo = async (
   console.log(`[kie] Async video saved: ${videoPath} (${(buffer.length / 1024 / 1024).toFixed(1)}MB, task=${taskId})`);
 
   return { videoPath, modelId: modelKey, durationSec, providerRequestId: taskId };
+};
+
+export const __kieVideoTest = {
+  resultUrlsFrom,
 };

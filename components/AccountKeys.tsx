@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import * as api from '../services/api';
 
-type ProviderKey = 'segmind' | 'gemini' | 'elevenlabs' | 'anthropic' | 'openai';
+type ProviderKey = 'segmind' | 'gemini' | 'elevenlabs' | 'anthropic' | 'openai' | 'kie';
 
 type KeyStatus = {
   provider: ProviderKey;
@@ -77,6 +77,13 @@ const OPTIONAL_PROVIDERS: ProviderInfo[] = [
     description: 'GPT Image 2 storyboards and optional GPT script writer.',
     docsUrl: 'https://platform.openai.com/api-keys',
     placeholder: 'sk-proj-...',
+  },
+  {
+    key: 'kie',
+    label: 'Kie',
+    description: 'Optional alternate video provider for Veo routes when selected as the project video model.',
+    docsUrl: 'https://kie.ai/api-key',
+    placeholder: 'kie_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   },
 ];
 

@@ -1,11 +1,12 @@
 // Shared video model registry — must stay in sync with
-// server/services/segmind.ts (SEGMIND_MODELS).
-// All models now route through Segmind's unified API.
+// server/services/segmind.ts (SEGMIND_MODELS) and
+// server/services/kie-video.ts (KIE_MODELS).
+// Segmind stays the default; Kie models are optional alternate provider routes.
 
 export interface VideoModelSpec {
   key: string;
   label: string;
-  provider: 'segmind';
+  provider: 'segmind' | 'kie';
   /** Allowed shot durations (seconds). First entry is the default. */
   durations: number[];
   /** Rough cost estimate for display ($/sec). */
@@ -76,6 +77,30 @@ export const VIDEO_MODELS: VideoModelSpec[] = [
     supportsRefs: true,
     refsWithFrames: false,
     resolutions: ['720p', '1080p'],
+  },
+  {
+    key: 'kie-veo3-fast',
+    label: 'Veo 3.1 Fast (Kie)',
+    provider: 'kie',
+    durations: [8],
+    costPerSec: 0.10,
+    note: 'Alternate Kie route. Supports vertical output and native audio.',
+    supportsLastFrame: true,
+    supportsRefs: false,
+    refsWithFrames: false,
+    resolutions: ['1080p'],
+  },
+  {
+    key: 'kie-veo3',
+    label: 'Veo 3.1 Quality (Kie)',
+    provider: 'kie',
+    durations: [8],
+    costPerSec: 0.20,
+    note: 'Higher quality alternate Kie route.',
+    supportsLastFrame: true,
+    supportsRefs: false,
+    refsWithFrames: false,
+    resolutions: ['1080p'],
   },
 ];
 

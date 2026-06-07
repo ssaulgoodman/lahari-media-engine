@@ -109,7 +109,7 @@ const KeyChecklist: React.FC<{
 
       <div className="flex items-center justify-between gap-4">
         <p className="text-[11px] text-zinc-500 leading-relaxed">
-          Optional keys (Anthropic, OpenAI) are only needed for web studio AI buttons without a harness.
+          Optional keys such as Anthropic, OpenAI, and Kie are only needed when you choose those web-studio or provider routes.
         </p>
         <button
           onClick={onGoToKeys}

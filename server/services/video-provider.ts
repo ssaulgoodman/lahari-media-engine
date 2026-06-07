@@ -6,6 +6,7 @@ import {
   isVertexVeoModelKey,
 } from './vertex-video.js';
 import { supportsPlatformColumns } from '../database.js';
+import { storageUrl } from '../storage.js';
 
 type VideoProvider = 'segmind' | 'vertex' | 'kie';
 
@@ -107,6 +108,11 @@ const summarizeError = (err: any): string => {
   return message.length > 180 ? `${message.slice(0, 180)}...` : message;
 };
 
+const publicStorageUrl = (pathOrUrl?: string): string | undefined => {
+  if (!pathOrUrl) return undefined;
+  return /^https?:\/\//i.test(pathOrUrl) ? pathOrUrl : storageUrl(pathOrUrl);
+};
+
 export const generateVideoWithFallback = async (
   startImagePath: string | undefined,
   motionPrompt: string,
@@ -117,8 +123,9 @@ export const generateVideoWithFallback = async (
   // Kie provider: routed by a kie-* model key. The Segmind/Vertex path below is
   // untouched, so Kie is purely additive and Segmind stays the default.
   if (isKieModelKey(modelKey)) {
-    const result = await generateKieVideo(startImagePath, motionPrompt, {
+    const result = await generateKieVideo(publicStorageUrl(startImagePath), motionPrompt, {
       modelKey,
+      endImageUrl: publicStorageUrl(opts?.endImagePath),
       aspectRatio: opts?.aspectRatio,
       durationSec: opts?.durationSec,
       generationAttemptId: opts?.generationAttemptId,
