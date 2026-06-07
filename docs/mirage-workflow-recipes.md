@@ -70,7 +70,7 @@ background, wardrobe, and vertical framing from the start frame steady throughou
 - **Filled from data:** `{dialogue}` (audio plan), `{language}` (project config).
 - **Filled by agent judgment:** `{pace}`, `{performance}`, `{ending}`.
 - **Preferences (real fields only):** `videoModel: veo-3.1`. Native audio is **not** a preference — see below.
-- **Format invariants (always, not judgment):** native audio **on** — passed per call as the *real* `generate_video` arg (the passing test used `generate_audio: true`); and native dialogue first → `voice_change_video` if the native voice ≠ the assigned cast voice (not TTS). These live as durable workflow notes / engine-applied, never agent-remembered.
+- **Format invariants (always, not judgment):** native audio **on** — exposed to agents as `nativeAudioMode: "on"` and resolved by the engine to the provider's `generate_audio: true`; and native dialogue first → `voice_change_video` if the native voice ≠ the assigned cast voice (not TTS). These live as durable workflow notes / engine-applied, never agent-remembered.
 - Identity is **not** a slot — "the speaker from the provided image" leans on the keyframe; no restating appearance.
 
 ## Slices
@@ -99,10 +99,11 @@ background, wardrobe, and vertical framing from the start frame steady throughou
 2. Does `apply_project_workflow` v1 set only the prompt override, or also preferences/cast defaults?
 3. Confirm engine-side `{dialogue}` fill in the keyframe composer vs agent-assembled `promptOverride`. (Recommended: engine-side.)
 4. Slot syntax + which slots are required vs optional, and the fallback when a judgment slot is empty.
-5. Use the **real** `generate_video` native-audio param (the passing test used `generate_audio: true`) — do not introduce a parallel `nativeAudioMode` knob unless you are deliberately renaming the one field. Two params for one behavior will drift.
+5. Keep one agent-facing native-audio knob: `nativeAudioMode`, resolved by the engine to the provider's `generate_audio` boolean. Do not expose a second raw `generate_audio` input to agents.
 6. Format invariants: agent passes them per call from the re-read recipe, or the **engine applies them from the recipe** at `generate_video` time. Recommended: engine-applied, so a compaction can't silently drop native audio.
 
 ## Log
 
 - 2026-06-XX: doc started. Origin = Yapper native-dialogue voice test (job `652657da-...`): identical params, prompt wording alone decided success. Prereq (keyframe honors project video override) confirmed as a real gap in `videoGeneration.ts`.
 - 2026-06-XX: refined after review. Native audio is a per-call `generate_video` arg / format invariant, not a `preferences` field (don't invent schema). Format invariants need a durable re-read home — ideally engine-applied from the recipe — and are slice-1 for Yapper (no lipsync without native audio). Use the real param name; don't add a parallel knob.
+- 2026-06-07: first implementation slice landed locally: `server/resources/workflows/yapper.json`, registry actions `list_workflows` / `apply_project_workflow`, keyframe video recipe slot fill in `videoGeneration.ts`, workflow metadata for native-audio invariants, and video-director skill guidance.

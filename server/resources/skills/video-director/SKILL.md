@@ -15,6 +15,7 @@ Read the shot state, mode, locked board/frame, motion prompt, audio plan, and re
 - Is the board/frame good enough to animate?
 - Is the failure in script, refs, board/frame, motion wording, audio cue, or model?
 - Have you run `run_action(generate_video, { dryRun: true })`?
+- Is there a project workflow recipe already applied for this format?
 
 Do not generate video to discover what a bad still already tells you.
 
@@ -54,6 +55,7 @@ Weak:
 - **Generate** -> `start_job(generate_video)` after approval.
 - **Previous provider outcome unknown/pending** -> do not retry until the artist acknowledges the risk; pass `acknowledgePreviousChargeRisk: true` only after that approval.
 - **One exact final prompt needed** -> use `promptOverride` on `generate_video`.
+- **Repeatable format needed** -> `run_action(list_workflows)`, then `run_action(apply_project_workflow)` if a named recipe fits. After that, fill the stored recipe's slots with `recipeSlots` and project dialogue; do not rewrite the wrapper.
 - **Native dialogue voice needs character match** -> generate the raw native-audio clip first, review it, then use `voice_change_video` from the audio surface. Do not solve this with TTS unless the artist wants overlay.
 - **Board/frame wrong** -> return to storyboarding/keyframe tools before video.
 - **Same failure twice** -> change model or upstream input, not just the same retry.

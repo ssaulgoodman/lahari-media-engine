@@ -11,10 +11,12 @@ import {
   applyProjectPreferences,
   applyProjectStyleNotes,
   applyProjectPromptOverride,
+  PROJECT_PROMPT_OVERRIDE_KINDS,
   revertProjectPromptOverride,
   writeProjectConfigDeskCopy,
   type ProjectPromptOverrideKind,
 } from '../projectConfig.js';
+import { getWorkflowRecipe, listWorkflowRecipes, summarizeWorkflowRecipe } from '../workflowRecipes.js';
 import { getStoryboardProvider } from '../../../constants/storyboardProviders.js';
 import { getVideoModel } from '../../../constants/videoModels.js';
 import {
@@ -1234,6 +1236,97 @@ export const applyProjectPromptOverrideConfig = async (
   };
 };
 
+export const listProjectWorkflows = () => ({
+  kind: 'mirage.workflow.list',
+  generatedAt: new Date().toISOString(),
+  workflows: listWorkflowRecipes().map(summarizeWorkflowRecipe),
+});
+
+export const applyProjectWorkflowConfig = async (
+  project: Project,
+  name: string,
+) => {
+  const recipe = getWorkflowRecipe(name);
+  const promptOverrides = recipe.applies.promptOverrides || {};
+  const promptKinds = (Object.keys(promptOverrides) as ProjectPromptOverrideKind[])
+    .filter((kind) => PROJECT_PROMPT_OVERRIDE_KINDS.includes(kind));
+  const preferences = recipe.applies.preferences || {};
+  const appliesPreferences = Object.keys(preferences).length > 0;
+  const appliedPrompts: Record<string, { hash: string; overrideId: string | null }> = {};
+  const metadata = {
+    workflowRecipe: {
+      name: recipe.name,
+      label: recipe.label,
+      version: recipe.version || null,
+      video: recipe.applies.video || null,
+    },
+    appliedAt: new Date().toISOString(),
+  };
+
+  for (const kind of promptKinds) {
+    const body = promptOverrides[kind];
+    if (!body) continue;
+    const result = await applyProjectPromptOverride(project.id, kind, body, null, {}, metadata);
+    appliedPrompts[kind] = { hash: result.hash, overrideId: result.overrideId };
+  }
+
+  const preferencesResult = appliesPreferences
+    ? await applyProjectPreferences(project, preferences)
+    : null;
+
+  const configCopy = await writeProjectConfigDeskCopy(project, defaultProjectWorkbenchDir(project));
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_workflow_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Codex applied the ${recipe.label} workflow recipe.`,
+    payload: {
+      name: recipe.name,
+      version: recipe.version || null,
+      promptKinds,
+      preferences: preferencesResult?.preferences || null,
+      video: recipe.applies.video || null,
+      configDir: configCopy.configDir,
+    },
+  });
+  appendSessionJournalEntry(
+    project,
+    'applied project workflow',
+    `Workflow: ${recipe.label}\nName: ${recipe.name}\nVersion: ${recipe.version || 'n/a'}\nPrompt kinds: ${promptKinds.join(', ') || 'none'}\nPreferences: ${appliesPreferences ? Object.keys(preferences).join(', ') : 'none'}`,
+  );
+
+  return {
+    kind: 'mirage.apply.project_workflow',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: project.title },
+    workflow: summarizeWorkflowRecipe(recipe),
+    applied: {
+      promptOverrides: appliedPrompts,
+      preferences: preferencesResult
+        ? {
+          preferences: preferencesResult.preferences,
+          hash: preferencesResult.hash,
+          warnings: preferencesResult.warnings,
+        }
+        : null,
+      video: recipe.applies.video || null,
+    },
+    localFiles: {
+      preferences: configCopy.preferencesPath,
+      prompts: Object.fromEntries(promptKinds.map((kind) => [kind, configCopy.promptPaths[kind]])),
+      hashes: configCopy.hashesPath,
+    },
+    changedArtifacts: await buildNotebookConfigArtifacts(project, {
+      preferences: appliesPreferences,
+      promptKinds,
+      hashes: true,
+    }),
+    note: 'Applied workflow recipe. For video generation, fill the stored recipe slots from project data and judgment; do not rewrite the wrapper.',
+  };
+};
+
 export const revertProjectPromptOverrideConfig = async (
   project: Project,
   kind: ProjectPromptOverrideKind,
@@ -1299,7 +1392,7 @@ export const applyGenerateVideo = async (
   shotId: string,
   promptOverride?: string,
   modelOverride: ModelOverride = {},
-  opts: { acknowledgePreviousChargeRisk?: boolean; nativeAudioMode?: 'auto' | 'off' | 'on' } = {},
+  opts: { acknowledgePreviousChargeRisk?: boolean; nativeAudioMode?: 'auto' | 'off' | 'on'; recipeSlots?: Record<string, string> } = {},
 ) => {
   const plan = planGenerateVideo(project, shotId, modelOverride);
   if (!plan.canRun) {
@@ -1323,6 +1416,7 @@ export const applyGenerateVideo = async (
   const result = await generateShotVideo(project.id, shotId, {
     promptOverride,
     nativeAudioMode: opts.nativeAudioMode,
+    recipeSlots: opts.recipeSlots,
     modelOverride: { videoModel: modelOverride.videoModel },
   });
   await recordDirectorEvent({
@@ -1335,6 +1429,7 @@ export const applyGenerateVideo = async (
     payload: {
       promptOverride: promptOverride || null,
       nativeAudioMode: opts.nativeAudioMode || null,
+      recipeSlots: opts.recipeSlots || null,
       mode: plan.mode,
       model: plan.model,
       modelOverride: modelOverride.videoModel ? { videoModel: modelOverride.videoModel } : null,

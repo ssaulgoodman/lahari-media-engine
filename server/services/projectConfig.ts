@@ -63,6 +63,7 @@ export interface PromptOverrideState {
   overrideId: string | null;
   updatedAt: string | null;
   active: boolean;
+  metadata: Record<string, unknown>;
 }
 
 export interface ProjectConfigState {
@@ -439,6 +440,9 @@ export const getPromptOverrideState = async (
     overrideId: row?.id ?? null,
     updatedAt: row?.updated_at ?? null,
     active: !!row,
+    metadata: row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? row.metadata
+      : {},
   };
 };
 

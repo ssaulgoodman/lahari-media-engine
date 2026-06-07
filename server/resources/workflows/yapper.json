@@ -1,0 +1,24 @@
+{
+  "name": "yapper",
+  "label": "Yapper - vertical podcast monologue",
+  "description": "Vertical talking-head podcast clips with native generated dialogue first, then optional voice change if the native voice is not the cast voice.",
+  "version": "2026-06-07.native-dialogue-v1",
+  "applies": {
+    "promptOverrides": {
+      "video": "A fast-paced medium close-up video of the speaker from the provided image.\nFrom the very first frame the speaker looks directly into the lens and is\nalready speaking {pace}. Their lips move energetically to deliver this\n{language} dialogue: \"{dialogue}\". They perform with {performance}. Immediately\nafter the final word they settle into {ending}. Keep the podcast studio\nbackground, wardrobe, and vertical framing from the start frame steady throughout."
+    },
+    "preferences": {
+      "videoModel": "veo-3.1"
+    },
+    "video": {
+      "nativeAudioMode": "on",
+      "slotDefaults": {
+        "language": "Telugu",
+        "pace": "rapidly and continuously with zero pauses",
+        "performance": "sharp, subtle head shakes and expressive podcast-host facial micro-expressions",
+        "ending": "a natural closed-mouth resting state"
+      },
+      "postprocess": "Review the native generated voice. If the mouth timing works but the voice does not match the cast voice, run voice_change_video instead of regenerating TTS first."
+    }
+  }
+}

@@ -199,6 +199,7 @@ export const VIDEO_ACTION_SPECS = {
       promptOverride: 'optional exact final video prompt',
       modelOverride: 'optional videoModel override',
       nativeAudioMode: 'optional "auto" | "off" | "on"; use "off" for silent lipsync video when final audio will be overlaid in render',
+      recipeSlots: 'optional workflow recipe slot values, e.g. { pace, performance, ending, language }; {dialogue} is filled from the shot audio plan when a project video recipe is active',
       acknowledgePreviousChargeRisk: 'required true only after a prior video attempt has an unknown or pending provider outcome; retry may spend again',
     },
     examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
@@ -467,6 +468,29 @@ export const STYLE_ACTION_SPECS = {
 } as const;
 
 export const SYSTEM_ACTION_SPECS = {
+  list_workflows: {
+    key: 'list_workflows',
+    title: 'List workflows',
+    surface: 'system',
+    mutates: false,
+    paid: false,
+    description: 'List named Mirage workflow recipes such as Yapper. Use this when an artist asks to apply a repeatable production format before writing prompts by hand.',
+    input: {},
+    examples: [{}],
+  },
+  apply_project_workflow: {
+    key: 'apply_project_workflow',
+    title: 'Apply project workflow',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Apply one named workflow recipe to a project. This writes the recipe-owned prompt override(s), real project preferences, and durable workflow metadata so future generation can fill slots instead of rewriting the wrapper.',
+    input: {
+      projectId: 'string',
+      name: 'workflow recipe name, e.g. "yapper"',
+    },
+    examples: [{ projectId: 'project_uuid', name: 'yapper' }],
+  },
   apply_project_settings: {
     key: 'apply_project_settings',
     title: 'Apply project settings',

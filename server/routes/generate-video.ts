@@ -65,6 +65,9 @@ export const mountVideoRoutes = (router: Router) => {
       const result = await generateShotVideo(projectId, shotId, {
         promptOverride: req.body?.promptOverride,
         refs: req.body?.refs,
+        nativeAudioMode: req.body?.nativeAudioMode,
+        recipeSlots: req.body?.recipeSlots,
+        modelOverride: req.body?.modelOverride,
       });
       await recordDirectorEvent({
         projectId,
@@ -77,6 +80,9 @@ export const mountVideoRoutes = (router: Router) => {
         payload: {
           promptOverride: req.body?.promptOverride || null,
           refs: req.body?.refs || null,
+          nativeAudioMode: req.body?.nativeAudioMode || null,
+          recipeSlots: req.body?.recipeSlots || null,
+          modelOverride: req.body?.modelOverride || null,
           result: eventResultPointers(result),
         },
       });

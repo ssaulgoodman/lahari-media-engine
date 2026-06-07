@@ -313,6 +313,12 @@ const generateVideoInputSchema = z.object({
   promptOverride: optionalPromptText,
   modelOverride: modelOverrideSchema,
   nativeAudioMode: z.enum(['auto', 'off', 'on']).optional(),
+  recipeSlots: z.object({
+    language: shortText.optional(),
+    pace: shortText.optional(),
+    performance: mediumText.optional(),
+    ending: shortText.optional(),
+  }).optional(),
   acknowledgePreviousChargeRisk: z.boolean().optional(),
 });
 const applyVideoPromptInputSchema = z.object({
@@ -488,6 +494,11 @@ const projectSettingsInputSchema = z.object({
     aspectRatio: z.enum(['16:9', '9:16', '1:1']).optional(),
   }),
   allowExistingVisualsStale: z.boolean().optional(),
+});
+const workflowNameSchema = z.string().min(1).max(80).regex(/^[a-z0-9][a-z0-9_-]*$/);
+const applyProjectWorkflowInputSchema = z.object({
+  projectId,
+  name: workflowNameSchema,
 });
 const projectStyleNotesInputSchema = z.object({
   projectId,
@@ -959,6 +970,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         allowExistingVisualsStale: input.allowExistingVisualsStale,
       });
     }
+    if (actionKey === 'list_workflows') {
+      return studio.listProjectWorkflows();
+    }
+    if (actionKey === 'apply_project_workflow') {
+      const input = applyProjectWorkflowInputSchema.parse(rawInput);
+      return studio.applyProjectWorkflowConfig(await fullProjectForUser(input.projectId, auth.userId), input.name);
+    }
     if (actionKey === 'apply_project_style_notes') {
       const input = projectStyleNotesInputSchema.parse(rawInput);
       return studio.applyProjectStyleNotesConfig(await fullProjectForUser(input.projectId, auth.userId), input.styleNotes, input.baseHash);
@@ -1073,6 +1091,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
         : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {}, {
           acknowledgePreviousChargeRisk: input.acknowledgePreviousChargeRisk,
           nativeAudioMode: input.nativeAudioMode,
+          recipeSlots: input.recipeSlots,
         });
     }
     if (actionKey === 'apply_video_prompt') {

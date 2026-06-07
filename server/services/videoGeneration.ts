@@ -10,7 +10,7 @@ import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
 import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
 import { parseTimestamp } from '../routes/scope-helpers.js';
-import { getProjectPreferencesState, getProjectPromptOverride } from './projectConfig.js';
+import { getProjectPreferencesState, getProjectPromptOverride, getPromptOverrideState } from './projectConfig.js';
 import { createGenerationAttempt, updateGenerationAttempt } from './generationAttempts.js';
 
 const parseJson = <T>(value: any, fallback: T): T => {
@@ -66,6 +66,7 @@ export type GenerateShotVideoOptions = {
   promptOverride?: string;
   refs?: VideoGenerationRef[];
   nativeAudioMode?: 'auto' | 'off' | 'on';
+  recipeSlots?: Record<string, string>;
   modelOverride?: {
     videoModel?: string;
   };
@@ -114,6 +115,52 @@ const promptRequestsSilence = (prompt: string): boolean =>
 const promptRequestsNativeAudio = (prompt: string): boolean =>
   !promptRequestsSilence(prompt)
   && /\b(native synchronized dialogue audio|native dialogue audio|native audio|audible synchronized speech|audible speech|generate audible|dialogue audio)\b/i.test(prompt);
+
+const workflowRecipeMeta = (metadata: Record<string, unknown> | null | undefined): Record<string, any> | null => {
+  const value = metadata?.workflowRecipe;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, any>
+    : null;
+};
+
+const normalizeNativeAudioMode = (value: unknown): 'auto' | 'off' | 'on' | null => (
+  value === 'auto' || value === 'off' || value === 'on' ? value : null
+);
+
+const cleanSlotValue = (value: unknown): string => (
+  typeof value === 'string' ? value.trim().slice(0, 1000) : ''
+);
+
+const renderProjectVideoRecipe = (
+  template: string,
+  input: {
+    dialogueLines: DialogueLine[];
+    recipeDefaults?: Record<string, unknown>;
+    recipeSlots?: Record<string, string>;
+  },
+): string => {
+  const defaults = input.recipeDefaults || {};
+  const overrides = input.recipeSlots || {};
+  const dialogue = input.dialogueLines
+    .map((line) => String(line.text || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  if (template.includes('{dialogue}') && !dialogue) {
+    throw structuredVideoError(
+      'workflow_recipe_missing_dialogue',
+      'This video workflow recipe needs shot dialogue, but the shot audio plan has no dialogue line.',
+      { requiredSlot: 'dialogue' },
+    );
+  }
+  const slots: Record<string, string> = {
+    dialogue,
+    language: cleanSlotValue(overrides.language) || cleanSlotValue(defaults.language) || 'Telugu',
+    pace: cleanSlotValue(overrides.pace) || cleanSlotValue(defaults.pace) || 'rapidly and continuously with zero pauses',
+    performance: cleanSlotValue(overrides.performance) || cleanSlotValue(defaults.performance) || 'natural podcast-host facial expressions and controlled head movement',
+    ending: cleanSlotValue(overrides.ending) || cleanSlotValue(defaults.ending) || 'a natural closed-mouth resting state',
+  };
+  return template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, key) => slots[key] || match).trim();
+};
 
 export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
   const project = await selectOne('projects', { id: projectId });
@@ -185,9 +232,6 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
 
     const veoPromptParts: string[] = [];
-    if (shot.motion_prompt && shot.motion_prompt !== 'Cinematic camera movement') {
-      veoPromptParts.push(shot.motion_prompt);
-    }
 
     const aspect = (project.aspect_ratio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16';
     const resolution = (project.video_resolution === '1080p' ? '1080p' : '720p') as '720p' | '1080p';
@@ -267,15 +311,36 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     }
 
     const promptOverrideText = opts.promptOverride?.trim() || '';
-    const baseKeyframePromptText = promptOverrideText || shot.motion_prompt || '';
     const audioPlan = parseJson<AudioPlan | null>(shot.audio_plan, null);
     const projectDialogueMode = dialogueVideoMode(project);
     const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
     const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const hasDialogue = dialogueLines.length > 0;
+    const projectVideoOverrideState = !promptOverrideText && !useStoryboardMode
+      ? await getPromptOverrideState(project.id, 'video')
+      : null;
+    const projectVideoRecipeMeta = workflowRecipeMeta(projectVideoOverrideState?.metadata);
+    const projectVideoOverrideBody = projectVideoOverrideState?.source === 'project_override'
+      ? String(projectVideoOverrideState.body || '').trim()
+      : '';
+    const projectVideoRecipeBody = projectVideoOverrideBody && (projectVideoRecipeMeta || /\{[a-zA-Z][a-zA-Z0-9_]*\}/.test(projectVideoOverrideBody))
+      ? String(projectVideoOverrideState.body || '').trim()
+      : '';
+    const renderedProjectVideoRecipe = projectVideoRecipeBody
+      ? renderProjectVideoRecipe(projectVideoRecipeBody, {
+        dialogueLines,
+        recipeDefaults: projectVideoRecipeMeta?.video?.slotDefaults,
+        recipeSlots: opts.recipeSlots,
+      })
+      : '';
+    const baseKeyframePromptText = promptOverrideText || renderedProjectVideoRecipe || shot.motion_prompt || '';
+    if (baseKeyframePromptText && baseKeyframePromptText !== 'Cinematic camera movement') {
+      veoPromptParts.push(baseKeyframePromptText);
+    }
     const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
     const keyframePromptHasDialogue = promptAlreadyContainsDialogue(baseKeyframePromptText, dialogueLines);
-    const nativeAudioMode = opts.nativeAudioMode || 'auto';
+    const recipeNativeAudioMode = normalizeNativeAudioMode(projectVideoRecipeMeta?.video?.nativeAudioMode);
+    const nativeAudioMode = opts.nativeAudioMode || recipeNativeAudioMode || 'auto';
     const canGenerateNativeAudio = modelSpec.family === 'seedance' || modelSpec.family === 'veo';
     const nativeVideoAudio = canGenerateNativeAudio
       && nativeAudioMode !== 'off'
