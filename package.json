@@ -11,6 +11,7 @@
     "check:look-contract": "tsx scripts/check-look-prompt-contract.ts",
     "check:notebook": "node scripts/check-notebook-resources.mjs",
     "check:skill-contracts": "tsx scripts/check-skill-operating-contracts.ts",
+    "check:segmind-video": "tsx scripts/check-segmind-video-contract.ts",
     "check:storyboard-contract": "tsx scripts/check-storyboard-prompt-contract.ts",
     "smoke:agent-contract": "tsx scripts/mirage-agent-contract-smoke.ts",
     "release:mirage-cli": "node scripts/release-mirage-cli.mjs",

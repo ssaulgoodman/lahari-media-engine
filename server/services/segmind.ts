@@ -13,6 +13,8 @@ import { updateGenerationAttempt } from './generationAttempts.js';
 
 const SEGMIND_V1_BASE = 'https://api.segmind.com/v1';
 const SEGMIND_V2_BASE = 'https://api.segmind.com/v2';
+const SEGMIND_ASSET_UPLOAD_URL = 'https://workflows-api.segmind.com/upload-asset';
+const segmindAssetUrlCache = new Map<string, string>();
 type SegmindResolution = '480p' | '720p' | '1080p';
 type SegmindVideoOptions = {
   endImagePath?: string;
@@ -391,12 +393,39 @@ const generateSegmindVideoV2 = async (
   const { modelKey, model, body, durationSec } = prepared;
   const endpoint = `${SEGMIND_V2_BASE}/${model.path}`;
   const apiKey = await requireProviderApiKey('segmind');
+  let stagedBody = body;
+  let stagedInputCount = 0;
   const requestStartedAt = new Date().toISOString();
   await updateGenerationAttempt(opts?.generationAttemptId, {
     status: 'sent',
     providerRequestStatus: 'sent',
     requestStartedAt,
   });
+
+  try {
+    const staged = await stageSegmindVideoBody(body, apiKey);
+    stagedBody = staged.body;
+    stagedInputCount = staged.stagedCount;
+  } catch (error: any) {
+    await updateGenerationAttempt(opts?.generationAttemptId, {
+      status: 'provider_rejected',
+      chargeStatus: 'mirage_failed_before_provider',
+      providerRequestStatus: 'input_staging_failed',
+      responseReceivedAt: new Date().toISOString(),
+      responseSummary: {
+        phase: 'input_staging',
+        message: error?.message || String(error),
+      },
+      error: error?.message || String(error),
+    });
+    attachProviderError(error, modelKey, {
+      chargeStatus: 'mirage_failed_before_provider',
+      providerRequestStatus: 'input_staging_failed',
+      estimatedCostUsd: 0,
+      errorCategory: 'input_staging_failed',
+    });
+    throw error;
+  }
 
   let submit: Response;
   try {
@@ -406,7 +435,7 @@ const generateSegmindVideoV2 = async (
         'x-api-key': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(stagedBody),
     });
   } catch (error: any) {
     await markAsyncOutcomeUnknown(opts?.generationAttemptId, modelKey, durationSec, model.costPerSec, {
@@ -436,7 +465,7 @@ const generateSegmindVideoV2 = async (
       statusText: submit.statusText,
       headers: responseHeaders,
       bodyText: submitText,
-      body,
+      body: stagedBody,
       modelKey,
       providerRequestId,
       generationAttemptId: opts?.generationAttemptId,
@@ -458,6 +487,7 @@ const generateSegmindVideoV2 = async (
         headers: responseHeaders,
         bodyKeys: submitJson && typeof submitJson === 'object' ? Object.keys(submitJson).sort() : [],
         bodyPreview: submitText.slice(0, 1000),
+        stagedInputCount,
       },
       error: 'Segmind async submit succeeded but did not return request_id and poll_url.',
     });
@@ -484,6 +514,7 @@ const generateSegmindVideoV2 = async (
       headers: responseHeaders,
       pollUrl,
       responseUrl: responseUrl || null,
+      stagedInputCount,
     },
   });
 
@@ -577,6 +608,86 @@ const parseMaybeJson = (text: string): any => {
   } catch {
     return null;
   }
+};
+
+const isSegmindAssetUrl = (url: string): boolean =>
+  /(^https:\/\/storage\.segmind\.com\/|^https:\/\/segmind-resources\.s3\.amazonaws\.com\/|^https:\/\/segmind-inference-io\.s3\.amazonaws\.com\/)/i.test(url);
+
+const inferMediaMime = (buffer: Buffer, fallback = ''): string => {
+  const normalized = fallback.toLowerCase();
+  if (normalized.startsWith('image/') || normalized.startsWith('audio/')) return normalized.split(';')[0];
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  if (buffer.length >= 3 && buffer.subarray(0, 3).toString('ascii') === 'ID3') return 'audio/mpeg';
+  if (buffer.length >= 2 && buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return 'audio/mpeg';
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WAVE') return 'audio/wav';
+  return normalized || 'application/octet-stream';
+};
+
+const stageSegmindAssetUrl = async (url: string, apiKey: string): Promise<{ url: string; staged: boolean }> => {
+  if (!url || isSegmindAssetUrl(url) || process.env.SEGMIND_STAGE_VIDEO_INPUTS === '0') {
+    return { url, staged: false };
+  }
+  const cached = segmindAssetUrlCache.get(url);
+  if (cached) return { url: cached, staged: false };
+
+  const input = await fetch(url);
+  if (!input.ok) {
+    throw new Error(`Segmind input staging failed to fetch media (${input.status} ${input.statusText})`);
+  }
+  const buffer = Buffer.from(await input.arrayBuffer());
+  if (buffer.length < 16) {
+    throw new Error(`Segmind input staging fetched suspiciously small media (${buffer.length} bytes)`);
+  }
+  const mime = inferMediaMime(buffer, input.headers.get('content-type') || '');
+  if (!mime.startsWith('image/') && !mime.startsWith('audio/')) {
+    throw new Error(`Segmind input staging does not support media type ${mime}`);
+  }
+  const dataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+  const upload = await fetch(SEGMIND_ASSET_UPLOAD_URL, {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      accept: 'application/json, text/plain, */*',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ data_urls: [dataUrl] }),
+  });
+  const text = await upload.text().catch(() => '');
+  if (!upload.ok) {
+    throw new Error(`Segmind input staging upload failed (${upload.status} ${upload.statusText}): ${text.slice(0, 240)}`);
+  }
+  const parsed = parseMaybeJson(text);
+  const stagedUrl = String(parsed?.urls?.[0] || parsed?.url || '').trim();
+  if (!/^https?:\/\//i.test(stagedUrl)) {
+    throw new Error(`Segmind input staging returned no usable URL. Body: ${text.slice(0, 240)}`);
+  }
+  segmindAssetUrlCache.set(url, stagedUrl);
+  return { url: stagedUrl, staged: true };
+};
+
+const stageSegmindVideoBody = async (body: Record<string, any>, apiKey: string): Promise<{ body: Record<string, any>; stagedCount: number }> => {
+  const stagedBody = { ...body };
+  let stagedCount = 0;
+  for (const key of ['image', 'last_frame', 'first_frame_url', 'last_frame_url']) {
+    if (typeof stagedBody[key] !== 'string' || !stagedBody[key]) continue;
+    const staged = await stageSegmindAssetUrl(stagedBody[key], apiKey);
+    stagedBody[key] = staged.url;
+    if (staged.staged) stagedCount += 1;
+  }
+  for (const key of ['reference_images', 'reference_audios']) {
+    if (!Array.isArray(stagedBody[key])) continue;
+    const values: string[] = [];
+    for (const value of stagedBody[key]) {
+      if (typeof value !== 'string' || !value) continue;
+      const staged = await stageSegmindAssetUrl(value, apiKey);
+      values.push(staged.url);
+      if (staged.staged) stagedCount += 1;
+    }
+    stagedBody[key] = values;
+  }
+  return { body: stagedBody, stagedCount };
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1005,4 +1116,11 @@ const pollSegmindRequest = async (params: {
       lastBodyKeys: Object.keys(lastPayload || {}).sort(),
     },
   });
+};
+
+export const __segmindVideoTest = {
+  inferMediaMime,
+  isSegmindAssetUrl,
+  prepareSegmindRequest,
+  stageSegmindVideoBody,
 };
