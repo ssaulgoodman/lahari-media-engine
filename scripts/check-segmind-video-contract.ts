@@ -56,7 +56,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit): P
     const body = JSON.parse(String(init?.body || '{}'));
     assert.ok(String(body.data_urls?.[0] || '').startsWith('data:image/jpeg;base64,'));
     assert.equal((init?.headers as Record<string, string>)?.['x-api-key'], 'SG_TEST');
-    return new Response(JSON.stringify({ urls: ['https://storage.segmind.com/assets/staged-start.jpg'] }), {
+    return new Response(JSON.stringify({ file_urls: ['https://images.segmind.com/assets/user/images/staged-start.jpg'] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -73,7 +73,7 @@ try {
 
   assert.equal(staged.stagedCount, 1);
   assert.equal(uploadCalled, true);
-  assert.equal(staged.body.image, 'https://storage.segmind.com/assets/staged-start.jpg');
+  assert.equal(staged.body.image, 'https://images.segmind.com/assets/user/images/staged-start.jpg');
   assert.deepEqual(staged.body.reference_images, ['https://storage.segmind.com/assets/already-staged.jpg']);
 } finally {
   globalThis.fetch = originalFetch;

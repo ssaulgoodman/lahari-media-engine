@@ -659,7 +659,7 @@ const stageSegmindAssetUrl = async (url: string, apiKey: string): Promise<{ url:
     throw new Error(`Segmind input staging upload failed (${upload.status} ${upload.statusText}): ${text.slice(0, 240)}`);
   }
   const parsed = parseMaybeJson(text);
-  const stagedUrl = String(parsed?.urls?.[0] || parsed?.url || '').trim();
+  const stagedUrl = String(parsed?.file_urls?.[0] || parsed?.urls?.[0] || parsed?.url || '').trim();
   if (!/^https?:\/\//i.test(stagedUrl)) {
     throw new Error(`Segmind input staging returned no usable URL. Body: ${text.slice(0, 240)}`);
   }
