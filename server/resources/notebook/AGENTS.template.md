@@ -28,6 +28,8 @@ Mirage server state is canonical. Local files are a workbench for reading, draft
 Use cockpit tools to orient:
 - `mirage_doctor`
 - `list_projects`
+- `query_artist_memory`
+- `search_artist_assets`
 - `open_project`
 - `get_project_state`
 - `mint_cli_token`
@@ -56,6 +58,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
 - Repeatable formats: use `run_action(list_workflows)` to discover named recipes, then `run_action(apply_project_workflow)` to apply one such as Yapper. After that, fill the stored recipe's slots instead of rewriting its wrapper.
+- Prior work: use `query_artist_memory` for old project taste/format/model clues and `search_artist_assets` for reusable refs, renders, keyframes, storyboards, audio, or style images.
 - Video: use `run_action(generate_video, { dryRun: true })` for requirements/cost, then `start_job(generate_video)` after approval.
 - Audio: use `apply_audio_plan` and `apply_cast_voice` for speech plans/voices; use `generate_dialogue_audio` for TTS; use `voice_change_video` after native-dialogue video when mouth timing works but the voice needs the assigned cast voice.
 

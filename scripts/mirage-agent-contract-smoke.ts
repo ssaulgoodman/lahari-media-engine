@@ -126,6 +126,14 @@ const runChecks = async (): Promise<SmokeResult[]> => {
     assert.doesNotMatch(notebook, /commands\.powershellInstalled|config\/skills\.json|Workspace-shared files live/, 'AGENTS.md must not teach the old workspace-sync operating files model');
   });
 
+  await check('artist memory tools stay read-only cockpit tools', () => {
+    const mcpRoute = readFileSync('server/routes/mcp.ts', 'utf8');
+    assert.match(mcpRoute, /registerTool\('query_artist_memory'/, 'query_artist_memory tool missing');
+    assert.match(mcpRoute, /registerTool\('search_artist_assets'/, 'search_artist_assets tool missing');
+    assert.match(mcpRoute, /'query_',/, 'query_* tools must be annotated read-only');
+    assert.doesNotMatch(mcpRoute, /case 'query_artist_memory'|case 'search_artist_assets'/, 'artist memory tools should not be registry actions');
+  });
+
   return results;
 };
 

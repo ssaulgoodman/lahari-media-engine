@@ -20,7 +20,7 @@ import { ACTION_KEYS, ACTION_SURFACES, actionSpec, actionSpecsForSurface, buildA
 import { buildNotebookResourceVersions } from '../services/codexStudio/notebook.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.18';
+const HOSTED_MCP_VERSION = '0.1.19';
 const SHOW_LEGACY_MCP_TOOLS = process.env.MIRAGE_MCP_INCLUDE_LEGACY_TOOLS === '1';
 const LEGACY_MCP_TOOLS = new Set([
   'list_queue',
@@ -82,7 +82,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as the director. Mirag
 
 Use Mirage tools to read project state and save changes. Write creative text yourself, then persist it through typed actions. Translate artist intent into exact edits: a prompt change, context override, style note, image edit instruction, lock, import, or generation request. Ask before paid generation, locks/unlocks, prompt overrides, topology rebuilds, or anything that stales approved work.
 
-To continue work, call list_projects if needed, then open_project. To start fresh, call create_project, then open_project. For uploaded audio, create the project shell, upload with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analysis.
+To continue work, call list_projects if needed, then open_project. To reuse prior style, characters, references, or successful formats, call query_artist_memory or search_artist_assets. To start fresh, call create_project, then open_project. For uploaded audio, create the project shell, upload with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analysis.
 
 Use run_action for free changes such as text edits, plans, locks, imports, and config updates. Use start_job for paid media generation such as images, storyboards, videos, and TTS; it returns a jobId. Use describe_action when you need one live input schema. Upload local images/audio with /api/agent/uploads, then pass the returned assetId into actions. Do not send bytes through MCP.
 
@@ -808,6 +808,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       'plan_',
       'preview_',
       'review_',
+      'query_',
       'write_project_notebook',
       'write_project_artifacts',
       'write_project_sheets',
@@ -1268,6 +1269,40 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       })),
     };
   });
+
+  registerTool('query_artist_memory', {
+    title: 'Query artist memory',
+    description: "Read-only. Searches the authenticated artist's prior Mirage projects for reusable project memory: style language, concepts, models, formats, and project links. Use before recreating a recurring format or asking the artist to re-explain prior taste.",
+    inputSchema: {
+      query: z.string().max(1000).optional(),
+      workflowKey: workflowKeySchema.optional(),
+      limit: z.number().int().min(1).max(25).optional(),
+    },
+  }, async ({ query, workflowKey, limit }) => studio.queryArtistMemory({
+    userId: auth.userId,
+    query,
+    workflowKey,
+    limit,
+  }));
+
+  registerTool('search_artist_assets', {
+    title: 'Search artist assets',
+    description: "Read-only. Searches the authenticated artist's prior Mirage assets across projects and returns asset IDs, public URLs, categories, source project links, and compact metadata. Use when reusing old references, renders, keyframes, storyboards, audio, or style assets.",
+    inputSchema: {
+      query: z.string().max(1000).optional(),
+      projectId: idString.optional(),
+      categories: maxArray(idString, 25).optional(),
+      mediaType: z.enum(['image', 'video', 'audio', 'other']).optional(),
+      limit: z.number().int().min(1).max(60).optional(),
+    },
+  }, async ({ query, projectId, categories, mediaType, limit }) => studio.searchArtistAssets({
+    userId: auth.userId,
+    query,
+    projectId,
+    categories,
+    mediaType,
+    limit,
+  }));
 
   registerTool('get_agent_timing_summary', {
     title: 'Get agent timing summary',

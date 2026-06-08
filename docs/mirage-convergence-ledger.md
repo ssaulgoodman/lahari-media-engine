@@ -43,6 +43,12 @@ when reading the tracks below:
   prevention gap the audit surfaced.
 - Non-destructive single-shot topology landed as registry actions (`3551cc4`): `add_shot` and
   `delete_shot` let agents insert/remove one shot without rebuilding the whole script graph.
+- Render cancellation and late-output salvage landed (`546dbf8`, `72c86ee`, `f2a01e6`):
+  local cancel now preserves paid shot/render outputs as recoverable versions, renderer jobs
+  receive best-effort cancellation, and terminal writes use conditional status guards.
+- Read-only artist memory landed as MCP cockpit tools: `query_artist_memory` searches prior
+  projects for reusable taste/format/model clues, and `search_artist_assets` finds old refs,
+  storyboards, videos, audio, and style assets by user-scoped project ownership.
 
 ## Locked decisions
 
@@ -95,11 +101,9 @@ foundation the queue port needs; the timeline decision (F2) gates render power.
 
 ### C0 — Reliability render ports `[ready now, no forks]`
 Small, safe, ships value immediately. The audit's duplicate-generation guard and single-shot
-topology items have already landed; remaining C0 work starts with render/media hardening from
-`lahari-divergence-audit.md` cluster B:
-- `2d6067d` render cancellation **+ the latent bug it carries** (`render.ts:312` does an
-  unconditional `updateRows` that can clobber a row that already moved on — port the
-  conditional `.eq('status','rendering')` guard even if the Cancel UI waits).
+topology items have already landed. Render cancellation and blind-update hardening have also
+landed, including the conditional status guards the audit called out. Remaining C0 work starts
+with media/render hardening from `lahari-divergence-audit.md` cluster B:
 - `a75ab45` ffmpeg benign-layout eligibility (adapt as a "non-default layout" check, not
   lahari's wholesale delete, so real transforms still force Remotion).
 - `a3151bb`/`881cda9` media-library hide/upload endpoints (part of the render-polish story).
@@ -171,6 +175,12 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   prevention landed in Mirage.
 - 2026-06-08 · shot topology · `3551cc4` · `add_shot` / `delete_shot` landed as registry-only
   script actions.
+- 2026-06-08 · render cancellation · `546dbf8` / `72c86ee` / `f2a01e6` · local cancel preserves
+  late paid outputs, renderer jobs get best-effort cancel signals, and shot/render activation
+  writes are conditional on current status.
+- 2026-06-08 · artist memory · — · added read-only MCP tools for user-scoped project
+  memory and cross-project asset search, with plugin/AGENTS guidance so agents can reuse prior
+  taste and media without asking the artist to re-explain it.
 
 ## References
 

@@ -47,6 +47,8 @@ Skills come from the installed Mirage plugin. Action schemas come from live MCP:
 
 For repeatable production formats, call `list_workflows` and apply the matching recipe with `apply_project_workflow`. The recipe is project data; fill its slots during generation instead of rewriting the wrapper from memory.
 
+When the artist asks to reuse prior taste, characters, references, formats, or old outputs, call `query_artist_memory` for project-level memory and `search_artist_assets` for reusable asset IDs/URLs before asking them to re-explain it.
+
 ## Safe Edit Rule
 
 Before visual assets exist, `apply_script` can create or rebuild broad topology.
