@@ -28,7 +28,7 @@ const getServeUrl = (): Promise<string> => {
       entryPoint: path.resolve(__dirname, 'entry.tsx'),
     });
   }
-  return bundlePromise;
+  return bundlePromise!;
 };
 
 export interface RenderResult {
@@ -41,8 +41,11 @@ export interface RenderResult {
 export const renderTimeline = async (
   inputProps: TimelineRenderProps,
   onProgress?: (p: number) => void,
+  signal?: AbortSignal,
 ): Promise<RenderResult> => {
+  if (signal?.aborted) throw new Error('render cancelled by artist');
   const serveUrl = await getServeUrl();
+  if (signal?.aborted) throw new Error('render cancelled by artist');
 
   const composition = await selectComposition({
     serveUrl,
@@ -50,6 +53,7 @@ export const renderTimeline = async (
     inputProps: inputProps as unknown as Record<string, unknown>,
     timeoutInMilliseconds: 120000,
   });
+  if (signal?.aborted) throw new Error('render cancelled by artist');
 
   const outputPath = path.join(tmpdir(), `lahari-render-${randomUUID()}.mp4`);
 
@@ -80,7 +84,8 @@ export const renderTimeline = async (
     onProgress: onProgress
       ? ({ progress }) => onProgress(progress)
       : undefined,
-  });
+    ...(signal ? { cancelSignal: signal } : {}),
+  } as any);
 
   return {
     outputPath,

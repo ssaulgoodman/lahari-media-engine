@@ -1754,7 +1754,7 @@ router.get('/:id/renders', async (req, res) => {
   // join on storage_path so the history shows URLs that actually load.
   const renderRows = await selectAll(
     'renders',
-    { project_id: projectId, status: 'completed' },
+    { project_id: projectId, status: ['completed', 'cancelled'] },
   );
   const urlByPath = new Map<string, string>();
   for (const rr of renderRows as any[]) {
@@ -1800,7 +1800,7 @@ router.delete('/:id/renders/:assetId', async (req, res) => {
   const queueRow = usesLegacyQueueAdapter() ? await findQueueByProjectIds([projectId]) : null;
   const currentUrl = (queueRow as any)?.video_url || null;
   const renderRow: any = await selectOne('renders', {
-    project_id: projectId, storage_path: asset.file_path, status: 'completed',
+    project_id: projectId, storage_path: asset.file_path,
   });
   const thisUrl = renderRow?.video_url ?? storageUrl(asset.file_path);
   if (queueRow && currentUrl === thisUrl) {

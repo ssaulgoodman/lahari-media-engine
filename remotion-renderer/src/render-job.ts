@@ -161,6 +161,7 @@ const postProgress = async (
 };
 
 type RenderErrorCode =
+  | 'render_cancelled'
   | 'bundle_failed'
   | 'chromium_oom'
   | 'asset_404'
@@ -174,6 +175,7 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
   const message = err instanceof Error ? err.message : String(err || '');
   const text = message.toLowerCase();
 
+  if (text.includes('render cancelled') || text.includes('aborted')) return 'render_cancelled';
   if (text.includes('empty render output')) return 'empty_output';
   if (text.includes('project not found before render')) return 'project_deleted';
   if (text.includes('out of memory') || /\boom\b/.test(text) || text.includes('memory limit')) {
@@ -203,19 +205,30 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
   return 'renderer_failed';
 };
 
-const withHardCap = async <T,>(promise: Promise<T>): Promise<T> => {
+const throwIfCancelled = (signal?: AbortSignal) => {
+  if (signal?.aborted) throw new Error('render cancelled by artist');
+};
+
+const withHardCap = async <T,>(promise: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  throwIfCancelled(signal);
   const minutes = renderHardCapMinutes();
   let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
       reject(new Error(`render timeout: exceeded ${minutes} min hard cap`));
     }, minutes * 60 * 1000);
     timer.unref?.();
+    if (signal) {
+      onAbort = () => reject(new Error('render cancelled by artist'));
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
   try {
     return await Promise.race([promise, timeout]);
   } finally {
     if (timer) clearTimeout(timer);
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
   }
 };
 
@@ -223,6 +236,7 @@ export interface RunRenderJobArgs {
   renderId: string;
   projectId: string;
   inputProps: TimelineRenderProps;
+  signal?: AbortSignal;
 }
 
 export interface RunRenderJobResult {
@@ -245,6 +259,7 @@ export const runRenderJob = async ({
   renderId,
   projectId,
   inputProps,
+  signal,
 }: RunRenderJobArgs): Promise<RunRenderJobResult> => {
   const startedAt = Date.now();
   console.log(`[render] start render=${renderId} project=${projectId}`);
@@ -256,6 +271,7 @@ export const runRenderJob = async ({
   let selectedEngine: 'ffmpeg' | 'remotion' | undefined;
   let selectedFfmpegFallbackReason: string | null = null;
   const reportProgress = async (stage: string, progress?: number, force = false) => {
+    if (signal?.aborted) return;
     const now = Date.now();
     const clamped = typeof progress === 'number' ? Math.max(0, Math.min(1, progress)) : undefined;
     if (
@@ -272,6 +288,7 @@ export const runRenderJob = async ({
     await postProgress(renderId, { stage, ...(clamped !== undefined ? { progress: clamped } : {}) });
   };
   const heartbeat = setInterval(() => {
+    if (signal?.aborted) return;
     void postProgress(renderId, {
       stage: lastStage,
       progress: lastProgress,
@@ -280,11 +297,14 @@ export const runRenderJob = async ({
   heartbeat.unref?.();
 
   try {
+    throwIfCancelled(signal);
     const exists = await projectExists(projectId);
     if (!exists) {
       throw new Error(`project not found before render: ${projectId}`);
     }
+    throwIfCancelled(signal);
     const stagedAssets = await stageTimelineAssets(inputProps, renderId, reportProgress);
+    throwIfCancelled(signal);
     cleanupStagedAssets = stagedAssets.cleanup;
     if (stagedAssets.count > 0) {
       track('render_assets_staged', projectId, {
@@ -324,14 +344,17 @@ export const runRenderJob = async ({
       useFfmpeg
         ? renderTimelineWithFfmpeg(stagedAssets.inputProps, (progress) => {
             void reportProgress('ffmpeg_rendering', 0.08 + progress * 0.79);
-          })
+          }, signal)
         : renderTimeline(stagedAssets.inputProps, (progress) => {
             void reportProgress('rendering_frames', 0.08 + progress * 0.79);
-          }),
+          }, signal),
+      signal,
     );
+    throwIfCancelled(signal);
     outputPath = result.outputPath;
 
     await reportProgress('validating_output', 0.9, true);
+    throwIfCancelled(signal);
     const outputStat = await stat(outputPath);
     if (outputStat.size < 1024) {
       throw new Error(`empty render output: ${outputStat.size} bytes`);
@@ -341,7 +364,9 @@ export const runRenderJob = async ({
     }
 
     await reportProgress('uploading', 0.94, true);
+    throwIfCancelled(signal);
     const upload = await uploadRender(outputPath, projectId);
+    throwIfCancelled(signal);
     const renderMs = Date.now() - startedAt;
 
     console.log(
@@ -375,8 +400,13 @@ export const runRenderJob = async ({
     const message = (e as Error).message;
     const errorCode = classifyRenderError(e);
     const renderMs = Date.now() - startedAt;
-    console.error(`[render] failed render=${renderId} project=${projectId}`, message);
-    trackError(projectId, e, { renderId, renderMs, errorCode });
+    if (errorCode === 'render_cancelled') {
+      console.log(`[render] cancelled render=${renderId} project=${projectId}`);
+      track('render_cancelled', projectId, { renderId, renderMs });
+    } else {
+      console.error(`[render] failed render=${renderId} project=${projectId}`, message);
+      trackError(projectId, e, { renderId, renderMs, errorCode });
+    }
     await postCallback(renderId, {
       error: message,
       errorCode,

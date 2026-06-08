@@ -152,4 +152,36 @@ def web():
             "modalFunctionCallId": modal_function_call_id,
         }
 
+    @api.post("/cancel")
+    async def cancel(req: Request, x_renderer_secret: str = Header(default="")):
+        if x_renderer_secret != shared_secret:
+            raise HTTPException(status_code=401, detail="unauthorized")
+
+        try:
+            body = await req.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid JSON body")
+
+        render_id = body.get("renderId")
+        call_id = body.get("modalFunctionCallId") or body.get("functionCallId")
+        if not render_id:
+            raise HTTPException(status_code=400, detail="renderId is required")
+        if not call_id:
+            return {
+                "ok": True,
+                "renderId": render_id,
+                "cancelled": False,
+                "reason": "missing_modal_function_call_id",
+            }
+
+        call = modal.FunctionCall.from_id(call_id)
+        call.cancel(terminate_containers=True)
+        return {
+            "ok": True,
+            "renderId": render_id,
+            "modalFunctionCallId": call_id,
+            "cancelled": True,
+            "terminateContainers": True,
+        }
+
     return api

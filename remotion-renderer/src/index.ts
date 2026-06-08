@@ -7,13 +7,14 @@ import { runBootBenchmark } from './benchmark';
 import type { TimelineRenderProps } from './Video';
 
 const app = new Hono();
+const activeRenderJobs = new Map<string, AbortController>();
 
 app.use('*', logger());
 
 // Shared-secret guard. The main backend includes this header on every call;
 // the renderer never trusts unsigned requests since rendering is expensive.
 const SHARED_SECRET = process.env.RENDERER_SHARED_SECRET;
-app.use('/render', async (c, next) => {
+const requireRendererSecret = async (c: any, next: any) => {
   if (!SHARED_SECRET) {
     return c.json({ error: 'RENDERER_SHARED_SECRET not configured' }, 500);
   }
@@ -21,7 +22,9 @@ app.use('/render', async (c, next) => {
     return c.json({ error: 'unauthorized' }, 401);
   }
   return next();
-});
+};
+app.use('/render', requireRendererSecret);
+app.use('/cancel', requireRendererSecret);
 
 app.get('/health', (c) => c.json({ ok: true }));
 
@@ -62,10 +65,40 @@ app.post('/render', async (c) => {
     return c.json({ error: (e as Error).message }, 400);
   }
 
+  if (activeRenderJobs.has(body.renderId)) {
+    return c.json({ error: 'render already active', renderId: body.renderId }, 409);
+  }
+
   // Respond 202 before starting the render so the caller's connection closes
   // immediately. The real result lands via postCallback when rendering finishes.
-  void runRenderJob({ renderId: body.renderId, projectId: body.projectId, inputProps });
+  const controller = new AbortController();
+  activeRenderJobs.set(body.renderId, controller);
+  void runRenderJob({
+    renderId: body.renderId,
+    projectId: body.projectId,
+    inputProps,
+    signal: controller.signal,
+  }).finally(() => {
+    activeRenderJobs.delete(body.renderId!);
+  });
   return c.json({ accepted: true, renderId: body.renderId }, 202);
+});
+
+app.post('/cancel', async (c) => {
+  let body: { renderId?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid JSON body' }, 400);
+  }
+
+  if (!body.renderId) return c.json({ error: 'renderId is required' }, 400);
+  const controller = activeRenderJobs.get(body.renderId);
+  if (!controller) {
+    return c.json({ ok: true, renderId: body.renderId, cancelled: false, reason: 'not_active' });
+  }
+  controller.abort();
+  return c.json({ ok: true, renderId: body.renderId, cancelled: true });
 });
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

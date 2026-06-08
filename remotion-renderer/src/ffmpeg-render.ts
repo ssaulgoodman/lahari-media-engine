@@ -211,10 +211,30 @@ const runFfmpeg = (
   args: string[],
   totalSec: number,
   onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
 ) =>
   new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('render cancelled by artist'));
+      return;
+    }
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
+    let settled = false;
+    let forceKillTimer: NodeJS.Timeout | undefined;
+    const cleanup = () => {
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      if (settled) return;
+      child.kill('SIGTERM');
+      forceKillTimer = setTimeout(() => {
+        if (!settled) child.kill('SIGKILL');
+      }, 5000);
+      forceKillTimer.unref?.();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
@@ -226,8 +246,20 @@ const runFfmpeg = (
       if (stderr.length > 12000) stderr = stderr.slice(-12000);
     });
 
-    child.on('error', reject);
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    });
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (signal?.aborted) {
+        reject(new Error('render cancelled by artist'));
+        return;
+      }
       if (code === 0) {
         onProgress?.(1);
         resolve();
@@ -241,6 +273,7 @@ const runFfmpeg = (
 export const renderTimelineWithFfmpeg = async (
   inputProps: TimelineRenderProps,
   onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
 ): Promise<RenderResult> => {
   const { width, height } = inputProps.size;
   const fps = inputProps.fps;
@@ -311,7 +344,7 @@ export const renderTimelineWithFfmpeg = async (
   if (audioLabels.length > 0) args.push('-c:a', 'aac', '-b:a', process.env.FFMPEG_AUDIO_BITRATE || '192k');
   args.push(outputPath);
 
-  await runFfmpeg(args, totalSec, onProgress);
+  await runFfmpeg(args, totalSec, onProgress, signal);
   return {
     outputPath,
     durationInFrames: Math.max(1, Math.round(totalSec * fps)),

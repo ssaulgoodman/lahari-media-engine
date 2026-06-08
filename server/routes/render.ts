@@ -64,6 +64,53 @@ const updateRenderIfStatus = async (
   return (data?.length || 0) > 0;
 };
 
+const requestRendererCancel = async (
+  rendererUrl: string | undefined,
+  rendererSecret: string | undefined,
+  render: any,
+) => {
+  if (!rendererUrl || !rendererSecret) {
+    return { attempted: false, cancelled: false, reason: 'renderer_not_configured' };
+  }
+
+  try {
+    const response = await fetch(`${rendererUrl.replace(/\/$/, '')}/cancel`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-renderer-secret': rendererSecret,
+      },
+      body: JSON.stringify({
+        renderId: render.id,
+        modalFunctionCallId: render.modal_function_call_id || null,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const bodyText = await response.text().catch(() => '');
+    const body = bodyText ? parseJson<Record<string, any>>(bodyText, {}) : {};
+    if (!response.ok) {
+      return {
+        attempted: true,
+        cancelled: false,
+        status: response.status,
+        reason: body?.error || body?.detail || bodyText.slice(0, 500) || `renderer_cancel_http_${response.status}`,
+      };
+    }
+    return {
+      attempted: true,
+      cancelled: body.cancelled === true,
+      reason: body.reason || null,
+      modalFunctionCallId: body.modalFunctionCallId || render.modal_function_call_id || null,
+    };
+  } catch (err: any) {
+    return {
+      attempted: true,
+      cancelled: false,
+      reason: err?.message || String(err),
+    };
+  }
+};
+
 const normalizeTimelineCanvas = (project: any, timeline: any) => ({
   ...timeline,
   size: renderCanvasSize(project),
@@ -391,7 +438,7 @@ router.post('/:id/renders/:renderId/cancel', async (req, res) => {
   if (render.status === 'cancelled') {
     return res.json({ ok: true, renderId, status: 'cancelled', alreadyFinalized: true });
   }
-  if (render.status === 'completed' || render.status === 'failed') {
+  if (render.status === 'completed' || render.status === 'failed' || render.status === 'pending_finalize') {
     return res.status(409).json({
       error: `Render is already ${render.status} and cannot be cancelled.`,
       renderId,
@@ -400,7 +447,7 @@ router.post('/:id/renders/:renderId/cancel', async (req, res) => {
   }
 
   const now = new Date().toISOString();
-  const updated = await updateRenderIfStatus(renderId, ['rendering', 'pending_finalize'], {
+  const updated = await updateRenderIfStatus(renderId, ['rendering'], {
     status: 'cancelled',
     error: 'cancelled by artist',
     error_code: 'render_cancelled',
@@ -409,12 +456,21 @@ router.post('/:id/renders/:renderId/cancel', async (req, res) => {
   });
   if (!updated) {
     const latest = await selectOne('renders', { id: renderId });
+    if (latest?.status === 'cancelled') {
+      return res.json({ ok: true, renderId, status: 'cancelled', alreadyFinalized: true });
+    }
     return res.status(409).json({
       error: `Render is already ${latest?.status || 'finalized'} and cannot be cancelled.`,
       renderId,
       status: latest?.status || null,
     });
   }
+
+  const rendererCancel = await requestRendererCancel(
+    process.env.REMOTION_RENDERER_URL,
+    process.env.RENDERER_SHARED_SECRET,
+    render,
+  );
 
   await recordDirectorEvent({
     projectId,
@@ -424,10 +480,10 @@ router.post('/:id/renders/:renderId/cancel', async (req, res) => {
     entityType: 'render',
     entityId: renderId,
     summary: 'Artist cancelled an in-flight final render.',
-    payload: { renderId, previousStatus: render.status },
+    payload: { renderId, previousStatus: render.status, rendererCancel },
   });
 
-  return res.json({ ok: true, renderId, status: 'cancelled' });
+  return res.json({ ok: true, renderId, status: 'cancelled', rendererCancel });
 });
 
 // Frontend polls this — returns the most recent render row for the project.
