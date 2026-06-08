@@ -18,10 +18,18 @@ import {
   RotateCcw,
   Check,
   Scissors,
+  History,
 } from 'lucide-react';
 import useStore from './store';
 import { useCurrentPlayerFrame } from './use-current-frame';
 import { saveSnapshot, clearSnapshot } from './persistence';
+import {
+  clearProjectTimeline,
+  listProjectTimelineVersions,
+  restoreProjectTimelineVersion,
+  saveProjectTimeline,
+  TimelineVersionSummary,
+} from '../../services/api';
 import {
   frameToTimeString,
   timeToString,
@@ -68,6 +76,25 @@ const playBtnStyle: React.CSSProperties = {
   color: '#e5e5e5',
 };
 
+const formatVersionTime = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const formatVersionDuration = (duration: number | null): string => {
+  if (!duration || !Number.isFinite(duration)) return '';
+  const seconds = Math.max(0, Math.round(duration / 1000));
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
 const Header: React.FC = () => {
   const { duration, fps, scale, playerRef, activeIds } = useStore();
   const canUndo = useStore((s) => s.canUndo);
@@ -75,9 +102,16 @@ const Header: React.FC = () => {
   const performUndo = useStore((s) => s.performUndo);
   const performRedo = useStore((s) => s.performRedo);
   const lastSavedAt = useStore((s) => s.lastSavedAt);
+  const timelineVersion = useStore((s) => s.timelineVersion);
+  const timelineSaveState = useStore((s) => s.timelineSaveState);
+  const timelineSaveMessage = useStore((s) => s.timelineSaveMessage);
   const projectId = useStore((s) => s.projectId);
+  const initialVideoSrcs = useStore((s) => s.initialVideoSrcs);
+  const initialAudioSrcs = useStore((s) => s.initialAudioSrcs);
   const bumpResetToken = useStore((s) => s.bumpResetToken);
   const setLastSavedAt = useStore((s) => s.setLastSavedAt);
+  const setTimelineVersion = useStore((s) => s.setTimelineVersion);
+  const setTimelineSaveState = useStore((s) => s.setTimelineSaveState);
   const deleteActiveItems = useStore((s) => s.deleteActiveItems);
   const splitActiveAtPlayhead = useStore((s) => s.splitActiveAtPlayhead);
   const trackItemsMap = useStore((s) => s.trackItemsMap);
@@ -110,9 +144,13 @@ const Header: React.FC = () => {
   // for ~1.2s after a successful save. Without this, clicking Save when
   // "Saved just now" is already showing gives no feedback at all.
   const [justSaved, setJustSaved] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [versions, setVersions] = useState<TimelineVersionSummary[]>([]);
   const firstSavedSeenRef = React.useRef<number | null>(null);
   useEffect(() => {
-    if (lastSavedAt == null) return;
+    if (lastSavedAt == null || timelineSaveState !== 'saved') return;
     setNowTs(Date.now());
     // Skip the flash on the initial hydration from disk — only flash when
     // lastSavedAt advances past the first value we saw in this mount.
@@ -130,13 +168,15 @@ const Header: React.FC = () => {
     }
     const id = window.setInterval(() => setNowTs(Date.now()), 30_000);
     return () => window.clearInterval(id);
-  }, [lastSavedAt]);
+  }, [lastSavedAt, timelineSaveState]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!projectId) return;
     const s = useStore.getState();
     if (s.trackItemIds.length === 0) return;
-    const savedAt = saveSnapshot(projectId, {
+    const snapshot = {
+      initialVideoSrcs,
+      initialAudioSrcs,
       trackItemIds: s.trackItemIds,
       trackItemsMap: s.trackItemsMap,
       transitionIds: s.transitionIds,
@@ -145,17 +185,89 @@ const Header: React.FC = () => {
       duration: s.duration,
       fps: s.fps,
       size: s.size,
-    });
+    };
+    setTimelineSaveState('saving');
+    try {
+      const result = await saveProjectTimeline(projectId, snapshot, timelineVersion, 'manual');
+      setTimelineVersion(result.version);
+      setTimelineSaveState('saved');
+      setLastSavedAt(new Date(result.updatedAt).getTime());
+    } catch (err: any) {
+      setTimelineSaveState('error', err?.message || 'Timeline save failed');
+      return;
+    }
+    const savedAt = saveSnapshot(projectId, snapshot);
     if (savedAt != null) setLastSavedAt(savedAt);
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (!projectId) return;
-    if (!confirm('Reset timeline to the original shot videos? Unsaved edits will be lost.'))
+    if (!confirm('Reset the shared timeline to the original shot videos? Everyone using this project will lose the current timeline draft.'))
       return;
+    try {
+      await clearProjectTimeline(projectId);
+      setTimelineVersion(null);
+      setTimelineSaveState('idle');
+    } catch (err: any) {
+      setTimelineSaveState('error', err?.message || 'Timeline reset failed');
+      return;
+    }
     clearSnapshot(projectId);
     setLastSavedAt(null);
     bumpResetToken();
+  };
+
+  const handleLoadLatest = () => {
+    if (!projectId) return;
+    if (!confirm('Discard your local timeline edits and load the latest shared timeline?'))
+      return;
+    setTimelineSaveState('idle');
+    clearSnapshot(projectId);
+    bumpResetToken();
+  };
+
+  const refreshHistory = async () => {
+    if (!projectId) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const result = await listProjectTimelineVersions(projectId);
+      setVersions(result.versions || []);
+    } catch (err: any) {
+      setHistoryError(err?.message || 'Timeline history failed to load');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const toggleHistory = () => {
+    const next = !historyOpen;
+    setHistoryOpen(next);
+    if (next) void refreshHistory();
+  };
+
+  const handleRestoreVersion = async (version: number) => {
+    if (!projectId) return;
+    if (
+      !confirm(
+        `Restore timeline version ${version}? This becomes the new latest timeline, and the current latest remains recoverable in history.`,
+      )
+    )
+      return;
+    setTimelineSaveState('saving');
+    try {
+      const result = await restoreProjectTimelineVersion(projectId, version, timelineVersion);
+      setTimelineVersion(result.version);
+      setTimelineSaveState('saved', `Restored version ${version}`);
+      clearSnapshot(projectId);
+      setLastSavedAt(new Date(result.updatedAt).getTime());
+      setHistoryOpen(false);
+      bumpResetToken();
+    } catch (err: any) {
+      const message = err?.message || 'Timeline restore failed';
+      setTimelineSaveState('error', message);
+      setHistoryError(message);
+    }
   };
 
   const togglePlay = () => {
@@ -274,18 +386,141 @@ const Header: React.FC = () => {
           <button style={btn} onClick={handleReset} title="Reset to original shot videos">
             <RotateCcw size={14} />
           </button>
-          {lastSavedAt != null && (
+          <div style={{ position: 'relative' }}>
+            <button
+              style={historyOpen ? { ...btn, color: '#e5e7eb', background: '#27272a' } : btn}
+              onClick={toggleHistory}
+              title="Timeline history"
+            >
+              <History size={14} />
+            </button>
+            {historyOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  bottom: 34,
+                  width: 310,
+                  maxHeight: 360,
+                  overflow: 'auto',
+                  padding: 10,
+                  borderRadius: 10,
+                  background: 'rgba(12,12,14,0.98)',
+                  border: '1px solid #27272a',
+                  boxShadow: '0 16px 50px rgba(0,0,0,0.55)',
+                  zIndex: 50,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ color: '#f4f4f5', fontSize: 12, fontWeight: 700 }}>Timeline history</div>
+                  <button
+                    style={{ ...btn, width: 'auto', height: 22, padding: '0 6px', fontSize: 11 }}
+                    onClick={refreshHistory}
+                    disabled={historyLoading}
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <div style={{ color: '#a1a1aa', fontSize: 11, lineHeight: 1.4, marginBottom: 8 }}>
+                  Every save is recoverable. Restoring creates a new latest version.
+                </div>
+                {historyError && (
+                  <div style={{ color: '#f87171', fontSize: 11, marginBottom: 8 }}>{historyError}</div>
+                )}
+                {historyLoading && (
+                  <div style={{ color: '#71717a', fontSize: 12, padding: '10px 0' }}>Loading...</div>
+                )}
+                {!historyLoading && versions.length === 0 && (
+                  <div style={{ color: '#71717a', fontSize: 12, padding: '10px 0' }}>No saved versions yet.</div>
+                )}
+                {!historyLoading &&
+                  versions.map((v) => {
+                    const isCurrent = v.version === timelineVersion;
+                    return (
+                      <div
+                        key={v.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr auto',
+                          gap: 8,
+                          alignItems: 'center',
+                          padding: '8px 0',
+                          borderTop: '1px solid #27272a',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: '#e5e7eb', fontSize: 12, fontWeight: 650 }}>
+                            v{v.version}
+                            {isCurrent ? ' - current' : ''}
+                          </div>
+                          <div style={{ color: '#a1a1aa', fontSize: 11, marginTop: 2 }}>
+                            {formatVersionTime(v.savedAt)}
+                            {v.source ? ` - ${v.source}` : ''}
+                          </div>
+                          <div style={{ color: '#71717a', fontSize: 11, marginTop: 2 }}>
+                            {v.itemCount} items
+                            {formatVersionDuration(v.duration) ? ` - ${formatVersionDuration(v.duration)}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          style={{
+                            ...btn,
+                            width: 'auto',
+                            height: 26,
+                            padding: '0 8px',
+                            fontSize: 11,
+                            color: isCurrent ? '#71717a' : '#f4f4f5',
+                            background: isCurrent ? 'transparent' : '#27272a',
+                            cursor: isCurrent ? 'default' : 'pointer',
+                          }}
+                          disabled={isCurrent}
+                          onClick={() => handleRestoreVersion(v.version)}
+                        >
+                          {isCurrent ? 'Current' : 'Restore'}
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+          {timelineSaveState === 'saving' && (
+            <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#71717a', marginLeft: 4 }}>
+              Saving...
+            </span>
+          )}
+          {timelineSaveState !== 'saving' && lastSavedAt != null && (
             <span
               style={{
                 fontSize: 11,
                 fontFamily: 'monospace',
-                color: '#52525b',
+                color: timelineSaveState === 'remote' ? '#fbbf24' : timelineSaveState === 'error' ? '#f87171' : '#52525b',
                 marginLeft: 4,
               }}
-              title={`Saved at ${new Date(lastSavedAt).toLocaleString()}`}
+              title={
+                timelineSaveMessage ||
+                (timelineSaveState === 'local'
+                  ? `Draft saved locally at ${new Date(lastSavedAt).toLocaleString()}`
+                  : `Saved to project at ${new Date(lastSavedAt).toLocaleString()}`)
+              }
             >
-              {formatSavedAgo(lastSavedAt, nowTs)}
+              {timelineSaveState === 'remote'
+                ? 'New saved version'
+                : timelineSaveState === 'error'
+                  ? 'Save failed'
+                  : timelineSaveState === 'local'
+                    ? 'Local draft'
+                    : formatSavedAgo(lastSavedAt, nowTs)}
             </span>
+          )}
+          {timelineSaveState === 'remote' && (
+            <button
+              style={{ ...btn, width: 'auto', padding: '0 7px', fontSize: 11, color: '#fbbf24' }}
+              onClick={handleLoadLatest}
+              title="Discard local edits and load the latest saved timeline"
+            >
+              Load latest
+            </button>
           )}
           <div style={{ width: 1, height: 18, background: '#27272a', margin: '0 6px' }} />
         </div>

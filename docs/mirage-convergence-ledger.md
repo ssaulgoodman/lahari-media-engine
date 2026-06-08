@@ -48,7 +48,12 @@ when reading the tracks below:
   receive best-effort cancellation, and terminal writes use conditional status guards.
 - Read-only artist memory landed as MCP cockpit tools: `query_artist_memory` searches prior
   projects for reusable taste/format/model clues, and `search_artist_assets` finds old refs,
-  storyboards, videos, audio, and style assets by user-scoped project ownership.
+  storyboards, videos, audio, and style assets by user-scoped project ownership. The important
+  boundary is server-side: callers never pass `userId`, and both tools derive ownership from
+  `auth.userId`.
+- Server-backed render timeline storage landed as the first C3 slice: the editor now has a
+  shared project timeline row, immutable save history, local browser drafts, explicit Save to
+  promote local to canonical, Restore, and Reset.
 
 ## Locked decisions
 
@@ -122,12 +127,13 @@ workspace is always the top tier. Capability-based feature gating (F3). Roles: o
 member. Schema unification lives here, but the first implementation slice should be the
 workspace model plus a migration rehearsal plan/prototype — not a live Lahari move.
 
-### C3 — Server-canonical timeline (agent-native render power) `[needs F2]`
-Give the timeline a server home: storage + recoverable history + realtime (audit cluster B:
-`d394179`, `ec6e879`, `41d09ad`/`75b1d1b`). Reframed as "agent can edit the timeline + cross-
-device + undo," not "port lahari." Keep mirage's better shotId-keyed
-`reconcileSnapshotWithInitialClips`; change *where* the snapshot persists, not the reconcile
-logic. Can float earlier if agent-native render is prioritized.
+### C3 — Server-canonical timeline (agent-native render power) `[started]`
+First slice landed: project timelines now have a server current row and recoverable version
+history, while browser edits remain local drafts until the artist presses Save. This preserves
+the Lahari-proven local-vs-canonical workflow and keeps Mirage's better shotId-keyed
+`reconcileSnapshotWithInitialClips`. Remaining C3 work: realtime "new saved version" refresh
+signals, explicit agent/API timeline-edit actions, and any richer render/media-library editing
+surface needed after artists use the shared timeline.
 
 ### C4 — Lahari preset pack `[needs C2]`
 Port the lahari workflow in as a gated preset pack: the queue (`music_video_queue` + `songs` +
@@ -180,7 +186,14 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   writes are conditional on current status.
 - 2026-06-08 · artist memory · — · added read-only MCP tools for user-scoped project
   memory and cross-project asset search, with plugin/AGENTS guidance so agents can reuse prior
-  taste and media without asking the artist to re-explain it.
+  taste and media without asking the artist to re-explain it. Security review: `userId` is
+  server-authoritative, project filters narrow ownership instead of replacing it, and asset
+  search scopes through user-owned project IDs. Known limit: asset recall scans the 500 most
+  recent owned assets before ranking, so very old assets may need a future indexed search path.
+- 2026-06-08 · C3 timeline base · — · added prefixed project timeline tables, current/versions/
+  restore/reset endpoints, explicit Save-to-shared behavior, local draft autosave, shared
+  version restore, and reset-to-generated-clips. Realtime remote-change notification and
+  agent-edit actions remain future C3 work.
 
 ## References
 

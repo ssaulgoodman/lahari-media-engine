@@ -62,7 +62,10 @@ are SKIP** (mirage already has it, mirage diverged intentionally, it's legacy
 4. **Artist cross-project memory** — `b16741e` (C) · PORT · M · low risk
    Read-only `query_artist_memory` + `search_artist_assets` over the artist's prior
    projects/assets. Mirage has zero cross-project agent memory (all read tools are
-   single-project). Map legacy `song_type`/`is_narrative` columns → mirage `workflow` fields.
+   single-project). **Landed in Mirage** as read-only cockpit tools, not registry actions.
+   Security review: user ownership is server-authoritative (`auth.userId`), projectId only
+   narrows the owned set, and asset search scopes by owned project IDs. Known limit: asset
+   recall ranks over the 500 most-recent owned assets before scoring.
 
 5. **Storyboard-lock in shot header** — `3d568c2` (D) · PORT · M · low risk
    In Seedance storyboard mode the header lock currently locks the *shot* (needs a video)
@@ -177,17 +180,16 @@ ledger + charge-risk semantics). Audited directly.
 
 ## Cluster B — render / timeline robustness
 
-**The architectural fork that decides this cluster:** lahari built a **server-canonical
-timeline** (`lahari_project_timelines` + `lahari_timeline_versions` tables, `GET/PUT
-/timeline`, `/restore`, `/versions`, Supabase realtime publication, optimistic-concurrency
-→ last-write-wins). **Mirage stayed localStorage-only** (`components/timeline-editor/
-persistence.ts`, debounced autosave, no server row/realtime/version history). So the entire
-server-draft/realtime/history sub-chain is **architecturally N/A** to mirage — porting it
-means adopting a whole new architecture (a product decision about multi-device/agent-shared
-editing), not a robustness fix. Separately, mirage independently solved the two *real*
-robustness goals that motivated half the cluster — "don't clobber the draft when new clips
-arrive" — via its own shotId-keyed `reconcileSnapshotWithInitialClips` + media-library badge,
-arguably better than lahari's src-string matching. **9 of 17 commits are already-has or moot.**
+**Architectural fork resolved for C3:** lahari built a **server-canonical timeline**
+(`lahari_project_timelines` + `lahari_timeline_versions` tables, `GET/PUT /timeline`,
+`/restore`, `/versions`, Supabase realtime publication, optimistic-concurrency / last-write-
+wins). Mirage originally stayed localStorage-only (`components/timeline-editor/persistence.ts`,
+debounced autosave, no server row/realtime/version history). We adopted the product decision
+for Mirage C3 and ported the base architecture: shared project timeline row, immutable
+versions, local browser drafts, explicit Save to promote local to canonical, Restore, and Reset.
+Mirage kept its better shotId-keyed `reconcileSnapshotWithInitialClips` + media-library badge
+instead of copying lahari's src-string matching. Remaining C3 follow-up: realtime remote-change
+notification and agent/API timeline-edit actions.
 
 Two genuine ports:
 
@@ -211,10 +213,11 @@ lahari's wholesale removal would silently ffmpeg-render genuine positioning/crop
 wrong. Port as a "non-default layout" predicate (mirror the existing `hasNonDefaultEffects`)
 so benign defaults pass but real transforms still force Remotion.
 
-Everything else SKIP: the server-timeline chain (`d394179`, `75b1d1b`, `41d09ad`, `ec6e879`,
-`c90d4f8`, `5768e10`, `bc4931a`, `5105dd8`, `28fd4e5`) is N/A to mirage's local model;
-`6d01cce`/`a074289`/`ddec68b` mirage already has equivalents; `d8774ea` is lahari-catalog
-stale-audio; `52b26fe`+`3a7018e` is a net-zero revert touching legacy `music_video_queue`.
+Server-timeline chain status: `d394179`, `75b1d1b`, `41d09ad`, `ec6e879`, `c90d4f8`,
+`5768e10`, `bc4931a`, `5105dd8`, and `28fd4e5` are now **ADAPTED as the C3 base**, except
+for realtime notification, which remains open. Everything else SKIP: `6d01cce`/`a074289`/
+`ddec68b` mirage already has equivalents; `d8774ea` is lahari-catalog stale-audio;
+`52b26fe`+`3a7018e` is a net-zero revert touching legacy `music_video_queue`.
 
 ---
 
@@ -236,13 +239,19 @@ mirage's existing posture. ADAPT plumbing only: lahari ships a `lahari_apply_scr
 RPC update for `is_extra`; mirage inserts shots TS-side, so it needs only the additive
 `is_extra` column migration + the TS service + a `StepRender.tsx` timeline filter.
 
-### b16741e — Artist memory query tools  ·  PORT · M · low
+### b16741e — Artist memory query tools  ·  PORTED · M · low
 Read-only `query_artist_memory` (NL search over the artist's prior projects — styles, models,
 taste patterns) and `search_artist_assets` (cross-project asset search → public URLs), both
 strictly `user_id`-scoped. Mirage's read tools (`list_projects`, `resolve_project`,
 `get_project_packet`) are all single-project — no cross-project memory exists. All deps
 present (`T.projects`/`T.assets`, `storageUrl`, `webStudioUrl`); map legacy `song_type`/
 `is_narrative` → mirage workflow fields.
+
+Mirage status: landed as `query_artist_memory` and `search_artist_assets`, both read-only MCP
+cockpit tools. The caller cannot supply `userId`; both queries derive it from authenticated
+context and route through owned projects. `search_artist_assets` is deliberately bounded and
+currently scans the 500 most-recent owned assets before ranking, so older library search can be
+promoted to an indexed path if artists outgrow that window.
 
 SKIP: `6109100` MCP tracing (mirage's `mcp_audit_events` + `get_agent_timing_summary` with
 p50/p90/max inter-tool gaps already surpasses flat trace rows); `0bcb669` per-entity visual
@@ -286,7 +295,7 @@ Legend: ✅ PORT · 🔧 ADAPT · 🟡 CONDITIONAL/INVESTIGATE · ⛔ SKIP
 | d7bbfb0 | A | Route visual generation through Segmind | LAHARI | diverged (provider-rich) | ⛔ |
 | a7fdad8 | C | Add context-aware extra shots | GENERAL | missing | ✅ PORT |
 | 8a44801 | C | Add safe extra shot deletion | GENERAL | missing | ✅ PORT |
-| b16741e | C | Add artist memory query tools | GENERAL | missing | ✅ PORT |
+| b16741e | C | Add artist memory query tools | GENERAL | landed as read-only cockpit tools | ✅ PORTED |
 | 6109100 | C | Add MCP call tracing | GENERAL | already-has (richer) | ⛔ |
 | 0bcb669 | C | Expose MCP visual reference tools | GENERAL | already-has (superior) | ⛔ |
 | 434470c | C | Document MCP v2 intent surface | GENERAL (doc) | already-has | ⛔ |

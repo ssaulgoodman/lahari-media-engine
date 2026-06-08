@@ -47,6 +47,8 @@ const T = {
   chat_messages: `${TABLE_PREFIX}_chat_messages`,
   ai_calls: `${TABLE_PREFIX}_ai_calls`,
   renders: `${TABLE_PREFIX}_renders`,
+  project_timelines: `${TABLE_PREFIX}_project_timelines`,
+  project_timeline_versions: `${TABLE_PREFIX}_project_timeline_versions`,
 } as const;
 
 type TableKey = keyof typeof T;

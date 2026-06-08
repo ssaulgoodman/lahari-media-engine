@@ -37,6 +37,120 @@ const numberMs = (value: unknown, fallback: number) => {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
+const isUniqueConflict = (error: any): boolean =>
+  error?.code === '23505' || String(error?.message || '').toLowerCase().includes('duplicate key');
+
+const timelineSummary = (snapshot: any) => ({
+  itemCount: Array.isArray(snapshot?.trackItemIds) ? snapshot.trackItemIds.length : 0,
+  durationMs: Number.isFinite(Number(snapshot?.duration))
+    ? Math.round(Number(snapshot.duration))
+    : null,
+});
+
+const insertTimelineVersion = async ({
+  projectId,
+  version,
+  snapshot,
+  userId,
+  source,
+}: {
+  projectId: string;
+  version: number;
+  snapshot: any;
+  userId?: string | null;
+  source: string;
+}) => {
+  const { itemCount, durationMs } = timelineSummary(snapshot);
+  const { error } = await getSB()
+    .from(T.project_timeline_versions)
+    .insert({
+      project_id: projectId,
+      version,
+      snapshot,
+      saved_by: userId || null,
+      source,
+      item_count: itemCount,
+      duration_ms: durationMs,
+    });
+  return error;
+};
+
+const saveCanonicalTimeline = async ({
+  projectId,
+  snapshot,
+  userId,
+  source,
+}: {
+  projectId: string;
+  snapshot: any;
+  userId?: string | null;
+  source: string;
+}): Promise<{ version: number; updatedAt: string } | { error: any }> => {
+  const sb = getSB();
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: existing, error: readErr } = await sb
+      .from(T.project_timelines)
+      .select('version')
+      .eq('project_id', projectId)
+      .maybeSingle();
+    if (readErr) return { error: readErr };
+
+    const nextVersion = existing ? Number(existing.version || 0) + 1 : 1;
+    const now = new Date().toISOString();
+
+    const write = existing
+      ? await sb
+          .from(T.project_timelines)
+          .update({
+            snapshot,
+            version: nextVersion,
+            updated_by: userId || null,
+            updated_at: now,
+          })
+          .eq('project_id', projectId)
+          .select('version, updated_at')
+          .single()
+      : await sb
+          .from(T.project_timelines)
+          .insert({
+            project_id: projectId,
+            snapshot,
+            version: nextVersion,
+            updated_by: userId || null,
+            updated_at: now,
+          })
+          .select('version, updated_at')
+          .single();
+
+    if (write.error) {
+      if (isUniqueConflict(write.error)) continue;
+      return { error: write.error };
+    }
+
+    const versionErr = await insertTimelineVersion({
+      projectId,
+      version: write.data.version,
+      snapshot,
+      userId,
+      source,
+    });
+    if (versionErr) {
+      if (isUniqueConflict(versionErr)) continue;
+      console.error('[timeline-history-save]', {
+        projectId,
+        version: write.data.version,
+        source,
+        error: versionErr.message || String(versionErr),
+      });
+    }
+
+    return { version: write.data.version, updatedAt: write.data.updated_at };
+  }
+
+  return { error: new Error('Timeline save raced too many times; retry save.') };
+};
+
 const itemSrc = (item: any) => {
   const src = item?.details?.src;
   return typeof src === 'string' && src.trim() ? src.trim() : null;
@@ -293,6 +407,103 @@ router.param('id', async (req, res, next, id) => {
     return res.status(403).json({ error: 'Access denied' });
   (req as any).project = row;
   next();
+});
+
+router.get('/:id/timeline', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { data, error } = await getSB()
+    .from(T.project_timelines)
+    .select('snapshot, version, updated_at')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.json({ timeline: null });
+  return res.json({
+    timeline: {
+      snapshot: data.snapshot,
+      version: data.version,
+      updatedAt: data.updated_at,
+    },
+  });
+});
+
+router.get('/:id/timeline/versions', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const limit = Math.min(Math.max(Number(req.query.limit || 30), 1), 100);
+  const { data, error } = await getSB()
+    .from(T.project_timeline_versions)
+    .select('id, version, created_at, saved_by, source, item_count, duration_ms')
+    .eq('project_id', projectId)
+    .order('version', { ascending: false })
+    .limit(limit);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({
+    versions: (data || []).map((row: any) => ({
+      id: row.id,
+      version: row.version,
+      savedAt: row.created_at,
+      savedBy: row.saved_by,
+      source: row.source,
+      itemCount: row.item_count ?? 0,
+      duration: row.duration_ms ?? null,
+    })),
+  });
+});
+
+router.put('/:id/timeline', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const snapshot = req.body?.snapshot;
+  const source = typeof req.body?.source === 'string' && req.body.source.trim()
+    ? req.body.source.trim().slice(0, 80)
+    : 'save';
+  if (!snapshot || typeof snapshot !== 'object') {
+    return res.status(400).json({ error: 'snapshot is required' });
+  }
+
+  const result = await saveCanonicalTimeline({
+    projectId,
+    snapshot,
+    userId: req.userId,
+    source,
+  });
+  if ('error' in result) return res.status(500).json({ error: result.error.message || String(result.error) });
+  return res.json(result);
+});
+
+router.post('/:id/timeline/restore', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const restoreVersion = Number(req.body?.version);
+  if (!Number.isInteger(restoreVersion) || restoreVersion <= 0) {
+    return res.status(400).json({ error: 'version is required' });
+  }
+
+  const { data: versionRow, error: versionReadErr } = await getSB()
+    .from(T.project_timeline_versions)
+    .select('snapshot, version')
+    .eq('project_id', projectId)
+    .eq('version', restoreVersion)
+    .maybeSingle();
+  if (versionReadErr) return res.status(500).json({ error: versionReadErr.message });
+  if (!versionRow) return res.status(404).json({ error: 'Timeline version not found' });
+
+  const result = await saveCanonicalTimeline({
+    projectId,
+    snapshot: versionRow.snapshot,
+    userId: req.userId,
+    source: `restore:${restoreVersion}`,
+  });
+  if ('error' in result) return res.status(500).json({ error: result.error.message || String(result.error) });
+  return res.json({ ...result, restoredFromVersion: restoreVersion });
+});
+
+router.delete('/:id/timeline', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const { error } = await getSB()
+    .from(T.project_timelines)
+    .delete()
+    .eq('project_id', projectId);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ ok: true });
 });
 
 router.post('/:id/render', async (req, res) => {

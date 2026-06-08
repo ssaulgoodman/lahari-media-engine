@@ -40,13 +40,20 @@ interface ITimelineStore {
   // header) can drive disabled state on Undo/Redo buttons reactively.
   canUndo: boolean;
   canRedo: boolean;
-  // Timestamp (ms) of the most recent successful localStorage snapshot write,
-  // or null if nothing is saved for the current project. Drives the "Saved"
-  // pill (tooltip exposes the exact time — no per-second ticker).
+  // Timestamp (ms) of the most recent successful local draft or shared server
+  // timeline save. Drives the save/draft pill.
   lastSavedAt: number | null;
+  timelineVersion: number | null;
+  timelineSaveState: 'idle' | 'saving' | 'saved' | 'local' | 'remote' | 'error';
+  timelineSaveMessage: string | null;
   // Project id published by TimelineEditor on mount so the Header (which is
   // several layers down) can save/clear snapshots without prop-drilling.
   projectId: string | null;
+  // Source sets from the current project state. Persisted with a snapshot so
+  // later generated shot videos can be offered as new media without mistaking
+  // a deliberate artist delete for a stale timeline.
+  initialVideoSrcs: string[];
+  initialAudioSrcs: string[];
   // Monotonic counter — bumping it re-runs the seed effect and re-seeds from
   // initialClips. Reset button in Header bumps this after clearSnapshot.
   resetToken: number;
@@ -57,7 +64,10 @@ interface ITimelineStore {
   setState: (partial: Partial<ITimelineStore>) => void;
   setHistory: (canUndo: boolean, canRedo: boolean) => void;
   setLastSavedAt: (ts: number | null) => void;
+  setTimelineVersion: (version: number | null) => void;
+  setTimelineSaveState: (state: ITimelineStore['timelineSaveState'], message?: string | null) => void;
   setProjectId: (id: string | null) => void;
+  setInitialSources: (videoSrcs: string[], audioSrcs: string[]) => void;
   bumpResetToken: () => void;
   // Set by TimelineEditor's main effect when the StateManager is wired up.
   // Header buttons + keyboard shortcuts call these. Null when the editor is
@@ -104,7 +114,12 @@ const useStore = create<ITimelineStore>((set, get) => ({
   canUndo: false,
   canRedo: false,
   lastSavedAt: null,
+  timelineVersion: null,
+  timelineSaveState: 'idle',
+  timelineSaveMessage: null,
   projectId: null,
+  initialVideoSrcs: [],
+  initialAudioSrcs: [],
   resetToken: 0,
   setStateManager: (stateManager) => set({ stateManager }),
   setTimeline: (timeline) => set({ timeline }),
@@ -113,7 +128,12 @@ const useStore = create<ITimelineStore>((set, get) => ({
   setState: (partial) => set(partial as any),
   setHistory: (canUndo, canRedo) => set({ canUndo, canRedo }),
   setLastSavedAt: (lastSavedAt) => set({ lastSavedAt }),
+  setTimelineVersion: (timelineVersion) => set({ timelineVersion }),
+  setTimelineSaveState: (timelineSaveState, timelineSaveMessage = null) =>
+    set({ timelineSaveState, timelineSaveMessage }),
   setProjectId: (projectId) => set({ projectId }),
+  setInitialSources: (initialVideoSrcs, initialAudioSrcs) =>
+    set({ initialVideoSrcs, initialAudioSrcs }),
   bumpResetToken: () => set((s) => ({ resetToken: s.resetToken + 1 })),
   performUndo: null,
   performRedo: null,

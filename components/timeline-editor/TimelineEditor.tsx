@@ -12,7 +12,8 @@ import Timeline from './Timeline';
 import EffectsPanel from './EffectsPanel';
 import useStore, { HistoryFrame } from './store';
 import useTimelineEvents from './use-timeline-events';
-import { loadSnapshot, saveSnapshot } from './persistence';
+import { loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
+import { getProjectTimeline } from '../../services/api';
 
 export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean };
 export type TimelineCanvasSize = { width: number; height: number };
@@ -102,6 +103,33 @@ const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<num
     el.onerror = () => done(5000);
     el.src = src;
   });
+
+const timelineSignature = (snapshot: SnapshotPayload) =>
+  JSON.stringify({
+    initialVideoSrcs: snapshot.initialVideoSrcs,
+    initialAudioSrcs: snapshot.initialAudioSrcs,
+    trackItemIds: snapshot.trackItemIds,
+    trackItemsMap: snapshot.trackItemsMap,
+    transitionIds: snapshot.transitionIds,
+    transitionsMap: snapshot.transitionsMap,
+    tracks: snapshot.tracks,
+    duration: snapshot.duration,
+    fps: snapshot.fps,
+    size: snapshot.size,
+  });
+
+const snapshotFromTimelineState = (s: ReturnType<typeof useStore.getState>): SnapshotPayload => ({
+  initialVideoSrcs: s.initialVideoSrcs,
+  initialAudioSrcs: s.initialAudioSrcs,
+  trackItemIds: s.trackItemIds,
+  trackItemsMap: s.trackItemsMap,
+  transitionIds: s.transitionIds,
+  transitionsMap: s.transitionsMap,
+  tracks: s.tracks,
+  duration: s.duration,
+  fps: s.fps,
+  size: s.size,
+});
 
 // Dispatch an ADD_VIDEO that appends to the first existing video track (or
 // creates one when the timeline is empty). Used by the manual-upload button
@@ -254,7 +282,10 @@ const TimelineEditor: React.FC<Props> = ({
     stateManager,
     setHistory,
     setLastSavedAt,
+    setTimelineVersion,
+    setTimelineSaveState,
     setProjectId,
+    setInitialSources,
     setHistoryHandlers,
   } = useStore();
   // Filled in by the main effect once a StateManager is mounted; called by
@@ -265,11 +296,19 @@ const TimelineEditor: React.FC<Props> = ({
   // as a dep here makes the seed effect re-run on bump.
   const resetToken = useStore((s) => s.resetToken);
 
-  // Mirror the prop into the store so deep children (Header) can read it.
+  // Mirror props into the store so deep children (Header) can save snapshots
+  // with the project id and the initial source set they were based on.
   useEffect(() => {
     setProjectId(projectId ?? null);
-    return () => setProjectId(null);
-  }, [projectId, setProjectId]);
+    setInitialSources(
+      (initialClips ?? []).map((clip) => clip.src),
+      (initialAudioClips ?? []).map((clip) => clip.src),
+    );
+    return () => {
+      setProjectId(null);
+      setInitialSources([], []);
+    };
+  }, [initialAudioClips, initialClips, projectId, setInitialSources, setProjectId]);
   const [sidePanel, setSidePanel] = useState<'effects' | null>(null);
   useTimelineEvents();
 
@@ -278,6 +317,7 @@ const TimelineEditor: React.FC<Props> = ({
   // subscribeToState wiring as user edits, and we don't want the first
   // post-seed fire to immediately rewrite the very snapshot we just loaded.
   const hasSeededRef = useRef(false);
+  const savedSignatureRef = useRef<string | null>(null);
 
   // Init the StateManager once.
   useEffect(() => {
@@ -310,6 +350,7 @@ const TimelineEditor: React.FC<Props> = ({
       activeIds: [],
       size: canvasSize,
     });
+    savedSignatureRef.current = null;
 
     // Session-only undo/redo. Whole-snapshot replay (vs. designcombo's
     // diff-based history) sidesteps the regrowth bug where a trim diff is
@@ -586,26 +627,50 @@ const TimelineEditor: React.FC<Props> = ({
         { kind: 'update', updateHistory: false },
       );
 
-      // Snapshot restore path: when a projectId is provided and a saved
-      // timeline exists in localStorage, hydrate from it and skip the
-      // initialClips seeding entirely. Reset flow calls clearSnapshot before
-      // bumping resetToken, so after a reset this returns null and we fall
-      // through to the fresh-clips path below.
+      // Restore path: local draft first, then shared server timeline, then
+      // generated project clips. Local stays git-like: edits in this browser
+      // do not overwrite the shared timeline until the artist presses Save.
       if (projectId) {
         const snap = loadSnapshot(projectId);
-        let restored: {
-          tracks: any[];
-          trackItemIds: string[];
-          trackItemsMap: Record<string, any>;
-          transitionIds: string[];
-          transitionsMap: Record<string, any>;
-          duration: number;
-          savedAt: number;
-        } | null = null;
-        if (snap && snap.trackItemIds.length > 0) {
-          restored = { ...snap };
+        const restoredLocalDraft = Boolean(snap && snap.trackItemIds.length > 0);
+        let serverVersion: number | null = null;
+        let serverUpdatedAt: number | null = null;
+        let serverSnapshot: (SnapshotPayload & { savedAt: number }) | null = null;
+        try {
+          const remote = await getProjectTimeline(projectId);
+          if (remote.timeline?.snapshot?.trackItemIds?.length) {
+            serverVersion = remote.timeline.version;
+            serverUpdatedAt = new Date(remote.timeline.updatedAt).getTime();
+            serverSnapshot = {
+              ...remote.timeline.snapshot,
+              savedAt: Number.isFinite(serverUpdatedAt) ? serverUpdatedAt : Date.now(),
+            };
+          }
+        } catch (err: any) {
+          setTimelineSaveState('error', err?.message || 'Timeline refresh failed; using local/generated timeline.');
         }
+
+        let restored: (SnapshotPayload & { savedAt: number }) | null = restoredLocalDraft
+          ? { ...snap! }
+          : serverSnapshot;
         if (restored) {
+          if ((initialAudioClips ?? []).length === 0) {
+            const audioIds = new Set(
+              Object.entries(restored.trackItemsMap)
+                .filter(([, item]: [string, any]) => item?.type === 'audio')
+                .map(([id]) => id),
+            );
+            if (audioIds.size > 0) {
+              const trackItemsMap = Object.fromEntries(
+                Object.entries(restored.trackItemsMap).filter(([id]) => !audioIds.has(id)),
+              ) as Record<string, any>;
+              const trackItemIds = restored.trackItemIds.filter((id) => !audioIds.has(id));
+              const tracks = restored.tracks
+                .map((track: any) => ({ ...track, items: (track.items || []).filter((id: string) => !audioIds.has(id)) }))
+                .filter((track: any) => track.items.length > 0 || track.type !== 'audio');
+              restored = { ...restored, trackItemsMap, trackItemIds, tracks };
+            }
+          }
           restored = reconcileSnapshotWithInitialClips(restored, initialClips ?? []);
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
@@ -623,8 +688,32 @@ const TimelineEditor: React.FC<Props> = ({
           );
           setState({ size: canvasSize });
           setLastSavedAt(restored.savedAt);
+          setTimelineVersion(restoredLocalDraft ? null : serverVersion);
+          if (restoredLocalDraft && serverVersion && serverUpdatedAt && serverUpdatedAt > restored.savedAt) {
+            setTimelineSaveState(
+              'remote',
+              'Local draft restored from this browser. A newer saved timeline also exists; use Load latest only if you want to replace this local draft.',
+            );
+          } else {
+            setTimelineSaveState(
+              restoredLocalDraft ? 'local' : 'saved',
+              restoredLocalDraft ? 'Draft restored from this browser. Press Save to make it shared.' : null,
+            );
+          }
           seededKeyRef.current = key;
           hasSeededRef.current = true;
+          savedSignatureRef.current = timelineSignature({
+            initialVideoSrcs: restored.initialVideoSrcs || [],
+            initialAudioSrcs: restored.initialAudioSrcs || [],
+            trackItemIds: restored.trackItemIds,
+            trackItemsMap: restored.trackItemsMap,
+            transitionIds: restored.transitionIds,
+            transitionsMap: restored.transitionsMap,
+            tracks: restored.tracks,
+            duration: restored.duration,
+            fps: restored.fps || 30,
+            size: restored.size || canvasSize,
+          });
           captureBaselineRef.current?.();
           if (restored.duration > 0) {
             requestAnimationFrame(() => {
@@ -642,6 +731,9 @@ const TimelineEditor: React.FC<Props> = ({
         }
         // No snapshot (or empty) — ensure stale "Saved X ago" pill clears.
         setLastSavedAt(null);
+        setTimelineVersion(null);
+        setTimelineSaveState('idle');
+        savedSignatureRef.current = null;
       }
 
       if (!initialClips?.length && !initialAudioClips?.length) {
@@ -745,6 +837,18 @@ const TimelineEditor: React.FC<Props> = ({
       setState({ size: canvasSize });
       seededKeyRef.current = key;
       hasSeededRef.current = true;
+      savedSignatureRef.current = timelineSignature({
+        initialVideoSrcs: (initialClips ?? []).map((clip) => clip.src),
+        initialAudioSrcs: (initialAudioClips ?? []).map((clip) => clip.src),
+        trackItemIds,
+        trackItemsMap,
+        transitionIds: [],
+        transitionsMap: {},
+        tracks,
+        duration: totalDuration,
+        fps: 30,
+        size: canvasSize,
+      });
       captureBaselineRef.current?.();
 
       // Fit-to-screen after the timeline canvas has rendered. getFitZoomLevel
@@ -767,15 +871,46 @@ const TimelineEditor: React.FC<Props> = ({
     return () => {
       cancelled = true;
     };
-  }, [stateManager, initialClips, initialAudioClips, projectId, resetToken, canvasSize.width, canvasSize.height, setLastSavedAt, setState]);
+  }, [
+    stateManager,
+    initialClips,
+    initialAudioClips,
+    projectId,
+    resetToken,
+    canvasSize,
+    canvasSize.width,
+    canvasSize.height,
+    setLastSavedAt,
+    setState,
+    setTimelineSaveState,
+    setTimelineVersion,
+  ]);
 
-  // Auto-save: debounced writer that mirrors the render-authoritative subset
-  // of the store into localStorage whenever the user edits the timeline.
+  // Local draft autosave only. Network persistence is explicit: Save,
+  // Restore, or Reset. This keeps the editor git-like: each browser can work
+  // locally; pressing Save promotes that browser's timeline to canonical.
   // Gated by hasSeededRef so the seed effect's own commits don't immediately
   // overwrite the snapshot we may have just loaded.
   useEffect(() => {
     if (!projectId || !stateManager) return;
     let timer: number | null = null;
+    const flushLocalSnapshot = () => {
+      const s = useStore.getState();
+      if (s.trackItemIds.length === 0) return;
+      const snapshot = snapshotFromTimelineState(s);
+      const signature = timelineSignature(snapshot);
+      if (signature === savedSignatureRef.current) return;
+      const savedAt = saveSnapshot(projectId, snapshot);
+      savedSignatureRef.current = signature;
+      if (savedAt != null) {
+        s.setLastSavedAt(savedAt);
+        if (s.timelineSaveState !== 'remote') {
+          s.setTimelineSaveState('local', 'Draft saved locally on this browser. Press Save to make it shared.');
+        }
+      }
+    };
+    window.addEventListener('pagehide', flushLocalSnapshot);
+    window.addEventListener('beforeunload', flushLocalSnapshot);
     const unsub = useStore.subscribe((state, prev) => {
       if (!hasSeededRef.current) return;
       // Only save when the render-authoritative subset actually changed.
@@ -791,23 +926,14 @@ const TimelineEditor: React.FC<Props> = ({
         return;
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        const s = useStore.getState();
-        if (s.trackItemIds.length === 0) return;
-        const savedAt = saveSnapshot(projectId, {
-          trackItemIds: s.trackItemIds,
-          trackItemsMap: s.trackItemsMap,
-          transitionIds: s.transitionIds,
-          transitionsMap: s.transitionsMap,
-          tracks: s.tracks,
-          duration: s.duration,
-          fps: s.fps,
-          size: s.size,
-        });
-        if (savedAt != null) s.setLastSavedAt(savedAt);
-      }, 500);
+        flushLocalSnapshot();
+      }, 150);
     });
     return () => {
       if (timer !== null) window.clearTimeout(timer);
+      flushLocalSnapshot();
+      window.removeEventListener('pagehide', flushLocalSnapshot);
+      window.removeEventListener('beforeunload', flushLocalSnapshot);
       unsub();
     };
   }, [projectId, stateManager]);

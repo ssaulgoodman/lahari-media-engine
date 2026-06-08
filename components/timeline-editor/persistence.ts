@@ -8,6 +8,8 @@ import type { ITrack, ITrackItem, ITransition } from '@designcombo/types';
 export interface TimelineSnapshot {
   version: number;
   savedAt: number;
+  initialVideoSrcs?: string[];
+  initialAudioSrcs?: string[];
   trackItemIds: string[];
   trackItemsMap: Record<string, ITrackItem>;
   transitionIds: string[];
