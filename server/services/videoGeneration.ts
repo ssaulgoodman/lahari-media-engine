@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn } from '../database.js';
+import { getSB, selectOne, selectAll, insertRow, updateRows, findShot, incrementColumn, T } from '../database.js';
 import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { generateVideoWithFallback, resolveVideoModelSpec, type VideoModelKey } from './video-provider.js';
 import { extractAudioSegment, extractLastFrame } from './ffmpeg.js';
@@ -18,6 +18,22 @@ const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
   if (typeof value === 'object') return value as T;
   try { return JSON.parse(value) as T; } catch { return fallback; }
+};
+
+const updateShotIfStatus = async (
+  shotId: string,
+  statusColumn: 'image_status' | 'video_status' | 'end_image_status',
+  expectedStatus: string,
+  updates: Record<string, any>,
+): Promise<boolean> => {
+  const { data, error } = await getSB()
+    .from(T.shots)
+    .update(updates)
+    .eq('id', shotId)
+    .eq(statusColumn, expectedStatus)
+    .select('id');
+  if (error) throw new Error(`DB update shots: ${error.message}`);
+  return (data?.length || 0) > 0;
 };
 
 const formatTimecode = (seconds: number): string => {
@@ -519,7 +535,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
 
     const shotNow = await selectOne('shots', { id: shot.id });
     const completedAfterLocalCancel = shotNow?.video_status !== 'loading';
-    const videoMetadata = JSON.stringify({
+    const initialVideoMetadata = {
       extracted_last_frame_asset_id: extractedAssetId,
       reference_audio_asset_id: referenceAudioAssetId,
       reference_audio_mode: referenceAudioMode,
@@ -527,8 +543,8 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       native_audio_generated: nativeVideoAudio,
       completed_after_local_cancel: completedAfterLocalCancel,
       local_cancel_status: completedAfterLocalCancel ? (shotNow?.video_status || null) : null,
-    });
-    await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
+    };
+    await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: JSON.stringify(initialVideoMetadata) });
     await updateGenerationAttempt(generationAttemptId, {
       outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
       durationMs: Date.now() - t0,
@@ -538,14 +554,48 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       } : {}),
     });
 
+    let savedAfterLocalCancel = completedAfterLocalCancel;
     if (!completedAfterLocalCancel) {
       const clearVideoError = shotNow?.image_status !== 'error' && shotNow?.end_image_status !== 'error';
-      await updateRows('shots', { id: shot.id }, {
+      const activated = await updateShotIfStatus(shot.id, 'video_status', 'loading', {
         video_asset_id: assetId,
         video_status: 'success',
         ...(clearVideoError ? { last_error: null } : {}),
         extracted_last_frame_asset_id: extractedAssetId,
       });
+      if (!activated) {
+        savedAfterLocalCancel = true;
+        const latestShot = await selectOne('shots', { id: shot.id });
+        await updateRows('assets', { id: assetId }, {
+          metadata: JSON.stringify({
+            ...initialVideoMetadata,
+            completed_after_local_cancel: true,
+            local_cancel_status: latestShot?.video_status || null,
+            local_cancel_race: true,
+          }),
+        });
+        await updateGenerationAttempt(generationAttemptId, {
+          chargeStatus: 'provider_completed_after_local_cancel',
+          providerRequestStatus: 'completed_after_local_cancel',
+        });
+        await recordDirectorEvent({
+          projectId: project.id,
+          source: 'system',
+          eventType: 'shot_video_completed_after_cancel',
+          entityType: 'asset',
+          entityId: assetId,
+          summary: 'A locally-cancelled video generation completed later and was saved as a recoverable version.',
+          payload: {
+            shotId: shot.id,
+            assetId,
+            extractedLastFrameAssetId: extractedAssetId,
+            previousStatus: latestShot?.video_status || null,
+            provider: result.provider,
+            model: modelId,
+            cancelRace: true,
+          },
+        });
+      }
     } else {
       await recordDirectorEvent({
         projectId: project.id,
@@ -565,7 +615,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       });
     }
 
-    if (!completedAfterLocalCancel && !useStoryboardMode && extractedFramePath) {
+    if (!savedAfterLocalCancel && !useStoryboardMode && extractedFramePath) {
       try {
         const nextShot = await findShot(shot.scene_id, shot.sort_order + 1, { continuity_from: 'prev_shot', locked: 0 });
         if (nextShot && nextShot.visual_prompt) {
@@ -629,7 +679,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
           ]
           : [],
       contextChain: await buildContextChain(project.id),
-      responseSummary: completedAfterLocalCancel
+      responseSummary: savedAfterLocalCancel
         ? `Video generated via ${result.provider} (${modelId}) after local cancel: ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}. Saved as recoverable version, not active shot video.`
         : `Video generated via ${result.provider} (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
       outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
@@ -651,7 +701,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       durationSec: result.durationSec,
       costEstimate,
       mode: useStoryboardMode ? 'storyboard' : 'keyframe',
-      completedAfterLocalCancel,
+      completedAfterLocalCancel: savedAfterLocalCancel,
     };
   } catch (err: any) {
     console.error(`[shot ${shot.id}] Video gen failed:`, err);

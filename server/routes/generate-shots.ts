@@ -31,6 +31,22 @@ const parseJson = <T>(value: any, fallback: T): T => {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
 
+const updateShotIfStatus = async (
+  shotId: string,
+  statusColumn: 'image_status' | 'video_status' | 'end_image_status',
+  expectedStatus: string,
+  updates: Record<string, any>,
+): Promise<boolean> => {
+  const { data, error } = await getSB()
+    .from(T.shots)
+    .update(updates)
+    .eq('id', shotId)
+    .eq(statusColumn, expectedStatus)
+    .select('id');
+  if (error) throw new Error(`DB update shots: ${error.message}`);
+  return (data?.length || 0) > 0;
+};
+
 export const mountShotRoutes = (router: Router) => {
 
 router.post('/:id/shots/:shotId/refine-prompt', upload.single('referenceImage'), async (req, res) => {
@@ -284,16 +300,38 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       }) : null,
     });
 
+    let savedAfterLocalCancel = completedAfterLocalCancel;
     if (!completedAfterLocalCancel) {
       // Only clear last_error if no other operation is in error state
       const clearError = shot.end_image_status !== 'error' && shot.video_status !== 'error';
-      await updateRows('shots', { id: shot.id }, {
+      const activated = await updateShotIfStatus(shot.id, 'image_status', 'loading', {
         image_asset_id: assetId,
         image_status: 'success',
         ...(clearError ? { last_error: null } : {}),
         user_feedback: null,
         prompts_stale: false,
       });
+      if (!activated) {
+        savedAfterLocalCancel = true;
+        const latestShot = await selectOne('shots', { id: shot.id });
+        await updateRows('assets', { id: assetId }, {
+          metadata: JSON.stringify({
+            completed_after_local_cancel: true,
+            local_cancel_status: latestShot?.image_status || null,
+            local_cancel_race: true,
+          }),
+        });
+        await recordDirectorEvent({
+          projectId: project.id,
+          userId: req.userId,
+          source: 'system',
+          eventType: 'shot_image_completed_after_cancel',
+          entityType: 'asset',
+          entityId: assetId,
+          summary: 'A locally-cancelled frame generation completed later and was saved as a recoverable version.',
+          payload: { shotId: shot.id, assetId, previousStatus: latestShot?.image_status || null, cancelRace: true },
+        });
+      }
     } else {
       await recordDirectorEvent({
         projectId: project.id,
@@ -319,7 +357,7 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
         ...(prevShotEndFramePath ? [{ type: 'image' as const, label: 'Prev end frame', url: storageUrl(prevShotEndFramePath) }] : []),
       ],
       contextChain: await buildContextChain(project.id),
-      responseSummary: completedAfterLocalCancel
+      responseSummary: savedAfterLocalCancel
         ? 'Generated start frame after local cancel; saved as recoverable version, not active frame'
         : 'Generated start frame for shot',
       outputAssetIds: [assetId],
