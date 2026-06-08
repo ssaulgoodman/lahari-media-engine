@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { countRows, deleteRows, insertRow, updateRows } from '../../../database.js';
+import { countRows, deleteRows, insertRow, selectAll, updateRows } from '../../../database.js';
 import { recordDirectorEvent } from '../../directorEvents.js';
 import {
   scriptContentHash,
@@ -77,6 +77,37 @@ const shotDeletionRisks = async (shot: ProjectShot): Promise<string[]> => {
   if (assetRows > 0) risks.push(`asset_rows:${assetRows}`);
   if (storyboardRows > 0) risks.push(`storyboard_versions:${storyboardRows}`);
   return risks;
+};
+
+const parseAssetMetadata = (metadata: unknown): Record<string, any> => {
+  if (!metadata) return {};
+  if (typeof metadata === 'object' && !Array.isArray(metadata)) return metadata as Record<string, any>;
+  if (typeof metadata === 'string') {
+    try {
+      const parsed = JSON.parse(metadata);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
+const detachShotAssetsForDeletedShot = async (shotId: string, label: string): Promise<string[]> => {
+  const assets = await selectAll('assets', { shot_id: shotId });
+  const detachedAt = new Date().toISOString();
+  await Promise.all(assets.map((asset: any) => updateRows('assets', { id: asset.id }, {
+    shot_id: null,
+    metadata: JSON.stringify({
+      ...parseAssetMetadata(asset.metadata),
+      detachedFromDeletedShot: true,
+      detachedShotId: shotId,
+      detachedShotLabel: label,
+      detachedByAction: 'delete_shot',
+      detachedAt,
+    }),
+  })));
+  return assets.map((asset: any) => asset.id);
 };
 
 const validateShotDuration = (project: Project, durationSec: number, shotId?: string) => {
@@ -314,7 +345,7 @@ export const deleteShot = async (project: Project, input: DeleteShotInput) => {
 
   const risks = await shotDeletionRisks(target.shot);
   if (risks.length && !input.force) {
-    return applyError('downstream_visual_work', 'Shot has downstream work. Pass force:true only after the artist approves deleting this shot and its generated rows.', {
+    return applyError('downstream_visual_work', 'Shot has downstream work. Pass force:true only after the artist approves deleting this shot. Paid asset rows will be detached for recovery instead of hard-deleted.', {
       shotId: input.shotId,
       next: `Deletion risks: ${risks.join(', ')}.`,
     });
@@ -336,8 +367,8 @@ export const deleteShot = async (project: Project, input: DeleteShotInput) => {
     });
   }
 
+  const preservedAssetIds = await detachShotAssetsForDeletedShot(input.shotId, shotApplyLabel(target));
   await deleteRows('storyboard_versions', { shot_id: input.shotId });
-  await deleteRows('assets', { shot_id: input.shotId });
   await deleteRows('shots', { id: input.shotId });
 
   const orderedScene = await applySceneOrderAndContinuityFlags({ ...scene, shots: nextShots });
@@ -361,11 +392,12 @@ export const deleteShot = async (project: Project, input: DeleteShotInput) => {
       risks,
       note: input.note || null,
       continuityStaleShotIds,
+      preservedAssetIds,
       removedLocalPaths,
       newFingerprint,
     },
   });
-  appendApplyJournal(project, 'deleted shot', `${shotApplyLabel(target)}\nShot ID: ${input.shotId}\nScene ID: ${scene.id}\nForce: ${!!input.force}\nDeleted downstream rows: ${risks.join(', ') || 'none'}\nStale neighbors: ${continuityStaleShotIds.join(', ') || 'none'}\nNew fingerprint: ${newFingerprint}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+  appendApplyJournal(project, 'deleted shot', `${shotApplyLabel(target)}\nShot ID: ${input.shotId}\nScene ID: ${scene.id}\nForce: ${!!input.force}\nDownstream risks: ${risks.join(', ') || 'none'}\nPreserved asset rows: ${preservedAssetIds.join(', ') || 'none'}\nStale neighbors: ${continuityStaleShotIds.join(', ') || 'none'}\nNew fingerprint: ${newFingerprint}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   return {
     kind: 'mirage.apply.delete_shot',
@@ -374,13 +406,14 @@ export const deleteShot = async (project: Project, input: DeleteShotInput) => {
     shotId: input.shotId,
     forced: !!input.force,
     deletionRisks: risks,
+    preservedAssetIds,
     newFingerprint,
     continuityStaleShotIds,
     removedLocalPaths,
     changedArtifacts: affectedSceneArtifacts(notebookProject, orderedScene),
     webUrl: webStudioUrl(project.id, { step: 'studio' }),
     note: risks.length
-      ? 'Deleted one shot and its generated rows after force approval. Refresh/sync the local notebook so removed shot files are pruned.'
+      ? 'Deleted one shot after force approval. Paid asset rows were detached with recovery metadata; shot-bound storyboard version rows were removed. Refresh/sync the local notebook so removed shot files are pruned.'
       : 'Deleted one shot without replacing topology. Existing work on other shots was preserved.',
   };
 };

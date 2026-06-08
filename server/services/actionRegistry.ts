@@ -428,7 +428,7 @@ export const SCRIPT_ACTION_SPECS = {
     surface: 'script',
     mutates: true,
     paid: false,
-    description: 'Remove one shot from an existing scene without rebuilding the whole script. Refuses by default when the shot has frames, boards, videos, audio, locks, or asset rows; pass force only after explicit approval.',
+    description: 'Remove one shot from an existing scene without rebuilding the whole script. Refuses by default when the shot has frames, boards, videos, audio, locks, or asset rows; pass force only after explicit approval. Forced deletes detach paid asset rows with recovery metadata instead of hard-deleting them.',
     input: {
       projectId: 'string',
       shotId: 'existing shot ID',

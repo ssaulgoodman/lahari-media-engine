@@ -1,0 +1,180 @@
+# Mirage Convergence Ledger
+
+**Date opened:** 2026-06-08
+**Status:** planning — forks open
+**Horizon:** post-v1. The v1 ledger (`mirage-platform-v1-ledger.md`) is finishing the
+hosted studio; this ledger is the next horizon and depends on nothing in v1 being undone.
+
+## North Star
+
+**Collapse the two codebases into one. Lahari stops being a separate repo and becomes a
+*tenant* inside Mirage.** Mirage stays the general agent-native video studio; everything
+lahari-specific (the queue, `songs`, its skills, its model defaults) lives *inside* a
+workspace, gated by membership. The dual-repo split was the right phase — it let Mirage find
+its general shape without lahari's gravity. Re-converging through tenancy is the mature move
+now that the shape is found.
+
+**Why it's the prize, not just cleanup:** one binary, no dual maintenance — and every Mirage
+improvement (charge-safety guards, agent-native render, MCP surface, the sidebar) flows to
+lahari artists for free. The split's whole tax (porting fixes back and forth, this very audit)
+disappears.
+
+**This is general multi-tenancy with lahari as customer zero.** Don't build "a lahari
+workspace" as a special case — build the workspace/preset-pack primitive (already sketched in
+`mirage-beta-workspace-preset-packs.md`) and make lahari the first tenant. A "preset pack" is
+the generalized form of "the lahari workflow": default structure + taste + inputs + skills +
+recipes + model choices + render defaults.
+
+## Related docs
+
+- `mirage-beta-workspace-preset-packs.md` — product shape (account / workspace / preset pack
+  / project). This ledger is its execution plan.
+- `lahari-divergence-audit.md` — the port-candidate backlog (render fixes, extra-shot, memory).
+  Tracks below pull from it.
+- `mirage-platform-v1-ledger.md` — predecessor; same format. v1 must land first.
+
+## Current landed work
+
+The divergence audit has already produced two concrete Mirage slices. Treat these as closed
+when reading the tracks below:
+
+- Duplicate paid-generation prevention landed across artist-triggered paid surfaces
+  (`3cbcc25`, `1963f9f`). This closes the "double click / double agent fire / double charge"
+  prevention gap the audit surfaced.
+- Non-destructive single-shot topology landed as registry actions (`3551cc4`): `add_shot` and
+  `delete_shot` let agents insert/remove one shot without rebuilding the whole script graph.
+
+## Locked decisions
+
+_(Things we've effectively agreed. Promote forks here as they're called.)_
+
+- **L1 — Lahari converges *in*, not maintained *out*.** No more porting fixes between two
+  repos; lahari becomes a tenant. (The reason this whole ledger exists.)
+- **L2 — Tenancy is the generalization, not a lahari hack.** Workspace + preset-pack is a
+  general primitive; lahari is tenant #1, validating the primitives any future studio reuses.
+
+## Non-goals / guardrails
+
+- Do not rebuild Lahari as a special global runtime inside Mirage. If a feature is useful, make
+  it a workspace/preset capability; if it is Lahari-only, gate it to the Lahari workspace.
+- Do not reintroduce Lahari, Bhakti, devotional, queue, or song assumptions into generic Mirage
+  prompts, skills, actions, or UI copy.
+- Do not migrate live Lahari data until there is a rehearsal plan with ownership mapping,
+  storage mapping, billing/spend handling, deep-link behavior, rollback, and a dry run.
+- Do not assume workspace-scoped installed skills exist yet. Until the plugin/runtime supports
+  dynamic skill distribution cleanly, preset packs mean server-owned recipes, defaults, assets,
+  style notes, prompt overrides, and operator guidance.
+
+## Open forks (need Saul's call before deep planning)
+
+- **F1 — Tenancy key + schema unification.** Target architecture: one codebase wants one data
+  model keyed by `workspace_id`, not two `DB_TABLE_PREFIX` schemas (`studio_*` vs `lahari_*`)
+  behind one binary. This is not a "yes, implement directly on live data" switch. The first
+  deliverable is a migration design/prototype: auth ownership, storage paths, queue/songs,
+  billing/spend, project IDs, deep links, rollback, dry run, and cutover.
+  *Recommendation: yes to the target; design the migration before moving live Lahari rows.*
+- **F2 — Server-canonical timeline.** Mirage's timeline lives in browser localStorage
+  (`components/timeline-editor/persistence.ts`), so an agent literally cannot see or edit it —
+  a hole in the agent-native story. Adopt the server-canonical timeline (storage + history +
+  realtime, from the audit's cluster B) so the agent can edit it, it survives devices, and
+  edits are recoverable? *Recommendation: yes. This is the line between "render fixes" and
+  "render gets powerful."*
+- **F3 — Gating model.** Capability-based (`workspace.features = ['lahari_queue', ...]`,
+  seed only lahari now) vs. identity-based (membership in the lahari workspace unlocks lahari
+  features). *Recommendation: capability-based — same effort now, future-proof.*
+- **F4 — Membership / invite flow.** Admin-add vs invite-by-email vs join-code.
+  *Recommendation for beta: invite-by-email / admin-add.*
+- **F5 — Deploy / domain cutover.** Lahari has live artists on its own Railway + URL. Merging
+  means one deploy and a cutover for real users mid-work — the one genuinely ops-risky,
+  irreversible piece. Needs its own migration + cutover plan (track C5).
+
+## Tracks (the phased sequence)
+
+Ordering reflects hard dependencies: sidebar sets the tenancy IA; the workspace model is the
+foundation the queue port needs; the timeline decision (F2) gates render power.
+
+### C0 — Reliability render ports `[ready now, no forks]`
+Small, safe, ships value immediately. The audit's duplicate-generation guard and single-shot
+topology items have already landed; remaining C0 work starts with render/media hardening from
+`lahari-divergence-audit.md` cluster B:
+- `2d6067d` render cancellation **+ the latent bug it carries** (`render.ts:312` does an
+  unconditional `updateRows` that can clobber a row that already moved on — port the
+  conditional `.eq('status','rendering')` guard even if the Cancel UI waits).
+- `a75ab45` ffmpeg benign-layout eligibility (adapt as a "non-default layout" check, not
+  lahari's wholesale delete, so real transforms still force Remotion).
+- `a3151bb`/`881cda9` media-library hide/upload endpoints (part of the render-polish story).
+
+### C1 — World-standard sidebar `[ready now]`
+Replace the toggle-drawer `ProjectSidebar.tsx` with a persistent left rail. IA that survives
+workspaces: **workspace switcher (slot reserved) › current project + switcher (now) › phase
+nav (Blueprint/Studio/Render) › account/settings/profile/BYOK at bottom.** Build
+workspace-aware from day one so the shell isn't rebuilt twice. `usePersistedProject` already
+maps phases to URL params — presentation change, not a routing rewrite.
+
+### C2 — Workspace tenancy model `[needs F1, F3, F4]`
+The foundation. `workspaces`, `workspace_members(user_id, workspace_id, role)`, `workspace_id`
+on projects (and queue/songs when ported). Everyone gets a personal default workspace →
+workspace is always the top tier. Capability-based feature gating (F3). Roles: owner / admin /
+member. Schema unification lives here, but the first implementation slice should be the
+workspace model plus a migration rehearsal plan/prototype — not a live Lahari move.
+
+### C3 — Server-canonical timeline (agent-native render power) `[needs F2]`
+Give the timeline a server home: storage + recoverable history + realtime (audit cluster B:
+`d394179`, `ec6e879`, `41d09ad`/`75b1d1b`). Reframed as "agent can edit the timeline + cross-
+device + undo," not "port lahari." Keep mirage's better shotId-keyed
+`reconcileSnapshotWithInitialClips`; change *where* the snapshot persists, not the reconcile
+logic. Can float earlier if agent-native render is prioritized.
+
+### C4 — Lahari preset pack `[needs C2]`
+Port the lahari workflow in as a gated preset pack: the queue (`music_video_queue` + `songs` +
+`Dashboard.tsx`) as a workspace-scoped feature; proven prompt recipes on the **existing**
+workflow-recipes rails (`server/resources/workflows/*`, `list_workflows`/
+`apply_project_workflow` — built earlier; see `mirage-workflow-recipes.md`); Lahari reference
+assets, style notes, prompt overrides, model/provider opinions, and render defaults as
+workspace/preset defaults, not global defaults. A Lahari skill pack can become real later if
+plugin/runtime support workspace-scoped skill distribution cleanly; do not make that a v1
+assumption. "Seamlessly" = behavior-parity with what artists ship on today.
+
+**Skill scoping note:** there are two delivery channels today. The plugin is global, so it
+should stay core-only; anything shipped there leaks to every artist. The materialized notebook
+is server-driven per project, so after C2 gives the server a workspace/features map, it can
+materialize `core + workspace packs` from `server/resources/skills/`. Until then, Lahari
+knowledge should live in recipes, prompt overrides, style notes, reference assets, and
+workspace defaults — not in globally installed skills.
+
+### C5 — Deploy / domain cutover `[needs C2, C4; gated by F5]`
+One deploy, migrate lahari auth/projects, cut over the domain for live artists. The
+irreversible, people-touching piece — its own plan, done last and carefully.
+
+### C6 — Render UX polish pass `[after C1, C3]`
+The editor is feature-rich already (~3,400 lines across Timeline/Ruler/Playhead/Effects/
+Transitions); "patchy, no polish" is chrome/interaction consistency, much of which the sidebar
+(C1) fixes for free. *Open input needed: is the patchiness in editor interactions, the
+StepRender flow, or visual design?* Scope this once C1/C3 land.
+
+## Dependency sketch
+
+```
+C0  (independent, ship now)
+C1  (independent, ship now) ──┐
+F1,F3,F4 ─► C2 ───────────────┼─► C4 ─► C5 (cutover)
+F2 ─► C3 ─────────────────────┘
+C1 + C3 ─► C6 (polish)
+```
+
+## Checkpoints
+
+_(Append as tracks execute. Format: date · track · commit · note.)_
+
+- 2026-06-08 · ledger opened · — · captured from strategy discussion; forks F1–F5 open.
+- 2026-06-08 · reliability guard · `3cbcc25` / `1963f9f` · duplicate paid-generation
+  prevention landed in Mirage.
+- 2026-06-08 · shot topology · `3551cc4` · `add_shot` / `delete_shot` landed as registry-only
+  script actions.
+
+## References
+
+- Audit + port backlog: `lahari-divergence-audit.md`
+- Product shape: `mirage-beta-workspace-preset-packs.md`
+- Recipe rails for C4: `mirage-workflow-recipes.md`
+- v1 predecessor: `mirage-platform-v1-ledger.md`
