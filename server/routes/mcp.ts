@@ -82,7 +82,7 @@ const HOSTED_MCP_INSTRUCTIONS = `You are operating Mirage as the director. Mirag
 
 Use Mirage tools to read project state and save changes. Write creative text yourself, then persist it through typed actions. Translate artist intent into exact edits: a prompt change, context override, style note, image edit instruction, lock, import, or generation request. Ask before paid generation, locks/unlocks, prompt overrides, topology rebuilds, or anything that stales approved work.
 
-To continue work, call list_projects if needed, then open_project. To reuse prior style, characters, references, or successful formats, call query_artist_memory or search_artist_assets. To start fresh, call create_project, then open_project. For uploaded audio, create the project shell, upload with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analysis.
+To continue work, call list_projects if needed, then open_project. To reuse prior style, characters, references, or successful formats, call query_artist_memory or search_artist_assets. To reuse saved recurring identities, call list_personas, then create_project_from_persona with the artist's topic. To start fresh, call create_project, then open_project. For uploaded audio, create the project shell, upload with purpose=audio_source, then ask whether the audio is soundtrack-only or source material before running analysis.
 
 Use run_action for free changes such as text edits, plans, locks, imports, and config updates. Use start_job for paid media generation such as images, storyboards, videos, and TTS; it returns a jobId. Use describe_action when you need one live input schema. Upload local images/audio with /api/agent/uploads, then pass the returned assetId into actions. Do not send bytes through MCP.
 
@@ -1496,6 +1496,66 @@ const createHostedMcpServer = (auth: HostedAuth) => {
   }, async ({ resultType, projectId, entityType, entityId }) => {
     if (resultType !== 'candidates') throw new Error(`Unsupported resultType: ${resultType}`);
     return runRegistryAction('list_candidates', { projectId, entityType, entityId });
+  });
+
+  registerTool('list_personas', {
+    title: 'List Mirage personas',
+    description: 'Read-only cockpit tool. Lists the authenticated artist\'s saved reusable personas — recurring hosts/characters with reference assets, voice IDs, tone notes, and default workflow pointer.',
+    inputSchema: {
+      query: z.string().min(1).max(120).optional(),
+      workflowName: z.string().min(1).max(80).optional().describe('Optional workflow recipe filter, e.g. yapper.'),
+      limit: z.number().int().min(1).max(60).optional(),
+    },
+  }, async ({ query, workflowName, limit }) => studio.listPersonasForDirector(auth.userId, { query, workflowName, limit }));
+
+  registerTool('save_persona', {
+    title: 'Save Mirage persona',
+    description: 'Mutating cockpit tool. Saves or updates one reusable artist persona. Use after the artist has uploaded/selected reusable character/style assets and provided voice/tone notes.',
+    inputSchema: {
+      personaId: idString.optional().describe('Existing persona id to update. Omit to create or upsert by slug.'),
+      name: z.string().min(1).max(160),
+      slug: z.string().min(1).max(120).optional(),
+      description: z.string().max(4000).optional(),
+      workflowName: z.string().min(1).max(80).optional().describe('Default workflow recipe pointer, e.g. yapper.'),
+      projectWorkflowKey: workflowKeySchema.optional().describe('Project workflow key for new projects. Defaults to scripted_narrative.'),
+      presetKey: presetKeySchema.optional().describe('Project preset key for new projects. Defaults to anime_default.'),
+      characterReferenceAssetId: idString.optional().describe('Existing image asset owned by this artist to copy as the persona character reference.'),
+      styleAssetId: idString.optional().describe('Existing image asset owned by this artist to copy as the project style reference.'),
+      voiceProvider: z.string().min(1).max(80).optional(),
+      voiceId: z.string().min(1).max(240).optional(),
+      voiceName: z.string().max(240).optional(),
+      toneNotes: z.string().max(12000).optional(),
+      topicLane: z.string().max(4000).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
+    },
+  }, async (input) => studio.savePersonaForDirector(auth.userId, input));
+
+  registerTool('create_project_from_persona', {
+    title: 'Create Mirage project from persona',
+    description: 'Creates a new project shell from a saved reusable persona and topic. Copies persona refs into the new project, assigns voice/style, applies the persona workflow recipe, and returns the fresh project.',
+    inputSchema: {
+      personaId: idString.optional(),
+      personaName: z.string().min(1).max(160).optional(),
+      topic: z.string().min(1).max(2000),
+      title: z.string().min(1).max(160).optional(),
+      directorBrief: z.string().max(8000).optional(),
+      targetRuntime: z.number().positive().max(7200).optional(),
+      targetShotDuration: z.number().positive().max(60).optional(),
+    },
+  }, async (input) => {
+    const created = await studio.createProjectFromPersonaForDirector(auth.userId, input);
+    let project = await fullProjectForUser(created.projectId, auth.userId);
+    let workflowApplied: unknown = null;
+    if (created.workflowName) {
+      workflowApplied = await studio.applyProjectWorkflowConfig(project, created.workflowName);
+      project = await fullProjectForUser(created.projectId, auth.userId);
+    }
+    return {
+      ...created,
+      workflowApplied,
+      project,
+      next: 'Project is seeded from persona and workflow. Write/apply the script from projectBrief/sourcePayload, then continue with audio/video generation.',
+    };
   });
 
   registerTool('create_project', {

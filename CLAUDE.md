@@ -106,6 +106,7 @@ The current architecture is registry + composer, not a pile of fat prompt templa
 - `components/PromptsLibrary.tsx` is the Tool Recipes UI. It should show artist-readable tool behavior first; raw prompt/template references are secondary/debug.
 - Avoid injecting workflow/preset enum labels into LLM prompt bodies. Logs may carry keys; prompts should receive human production language.
 - Named workflow recipes live under `server/resources/workflows/*`. `list_workflows` / `apply_project_workflow` apply those recipes to a project; prompt overrides remain the under-the-hood save slot, not the workflow library.
+- Saved personas are reusable identity seeds, not workflow recipes. `list_personas` / `save_persona` / `create_project_from_persona` own the WHO (character ref, style ref, voice, tone notes); the workflow recipe still owns the HOW.
 
 ## Seedance Storyboard Mode
 

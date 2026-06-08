@@ -37,6 +37,14 @@ export type ContentPart = { text: string } | { inlineData: { mimeType: string; d
 // because the artist's pick is the contract.
 const DEFAULT_IMAGE_MODELS = ['gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview'] as const;
 
+const alternateBatchModel = (model: string): string | null => {
+  if (model === DEFAULT_IMAGE_MODELS[0]) return DEFAULT_IMAGE_MODELS[1];
+  return null;
+};
+
+const emptyBatchError = (kind: 'character' | 'environment', name: string, model: string, attempts: number) =>
+  new Error(`No ${kind} look images were generated for ${name} with ${model} after ${attempts} parallel attempts.`);
+
 export const generateImageWithRefs = async (
   parts: ContentPart[],
   aspectRatio = '16:9',
@@ -277,10 +285,10 @@ export const generateCharacterLooks = async (
 
   parts.push({ text: prompt });
 
-  const singleCall = async (): Promise<string | null> => {
+  const singleCall = async (runModel: string): Promise<string | null> => {
     try {
       const response = await ai.models.generateContent({
-        model,
+        model: runModel,
         contents: [{ role: 'user', parts }],
         config: {
           responseModalities: ['IMAGE'],
@@ -296,9 +304,21 @@ export const generateCharacterLooks = async (
     }
   };
 
-  const results = await Promise.all(Array.from({ length: N }, () => singleCall()));
-  const paths = results.filter((p): p is string => p !== null);
+  const results = await Promise.all(Array.from({ length: N }, () => singleCall(model)));
+  let paths = results.filter((p): p is string => p !== null);
   console.log(`[imagen] Character looks (${model}): got ${paths.length}/${N} images via parallel calls`);
+  if (paths.length === 0) {
+    const fallback = alternateBatchModel(model);
+    if (fallback) {
+      console.warn(`[imagen] Character looks (${model}) returned 0/${N}; retrying once with ${fallback}`);
+      const retryResults = await Promise.all(Array.from({ length: N }, () => singleCall(fallback)));
+      paths = retryResults.filter((p): p is string => p !== null);
+      console.log(`[imagen] Character looks (${fallback}): got ${paths.length}/${N} images via fallback parallel calls`);
+      if (paths.length === 0) throw emptyBatchError('character', character.name, fallback, N);
+      return paths;
+    }
+    throw emptyBatchError('character', character.name, model, N);
+  }
   return paths;
 };
 
@@ -372,10 +392,10 @@ export const generateEnvironmentLooks = async (
 
   parts.push({ text: prompt });
 
-  const singleCall = async (): Promise<string | null> => {
+  const singleCall = async (runModel: string): Promise<string | null> => {
     try {
       const response = await ai.models.generateContent({
-        model,
+        model: runModel,
         contents: [{ role: 'user', parts }],
         config: {
           responseModalities: ['IMAGE'],
@@ -391,9 +411,21 @@ export const generateEnvironmentLooks = async (
     }
   };
 
-  const results = await Promise.all(Array.from({ length: N }, () => singleCall()));
-  const paths = results.filter((p): p is string => p !== null);
+  const results = await Promise.all(Array.from({ length: N }, () => singleCall(model)));
+  let paths = results.filter((p): p is string => p !== null);
   console.log(`[imagen] Environment looks (${model}): got ${paths.length}/${N} images via parallel calls`);
+  if (paths.length === 0) {
+    const fallback = alternateBatchModel(model);
+    if (fallback) {
+      console.warn(`[imagen] Environment looks (${model}) returned 0/${N}; retrying once with ${fallback}`);
+      const retryResults = await Promise.all(Array.from({ length: N }, () => singleCall(fallback)));
+      paths = retryResults.filter((p): p is string => p !== null);
+      console.log(`[imagen] Environment looks (${fallback}): got ${paths.length}/${N} images via fallback parallel calls`);
+      if (paths.length === 0) throw emptyBatchError('environment', environment.name, fallback, N);
+      return paths;
+    }
+    throw emptyBatchError('environment', environment.name, model, N);
+  }
   return paths;
 };
 

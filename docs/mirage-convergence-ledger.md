@@ -120,6 +120,49 @@ nav (Blueprint/Studio/Render) › account/settings/profile/BYOK at bottom.** Bui
 workspace-aware from day one so the shell isn't rebuilt twice. `usePersistedProject` already
 maps phases to URL params — presentation change, not a routing rewrite.
 
+### CP — Yapper Pack v1 (preset-pack pilot) `[ready now — no forks]`
+The smallest real preset-pack pilot, chosen to *earn* the workspace/queue foundation rather
+than guess it. Proves the persona/pack pattern with low blast radius before C2 exists.
+
+**Done when (acceptance):** in a fresh session with zero setup, the artist says *"make a Padma
+clip about <topic>"* → the agent loads the saved persona (character ref + voice + style + tone),
+applies the Yapper workflow, writes a topic-aware script in that persona's lane, and generates
+the clip — **no re-uploading the image, no re-entering the voice id, no re-picking the style.**
+Repeat across 5 sessions (any persona × any topic), each a one-liner → clip. The proof is the
+*absence of re-setup*, session over session.
+
+**The missing primitive is personas, not more overrides.** A persona is a reusable production
+identity: name, character reference asset, voice id, style ref(s), freetext tone/topic-lane
+notes, and a default workflow pointer. Build it as a **user-scoped `personas` table now** (same
+scoping as the artist-memory tools — this is their write-side counterpart); add `workspace_id`
+additively when C2 lands. This keeps the pilot unblocked from forks F1/F3/F4.
+
+**A persona is a project-seed from reusable assets — it rides existing rails.** "Create project
+from persona" = seed a `cast_member` with the persona's `reference_asset_id` (shared file path) +
+`voiceId`, set style, set preferences, set `workflow_key = yapper`. That's the proven fork
+deep-copy-row / share-file pattern; the pipeline downstream is unchanged. New surface is small: a
+`personas` CRUD + a `create_project_from_persona` action (MCP + web).
+
+**Layering — persona owns WHO, the workflow/pack owns HOW.** The Yapper recipe owns the shared
+production path (native dialogue → voice-change) on the existing workflow-recipe rails. The
+persona owns only what differs per identity (character ref, voice id, style ref, tone). A persona
+may *override* a recipe knob where one yapper truly diverges, but the recipe is not copied onto
+every persona. Override order: pack/recipe default → persona override → project.
+
+**The magic wiring:** the persona's tone notes auto-feed the script writer, so "<persona> clip
+about <topic>" → the writer receives `persona.toneNotes + topic` and writes in-lane with no
+re-explaining. Small wiring on top of the seed step — it's what makes v1 a win, not a shortcut.
+
+**Out of scope for v1:** no queue/board (select-persona + topic → one clip is enough; the generic
+queue comes *after* personas exist, when we know what a queue item must carry). No backstory or
+topic taxonomy — tone-lane is freetext.
+
+**Why it precedes C2/C4:** Yapper Pack v1 is the first concrete preset pack (workflow recipe +
+persona library + defaults). Validating it user-scoped means C2 later just re-homes personas
+under workspaces, and Lahari (C4) becomes a bigger adapter on the same primitive — not a
+from-scratch shape. The generic workspace queue is the next foundation after this, informed by
+what the Yapper queue-item actually needed to carry.
+
 ### C2 — Workspace tenancy model `[needs F1, F3, F4]`
 The foundation. `workspaces`, `workspace_members(user_id, workspace_id, role)`, `workspace_id`
 on projects (and queue/songs when ported). Everyone gets a personal default workspace →
@@ -167,10 +210,16 @@ StepRender flow, or visual design?* Scope this once C1/C3 land.
 ```
 C0  (independent, ship now)
 C1  (independent, ship now) ──┐
+CP  (Yapper Pack v1 — user-scoped, no forks) ──► teaches ──► C2 / generic queue / C4
 F1,F3,F4 ─► C2 ───────────────┼─► C4 ─► C5 (cutover)
 F2 ─► C3 ─────────────────────┘
 C1 + C3 ─► C6 (polish)
 ```
+
+Sequencing note: CP (Yapper Pack v1) is the recommended next build — it's the lowest-blast-radius
+way to prove the persona/preset-pack pattern, and it's unblocked (user-scoped, no forks). The
+generic workspace queue follows CP, then C2 re-homes personas under workspaces, then C4 ports
+Lahari as a bigger adapter on the same primitive.
 
 ## Checkpoints
 
@@ -197,6 +246,16 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
 - 2026-06-08 · C3 timeline review fix · — · fixed reset-then-save versioning: timeline saves now
   derive the next version from both the current canonical row and immutable history, so Reset can
   keep recoverable versions without causing deterministic version conflicts.
+- 2026-06-08 · CP Yapper Pack v1 · first spine · added prefix-mapped user-scoped `personas`
+  schema, `list_personas`, `save_persona`, and `create_project_from_persona`. The seed action
+  copies owned ref asset rows into the new project while sharing storage files, creates the
+  cast member with voice fields, locks the style ref when present, stores topic/persona context
+  in `project_brief`/`source_payload`, and applies the saved workflow recipe. Still to prove:
+  one live Padma-style run from saved persona → script → audio/video → clip, then repeat across
+  5 personas/sessions.
+- 2026-06-08 · divergence cleanup · first spine · ported `eb51137` fail-loud empty look batches:
+  Gemini character/environment look generation retries once on the alternate Gemini image model
+  if 0/N variants return, then throws instead of returning an empty candidate set.
 
 ## References
 

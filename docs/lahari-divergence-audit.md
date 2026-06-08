@@ -72,9 +72,10 @@ are SKIP** (mirage already has it, mirage diverged intentionally, it's legacy
    instead of the *storyboard*. Mirage's `ShotCard` lacks `canLockStoryboard`/`visibleLocked`.
    UX-correctness fix that matches mirage's documented storyboard-lock workflow.
 
-6. **Fail loud on empty look batches** — `eb51137` (A) · PORT · S · low risk
-   Mirage's batch look functions (`imagen.ts:301/396`) silently return empty sets when a
-   whole batch fails. Throw instead of surfacing a silent no-op.
+6. **Fail loud on empty look batches** — `eb51137` (A) · PORT · S · low risk · **landed 2026-06-08**
+   Mirage's Gemini batch look functions now retry once on the alternate Gemini image model, then
+   throw if a whole batch returns empty. This prevents a failed persona/reference setup from
+   surfacing as a silent successful no-op.
 
 ### Tier 3 — refinements / conditional
 
@@ -130,6 +131,10 @@ ledger + charge-risk semantics). Audited directly.
 ### eb51137 — Fail loudly on empty look generations
 - **classification:** GENERAL · **mirage-status:** partially-has · **recommendation:** PORT
 - **effort:** S · **risk:** low
+- **mirage-status update 2026-06-08:** landed in `server/services/imagen.ts` for Gemini
+  character/environment look batches. If 0/N variants return, Mirage retries once with the
+  alternate Gemini image model when available, then throws a clear error instead of returning
+  an empty candidate list.
 - **what-it-does:** After generating N parallel character/environment look variants, if
   *all* came back empty (`paths.length === 0`), throw instead of returning an empty look
   set. Adds a one-shot alternate-model retry before giving up.
