@@ -256,6 +256,12 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
 - 2026-06-08 · divergence cleanup · first spine · ported `eb51137` fail-loud empty look batches:
   Gemini character/environment look generation retries once on the alternate Gemini image model
   if 0/N variants return, then throws instead of returning an empty candidate set.
+- 2026-06-08 · CP agent guidance · follow-up · taught personas across the agent-facing surfaces:
+  hosted MCP instructions/tool descriptions already route `list_personas` →
+  `create_project_from_persona`; plugin Mirage skill, notebook `AGENTS.template.md`, and CLI
+  `mirage init` template now teach the same "make a <persona> clip about <topic>" move. Bumped
+  Mirage CLI to `0.1.11` for the new init template and plugin manifest to `0.1.9` for the new
+  skill copy.
 
 ## References
 

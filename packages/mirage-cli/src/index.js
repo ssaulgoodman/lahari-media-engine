@@ -111,7 +111,7 @@ Mirage server state is canonical. Local files are for reading, drafting, review,
 
 ## Tools
 
-Use cockpit tools to orient: \`mirage_doctor\`, \`list_projects\`, \`open_project\`, \`get_project_state\`, \`mint_cli_token\`, \`get_job\`, and \`mirage_capture_issue\`.
+Use cockpit tools to orient: \`mirage_doctor\`, \`list_projects\`, \`list_personas\`, \`create_project_from_persona\`, \`open_project\`, \`get_project_state\`, \`mint_cli_token\`, \`get_job\`, and \`mirage_capture_issue\`.
 
 Use action tools to change things: \`run_action(actionKey, input)\` for free/persistence actions, \`start_job(actionKey, input)\` for paid media generation, and \`describe_action(actionKey)\` for the one live schema you are about to use.
 
@@ -126,6 +126,8 @@ Action schemas are live in MCP. Do not expect local \`config/actions/*\` files i
 - Style: use \`generate_style_candidates\`, \`apply_style_direction\`, style notes, or project prompt overrides.
 - Cast/environment refs: use \`generate_candidates\`, \`list_results\`, \`lock_reference\`, or upload an artist image.
 - Native storyboard image: upload with \`purpose=storyboard_image\`, then \`run_action(import_storyboard_image)\`.
+- Repeatable formats: use \`run_action(list_workflows)\`, then \`run_action(apply_project_workflow)\` to apply one such as Yapper.
+- Saved personas: when the artist says "make a <persona> clip about <topic>" or "run Padma/Yapper," call \`list_personas\`, then \`create_project_from_persona\` with the persona and topic. Personas own reusable identity; workflow recipes own the production format.
 - Video: dry-run first with \`run_action(generate_video, { dryRun: true })\`, then \`start_job(generate_video)\` after approval.
 - Audio: use \`apply_audio_plan\`, \`apply_cast_voice\`, and \`generate_dialogue_audio\` when producing dialogue/narration.
 
@@ -135,6 +137,7 @@ Do not solve every problem by regenerating. Use the smallest lever that addresse
 
 - Use \`contextOverrides\` for one call's input bundle: include an extra guide/ref, exclude a wrong ref, drop the style image, include previous storyboard, or change style-note sections.
 - Use \`promptOverride\` when one paid call needs an exact final model prompt.
+- Use personas for repeated identity so the artist does not re-upload the same character image, re-enter the same voice id, or re-explain the same tone lane.
 - Use style notes for reusable taste or model phrasing.
 - Use image edit/refine when the asset is mostly right. Regenerate when staging, premise, panel structure, or reference use is wrong.
 - Use native imagegen plus \`import_storyboard_image\` when outside image work beats Mirage generation.

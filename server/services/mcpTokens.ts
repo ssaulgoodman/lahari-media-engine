@@ -45,7 +45,7 @@ const normalizeTtlMinutes = (ttlMinutes?: number | null) => {
 const posixCliCacheDir = '${TMPDIR:-/tmp}/mirage-npm-cache';
 const posixCliCacheEnv = `NPM_CONFIG_CACHE="${posixCliCacheDir}" npm_config_cache="${posixCliCacheDir}"`;
 const powershellCliCacheCommand = `$env:NPM_CONFIG_CACHE=(Join-Path ([System.IO.Path]::GetTempPath()) 'mirage-npm-cache'); $env:npm_config_cache=$env:NPM_CONFIG_CACHE`;
-export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.10';
+export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.11';
 
 const codexPluginInstallCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
 launchctl setenv MIRAGE_MCP_TOKEN '${token}'

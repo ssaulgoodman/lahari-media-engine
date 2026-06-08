@@ -42,6 +42,8 @@ Check Mirage status and open my latest project.
 
 Codex should call `mirage_doctor`, run `mirage init` if the folder is new, choose or create a project, and sync project files with the returned `mint_cli_token` command. Project sync should not require a fresh chat; a fresh chat is only needed after installing or updating the plugin.
 
+For recurring formats like Yapper, Codex should call `list_personas` and `create_project_from_persona` when the artist asks for a saved host/persona such as Padma, instead of asking for the same reference image, style, or voice id again.
+
 If a paid provider call returns outcome unknown, Codex should inspect the generation trace/attempt before retrying. Do not spend again until the prior provider request is reconciled or the artist explicitly accepts the charge risk.
 
 ## Beta Onboarding Goal

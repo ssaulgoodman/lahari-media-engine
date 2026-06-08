@@ -1,6 +1,6 @@
 {
   "name": "mirage",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Operate Mirage video projects from Codex with project sync, production actions, and craft skills.",
   "author": {
     "name": "Mothership",
@@ -35,6 +35,7 @@
     "defaultPrompt": [
       "Check Mirage status and open my latest project",
       "Open my latest Mirage project",
+      "Make a Yapper clip from a saved persona",
       "Start a new Mirage video from this idea",
       "Refresh this Mirage workspace"
     ],
