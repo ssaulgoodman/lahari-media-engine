@@ -11,7 +11,7 @@
  * render row to resolve the project for finalizePublish.
  */
 import { Router } from 'express';
-import { selectOne, updateRows } from '../database.js';
+import { getSB, selectOne, T, updateRows } from '../database.js';
 import { finalizePublish } from './queue.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 
@@ -30,6 +30,24 @@ const clampProgress = (value: unknown): number | null => {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.max(0, Math.min(1, n));
+};
+
+const isTerminalRenderStatus = (status: string | null | undefined) =>
+  status === 'completed' || status === 'failed' || status === 'cancelled';
+
+const updateRenderIfStatus = async (
+  renderId: string,
+  statuses: string[],
+  updates: Record<string, any>,
+): Promise<boolean> => {
+  const { data, error } = await getSB()
+    .from(T.renders)
+    .update(updates)
+    .eq('id', renderId)
+    .in('status', statuses)
+    .select('id');
+  if (error) throw new Error(`DB update renders: ${error.message}`);
+  return (data?.length || 0) > 0;
 };
 
 router.post('/progress/:renderId', async (req, res) => {
@@ -81,7 +99,7 @@ router.post('/callback/:renderId', async (req, res) => {
 
   // Already finalized — treat as idempotent success so the renderer doesn't
   // retry. Covers duplicate callbacks from a flaky network or a renderer retry.
-  if (render.status === 'completed' || render.status === 'failed') {
+  if (isTerminalRenderStatus(render.status)) {
     return res.json({ ok: true, alreadyFinalized: true });
   }
 
@@ -95,7 +113,7 @@ router.post('/callback/:renderId', async (req, res) => {
     if (error) {
       const errorMessage = String(error).slice(0, 2000);
       const errorCode = typeof req.body?.errorCode === 'string' ? req.body.errorCode.slice(0, 80) : 'renderer_failed';
-      await updateRows('renders', { id: renderId }, {
+      const updated = await updateRenderIfStatus(renderId, ['rendering'], {
         status: 'failed',
         error: compactRendererError(error),
         error_code: errorCode,
@@ -105,15 +123,17 @@ router.post('/callback/:renderId', async (req, res) => {
         ...(ffmpegFallbackReason ? { ffmpeg_fallback_reason: ffmpegFallbackReason } : {}),
         updated_at: new Date().toISOString(),
       });
-      await recordDirectorEvent({
-        projectId: render.project_id,
-        source: 'system',
-        eventType: 'render_failed',
-        entityType: 'render',
-        entityId: renderId,
-        summary: 'Final render failed.',
-        payload: { renderId, errorCode, error: errorMessage.slice(0, 500), renderMs: typeof renderMs === 'number' ? renderMs : null },
-      });
+      if (updated) {
+        await recordDirectorEvent({
+          projectId: render.project_id,
+          source: 'system',
+          eventType: 'render_failed',
+          entityType: 'render',
+          entityId: renderId,
+          summary: 'Final render failed.',
+          payload: { renderId, errorCode, error: errorMessage.slice(0, 500), renderMs: typeof renderMs === 'number' ? renderMs : null },
+        });
+      }
       return res.json({ ok: true });
     }
 
@@ -159,31 +179,33 @@ router.post('/callback/:renderId', async (req, res) => {
     // queue + assets row are good; only the render row says `failed`. Log so
     // we can spot it in dashboards.
     const recheck = await selectOne('renders', { id: renderId });
-    if (recheck?.status === 'failed') {
+    if (recheck?.status === 'failed' || recheck?.status === 'cancelled') {
       console.warn(
-        `[render-callback ${renderId}] watchdog won race — render row stays "failed" but finalizePublish succeeded (queue + assets row are consistent).`,
+        `[render-callback ${renderId}] ${recheck.status} row won race — render row stays "${recheck.status}" but finalizePublish succeeded (queue + assets row are consistent).`,
       );
     }
 
     res.json({ ok: true });
   } catch (err: any) {
     console.error(`[render-callback ${renderId}] failed:`, err);
-    await updateRows('renders', { id: renderId }, {
+    const updated = await updateRenderIfStatus(renderId, ['rendering', 'pending_finalize'], {
       status: 'failed',
       error: (err?.message || 'callback failed').slice(0, 2000),
       error_code: 'callback_failed',
       stage: 'failed',
       updated_at: new Date().toISOString(),
     }).catch(() => {});
-    await recordDirectorEvent({
-      projectId: render.project_id,
-      source: 'system',
-      eventType: 'render_failed',
-      entityType: 'render',
-      entityId: renderId,
-      summary: 'Render callback failed while finalizing.',
-      payload: { renderId, errorCode: 'callback_failed', error: String(err?.message || 'callback failed').slice(0, 500) },
-    });
+    if (updated) {
+      await recordDirectorEvent({
+        projectId: render.project_id,
+        source: 'system',
+        eventType: 'render_failed',
+        entityType: 'render',
+        entityId: renderId,
+        summary: 'Render callback failed while finalizing.',
+        payload: { renderId, errorCode: 'callback_failed', error: String(err?.message || 'callback failed').slice(0, 500) },
+      });
+    }
     res.status(500).json({ error: err?.message || 'callback failed' });
   }
 });

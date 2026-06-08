@@ -1077,7 +1077,7 @@ export interface TimelineRenderState {
   durationMs: number;
 }
 
-export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed';
+export type RenderStatus = 'idle' | 'rendering' | 'pending_finalize' | 'completed' | 'failed' | 'cancelled';
 
 export interface RenderStatusResponse {
   renderId: string | null;
@@ -1096,7 +1096,7 @@ export interface RenderStatusResponse {
 
 // Kicks off an async render. Backend returns 202 immediately with a renderId;
 // the real result lands later via the renderer's callback. Poll
-// getRenderStatus() until status is 'completed' or 'failed'.
+// getRenderStatus() until status is 'completed', 'failed', or 'cancelled'.
 export const startRender = async (
   projectId: string,
   timeline: TimelineRenderState,
@@ -1116,6 +1116,16 @@ export const getRenderStatus = async (
   signal?: AbortSignal,
 ): Promise<RenderStatusResponse> => {
   const res = await authFetch(`${API}/projects/${projectId}/render-status`, { signal });
+  return handleResponse(res);
+};
+
+export const cancelRender = async (
+  projectId: string,
+  renderId: string,
+): Promise<{ ok: true; renderId: string; status: 'cancelled'; alreadyFinalized?: boolean }> => {
+  const res = await authFetch(`${API}/projects/${projectId}/renders/${renderId}/cancel`, {
+    method: 'POST',
+  });
   return handleResponse(res);
 };
 

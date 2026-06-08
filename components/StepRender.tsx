@@ -6,6 +6,7 @@ import { loadSnapshot } from './timeline-editor/persistence';
 import { MediaLibraryDrawer } from './MediaLibraryDrawer';
 import {
   startRender,
+  cancelRender,
   getRenderStatus,
   listRenders,
   deleteRender,
@@ -32,7 +33,8 @@ type RenderPhase =
   | { kind: 'idle' }
   | { kind: 'rendering' }
   | { kind: 'done'; videoUrl: string }
-  | { kind: 'error'; message: string };
+  | { kind: 'error'; message: string }
+  | { kind: 'cancelled' };
 
 const POLL_MS = 4000;
 
@@ -62,6 +64,8 @@ const renderStageLabel = (stage?: string | null) => {
       return 'Complete';
     case 'failed':
       return 'Failed';
+    case 'cancelled':
+      return 'Cancelled';
     default:
       return 'Rendering';
   }
@@ -97,6 +101,8 @@ const renderErrorHint = (code?: string | null) => {
       return 'The renderer produced an empty video file.';
     case 'renderer_failed':
       return 'The renderer crashed or returned an error.';
+    case 'render_cancelled':
+      return null;
     default:
       return null;
   }
@@ -110,6 +116,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   const [mediaNoticeDismissedFor, setMediaNoticeDismissedFor] = useState('');
   const [history, setHistory] = useState<RenderHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [cancelingRender, setCancelingRender] = useState(false);
   const timelineItems = useStore((s) => s.trackItemsMap);
   const timelineItemIds = useStore((s) => s.trackItemIds);
   const lastSavedAt = useStore((s) => s.lastSavedAt);
@@ -254,8 +261,11 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
         } else if (s.status === 'failed') {
           stopPolling();
           setPhase({ kind: 'error', message: s.error || 'Render failed' });
+        } else if (s.status === 'cancelled') {
+          stopPolling();
+          setPhase({ kind: 'cancelled' });
         }
-        // 'rendering' / 'idle' → keep waiting
+        // 'rendering' / 'pending_finalize' / 'idle' → keep waiting
       } catch (err: any) {
         console.error('[render-status]', err);
       }
@@ -332,6 +342,29 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
     }
   };
 
+  const handleCancelRender = async () => {
+    const renderId = renderMeta?.renderId;
+    if (!renderId || cancelingRender) return;
+    setCancelingRender(true);
+    try {
+      await cancelRender(project.id, renderId);
+      stopPolling();
+      setRenderMeta((cur) => cur ? {
+        ...cur,
+        status: 'cancelled',
+        error: 'cancelled by artist',
+        errorCode: 'render_cancelled',
+        stage: 'cancelled',
+      } : cur);
+      setPhase({ kind: 'cancelled' });
+    } catch (err: any) {
+      console.error('[render-cancel]', err);
+      setPhase({ kind: 'error', message: err?.message || 'Cancel failed' });
+    } finally {
+      setCancelingRender(false);
+    }
+  };
+
   const isBusy = phase.kind === 'rendering';
   const progress = (renderMeta?.status === 'rendering' || renderMeta?.status === 'pending_finalize') && renderMeta.progress !== null
     ? Math.max(0, Math.min(1, renderMeta.progress))
@@ -387,6 +420,18 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             title="Past renders"
           >
             History{history.length > 0 ? ` (${history.length})` : ''}
+          </button>
+          <button
+            onClick={handleCancelRender}
+            disabled={!renderMeta?.renderId || cancelingRender}
+            className={`text-[11px] px-2 py-1 rounded-md transition-colors ${
+              phase.kind === 'rendering'
+                ? 'text-zinc-300 hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed'
+                : 'hidden'
+            }`}
+            title="Cancel active render"
+          >
+            {cancelingRender ? 'Cancelling…' : 'Cancel'}
           </button>
           <button
             onClick={handleRender}
@@ -565,6 +610,18 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
             </button>
           </div>
         )}
+        {phase.kind === 'cancelled' && (
+          <div className="absolute bottom-4 right-4 max-w-sm bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl px-3 py-2 text-xs text-zinc-200 flex items-start justify-between gap-3">
+            <span>Render cancelled.</span>
+            <button
+              onClick={() => setPhase({ kind: 'idle' })}
+              className="text-zinc-500 hover:text-white leading-none"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {phase.kind === 'rendering' && (
           <div className="absolute bottom-4 right-4 w-72 bg-[#1a1a1e]/95 border border-white/[0.08] rounded-lg shadow-xl px-3 py-2 backdrop-blur-sm">
             <div className="flex items-center justify-between gap-3">
@@ -597,6 +654,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
               <span>{renderMeta?.renderId ? renderMeta.renderId.slice(0, 8) : 'starting'}</span>
               {heartbeatAgeSeconds !== null && <span>heartbeat {heartbeatAgeSeconds}s ago</span>}
             </div>
+            <button
+              type="button"
+              onClick={handleCancelRender}
+              disabled={!renderMeta?.renderId || cancelingRender}
+              className="mt-2 w-full rounded-md border border-white/[0.08] px-2 py-1 text-[11px] text-zinc-300 hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {cancelingRender ? 'Cancelling…' : 'Cancel render'}
+            </button>
           </div>
         )}
       </div>

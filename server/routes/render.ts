@@ -12,7 +12,7 @@
  */
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { insertRow, selectAll, selectOne, updateRows } from '../database.js';
+import { getSB, insertRow, selectAll, selectOne, T, updateRows } from '../database.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { storageUrl } from '../storage.js';
 
@@ -47,6 +47,21 @@ const renderCanvasSize = (project: any) => {
   if (project?.aspect_ratio === '9:16') return { width: base, height: Math.round((base * 16) / 9) };
   if (project?.aspect_ratio === '1:1') return { width: base, height: base };
   return { width: Math.round((base * 16) / 9), height: base };
+};
+
+const updateRenderIfStatus = async (
+  renderId: string,
+  statuses: string[],
+  updates: Record<string, any>,
+): Promise<boolean> => {
+  const { data, error } = await getSB()
+    .from(T.renders)
+    .update(updates)
+    .eq('id', renderId)
+    .in('status', statuses)
+    .select('id');
+  if (error) throw new Error(`DB update renders: ${error.message}`);
+  return (data?.length || 0) > 0;
 };
 
 const normalizeTimelineCanvas = (project: any, timeline: any) => ({
@@ -309,22 +324,24 @@ router.post('/:id/render', async (req, res) => {
         const body = await response.text().catch(() => '');
         const message = `renderer rejected render request: HTTP ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`;
         console.error(`[render ${renderId}] ${message}`);
-        await updateRows('renders', { id: renderId }, {
+        const updated = await updateRenderIfStatus(renderId, ['rendering'], {
           status: 'failed',
           error: message,
           error_code: 'renderer_rejected',
           stage: 'failed',
           updated_at: new Date().toISOString(),
         }).catch(() => {});
-        await recordDirectorEvent({
-          projectId,
-          source: 'system',
-          eventType: 'render_failed',
-          entityType: 'render',
-          entityId: renderId,
-          summary: 'Render request was rejected by the renderer.',
-          payload: { renderId, errorCode: 'renderer_rejected', error: message.slice(0, 500) },
-        });
+        if (updated) {
+          await recordDirectorEvent({
+            projectId,
+            source: 'system',
+            eventType: 'render_failed',
+            entityType: 'render',
+            entityId: renderId,
+            summary: 'Render request was rejected by the renderer.',
+            payload: { renderId, errorCode: 'renderer_rejected', error: message.slice(0, 500) },
+          });
+        }
       } else {
         const body = await response.json().catch(() => null);
         const modalFunctionCallId =
@@ -341,26 +358,76 @@ router.post('/:id/render', async (req, res) => {
       }
     } catch (err: any) {
       console.error(`[render ${renderId}] upstream fetch threw:`, err?.message || err);
-      await updateRows('renders', { id: renderId }, {
+      const updated = await updateRenderIfStatus(renderId, ['rendering'], {
         status: 'failed',
         error: err?.message || 'renderer unreachable',
         error_code: 'renderer_unreachable',
         stage: 'failed',
         updated_at: new Date().toISOString(),
       }).catch(() => {});
-      await recordDirectorEvent({
-        projectId,
-        source: 'system',
-        eventType: 'render_failed',
-        entityType: 'render',
-        entityId: renderId,
-        summary: 'Render request could not reach the renderer.',
-        payload: { renderId, errorCode: 'renderer_unreachable', error: String(err?.message || 'renderer unreachable').slice(0, 500) },
-      });
+      if (updated) {
+        await recordDirectorEvent({
+          projectId,
+          source: 'system',
+          eventType: 'render_failed',
+          entityType: 'render',
+          entityId: renderId,
+          summary: 'Render request could not reach the renderer.',
+          payload: { renderId, errorCode: 'renderer_unreachable', error: String(err?.message || 'renderer unreachable').slice(0, 500) },
+        });
+      }
     }
   })();
 
   return res.status(202).json({ renderId, status: 'rendering' });
+});
+
+router.post('/:id/renders/:renderId/cancel', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const renderId = paramStr(req.params.renderId);
+  const render = await selectOne('renders', { id: renderId });
+  if (!render || render.project_id !== projectId) return res.status(404).json({ error: 'Render not found' });
+
+  if (render.status === 'cancelled') {
+    return res.json({ ok: true, renderId, status: 'cancelled', alreadyFinalized: true });
+  }
+  if (render.status === 'completed' || render.status === 'failed') {
+    return res.status(409).json({
+      error: `Render is already ${render.status} and cannot be cancelled.`,
+      renderId,
+      status: render.status,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const updated = await updateRenderIfStatus(renderId, ['rendering', 'pending_finalize'], {
+    status: 'cancelled',
+    error: 'cancelled by artist',
+    error_code: 'render_cancelled',
+    stage: 'cancelled',
+    updated_at: now,
+  });
+  if (!updated) {
+    const latest = await selectOne('renders', { id: renderId });
+    return res.status(409).json({
+      error: `Render is already ${latest?.status || 'finalized'} and cannot be cancelled.`,
+      renderId,
+      status: latest?.status || null,
+    });
+  }
+
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'render_cancelled',
+    entityType: 'render',
+    entityId: renderId,
+    summary: 'Artist cancelled an in-flight final render.',
+    payload: { renderId, previousStatus: render.status },
+  });
+
+  return res.json({ ok: true, renderId, status: 'cancelled' });
 });
 
 // Frontend polls this — returns the most recent render row for the project.
