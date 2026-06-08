@@ -14,7 +14,9 @@ Read `script.md`, `state/concept.md`, `state/shot-prompts.md`, and relevant sour
 - **Wording cleanup after refs/boards/videos exist** -> `run_action(apply_text_edits)`.
 - **Visual/motion/continuity prompt edits** -> `run_action(apply_shot_prompts)`.
 - **Storyboard/keyframe mode changes** -> `run_action(apply_shot_workflow_modes)`.
-- **New topology** -> edit `script.md`, then `run_action(apply_script)`.
+- **Add one shot to an existing scene** -> `run_action(add_shot)`.
+- **Delete one shot from an existing scene** -> `run_action(delete_shot)`, using `force` only after explicit approval if the shot has downstream work.
+- **Fresh script or broad topology rebuild** -> edit `script.md`, then `run_action(apply_script)`.
 
 Preserve IDs unless the artist asked for structural change. IDs are continuity.
 
@@ -40,9 +42,9 @@ When splitting or merging, say what changes structurally: “I am splitting S2.3
 
 ## Safe Edit Rule
 
-After visual work exists, `apply_script` is a topology tool and can require destructive approval. Use `apply_text_edits` for existing scene titles, shot directions, and dialogue lines. It preserves refs/boards/videos and marks affected outputs stale.
+After visual work exists, `apply_script` is a broad topology rebuild and can require destructive approval. Use `apply_text_edits` for existing scene titles, shot directions, and dialogue lines. It preserves refs/boards/videos and marks affected outputs stale.
 
-Use `apply_script` only when adding, deleting, reordering, or re-IDing cast, environments, scenes, or shots.
+Use `add_shot` / `delete_shot` for one-shot structural changes inside an existing scene. They preserve other shots and only stale continuity-dependent neighbors. Use `apply_script` for fresh scripts, cast/environment changes, scene changes, multi-shot reorders, merges, or re-IDing.
 
 ## Push Back
 
@@ -53,6 +55,7 @@ Use `apply_script` only when adding, deleting, reordering, or re-IDing cast, env
 ## Avoid
 
 - Wording cleanup through `apply_script`.
+- Whole-script rebuilds for one added/deleted shot.
 - Reusable names left only in prose instead of cast/environment entries.
 - Wallpaper shots with slightly different phrasing.
 - Interior states that cannot be staged.

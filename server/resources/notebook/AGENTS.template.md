@@ -48,6 +48,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Concept: write or revise the project spine, then `run_action(apply_concept)`.
 - Script topology: before visual work exists, use `run_action(apply_script)`.
 - Script wording after refs/boards/videos exist: use `run_action(apply_text_edits)`.
+- Single-shot topology changes: use `run_action(add_shot)` or `run_action(delete_shot)`; delete with `force` only after explicit approval if that shot has downstream work.
 - Shot prompts: edit `storyboards/*.md`, then persist with `apply_shot_prompts` or `apply_storyboard_prompts`.
 - Style direction: use `generate_style_candidates`, `apply_style_direction`, style notes, or project prompt overrides depending on scope.
 - Cast/environment refs: use `generate_candidates`, `list_results`, `lock_reference`, or upload an image through `/api/agent/uploads`.

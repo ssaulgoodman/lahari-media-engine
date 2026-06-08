@@ -267,6 +267,34 @@ router.post('/apply/shot-workflow-modes', audited('director.apply.shot_workflow_
   req.body.shots,
 )));
 
+router.post('/apply/add-shot', audited('director.apply.add_shot', async (req) => studio.addShot(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  {
+    sceneId: req.body.sceneId,
+    afterShotId: req.body.afterShotId,
+    beforeShotId: req.body.beforeShotId,
+    direction: req.body.direction,
+    durationSec: req.body.durationSec,
+    castIds: req.body.castIds,
+    environmentId: req.body.environmentId,
+    continuityFrom: req.body.continuityFrom,
+    workflowMode: req.body.workflowMode,
+    visualPrompt: req.body.visualPrompt,
+    motionPrompt: req.body.motionPrompt,
+    storyboardPrompt: req.body.storyboardPrompt,
+    storyboardCutPlan: req.body.storyboardCutPlan,
+  },
+)));
+
+router.post('/apply/delete-shot', audited('director.apply.delete_shot', async (req) => studio.deleteShot(
+  await fullProjectForUser(req.body.projectId, req.userId),
+  {
+    shotId: req.body.shotId,
+    force: !!req.body.force,
+    note: req.body.note,
+  },
+)));
+
 router.post('/apply/storyboard-prompt', audited('director.apply.storyboard_prompt', async (req) => studio.applyStoryboardPrompt(
   await fullProjectForUser(req.body.projectId, req.userId),
   req.body.shotId,

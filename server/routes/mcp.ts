@@ -20,7 +20,7 @@ import { ACTION_KEYS, ACTION_SURFACES, actionSpec, actionSpecsForSurface, buildA
 import { buildNotebookResourceVersions } from '../services/codexStudio/notebook.js';
 
 const router = Router();
-const HOSTED_MCP_VERSION = '0.1.17';
+const HOSTED_MCP_VERSION = '0.1.18';
 const SHOW_LEGACY_MCP_TOOLS = process.env.MIRAGE_MCP_INCLUDE_LEGACY_TOOLS === '1';
 const LEGACY_MCP_TOOLS = new Set([
   'list_queue',
@@ -429,6 +429,28 @@ const textEditsInputSchema = z.object({
       text: z.string().min(1).max(500),
     }), 40).optional(),
   }), 200).min(1),
+});
+const addShotInputSchema = z.object({
+  projectId,
+  sceneId: idString,
+  afterShotId: idString.nullable().optional(),
+  beforeShotId: idString.nullable().optional(),
+  direction: promptText,
+  durationSec: z.number().positive().max(60).optional(),
+  castIds: maxArray(idString, 20).optional(),
+  environmentId: idString.nullable().optional(),
+  continuityFrom: z.enum(['cut', 'prev_shot']).optional(),
+  workflowMode: workflowModeSchema.optional(),
+  visualPrompt: optionalPromptText,
+  motionPrompt: optionalPromptText,
+  storyboardPrompt: optionalPromptText,
+  storyboardCutPlan: optionalPromptText,
+});
+const deleteShotInputSchema = z.object({
+  projectId,
+  shotId,
+  force: z.boolean().optional(),
+  note: mediumText.optional(),
 });
 const shotPromptsInputSchema = z.object({
   projectId,
@@ -927,6 +949,14 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (actionKey === 'apply_text_edits') {
       const input = textEditsInputSchema.parse(rawInput);
       return studio.applyTextEdits(await fullProjectForUser(input.projectId, auth.userId), input.edits);
+    }
+    if (actionKey === 'add_shot') {
+      const input = addShotInputSchema.parse(rawInput);
+      return studio.addShot(await fullProjectForUser(input.projectId, auth.userId), input);
+    }
+    if (actionKey === 'delete_shot') {
+      const input = deleteShotInputSchema.parse(rawInput);
+      return studio.deleteShot(await fullProjectForUser(input.projectId, auth.userId), input);
     }
     if (actionKey === 'apply_shot_prompts') {
       const input = shotPromptsInputSchema.parse(rawInput);

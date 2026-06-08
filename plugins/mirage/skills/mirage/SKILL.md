@@ -49,9 +49,9 @@ For repeatable production formats, call `list_workflows` and apply the matching 
 
 ## Safe Edit Rule
 
-Before visual assets exist, `apply_script` can create or rebuild topology.
+Before visual assets exist, `apply_script` can create or rebuild broad topology.
 
-After references, storyboards, or videos exist, use `apply_text_edits` for wording-only changes to existing scene titles, shot directions, or dialogue. Keep `apply_script` for real topology changes: add, remove, or re-ID scenes, shots, cast, or environments.
+After references, storyboards, or videos exist, use `apply_text_edits` for wording-only changes to existing scene titles, shot directions, or dialogue. Use `add_shot` / `delete_shot` for one-shot changes inside an existing scene. Keep `apply_script` for broad topology changes: scenes, cast, environments, multi-shot reorders, or re-IDing.
 
 ## Sync And Permissions
 

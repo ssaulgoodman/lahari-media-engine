@@ -121,6 +121,8 @@ const labelTool = (tool: string, args: Record<string, any>) => {
   if (tool.includes('storyboard_scene_markdown')) return 'Updating storyboard scene prompts';
   if (tool.includes('apply_storyboard_prompt') || tool.includes('storyboard_prompt')) return `Updating storyboard prompt${shot}`;
   if (action === 'apply_text_edits' || tool.includes('apply_text_edits')) return 'Applying text edits';
+  if (action === 'add_shot' || tool.includes('add_shot')) return 'Adding shot';
+  if (action === 'delete_shot' || tool.includes('delete_shot')) return 'Deleting shot';
   if (tool.includes('apply_script') || tool.includes('apply.script')) return 'Updating script';
   if (tool.includes('apply_concept') || tool.includes('apply.concept')) return 'Updating concept';
   if (tool.includes('apply_shot_prompts') || tool.includes('shot_prompts')) return 'Updating shot prompts';
