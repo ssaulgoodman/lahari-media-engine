@@ -96,7 +96,19 @@ const saveCanonicalTimeline = async ({
       .maybeSingle();
     if (readErr) return { error: readErr };
 
-    const nextVersion = existing ? Number(existing.version || 0) + 1 : 1;
+    const { data: latestVersion, error: historyReadErr } = await sb
+      .from(T.project_timeline_versions)
+      .select('version')
+      .eq('project_id', projectId)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (historyReadErr) return { error: historyReadErr };
+
+    const nextVersion = Math.max(
+      Number(existing?.version || 0),
+      Number(latestVersion?.version || 0),
+    ) + 1;
     const now = new Date().toISOString();
 
     const write = existing

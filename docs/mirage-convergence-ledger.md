@@ -194,6 +194,9 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   restore/reset endpoints, explicit Save-to-shared behavior, local draft autosave, shared
   version restore, and reset-to-generated-clips. Realtime remote-change notification and
   agent-edit actions remain future C3 work.
+- 2026-06-08 · C3 timeline review fix · — · fixed reset-then-save versioning: timeline saves now
+  derive the next version from both the current canonical row and immutable history, so Reset can
+  keep recoverable versions without causing deterministic version conflicts.
 
 ## References
 
