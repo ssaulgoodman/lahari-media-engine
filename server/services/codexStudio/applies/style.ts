@@ -7,6 +7,7 @@ import { getImageGenerationModelName, getImageService, getStyleOptionsModelName 
 import { getProjectRuntimePreset, presetSubject } from '../../../presets.js';
 import { buildContextChain, logCall } from '../../../xray.js';
 import { formatSelectedStyleNotes, getProjectStyleNotesState } from '../../projectConfig.js';
+import { generationKey, withInFlightGeneration } from '../../inFlightGeneration.js';
 import {
   contextTracePreview,
   emptyContextTrace,
@@ -40,7 +41,7 @@ const styleDescriptionNeedsBackfill = (value?: string | null) => {
   return text.length < 40;
 };
 
-const identifyStyleAsset = async (
+const identifyStyleAssetUnlocked = async (
   project: Project,
   asset: any,
   opts: { apply?: boolean; auto?: boolean } = {},
@@ -81,6 +82,16 @@ const identifyStyleAsset = async (
 
   return styleDescription;
 };
+
+const identifyStyleAsset = async (
+  project: Project,
+  asset: any,
+  opts: { apply?: boolean; auto?: boolean } = {},
+) => withInFlightGeneration(
+  generationKey('style-identify', project.id, 'project'),
+  { kind: 'style-identify', projectId: project.id, targetId: project.id, targetLabel: 'project style' },
+  () => identifyStyleAssetUnlocked(project, asset, opts),
+);
 
 export const markStyleDependentsStale = async (projectId: string) => {
   await updateRows('cast_members', { project_id: projectId }, { prompts_stale: true });
@@ -197,7 +208,7 @@ export const applyStyleDirection = async (
   };
 };
 
-export const identifyStyle = async (project: Project, input: { assetId?: string; apply?: boolean } = {}) => {
+const identifyStyleUnlocked = async (project: Project, input: { assetId?: string; apply?: boolean } = {}) => {
   const assetId = input.assetId || project.styleAssetId;
   const asset = await findProjectStyleAsset(project, assetId);
   if (!asset) return applyError('validation_failed', 'No style asset found to identify.', { field: 'assetId' });
@@ -226,7 +237,10 @@ export const identifyStyle = async (project: Project, input: { assetId?: string;
   };
 };
 
-export const generateStyleCandidates = async (
+export const identifyStyle = async (project: Project, input: { assetId?: string; apply?: boolean } = {}) =>
+  identifyStyleUnlocked(project, input);
+
+const generateStyleCandidatesUnlocked = async (
   project: Project,
   input: {
     note?: string;
@@ -385,3 +399,19 @@ export const generateStyleCandidates = async (
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
   };
 };
+
+export const generateStyleCandidates = async (
+  project: Project,
+  input: {
+    note?: string;
+    promptOverride?: string;
+    directions?: Array<{ title?: string; description: string }>;
+    guideAssetId?: string;
+    count?: number;
+    contextOverrides?: ContextOverrides;
+  } = {},
+) => withInFlightGeneration(
+  generationKey('style-candidates', project.id, 'project'),
+  { kind: 'style-candidates', projectId: project.id, targetId: project.id, targetLabel: 'project style' },
+  () => generateStyleCandidatesUnlocked(project, input),
+);

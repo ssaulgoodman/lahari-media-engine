@@ -941,6 +941,8 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 
 2026-06-08 Codex: Ported the Lahari duplicate paid-generation guard into Mirage's current shared surfaces. Added an in-process per-shot generation lock with structured 409 `generation_already_running` errors, wrapped shared storyboard and video generation services so MCP/web paths converge, guarded start-frame/end-frame routes before they mark shots loading, and made Studio generation buttons exclusive for start frame, end frame, storyboard image/refine, and video. Added `npm run check:inflight-generation`. Validation passed: `npm run check:inflight-generation`, `npx tsc --noEmit --pretty false`, `npm run build`, `npm run check:notebook`, `npm run smoke:agent-contract -- --repeat=1`, `git diff --check`.
 
+2026-06-08 Codex: Extended the in-flight paid-work guard beyond shot media. Style candidates/visualize/identify/analyze, style brainstorm/refine text routes, character/environment look candidates, dialogue TTS, voice-change video, and audio transcribe/structure now return structured 409 `generation_already_running` for same-target duplicate submits. Targeted locks are per project, per asset, per entity, per dialogue line, or per shot as appropriate, so unrelated paid work can still run. Validation passed: `npm run check:inflight-generation`, `npx tsc --noEmit --pretty false`, `git diff --check`.
+
 ---
 
 ## 10. References

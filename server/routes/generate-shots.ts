@@ -221,6 +221,9 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     additionalRefs = shotRefAssets.map((a: any) => ({ imagePath: a.file_path }));
   }
 
+  const releaseGeneration = beginInFlightGeneration(generationKey('image', project.id, shot.id));
+  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('image', project.id, shot.id));
+
   // Vision-describe continuity frame (shared by both paths)
   if (prevShotEndFramePath && !continuityDescription) {
     try {
@@ -232,9 +235,6 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       console.warn(`[shot ${shot.id}] Continuity description failed: ${err.message}`);
     }
   }
-
-  const releaseGeneration = beginInFlightGeneration(generationKey('image', project.id, shot.id));
-  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('image', project.id, shot.id));
 
   try {
     await updateRows('shots', { id: shot.id }, { image_status: 'loading' });

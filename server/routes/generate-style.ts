@@ -18,6 +18,7 @@ import { getStylePreset, STYLE_PRESETS } from '../style-presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 import { formatSelectedStyleNotes, getProjectStyleNotesState } from '../services/projectConfig.js';
+import { beginInFlightGeneration, generationAlreadyRunningError, generationKey } from '../services/inFlightGeneration.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -118,6 +119,8 @@ export const mountStyleRoutes = (router: Router) => {
     const concept = JSON.parse(project.locked_concept || '{}');
     const { userNotes } = req.body;
     const preset = getProjectRuntimePreset(project, req.body?.presetKey);
+    const releaseGeneration = beginInFlightGeneration(generationKey('style-brainstorm', project.id, 'project'));
+    if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('style-brainstorm', project.id, project.id, 'project style'));
 
     try {
       console.log(`[${project.id}] Brainstorming style directions...`);
@@ -174,6 +177,8 @@ export const mountStyleRoutes = (router: Router) => {
         error: err.message,
       });
       sendStructuredError(res, err);
+    } finally {
+      releaseGeneration();
     }
   });
 
@@ -194,6 +199,9 @@ export const mountStyleRoutes = (router: Router) => {
     const projectStyleNotes = await getProjectStyleNotesState(project.id);
     const styleNotes = formatSelectedStyleNotes(projectStyleNotes, ['image']);
     const genPrompt = buildStylePrompt(stylePrompt, subject, preset, styleNotes);
+
+    const releaseGeneration = beginInFlightGeneration(generationKey('style-candidates', project.id, 'project'));
+    if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('style-candidates', project.id, project.id, 'project style'));
 
     try {
       console.log(`[${project.id}] Visualizing style direction...`);
@@ -245,6 +253,8 @@ export const mountStyleRoutes = (router: Router) => {
         error: err.message,
       });
       sendStructuredError(res, err);
+    } finally {
+      releaseGeneration();
     }
   });
 
@@ -256,6 +266,8 @@ export const mountStyleRoutes = (router: Router) => {
 
     const concept = JSON.parse(project.locked_concept || '{}');
     const { description, feedback } = req.body;
+    const releaseGeneration = beginInFlightGeneration(generationKey('style-refine', project.id, 'project'));
+    if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('style-refine', project.id, project.id, 'project style'));
 
     try {
       const t0 = Date.now();
@@ -299,6 +311,8 @@ export const mountStyleRoutes = (router: Router) => {
         error: err.message,
       });
       sendStructuredError(res, err);
+    } finally {
+      releaseGeneration();
     }
   });
 
@@ -339,6 +353,8 @@ export const mountStyleRoutes = (router: Router) => {
     if (!req.file) return res.status(400).json({ error: 'Image required' });
     const projectId = paramStr(req.params.id);
     const projectForProvider = await selectOne('projects', { id: projectId });
+    const releaseGeneration = beginInFlightGeneration(generationKey('style-identify', projectId, 'project'));
+    if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('style-identify', projectId, projectId, 'project style'));
 
     try {
       const ext = req.file.mimetype.includes('png') ? 'png' : req.file.mimetype.includes('jpeg') ? 'jpg' : 'png';
@@ -391,6 +407,8 @@ export const mountStyleRoutes = (router: Router) => {
     } catch (err: any) {
       console.error(`[${projectId}] upload-and-lock-style failed:`, err);
       sendStructuredError(res, err);
+    } finally {
+      releaseGeneration();
     }
   });
 
@@ -401,6 +419,8 @@ export const mountStyleRoutes = (router: Router) => {
     const projectId = paramStr(req.params.id);
     const prompt = 'Analyze uploaded style reference image for visual style description';
     const projectForProvider = await selectOne('projects', { id: projectId });
+    const releaseGeneration = beginInFlightGeneration(generationKey('style-identify', projectId, 'project'));
+    if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('style-identify', projectId, projectId, 'project style'));
 
     try {
       const imageBase64 = req.file.buffer.toString('base64');
@@ -442,6 +462,8 @@ export const mountStyleRoutes = (router: Router) => {
         error: err.message,
       });
       sendStructuredError(res, err);
+    } finally {
+      releaseGeneration();
     }
   });
 

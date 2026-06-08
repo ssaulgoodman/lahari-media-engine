@@ -18,6 +18,7 @@ import {
   shouldIncludeStyleImage,
   type ContextOverrides,
 } from '../contextOverrides.js';
+import { generationKey, withInFlightGenerations } from '../inFlightGeneration.js';
 import { webStudioUrl, type Project } from './core.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
 
@@ -81,14 +82,24 @@ const candidateMetadata = (base: Record<string, unknown>, opts: {
   contextOverrides: opts.contextOverrides || null,
 });
 
-export const generateCharacterLooksForDirector = async (
+const characterLookTargetIds = (project: Project, castMemberIds: string[]) => (
+  castMemberIds.length
+    ? castMemberIds
+    : project.cast.filter((member) => !member.referenceAssetId && !member.referenceImageUrl).map((member) => member.id)
+);
+
+const environmentLookTargetIds = (project: Project, environmentIds: string[]) => (
+  environmentIds.length
+    ? environmentIds
+    : project.environments.filter((environment) => !environment.referenceAssetId && !environment.referenceImageUrl).map((environment) => environment.id)
+);
+
+const generateCharacterLooksForDirectorUnlocked = async (
   project: Project,
   castMemberIds: string[],
   opts: GenerateLooksOptions = {},
 ) => {
-  const ids = castMemberIds.length
-    ? castMemberIds
-    : project.cast.filter((member) => !member.referenceAssetId && !member.referenceImageUrl).map((member) => member.id);
+  const ids = characterLookTargetIds(project, castMemberIds);
   if (!ids.length) {
     return {
       kind: 'mirage.generate.character_looks',
@@ -244,14 +255,29 @@ export const generateCharacterLooksForDirector = async (
   };
 };
 
-export const generateEnvironmentLooksForDirector = async (
+export const generateCharacterLooksForDirector = async (
+  project: Project,
+  castMemberIds: string[],
+  opts: GenerateLooksOptions = {},
+) => {
+  const ids = characterLookTargetIds(project, castMemberIds);
+  if (!ids.length) return generateCharacterLooksForDirectorUnlocked(project, castMemberIds, opts);
+  if (opts.promptOverride && ids.length !== 1) {
+    throw new Error('promptOverride can only target one cast member. Pass exactly one castMemberId.');
+  }
+  return withInFlightGenerations(
+    ids.map((id) => generationKey('character-look', project.id, id)),
+    { kind: 'character-look', projectId: project.id, targetId: ids.join(','), targetLabel: 'character look selection' },
+    () => generateCharacterLooksForDirectorUnlocked(project, castMemberIds, opts),
+  );
+};
+
+const generateEnvironmentLooksForDirectorUnlocked = async (
   project: Project,
   environmentIds: string[],
   opts: GenerateLooksOptions = {},
 ) => {
-  const ids = environmentIds.length
-    ? environmentIds
-    : project.environments.filter((environment) => !environment.referenceAssetId && !environment.referenceImageUrl).map((environment) => environment.id);
+  const ids = environmentLookTargetIds(project, environmentIds);
   if (!ids.length) {
     return {
       kind: 'mirage.generate.environment_looks',
@@ -405,4 +431,21 @@ export const generateEnvironmentLooksForDirector = async (
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
     note: 'Generated candidate environment looks. Lock one with apply_environment_reference using the returned asset id.',
   };
+};
+
+export const generateEnvironmentLooksForDirector = async (
+  project: Project,
+  environmentIds: string[],
+  opts: GenerateLooksOptions = {},
+) => {
+  const ids = environmentLookTargetIds(project, environmentIds);
+  if (!ids.length) return generateEnvironmentLooksForDirectorUnlocked(project, environmentIds, opts);
+  if (opts.promptOverride && ids.length !== 1) {
+    throw new Error('promptOverride can only target one environment. Pass exactly one environmentId.');
+  }
+  return withInFlightGenerations(
+    ids.map((id) => generationKey('environment-look', project.id, id)),
+    { kind: 'environment-look', projectId: project.id, targetId: ids.join(','), targetLabel: 'environment look selection' },
+    () => generateEnvironmentLooksForDirectorUnlocked(project, environmentIds, opts),
+  );
 };

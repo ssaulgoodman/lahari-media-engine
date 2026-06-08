@@ -5,6 +5,7 @@ import { recordDirectorEvent } from '../directorEvents.js';
 import { assertDailyCapAvailable, incrementProviderUsageDaily } from '../providerUsage.js';
 import { getProjectPreferencesState } from '../projectConfig.js';
 import { generateSpeech } from '../tts/index.js';
+import { beginInFlightGenerations, generationAlreadyRunningError, generationKey } from '../inFlightGeneration.js';
 import { normalizeElevenLabsTtsModel } from '../../../constants/ttsModels.js';
 import { audioPlanHash, castVoiceHash, webStudioUrl, type Project, type ProjectShot } from './core.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
@@ -369,6 +370,12 @@ export const generateDialogueAudio = async (
     const member = castById.get(line.characterId);
     return member?.voiceProvider && member?.voiceId ? sum + line.text.length : sum;
   }, 0));
+  const releaseGeneration = beginInFlightGenerations(
+    pendingTargets.map(({ line }) => generationKey('dialogue-audio', project.id, line.id)),
+  );
+  if (!releaseGeneration) throw generationAlreadyRunningError('dialogue-audio', project.id, project.id, 'dialogue selection');
+
+  try {
   await assertDailyCapAvailable(userId, 'elevenlabs', estimatedUsd);
 
   const generated: Array<{ dialogueId: string; assetId: string; url: string; durationSec?: number; costUsd: number }> = [];
@@ -472,4 +479,7 @@ export const generateDialogueAudio = async (
     changedArtifacts: updatedPlansByShot.size ? buildNotebookMirrorArtifacts(nextProjectWithAudioPlans(project, updatedPlansByShot), { audioPlan: true }) : [],
     webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
   };
+  } finally {
+    releaseGeneration();
+  }
 };

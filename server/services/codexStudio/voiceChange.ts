@@ -7,6 +7,7 @@ import { eventResultPointers, recordDirectorEvent } from '../directorEvents.js';
 import { assertDailyCapAvailable, incrementProviderUsageDaily } from '../providerUsage.js';
 import { changeElevenLabsVoice } from '../tts/elevenlabs.js';
 import { extractVideoAudioSegment, probeMediaDurationSec, replaceVideoAudioWithSegments } from '../ffmpeg.js';
+import { generationKey, withInFlightGeneration } from '../inFlightGeneration.js';
 import {
   appendSessionJournalEntry,
   shotLabel,
@@ -127,7 +128,7 @@ const normalizeSegments = (project: Project, inputSegments: VoiceChangeSegmentIn
   });
 };
 
-export const voiceChangeVideo = async (
+const voiceChangeVideoUnlocked = async (
   project: Project,
   userId: string,
   input: VoiceChangeVideoInput,
@@ -359,4 +360,17 @@ export const voiceChangeVideo = async (
       ? 'Voice-changed video created and set as the active shot video. Raw source video remains in asset history.'
       : 'Voice-changed video created but not made active.',
   };
+};
+
+export const voiceChangeVideo = async (
+  project: Project,
+  userId: string,
+  input: VoiceChangeVideoInput,
+) => {
+  if (input.dryRun) return voiceChangeVideoUnlocked(project, userId, input);
+  return withInFlightGeneration(
+    generationKey('voice-change', project.id, input.shotId),
+    { kind: 'voice-change', projectId: project.id, shotId: input.shotId },
+    () => voiceChangeVideoUnlocked(project, userId, input),
+  );
 };

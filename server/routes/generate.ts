@@ -15,6 +15,7 @@ import { mountAudioRoutes } from './generate-audio.js';
 import { getProjectRuntimePreset, presetSubject } from '../presets.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
+import { beginInFlightGeneration, generationAlreadyRunningError, generationKey } from '../services/inFlightGeneration.js';
 
 const router = Router();
 
@@ -57,6 +58,9 @@ router.post('/:id/generate-styles', async (req, res) => {
   const subject = presetSubject(concept, project.title, preset);
 
   const prompt = `Generate 4 style options for "${subject}" — ${notes || project.style_description || preset.style.rules}`;
+
+  const releaseGeneration = beginInFlightGeneration(generationKey('style-candidates', project.id, 'project'));
+  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('style-candidates', project.id, project.id, 'project style'));
 
   try {
     console.log(`[${project.id}] Generating style options...`);
@@ -114,6 +118,8 @@ router.post('/:id/generate-styles', async (req, res) => {
       error: err.message,
     });
     sendStructuredError(res, err);
+  } finally {
+    releaseGeneration();
   }
 });
 

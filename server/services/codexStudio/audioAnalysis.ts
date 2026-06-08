@@ -3,6 +3,7 @@ import { readAsBase64, mimeFromExt, storageUrl } from '../../storage.js';
 import { transcribeLyrics, detectStructure } from '../gemini.js';
 import { recordDirectorEvent } from '../directorEvents.js';
 import { logCall } from '../../xray.js';
+import { generationKey, withInFlightGeneration } from '../inFlightGeneration.js';
 import { buildNotebookMirrorArtifacts } from './notebook.js';
 import { appendApplyJournal } from './applies/helpers.js';
 import { webStudioUrl, type Project } from './core.js';
@@ -26,7 +27,7 @@ const nextProject = (project: Project, updates: Partial<Project>): Project => ({
   updatedAt: new Date().toISOString(),
 });
 
-export const analyzeAudioTranscribe = async (
+const analyzeAudioTranscribeUnlocked = async (
   project: Project,
   userId: string,
   opts: { language?: string | null } = {},
@@ -75,7 +76,17 @@ export const analyzeAudioTranscribe = async (
   };
 };
 
-export const analyzeAudioStructure = async (
+export const analyzeAudioTranscribe = async (
+  project: Project,
+  userId: string,
+  opts: { language?: string | null } = {},
+) => withInFlightGeneration(
+  generationKey('audio-transcribe', project.id, 'project'),
+  { kind: 'audio-transcribe', projectId: project.id, targetId: project.id, targetLabel: 'project audio' },
+  () => analyzeAudioTranscribeUnlocked(project, userId, opts),
+);
+
+const analyzeAudioStructureUnlocked = async (
   project: Project,
   userId: string,
 ) => {
@@ -126,3 +137,12 @@ export const analyzeAudioStructure = async (
     note: 'Analyzed audio structure. Audio classification tags are no longer generated; use project style notes for pacing/taste decisions.',
   };
 };
+
+export const analyzeAudioStructure = async (
+  project: Project,
+  userId: string,
+) => withInFlightGeneration(
+  generationKey('audio-structure', project.id, 'project'),
+  { kind: 'audio-structure', projectId: project.id, targetId: project.id, targetLabel: 'project audio' },
+  () => analyzeAudioStructureUnlocked(project, userId),
+);

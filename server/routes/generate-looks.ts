@@ -20,6 +20,7 @@ import { sendStructuredError } from '../services/structuredErrors.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
 import { getProjectPromptOverride } from '../services/projectConfig.js';
 import { isLegacyLookPrompt } from '../prompts/lookPrompts.js';
+import { beginInFlightGeneration, generationAlreadyRunningError, generationKey } from '../services/inFlightGeneration.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -140,6 +141,9 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
   const renderPrompt = withCharacterLooksRecipe(genPrompt);
   const xrayPrompt = `Generate 3 looks for "${member.name}" | Prompt: ${renderPrompt.substring(0, 150)}...`;
 
+  const releaseGeneration = beginInFlightGeneration(generationKey('character-look', project.id, member.id));
+  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('character-look', project.id, member.id, 'character'));
+
   try {
     const imageService = getImageService(project.image_model);
     console.log(`[${project.id}] Generating looks for ${member.name} via ${getImageGenerationModelName(project.image_model)}${userRefImagePath ? ' (with user ref)' : ''}...`);
@@ -214,6 +218,8 @@ router.post('/:id/generate-looks', upload.single('image'), async (req, res) => {
       error: err.message,
     });
     sendStructuredError(res, err);
+  } finally {
+    releaseGeneration();
   }
 });
 
@@ -442,6 +448,9 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
   // Save the (possibly rewritten) prompt
   await updateRows('environments', { id: environmentId }, { generation_prompt: genPrompt, prompts_stale: false });
 
+  const releaseGeneration = beginInFlightGeneration(generationKey('environment-look', project.id, env.id));
+  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('environment-look', project.id, env.id, 'environment'));
+
   try {
     const imageService = getImageService(project.image_model);
     const renderPrompt = withEnvironmentLooksRecipe(genPrompt);
@@ -509,6 +518,8 @@ router.post('/:id/generate-environment-look', upload.single('image'), async (req
       error: err.message,
     });
     sendStructuredError(res, err);
+  } finally {
+    releaseGeneration();
   }
 });
 

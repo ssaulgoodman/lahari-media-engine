@@ -13,6 +13,7 @@ import { saveBuffer, storageUrl } from '../storage.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
 import { getProjectPromptOverride } from '../services/projectConfig.js';
+import { beginInFlightGenerations, generationAlreadyRunningError, generationKey } from '../services/inFlightGeneration.js';
 
 export const mountAudioRoutes = (router: Router) => {
 
@@ -246,6 +247,12 @@ router.post('/:id/generate-dialogue-audio', async (req, res) => {
       const member: any = castById.get(line.characterId);
       return member?.voice_provider && member?.voice_id ? sum + line.text.length : sum;
     }, 0));
+    const releaseGeneration = beginInFlightGenerations(
+      pendingTargets.map(({ line }) => generationKey('dialogue-audio', projectId, line.id)),
+    );
+    if (!releaseGeneration) throw generationAlreadyRunningError('dialogue-audio', projectId, projectId, 'dialogue selection');
+
+    try {
     await assertDailyCapAvailable(req.userId, 'elevenlabs', estimatedUsd);
 
     const generated: Array<{ dialogueId: string; assetId: string; url: string; durationSec?: number; costUsd: number }> = [];
@@ -357,6 +364,9 @@ router.post('/:id/generate-dialogue-audio', async (req, res) => {
       totalCostUsd,
       project: await getFullProject(projectId),
     });
+    } finally {
+      releaseGeneration();
+    }
   } catch (err) {
     console.error(`[${projectId}] Generate dialogue audio failed:`, err);
     sendStructuredError(res, err);
