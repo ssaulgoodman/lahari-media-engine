@@ -12,6 +12,7 @@ import { parseTimestamp } from '../routes/scope-helpers.js';
 import { getProjectPreferencesState, getProjectPromptOverride, getPromptOverrideState } from './projectConfig.js';
 import { createGenerationAttempt, updateGenerationAttempt } from './generationAttempts.js';
 import { generationKey, withInFlightGeneration } from './inFlightGeneration.js';
+import { recordDirectorEvent } from './directorEvents.js';
 
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
@@ -516,29 +517,55 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       console.warn(`  [shot ${shot.id}] last-frame extraction failed: ${err.message}`);
     }
 
+    const shotNow = await selectOne('shots', { id: shot.id });
+    const completedAfterLocalCancel = shotNow?.video_status !== 'loading';
     const videoMetadata = JSON.stringify({
       extracted_last_frame_asset_id: extractedAssetId,
       reference_audio_asset_id: referenceAudioAssetId,
       reference_audio_mode: referenceAudioMode,
       dialogue_strategy: projectDialogueMode,
       native_audio_generated: nativeVideoAudio,
+      completed_after_local_cancel: completedAfterLocalCancel,
+      local_cancel_status: completedAfterLocalCancel ? (shotNow?.video_status || null) : null,
     });
     await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_video', file_path: videoPath, metadata: videoMetadata });
     await updateGenerationAttempt(generationAttemptId, {
       outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
       durationMs: Date.now() - t0,
+      ...(completedAfterLocalCancel ? {
+        chargeStatus: 'provider_completed_after_local_cancel',
+        providerRequestStatus: 'completed_after_local_cancel',
+      } : {}),
     });
 
-    const shotNow = await selectOne('shots', { id: shot.id });
-    const clearVideoError = shotNow?.image_status !== 'error' && shotNow?.end_image_status !== 'error';
-    await updateRows('shots', { id: shot.id }, {
-      video_asset_id: assetId,
-      video_status: 'success',
-      ...(clearVideoError ? { last_error: null } : {}),
-      extracted_last_frame_asset_id: extractedAssetId,
-    });
+    if (!completedAfterLocalCancel) {
+      const clearVideoError = shotNow?.image_status !== 'error' && shotNow?.end_image_status !== 'error';
+      await updateRows('shots', { id: shot.id }, {
+        video_asset_id: assetId,
+        video_status: 'success',
+        ...(clearVideoError ? { last_error: null } : {}),
+        extracted_last_frame_asset_id: extractedAssetId,
+      });
+    } else {
+      await recordDirectorEvent({
+        projectId: project.id,
+        source: 'system',
+        eventType: 'shot_video_completed_after_cancel',
+        entityType: 'asset',
+        entityId: assetId,
+        summary: 'A locally-cancelled video generation completed later and was saved as a recoverable version.',
+        payload: {
+          shotId: shot.id,
+          assetId,
+          extractedLastFrameAssetId: extractedAssetId,
+          previousStatus: shotNow?.video_status || null,
+          provider: result.provider,
+          model: modelId,
+        },
+      });
+    }
 
-    if (!useStoryboardMode && extractedFramePath) {
+    if (!completedAfterLocalCancel && !useStoryboardMode && extractedFramePath) {
       try {
         const nextShot = await findShot(shot.scene_id, shot.sort_order + 1, { continuity_from: 'prev_shot', locked: 0 });
         if (nextShot && nextShot.visual_prompt) {
@@ -602,7 +629,9 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
           ]
           : [],
       contextChain: await buildContextChain(project.id),
-      responseSummary: `Video generated via ${result.provider} (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
+      responseSummary: completedAfterLocalCancel
+        ? `Video generated via ${result.provider} (${modelId}) after local cancel: ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}. Saved as recoverable version, not active shot video.`
+        : `Video generated via ${result.provider} (${modelId}): ${videoPath}${extractedAssetId ? ' (last frame extracted)' : ''}`,
       outputAssetIds: extractedAssetId ? [assetId, extractedAssetId] : [assetId],
       durationMs,
       costEstimate,
@@ -622,6 +651,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       durationSec: result.durationSec,
       costEstimate,
       mode: useStoryboardMode ? 'storyboard' : 'keyframe',
+      completedAfterLocalCancel,
     };
   } catch (err: any) {
     console.error(`[shot ${shot.id}] Video gen failed:`, err);
@@ -665,7 +695,10 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       costEstimate: ['charge_unknown', 'provider_outcome_unknown', 'provider_accepted_pending', 'provider_completed_ingest_failed'].includes(chargeStatus) ? estimatedCostUsd : 0,
       error: err.message,
     });
-    await updateRows('shots', { id: shot.id }, { video_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
+    const shotNow = await selectOne('shots', { id: shot.id });
+    if (shotNow?.video_status === 'loading') {
+      await updateRows('shots', { id: shot.id }, { video_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
+    }
     throw err;
   }
 };

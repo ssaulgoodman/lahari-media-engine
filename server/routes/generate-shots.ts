@@ -265,19 +265,47 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
 
     const durationMs = Date.now() - t0;
 
-    // Save asset
+    // Save asset. If the artist cancelled locally while the provider was still
+    // running, keep the paid output as a recoverable version instead of making
+    // it the active frame.
     const assetId = uuidv4();
-    await insertRow('assets', { id: assetId, project_id: project.id, shot_id: shot.id, category: 'shot_image', file_path: imagePath, prompt: shotPrompt });
-
-    // Only clear last_error if no other operation is in error state
-    const clearError = shot.end_image_status !== 'error' && shot.video_status !== 'error';
-    await updateRows('shots', { id: shot.id }, {
-      image_asset_id: assetId,
-      image_status: 'success',
-      ...(clearError ? { last_error: null } : {}),
-      user_feedback: null,
-      prompts_stale: false,
+    const shotNow = await selectOne('shots', { id: shot.id });
+    const completedAfterLocalCancel = shotNow?.image_status !== 'loading';
+    await insertRow('assets', {
+      id: assetId,
+      project_id: project.id,
+      shot_id: shot.id,
+      category: 'shot_image',
+      file_path: imagePath,
+      prompt: shotPrompt,
+      metadata: completedAfterLocalCancel ? JSON.stringify({
+        completed_after_local_cancel: true,
+        local_cancel_status: shotNow?.image_status || null,
+      }) : null,
     });
+
+    if (!completedAfterLocalCancel) {
+      // Only clear last_error if no other operation is in error state
+      const clearError = shot.end_image_status !== 'error' && shot.video_status !== 'error';
+      await updateRows('shots', { id: shot.id }, {
+        image_asset_id: assetId,
+        image_status: 'success',
+        ...(clearError ? { last_error: null } : {}),
+        user_feedback: null,
+        prompts_stale: false,
+      });
+    } else {
+      await recordDirectorEvent({
+        projectId: project.id,
+        userId: req.userId,
+        source: 'system',
+        eventType: 'shot_image_completed_after_cancel',
+        entityType: 'asset',
+        entityId: assetId,
+        summary: 'A locally-cancelled frame generation completed later and was saved as a recoverable version.',
+        payload: { shotId: shot.id, assetId, previousStatus: shotNow?.image_status || null },
+      });
+    }
 
     await logCall({
       projectId: project.id,
@@ -291,7 +319,9 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
         ...(prevShotEndFramePath ? [{ type: 'image' as const, label: 'Prev end frame', url: storageUrl(prevShotEndFramePath) }] : []),
       ],
       contextChain: await buildContextChain(project.id),
-      responseSummary: `Generated start frame for shot`,
+      responseSummary: completedAfterLocalCancel
+        ? 'Generated start frame after local cancel; saved as recoverable version, not active frame'
+        : 'Generated start frame for shot',
       outputAssetIds: [assetId],
       durationMs,
       costEstimate: 0.04,
@@ -311,7 +341,10 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
       durationMs: 0,
       error: err.message,
     });
-    await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
+    const shotNow = await selectOne('shots', { id: shot.id });
+    if (shotNow?.image_status === 'loading') {
+      await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
+    }
     sendStructuredError(res, err);
   } finally {
     releaseGeneration();
@@ -925,20 +958,40 @@ router.post('/:id/shots/:shotId/clear-end-frame', async (req, res) => {
 // to idle so the artist can retry. Server work (if any) keeps running but
 // its terminal write is harmless on an idle row.
 router.post('/:id/shots/:shotId/cancel-image', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const shot = await selectOne('shots', { id: shotId });
   if (shot?.image_status === 'loading') {
     await updateRows('shots', { id: shotId }, { image_status: 'idle' });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'shot_image_cancel_requested',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist locally cancelled an in-flight frame generation. Provider work may still complete and be saved as a recoverable version.',
+    });
   }
   res.json({ ok: true });
 });
 
 // Cancel an in-flight video generation — same pattern as cancel-image.
 router.post('/:id/shots/:shotId/cancel-video', async (req, res) => {
+  const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
   const shot = await selectOne('shots', { id: shotId });
   if (shot?.video_status === 'loading') {
     await updateRows('shots', { id: shotId }, { video_status: 'idle' });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'shot_video_cancel_requested',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist locally cancelled an in-flight video generation. Provider work may still complete and be saved as a recoverable version.',
+    });
   }
   res.json({ ok: true });
 });
