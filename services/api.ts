@@ -53,6 +53,9 @@ export class ApiError extends Error {
 export const isMissingKeyError = (err: unknown): err is ApiError =>
   err instanceof ApiError && err.code === 'missing_key';
 
+export const isGenerationAlreadyRunning = (err: unknown): err is ApiError =>
+  err instanceof ApiError && err.code === 'generation_already_running';
+
 const handleResponse = async (res: Response) => {
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: { message: res.statusText } }));
@@ -759,11 +762,12 @@ export const cancelShotVideo = async (projectId: string, shotId: string) => {
   return handleResponse(res);
 };
 
-export const generateEndFrame = async (projectId: string, shotId: string, refs?: ShotRefInput[]) => {
+export const generateEndFrame = async (projectId: string, shotId: string, refs?: ShotRefInput[], signal?: AbortSignal) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/generate-end-frame`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(refs ? { refs } : {}),
+    signal,
   });
   return handleResponse(res);
 };

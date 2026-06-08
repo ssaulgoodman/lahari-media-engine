@@ -11,6 +11,7 @@ import type { XRayReference } from '../xray.js';
 import { parseTimestamp } from '../routes/scope-helpers.js';
 import { getProjectPreferencesState, getProjectPromptOverride, getPromptOverrideState } from './projectConfig.js';
 import { createGenerationAttempt, updateGenerationAttempt } from './generationAttempts.js';
+import { generationKey, withInFlightGeneration } from './inFlightGeneration.js';
 
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
@@ -161,7 +162,7 @@ const renderProjectVideoRecipe = (
   return template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, key) => slots[key] || match).trim();
 };
 
-export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
+const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) => {
   const project = await selectOne('projects', { id: projectId });
   if (!project) {
     const error = new Error('Project not found') as Error & { statusCode?: number };
@@ -668,3 +669,10 @@ export const generateShotVideo = async (projectId: string, shotId: string, opts:
     throw err;
   }
 };
+
+export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) =>
+  withInFlightGeneration(
+    generationKey('video', projectId, shotId),
+    { kind: 'video', projectId, shotId },
+    () => generateShotVideoUnlocked(projectId, shotId, opts),
+  );

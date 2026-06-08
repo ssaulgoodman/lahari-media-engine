@@ -178,6 +178,12 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     opsRef.current[key] = ctrl;
     return ctrl.signal;
   }, []);
+  const startExclusiveOp = useCallback((key: string): AbortSignal | null => {
+    if (opsRef.current[key]) return null;
+    const ctrl = new AbortController();
+    opsRef.current[key] = ctrl;
+    return ctrl.signal;
+  }, []);
   const abortOp = useCallback((key: string) => {
     opsRef.current[key]?.abort();
     delete opsRef.current[key];
@@ -550,13 +556,24 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   const handleGenerateEndFrame = async (shotId: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
+    const opKey = `end-frame:${shotId}`;
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.LOADING });
     try {
-      const p = await api.generateEndFrame(project.id, shotId, refs);
+      const p = await api.generateEndFrame(project.id, shotId, refs, signal);
       setProject(p);
     } catch (err: any) {
-      updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.ERROR });
-      setError(`End frame generation failed: ${err.message}`);
+      if (api.isCancelled(err)) {
+        updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.IDLE });
+      } else if (api.isGenerationAlreadyRunning(err)) {
+        return;
+      } else {
+        updateShotOptimistic(shotId, { endImageStatus: GenerationStatus.ERROR });
+        setError(`End frame generation failed: ${err.message}`);
+      }
+    } finally {
+      endOp(opKey);
     }
   };
 
@@ -655,7 +672,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const handleGenerateImage = async (sceneId: string, shotId: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     const opKey = `image:${shotId}`;
-    const signal = startOp(opKey);
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -681,6 +699,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
             } : s)
           };
         });
+      } else if (api.isGenerationAlreadyRunning(err)) {
+        return;
       } else {
         setError(`Image generation failed: ${err.message}`);
         setProject(prev => {
@@ -830,7 +850,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const handleGenerateVideo = async (sceneId: string, shotId: string, promptOverride?: string, refs?: api.ShotRefInput[]) => {
     if (!project) return;
     const opKey = `video:${shotId}`;
-    const signal = startOp(opKey);
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     setProject(prev => {
       if (!prev) return prev;
       return {
@@ -858,6 +879,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
             } : s)
           };
         });
+      } else if (api.isGenerationAlreadyRunning(err)) {
+        return;
       } else {
         setError(err.message);
         setProject(prev => {
@@ -878,8 +901,10 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   const handleGenerateStoryboard = async (shotId: string) => {
     if (!project) return;
+    const opKey = `storyboard:${shotId}`;
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING });
-    const signal = startOp(`storyboard:${shotId}`);
     try {
       const result = await api.generateStoryboard(project.id, shotId, signal);
       setProject(result.project);
@@ -888,10 +913,11 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.IDLE });
         return;
       }
+      if (api.isGenerationAlreadyRunning(err)) return;
       updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
       setError(`Storyboard generation failed: ${err.message}`);
     } finally {
-      endOp(`storyboard:${shotId}`);
+      endOp(opKey);
     }
   };
 
@@ -922,12 +948,14 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     referenceImage?: File
   ) => {
     if (!project || !feedback.trim()) return;
+    const opKey = `storyboard-refine:${shotId}`;
+    const signal = startExclusiveOp(opKey);
+    if (!signal) return;
     if (refineMode === 'edit_image') {
       updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING, storyboardUserFeedback: feedback });
     } else {
       updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
     }
-    const signal = startOp(`storyboard-refine:${shotId}`);
     try {
       const result = await api.refineStoryboard(project.id, shotId, feedback, previousVersionId, refineMode, referenceImage, signal);
       setProject(result.project);
@@ -936,10 +964,11 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.IDLE } : { storyboardPromptStatus: GenerationStatus.IDLE });
         return;
       }
+      if (api.isGenerationAlreadyRunning(err)) return;
       updateShotOptimistic(shotId, refineMode === 'edit_image' ? { storyboardStatus: GenerationStatus.ERROR } : { storyboardPromptStatus: GenerationStatus.ERROR });
       setError(`Storyboard refinement failed: ${err.message}`);
     } finally {
-      endOp(`storyboard-refine:${shotId}`);
+      endOp(opKey);
     }
   };
 

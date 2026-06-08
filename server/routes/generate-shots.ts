@@ -17,6 +17,7 @@ import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
 import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
+import { beginInFlightGeneration, generationAlreadyRunningError, generationKey } from '../services/inFlightGeneration.js';
 import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
 import { getFullProject } from './projects.js';
 import { logCall, buildContextChain } from '../xray.js';
@@ -232,6 +233,9 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     }
   }
 
+  const releaseGeneration = beginInFlightGeneration(generationKey('image', project.id, shot.id));
+  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('image', project.id, shot.id));
+
   try {
     await updateRows('shots', { id: shot.id }, { image_status: 'loading' });
     const t0 = Date.now();
@@ -309,6 +313,8 @@ router.post('/:id/shots/:shotId/generate-image', async (req, res) => {
     });
     await updateRows('shots', { id: shot.id }, { image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     sendStructuredError(res, err);
+  } finally {
+    releaseGeneration();
   }
 });
 
@@ -698,6 +704,9 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
     if (project.style_asset_id) styleImagePath = await resolveAsset(project.style_asset_id);
   }
 
+  const releaseGeneration = beginInFlightGeneration(generationKey('end-frame', projectId, shotId));
+  if (!releaseGeneration) return sendStructuredError(res, generationAlreadyRunningError('end-frame', projectId, shotId));
+
   try {
     await updateRows('shots', { id: shotId }, { end_image_status: 'loading' });
     const t0 = Date.now();
@@ -745,6 +754,8 @@ router.post('/:id/shots/:shotId/generate-end-frame', async (req, res) => {
   } catch (err: any) {
     await updateRows('shots', { id: shotId }, { end_image_status: 'error', last_error: err.message?.slice(0, 500) || 'Unknown error' });
     sendStructuredError(res, err, 'end_frame_generation_failed');
+  } finally {
+    releaseGeneration();
   }
 });
 

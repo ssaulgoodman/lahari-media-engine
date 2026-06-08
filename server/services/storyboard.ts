@@ -19,6 +19,7 @@ import {
   shouldIncludeStyleImage,
   type ContextOverrides,
 } from './contextOverrides.js';
+import { generationKey, withInFlightGeneration } from './inFlightGeneration.js';
 
 type StoryboardRefMeta = {
   label: string;
@@ -75,6 +76,20 @@ type StoryboardContext = {
 };
 
 type StoryboardRefineMode = 'replan' | 'edit_image';
+
+type GenerateStoryboardVersionOptions = {
+  projectId: string;
+  shotId: string;
+  variant?: StoryboardPromptVariant;
+  artistNote?: string;
+  previousVersionId?: string;
+  refineMode?: StoryboardRefineMode;
+  artistReferenceImagePath?: string;
+  contextOverrides?: ContextOverrides;
+  modelOverride?: {
+    storyboardProvider?: string;
+  };
+};
 
 const parseJson = <T>(value: any, fallback: T): T => {
   if (!value) return fallback;
@@ -519,19 +534,7 @@ const renderWithProvider = async (
   };
 };
 
-export const generateStoryboardVersion = async (opts: {
-  projectId: string;
-  shotId: string;
-  variant?: StoryboardPromptVariant;
-  artistNote?: string;
-  previousVersionId?: string;
-  refineMode?: StoryboardRefineMode;
-  artistReferenceImagePath?: string;
-  contextOverrides?: ContextOverrides;
-  modelOverride?: {
-    storyboardProvider?: string;
-  };
-}): Promise<{
+const generateStoryboardVersionUnlocked = async (opts: GenerateStoryboardVersionOptions): Promise<{
   versionId: string;
   assetId: string;
   imageUrl: string;
@@ -735,6 +738,12 @@ ${artistRefNote}`
     throw err;
   }
 };
+
+export const generateStoryboardVersion = async (opts: GenerateStoryboardVersionOptions) => withInFlightGeneration(
+  generationKey('storyboard', opts.projectId, opts.shotId),
+  { kind: 'storyboard', projectId: opts.projectId, shotId: opts.shotId },
+  () => generateStoryboardVersionUnlocked(opts),
+);
 
 export const lockStoryboardVersion = async (projectId: string, shotId: string, versionId?: string): Promise<void> => {
   const shot = await selectOne('shots', { id: shotId });
