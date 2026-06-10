@@ -67,10 +67,13 @@ are SKIP** (mirage already has it, mirage diverged intentionally, it's legacy
    narrows the owned set, and asset search scopes by owned project IDs. Known limit: asset
    recall ranks over the 500 most-recent owned assets before scoring.
 
-5. **Storyboard-lock in shot header** — `3d568c2` (D) · PORT · M · low risk
-   In Seedance storyboard mode the header lock currently locks the *shot* (needs a video)
-   instead of the *storyboard*. Mirage's `ShotCard` lacks `canLockStoryboard`/`visibleLocked`.
-   UX-correctness fix that matches mirage's documented storyboard-lock workflow.
+5. **Storyboard-lock in shot header** — `3d568c2` (D) · PORT · M · low risk · **landed 2026-06-10**
+   In Seedance storyboard mode the header lock now locks/unlocks the *storyboard* (the unit
+   the artist signs off on), not the shot. Ported `canLockStoryboard`/`visibleLocked` to
+   Mirage's `ShotCard`; expanded-panel locks route through the panel's `handleLock` (token
+   bridge) so plan-flush and versionId resolution still apply, and the panel's own
+   lock/unlock controls hide behind `hideLockControls` so the header is the single surface.
+   Kept Mirage's `isLockingShot` spinner on the non-storyboard path.
 
 6. **Fail loud on empty look batches** — `eb51137` (A) · PORT · S · low risk · **landed 2026-06-08**
    Mirage's Gemini batch look functions now retry once on the alternate Gemini image model, then

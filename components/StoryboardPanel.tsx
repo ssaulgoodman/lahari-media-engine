@@ -62,6 +62,11 @@ interface StoryboardPanelProps {
   // compatibility with any non-storyboard-mode call sites.
   subTab?: StoryboardSubTab;
   onSubTabChange?: (next: StoryboardSubTab) => void;
+  // Header lock bridge: ShotCard bumps the token to request a lock from the
+  // expanded panel (which owns versionId + plan-flush), and hides the panel's
+  // own lock/unlock controls so the header is the single lock surface.
+  lockRequestToken?: number;
+  hideLockControls?: boolean;
 }
 
 export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
@@ -74,6 +79,8 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   setModalImage,
   subTab: subTabProp,
   onSubTabChange,
+  lockRequestToken,
+  hideLockControls = false,
 }) => {
   // Controlled/uncontrolled bridge: when the parent passes subTab + onSubTabChange,
   // the panel reads from those (parent-owned). When not, fall back to local state.
@@ -341,6 +348,16 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     await onLockStoryboard(shot.id, versionId);
   };
 
+  // Header-initiated lock: only act on a token bump (ref guard), then run the
+  // same handleLock path so plan-flush and guards apply.
+  const lastLockRequestRef = useRef(lockRequestToken ?? 0);
+  useEffect(() => {
+    const token = lockRequestToken ?? 0;
+    if (token <= lastLockRequestRef.current) return;
+    lastLockRequestRef.current = token;
+    if (!isLocked && hasStoryboard) void handleLock();
+  }, [lockRequestToken, isLocked, hasStoryboard, handleLock]);
+
   const handleRefine = async (feedback: string) => {
     if (!feedback.trim()) return;
     const key = `storyboard:${shot.id}`;
@@ -564,6 +581,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           isPromptCollapsed={isPromptCollapsed}
           onTogglePromptCollapse={() => setIsPromptCollapsed(c => !c)}
           recentlyRefined={recentlyRefined}
+          hideLockControls={hideLockControls}
           refineImage={refineImage}
           onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
@@ -629,6 +647,7 @@ interface StoryboardTabBodyProps {
   // Transient flash when shot.storyboardPrompt changes externally — see
   // the recently-refined effect in the parent.
   recentlyRefined: boolean;
+  hideLockControls: boolean;
   refineImage: { file: File; previewUrl: string } | null;
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
@@ -642,7 +661,7 @@ interface StoryboardTabBodyProps {
 
 const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   shot, isLocked, isGenerating, isError, isRefining, hasStoryboard, versionId,
-  saveState, cutPlanRequired, promptRequired, cutPlanText, promptText,
+  saveState, cutPlanRequired, promptRequired, cutPlanText, promptText, hideLockControls,
   refineMode, onRefineModeChange,
   onPromptChange, onPlanBlur,
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
@@ -814,7 +833,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               "follow the storyboard image" default — see VideoTabBody and
               seedanceShotList(). The Video prompt label shows "Optional" so
               the artist knows the field is empty by choice. */}
-          {hasStoryboard && (
+          {hasStoryboard && !hideLockControls && (
             <button
               onClick={handleLockClick}
               disabled={isGenerating || saving || locking}
@@ -828,7 +847,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
         </div>
       )}
 
-      {isLocked && (
+      {isLocked && !hideLockControls && (
         <div className="flex items-center gap-2">
           <button
             onClick={handleUnlockClick}
