@@ -5,28 +5,48 @@ import { isolatedCacheDir, loadReleaseEnv, requireEnv, rootDir, run } from './re
 
 loadReleaseEnv();
 
+const args = process.argv.slice(2);
+const hasArg = (name) => args.includes(name);
+
+if (hasArg('--help') || hasArg('-h')) {
+  console.log(`Usage: npm run release:mirage-cli -- [--dry-run]
+
+Publishes packages/mirage-cli to npm and verifies the exact version.
+
+Required env for real publish:
+  NPM_TOKEN  npm automation token with publish rights for @ssaulgoodman420/mirage-cli`);
+  process.exit(0);
+}
+
+const dryRun = hasArg('--dry-run');
 const cliDir = path.join(rootDir, 'packages', 'mirage-cli');
 const pkgPath = path.join(cliDir, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-const npmToken = requireEnv('NPM_TOKEN', 'Add it to .env.release.local from an npm automation token with publish rights.');
 const cacheDir = isolatedCacheDir('mirage-npm-cache');
 const userConfigPath = path.join(cacheDir, 'mirage-publish.npmrc');
 
-fs.writeFileSync(userConfigPath, [
-  '@ssaulgoodman420:registry=https://registry.npmjs.org/',
-  '//registry.npmjs.org/:_authToken=${NPM_TOKEN}',
-  'always-auth=true',
-  '',
-].join('\n'));
+const npmToken = dryRun ? '' : requireEnv('NPM_TOKEN', 'Add it to .env.release.local from an npm automation token with publish rights.');
+
+if (!dryRun) {
+  fs.writeFileSync(userConfigPath, [
+    '@ssaulgoodman420:registry=https://registry.npmjs.org/',
+    '//registry.npmjs.org/:_authToken=${NPM_TOKEN}',
+    'always-auth=true',
+    '',
+  ].join('\n'));
+}
 
 const npmEnv = {
   ...process.env,
   NPM_TOKEN: npmToken,
   NPM_CONFIG_CACHE: cacheDir,
   npm_config_cache: cacheDir,
-  NPM_CONFIG_USERCONFIG: userConfigPath,
-  npm_config_userconfig: userConfigPath,
 };
+
+if (!dryRun) {
+  npmEnv.NPM_CONFIG_USERCONFIG = userConfigPath;
+  npmEnv.npm_config_userconfig = userConfigPath;
+}
 
 const existing = run('npm', ['view', `${pkg.name}@${pkg.version}`, 'version'], {
   cwd: cliDir,
@@ -36,6 +56,15 @@ const existing = run('npm', ['view', `${pkg.name}@${pkg.version}`, 'version'], {
 
 if (existing.status === 0 && existing.stdout.trim() === pkg.version) {
   console.log(`${pkg.name}@${pkg.version} is already published.`);
+  process.exit(0);
+}
+
+if (dryRun) {
+  console.log(`Dry run: checking ${pkg.name}@${pkg.version} package contents with isolated npm cache...`);
+  run('npm', ['publish', '--dry-run', '--access', 'public'], {
+    cwd: cliDir,
+    env: npmEnv,
+  });
   process.exit(0);
 }
 
