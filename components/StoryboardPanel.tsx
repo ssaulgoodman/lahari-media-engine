@@ -132,13 +132,12 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   const versionId = shot.storyboardVersionId;
   const dirty = cutPlanText.trim() !== savedPlanText.trim() || promptText.trim() !== savedPromptText.trim();
   const saving = saveState === 'saving';
-  // The backend rejects empty cutPlanText, and an empty plan would
-  // produce a meaningless Seedance prompt. When a storyboard exists,
-  // the cut plan must be non-empty before lock or video generation
-  // is allowed — otherwise the locked version would silently retain
-  // the previous server text, mismatching what the artist sees.
+  // Empty cut plan is allowed end to end — the artist may deliberately
+  // delete it so Seedance falls back to following the board's panel order,
+  // and the backend accepts an explicit empty save. cutPlanEmpty only
+  // drives informational labels, never gates lock/save/generate.
   const promptRequired = !promptText.trim();
-  const cutPlanRequired = (hasStoryboard || !!promptText.trim()) && cutPlanText.trim() === '';
+  const cutPlanEmpty = (hasStoryboard || !!promptText.trim()) && cutPlanText.trim() === '';
 
   // Backend-bound refs only — what the storyboard generator actually uses.
   // Mirrors server/services/storyboard.ts: locked style + locked cast (only
@@ -301,20 +300,14 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
 
   // The single save path used by both onBlur autosave and the explicit Lock
   // flush below. Returns true on success so callers can sequence follow-ups.
-  // An empty cut plan with a storyboard present is treated as a hard failure:
-  // the backend rejects empty cutPlanText, and silently treating it as saved
-  // would let Lock freeze the previous server text instead of what the artist
-  // sees. A no-storyboard or no-change call is a no-op success.
+  // An empty cut plan saves like any other edit (the backend clears the field
+  // and Seedance falls back to board order), so Lock never freezes stale
+  // server text. An empty prompt still fails the save: the prompt is the
+  // planner anchor and the backend rejects clearing it.
   const flushPlan = useCallback(async (): Promise<boolean> => {
     const trimmed = cutPlanText.trim();
     const promptTrimmed = promptText.trim();
-    if (!trimmed) {
-      if (hasStoryboard || promptTrimmed) {
-        setSaveState('failed');
-        return false;
-      }
-      return true;
-    }
+    if (!trimmed && !promptTrimmed && !hasStoryboard) return true;
     if (!promptTrimmed) {
       setSaveState('failed');
       return false;
@@ -336,8 +329,11 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   }, [cutPlanText, promptText, savedPlanText, savedPromptText, hasStoryboard, onUpdateStoryboardPlan, shot.id]);
 
   const handleLock = async () => {
-    // Defense in depth — Lock is also disabled in the UI when these are true.
-    if (saving || cutPlanRequired) return;
+    // Defense in depth — Lock is also disabled in the UI while saving. An
+    // empty cut plan does NOT block locking: the artist may deliberately
+    // delete it to fall back to Seedance's "follow the storyboard image"
+    // default (see the Lock button comment below).
+    if (saving) return;
     // Flush any unsaved edit BEFORE locking, so we never freeze stale text
     // into the locked version. If save fails, abort the lock — the artist
     // sees the failed state and can retry.
@@ -570,7 +566,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           hasStoryboard={hasStoryboard}
           versionId={versionId}
           saveState={saveState}
-          cutPlanRequired={cutPlanRequired}
+          cutPlanEmpty={cutPlanEmpty}
           promptRequired={promptRequired}
           cutPlanText={cutPlanText}
           promptText={promptText}
@@ -600,7 +596,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           hasVideo={hasVideo}
           isVideoGenerating={isVideoGenerating}
           cutPlanText={cutPlanText}
-          cutPlanRequired={cutPlanRequired}
+          cutPlanEmpty={cutPlanEmpty}
           planLoading={planLoading}
           saveState={saveState}
           dirty={dirty}
@@ -630,7 +626,7 @@ interface StoryboardTabBodyProps {
   // (Saving/Saved/Failed badges) moved to the Video tab along with the
   // cut plan editor itself.
   saveState: SaveState;
-  cutPlanRequired: boolean;
+  cutPlanEmpty: boolean;
   promptRequired: boolean;
   cutPlanText: string;
   promptText: string;
@@ -661,7 +657,7 @@ interface StoryboardTabBodyProps {
 
 const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   shot, isLocked, isGenerating, isError, isRefining, hasStoryboard, versionId,
-  saveState, cutPlanRequired, promptRequired, cutPlanText, promptText, hideLockControls,
+  saveState, cutPlanEmpty, promptRequired, cutPlanText, promptText, hideLockControls,
   refineMode, onRefineModeChange,
   onPromptChange, onPlanBlur,
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
@@ -747,7 +743,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             <AutoGrowTextarea
               value={promptText}
               onChange={(e) => onPromptChange((e.target as HTMLTextAreaElement).value)}
-              onBlur={() => { if (cutPlanText.trim()) void onPlanBlur(); }}
+              onBlur={() => { void onPlanBlur(); }}
               placeholder="Write or generate the storyboard image prompt first…"
               rows={4}
               className="w-full surface-inset rounded-md px-3 py-2.5 text-sm text-zinc-300 leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono"
@@ -786,13 +782,14 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               Stop
             </button>
           )}
-          {/* Image gen still hard-blocks on empty cut plan — the backend's
-              writeStoryboardPrompt contract guarantees both fields are
-              populated, so an empty cut plan here means the planner step
-              hasn't run yet and the artist should run it before rendering. */}
+          {/* Image gen needs only the storyboard prompt — the cut plan is
+              never sent to the image provider (it feeds the downstream
+              Seedance video step), so an empty or deliberately-deleted cut
+              plan must not block rendering. promptRequired still covers the
+              planner-not-run case, since the planner fills both fields. */}
           <button
             onClick={() => onGenerateStoryboard(shot.id)}
-            disabled={isGenerating || saving || promptRequired || cutPlanRequired}
+            disabled={isGenerating || saving || promptRequired}
             className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
             // Tooltip priority: required-fields error > staleness hint >
             // nothing. Staleness only surfaces after the first storyboard
@@ -801,8 +798,6 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             title={
               promptRequired
                 ? 'Write a storyboard prompt first.'
-                : cutPlanRequired
-                ? 'Run "Write prompt" first — image gen needs the planner output (also fills the video prompt over in the Video tab).'
                 : promptStale && hasStoryboard
                 ? stalenessHint
                 : undefined
@@ -1000,7 +995,7 @@ interface VideoTabBodyProps {
   hasVideo: boolean;
   isVideoGenerating: boolean;
   cutPlanText: string;
-  cutPlanRequired: boolean;
+  cutPlanEmpty: boolean;
   // Cut plan (= video prompt for Seedance) editing — same save plumbing as
   // the storyboard tab. Editable only while the storyboard is unlocked;
   // locked shots render the value as a read-only block so the input that
@@ -1018,7 +1013,7 @@ interface VideoTabBodyProps {
 }
 
 const VideoTabBody: React.FC<VideoTabBodyProps> = ({
-  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanRequired,
+  scene, shot, isLocked, hasVideo, isVideoGenerating, cutPlanText, cutPlanEmpty,
   planLoading, saveState, dirty, onCutPlanChange, onPlanBlur, onPlanRetry,
   recentlyRefined,
   onUpdateShot, onGenerateVideo,
@@ -1044,7 +1039,7 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
         <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1 flex items-center gap-2">
           Video prompt
           {planLoading && <span className="text-[10px] normal-case tracking-normal text-zinc-400">Loading…</span>}
-          {!planLoading && cutPlanRequired && (
+          {!planLoading && cutPlanEmpty && (
             <span className="text-[10px] normal-case tracking-normal text-zinc-500" title="Empty — Seedance will use a default 'follow the storyboard image's panel order' guide.">
               Optional
             </span>
@@ -1122,7 +1117,7 @@ const VideoTabBody: React.FC<VideoTabBodyProps> = ({
         {!isLocked && (
           <span className="text-[11px] text-zinc-400">Lock the storyboard first.</span>
         )}
-        {isLocked && cutPlanRequired && (
+        {isLocked && cutPlanEmpty && (
           <span className="text-[11px] text-zinc-500" title="Empty video prompt is OK — Seedance will follow the storyboard image's panel order.">
             No video prompt — will follow storyboard order.
           </span>

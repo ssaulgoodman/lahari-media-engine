@@ -581,10 +581,13 @@ router.post('/:id/shots/:shotId/unlock-storyboard', async (req, res) => {
 router.patch('/:id/shots/:shotId/storyboard-plan', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const shotId = paramStr(req.params.shotId);
-  const cutPlanText = String(req.body?.cutPlanText || '').trim();
+  // Empty cutPlanText is a valid save — it clears the cut plan and Seedance
+  // falls back to following the board's panel order. Only a missing field is
+  // rejected, so callers must state the empty intent explicitly.
+  if (req.body?.cutPlanText === undefined) return res.status(400).json({ error: 'cutPlanText required (empty string clears the cut plan)' });
+  const cutPlanText = String(req.body.cutPlanText || '').trim();
   const storyboardPrompt = req.body?.storyboardPrompt === undefined ? undefined : String(req.body.storyboardPrompt || '').trim();
 
-  if (!cutPlanText) return res.status(400).json({ error: 'cutPlanText required' });
   if (storyboardPrompt !== undefined && !storyboardPrompt) return res.status(400).json({ error: 'storyboardPrompt cannot be empty' });
 
   try {
