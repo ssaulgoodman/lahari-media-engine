@@ -774,6 +774,7 @@ Numbering below is stable IDs, not sequential — gaps (1, 3, 5, 6, 8–12) are 
 
 **Pass log:**
 - 2026-06-10 (this commit): prefix-mapped `*_issues` table landed (`migrations/2026-06-10_add_issues_table.sql`, both prefixes, RLS owner-read, `project_id` ON DELETE SET NULL so issues outlive deleted projects). `captureMirageIssue` is now DB-first: inserts `project_id`, `user_id`, `source` (`mcp` / `director-api` / `web`), severity, summary, suggested fix, redacted tool tail, and `status='open'`; returns `issueRef` (row id) + `storage:'db'`. Local `.mirage/issues/` JSON survives only as the fallback when the DB insert fails or Supabase isn't configured (dev), flagged `storage:'filesystem'` + ephemeral note. Both callers thread identity: hosted MCP `mirage_capture_issue` passes `auth.userId`/`'mcp'`, `/api/director/issues/capture` passes `req.userId`/`'director-api'`. Triage read: `GET /api/admin/issues?status=&limit=` (admin-secret gated).
+- 2026-06-10 (review follow-up, Codex P1/P3): added the issues migration to `scripts/migrate-mirage.mjs` `DEFAULT_MIGRATIONS` — the missing-table fallback in `captureMirageIssue` would otherwise mask an unapplied migration as a healthy deploy. Added `GET /api/admin/issues/:id` returning the full row including `recent_tool_calls`, so triage doesn't need direct DB access.
 
 ### 15. Smoke feedback queue from first Blueprint agent run
 

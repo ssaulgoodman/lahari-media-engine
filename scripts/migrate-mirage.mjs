@@ -10,6 +10,7 @@ loadReleaseEnv();
 const DEFAULT_MIGRATIONS = [
   'migrations/2026-06-08_add_project_timelines.sql',
   'migrations/2026-06-08_add_user_personas.sql',
+  'migrations/2026-06-10_add_issues_table.sql',
 ];
 
 const args = process.argv.slice(2);

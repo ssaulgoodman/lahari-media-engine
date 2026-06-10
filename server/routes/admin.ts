@@ -66,6 +66,22 @@ router.get('/issues', auth, async (req, res) => {
   }
 });
 
+// GET /api/admin/issues/:id — full issue row including the redacted tool tail
+router.get('/issues/:id', auth, async (req, res) => {
+  try {
+    const { data, error } = await getSB()
+      .from(T.issues)
+      .select('*')
+      .eq('id', String(req.params.id))
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return res.status(404).json({ error: 'Issue not found' });
+    res.json({ issue: data });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/env — report which env vars are populated
 router.get('/env', auth, (_req, res) => {
   const keys = [
