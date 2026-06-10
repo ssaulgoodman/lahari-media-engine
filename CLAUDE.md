@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repo. Keep this file compact. Full pipeline details live in `docs/pipeline-anatomy.md`; current Mirage v1 task state lives in `docs/mirage-platform-v1-ledger.md`; Codex-specific primer lives in `AGENTS.md`.
+Guidance for Claude Code when working in this repo. Keep this file compact. Full pipeline details live in `docs/pipeline-anatomy.md`; current Mirage v1 task state lives in `docs/mirage-platform-v1-ledger.md`; the post-v1 convergence plan lives in `docs/mirage-convergence-ledger.md` and its port backlog in `docs/lahari-divergence-audit.md`; Codex-specific primer lives in `AGENTS.md`.
 
 ## Build & Run
 
@@ -28,7 +28,8 @@ Useful checks: `npm run build`, `npx tsc --noEmit --pretty false`, `npm run chec
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY` - GPT-5.5 text-provider option, `gpt-image-2` storyboard provider, optional GPT script-writer experiment.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces script generation to GPT-5.5 globally. The normal text-provider picker does not route script writing.
-- `SEGMIND_API_KEY` - video generation and Nano Banana 2 image renderer.
+- `SEGMIND_API_KEY` - default video generation and Nano Banana 2 image renderer.
+- `KIE_API_KEY` - optional BYOK alternate video provider (Kie Veo / Gemini Omni). Segmind stays default.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `DB_TABLE_PREFIX` - backend table prefix. Mirage uses `studio`; Lahari uses `lahari`.
@@ -75,7 +76,7 @@ Other high-value routers: `projects.ts`, `queue.ts`, `render.ts`, `render-callba
 
 ## Pipeline Shape
 
-Start: `StartProject.tsx` is Mirage's primary intake surface. `music_led` projects start from uploaded audio. `scripted_narrative` projects, including the anime preset, start from pasted/uploaded script or related source material. The legacy queue adapter still exists behind `music_video_queue` + `songs`, but it is not the main Mirage frontend entry.
+Start: `StartProject.tsx` is Mirage's primary intake surface. `music_led` projects start from uploaded audio. `scripted_narrative` projects, including the anime preset, start from pasted/uploaded script or related source material. The legacy queue adapter still exists behind `music_video_queue` + `songs`, but it is not the main Mirage frontend entry. To reuse prior work instead of re-asking the artist, `query_artist_memory` (prior projects: taste/format/model clues) and `search_artist_assets` (prior refs/renders/audio) are read-only, user-scoped cross-project tools.
 
 Blueprint: `AnalysisEditor.tsx` now behaves as asset shelves for Concept, Script, Style, Characters, Environments, and Audio where available. Tool availability comes from `server/tools/registry.ts` and project `availableTools` / `blockedTools`, not status-stage branching. Mirage v1 does not expose legacy Lahari curated style presets. If clean workflow-specific curated styles return, `server/style-presets.ts` owns them; preset image is ground truth and `style_description` stays intentionally empty. Characters/environments use editable generation prompts and the locked style image as the visual anchor.
 
@@ -93,7 +94,7 @@ Render: `StepRender.tsx` posts the render-authoritative timeline snapshot to `/a
 | Image default | Gemini 3 Pro Image ("Nano Banana Pro") with flash fallback | `imagen.ts` |
 | Image alternates | `nano-banana-2`, `gpt-image-2` | `segmind-image.ts`, `openai-image.ts` |
 | Storyboard image | project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, `gpt-image-2` | `storyboard.ts` |
-| Video | Segmind Seedance/Veo variants, with Vertex fallback for Veo infra/billing only | `video-provider.ts`, `segmind.ts` |
+| Video | Segmind Seedance/Veo (default); optional BYOK Kie (`kie-veo3`, `kie-veo3-fast`, `kie-gemini-omni-video`); Vertex fallback for Veo infra/billing only | `video-provider.ts`, `segmind.ts`, `kie-video.ts` |
 
 Text-provider routing does **not** include script writing. `planScenes`, `refineScript`, and `writeShotPrompts` stay on Claude Opus because they rely on extended thinking and validation/retry semantics.
 
@@ -129,7 +130,7 @@ Storyboard mode ignores the old extracted-frame continuity chain and does not bl
 
 ## Video Generation
 
-All video generation tries Segmind first. Veo may fall back to Vertex for infra/billing failures when configured. Seedance never falls back to Vertex.
+Routing is by provider-owned model spec (`resolveVideoModelSpec`). Segmind stays the default: Segmind model keys go to Segmind first (Veo may fall back to Vertex for infra/billing failures when configured; Seedance never does). `kie-*` model keys route to the Kie BYOK provider instead (no Vertex fallback).
 
 Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
 
@@ -141,9 +142,9 @@ Default `RENDER_ENGINE=ffmpeg`. FFmpeg is eligible only for video/image/audio it
 
 FFmpeg output: `libx264`, preset `veryfast`, CRF `23`, yuv420p, faststart, AAC audio. Asset pre-staging fetches remote media into `/tmp` and serves via loopback HTTP.
 
-Render rows move through `lahari_renders` (`rendering`, `pending_finalize`, `completed`, `failed`) with progress/stage/error metadata. Use `/api/admin/active-renders` before renderer deploys when possible.
+Render rows move through `lahari_renders` (`rendering`, `pending_finalize`, `completed`, `failed`, `cancelled`) with progress/stage/error metadata. Status writes are compare-and-swap on current status, so a cancel isn't clobbered by a late finish; a render that completes after cancel is saved to history, not published. Use `/api/admin/active-renders` before renderer deploys when possible.
 
-Timeline editor features currently include media library, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. If timeline composition code changes, sync renderer copies with:
+The render timeline is server-backed: browser edits autosave as a local draft, **Save** promotes the cut to the shared project timeline (`*_project_timelines`) with immutable version history, and **Restore**/**Reset** work off that history (timeline routes in `server/routes/render.ts`; Mirage keeps its shotId-keyed `reconcileSnapshotWithInitialClips`). Editor features include media library, split-at-playhead, ripple delete, horizontal scroll, and render history. If timeline composition code changes, sync renderer copies with:
 
 ```bash
 cd remotion-renderer && npm run sync-timeline
@@ -198,6 +199,8 @@ Concept/script/style action bridge: prefer `run_action` for `apply_concept`, `ap
 Storyboard action bridge: prefer `run_action` for `apply_storyboard_prompts`, `import_storyboard_image`, `lock_storyboard`, and `unlock_storyboard`. For local/native storyboard PNGs created by Codex imagegen, POST to `/api/agent/uploads` with `purpose=storyboard_image`, then call `import_storyboard_image({ shotId, sourceAssetId, lock: true })` to attach and approve that exact board. For paid storyboard generation/refine, use `start_job` with `generate_storyboard` or `refine_storyboard_image` after artist approval. `bulk_generate_storyboards` is hidden from the materialized agent surface until proper async batch fan-out exists. Use `contextOverrides` on storyboard generation when the agent needs a one-off ref bundle rather than the shot's default style/cast/env/previous-board refs.
 
 Video action bridge: use `run_action(generate_video, dryRun: true)` for requirements/cost, then `start_job(generate_video)` after approval. `apply_video_prompt` only persists keyframe-mode motion prompt text; it does not generate media.
+
+Paid-generation safety: a duplicate paid generation for the same shot is rejected with `409 generation_already_running` while one is in flight (`inFlightGeneration.ts`) — don't blindly retry. In-flight shot image/video generation can be locally cancelled (`cancel-image` / `cancel-video`); a provider output that lands after cancel is saved as a recoverable version, not promoted to the active frame/video.
 
 Audio action bridge: prefer `run_action` for `apply_audio_plan` and `apply_cast_voice`. Use `run_action(generate_dialogue_audio, { dryRun: true })` for TTS cost/missing voices, then `start_job(generate_dialogue_audio)` after approval. For native-dialogue video whose mouth timing works but voice is wrong, review the raw clip, run `run_action(voice_change_video, { dryRun: true })`, then `start_job(voice_change_video)` after approval; pass one whole-clip segment or explicit speaker cut ranges. `apply_audio_plan` accepts either structured `shots[]` or markdown from `audio-plan.md`.
 

@@ -5,6 +5,7 @@ Guidance for Codex when working in this repo. Keep this file aligned with `CLAUD
 **Architectural context (read first):**
 - `docs/mirage-platform-v1-ledger.md` — current Mirage v1 decisions, task tracks, checkpoints, and pending workstreams.
 - `docs/codex-native-doctrine.md` — durable operating contract. Three editability tiers, MCP/CLI boundary, session-type protocol, distribution arc.
+- `docs/mirage-convergence-ledger.md` — post-v1 plan: collapse Lahari into Mirage as a tenant (tracks/forks/landed work). Port backlog in `docs/lahari-divergence-audit.md`.
 
 ## Operating Principle
 
@@ -112,7 +113,8 @@ Useful checks in this repo: `npm run build`, `npx tsc --noEmit --pretty false`, 
 - `ANTHROPIC_API_KEY`
 - `OPENAI_API_KEY` - GPT-5.5 text-provider option, `gpt-image-2` storyboard/image provider, and optional GPT script-writer experiment.
 - `SCRIPT_WRITER_PROVIDER=openai` (optional) - forces `generate-script` to GPT-5.5 globally. Script writing is otherwise Claude Opus and is intentionally not routed through the text-provider picker.
-- `SEGMIND_API_KEY` - all video generation through Segmind; also Nano Banana 2 image renderer.
+- `SEGMIND_API_KEY` - default video generation; also Nano Banana 2 image renderer.
+- `KIE_API_KEY` - optional BYOK alternate video provider (Kie Veo / Gemini Omni). Segmind stays default.
 - `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` - Postgres + Storage + song catalog.
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `DB_TABLE_PREFIX` - optional. Defaults to `lahari`. Set to `studio` for the fresh platform DB.
@@ -288,7 +290,7 @@ Generate router modules:
 | Image gen default | Gemini 3 Pro Image ("Nano Banana Pro") with flash fallback | `imagen.ts` |
 | Image alternates | `nano-banana-2`, `gpt-image-2` | `segmind-image.ts`, `openai-image.ts` |
 | Storyboard image | Project `storyboard_provider`: `nano-banana-2`, `nano-banana-pro`, `gpt-image-2` | `storyboard.ts` |
-| Video | Segmind: Seedance 2.0 / Veo 3.1 variants | `segmind.ts`, `video-provider.ts` |
+| Video | Segmind Seedance/Veo (default); optional BYOK Kie (`kie-veo3`, `kie-veo3-fast`, `kie-gemini-omni-video`) | `segmind.ts`, `video-provider.ts`, `kie-video.ts` |
 
 ### Text Provider Routing
 
@@ -330,7 +332,7 @@ Continuity:
 
 ## Video Generation
 
-All video generation goes through Segmind first. Veo requests may fall back to Vertex when Segmind fails for infra/billing reasons and Vertex is configured. Seedance never falls back to Vertex.
+Routing is by provider-owned model spec (`resolveVideoModelSpec`); Segmind stays the default. Segmind model keys go to Segmind first (Veo may fall back to Vertex when Segmind fails for infra/billing and Vertex is configured; Seedance never does). `kie-*` model keys route to the Kie BYOK provider instead (no Vertex fallback).
 
 Seedance constraint: `first_frame_url` and `reference_images` are mutually exclusive. Keyframe mode prioritizes frame control. Storyboard mode sends no `first_frame_url`; it sends locked storyboard as `@image1` plus style/cast/environment refs.
 
@@ -362,7 +364,12 @@ Renderer engines:
 - FFmpeg output: `libx264`, preset `veryfast`, CRF `23`, yuv420p, faststart, audio mixed with AAC.
 - Ineligible timelines fall back to Remotion. Keep Remotion for future text effects, transitions, and richer layout work.
 
-Timeline editor features include media library, split-at-playhead, ripple delete, horizontal scroll, version append, and render history. Sync renderer timeline copies with `cd remotion-renderer && npm run sync-timeline` after changing upstream timeline composition code.
+The render timeline is server-backed: browser edits autosave as a local draft, **Save** promotes the cut to the shared project timeline (`*_project_timelines`) with immutable version history, and **Restore**/**Reset** work off that history (timeline routes in `server/routes/render.ts`; Mirage keeps its shotId-keyed `reconcileSnapshotWithInitialClips`). Editor features include media library, split-at-playhead, ripple delete, horizontal scroll, and render history. Sync renderer timeline copies with `cd remotion-renderer && npm run sync-timeline` after changing upstream timeline composition code.
+
+Paid-generation safety, cancel, and reuse:
+- A duplicate paid generation for the same shot returns `409 generation_already_running` while one is in flight (`server/services/inFlightGeneration.ts`) — don't blindly retry.
+- In-flight shot image/video can be locally cancelled (`cancel-image` / `cancel-video`); an output that lands after cancel is saved as a recoverable version, not the active frame/video. Final-render rows add a `cancelled` status; status writes are compare-and-swap, and a render that completes after cancel goes to history, not published.
+- Reuse instead of re-asking the artist: `query_artist_memory` / `search_artist_assets` are read-only, user-scoped cross-project tools, and saved personas (`list_personas` / `save_persona` / `create_project_from_persona`) seed a new project's character ref, voice, style, tone, and workflow from a reusable identity.
 
 ## Staleness
 
