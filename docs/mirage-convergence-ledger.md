@@ -271,6 +271,13 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   ref-frame intrusion + mid-clip style drift (3-5 clip paid smoke still pending); and
   `rename_project` registry action closing the shell-vs-concept title divergence. Apply
   `migrations/2026-06-10_add_issues_table.sql` before deploying.
+- 2026-06-10 · beta-prep hardening 2 · `7c7a156` / `dbcf5c1` / `2eedd32` · stretch slices:
+  `generate_candidates` ships four per-mode examples with `entityIds[]` made explicit;
+  storyboard-mode header lock now locks the storyboard, not the shot (lahari `3d568c2`
+  ported with a token bridge into the panel's lock path); ffmpeg fast path accepts benign
+  default layout metadata while real transforms still force Remotion (lahari `a75ab45`
+  adapted, not blind-ported). C0's render-hardening backlog is now down to the conditional
+  media-library endpoints.
 
 ## References
 
