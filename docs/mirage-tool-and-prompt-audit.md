@@ -130,6 +130,7 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 | `generate_dialogue_audio` | audio | Renders TTS for selected dialogue lines | TTS | ● |
 | `apply_audio_plan` | audio | Saves Codex-written dialogue + sound notes per shot | DB only | — |
 | `apply_cast_voice` | audio | Assigns ElevenLabs voice ID to a cast member | DB only | — |
+| `rename_project` | system | Renames the project shell title (lists/sidebar/header); graph content untouched | DB only | — |
 | `apply_project_preferences` | system | Saves project model/provider routing | DB only | — |
 | `apply_project_style_notes` | system | Saves project per-surface style notes (taste memory) | DB only | — |
 | `apply_project_prompt_override` | system | Saves project-scoped prompt recipe override | DB only | — |
@@ -285,6 +286,13 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 **Notes:** _blank_
 
 **Pass log:** none
+
+#### rename_project
+
+**Notes:** _blank_
+
+**Pass log:**
+- 2026-06-10 (this commit): action created (smoke feedback item 15 P1 "project-visible title sync"). Renames the project shell title only; refuses empty/oversize titles; no-op receipt when unchanged; records `project_renamed` director event + journal entry; receipt refreshes the brief notebook mirror. Concept/graph content untouched — title sync is explicit, not a hidden side effect of `apply_concept`.
 
 #### apply_project_preferences
 
@@ -686,7 +694,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 **B · Post-test friction wins (P1, small/high-ROI)**
 - ☐ Stronger action examples (make `entityIds[]` impossible to miss)
 - ☐ `get_project_state({ detail: "agent_working_set" })` — compact loop state
-- ☐ `rename_project` / title sync (shell title vs concept title divergence)
+- ✅ `rename_project` / title sync (shell title vs concept title divergence) — shipped 2026-06-10
 
 **C · Product quality (the real lever — currently unmeasured)**
 - ☐ Output quality harness — generate N candidates → judge → surface weak (style drift, ref intrusion, bad blocking) → feed fixes back into prompts/refs/style-notes. Doubles as the first parallel/sub-agent workflow.
@@ -781,6 +789,9 @@ Pass log:
 
 **P1 soon: project-visible title sync.**
 The shell title and concept title can diverge (`Neon Afterimage` vs `Beautiful Killers`) with no obvious agent action to rename the visible project. Add `rename_project`, or let `apply_concept` optionally sync the shell title.
+
+Pass log:
+- 2026-06-10: `rename_project` shipped as a system-surface registry action (explicit rename, not an `apply_concept` side effect). See its Layer 2 pass log.
 
 **P1 soon: compact agent working set.**
 Add `get_project_state({ detail: "agent_working_set" })` for the common loop: checkpoint, entities with IDs/locked refs, shots with cast/env IDs, stale flags, weak links, and next legal actions. Current production state is useful but still larger than needed for many turns.

@@ -1150,6 +1150,54 @@ export const applyProjectSettingsConfig = async (
   };
 };
 
+export const renameProjectConfig = async (
+  project: Project,
+  title: string,
+) => {
+  const nextTitle = String(title || '').trim();
+  if (!nextTitle) throw new Error('rename_project requires a non-empty title.');
+  if (nextTitle.length > 160) throw new Error('Project title is too long (max 160 characters).');
+  if (nextTitle === project.title) {
+    return {
+      kind: 'mirage.apply.rename_project',
+      generatedAt: new Date().toISOString(),
+      project: { id: project.id, title: project.title },
+      changed: {},
+      changedArtifacts: [],
+      webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+      note: 'Project title is already set to this value.',
+    };
+  }
+
+  await updateRows('projects', { id: project.id }, { title: nextTitle, updated_at: new Date().toISOString() });
+
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: 'project_renamed',
+    entityType: 'project',
+    entityId: project.id,
+    summary: `Codex renamed project to "${nextTitle}".`,
+    payload: { previousTitle: project.title, title: nextTitle },
+  });
+  appendSessionJournalEntry(
+    project,
+    'renamed project',
+    `Previous: ${project.title}\nNext: ${nextTitle}`,
+  );
+
+  const notebookProject: Project = { ...project, title: nextTitle };
+  return {
+    kind: 'mirage.apply.rename_project',
+    generatedAt: new Date().toISOString(),
+    project: { id: project.id, title: nextTitle },
+    changed: { title: { previous: project.title, next: nextTitle } },
+    changedArtifacts: buildNotebookMirrorArtifacts(notebookProject, { brief: true }),
+    webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+    note: 'Renamed the project shell title. Concept and graph content are unchanged.',
+  };
+};
+
 export const applyProjectStyleNotesConfig = async (
   project: Project,
   styleNotes: unknown,

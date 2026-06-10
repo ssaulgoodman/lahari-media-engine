@@ -554,6 +554,19 @@ export const SYSTEM_ACTION_SPECS = {
     },
     examples: [{ projectId: 'project_uuid', settings: { aspectRatio: '9:16' } }],
   },
+  rename_project: {
+    key: 'rename_project',
+    title: 'Rename project',
+    surface: 'system',
+    mutates: true,
+    paid: false,
+    description: 'Rename the project shell title shown in project lists, the sidebar, and the web studio header. Use this when the working title has diverged from the concept title and the artist confirms the new name. Does not touch concept, script, or any other graph content.',
+    input: {
+      projectId: 'string',
+      title: 'string, 1-160 chars',
+    },
+    examples: [{ projectId: 'project_uuid', title: 'Beautiful Killers' }],
+  },
   apply_project_preferences: {
     key: 'apply_project_preferences',
     title: 'Apply project preferences',

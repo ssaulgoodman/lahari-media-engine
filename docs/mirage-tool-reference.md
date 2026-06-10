@@ -113,6 +113,7 @@ Every action is agent-callable via `run_action(actionKey, input)` or `start_job(
 | `generate_dialogue_audio` | audio | Renders TTS for selected dialogue lines | TTS | ● |
 | `apply_audio_plan` | audio | Saves Codex-written dialogue + sound notes per shot | DB only | — |
 | `apply_cast_voice` | audio | Assigns ElevenLabs voice ID to a cast member | DB only | — |
+| `rename_project` | system | Renames the project shell title (lists/sidebar/header); graph content untouched | DB only | — |
 | `apply_project_preferences` | system | Saves project model/provider routing | DB only | — |
 | `apply_project_style_notes` | system | Saves project per-surface style notes (taste memory) | DB only | — |
 | `apply_project_prompt_override` | system | Saves project-scoped prompt recipe override | DB only | — |

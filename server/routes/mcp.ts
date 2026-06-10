@@ -517,6 +517,10 @@ const projectSettingsInputSchema = z.object({
   }),
   allowExistingVisualsStale: z.boolean().optional(),
 });
+const renameProjectInputSchema = z.object({
+  projectId,
+  title: z.string().min(1).max(160),
+});
 const workflowNameSchema = z.string().min(1).max(80).regex(/^[a-z0-9][a-z0-9_-]*$/);
 const applyProjectWorkflowInputSchema = z.object({
   projectId,
@@ -1000,6 +1004,10 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       return studio.applyProjectSettingsConfig(await fullProjectForUser(input.projectId, auth.userId), input.settings, {
         allowExistingVisualsStale: input.allowExistingVisualsStale,
       });
+    }
+    if (actionKey === 'rename_project') {
+      const input = renameProjectInputSchema.parse(rawInput);
+      return studio.renameProjectConfig(await fullProjectForUser(input.projectId, auth.userId), input.title);
     }
     if (actionKey === 'list_workflows') {
       return studio.listProjectWorkflows();
