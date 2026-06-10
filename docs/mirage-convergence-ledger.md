@@ -109,8 +109,9 @@ Small, safe, ships value immediately. The audit's duplicate-generation guard and
 topology items have already landed. Render cancellation and blind-update hardening have also
 landed, including the conditional status guards the audit called out. Remaining C0 work starts
 with media/render hardening from `lahari-divergence-audit.md` cluster B:
-- `a75ab45` ffmpeg benign-layout eligibility (adapt as a "non-default layout" check, not
-  lahari's wholesale delete, so real transforms still force Remotion).
+- ~~`a75ab45` ffmpeg benign-layout eligibility~~ — landed 2026-06-10 as the planned
+  "non-default layout" adapt (benign defaults take the ffmpeg fast path; real transforms
+  still force Remotion).
 - `a3151bb`/`881cda9` media-library hide/upload endpoints (part of the render-polish story).
 
 ### C1 — World-standard sidebar `[ready now]`

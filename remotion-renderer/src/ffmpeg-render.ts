@@ -59,28 +59,47 @@ const hasNonDefaultEffects = (details: any) => {
   return false;
 };
 
-const hasLayoutOverrides = (details: any) => {
+// Saved timelines often carry layout metadata with purely default values.
+// The ffmpeg path composes every visual as objectFit "contain" centered on
+// the full canvas, so a layout value that reproduces exactly that is benign;
+// anything else is a real transform and must fall back to Remotion. Unknown
+// or unparseable values count as non-default (correctness over speed).
+const hasNonDefaultLayout = (details: any, size: { width: number; height: number }) => {
   if (!details) return false;
-  const layoutKeys = [
-    'top',
-    'left',
-    'right',
-    'bottom',
-    'x',
-    'y',
-    'width',
-    'height',
-    'scale',
-    'scaleX',
-    'scaleY',
-    'rotate',
-    'rotation',
-    'transform',
-    'objectFit',
-    'objectPosition',
-    'crop',
-  ];
-  return layoutKeys.some((key) => details[key] !== undefined && details[key] !== null);
+  for (const key of ['top', 'left', 'right', 'bottom', 'x', 'y']) {
+    const value = details[key];
+    if (value === undefined || value === null) continue;
+    if (parseFloat(String(value)) !== 0) return true;
+  }
+  for (const [key, full] of [['width', size?.width], ['height', size?.height]] as const) {
+    const value = details[key];
+    if (value === undefined || value === null) continue;
+    if (Number(value) !== full) return true;
+  }
+  for (const key of ['scale', 'scaleX', 'scaleY']) {
+    const value = details[key];
+    if (value === undefined || value === null) continue;
+    const numeric = Number(value);
+    // identity in either unit convention (1 = css scale factor, 100 = percent)
+    if (numeric !== 1 && numeric !== 100) return true;
+  }
+  for (const key of ['rotate', 'rotation']) {
+    const value = details[key];
+    if (value === undefined || value === null) continue;
+    if (parseFloat(String(value)) !== 0) return true;
+  }
+  if (details.transform != null && String(details.transform).trim() !== '' && details.transform !== 'none') return true;
+  if (details.objectFit != null && details.objectFit !== 'contain') return true;
+  if (details.objectPosition != null) {
+    const position = String(details.objectPosition).trim().toLowerCase();
+    if (position !== 'center' && position !== 'center center' && position !== '50% 50%') return true;
+  }
+  if (details.crop != null) {
+    if (typeof details.crop !== 'object') return true;
+    const cropValues = Object.values(details.crop).filter((value) => value !== undefined && value !== null);
+    if (cropValues.some((value) => parseFloat(String(value)) !== 0)) return true;
+  }
+  return false;
 };
 
 const itemSrc = (item: TimelineItem) => {
@@ -123,7 +142,7 @@ export const canRenderWithFfmpeg = (inputProps: TimelineRenderProps): Eligibilit
       if (hasNonDefaultEffects(details)) {
         return { ok: false, reason: 'timeline has visual effects' };
       }
-      if (hasLayoutOverrides(details)) {
+      if (hasNonDefaultLayout(details, inputProps.size)) {
         return { ok: false, reason: 'timeline has custom visual positioning' };
       }
     }

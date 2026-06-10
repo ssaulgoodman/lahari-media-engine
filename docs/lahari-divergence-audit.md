@@ -82,11 +82,13 @@ are SKIP** (mirage already has it, mirage diverged intentionally, it's legacy
 
 ### Tier 3 — refinements / conditional
 
-7. **ffmpeg benign-layout eligibility** — `a75ab45` (B) · ADAPT · S · med risk
-   Mirage's `ffmpeg-render.ts` is byte-identical to lahari's pre-fix state and over-rejects
-   to Remotion on default/benign layout metadata. Port the *intent* as a "non-default
-   layout" check (mirror `hasNonDefaultEffects`), **not** lahari's wholesale delete, so real
-   transforms/crops still force the Remotion fallback.
+7. **ffmpeg benign-layout eligibility** — `a75ab45` (B) · ADAPT · S · med risk · **landed 2026-06-10**
+   Adapted as designed: `hasLayoutOverrides` (any layout key present → Remotion) replaced
+   with `hasNonDefaultLayout(details, size)` — benign means "reproduces the ffmpeg path's
+   own contain-centered-on-canvas composition" (zeros, canvas-size width/height, identity
+   scale in either unit convention, zero rotation, `contain`/`center`, empty crop). Real
+   transforms/crops and unparseable values still force Remotion. Lahari's wholesale delete
+   was NOT ported.
 
 8. **Split paid rate limits (image vs video)** — `4c7c561` (A) · ADAPT · S · low risk
    Mirage lumps all paid tools into one `mcp:paid`/day bucket; video costs far more than
@@ -212,14 +214,13 @@ renderer-reject failure update to a conditional `.eq('status','rendering')`, fix
 helpers (table is prefix-mapped `lahari_renders`) and param-guarded routing — don't copy
 lahari's hardcoded `getSB().from('lahari_renders')`.
 
-### a75ab45 — Allow ffmpeg render with benign layout metadata  ·  ADAPT · S · med
+### a75ab45 — Allow ffmpeg render with benign layout metadata  ·  ADAPTED · landed 2026-06-10
 Lahari deletes the `hasLayoutOverrides` eligibility gate so timelines carrying default
-layout fields take the fast ffmpeg path instead of falling back to Remotion. Mirage's
-`remotion-renderer/src/ffmpeg-render.ts` is byte-identical to lahari's pre-fix state
-(`hasLayoutOverrides` at `:62-84`, rejects at `:126`). **Do not blind-port the delete** —
-lahari's wholesale removal would silently ffmpeg-render genuine positioning/crop transforms
-wrong. Port as a "non-default layout" predicate (mirror the existing `hasNonDefaultEffects`)
-so benign defaults pass but real transforms still force Remotion.
+layout fields take the fast ffmpeg path instead of falling back to Remotion. Mirage ported
+the *intent*, not the delete: `hasNonDefaultLayout(details, size)` passes only values that
+reproduce the ffmpeg path's own composition (objectFit `contain` centered on the full
+canvas — zero offsets, canvas-size width/height, identity scale, zero rotation, empty
+crop); real transforms/crops and unparseable values still force the Remotion fallback.
 
 Server-timeline chain status: `d394179`, `75b1d1b`, `41d09ad`, `ec6e879`, `c90d4f8`,
 `5768e10`, `bc4931a`, `5105dd8`, and `28fd4e5` are now **ADAPTED as the C3 base**, except
