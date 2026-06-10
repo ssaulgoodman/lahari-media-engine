@@ -256,12 +256,10 @@ Every action is agent-callable via `run_action` / `start_job`. Quick index table
 #### generate_video
 
 **Notes:**
-- **Seedance storyboard-mode prompt hardening (per Saul's production observations).** Two recurring failure modes in `seedance-storyboard-video` (board_plus_timing variant in `server/services/seedance-storyboard-rd.ts:buildSeedanceStoryboardVideoPrompt`):
-  1. **Ref-frame intrusion** (~25% of clips): the video randomly inserts a character reference image as-is for a brief moment between/during panels. Has to be cut manually. Current prompt says "identity anchor only" but doesn't explicitly forbid using the ref as a video frame. Proposed addition to the "Identity refs" block: *"Reference images are guides, not frames. Never insert them — even briefly, even for a single frame — between or during panels. They exist only to anchor likeness, costume, and environment geometry."*
-  2. **Style drift mid-clip**: Seedance randomly shifts the rendering/palette/aesthetic, often toward photoreal or a more generic look. Current prompt only addresses character/environment identity, not style preservation. Proposed addition after the preserve-identity paragraph: *"Style discipline: match the rendering, palette, line treatment, texture, and finish of the storyboard @image1 and the locked style reference throughout the clip. Do not drift toward photoreal, toward a different aesthetic, or toward a more generic look mid-clip. Identity refs are guides for likeness only — never use them as aesthetic targets."*
-- Both additions should land together in one slice, with a small smoke test (3-5 representative clips) to confirm the additions help and don't introduce new artifacts. Catalog template and tool-reference doc need matching updates when this lands.
+- **🟡 Smoke pending for the 2026-06-10 prompt hardening:** run 3-5 representative storyboard-mode clips to confirm the two new instruction blocks reduce ref-frame intrusion / style drift without introducing new artifacts. Paid run — Saul to trigger.
 
-**Pass log:** none
+**Pass log:**
+- 2026-06-10 (this commit): Seedance storyboard-video prompt hardening landed (both additions from Saul's production observations, in one slice as specced). The Identity refs block now ends with "Reference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame — between or during panels." (targets the ~25% ref-frame intrusion); a new "Style discipline" paragraph after preserve-identity pins rendering/palette/line/texture to @image1 + the locked style ref and forbids mid-clip drift toward photoreal/generic (targets style drift). `board_plus_timing` variant only. Catalog template + `mirage-tool-reference.md` contract synced.
 
 #### apply_video_prompt
 

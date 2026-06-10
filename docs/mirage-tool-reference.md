@@ -186,7 +186,7 @@ Composes the Seedance prompt for video gen from a locked storyboard.
 - Triggered by: `generate_video` in storyboard workflow mode
 - Model: `project.video_model` (Seedance variants only)
 - Inputs: storyboardImage (@image1), referenceImages (@image2+), rows/cols, cutPlanText, clipDuration, mood, clipDirection, lipsyncEnabled
-- Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. No panel borders/numbers in output.
+- Contract: animates the locked storyboard panels left-to-right, top-to-bottom as one continuous edited shot. Preserves character identity + environment geometry across panels. Refs are guides, not frames — never inserted into the video, even for a single frame. Style discipline: rendering/palette/texture match @image1 + locked style ref throughout; no mid-clip drift toward photoreal or a more generic look. No panel borders/numbers in output.
 - Output: video clip
 
 ### Web-direct (16) — fires only from Visual Studio buttons

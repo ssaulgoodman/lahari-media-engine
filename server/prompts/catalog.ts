@@ -972,11 +972,13 @@ Animate the storyboard @image1 into one {{clipDuration}}s clip. Follow the panel
 
 Shot: {{clipDirection}}
 
-{{refBindings ? "Identity refs (do not redesign):\\n" + refBindings : ""}}
+{{refBindings ? "Identity refs (do not redesign):\\n" + refBindings + "\\nReference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame — between or during panels. They exist only to anchor likeness, costume, and environment geometry." : ""}}
 {{cutPlanText ? "\\nPanel beats:\\n" + cutPlanText : ""}}
 {{lipsyncEnabled ? "\\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural." : ""}}
 
 Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
+
+Style discipline: match the rendering, palette, line treatment, texture, and finish of the storyboard @image1 and the locked style reference throughout the clip. Do not drift toward photoreal, toward a different aesthetic, or toward a more generic look mid-clip. Identity refs are guides for likeness only — never use them as aesthetic targets.
 
 Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`,
     source: { file: 'server/services/seedance-storyboard-rd.ts', lines: 'buildSeedanceStoryboardVideoPrompt (board_plus_timing variant)' },

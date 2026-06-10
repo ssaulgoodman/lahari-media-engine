@@ -320,10 +320,12 @@ ${opts?.nativeAudioEnabled ? 'Generate synchronized native audio when the prompt
 
 Shot: ${input.clipDirection}
 
-${refBindings ? `Identity refs (do not redesign):\n${refBindings}` : ''}
+${refBindings ? `Identity refs (do not redesign):\n${refBindings}\nReference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame — between or during panels. They exist only to anchor likeness, costume, and environment geometry.` : ''}
 ${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}${nativeAudioInstruction}
 
 Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
+
+Style discipline: match the rendering, palette, line treatment, texture, and finish of the storyboard @image1 and the locked style reference throughout the clip. Do not drift toward photoreal, toward a different aesthetic, or toward a more generic look mid-clip. Identity refs are guides for likeness only — never use them as aesthetic targets.
 
 ${preset.studio.videoPromptRules}
 ${opts?.lipsyncEnabled ? `Use @audio1 only as a rhythm reference. If a singer, performer, or visible character mouth is clearly visible, add subtle mouth movement matching @audio1; avoid exaggerated dialogue lip-sync if the face is not featured.` : ''}
