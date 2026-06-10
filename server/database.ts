@@ -50,6 +50,7 @@ const T = {
   project_timelines: `${TABLE_PREFIX}_project_timelines`,
   project_timeline_versions: `${TABLE_PREFIX}_project_timeline_versions`,
   personas: `${TABLE_PREFIX}_personas`,
+  issues: `${TABLE_PREFIX}_issues`,
 } as const;
 
 type TableKey = keyof typeof T;

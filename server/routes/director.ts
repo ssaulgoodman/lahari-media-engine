@@ -479,6 +479,8 @@ router.post('/issues/capture', audited('director.issues.capture', async (req) =>
   await assertProjectAccess(req.body.projectId, req.userId);
   return captureMirageIssue({
     projectId: req.body.projectId,
+    userId: req.userId,
+    source: 'director-api',
     severity: req.body.severity || 'mid',
     summary: req.body.summary,
     suggestedFix: req.body.suggestedFix,

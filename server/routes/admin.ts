@@ -47,6 +47,25 @@ router.get('/usage', auth, async (req, res) => {
   }
 });
 
+// GET /api/admin/issues?status=open&limit=50 — captured agent/artist issue reports
+router.get('/issues', auth, async (req, res) => {
+  const status = typeof req.query.status === 'string' && req.query.status ? req.query.status : null;
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit || '50'), 10) || 50, 1), 200);
+  try {
+    let q = getSB()
+      .from(T.issues)
+      .select('id, project_id, user_id, source, severity, summary, suggested_fix, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (status) q = q.eq('status', status);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    res.json({ count: (data || []).length, issues: data || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/env — report which env vars are populated
 router.get('/env', auth, (_req, res) => {
   const keys = [

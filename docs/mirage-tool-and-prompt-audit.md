@@ -764,13 +764,10 @@ Numbering below is stable IDs, not sequential — gaps (1, 3, 5, 6, 8–12) are 
 
 **Don't forget to do this.** Easy to defer indefinitely; that's how legacy chrome accumulates.
 
-### 14. Durable issue capture
+### 14. Durable issue capture — ✅ DONE
 
-**Problem:** `mirage_capture_issue` currently writes JSON files to the server-local `.mirage/issues/` directory. That works for local engine debugging, but deployed Railway storage is ephemeral; reports can disappear on restart/redeploy and there is no web-visible issue inbox.
-
-**Slice:** add a prefix-mapped `*_issues` table and route `mirage_capture_issue` / `/api/director/issues/capture` into it. Store `project_id`, `user_id`, `severity`, `summary`, `suggested_fix`, redacted recent tool tail, status, timestamps, and source (`mcp`, `director-api`, `web`). Keep the local JSON file only as a dev fallback if DB insert fails outside production.
-
-**Why deferred:** not a smoke blocker, but important before widening beta. Agents telling artists "I logged it" should mean the issue is durable and inspectable after deploys.
+**Pass log:**
+- 2026-06-10 (this commit): prefix-mapped `*_issues` table landed (`migrations/2026-06-10_add_issues_table.sql`, both prefixes, RLS owner-read, `project_id` ON DELETE SET NULL so issues outlive deleted projects). `captureMirageIssue` is now DB-first: inserts `project_id`, `user_id`, `source` (`mcp` / `director-api` / `web`), severity, summary, suggested fix, redacted tool tail, and `status='open'`; returns `issueRef` (row id) + `storage:'db'`. Local `.mirage/issues/` JSON survives only as the fallback when the DB insert fails or Supabase isn't configured (dev), flagged `storage:'filesystem'` + ephemeral note. Both callers thread identity: hosted MCP `mirage_capture_issue` passes `auth.userId`/`'mcp'`, `/api/director/issues/capture` passes `req.userId`/`'director-api'`. Triage read: `GET /api/admin/issues?status=&limit=` (admin-secret gated).
 
 ### 15. Smoke feedback queue from first Blueprint agent run
 

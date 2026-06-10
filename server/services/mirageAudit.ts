@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { getSB, insertRow, T } from '../database.js';
 import { isPaidActionKey } from './actionRegistry.js';
 
@@ -557,8 +558,20 @@ export const summarizeAgentTiming = async (opts: {
   };
 };
 
-export const captureMirageIssue = (input: {
+type IssueSource = 'mcp' | 'director-api' | 'web';
+
+const isMissingIssuesTableError = (error: any) => {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  return code === '42P01'
+    || code === 'PGRST205'
+    || message.includes('_issues');
+};
+
+export const captureMirageIssue = async (input: {
   projectId?: string | null;
+  userId?: string | null;
+  source?: IssueSource;
   severity: IssueSeverity;
   summary: string;
   suggestedFix?: string | null;
@@ -575,6 +588,33 @@ export const captureMirageIssue = (input: {
       ? redactAuditValue(input.recentToolCalls)
       : readAuditTail(input.projectId, 20),
   };
+  if (durableAuditConfigured()) {
+    const issueId = randomUUID();
+    try {
+      await insertRow('issues', {
+        id: issueId,
+        project_id: issue.projectId,
+        user_id: input.userId || null,
+        source: input.source || 'mcp',
+        severity: issue.severity,
+        summary: issue.summary,
+        suggested_fix: issue.suggestedFix,
+        recent_tool_calls: issue.recentToolCalls || [],
+        status: 'open',
+        created_at: issue.capturedAt,
+      });
+      return {
+        ...issue,
+        issueRef: issueId,
+        storage: 'db',
+        note: 'Issue captured durably for Mirage engine debugging.',
+      } as Record<string, unknown>;
+    } catch (error: any) {
+      if (!isMissingIssuesTableError(error)) {
+        console.warn(`[mirage-issues] durable persist failed: ${error?.message || error}`);
+      }
+    }
+  }
   const issueFile = `${timestampSlug()}-${input.severity}.json`;
   const filePath = path.join(issuesDir(), issueFile);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -582,7 +622,8 @@ export const captureMirageIssue = (input: {
   const result: Record<string, unknown> = {
     ...issue,
     issueRef: issueFile.replace(/\.json$/, ''),
-    note: 'Issue captured for Mirage engine debugging. Server filesystem paths are intentionally not exposed.',
+    storage: 'filesystem',
+    note: 'Issue captured to local server storage (ephemeral on hosted deployments). Server filesystem paths are intentionally not exposed.',
   };
   if (process.env.NODE_ENV !== 'production') {
     result.path = filePath;

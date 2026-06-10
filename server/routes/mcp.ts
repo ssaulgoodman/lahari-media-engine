@@ -2300,7 +2300,7 @@ const createHostedMcpServer = (auth: HostedAuth) => {
 
   const captureIssue = async ({ projectId, severity, summary, suggestedFix, recentToolCalls }: any) => {
     await assertProjectAccess(projectId, auth.userId);
-    return captureMirageIssue({ projectId, severity, summary, suggestedFix, recentToolCalls });
+    return captureMirageIssue({ projectId, userId: auth.userId, source: 'mcp', severity, summary, suggestedFix, recentToolCalls });
   };
 
   registerTool('mirage_capture_issue', {
