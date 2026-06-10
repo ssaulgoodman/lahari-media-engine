@@ -263,6 +263,14 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   Mirage CLI to `0.1.11` for the new init template and plugin manifest to `0.1.9` for the new
   skill copy.
 
+- 2026-06-10 · beta-prep hardening · `f9b2130` / `e6e4b75` / `5d81b68` · three pre-onboarding
+  slices from the tool audit backlog: durable prefix-mapped `*_issues` table behind
+  `mirage_capture_issue` (DB-first, user/source attributed, `GET /api/admin/issues` triage,
+  local JSON now dev-fallback only); Seedance storyboard-video prompt hardening against
+  ref-frame intrusion + mid-clip style drift (3-5 clip paid smoke still pending); and
+  `rename_project` registry action closing the shell-vs-concept title divergence. Apply
+  `migrations/2026-06-10_add_issues_table.sql` before deploying.
+
 ## References
 
 - Audit + port backlog: `lahari-divergence-audit.md`
