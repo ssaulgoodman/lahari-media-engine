@@ -11,10 +11,10 @@ export const LOOK_ACTION_SPECS = {
     input: {
       projectId: 'string',
       entityType: '"cast" | "environment"',
-      entityIds: 'string[]',
+      entityIds: 'string[] — always an array, even for a single entity; use the cast/environment ids from project state',
       note: 'optional string',
       promptOverride: 'optional string; only one entityId may be used',
-      guideAssetId: 'optional existing Mirage asset id',
+      guideAssetId: 'optional existing Mirage asset id (from /api/agent/uploads or a prior generation)',
       contextOverrides: 'optional context include/exclude controls, e.g. { includeStyleImage: false, includeProjectStyleDescription: false, styleNoteSections: { include: ["image"] } }',
     },
     examples: [{
@@ -22,6 +22,21 @@ export const LOOK_ACTION_SPECS = {
       entityType: 'cast',
       entityIds: ['cast_member_uuid'],
       note: 'make the outfit simpler and closer to the locked style reference',
+    }, {
+      projectId: 'project_uuid',
+      entityType: 'environment',
+      entityIds: ['environment_uuid_a', 'environment_uuid_b'],
+    }, {
+      projectId: 'project_uuid',
+      entityType: 'cast',
+      entityIds: ['cast_member_uuid'],
+      guideAssetId: 'asset_uuid_from_agent_upload',
+      note: 'match this uploaded reference for identity; keep the locked style rendering',
+    }, {
+      projectId: 'project_uuid',
+      entityType: 'cast',
+      entityIds: ['cast_member_uuid'],
+      promptOverride: 'Full-body reference of the character in a neutral pose on a plain soft background, rendered to match the locked style reference.',
     }],
   },
   list_candidates: {

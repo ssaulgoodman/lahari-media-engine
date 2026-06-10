@@ -692,7 +692,7 @@ Scannable view of everything ahead. Detailed entries with the same IDs follow be
 - ☐ **Thorough test** of the full agent-native chain (skills now clean — measures the system, not skill rot)
 
 **B · Post-test friction wins (P1, small/high-ROI)**
-- ☐ Stronger action examples (make `entityIds[]` impossible to miss)
+- ✅ Stronger action examples (make `entityIds[]` impossible to miss) — shipped 2026-06-10
 - ☐ `get_project_state({ detail: "agent_working_set" })` — compact loop state
 - ✅ `rename_project` / title sync (shell title vs concept title divergence) — shipped 2026-06-10
 
@@ -804,6 +804,9 @@ Pass log:
 
 **P1 soon: stronger action examples.**
 Action schemas need exact happy-path examples for each common mode. `generate_candidates` must make `entityIds[]` impossible to miss, with separate cast/env examples including `guideAssetId` and `promptOverride`.
+
+Pass log:
+- 2026-06-10: `generate_candidates` now ships four happy-path examples (cast + note, multi-id environment, upload-guided via `guideAssetId`, single-entity `promptOverride`) and the `entityIds` input doc says "always an array, even for a single entity". Materialized `config/actions/looks.json` picks this up from the registry automatically.
 
 **Substantially resolved for smoke (was P0): reliable local workbench sync.**
 The first smoke test exposed the sync seam: `mint_cli_token -> mirage-cli sync` failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads, which bloats context and can't do a full refresh. The CLI bridge is now hardened enough that this is no longer a smoke blocker. What remains is the durable architecture move (kill npx entirely), demoted to the deferred tier below.
