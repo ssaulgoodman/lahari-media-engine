@@ -2,6 +2,7 @@ import { stat, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { stageTimelineAssets } from './asset-staging';
 import { canRenderWithFfmpeg, renderTimelineWithFfmpeg } from './ffmpeg-render';
+import { ensureUploadableMp4 } from './output-optimizer';
 import { shutdownPosthog, track, trackError } from './posthog';
 import { renderTimeline } from './render';
 import { projectExists, uploadRender, writeTerminalFallback } from './storage';
@@ -165,6 +166,7 @@ type RenderErrorCode =
   | 'chromium_oom'
   | 'asset_404'
   | 'project_deleted'
+  | 'output_too_large'
   | 'supabase_5xx'
   | 'timeout'
   | 'empty_output'
@@ -175,6 +177,9 @@ const classifyRenderError = (err: unknown): RenderErrorCode => {
   const text = message.toLowerCase();
 
   if (text.includes('empty render output')) return 'empty_output';
+  if (text.includes('output too large') || text.includes('maximum allowed size') || text.includes('object-size limit')) {
+    return 'output_too_large';
+  }
   if (text.includes('project not found before render')) return 'project_deleted';
   if (text.includes('out of memory') || /\boom\b/.test(text) || text.includes('memory limit')) {
     return 'chromium_oom';
@@ -338,6 +343,24 @@ export const runRenderJob = async ({
     }
     if (!result.durationInFrames || result.durationInFrames <= 0) {
       throw new Error(`empty render output: ${result.durationInFrames} frames`);
+    }
+
+    const uploadable = await ensureUploadableMp4(outputPath, result.durationInFrames / stagedAssets.inputProps.fps);
+    if (uploadable.outputPath !== outputPath) {
+      const originalPath = outputPath;
+      outputPath = uploadable.outputPath;
+      await unlink(originalPath).catch(() => {});
+      console.log(
+        `[render] compressed render=${renderId} originalBytes=${uploadable.originalSizeBytes} ` +
+        `bytes=${uploadable.sizeBytes} maxBytes=${uploadable.maxBytes}`,
+      );
+      track('render_output_compressed', projectId, {
+        renderId,
+        engine,
+        originalSizeBytes: uploadable.originalSizeBytes,
+        sizeBytes: uploadable.sizeBytes,
+        maxBytes: uploadable.maxBytes,
+      });
     }
 
     await reportProgress('uploading', 0.94, true);

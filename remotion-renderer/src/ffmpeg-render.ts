@@ -45,7 +45,7 @@ const numberEnv = (name: string, fallback: number) => {
 };
 
 const ffmpegPreset = () => process.env.FFMPEG_PRESET || 'veryfast';
-const ffmpegCrf = () => String(Math.round(numberEnv('FFMPEG_CRF', 23)));
+const ffmpegCrf = () => String(Math.round(numberEnv('FFMPEG_CRF', 26)));
 
 const seconds = (ms: number) => Math.max(0, ms / 1000);
 const frameMs = (fps: number) => 1000 / fps;

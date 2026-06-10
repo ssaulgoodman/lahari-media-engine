@@ -85,6 +85,8 @@ const renderErrorHint = (code?: string | null) => {
       return 'One of the timeline media files could not be fetched.';
     case 'project_deleted':
       return 'The project was deleted before the renderer started.';
+    case 'output_too_large':
+      return 'The rendered MP4 was too large for storage. Try a shorter render or lower resolution.';
     case 'supabase_5xx':
       return 'Supabase Storage returned a temporary server error.';
     case 'timeout':

@@ -36,6 +36,14 @@ export const uploadRender = async (
   });
   if (error) {
     console.error('[storage] upload failed', { key, sizeBytes: buf.byteLength, error });
+    const status = String((error as any).statusCode || (error as any).status || '');
+    const message = String((error as any).message || '');
+    if (status === '413' || /maximum allowed size|exceeded/i.test(message)) {
+      throw new Error(
+        `Render output too large for Supabase Storage (${buf.byteLength} bytes). ` +
+        `The renderer tried to upload past the configured object-size limit.`,
+      );
+    }
     throw new Error(
       `Supabase upload failed (${buf.byteLength} bytes): ${JSON.stringify(error)}`,
     );
