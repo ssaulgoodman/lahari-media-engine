@@ -17,6 +17,7 @@
     "check:storyboard-contract": "tsx scripts/check-storyboard-prompt-contract.ts",
     "smoke:agent-contract": "tsx scripts/mirage-agent-contract-smoke.ts",
     "release:mirage-cli": "node scripts/release-mirage-cli.mjs",
+    "migrate:mirage": "node scripts/migrate-mirage.mjs",
     "deploy:mirage": "node scripts/deploy-mirage.mjs",
     "lahari": "tsx cli/lahari.ts",
     "lahari:mcp": "tsx mcp/lahari.ts",
