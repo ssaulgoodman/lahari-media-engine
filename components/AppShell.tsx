@@ -69,12 +69,24 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   // Renders viewer (popup) — opened from sidebar entries.
   const [rendersFor, setRendersFor] = useState<{ id: string; title: string } | null>(null);
 
-  // Project sidebar
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Project rail — persistent on desktop, overlay drawer on narrow viewports.
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState<ProjectSummary[]>([]);
   const [projectListLoading, setProjectListLoading] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+
+  // The rail is always visible, so the list refreshes on mount and whenever
+  // the active project changes (create/fork/switch) instead of on drawer open.
+  useEffect(() => {
+    let cancelled = false;
+    setProjectListLoading(true);
+    api.listProjects()
+      .then(list => { if (!cancelled) setProjectList(list); })
+      .catch(() => { /* keep the previous list on transient failures */ })
+      .finally(() => { if (!cancelled) setProjectListLoading(false); });
+    return () => { cancelled = true; };
+  }, [project?.id]);
 
   const startRename = (id: string, currentTitle: string) => {
     setRenamingId(id);
@@ -1305,23 +1317,10 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   // ─── Project Sidebar ──────────────────────────────────────────
 
-  const openSidebar = async () => {
-    setSidebarOpen(true);
-    setProjectListLoading(true);
-    try {
-      const list = await api.listProjects();
-      setProjectList(list);
-    } catch {
-      setProjectList([]);
-    } finally {
-      setProjectListLoading(false);
-    }
-  };
-
   const loadProject = async (id: string) => {
-    if (project?.id === id) { setSidebarOpen(false); return; }
+    if (project?.id === id) { setMobileSidebarOpen(false); return; }
     setLoading(true);
-    setSidebarOpen(false);
+    setMobileSidebarOpen(false);
     try {
       const p = await api.getProject(id);
       setProject(p);
@@ -1337,6 +1336,13 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
 
   // ─── Navigation ─────────────────────────────────────────────────
 
+  // Phase clicks from the rail. usePersistedProject already persists the
+  // step to the URL; closing the Prompts overlay keeps the destination visible.
+  const handleStepChange = useCallback((step: AppStep) => {
+    setPromptsOpen(false);
+    setCurrentStep(step);
+  }, []);
+
   const activeAgentOperationList = Object.values(agentOperations)
     .sort((a, b) => Date.parse(a.started_at || '') - Date.parse(b.started_at || ''));
   const realtimeBadge = activeAgentOperationList[0]
@@ -1348,18 +1354,48 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[999] focus:top-2 focus:left-2 focus:bg-white focus:text-black focus:px-4 focus:py-2 focus:rounded-md focus:text-sm">Skip to content</a>
       <AppHeader
         activeAgentOperationList={activeAgentOperationList}
-        currentStep={currentStep}
         project={project}
         realtimeBadge={realtimeBadge}
-        signOut={signOut}
-        user={user}
-        onOpenPrompts={() => setPromptsOpen(true)}
-        onOpenSidebar={openSidebar}
+        onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
         onOpenXray={() => setXrayOpen(true)}
-        onStepChange={setCurrentStep}
       />
 
       <div className="flex flex-1 overflow-hidden">
+        <ProjectSidebar
+          activeProjectId={project?.id}
+          currentStep={currentStep}
+          mobileOpen={mobileSidebarOpen}
+          project={project}
+          projectList={projectList}
+          projectListLoading={projectListLoading}
+          renameDraft={renameDraft}
+          renamingId={renamingId}
+          user={user}
+          workspace={{ id: 'personal', name: 'Personal workspace' }}
+          signOut={signOut}
+          onCancelRename={cancelRename}
+          onCloseMobile={() => setMobileSidebarOpen(false)}
+          onLoadProject={loadProject}
+          onNewProject={() => handleStepChange(AppStep.UPLOAD)}
+          onOpenPrompts={() => setPromptsOpen(true)}
+          onRenameDraftChange={setRenameDraft}
+          onRequestDelete={(p) => setDestructive({
+            title: `Delete "${p.title}"?`,
+            description: 'Removes the project from the list. Generated files stay on disk and can be re-linked later if needed.',
+            mode: 'simple',
+            confirmLabel: 'Delete',
+            run: async () => {
+              await api.deleteProject(p.id);
+              setProjectList(list => list.filter(x => x.id !== p.id));
+              if (project?.id === p.id) setProject(null);
+            },
+          })}
+          onSaveRename={saveRename}
+          onStartRename={startRename}
+          onStepChange={handleStepChange}
+          onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
+        />
+
         <main id="main-content" className="flex-1 overflow-y-auto relative">
           {/* Loading overlay — visible during project switch */}
           {(restoring || (loading && !project)) && (
@@ -1528,33 +1564,6 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         action={destructive}
         onCancel={() => setDestructive(null)}
         onRun={runDestructive}
-      />
-
-      <ProjectSidebar
-        activeProjectId={project?.id}
-        isOpen={sidebarOpen}
-        projectList={projectList}
-        projectListLoading={projectListLoading}
-        renameDraft={renameDraft}
-        renamingId={renamingId}
-        onCancelRename={cancelRename}
-        onClose={() => setSidebarOpen(false)}
-        onLoadProject={loadProject}
-        onRenameDraftChange={setRenameDraft}
-        onRequestDelete={(p) => setDestructive({
-          title: `Delete "${p.title}"?`,
-          description: 'Removes the project from the list. Generated files stay on disk and can be re-linked later if needed.',
-          mode: 'simple',
-          confirmLabel: 'Delete',
-          run: async () => {
-            await api.deleteProject(p.id);
-            setProjectList(list => list.filter(x => x.id !== p.id));
-            if (project?.id === p.id) setProject(null);
-          },
-        })}
-        onSaveRename={saveRename}
-        onStartRename={startRename}
-        onViewRenders={(projectId, title) => setRendersFor({ id: projectId, title })}
       />
 
       {/* Renders viewer popup — accessible from sidebar entries */}

@@ -1,14 +1,7 @@
 import React from 'react';
-import { AppStep, ApiProject } from '../types';
+import { ApiProject } from '../types';
 import { getVideoModel } from '../constants/videoModels';
 import type { AgentOperationRow, RealtimeNotice } from '../hooks/useRealtimePresence';
-
-const PIPELINE_STEPS = [
-  { id: AppStep.UPLOAD, label: 'Start' },
-  { id: AppStep.BLUEPRINT, label: 'Blueprint' },
-  { id: AppStep.STUDIO, label: 'Studio' },
-  { id: AppStep.RENDER, label: 'Render' },
-];
 
 const WORKFLOW_LABEL: Record<string, string> = {
   music_led: 'Music-led',
@@ -32,40 +25,36 @@ const PRESET_LABEL: Record<string, string> = {
 
 type AppHeaderProps = {
   activeAgentOperationList: AgentOperationRow[];
-  currentStep: AppStep;
   project: ApiProject | null;
   realtimeBadge: RealtimeNotice | null;
-  signOut: () => Promise<void>;
-  user: { id: string; email?: string; user_metadata?: any };
-  onOpenPrompts: () => void;
-  onOpenSidebar: () => void;
+  onOpenMobileSidebar: () => void;
   onOpenXray: () => void;
-  onStepChange: (step: AppStep) => void;
 };
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   activeAgentOperationList,
-  currentStep,
   project,
   realtimeBadge,
-  signOut,
-  user,
-  onOpenPrompts,
-  onOpenSidebar,
+  onOpenMobileSidebar,
   onOpenXray,
-  onStepChange,
 }) => (
   <header className="h-14 bg-[#141418]/90 backdrop-blur-xl border-b border-white/[0.06] flex-shrink-0 z-50">
     <div className="h-full px-6 flex items-center gap-8">
+      {/* Narrow viewports: the rail collapses, this reopens it as an overlay */}
       <button
-        onClick={onOpenSidebar}
-        className="flex items-center gap-2.5 group outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md flex-shrink-0"
+        onClick={onOpenMobileSidebar}
+        aria-label="Open navigation"
+        className="md:hidden p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 flex-shrink-0"
       >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+
+      <div className="flex items-center gap-2.5 flex-shrink-0 min-w-0">
         <span className="text-sm font-display font-semibold text-white tracking-tight">Mirage</span>
         {project && (
           <>
             <span className="text-zinc-400/60 text-sm">/</span>
-            <span className="text-sm text-zinc-300 group-hover:text-white transition-colors truncate max-w-[200px]">{project.title}</span>
+            <span className="text-sm text-zinc-300 truncate max-w-[200px]">{project.title}</span>
             {WORKFLOW_LABEL[project.workflowKey] && (
               <span
                 className="text-[10px] uppercase tracking-wider font-mono text-zinc-400 px-1.5 py-0.5 rounded surface-inset"
@@ -76,39 +65,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             )}
           </>
         )}
-        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-zinc-400/60 group-hover:text-zinc-300 transition-colors flex-shrink-0"><path d="M6 9l6 6 6-6"/></svg>
-      </button>
+      </div>
 
-      <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
-        {PIPELINE_STEPS.map((step) => {
-          const isActive = currentStep === step.id;
-          const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
-          const hasShotPlan = !!project && project.scenes.some(s => s.shots.length > 0);
-          const isAccessible =
-            step.id === AppStep.UPLOAD ||
-            (project && step.id === AppStep.BLUEPRINT) ||
-            (project && step.id === AppStep.STUDIO && hasShotPlan) ||
-            (project && step.id === AppStep.RENDER && hasRenderableContent);
-
-          return (
-            <button
-              key={step.id}
-              disabled={!isAccessible}
-              onClick={() => onStepChange(step.id)}
-              className={`relative px-3.5 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md ${
-                isActive
-                  ? 'text-white'
-                  : isAccessible
-                    ? 'text-zinc-400 hover:text-white'
-                    : 'text-zinc-400/40 cursor-not-allowed'
-              }`}
-            >
-              {step.label}
-              {isActive && <span aria-hidden="true" className="absolute left-3.5 right-3.5 -bottom-[12px] h-px bg-white/70" />}
-            </button>
-          );
-        })}
-      </nav>
+      <div className="flex-1" />
 
       <div className="flex items-center gap-1 flex-shrink-0">
         {project && realtimeBadge && (
@@ -131,36 +90,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </span>
           </div>
         )}
-        <a
-          href="/account/keys"
-          className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
-          title="Your API keys for paid providers (BYOK). Required before generation."
-        >
-          API Keys
-        </a>
-        <button
-          onClick={onOpenPrompts}
-          className="text-[11px] text-zinc-400 hover:text-white px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 font-mono uppercase tracking-wider"
-          title="Prompts - the templates that drive every AI call"
-        >
-          Prompts
-        </button>
-        <div className="w-px h-4 bg-white/[0.06]" />
-        <button
-          onClick={signOut}
-          className="flex items-center gap-2 px-2.5 py-1 rounded-md hover:bg-white/[0.06] transition-colors outline-none group"
-          title={`Signed in as ${user.email || 'user'} - click to sign out`}
-        >
-          {user.user_metadata?.avatar_url ? (
-            <img src={user.user_metadata.avatar_url} alt="" className="w-5 h-5 rounded-full" />
-          ) : (
-            <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[10px] text-zinc-300 font-medium">
-              {(user.email || '?')[0].toUpperCase()}
-            </div>
-          )}
-          <span className="text-[11px] text-zinc-400 group-hover:text-white transition-colors hidden lg:inline">{user.email?.split('@')[0]}</span>
-        </button>
-        {project && <div className="w-px h-4 bg-white/[0.06]" />}
         {project && (
           <>
             <span

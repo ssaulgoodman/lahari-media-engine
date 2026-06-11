@@ -1,5 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { AppStep, ApiProject } from '../types';
 
 export type ProjectSummary = {
   id: string;
@@ -12,15 +13,234 @@ export type ProjectSummary = {
   renderCount?: number;
 };
 
+// Workspace tier — reserved for C2. Only a static identity chip renders today;
+// the real switcher replaces WorkspaceSlot in place without reshaping the rail.
+export type WorkspaceSummary = {
+  id: string;
+  name: string;
+};
+
 type ProjectSidebarProps = {
   activeProjectId?: string;
-  isOpen: boolean;
+  currentStep: AppStep;
+  mobileOpen: boolean;
+  project: ApiProject | null;
   projectList: ProjectSummary[];
   projectListLoading: boolean;
   renameDraft: string;
   renamingId: string | null;
+  user: { email?: string; user_metadata?: any };
+  workspace: WorkspaceSummary;
+  signOut: () => Promise<void>;
   onCancelRename: () => void;
-  onClose: () => void;
+  onCloseMobile: () => void;
+  onLoadProject: (id: string) => void;
+  onNewProject: () => void;
+  onOpenPrompts: () => void;
+  onRenameDraftChange: (value: string) => void;
+  onRequestDelete: (project: ProjectSummary) => void;
+  onSaveRename: () => void;
+  onStartRename: (id: string, title: string) => void;
+  onStepChange: (step: AppStep) => void;
+  onViewRenders: (projectId: string, title: string) => void;
+};
+
+export const ProjectSidebar: React.FC<ProjectSidebarProps> = (props) => (
+  <>
+    {/* Persistent rail — always visible at desktop widths */}
+    <aside className="hidden md:flex w-64 flex-shrink-0 flex-col bg-obsidian-900 border-r border-white/[0.06]">
+      <RailContent {...props} />
+    </aside>
+
+    {/* Narrow viewports: the same rail as an overlay drawer, opened from the header */}
+    <AnimatePresence>
+      {props.mobileOpen && (
+        <>
+          <motion.div
+            key="rail-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/60 z-[100] md:hidden"
+            onClick={props.onCloseMobile}
+          />
+          <motion.aside
+            key="rail-panel"
+            initial={{ x: -280, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -280, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+            className="fixed top-0 left-0 bottom-0 w-64 bg-obsidian-900 border-r border-white/[0.06] z-[101] flex flex-col md:hidden"
+          >
+            <RailContent {...props} />
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
+  </>
+);
+
+const PHASES = [
+  { id: AppStep.BLUEPRINT, label: 'Blueprint' },
+  { id: AppStep.STUDIO, label: 'Studio' },
+  { id: AppStep.RENDER, label: 'Render' },
+];
+
+const RailContent: React.FC<ProjectSidebarProps> = ({
+  activeProjectId,
+  currentStep,
+  project,
+  projectList,
+  projectListLoading,
+  renameDraft,
+  renamingId,
+  user,
+  workspace,
+  signOut,
+  onCancelRename,
+  onCloseMobile,
+  onLoadProject,
+  onNewProject,
+  onOpenPrompts,
+  onRenameDraftChange,
+  onRequestDelete,
+  onSaveRename,
+  onStartRename,
+  onStepChange,
+  onViewRenders,
+}) => {
+  // Same gating as the old header pipeline nav — Studio needs a shot plan,
+  // Render needs at least one generated clip.
+  const hasShotPlan = !!project && project.scenes.some(s => s.shots.length > 0);
+  const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
+  const phaseAccessible = (step: AppStep) =>
+    step === AppStep.BLUEPRINT ? !!project
+      : step === AppStep.STUDIO ? hasShotPlan
+        : hasRenderableContent;
+
+  return (
+    <>
+      <WorkspaceSlot workspace={workspace} />
+
+      {/* Current project + switcher */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="px-4 pt-3 pb-1.5 flex items-center justify-between flex-shrink-0">
+          <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">Projects</span>
+          <button
+            onClick={onNewProject}
+            title="New project"
+            className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+          {projectListLoading && projectList.length === 0 ? (
+            <div className="space-y-2 p-2">
+              {[1, 2, 3].map(i => <div key={i} className="skeleton h-10 rounded-lg" />)}
+            </div>
+          ) : projectList.length === 0 ? (
+            <p className="text-xs text-zinc-400 text-center py-6">No projects yet</p>
+          ) : (
+            <ProjectTree
+              activeProjectId={activeProjectId}
+              projectList={projectList}
+              renameDraft={renameDraft}
+              renamingId={renamingId}
+              onCancelRename={onCancelRename}
+              onLoadProject={onLoadProject}
+              onRenameDraftChange={onRenameDraftChange}
+              onRequestDelete={onRequestDelete}
+              onSaveRename={onSaveRename}
+              onStartRename={onStartRename}
+              onViewRenders={onViewRenders}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Phase navigation — steps persist to the URL via usePersistedProject */}
+      <nav className="px-2 py-2 border-t border-white/[0.06] space-y-px flex-shrink-0">
+        {PHASES.map((phase) => {
+          const isActive = currentStep === phase.id;
+          const isAccessible = phaseAccessible(phase.id);
+          return (
+            <button
+              key={phase.id}
+              disabled={!isAccessible}
+              onClick={() => { onStepChange(phase.id); onCloseMobile(); }}
+              className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 ${
+                isActive
+                  ? 'bg-white/[0.08] text-white'
+                  : isAccessible
+                    ? 'text-zinc-300 hover:text-white hover:bg-white/[0.03]'
+                    : 'text-zinc-400/40 cursor-not-allowed'
+              }`}
+            >
+              {phase.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Account / settings / BYOK */}
+      <div className="px-2 py-2 border-t border-white/[0.06] space-y-px flex-shrink-0">
+        <a
+          href="/account/keys"
+          title="Your API keys for paid providers (BYOK). Required before generation."
+          className="flex items-center gap-2.5 px-3 py-2 rounded-md text-xs text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          API Keys
+        </a>
+        <button
+          onClick={() => { onOpenPrompts(); onCloseMobile(); }}
+          title="Prompts - the templates that drive every AI call"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Prompts
+        </button>
+        <button
+          onClick={signOut}
+          title={`Signed in as ${user.email || 'user'} - click to sign out`}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-white/[0.06] transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 group"
+        >
+          {user.user_metadata?.avatar_url ? (
+            <img src={user.user_metadata.avatar_url} alt="" className="w-5 h-5 rounded-full flex-shrink-0" />
+          ) : (
+            <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center text-[10px] text-zinc-300 font-medium flex-shrink-0">
+              {(user.email || '?')[0].toUpperCase()}
+            </div>
+          )}
+          <span className="text-xs text-zinc-400 group-hover:text-white transition-colors truncate">{user.email?.split('@')[0]}</span>
+          <span className="ml-auto text-[11px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">Sign out</span>
+        </button>
+      </div>
+    </>
+  );
+};
+
+// C2 slot: render-only workspace identity. Swap this component for the real
+// switcher when workspaces exist — the rail layout around it stays put.
+const WorkspaceSlot: React.FC<{ workspace: WorkspaceSummary }> = ({ workspace }) => (
+  <div className="px-3 pt-3 pb-2.5 border-b border-white/[0.06] flex-shrink-0">
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md surface-inset">
+      <div className="w-5 h-5 rounded bg-zinc-700 flex items-center justify-center text-[10px] text-zinc-300 font-medium flex-shrink-0">
+        {workspace.name[0]?.toUpperCase() || 'W'}
+      </div>
+      <span className="text-xs text-zinc-300 truncate">{workspace.name}</span>
+    </div>
+  </div>
+);
+
+type ProjectTreeProps = {
+  activeProjectId?: string;
+  projectList: ProjectSummary[];
+  renameDraft: string;
+  renamingId: string | null;
+  onCancelRename: () => void;
   onLoadProject: (id: string) => void;
   onRenameDraftChange: (value: string) => void;
   onRequestDelete: (project: ProjectSummary) => void;
@@ -29,82 +249,7 @@ type ProjectSidebarProps = {
   onViewRenders: (projectId: string, title: string) => void;
 };
 
-export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
-  activeProjectId,
-  isOpen,
-  projectList,
-  projectListLoading,
-  renameDraft,
-  renamingId,
-  onCancelRename,
-  onClose,
-  onLoadProject,
-  onRenameDraftChange,
-  onRequestDelete,
-  onSaveRename,
-  onStartRename,
-  onViewRenders,
-}) => (
-  <AnimatePresence>
-    {isOpen && (
-      <>
-        <motion.div
-          key="sidebar-backdrop"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="fixed inset-0 bg-black/60 z-[100]"
-          onClick={onClose}
-        />
-        <motion.aside
-          key="sidebar-panel"
-          initial={{ x: -320, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: -320, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-          className="fixed top-0 left-0 bottom-0 w-80 bg-obsidian-900 border-r border-white/[0.06] z-[101] flex flex-col"
-        >
-          <div className="h-14 px-5 flex items-center justify-between border-b border-white/[0.06] flex-shrink-0">
-            <span className="text-sm font-medium text-white">Projects</span>
-            <button
-              onClick={onClose}
-              className="text-zinc-400 hover:text-white transition-colors outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded-md p-1"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2">
-            {projectListLoading ? (
-              <div className="space-y-2 p-2">
-                {[1, 2, 3].map(i => <div key={i} className="skeleton h-14 rounded-lg" />)}
-              </div>
-            ) : projectList.length === 0 ? (
-              <p className="text-sm text-zinc-400 text-center py-8">No projects yet</p>
-            ) : (
-              <ProjectTree
-                activeProjectId={activeProjectId}
-                projectList={projectList}
-                renameDraft={renameDraft}
-                renamingId={renamingId}
-                onCancelRename={onCancelRename}
-                onLoadProject={onLoadProject}
-                onRenameDraftChange={onRenameDraftChange}
-                onRequestDelete={onRequestDelete}
-                onSaveRename={onSaveRename}
-                onStartRename={onStartRename}
-                onViewRenders={onViewRenders}
-              />
-            )}
-          </div>
-        </motion.aside>
-      </>
-    )}
-  </AnimatePresence>
-);
-
-const ProjectTree: React.FC<Omit<ProjectSidebarProps, 'isOpen' | 'projectListLoading' | 'onClose'>> = ({
+const ProjectTree: React.FC<ProjectTreeProps> = ({
   activeProjectId,
   projectList,
   renameDraft,
@@ -229,7 +374,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
               if (e.key === 'Escape') { e.preventDefault(); onCancelRename(); }
             }}
             onBlur={onSaveRename}
-            className="flex-1 bg-white/[0.04] text-sm text-white border border-white/[0.12] rounded px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+            className="flex-1 min-w-0 bg-white/[0.04] text-sm text-white border border-white/[0.12] rounded px-2 py-1 outline-none focus-visible:ring-1 focus-visible:ring-white/30"
           />
         </div>
       ) : (
