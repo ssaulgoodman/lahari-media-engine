@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { VIDEO_MODELS } from '../../constants/videoModels.js';
 import { getSB, T } from '../database.js';
 
 const router = Router();
@@ -40,6 +41,26 @@ const addAgg = <T extends { calls: number; errors: number; cost: number; duratio
 };
 
 const sortByCost = <T extends { cost: number }>(rows: T[]) => rows.sort((a, b) => b.cost - a.cost);
+
+const IMAGE_STAGES = new Set([
+  'visualize-style',
+  'generate-looks',
+  'generate-environment-look',
+  'generate-shot-start-frame',
+  'generate-end-frame',
+  'render-storyboard-image',
+  'edit-storyboard-image',
+]);
+
+const VIDEO_STAGES = new Set(['generate-shot-video']);
+
+const STYLE_REF_COST = Number(process.env.BUDGET_STYLE_REF_COST || 0.01);
+const LOOK_REF_COST = Number(process.env.BUDGET_LOOK_REF_COST || 0.04);
+const STORYBOARD_IMAGE_COST = Number(process.env.SEGMIND_STORYBOARD_RENDER_COST_ESTIMATE || 0.03);
+const KEYFRAME_IMAGE_COST = Number(process.env.BUDGET_KEYFRAME_IMAGE_COST || 0.04);
+
+const videoCostPerSec = (modelKey?: string) =>
+  VIDEO_MODELS.find((model) => model.key === modelKey)?.costPerSec ?? VIDEO_MODELS[0].costPerSec;
 
 const chunk = <T,>(items: T[], size = 200) => {
   const chunks: T[][] = [];
@@ -90,7 +111,7 @@ router.get('/dev', async (req, res) => {
 
     const { data: projects, error: projectError } = await sb
       .from(T.projects)
-      .select('id,user_id,title,song_type,source_queue_id,created_at,cost_estimate');
+      .select('id,user_id,title,song_type,source_queue_id,status,video_model,created_at,updated_at,cost_estimate');
     if (projectError) throw new Error(projectError.message);
 
     const allProjectRows = (projects || []) as any[];
@@ -130,6 +151,25 @@ router.get('/dev', async (req, res) => {
       ? allCalls.filter(call => projectById.get(call.project_id)?.user_id === selectedUserId)
       : allCalls;
 
+    const lifetimeCalls: any[] = [];
+    const selectedProjectIds = projectRows.map(p => p.id).filter(Boolean);
+    if (selectedProjectIds.length > 0) {
+      for (const ids of chunk(selectedProjectIds)) {
+        for (let from = 0; from < 20000; from += 1000) {
+          const { data, error } = await sb
+            .from(T.ai_calls)
+            .select('project_id,stage,model,cost_estimate,duration_ms,error,created_at')
+            .in('project_id', ids)
+            .order('created_at', { ascending: false })
+            .range(from, from + 999);
+          if (error) throw new Error(error.message);
+          const batch = (data || []) as any[];
+          lifetimeCalls.push(...batch);
+          if (batch.length < 1000) break;
+        }
+      }
+    }
+
     const totals = {
       cost: 0,
       calls: calls.length,
@@ -148,6 +188,14 @@ router.get('/dev', async (req, res) => {
     const accountProjects = new Map<string, Set<string>>();
     const accountSongs = new Map<string, Set<string>>();
     const projectCosts = new Map<string, { cost: number; calls: number; errors: number }>();
+    const projectAssetSpend = new Map<string, {
+      imageCost: number;
+      imageCalls: number;
+      videoCost: number;
+      videoCalls: number;
+      otherCost: number;
+      otherCalls: number;
+    }>();
 
     for (const project of allProjectRows) {
       const userId = project.user_id || 'unknown';
@@ -224,6 +272,31 @@ router.get('/dev', async (req, res) => {
       }));
     }
 
+    for (const call of lifetimeCalls) {
+      const projectId = call.project_id;
+      const row = projectAssetSpend.get(projectId) || {
+        imageCost: 0,
+        imageCalls: 0,
+        videoCost: 0,
+        videoCalls: 0,
+        otherCost: 0,
+        otherCalls: 0,
+      };
+      const cost = Number(call.cost_estimate || 0);
+      const stage = call.stage || 'unknown';
+      if (IMAGE_STAGES.has(stage)) {
+        row.imageCost += cost;
+        row.imageCalls += 1;
+      } else if (VIDEO_STAGES.has(stage)) {
+        row.videoCost += cost;
+        row.videoCalls += 1;
+      } else {
+        row.otherCost += cost;
+        row.otherCalls += 1;
+      }
+      projectAssetSpend.set(projectId, row);
+    }
+
     for (const [userId, row] of byAccount) {
       row.projects = accountProjects.get(userId)?.size || 0;
       row.songs = accountSongs.get(userId)?.size || 0;
@@ -231,7 +304,6 @@ router.get('/dev', async (req, res) => {
 
     const accounts = sortByCost([...byAccount.values()]);
     const selectedUser = selectedUserId ? userById.get(selectedUserId) : null;
-    const selectedProjectIds = projectRows.map(p => p.id).filter(Boolean);
 
     const sceneRows: any[] = [];
     const shotRows: any[] = [];
@@ -268,11 +340,10 @@ router.get('/dev', async (req, res) => {
       }
 
       for (const ids of chunk(selectedProjectIds)) {
-        let query = sb
+        const query = sb
           .from(T.assets)
           .select('id,project_id,shot_id,category,created_at')
           .in('project_id', ids);
-        if (sinceIso) query = query.gte('created_at', sinceIso);
         const { data, error } = await query;
         if (error) throw new Error(error.message);
         assetRows.push(...((data || []) as any[]));
@@ -285,7 +356,7 @@ router.get('/dev', async (req, res) => {
       for (const ids of chunk(sceneIds)) {
         const { data, error } = await sb
           .from(T.shots)
-          .select('id,scene_id,image_asset_id,storyboard_asset_id,end_image_asset_id,video_asset_id,is_extra')
+          .select('id,scene_id,duration,image_asset_id,storyboard_asset_id,end_image_asset_id,video_asset_id,is_extra')
           .in('scene_id', ids);
         if (error) throw new Error(error.message);
         shotRows.push(...((data || []) as any[]));
@@ -299,6 +370,7 @@ router.get('/dev', async (req, res) => {
           castRequired: 0,
           environmentRequired: 0,
           shotRequired: 0,
+          totalShotSeconds: 0,
           imageAssetsCreated: 0,
           videoAssetsCreated: 0,
           currentImagesReady: 0,
@@ -325,6 +397,7 @@ router.get('/dev', async (req, res) => {
       if (!projectId) continue;
       const stats = ensureStats(projectId);
       stats.shotRequired += 1;
+      stats.totalShotSeconds += Number(shot.duration || 0);
       if (shot.image_asset_id || shot.storyboard_asset_id) stats.currentImagesReady += 1;
       if (shot.video_asset_id) stats.currentVideosReady += 1;
     }
@@ -348,17 +421,39 @@ router.get('/dev', async (req, res) => {
       if (videoAssetCategories.has(asset.category)) stats.videoAssetsCreated += 1;
     }
 
-    const productionEfficiency = projectRows.map((project) => {
+    const completedProjectRows = projectRows.filter((project) => {
+      if (project.status !== 'completed') return false;
+      if (!sinceIso) return true;
+      const completedAt = project.updated_at || project.created_at;
+      return completedAt ? completedAt >= sinceIso : true;
+    });
+
+    const productionEfficiency = completedProjectRows.map((project) => {
       const stats = ensureStats(project.id);
       const accountUser = userById.get(project.user_id);
       const song = project.source_queue_id ? queueSongById.get(project.source_queue_id) : null;
       const imageAssetsRequired = 1 + stats.castRequired + stats.environmentRequired + stats.shotRequired;
       const videoAssetsRequired = stats.shotRequired;
-      const totalRequired = imageAssetsRequired + videoAssetsRequired;
-      const totalCreated = stats.imageAssetsCreated + stats.videoAssetsCreated;
-      const efficiency = totalCreated > 0 ? Math.min(100, (totalRequired / totalCreated) * 100) : null;
-      const completion = totalRequired > 0
-        ? ((Math.min(stats.currentImagesReady, imageAssetsRequired) + Math.min(stats.currentVideosReady, videoAssetsRequired)) / totalRequired) * 100
+      const shotImageUnitCost = String(project.video_model || '').startsWith('seedance')
+        ? STORYBOARD_IMAGE_COST
+        : KEYFRAME_IMAGE_COST;
+      const requiredImageCost = STYLE_REF_COST
+        + ((stats.castRequired + stats.environmentRequired) * LOOK_REF_COST)
+        + (stats.shotRequired * shotImageUnitCost);
+      const requiredVideoCost = stats.totalShotSeconds * videoCostPerSec(project.video_model);
+      const requiredCost = requiredImageCost + requiredVideoCost;
+      const actual = projectAssetSpend.get(project.id) || {
+        imageCost: 0,
+        imageCalls: 0,
+        videoCost: 0,
+        videoCalls: 0,
+        otherCost: 0,
+        otherCalls: 0,
+      };
+      const actualAssetCost = actual.imageCost + actual.videoCost;
+      const efficiency = actualAssetCost > 0 ? (requiredCost / actualAssetCost) * 100 : null;
+      const completion = (imageAssetsRequired + videoAssetsRequired) > 0
+        ? ((Math.min(stats.currentImagesReady, imageAssetsRequired) + Math.min(stats.currentVideosReady, videoAssetsRequired)) / (imageAssetsRequired + videoAssetsRequired)) * 100
         : null;
       const projectCost = projectCosts.get(project.id) || { cost: 0, calls: 0, errors: 0 };
       return {
@@ -369,6 +464,17 @@ router.get('/dev', async (req, res) => {
         credits: projectCost.cost,
         calls: projectCost.calls,
         errors: projectCost.errors,
+        requiredCost,
+        actualAssetCost,
+        extraCost: actualAssetCost - requiredCost,
+        requiredImageCost,
+        actualImageCost: actual.imageCost,
+        imageCalls: actual.imageCalls,
+        requiredVideoCost,
+        actualVideoCost: actual.videoCost,
+        videoCalls: actual.videoCalls,
+        otherCost: actual.otherCost,
+        otherCalls: actual.otherCalls,
         imageAssetsRequired,
         imageAssetsCreated: stats.imageAssetsCreated,
         videoAssetsRequired,
@@ -378,7 +484,7 @@ router.get('/dev', async (req, res) => {
         efficiency,
         completion,
       };
-    }).sort((a, b) => b.credits - a.credits);
+    }).sort((a, b) => (a.efficiency ?? -1) - (b.efficiency ?? -1));
 
     res.json({
       account: {
