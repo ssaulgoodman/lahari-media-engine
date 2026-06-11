@@ -114,7 +114,7 @@ with media/render hardening from `lahari-divergence-audit.md` cluster B:
   still force Remotion).
 - `a3151bb`/`881cda9` media-library hide/upload endpoints (part of the render-polish story).
 
-### C1 — World-standard sidebar `[ready now]`
+### C1 — World-standard sidebar `[landed — pending visual pass]`
 Replace the toggle-drawer `ProjectSidebar.tsx` with a persistent left rail. IA that survives
 workspaces: **workspace switcher (slot reserved) › current project + switcher (now) › phase
 nav (Blueprint/Studio/Render) › account/settings/profile/BYOK at bottom.** Build
@@ -278,6 +278,13 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   default layout metadata while real transforms still force Remotion (lahari `a75ab45`
   adapted, not blind-ported). C0's render-hardening backlog is now down to the conditional
   media-library endpoints.
+
+- 2026-06-11 · C1 sidebar · `4c0f2b2` · persistent left rail landed: workspace identity slot
+  (static `WorkspaceSlot`, swap-in point for the C2 switcher), always-visible project tree with
+  the existing fork hierarchy/rename/delete/renders actions, Blueprint/Studio/Render phase nav
+  with header-parity gating, account/Prompts/BYOK/sign-out at bottom. Header lost its center
+  pipeline nav + account cluster; narrow viewports get the same rail as an overlay drawer.
+  Saul's visual pass pending.
 
 ## References
 
