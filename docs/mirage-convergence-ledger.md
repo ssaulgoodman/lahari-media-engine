@@ -104,15 +104,15 @@ _(Things we've effectively agreed. Promote forks here as they're called.)_
 Ordering reflects hard dependencies: sidebar sets the tenancy IA; the workspace model is the
 foundation the queue port needs; the timeline decision (F2) gates render power.
 
-### C0 — Reliability render ports `[ready now, no forks]`
+### C0 — Reliability render ports `[closed 2026-06-11]`
 Small, safe, ships value immediately. The audit's duplicate-generation guard and single-shot
 topology items have already landed. Render cancellation and blind-update hardening have also
-landed, including the conditional status guards the audit called out. Remaining C0 work starts
-with media/render hardening from `lahari-divergence-audit.md` cluster B:
+landed, including the conditional status guards the audit called out. All C0 items have landed:
 - ~~`a75ab45` ffmpeg benign-layout eligibility~~ — landed 2026-06-10 as the planned
   "non-default layout" adapt (benign defaults take the ffmpeg fast path; real transforms
   still force Remotion).
-- `a3151bb`/`881cda9` media-library hide/upload endpoints (part of the render-polish story).
+- ~~`a3151bb`/`881cda9` media-library hide/upload endpoints~~ — hide had already landed for
+  shot videos; the upload half landed 2026-06-11 (see checkpoint). C0 is closed.
 
 ### C1 — World-standard sidebar `[landed — pending visual pass]`
 Replace the toggle-drawer `ProjectSidebar.tsx` with a persistent left rail. IA that survives
@@ -285,6 +285,12 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   with header-parity gating, account/Prompts/BYOK/sign-out at bottom. Header lost its center
   pipeline nav + account cluster; narrow viewports get the same rail as an overlay drawer.
   Saul's visual pass pending.
+- 2026-06-11 · C0 closed · `810b493` · media-library uploads ported (lahari `881cda9`
+  adapted): `GET/POST /api/projects/:id/media-library/uploads` + `:assetId/hide` behind the
+  projects ownership guard, asset category `media_library_video`, soft-hide via metadata flag;
+  drawer gains an Uploads row, Upload clip button, and emerald in-timeline/added indicators;
+  Render button now gates on the timeline containing a visual clip and the editor mounts even
+  with zero generated shots. Hides are events-attributed. C0's audit backlog is now empty.
 
 ## References
 
