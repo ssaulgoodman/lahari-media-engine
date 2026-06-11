@@ -232,7 +232,17 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
     return !!scene.shots[shotIdx - 1]?.videoUrl;
   };
 
-  if (scenes.length === 0) return null;
+  // Empty state instead of null — phase nav no longer locks Studio, so an
+  // artist can land here before a shot plan exists.
+  if (scenes.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center py-24">
+        <p className="text-sm text-zinc-400">
+          No shots yet — write a script in Blueprint to plan your scenes first.
+        </p>
+      </div>
+    );
+  }
 
   const isStoryboardModeActive = storyboardSupported && studioMode === 'storyboard';
 

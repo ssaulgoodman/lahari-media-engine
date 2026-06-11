@@ -110,14 +110,12 @@ const RailContent: React.FC<ProjectSidebarProps> = ({
   onStepChange,
   onViewRenders,
 }) => {
-  // Same gating as the old header pipeline nav — Studio needs a shot plan,
-  // Render needs at least one generated clip.
-  const hasShotPlan = !!project && project.scenes.some(s => s.shots.length > 0);
-  const hasRenderableContent = !!project && project.scenes.some(s => s.shots.some(sh => !!sh.videoUrl));
-  const phaseAccessible = (step: AppStep) =>
-    step === AppStep.BLUEPRINT ? !!project
-      : step === AppStep.STUDIO ? hasShotPlan
-        : hasRenderableContent;
+  // Phases never lock once a project is loaded. Each phase owns its own
+  // empty state (Studio shows a "write a script first" notice; Render's
+  // button gates on the timeline containing a visual clip), so nav gating
+  // would only hide capability — e.g. uploading clips to render before any
+  // shot video exists.
+  const phaseAccessible = (_step: AppStep) => !!project;
 
   return (
     <>
