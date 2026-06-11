@@ -856,6 +856,14 @@ export const useShotAsPrevEnd = async (projectId: string, shotId: string) => {
 };
 
 export type VersionEntry = { assetId: string; url: string; createdAt: string; isCurrent: boolean; thumbnailUrl?: string | null };
+export type MediaLibraryUpload = {
+  assetId: string;
+  url: string;
+  createdAt: string;
+  name: string;
+  mimeType?: string | null;
+  bytes?: number | null;
+};
 
 export const getShotHistory = async (projectId: string, shotId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/history`);
@@ -864,6 +872,28 @@ export const getShotHistory = async (projectId: string, shotId: string) => {
 
 export const hideShotVideoFromMediaLibrary = async (projectId: string, shotId: string, assetId: string) => {
   const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/assets/${assetId}/hide-from-media-library`, {
+    method: 'POST',
+  });
+  return handleResponse(res) as Promise<{ ok: true }>;
+};
+
+export const listMediaLibraryUploads = async (projectId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/media-library/uploads`);
+  return handleResponse(res) as Promise<{ uploads: MediaLibraryUpload[] }>;
+};
+
+export const uploadMediaLibraryVideo = async (projectId: string, file: File) => {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await authFetch(`${API}/projects/${projectId}/media-library/uploads`, {
+    method: 'POST',
+    body: form,
+  });
+  return handleResponse(res) as Promise<{ upload: MediaLibraryUpload }>;
+};
+
+export const hideMediaLibraryUpload = async (projectId: string, assetId: string) => {
+  const res = await authFetch(`${API}/projects/${projectId}/media-library/uploads/${assetId}/hide`, {
     method: 'POST',
   });
   return handleResponse(res) as Promise<{ ok: true }>;
