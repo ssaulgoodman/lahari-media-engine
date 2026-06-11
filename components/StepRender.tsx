@@ -207,6 +207,14 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
   );
   const newMediaCount = newMediaUrls.size;
   const showNewMediaNotice = newMediaCount > 0 && mediaNoticeDismissedFor !== newMediaSignature;
+  // Render gate is timeline-derived, not project-derived: an artist with zero
+  // generated shots can still upload clips into the media library, arrange
+  // them, and render. Only a timeline with at least one visual clip is
+  // renderable (audio-only timelines produce nothing watchable).
+  const hasRenderableVisualClip = useMemo(
+    () => Object.values(timelineItems).some((item: any) => item?.type === 'video' || item?.type === 'image'),
+    [timelineItems],
+  );
 
   const openMediaLibrary = useCallback(() => {
     setMediaLibraryOpen(true);
@@ -435,7 +443,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           </button>
           <button
             onClick={handleRender}
-            disabled={isBusy || previewClips.length === 0}
+            disabled={isBusy || !hasRenderableVisualClip}
             className="px-3 py-1 rounded-md bg-white text-black text-xs font-medium hover:bg-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {phase.kind === 'done' ? 'Render again' : 'Render'}
@@ -446,27 +454,21 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
       {/* Editor body: takes the rest of the viewport. Done/error banners
           overlay at the bottom-right so they never push layout. */}
       <div className="flex-1 min-h-0 relative">
-        {previewClips.length > 0 ? (
-          <TimelineEditor
-            embedded
-            initialClips={previewClips}
-            initialAudioClips={previewAudioClips}
-            projectId={project.id}
-            canvasSize={canvasSize}
-            onOpenMediaLibrary={openMediaLibrary}
-            mediaLibraryBadgeCount={newMediaCount}
-          />
-        ) : (
-          <div className="h-full flex items-center justify-center">
-            <p className="text-zinc-400 text-sm">
-              No shot videos available yet. Generate videos in the Studio first.
-            </p>
-          </div>
-        )}
+        {/* Always mounted, even with zero generated clips — the artist can
+            still upload clips through the media library and arrange them. */}
+        <TimelineEditor
+          embedded
+          initialClips={previewClips}
+          initialAudioClips={previewAudioClips}
+          projectId={project.id}
+          canvasSize={canvasSize}
+          onOpenMediaLibrary={openMediaLibrary}
+          mediaLibraryBadgeCount={newMediaCount}
+        />
 
-        {/* Media library — bottom drawer over the timeline. Self-hides when
-            the project has no rendered shots yet. Click the handle at the
-            bottom to expand; click any version card to append to timeline. */}
+        {/* Media library — bottom drawer over the timeline. Click the handle
+            at the bottom to expand; click any generated or uploaded clip to
+            append it to the timeline. */}
         <MediaLibraryDrawer
           project={project}
           open={mediaLibraryOpen}

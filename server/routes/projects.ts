@@ -101,6 +101,19 @@ router.param('sceneId', async (req, res, next, sceneId) => {
 
 // Multer config: save audio files to storage
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
+const mediaLibraryUploadCategory = 'media_library_video';
+
+const mediaLibraryUploadResponse = (asset: any) => {
+  const metadata = parseJson<Record<string, any>>(asset.metadata, {});
+  return {
+    assetId: asset.id,
+    url: storageUrl(asset.file_path),
+    createdAt: asset.created_at,
+    name: metadata.name || asset.prompt || 'Uploaded clip',
+    mimeType: metadata.mimeType || null,
+    bytes: metadata.bytes || null,
+  };
+};
 
 const insertProductionPlan = async (
   projectId: string,
@@ -1730,6 +1743,97 @@ router.put('/:id/environments/:envId', async (req, res) => {
 
 router.delete('/:id/environments/:envId', async (req, res) => {
   await deleteRows('environments', { id: paramStr(req.params.envId) });
+  res.json({ ok: true });
+});
+
+// ─── Render media library uploads ───────────────────────────────────
+//
+// Uploaded clips are library takes, not canonical shot state. They can be
+// appended to the render timeline but never mark shots stale or replace
+// generated media. Ownership is enforced by the `router.param('id')` guard
+// at the top of the file.
+
+router.get('/:id/media-library/uploads', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const rows = await selectAll(
+    'assets',
+    { project_id: projectId, category: mediaLibraryUploadCategory },
+    { orderBy: 'created_at', ascending: false },
+  );
+  const uploads = (rows as any[])
+    .filter((row) => parseJson<Record<string, any>>(row.metadata, {}).hiddenFromMediaLibrary !== true)
+    .map(mediaLibraryUploadResponse);
+  res.json({ uploads });
+});
+
+router.post('/:id/media-library/uploads', upload.single('file'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'file required' });
+  if (!file.mimetype?.startsWith('video/')) {
+    return res.status(400).json({ error: 'Media library upload currently supports video files only.' });
+  }
+
+  const rawExt = path.extname(file.originalname || '').replace('.', '').toLowerCase();
+  const ext = rawExt || (file.mimetype === 'video/webm' ? 'webm' : file.mimetype === 'video/quicktime' ? 'mov' : 'mp4');
+  const filePath = await saveBuffer(file.buffer, 'videos', ext);
+  const assetId = uuidv4();
+  const name = (req.body?.name || file.originalname || 'Uploaded clip').toString().slice(0, 160);
+  const metadata = {
+    mediaLibrary: true,
+    source: 'upload',
+    name,
+    mimeType: file.mimetype,
+    bytes: file.size,
+  };
+  const asset = {
+    id: assetId,
+    project_id: projectId,
+    category: mediaLibraryUploadCategory,
+    file_path: filePath,
+    prompt: name,
+    metadata: JSON.stringify(metadata),
+    created_at: new Date().toISOString(),
+  };
+  await insertRow('assets', asset);
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'media_library_upload_added',
+    entityType: 'asset',
+    entityId: assetId,
+    summary: `Artist uploaded "${name}" to the render media library.`,
+    payload: { assetId, filePath, mimeType: file.mimetype, bytes: file.size },
+  });
+  res.json({ upload: mediaLibraryUploadResponse(asset) });
+});
+
+router.post('/:id/media-library/uploads/:assetId/hide', async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const assetId = paramStr(req.params.assetId);
+  const asset: any = await selectOne('assets', { id: assetId });
+  if (!asset || asset.project_id !== projectId || asset.category !== mediaLibraryUploadCategory) {
+    return res.status(404).json({ error: 'Uploaded media not found for this project' });
+  }
+  const metadata = parseJson<Record<string, any>>(asset.metadata, {});
+  await updateRows('assets', { id: assetId }, {
+    metadata: JSON.stringify({
+      ...metadata,
+      hiddenFromMediaLibrary: true,
+      hiddenFromMediaLibraryAt: new Date().toISOString(),
+    }),
+  });
+  await recordDirectorEvent({
+    projectId,
+    userId: req.userId,
+    source: 'web',
+    eventType: 'media_library_upload_hidden',
+    entityType: 'asset',
+    entityId: assetId,
+    summary: 'Artist hid an uploaded clip from the render media library.',
+    payload: { assetId },
+  });
   res.json({ ok: true });
 });
 

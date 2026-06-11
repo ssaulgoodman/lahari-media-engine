@@ -22,6 +22,7 @@ const MIME_MAP: Record<string, string> = {
   '.ogg': 'audio/ogg', '.flac': 'audio/flac', '.aac': 'audio/aac',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.webp': 'image/webp', '.mp4': 'video/mp4', '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
 };
 
 export const mimeFromExt = (filePath: string): string => {
