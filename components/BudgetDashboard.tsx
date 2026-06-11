@@ -27,11 +27,29 @@ type BudgetData = {
   byStage: AggRow[];
   byAccount: AggRow[];
   bySong: AggRow[];
+  productionEfficiency: Array<{
+    projectId: string;
+    accountEmail: string;
+    song: string;
+    isrc: string | null;
+    credits: number;
+    calls: number;
+    errors: number;
+    imageAssetsRequired: number;
+    imageAssetsCreated: number;
+    videoAssetsRequired: number;
+    videoAssetsCreated: number;
+    currentImagesReady: number;
+    currentVideosReady: number;
+    efficiency: number | null;
+    completion: number | null;
+  }>;
   note: string;
 };
 
 const money = (value: number) => `$${Number(value || 0).toFixed(2)}`;
 const seconds = (ms: number) => `${Math.round(Number(ms || 0) / 1000).toLocaleString()}s`;
+const percent = (value: number | null | undefined) => value == null ? '—' : `${Math.round(value)}%`;
 
 const StatCard: React.FC<{ label: string; value: string; sub?: string }> = ({ label, value, sub }) => (
   <div className="surface-inset rounded-lg px-4 py-3">
@@ -107,6 +125,57 @@ const SongTable: React.FC<{ rows: AggRow[] }> = ({ rows }) => (
           <span className={`text-right font-mono ${row.errors > 0 ? 'text-amber-300' : 'text-zinc-500'}`}>{row.errors}</span>
         </div>
       ))}
+    </div>
+  </section>
+);
+
+const EfficiencyTable: React.FC<{ rows: BudgetData['productionEfficiency'] }> = ({ rows }) => (
+  <section className="rounded-xl border border-white/[0.06] overflow-hidden">
+    <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between gap-3">
+      <div>
+        <h2 className="text-sm font-medium text-white">Production Efficiency</h2>
+        <p className="text-xs text-zinc-500 mt-0.5">
+          Required = current minimum useful refs, shot images, and shot videos. Created = generated takes in this budget window.
+        </p>
+      </div>
+      <span className="text-xs text-zinc-500 shrink-0">{rows.length} songs</span>
+    </div>
+    <div className="overflow-x-auto">
+      <div className="min-w-[1120px] divide-y divide-white/[0.04]">
+        <div className="grid grid-cols-[minmax(240px,1.5fr)_150px_220px_110px_120px_120px_110px_100px] px-4 py-2.5 text-xs uppercase tracking-wide text-zinc-500 bg-white/[0.01]">
+          <span>Song</span>
+          <span>ISRC</span>
+          <span>Account</span>
+          <span className="text-right">Credits</span>
+          <span className="text-right">Images</span>
+          <span className="text-right">Videos</span>
+          <span className="text-right">Efficiency</span>
+          <span className="text-right">Done</span>
+        </div>
+        {rows.slice(0, 60).map((row) => (
+          <div key={row.projectId} className="grid grid-cols-[minmax(240px,1.5fr)_150px_220px_110px_120px_120px_110px_100px] px-4 py-3 text-sm items-center hover:bg-white/[0.02]">
+            <div className="min-w-0">
+              <div className="text-zinc-200 truncate" title={row.song}>{row.song}</div>
+              <div className="text-xs text-zinc-600 truncate">{row.calls} calls · {row.errors} errors</div>
+            </div>
+            <span className="font-mono text-zinc-500 truncate">{row.isrc || '—'}</span>
+            <span className="text-zinc-400 truncate" title={row.accountEmail}>{row.accountEmail}</span>
+            <span className="text-right font-mono text-zinc-200">{money(row.credits)}</span>
+            <span className="text-right font-mono text-zinc-300">
+              {row.imageAssetsRequired}/{row.imageAssetsCreated}
+            </span>
+            <span className="text-right font-mono text-zinc-300">
+              {row.videoAssetsRequired}/{row.videoAssetsCreated}
+            </span>
+            <span className={`text-right font-mono ${(row.efficiency || 0) < 55 ? 'text-amber-300' : 'text-zinc-200'}`}>
+              {percent(row.efficiency)}
+            </span>
+            <span className={`text-right font-mono ${(row.completion || 0) < 80 ? 'text-zinc-500' : 'text-emerald-300'}`}>
+              {percent(row.completion)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   </section>
 );
@@ -220,6 +289,7 @@ export const BudgetDashboard: React.FC<{ user: { email?: string | null }; signOu
             </div>
 
             <SongTable rows={data.bySong} />
+            <EfficiencyTable rows={data.productionEfficiency || []} />
             <SimpleTable title="By Stage" rows={data.byStage} primaryKeyName="stage" primaryLabel="Stage" limit={25} />
           </>
         )}

@@ -41,6 +41,12 @@ const addAgg = <T extends { calls: number; errors: number; cost: number; duratio
 
 const sortByCost = <T extends { cost: number }>(rows: T[]) => rows.sort((a, b) => b.cost - a.cost);
 
+const chunk = <T,>(items: T[], size = 200) => {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+};
+
 const listAuthUsers = async () => {
   const sb = getSB();
   const users: any[] = [];
@@ -141,6 +147,7 @@ router.get('/dev', async (req, res) => {
     const byAccount = new Map<string, any>();
     const accountProjects = new Map<string, Set<string>>();
     const accountSongs = new Map<string, Set<string>>();
+    const projectCosts = new Map<string, { cost: number; calls: number; errors: number }>();
 
     for (const project of allProjectRows) {
       const userId = project.user_id || 'unknown';
@@ -190,6 +197,11 @@ router.get('/dev', async (req, res) => {
       totals.cost += cost;
       totals.errors += call.error ? 1 : 0;
       totals.durationMs += Number(call.duration_ms || 0);
+      const projectCost = projectCosts.get(call.project_id) || { cost: 0, calls: 0, errors: 0 };
+      projectCost.cost += cost;
+      projectCost.calls += 1;
+      projectCost.errors += call.error ? 1 : 0;
+      projectCosts.set(call.project_id, projectCost);
 
       addAgg(byDay, dayKey(call.created_at), call, () => ({ date: dayKey(call.created_at), calls: 0, errors: 0, cost: 0, durationMs: 0 }));
       addAgg(byWeek, weekKey(call.created_at), call, () => ({ week: weekKey(call.created_at), calls: 0, errors: 0, cost: 0, durationMs: 0 }));
@@ -219,6 +231,154 @@ router.get('/dev', async (req, res) => {
 
     const accounts = sortByCost([...byAccount.values()]);
     const selectedUser = selectedUserId ? userById.get(selectedUserId) : null;
+    const selectedProjectIds = projectRows.map(p => p.id).filter(Boolean);
+
+    const sceneRows: any[] = [];
+    const shotRows: any[] = [];
+    const castRows: any[] = [];
+    const environmentRows: any[] = [];
+    const assetRows: any[] = [];
+
+    if (selectedProjectIds.length > 0) {
+      for (const ids of chunk(selectedProjectIds)) {
+        const { data, error } = await sb
+          .from(T.scenes)
+          .select('id,project_id')
+          .in('project_id', ids);
+        if (error) throw new Error(error.message);
+        sceneRows.push(...((data || []) as any[]));
+      }
+
+      for (const ids of chunk(selectedProjectIds)) {
+        const { data, error } = await sb
+          .from(T.cast_members)
+          .select('id,project_id,reference_asset_id')
+          .in('project_id', ids);
+        if (error) throw new Error(error.message);
+        castRows.push(...((data || []) as any[]));
+      }
+
+      for (const ids of chunk(selectedProjectIds)) {
+        const { data, error } = await sb
+          .from(T.environments)
+          .select('id,project_id,reference_asset_id')
+          .in('project_id', ids);
+        if (error) throw new Error(error.message);
+        environmentRows.push(...((data || []) as any[]));
+      }
+
+      for (const ids of chunk(selectedProjectIds)) {
+        let query = sb
+          .from(T.assets)
+          .select('id,project_id,shot_id,category,created_at')
+          .in('project_id', ids);
+        if (sinceIso) query = query.gte('created_at', sinceIso);
+        const { data, error } = await query;
+        if (error) throw new Error(error.message);
+        assetRows.push(...((data || []) as any[]));
+      }
+    }
+
+    const sceneProject = new Map(sceneRows.map(scene => [scene.id, scene.project_id]));
+    const sceneIds = sceneRows.map(scene => scene.id).filter(Boolean);
+    if (sceneIds.length > 0) {
+      for (const ids of chunk(sceneIds)) {
+        const { data, error } = await sb
+          .from(T.shots)
+          .select('id,scene_id,image_asset_id,storyboard_asset_id,end_image_asset_id,video_asset_id,is_extra')
+          .in('scene_id', ids);
+        if (error) throw new Error(error.message);
+        shotRows.push(...((data || []) as any[]));
+      }
+    }
+
+    const projectStats = new Map<string, any>();
+    const ensureStats = (projectId: string) => {
+      if (!projectStats.has(projectId)) {
+        projectStats.set(projectId, {
+          castRequired: 0,
+          environmentRequired: 0,
+          shotRequired: 0,
+          imageAssetsCreated: 0,
+          videoAssetsCreated: 0,
+          currentImagesReady: 0,
+          currentVideosReady: 0,
+        });
+      }
+      return projectStats.get(projectId);
+    };
+
+    for (const member of castRows) {
+      const stats = ensureStats(member.project_id);
+      stats.castRequired += 1;
+      if (member.reference_asset_id) stats.currentImagesReady += 1;
+    }
+
+    for (const environment of environmentRows) {
+      const stats = ensureStats(environment.project_id);
+      stats.environmentRequired += 1;
+      if (environment.reference_asset_id) stats.currentImagesReady += 1;
+    }
+
+    for (const shot of shotRows) {
+      const projectId = sceneProject.get(shot.scene_id);
+      if (!projectId) continue;
+      const stats = ensureStats(projectId);
+      stats.shotRequired += 1;
+      if (shot.image_asset_id || shot.storyboard_asset_id) stats.currentImagesReady += 1;
+      if (shot.video_asset_id) stats.currentVideosReady += 1;
+    }
+
+    const imageAssetCategories = new Set([
+      'style',
+      'character',
+      'character_candidate',
+      'environment',
+      'environment_candidate',
+      'shot_image',
+      'shot_end_frame',
+      'shot_storyboard',
+      'storyboard_refine_ref',
+    ]);
+    const videoAssetCategories = new Set(['shot_video']);
+
+    for (const asset of assetRows) {
+      const stats = ensureStats(asset.project_id);
+      if (imageAssetCategories.has(asset.category)) stats.imageAssetsCreated += 1;
+      if (videoAssetCategories.has(asset.category)) stats.videoAssetsCreated += 1;
+    }
+
+    const productionEfficiency = projectRows.map((project) => {
+      const stats = ensureStats(project.id);
+      const accountUser = userById.get(project.user_id);
+      const song = project.source_queue_id ? queueSongById.get(project.source_queue_id) : null;
+      const imageAssetsRequired = 1 + stats.castRequired + stats.environmentRequired + stats.shotRequired;
+      const videoAssetsRequired = stats.shotRequired;
+      const totalRequired = imageAssetsRequired + videoAssetsRequired;
+      const totalCreated = stats.imageAssetsCreated + stats.videoAssetsCreated;
+      const efficiency = totalCreated > 0 ? Math.min(100, (totalRequired / totalCreated) * 100) : null;
+      const completion = totalRequired > 0
+        ? ((Math.min(stats.currentImagesReady, imageAssetsRequired) + Math.min(stats.currentVideosReady, videoAssetsRequired)) / totalRequired) * 100
+        : null;
+      const projectCost = projectCosts.get(project.id) || { cost: 0, calls: 0, errors: 0 };
+      return {
+        projectId: project.id,
+        accountEmail: accountUser?.email || project.user_id || 'unknown',
+        song: song?.song_name || project.title || 'Untitled',
+        isrc: song?.isrc || null,
+        credits: projectCost.cost,
+        calls: projectCost.calls,
+        errors: projectCost.errors,
+        imageAssetsRequired,
+        imageAssetsCreated: stats.imageAssetsCreated,
+        videoAssetsRequired,
+        videoAssetsCreated: stats.videoAssetsCreated,
+        currentImagesReady: stats.currentImagesReady,
+        currentVideosReady: stats.currentVideosReady,
+        efficiency,
+        completion,
+      };
+    }).sort((a, b) => b.credits - a.credits);
 
     res.json({
       account: {
@@ -236,6 +396,7 @@ router.get('/dev', async (req, res) => {
       bySongType: sortByCost([...bySongType.values()]),
       byAccount: accounts,
       bySong: sortByCost([...bySong.values()]),
+      productionEfficiency,
       note: 'Estimated app spend from lahari_ai_calls.cost_estimate, not the provider invoice.',
     });
   } catch (err: any) {
