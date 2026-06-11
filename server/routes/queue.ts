@@ -5,7 +5,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile, findQueueByProjectIds } from '../services/supabase.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { transcribeLyrics, detectStructure } from '../services/gemini.js';
+import { GEMINI_AUDIO_ANALYSIS_MODEL, transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows, getSB, T, supportsPlatformColumns, usesLegacyQueueAdapter } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -294,7 +294,7 @@ router.post('/:queueId/start', async (req, res) => {
         await logCall({
           projectId,
           stage: 'detect-structure',
-          model: 'gemini-3-pro-preview',
+          model: GEMINI_AUDIO_ANALYSIS_MODEL,
           prompt: 'Identify musical sections: label, startTime, endTime, energy level, description. Max 10 sections.',
           referenceInputs: audioRef,
           responseSummary: structureResult.status === 'fulfilled'

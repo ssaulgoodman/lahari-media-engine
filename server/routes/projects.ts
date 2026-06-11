@@ -9,7 +9,7 @@ import {
 } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
 import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
-import { transcribeLyrics, detectStructure } from '../services/gemini.js';
+import { GEMINI_AUDIO_ANALYSIS_MODEL, transcribeLyrics, detectStructure } from '../services/gemini.js';
 import { generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } from '../presets.js';
@@ -1537,6 +1537,12 @@ router.post('/:id/analyze-audio', async (req, res) => {
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
     const structureData2 = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [] };
     const musicalStructure = Array.isArray(structureData2) ? structureData2 : structureData2.sections;
+    const transcribeSucceeded = runTranscribe && lyricsResult.status === 'fulfilled';
+    const structureSucceeded = runStructure && structureResult.status === 'fulfilled';
+    const anyRequestedSucceeded = transcribeSucceeded || structureSucceeded;
+    const settledError = (result: PromiseSettledResult<unknown>) => (
+      result.status === 'rejected' ? String(result.reason) : null
+    );
 
     if (lyricsResult.status === 'rejected') console.warn(`[${projectId}] lyrics transcription failed:`, lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
@@ -1547,7 +1553,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
       logCall({
         projectId,
         stage: 'transcribe-lyrics',
-        model: 'gemini-3-pro-preview',
+        model: GEMINI_AUDIO_ANALYSIS_MODEL,
         prompt: 'Transcribe lyrics from audio with timestamps.',
         referenceInputs: audioRef,
         responseSummary: lyrics ? `${lyrics.split('\n').length} lines` : 'FAILED',
@@ -1560,7 +1566,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
       logCall({
         projectId,
         stage: 'detect-structure',
-        model: 'gemini-3-pro-preview',
+        model: GEMINI_AUDIO_ANALYSIS_MODEL,
         prompt: 'Re-run: identify musical sections (label, startTime, endTime, energyLevel, description).',
         referenceInputs: audioRef,
         responseSummary: structureResult.status === 'fulfilled'
@@ -1572,15 +1578,49 @@ router.post('/:id/analyze-audio', async (req, res) => {
       });
     }
 
+    if (!anyRequestedSucceeded) {
+      await recordDirectorEvent({
+        projectId,
+        userId: req.userId,
+        source: 'web',
+        eventType: 'audio_analysis_failed',
+        entityType: 'project',
+        entityId: projectId,
+        summary: 'Audio analysis failed before producing transcript or structure.',
+        payload: {
+          sourceProjectId: sourceId,
+          forked: req.body?.fork === true,
+          requested: {
+            transcribe: runTranscribe,
+            structure: runStructure,
+          },
+          errors: {
+            transcribe: runTranscribe ? settledError(lyricsResult) : null,
+            structure: runStructure ? settledError(structureResult) : null,
+          },
+        },
+      });
+      const err = new Error(JSON.stringify({
+        code: 'audio_analysis_failed',
+        message: 'Audio analysis failed before producing transcript or structure.',
+        details: {
+          transcribe: runTranscribe ? settledError(lyricsResult) : null,
+          structure: runStructure ? settledError(structureResult) : null,
+        },
+      }));
+      (err as any).statusCode = 502;
+      throw err;
+    }
+
     // Conditional status update: only move to 'analyzed' if currently 'uploaded' or 'analyzing'
     const statusUpdate: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
     if (runTranscribe && lyrics) statusUpdate.lyrics = lyrics;
-    if (runStructure) {
+    if (runStructure && structureSucceeded) {
       statusUpdate.musical_structure = JSON.stringify(musicalStructure);
     }
-    if (project.status === 'uploaded' || project.status === 'analyzing') {
+    if ((project.status === 'uploaded' || project.status === 'analyzing') && anyRequestedSucceeded) {
       statusUpdate.status = 'analyzed';
     }
     await updateRows('projects', { id: projectId }, statusUpdate);
@@ -1595,9 +1635,18 @@ router.post('/:id/analyze-audio', async (req, res) => {
       payload: {
         sourceProjectId: sourceId,
         forked: req.body?.fork === true,
-        transcribed: runTranscribe,
+        transcribed: transcribeSucceeded,
+        transcription: runTranscribe ? {
+          requested: true,
+          succeeded: transcribeSucceeded,
+          lines: lyrics ? lyrics.split('\n').length : 0,
+          error: settledError(lyricsResult),
+        } : null,
         structure: runStructure ? {
+          requested: true,
+          succeeded: structureSucceeded,
           sections: musicalStructure.length,
+          error: settledError(structureResult),
         } : null,
       },
     });

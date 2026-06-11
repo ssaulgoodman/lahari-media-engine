@@ -8,6 +8,7 @@ import { requireProviderApiKey } from './byok/providerKeys.js';
 import { generateText } from './text-provider.js';
 
 const getAI = async () => new GoogleGenAI({ apiKey: await requireProviderApiKey('gemini') });
+export const GEMINI_AUDIO_ANALYSIS_MODEL = process.env.GEMINI_AUDIO_ANALYSIS_MODEL || 'gemini-3.5-flash';
 
 // ─── JSON Repair ────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ export const transcribeLyrics = async (
 ): Promise<string> => {
   const ai = await getAI();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_AUDIO_ANALYSIS_MODEL,
     contents: { parts: [
       { inlineData: { mimeType, data: audioBase64 } },
       { text: `Transcribe the lyrics of this audio.
@@ -100,7 +101,7 @@ export const detectStructure = async (
 ): Promise<{ sections: any[] }> => {
   const ai = await getAI();
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_AUDIO_ANALYSIS_MODEL,
     contents: { parts: [
       { inlineData: { mimeType, data: audioBase64 } },
       { text: `Analyze this audio and return a JSON object with one field:

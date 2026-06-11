@@ -1,6 +1,6 @@
 import { selectOne, updateRows } from '../../database.js';
 import { readAsBase64, mimeFromExt, storageUrl } from '../../storage.js';
-import { transcribeLyrics, detectStructure } from '../gemini.js';
+import { GEMINI_AUDIO_ANALYSIS_MODEL, transcribeLyrics, detectStructure } from '../gemini.js';
 import { recordDirectorEvent } from '../directorEvents.js';
 import { logCall } from '../../xray.js';
 import { generationKey, withInFlightGeneration } from '../inFlightGeneration.js';
@@ -47,7 +47,7 @@ const analyzeAudioTranscribeUnlocked = async (
   await logCall({
     projectId: project.id,
     stage: 'transcribe-lyrics',
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_AUDIO_ANALYSIS_MODEL,
     prompt: `Transcribe lyrics from audio.\nLanguage: ${opts.language || 'Detect automatically'}.`,
     referenceInputs: audioRef(project),
     responseSummary: lyrics ? `${lyrics.split('\n').length} lines` : 'empty transcription',
@@ -106,7 +106,7 @@ const analyzeAudioStructureUnlocked = async (
   await logCall({
     projectId: project.id,
     stage: 'detect-structure',
-    model: 'gemini-3-pro-preview',
+    model: GEMINI_AUDIO_ANALYSIS_MODEL,
     prompt: 'Identify musical sections: label, startTime, endTime, energy level, description.',
     referenceInputs: audioRef(project),
     responseSummary: musicalStructure.map((s: any) => `${s.label} [${s.startTime}-${s.endTime}]`).join('\n') || 'no sections',
