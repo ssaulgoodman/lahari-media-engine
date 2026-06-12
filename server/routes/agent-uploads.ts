@@ -132,7 +132,7 @@ router.post('/', upload.single('file'), async (req, res) => {
             ? 'Use this assetId as sourceAssetId in run_action(import_keyframe_image) with shotId. Then use run_action(apply_shot_workflow_modes) if the shot must force keyframe mode.'
             : purpose.endsWith('_guide')
               ? 'Use this assetId as guideAssetId in run_action(generate_candidates).'
-              : 'Use this assetId as sourceAssetId in run_action(lock_reference).';
+              : 'Use this assetId as sourceAssetId in run_action(import_reference_candidate) when the artist should review it, or run_action(lock_reference) when it is already approved.';
 
     return res.json({
       kind: 'mirage.agent.upload',

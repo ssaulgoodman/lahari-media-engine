@@ -77,6 +77,7 @@ export { applyStyleDirection, generateStyleCandidates, identifyStyle } from './c
 export {
   applyCastReference,
   applyEnvironmentReference,
+  importReferenceCandidate,
   listReferenceCandidates,
   uploadCastReference,
   uploadEnvironmentReference,

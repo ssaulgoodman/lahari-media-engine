@@ -57,6 +57,28 @@ export const LOOK_ACTION_SPECS = {
       entityId: 'environment_uuid',
     }],
   },
+  import_reference_candidate: {
+    key: 'import_reference_candidate',
+    title: 'Import reference candidate',
+    surface: 'looks',
+    mutates: true,
+    paid: false,
+    description: 'Turn an uploaded/native image asset into a reviewable character or environment candidate card. Use after /api/agent/uploads when the artist should review the image before locking it.',
+    input: {
+      projectId: 'string',
+      entityType: '"cast" | "environment"',
+      entityId: 'string',
+      sourceAssetId: 'uploaded asset id from /api/agent/uploads',
+      note: 'optional short source/reason note',
+    },
+    examples: [{
+      projectId: 'project_uuid',
+      entityType: 'cast',
+      entityId: 'cast_member_uuid',
+      sourceAssetId: 'asset_uuid_from_agent_upload',
+      note: 'Codex imagegen candidate; review before locking',
+    }],
+  },
   lock_reference: {
     key: 'lock_reference',
     title: 'Lock reference',

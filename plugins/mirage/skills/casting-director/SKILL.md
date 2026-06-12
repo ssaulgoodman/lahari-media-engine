@@ -24,7 +24,8 @@ Fix weak anchors before spending on boards or videos.
 - **Need fresh candidates** -> `start_job(generate_candidates)` after approval. Use `entityIds[]`.
 - **Need to inspect options** -> `run_action(list_candidates)`. Never lock blind.
 - **Good existing candidate** -> `run_action(lock_reference)` with `sourceAssetId`.
-- **Artist image should become the ref** -> upload through `/api/agent/uploads`, then lock that returned `assetId`.
+- **Artist image should be reviewed as an option** -> upload through `/api/agent/uploads`, then `run_action(import_reference_candidate)` so it appears with candidates before locking.
+- **Artist image should become the ref immediately** -> upload through `/api/agent/uploads`, then `run_action(lock_reference)` with the returned `assetId`.
 - **Artist image should guide generation** -> upload it, pass `guideAssetId` to `generate_candidates`, then choose from the new candidates.
 - **One exact idea is needed** -> use `promptOverride` for one entity only.
 - **Small soft correction** -> use `note`; Mirage rewrites the saved generation prompt before rendering.
@@ -61,7 +62,7 @@ Weak environment refs are mood paintings, generic backdrops, copied style-ref se
 1. **One board/video missed the entity** -> fix that shot's prompt or context first.
 2. **Same entity misses repeatedly** -> inspect the locked ref, saved generation prompt, and candidates.
 3. **Better candidate already exists** -> relock it.
-4. **Artist has the right image** -> upload and lock use-as-is, or upload as `guideAssetId` and regenerate.
+4. **Artist has the right image** -> upload and import as a reviewable candidate, lock use-as-is, or upload as `guideAssetId` and regenerate.
 5. **Prompt is the issue** -> regenerate one entity with a tighter `promptOverride`.
 6. **Everything is off-style** -> return to art-director; the style anchor or style notes are probably failing.
 

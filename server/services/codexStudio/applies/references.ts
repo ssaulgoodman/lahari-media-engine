@@ -88,8 +88,103 @@ export const listReferenceCandidates = async (
     candidates,
     count: candidates.length,
     note: candidates.length
-      ? `Lock one with ${isCharacter ? 'apply_cast_reference' : 'apply_environment_reference'} using assetId.`
+      ? 'Lock one with run_action(lock_reference) using sourceAssetId.'
       : 'No generated candidates found for this entity yet.',
+  };
+};
+
+export const importReferenceCandidate = async (
+  project: Project,
+  input: { entityType: 'character' | 'environment'; entityId: string; sourceAssetId: string; note?: string },
+) => {
+  const isCharacter = input.entityType === 'character';
+  const entity = isCharacter
+    ? project.cast.find((item) => item.id === input.entityId)
+    : project.environments.find((item) => item.id === input.entityId);
+  if (!entity) {
+    return applyError('validation_failed', `${isCharacter ? 'Cast member' : 'Environment'} was not found in this project.`, { field: 'entityId' });
+  }
+
+  const sourceAsset = await selectOne('assets', { id: input.sourceAssetId });
+  if (!sourceAsset || sourceAsset.project_id !== project.id) {
+    return applyError('validation_failed', 'Source asset was not found in this project.', { field: 'sourceAssetId' });
+  }
+  if (!sourceAsset.file_path) {
+    return applyError('validation_failed', 'Source asset has no file path.', { field: 'sourceAssetId' });
+  }
+
+  const candidateId = uuidv4();
+  const category = isCharacter ? 'character_candidate' : 'environment_candidate';
+  const metaKey = isCharacter ? 'castMemberId' : 'environmentId';
+  const sourceMetadata = candidateMetadata(sourceAsset);
+  const prompt = input.note || `Imported candidate for ${entity.name}`;
+
+  await insertRow('assets', {
+    id: candidateId,
+    project_id: project.id,
+    category,
+    file_path: sourceAsset.file_path,
+    prompt,
+    metadata: JSON.stringify({
+      [metaKey]: entity.id,
+      importedCandidate: true,
+      sourceAssetId: sourceAsset.id,
+      sourceCategory: sourceAsset.category || null,
+      sourcePurpose: sourceMetadata.purpose || null,
+      sourceFilename: sourceMetadata.filename || null,
+      generatedBy: 'agent_import',
+      provider: 'upload',
+      imageModel: 'upload',
+      promptSource: 'imported_asset',
+      note: input.note || null,
+    }),
+  });
+
+  await logCall({
+    projectId: project.id,
+    stage: isCharacter ? 'import-character-candidate' : 'import-environment-candidate',
+    model: 'upload',
+    prompt,
+    referenceInputs: [{ type: 'image', label: `${entity.name} source asset`, url: storageUrl(sourceAsset.file_path) }],
+    contextChain: await buildContextChain(project.id),
+    responseSummary: `Imported uploaded image as ${entity.name} candidate`,
+    outputAssetIds: [candidateId],
+    durationMs: 0,
+    costEstimate: 0,
+  });
+  await recordDirectorEvent({
+    projectId: project.id,
+    source: 'codex',
+    eventType: isCharacter ? 'character_candidate_imported' : 'environment_candidate_imported',
+    entityType: isCharacter ? 'cast_member' : 'environment',
+    entityId: entity.id,
+    summary: `Codex imported an uploaded image as a candidate for "${entity.name}".`,
+    payload: {
+      entityType: input.entityType,
+      entityId: entity.id,
+      candidateAssetId: candidateId,
+      sourceAssetId: sourceAsset.id,
+      note: input.note || null,
+    },
+  });
+
+  appendApplyJournal(project, 'imported reference candidate', `${isCharacter ? 'Character' : 'Environment'}: ${entity.name}\nCandidate asset: ${candidateId}\nSource asset: ${sourceAsset.id}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+
+  const refreshed = await listReferenceCandidates(project, input);
+
+  return {
+    kind: 'mirage.reference.candidate_imported',
+    projectId: project.id,
+    entityType: input.entityType,
+    entityId: entity.id,
+    entityName: entity.name,
+    sourceAssetId: sourceAsset.id,
+    candidateAssetId: candidateId,
+    candidateUrl: storageUrl(sourceAsset.file_path),
+    candidates: 'error' in refreshed ? [] : refreshed.candidates,
+    count: 'error' in refreshed ? 1 : refreshed.count,
+    webUrl: webStudioUrl(project.id, { step: 'blueprint' }),
+    note: 'Imported uploaded image as a reference candidate. Review with list_candidates, then lock_reference if approved.',
   };
 };
 

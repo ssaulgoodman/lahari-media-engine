@@ -248,6 +248,13 @@ const listCandidatesInputSchema = z.object({
   entityType: lookEntityTypeSchema,
   entityId: idString,
 });
+const importReferenceCandidateInputSchema = z.object({
+  projectId,
+  entityType: lookEntityTypeSchema,
+  entityId: idString,
+  sourceAssetId: idString,
+  note: mediumText.optional(),
+});
 const lockReferenceInputSchema = z.object({
   projectId,
   entityType: lookEntityTypeSchema,
@@ -1052,6 +1059,16 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       return studio.listReferenceCandidates(await fullProjectForUser(input.projectId, auth.userId), {
         entityType: entityType === 'cast' ? 'character' : 'environment',
         entityId: input.entityId,
+      });
+    }
+    if (actionKey === 'import_reference_candidate') {
+      const input = importReferenceCandidateInputSchema.parse(rawInput);
+      const entityType = normalizeLookEntityType(input.entityType);
+      return studio.importReferenceCandidate(await fullProjectForUser(input.projectId, auth.userId), {
+        entityType: entityType === 'cast' ? 'character' : 'environment',
+        entityId: input.entityId,
+        sourceAssetId: input.sourceAssetId,
+        note: input.note,
       });
     }
     if (actionKey === 'lock_reference') {

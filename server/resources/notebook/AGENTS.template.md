@@ -55,7 +55,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Single-shot topology changes: use `run_action(add_shot)` or `run_action(delete_shot)`; delete with `force` only after explicit approval if that shot has downstream work. Forced deletes detach paid asset rows with recovery metadata instead of hard-deleting them.
 - Shot prompts: edit `storyboards/*.md`, then persist with `apply_shot_prompts` or `apply_storyboard_prompts`.
 - Style direction: use `generate_style_candidates`, `apply_style_direction`, style notes, or project prompt overrides depending on scope.
-- Cast/environment refs: use `generate_candidates`, `list_results`, `lock_reference`, or upload an image through `/api/agent/uploads`.
+- Cast/environment refs: use `generate_candidates`, `list_candidates`, `import_reference_candidate`, `lock_reference`, or upload an image through `/api/agent/uploads`.
 - Native storyboard image: upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 - Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
