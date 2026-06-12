@@ -9,7 +9,7 @@ import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
 import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
 import { parseTimestamp } from '../routes/scope-helpers.js';
-import { getProjectPreferencesState, getProjectPromptOverride, getPromptOverrideState } from './projectConfig.js';
+import { getProjectPreferencesState, getPromptOverrideState } from './projectConfig.js';
 import { createGenerationAttempt, updateGenerationAttempt } from './generationAttempts.js';
 import { generationKey, withInFlightGeneration } from './inFlightGeneration.js';
 import { recordDirectorEvent } from './directorEvents.js';
@@ -162,20 +162,28 @@ const renderProjectVideoRecipe = (
     .map((line) => String(line.text || '').trim())
     .filter(Boolean)
     .join(' ');
-  if (template.includes('{dialogue}') && !dialogue) {
+  const slots: Record<string, string> = {};
+  for (const [key, value] of Object.entries(defaults)) {
+    const cleaned = cleanSlotValue(value);
+    if (cleaned) slots[key] = cleaned;
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    const cleaned = cleanSlotValue(value);
+    if (cleaned) slots[key] = cleaned;
+  }
+  if (dialogue) slots.dialogue = dialogue;
+  slots.language ||= 'Telugu';
+  slots.pace ||= 'rapidly and continuously with zero pauses';
+  slots.performance ||= 'natural podcast-host facial expressions and controlled head movement';
+  slots.ending ||= 'a natural closed-mouth resting state';
+
+  if (template.includes('{dialogue}') && !slots.dialogue) {
     throw structuredVideoError(
       'workflow_recipe_missing_dialogue',
       'This video workflow recipe needs shot dialogue, but the shot audio plan has no dialogue line.',
       { requiredSlot: 'dialogue' },
     );
   }
-  const slots: Record<string, string> = {
-    dialogue,
-    language: cleanSlotValue(overrides.language) || cleanSlotValue(defaults.language) || 'Telugu',
-    pace: cleanSlotValue(overrides.pace) || cleanSlotValue(defaults.pace) || 'rapidly and continuously with zero pauses',
-    performance: cleanSlotValue(overrides.performance) || cleanSlotValue(defaults.performance) || 'natural podcast-host facial expressions and controlled head movement',
-    ending: cleanSlotValue(overrides.ending) || cleanSlotValue(defaults.ending) || 'a natural closed-mouth resting state',
-  };
   return template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, key) => slots[key] || match).trim();
 };
 
@@ -333,7 +341,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
     const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const hasDialogue = dialogueLines.length > 0;
-    const projectVideoOverrideState = !promptOverrideText && !useStoryboardMode
+    const projectVideoOverrideState = !promptOverrideText
       ? await getPromptOverrideState(project.id, 'video')
       : null;
     const projectVideoRecipeMeta = workflowRecipeMeta(projectVideoOverrideState?.metadata);
@@ -417,11 +425,9 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
         nativeAudioEnabled: nativeVideoAudio,
       })
       : '';
-    const projectVideoOverride = useStoryboardMode
-      ? await getProjectPromptOverride(project.id, 'video')
-      : null;
-    const storyboardPrompt = projectVideoOverride
-      ? `${projectVideoOverride.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
+    const projectVideoInstruction = renderedProjectVideoRecipe || projectVideoOverrideBody;
+    const storyboardPrompt = useStoryboardMode && projectVideoInstruction
+      ? `${projectVideoInstruction.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
       : storyboardPromptBase;
     const keyframePrompt = promptOverrideText
       ? promptOverrideText

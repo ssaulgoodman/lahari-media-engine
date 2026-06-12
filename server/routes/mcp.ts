@@ -320,12 +320,7 @@ const generateVideoInputSchema = z.object({
   promptOverride: optionalPromptText,
   modelOverride: modelOverrideSchema,
   nativeAudioMode: z.enum(['auto', 'off', 'on']).optional(),
-  recipeSlots: z.object({
-    language: shortText.optional(),
-    pace: shortText.optional(),
-    performance: mediumText.optional(),
-    ending: shortText.optional(),
-  }).optional(),
+  recipeSlots: z.record(z.string(), shortText).optional(),
   acknowledgePreviousChargeRisk: z.boolean().optional(),
 });
 const applyVideoPromptInputSchema = z.object({

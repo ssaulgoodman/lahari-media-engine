@@ -60,6 +60,8 @@ Weak:
 - **Board/frame wrong** -> return to storyboarding/keyframe tools before video.
 - **Same failure twice** -> change model or upstream input, not just the same retry.
 
+For `hf_music_video`, keep the final video prompt full-frame and music-led. Use the sketch board as a camera/choreography plan only, not final style. When useful, pass `recipeSlots` such as `musicSection`, `beatTiming`, `choreography`, and `audioPolicy` on `generate_video`. The uploaded song remains the authoritative final audio; use source-audio lipsync only when a shot explicitly needs singing or mouth timing.
+
 ## Repair Ladder
 
 1. **Motion wording wrong** -> edit motion prompt.

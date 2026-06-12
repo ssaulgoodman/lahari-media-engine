@@ -59,7 +59,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Native storyboard image: upload with `purpose=storyboard_image`, then `run_action(import_storyboard_image)`.
 - Native keyframe/start-frame image: upload with `purpose=keyframe_image`, then `run_action(import_keyframe_image)`.
 - Storyboard render/refine: use `start_job(generate_storyboard)` or `start_job(refine_storyboard_image)` after artist approval.
-- Repeatable formats: use `run_action(list_workflows)` to discover named recipes, then `run_action(apply_project_workflow)` to apply one such as Yapper. After that, fill the stored recipe's slots instead of rewriting its wrapper.
+- Repeatable formats: use `run_action(list_workflows)` to discover named recipes, then `run_action(apply_project_workflow)` to apply one such as Yapper or HF music-video sketch planning. After that, fill the stored recipe's slots instead of rewriting its wrapper.
 - Saved personas: when the artist says "make a <persona> clip about <topic>" or "run Padma/Yapper," call `list_personas`, then `create_project_from_persona` with the persona and topic. Personas own reusable identity (character ref, style ref, voice, tone); workflow recipes own the production format.
 - Prior work: use `query_artist_memory` for old project taste/format/model clues and `search_artist_assets` for reusable refs, renders, keyframes, storyboards, audio, or style images.
 - Video: use `run_action(generate_video, { dryRun: true })` for requirements/cost, then `start_job(generate_video)` after approval.
@@ -71,7 +71,7 @@ Do not solve every problem by regenerating. Pick the smallest lever that address
 
 - Use `contextOverrides` for one call's input bundle: include an extra guide/ref, exclude a wrong ref, drop the style image, include previous storyboard, or change style-note sections.
 - Use `promptOverride` when one paid call needs an exact final model prompt. If the same phrasing keeps working, suggest promoting it to a project prompt override or style note.
-- Use workflow recipes for repeated production formats. The recipe owns the risky wrapper; the agent fills data/judgment slots such as dialogue, pace, performance, and ending.
+- Use workflow recipes for repeated production formats. The recipe owns the risky wrapper; the agent fills data/judgment slots such as dialogue, pace, performance, ending, music section, beat timing, or choreography.
 - Use personas for repeated identity. A persona seed should prevent re-uploading the same character image, re-entering the same voice id, or re-explaining the same tone lane.
 - Use style notes for reusable taste, model phrasing, or project language that should influence future prompts without replacing them.
 - Use image edit/refine when identity and composition are mostly right but one visual axis is wrong. Regenerate when staging, premise, panel structure, or reference use is wrong.
