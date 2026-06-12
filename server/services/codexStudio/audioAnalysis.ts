@@ -27,6 +27,109 @@ const nextProject = (project: Project, updates: Partial<Project>): Project => ({
   updatedAt: new Date().toISOString(),
 });
 
+const parseTimestampMs = (value: unknown): number | null => {
+  const text = String(value || '').trim();
+  const match = text.match(/^(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.\d+)?$/) || text.match(/^(\d{1,2}):(\d{2})(?:\.\d+)?$/);
+  if (!match) return null;
+  if (match.length === 4) {
+    return ((Number(match[1] || 0) * 3600) + (Number(match[2]) * 60) + Number(match[3])) * 1000;
+  }
+  return ((Number(match[1]) * 60) + Number(match[2])) * 1000;
+};
+
+const lastTimestampMs = (lyrics: string): number | null => {
+  let last: number | null = null;
+  for (const match of lyrics.matchAll(/\[(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)\]/g)) {
+    const parsed = parseTimestampMs(match[1]);
+    if (parsed !== null) last = Math.max(last ?? 0, parsed);
+  }
+  return last;
+};
+
+type TranscriptQualityProject = Pick<Project, 'lyrics' | 'musicalStructure'>;
+
+const structureEndMs = (project: TranscriptQualityProject): number | null => {
+  let maxEnd: number | null = null;
+  for (const section of project.musicalStructure || []) {
+    const parsed = parseTimestampMs(section?.endTime);
+    if (parsed !== null) maxEnd = Math.max(maxEnd ?? 0, parsed);
+  }
+  return maxEnd;
+};
+
+const lyricsLineCount = (lyrics: string): number => lyrics.split('\n').map((line) => line.trim()).filter(Boolean).length;
+
+export const assertTranscriptDoesNotRegress = (project: TranscriptQualityProject, lyrics: string) => {
+  const previous = String(project.lyrics || '');
+  const newLines = lyricsLineCount(lyrics);
+  const previousLines = lyricsLineCount(previous);
+  if (!lyrics.trim()) {
+    const err = new Error('Audio transcription returned empty output; existing lyrics were preserved.');
+    (err as any).statusCode = 502;
+    (err as any).code = 'audio_transcription_empty';
+    throw err;
+  }
+
+  const expectedEnd = structureEndMs(project);
+  const observedEnd = lastTimestampMs(lyrics);
+  if (expectedEnd && observedEnd && observedEnd < expectedEnd * 0.75) {
+    const err = new Error(`Audio transcription appears partial: last timestamp ${Math.round(observedEnd / 1000)}s is far before expected ${Math.round(expectedEnd / 1000)}s. Existing lyrics were preserved.`);
+    (err as any).statusCode = 502;
+    (err as any).code = 'audio_transcription_partial';
+    (err as any).details = { observedEndMs: observedEnd, expectedEndMs: expectedEnd, newLines, previousLines };
+    throw err;
+  }
+
+  if (previousLines >= 20 && newLines < previousLines * 0.75) {
+    const err = new Error(`Audio transcription regressed from ${previousLines} lines to ${newLines} lines. Existing lyrics were preserved.`);
+    (err as any).statusCode = 502;
+    (err as any).code = 'audio_transcription_regressed';
+    (err as any).details = { newLines, previousLines };
+    throw err;
+  }
+};
+
+export const applySourceLyrics = async (
+  project: Project,
+  userId: string,
+  lyrics: string,
+  opts: { source?: string | null; note?: string | null } = {},
+) => {
+  const cleaned = String(lyrics || '').trim();
+  if (cleaned.length < 20) throw new Error('apply_source_lyrics requires non-empty lyrics/source text.');
+  await updateRows('projects', { id: project.id }, {
+    lyrics: cleaned,
+    status: project.status === 'uploaded' || project.status === 'analyzing' ? 'analyzed' : project.status,
+    updated_at: new Date().toISOString(),
+  });
+  await recordDirectorEvent({
+    projectId: project.id,
+    userId,
+    source: 'codex',
+    eventType: 'source_lyrics_applied',
+    entityType: 'project',
+    entityId: project.id,
+    summary: 'Source lyrics/text applied to the project.',
+    payload: {
+      source: opts.source || null,
+      note: opts.note || null,
+      chars: cleaned.length,
+      lines: lyricsLineCount(cleaned),
+    },
+  });
+  appendApplyJournal(project, 'applied source lyrics', `Lyrics chars: ${cleaned.length}\nSource: ${opts.source || 'unspecified'}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+
+  const updatedProject = nextProject(project, { lyrics: cleaned, status: 'analyzed' } as Partial<Project>);
+  return {
+    kind: 'mirage.audio.source_lyrics',
+    projectId: project.id,
+    chars: cleaned.length,
+    lines: lyricsLineCount(cleaned),
+    changedArtifacts: buildNotebookMirrorArtifacts(updatedProject, { audioAnalysis: true }),
+    note: 'Applied project source lyrics/text. Use this when canonical text is better than a partial transcription.',
+  };
+};
+
 const analyzeAudioTranscribeUnlocked = async (
   project: Project,
   userId: string,
@@ -38,6 +141,7 @@ const analyzeAudioTranscribeUnlocked = async (
   const t0 = Date.now();
   const lyrics = await transcribeLyrics(audioBase64, audioMime, opts.language || undefined);
   const durationMs = Date.now() - t0;
+  assertTranscriptDoesNotRegress(project, lyrics);
 
   await updateRows('projects', { id: project.id }, {
     lyrics,

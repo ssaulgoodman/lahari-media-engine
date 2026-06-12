@@ -26,6 +26,7 @@ import { STORYBOARD_PROVIDERS } from '../../constants/storyboardProviders.js';
 import { VIDEO_MODELS } from '../../constants/videoModels.js';
 import { TEXT_PROVIDERS, getTextProvider } from '../../constants/textProviders.js';
 import { recordDirectorEvent } from '../services/directorEvents.js';
+import { assertTranscriptDoesNotRegress } from '../services/codexStudio/audioAnalysis.js';
 
 const router = Router();
 const paramStr = (val: string | string[]): string => Array.isArray(val) ? val[0] : val;
@@ -1537,12 +1538,29 @@ router.post('/:id/analyze-audio', async (req, res) => {
     const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
     const structureData2 = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [] };
     const musicalStructure = Array.isArray(structureData2) ? structureData2 : structureData2.sections;
-    const transcribeSucceeded = runTranscribe && lyricsResult.status === 'fulfilled';
     const structureSucceeded = runStructure && structureResult.status === 'fulfilled';
+    let transcriptionQualityError: unknown = null;
+    if (runTranscribe && lyricsResult.status === 'fulfilled') {
+      try {
+        assertTranscriptDoesNotRegress({
+          lyrics: project.lyrics || '',
+          musicalStructure: structureSucceeded
+            ? musicalStructure
+            : parseJson(project.musical_structure, []),
+        }, lyrics);
+      } catch (err) {
+        transcriptionQualityError = err;
+        console.warn(`[${projectId}] lyrics transcription quality failed:`, err);
+      }
+    }
+    const transcribeSucceeded = runTranscribe && lyricsResult.status === 'fulfilled' && !transcriptionQualityError;
     const anyRequestedSucceeded = transcribeSucceeded || structureSucceeded;
     const settledError = (result: PromiseSettledResult<unknown>) => (
       result.status === 'rejected' ? String(result.reason) : null
     );
+    const transcribeError = transcriptionQualityError
+      ? ((transcriptionQualityError as any)?.message || String(transcriptionQualityError))
+      : settledError(lyricsResult);
 
     if (lyricsResult.status === 'rejected') console.warn(`[${projectId}] lyrics transcription failed:`, lyricsResult.reason);
     if (structureResult.status === 'rejected') console.warn(`[${projectId}] structure failed:`, structureResult.reason);
@@ -1556,10 +1574,12 @@ router.post('/:id/analyze-audio', async (req, res) => {
         model: GEMINI_AUDIO_ANALYSIS_MODEL,
         prompt: 'Transcribe lyrics from audio with timestamps.',
         referenceInputs: audioRef,
-        responseSummary: lyrics ? `${lyrics.split('\n').length} lines` : 'FAILED',
+        responseSummary: transcribeSucceeded
+          ? `${lyrics.split('\n').length} lines`
+          : (lyrics ? `Rejected partial/regressed transcript (${lyrics.split('\n').length} lines)` : 'FAILED'),
         durationMs: analysisMs,
         costEstimate: 0.01,
-        error: lyricsResult.status === 'rejected' ? String(lyricsResult.reason) : undefined,
+        error: transcribeError || undefined,
       });
     }
     if (runStructure) {
@@ -1595,7 +1615,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
             structure: runStructure,
           },
           errors: {
-            transcribe: runTranscribe ? settledError(lyricsResult) : null,
+            transcribe: runTranscribe ? transcribeError : null,
             structure: runStructure ? settledError(structureResult) : null,
           },
         },
@@ -1604,7 +1624,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
         code: 'audio_analysis_failed',
         message: 'Audio analysis failed before producing transcript or structure.',
         details: {
-          transcribe: runTranscribe ? settledError(lyricsResult) : null,
+          transcribe: runTranscribe ? transcribeError : null,
           structure: runStructure ? settledError(structureResult) : null,
         },
       }));
@@ -1616,7 +1636,7 @@ router.post('/:id/analyze-audio', async (req, res) => {
     const statusUpdate: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
-    if (runTranscribe && lyrics) statusUpdate.lyrics = lyrics;
+    if (runTranscribe && transcribeSucceeded && lyrics) statusUpdate.lyrics = lyrics;
     if (runStructure && structureSucceeded) {
       statusUpdate.musical_structure = JSON.stringify(musicalStructure);
     }
@@ -1639,8 +1659,9 @@ router.post('/:id/analyze-audio', async (req, res) => {
         transcription: runTranscribe ? {
           requested: true,
           succeeded: transcribeSucceeded,
-          lines: lyrics ? lyrics.split('\n').length : 0,
-          error: settledError(lyricsResult),
+          lines: transcribeSucceeded && lyrics ? lyrics.split('\n').length : 0,
+          rejectedLines: !transcribeSucceeded && lyrics ? lyrics.split('\n').length : 0,
+          error: transcribeError,
         } : null,
         structure: runStructure ? {
           requested: true,

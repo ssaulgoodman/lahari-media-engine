@@ -87,7 +87,7 @@ export { applyScript, applyScriptMarkdown } from './codexStudio/applies/script.j
 export { applyTextEdits } from './codexStudio/applies/textEdits.js';
 export { applyAudioPlan, applyAudioPlanMarkdown, applyCastVoice, generateDialogueAudio, getAudioPlanCost } from './codexStudio/audioPlan.js';
 export { voiceChangeVideo } from './codexStudio/voiceChange.js';
-export { analyzeAudioTranscribe, analyzeAudioStructure } from './codexStudio/audioAnalysis.js';
+export { analyzeAudioTranscribe, analyzeAudioStructure, applySourceLyrics } from './codexStudio/audioAnalysis.js';
 export { queryArtistMemory, searchArtistAssets } from './codexStudio/artistMemory.js';
 export { createProjectFromPersonaForDirector, listPersonasForDirector, savePersonaForDirector } from './codexStudio/personas.js';
 import { buildProjectPacket, buildShotPacket } from './codexStudio/packets.js';

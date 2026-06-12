@@ -362,6 +362,12 @@ const analyzeAudioTranscribeInputSchema = z.object({
 const analyzeAudioStructureInputSchema = z.object({
   projectId,
 });
+const applySourceLyricsInputSchema = z.object({
+  projectId,
+  lyrics: promptText,
+  source: mediumText.optional(),
+  note: mediumText.optional(),
+});
 const applyAudioPlanInputSchema = z.object({
   projectId,
   shots: maxArray(z.object({
@@ -1178,6 +1184,13 @@ const createHostedMcpServer = (auth: HostedAuth) => {
     if (actionKey === 'analyze_audio_structure') {
       const input = analyzeAudioStructureInputSchema.parse(rawInput);
       return studio.analyzeAudioStructure(await fullProjectForUser(input.projectId, auth.userId), auth.userId);
+    }
+    if (actionKey === 'apply_source_lyrics') {
+      const input = applySourceLyricsInputSchema.parse(rawInput);
+      return studio.applySourceLyrics(await fullProjectForUser(input.projectId, auth.userId), auth.userId, input.lyrics, {
+        source: input.source,
+        note: input.note,
+      });
     }
     if (actionKey === 'apply_audio_plan') {
       const input = applyAudioPlanInputSchema.parse(rawInput);

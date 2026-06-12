@@ -63,7 +63,7 @@ If Mirage MCP tools are unavailable, stop and ask the artist to reconnect Mirage
 - Saved personas: when the artist says "make a <persona> clip about <topic>" or "run Padma/Yapper," call `list_personas`, then `create_project_from_persona` with the persona and topic. Personas own reusable identity (character ref, style ref, voice, tone); workflow recipes own the production format.
 - Prior work: use `query_artist_memory` for old project taste/format/model clues and `search_artist_assets` for reusable refs, renders, keyframes, storyboards, audio, or style images.
 - Video: use `run_action(generate_video, { dryRun: true })` for requirements/cost, then `start_job(generate_video)` after approval.
-- Audio: use `apply_audio_plan` and `apply_cast_voice` for speech plans/voices; use `generate_dialogue_audio` for TTS; use `voice_change_video` after native-dialogue video when mouth timing works but the voice needs the assigned cast voice.
+- Audio: use `apply_source_lyrics` for canonical/artist-provided lyrics or partial-transcript repair; use `apply_audio_plan` and `apply_cast_voice` for speech plans/voices; use `generate_dialogue_audio` for TTS; use `voice_change_video` after native-dialogue video when mouth timing works but the voice needs the assigned cast voice.
 
 ## Choosing The Lever
 

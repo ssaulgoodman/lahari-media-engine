@@ -260,6 +260,21 @@ export const VIDEO_ACTION_SPECS = {
 } as const;
 
 export const AUDIO_ACTION_SPECS = {
+  apply_source_lyrics: {
+    key: 'apply_source_lyrics',
+    title: 'Apply source lyrics',
+    surface: 'audio',
+    mutates: true,
+    paid: false,
+    description: 'Persist canonical or artist-provided project-level source lyrics/text when audio transcription is partial, unavailable, or not worth rerunning.',
+    input: {
+      projectId: 'string',
+      lyrics: 'full lyrics/source text to save on the project',
+      source: 'optional source label or URL',
+      note: 'optional operator note',
+    },
+    examples: [{ projectId: 'project_uuid', lyrics: '[0:00] First line...', source: 'artist-provided lyrics' }],
+  },
   analyze_audio_transcribe: {
     key: 'analyze_audio_transcribe',
     title: 'Transcribe audio',
