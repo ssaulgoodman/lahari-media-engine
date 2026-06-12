@@ -809,6 +809,9 @@ Action schemas need exact happy-path examples for each common mode. `generate_ca
 Pass log:
 - 2026-06-10: `generate_candidates` now ships four happy-path examples (cast + note, multi-id environment, upload-guided via `guideAssetId`, single-entity `promptOverride`) and the `entityIds` input doc says "always an array, even for a single entity". Materialized `config/actions/looks.json` picks this up from the registry automatically.
 
+**P1 soon: music-led project creation should be hard to misroute.**
+2026-06-11 music-video smoke exposed a confusing bootstrap path: the artist asked for a music video, but `create_project` produced a default `scripted_narrative` / anime shell. The agent then checked `list_workflows`, saw only the `yapper` recipe, and had to reason out that workflow recipes are not the same thing as project production profiles. Cleanup target: `create_project` docs/schema/examples should make the music-video happy path explicit (`workflowKey: music_led`, `presetKey: music_video_default`, audio-source flow); agent instructions should distinguish **production profile** (`music_led` / `scripted_narrative`) from **workflow recipe** (`yapper`); and empty wrong-shell projects need an archive/delete path so the artist does not carry confusing test shells.
+
 **Substantially resolved for smoke (was P0): reliable local workbench sync.**
 The first smoke test exposed the sync seam: `mint_cli_token -> mirage-cli sync` failed because `npx` hit a root-owned global npm cache, so the agent fell back to MCP file reads, which bloats context and can't do a full refresh. The CLI bridge is now hardened enough that this is no longer a smoke blocker. What remains is the durable architecture move (kill npx entirely), demoted to the deferred tier below.
 
