@@ -45,9 +45,10 @@ const normalizeTtlMinutes = (ttlMinutes?: number | null) => {
 const posixCliCacheDir = '${TMPDIR:-/tmp}/mirage-npm-cache';
 const posixCliCacheEnv = `NPM_CONFIG_CACHE="${posixCliCacheDir}" npm_config_cache="${posixCliCacheDir}"`;
 const powershellCliCacheCommand = `$env:NPM_CONFIG_CACHE=(Join-Path ([System.IO.Path]::GetTempPath()) 'mirage-npm-cache'); $env:npm_config_cache=$env:NPM_CONFIG_CACHE`;
-export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.11';
+export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.12';
 
 const codexPluginInstallCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+mirage login --token '${token}'
 launchctl setenv MIRAGE_MCP_TOKEN '${token}'
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
@@ -56,6 +57,7 @@ codex mcp add mirage --url ${endpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
 
 const codexPluginInstallWindowsCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+mirage login --token "${token}"
 [Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${token}", "User")
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
@@ -151,6 +153,8 @@ export const createCliToken = async (
   const powershellNpxCommand = `${powershellCliCacheCommand}; $env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; cmd /c npx -y ${cliPackage} sync ${opts.projectId}`;
   const posixInstalledCommand = `MIRAGE_CLI_TOKEN=${token} MIRAGE_API_URL=${apiUrl} mirage sync ${opts.projectId}`;
   const powershellInstalledCommand = `$env:MIRAGE_CLI_TOKEN='${token}'; $env:MIRAGE_API_URL='${apiUrl}'; mirage sync ${opts.projectId}`;
+  const posixLoggedInCommand = `MIRAGE_API_URL=${apiUrl} mirage sync ${opts.projectId}`;
+  const powershellLoggedInCommand = `$env:MIRAGE_API_URL='${apiUrl}'; mirage sync ${opts.projectId}`;
   const posixInitCommand = 'mirage init';
   const powershellInitCommand = 'mirage init';
   const posixUploadExample = `curl -sS -H "Authorization: Bearer ${token}" -F projectId=${opts.projectId} -F purpose=cast_reference -F entityId=<castMemberId> -F file=@<imagePath> ${uploadEndpoint}`;
@@ -173,6 +177,8 @@ export const createCliToken = async (
       powershell: powershellInstalledCommand,
       posixInstalled: posixInstalledCommand,
       powershellInstalled: powershellInstalledCommand,
+      posixLoggedIn: posixLoggedInCommand,
+      powershellLoggedIn: powershellLoggedInCommand,
       posixNpxFallback: posixNpxCommand,
       powershellNpxFallback: powershellNpxCommand,
     },
@@ -193,7 +199,7 @@ export const createCliToken = async (
       },
       next: 'Use the returned assetId as sourceAssetId for lock_reference/apply_style_direction/import_storyboard_image/import_keyframe_image, as guideAssetId for generation, or leave audio_source attached to the project.',
     },
-    note: 'Short-lived project-scoped token. Do not store it. Install/update the Mirage CLI once with commands.installCli outside the token flow, initialize the workspace once with commands.init, then use commands.posix/commands.powershell for project-file sync. Project sync writes only mirage/projects/<projectId>/ plus small workspace metadata; skills come from the installed Mirage plugin and action schemas come from live MCP. Use npx fallback commands only when the installed CLI is unavailable and the artist accepts that npm will download code while carrying a live short-lived token. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
+    note: 'Short-lived project-scoped token. Do not store it. If the artist has run mirage login from /connect, use commands.posixLoggedIn/commands.powershellLoggedIn or simply `mirage sync <projectId>` and the CLI will mint a short-lived project token internally. Otherwise install/update the Mirage CLI once with commands.installCli outside the token flow, initialize the workspace once with commands.init, then use commands.posix/commands.powershell for one-off project-file sync. Project sync writes only mirage/projects/<projectId>/ plus small workspace metadata; skills come from the installed Mirage plugin and action schemas come from live MCP. Use npx fallback commands only when the installed CLI is unavailable and the artist accepts that npm will download code while carrying a live short-lived token. For local image/audio files, POST multipart directly to upload.endpoint; Mirage CLI upload subcommands are not part of the agent path.',
     sync: {
       npmCache: {
         posix: posixCliCacheDir,

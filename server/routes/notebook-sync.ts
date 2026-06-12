@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { selectOne } from '../database.js';
-import { verifyMcpBearerToken } from '../services/mcpTokens.js';
+import { createCliToken, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { buildProjectNotebook, uploadCastReference, uploadEnvironmentReference } from '../services/codexStudio.js';
 import { getFullProject } from './projects.js';
 import { paramStr } from './scope-helpers.js';
@@ -46,6 +46,62 @@ const verifiedCliProject = async (req: any, res: any) => {
   }
   return { projectId, auth };
 };
+
+router.get('/auth/status', async (req, res) => {
+  try {
+    const rawToken = bearerToken(req.headers.authorization);
+    const auth = await verifyMcpBearerToken(rawToken);
+    return res.json({
+      ok: true,
+      data: {
+        kind: 'mirage.cli.auth.status',
+        tokenKind: auth.tokenKind,
+        scopeProjectId: auth.scopeProjectId,
+        tokenPrefix: rawToken ? rawToken.slice(0, 18) : null,
+        authenticated: true,
+      },
+    });
+  } catch (error: any) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown auth status error');
+    return fail(res, 401, 'auth_failed', message);
+  }
+});
+
+router.post('/projects/:projectId/cli-token', async (req, res) => {
+  try {
+    const projectId = paramStr(req.params.projectId);
+    const rawToken = bearerToken(req.headers.authorization);
+    const auth = await verifyMcpBearerToken(rawToken);
+    if (auth.tokenKind !== 'mcp') {
+      return fail(res, 403, 'wrong_token_kind', 'This endpoint requires an account-scoped Mirage MCP token from /connect.');
+    }
+    const ttlMinutes = Number.isFinite(Number(req.body?.ttlMinutes)) ? Number(req.body.ttlMinutes) : undefined;
+    const minted = await createCliToken(auth.userId, {
+      projectId,
+      ttlMinutes,
+      label: `CLI sync: ${projectId.slice(0, 8)}`,
+    });
+    return res.json({
+      ok: true,
+      data: {
+        kind: 'mirage.cli_token.minted',
+        token: minted.token,
+        tokenPrefix: minted.tokenPrefix,
+        tokenKind: minted.tokenKind,
+        scopeProjectId: minted.scopeProjectId,
+        expiresAt: minted.expiresAt,
+        ttlMinutes: minted.ttlMinutes,
+      },
+    });
+  } catch (error: any) {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown CLI token mint error');
+    const status = message.includes('Missing') || message.includes('Invalid') || message.includes('Expired') || message.includes('Revoked') ? 401
+      : message.includes('Access denied') ? 403
+        : message.includes('not found') || message.includes('Not found') ? 404
+          : 500;
+    return fail(res, status, status === 401 ? 'auth_failed' : 'cli_token_mint_failed', message);
+  }
+});
 
 router.post('/projects/:projectId/notebook', async (req, res) => {
   try {

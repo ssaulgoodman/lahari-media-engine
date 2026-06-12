@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline/promises';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -13,6 +15,8 @@ const WORKSPACE_STATE_FILE = '.mirage-workspace-state.json';
 const LOCK_DIR = '.sync-state.lock';
 const WORKSPACE_LOCK_DIR = '.mirage-workspace-state.lock';
 const DEFAULT_LOCK_TTL_MS = 15 * 60 * 1000;
+const DEFAULT_AUTH_DIR = path.join(os.homedir(), '.mirage');
+const AUTH_FILE = process.env.MIRAGE_AUTH_FILE || path.join(process.env.MIRAGE_AUTH_DIR || DEFAULT_AUTH_DIR, 'auth.json');
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const normalizeSlash = (value) => value.split(path.sep).join('/');
@@ -37,9 +41,20 @@ const parseArgs = (argv) => {
     ? rest
     : command === 'status' || command === 'doctor' || command === 'init'
       ? (projectId && !projectId.startsWith('-') ? argv.slice(2) : argv.slice(1))
+      : command === 'login' || command === 'logout'
+        ? argv.slice(1)
+        : command === 'auth'
+          ? (projectId && !projectId.startsWith('-') ? argv.slice(2) : argv.slice(1))
       : argv.slice(2);
   const opts = { command, projectId, cwd: process.cwd(), force: false, recoverLock: false };
   if ((command === 'status' || command === 'doctor' || command === 'init') && projectId?.startsWith('-')) {
+    opts.projectId = undefined;
+  }
+  if (command === 'auth') {
+    opts.subcommand = projectId && !projectId.startsWith('-') ? projectId : 'status';
+    opts.projectId = undefined;
+  }
+  if (command === 'login' || command === 'logout') {
     opts.projectId = undefined;
   }
   if (command === 'init') {
@@ -61,11 +76,18 @@ const parseArgs = (argv) => {
     } else if (arg === '--api-url') {
       opts.apiUrl = optionArgs[i + 1];
       i += 1;
+    } else if (arg === '--token') {
+      opts.loginToken = optionArgs[i + 1] || '';
+      i += 1;
+    } else if (arg === '--stdin') {
+      opts.tokenFromStdin = true;
     } else if (arg === '--note') {
       opts.note = optionArgs[i + 1] || '';
       i += 1;
     } else if (arg === '--help' || arg === '-h') {
       opts.help = true;
+    } else if (command === 'login' && !opts.loginToken && !arg.startsWith('-')) {
+      opts.loginToken = arg;
     } else {
       fail('unknown_arg', `Unknown argument: ${arg}`);
     }
@@ -76,6 +98,9 @@ const parseArgs = (argv) => {
 const help = () => `Mirage CLI ${pkg.version}
 
 Usage:
+  mirage login [--token <mcpToken> | --stdin] [--api-url <url>]
+  mirage auth status [--api-url <url>]
+  mirage logout
   mirage init [--cwd <dir>] [--force]
   mirage sync <projectId> [--cwd <dir>] [--force] [--recover-lock] [--api-url <url>]
   mirage status [projectId] [--cwd <dir>]
@@ -83,11 +108,15 @@ Usage:
   mirage upload-environment-reference <projectId> <environmentId> <imagePath> [--note <text>] [--api-url <url>]
 
 Environment:
-  MIRAGE_CLI_TOKEN  Short-lived token from Mirage MCP mint_cli_token
+  MIRAGE_CLI_TOKEN  Optional one-off short-lived project token
   MIRAGE_TOKEN      Alias for MIRAGE_CLI_TOKEN
+  MIRAGE_MCP_TOKEN  Optional account token fallback when not logged in
   MIRAGE_API_URL    Defaults to ${DEFAULT_API_URL}
+  MIRAGE_AUTH_FILE  Optional credential-store path; defaults to ${AUTH_FILE}
 
 Notes:
+  login stores your account token locally with 0600 permissions.
+  sync mints a short-lived project token automatically after login.
   init writes token-free workspace instructions once.
   sync refreshes project files only and automatically recovers dead-owner locks.
   Use --recover-lock only after confirming another sync is not actively running.
@@ -106,12 +135,12 @@ Mirage server state is canonical. Local files are for reading, drafting, review,
 1. Confirm Mirage MCP is connected.
 2. Call \`mirage_doctor\` on first contact.
 3. Choose or create one project with \`list_projects\`, \`open_project\`, or \`create_project\`.
-4. If project files are missing or stale, call \`mint_cli_token\` and run the returned \`mirage sync <projectId>\` command from this folder.
+4. If project files are missing or stale, run \`mirage sync <projectId>\` from this folder. If the CLI is not logged in, run \`mirage login\` with the token from Mirage \`/connect\`.
 5. Use synced files for long bodies and traces. Use MCP for live state and actions.
 
 ## Tools
 
-Use cockpit tools to orient: \`mirage_doctor\`, \`list_projects\`, \`list_personas\`, \`create_project_from_persona\`, \`open_project\`, \`get_project_state\`, \`mint_cli_token\`, \`get_job\`, and \`mirage_capture_issue\`.
+Use cockpit tools to orient: \`mirage_doctor\`, \`list_projects\`, \`list_personas\`, \`create_project_from_persona\`, \`open_project\`, \`get_project_state\`, \`mint_cli_token\`, \`get_job\`, and \`mirage_capture_issue\`. Prefer \`mirage sync <projectId>\` after \`mirage login\`; \`mint_cli_token\` remains the one-off fallback.
 
 Use action tools to change things: \`run_action(actionKey, input)\` for free/persistence actions, \`start_job(actionKey, input)\` for paid media generation, and \`describe_action(actionKey)\` for the one live schema you are about to use.
 
@@ -191,6 +220,34 @@ const readJson = (filePath, fallback) => {
     return fallback;
   }
 };
+
+const readAuth = () => readJson(AUTH_FILE, null);
+
+const writeAuth = (auth) => {
+  fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(AUTH_FILE, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+  try {
+    fs.chmodSync(AUTH_FILE, 0o600);
+  } catch {
+    // Best effort on filesystems that do not support POSIX modes.
+  }
+};
+
+const removeAuth = () => {
+  if (fs.existsSync(AUTH_FILE)) fs.rmSync(AUTH_FILE, { force: true });
+};
+
+const envCliToken = () => process.env.MIRAGE_CLI_TOKEN || process.env.MIRAGE_TOKEN || '';
+const envMcpToken = () => process.env.MIRAGE_MCP_TOKEN || '';
+
+const storedMcpToken = () => {
+  const auth = readAuth();
+  return auth?.mcpToken || '';
+};
+
+const accountToken = () => envMcpToken() || storedMcpToken();
+
+const tokenPrefix = (value) => value ? value.slice(0, 18) : null;
 
 const readTextIfExists = (filePath) => {
   if (!fs.existsSync(filePath)) return null;
@@ -435,8 +492,134 @@ const acquireLock = (lockPath, opts = {}) => {
   };
 };
 
-const token = () => process.env.MIRAGE_CLI_TOKEN || process.env.MIRAGE_TOKEN || process.env.MIRAGE_MCP_TOKEN || '';
 const apiUrl = (opts) => (opts.apiUrl || process.env.MIRAGE_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
+
+const authFetchJson = async (url, opts = {}) => {
+  const response = await fetch(url, opts);
+  const json = await response.json().catch(() => null);
+  if (!json || typeof json !== 'object') {
+    fail('invalid_response', `Mirage returned a non-JSON response with HTTP ${response.status}. Is the latest server deployed?`, { status: response.status }, 1);
+  }
+  if (!response.ok || json?.ok === false) {
+    const err = json?.error || { code: 'request_failed', message: `Request failed with HTTP ${response.status}`, details: json };
+    fail(err.code || 'request_failed', err.message || 'Request failed', err.details || err, response.status === 401 ? 2 : 1);
+  }
+  return json.data;
+};
+
+const verifyAccountToken = async (opts, bearer) => authFetchJson(`${apiUrl(opts)}/api/notebook-sync/auth/status`, {
+  method: 'GET',
+  headers: {
+    authorization: `Bearer ${bearer}`,
+    'x-mirage-cli-version': pkg.version,
+  },
+});
+
+const mintProjectCliToken = async (opts) => {
+  const oneOffToken = envCliToken();
+  if (oneOffToken) return { token: oneOffToken, source: 'env_cli_token' };
+  const bearer = accountToken();
+  if (!bearer) {
+    fail(
+      'auth_missing',
+      'Run `mirage login` with the token from Mirage /connect, or set MIRAGE_CLI_TOKEN for a one-off sync.',
+      { authFile: AUTH_FILE },
+      2,
+    );
+  }
+  const data = await authFetchJson(`${apiUrl(opts)}/api/notebook-sync/projects/${encodeURIComponent(opts.projectId)}/cli-token`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${bearer}`,
+      'content-type': 'application/json',
+      'x-mirage-cli-version': pkg.version,
+    },
+    body: JSON.stringify({ ttlMinutes: 60 }),
+  });
+  return { token: data.token, source: envMcpToken() ? 'env_mcp_token' : 'stored_mcp_token', tokenPrefix: data.tokenPrefix, expiresAt: data.expiresAt };
+};
+
+const readLoginToken = async (opts) => {
+  if (opts.loginToken) return opts.loginToken.trim();
+  if (opts.tokenFromStdin || !process.stdin.isTTY) {
+    return fs.readFileSync(0, 'utf8').trim();
+  }
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question('Paste Mirage token from /connect: ')).trim();
+  } finally {
+    rl.close();
+  }
+};
+
+const login = async (opts) => {
+  const bearer = await readLoginToken(opts);
+  if (!bearer) fail('auth_missing', 'No token provided. Run `mirage login` and paste the token from Mirage /connect.', undefined, 2);
+  if (!bearer.startsWith('mirage_mcp_') && !bearer.startsWith('lahari_mcp_')) {
+    fail('invalid_token', 'That does not look like a Mirage MCP token from /connect.', { tokenPrefix: tokenPrefix(bearer) }, 2);
+  }
+  const status = await verifyAccountToken(opts, bearer);
+  if (status.tokenKind !== 'mcp') {
+    fail('wrong_token_kind', 'mirage login requires an account-scoped MCP token from /connect, not a short-lived project token.', status, 2);
+  }
+  const auth = {
+    kind: 'mirage.cli.auth',
+    apiUrl: apiUrl(opts),
+    mcpToken: bearer,
+    tokenPrefix: tokenPrefix(bearer),
+    savedAt: new Date().toISOString(),
+    cliVersion: pkg.version,
+  };
+  writeAuth(auth);
+  output({
+    ok: true,
+    kind: 'mirage.cli.login',
+    apiUrl: auth.apiUrl,
+    authFile: AUTH_FILE,
+    tokenPrefix: auth.tokenPrefix,
+    savedAt: auth.savedAt,
+    next: 'Run `mirage init` once in a workspace, then `mirage sync <projectId>` without calling mint_cli_token.',
+  });
+};
+
+const logout = async () => {
+  removeAuth();
+  output({
+    ok: true,
+    kind: 'mirage.cli.logout',
+    authFile: AUTH_FILE,
+    loggedOutAt: new Date().toISOString(),
+  });
+};
+
+const authStatus = async (opts) => {
+  const auth = readAuth();
+  const bearer = envMcpToken() || auth?.mcpToken || '';
+  if (!bearer) {
+    output({
+      ok: false,
+      kind: 'mirage.cli.auth.status',
+      authenticated: false,
+      authFile: AUTH_FILE,
+      userAction: 'Run `mirage login` and paste the token from Mirage /connect.',
+    });
+    process.exitCode = 2;
+    return;
+  }
+  const status = await verifyAccountToken(opts, bearer);
+  output({
+    ok: true,
+    kind: 'mirage.cli.auth.status',
+    authenticated: true,
+    apiUrl: apiUrl(opts),
+    authFile: AUTH_FILE,
+    tokenSource: envMcpToken() ? 'env:MIRAGE_MCP_TOKEN' : 'stored',
+    tokenKind: status.tokenKind,
+    scopeProjectId: status.scopeProjectId,
+    tokenPrefix: status.tokenPrefix || tokenPrefix(bearer),
+    canAutoMintProjectTokens: status.tokenKind === 'mcp',
+  });
+};
 
 const mimeFromPath = (filePath) => {
   const lower = filePath.toLowerCase();
@@ -447,16 +630,14 @@ const mimeFromPath = (filePath) => {
 };
 
 const postNotebookSync = async (opts, knownHashes) => {
-  const bearer = token();
-  if (!bearer) {
-    fail('auth_missing', 'Set MIRAGE_CLI_TOKEN from the Mirage MCP mint_cli_token tool before running sync.');
-  }
+  const auth = await mintProjectCliToken(opts);
   const response = await fetch(`${apiUrl(opts)}/api/notebook-sync/projects/${encodeURIComponent(opts.projectId)}/notebook`, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${bearer}`,
+      authorization: `Bearer ${auth.token}`,
       'content-type': 'application/json',
       'x-mirage-cli-version': pkg.version,
+      'x-mirage-cli-auth-source': auth.source,
     },
     body: JSON.stringify({ knownHashes }),
   });
@@ -611,7 +792,7 @@ const init = async (opts) => {
       tokenRequired: false,
       next: conflicts.length
         ? 'Review existing AGENTS.md/CLAUDE.md, then rerun with --force only if you want Mirage to replace them.'
-        : 'Workspace is initialized. Use Mirage MCP to open a project, then run mirage sync <projectId> with a minted token.',
+        : 'Workspace is initialized. Use Mirage MCP to open a project, then run mirage sync <projectId>. If not logged in, run mirage login first.',
     },
     details: { written, skipped },
   });
@@ -967,10 +1148,7 @@ const uploadReference = async (opts) => {
       : 'Usage: mirage upload-cast-reference <projectId> <castMemberId> <imagePath>';
     fail('missing_args', usage);
   }
-  const bearer = token();
-  if (!bearer) {
-    fail('auth_missing', 'Set MIRAGE_CLI_TOKEN from the Mirage MCP mint_cli_token tool before running uploads.');
-  }
+  const auth = await mintProjectCliToken(opts);
   if (!fs.existsSync(opts.filePath)) fail('file_not_found', `Image file not found: ${opts.filePath}`);
   const stat = fs.statSync(opts.filePath);
   if (!stat.isFile()) fail('not_a_file', `Path is not a file: ${opts.filePath}`);
@@ -985,9 +1163,10 @@ const uploadReference = async (opts) => {
   const response = await fetch(`${apiUrl(opts)}/api/notebook-sync/projects/${encodeURIComponent(opts.projectId)}/references/${entityPath}/upload`, {
     method: 'POST',
     headers: {
-      authorization: `Bearer ${bearer}`,
+      authorization: `Bearer ${auth.token}`,
       'content-type': 'application/json',
       'x-mirage-cli-version': pkg.version,
+      'x-mirage-cli-auth-source': auth.source,
     },
     body: JSON.stringify({
       filename: path.basename(opts.filePath),
@@ -1017,7 +1196,15 @@ try {
     process.stdout.write(help());
     process.exit(0);
   }
-  if (opts.command === 'init') {
+  if (opts.command === 'login') {
+    await login(opts);
+  } else if (opts.command === 'logout') {
+    await logout(opts);
+  } else if (opts.command === 'auth' && opts.subcommand === 'status') {
+    await authStatus(opts);
+  } else if (opts.command === 'auth') {
+    fail('unknown_command', `Unknown auth command: ${opts.subcommand}`, { help: 'Usage: mirage auth status [--api-url <url>]' });
+  } else if (opts.command === 'init') {
     await init(opts);
   } else if (opts.command === 'sync') {
     await sync(opts);

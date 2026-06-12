@@ -13,7 +13,7 @@ Use Mirage as an agent-operated video studio. Help the artist move one Mirage pr
 2. Call `mirage_doctor` on first contact or after a deploy. If it says production/plugin state is not coherent, report the verdict plainly and stop before paid work.
 3. Choose or create one project with Mirage tools.
 4. If the workspace lacks `AGENTS.md` / `CLAUDE.md`, run `mirage init` once. This is token-free and writes stable workspace instructions.
-5. Call `mint_cli_token` and run the returned installed-CLI sync command to refresh project files.
+5. Run `mirage sync <projectId>` to refresh project files. If the CLI is not logged in, run `mirage login` with the token from Mirage `/connect`; `mint_cli_token` is the one-off fallback.
 6. Read the sync receipt. Trust `generatedAt`, file counts, and receipt status; do not treat the notebook schema version as freshness.
 
 ## Operating Contract
@@ -61,7 +61,7 @@ After references, storyboards, or videos exist, use `apply_text_edits` for wordi
 
 Project sync writes project files only. It should not rewrite skills, action schemas, `AGENTS.md`, or `CLAUDE.md`.
 
-Install/update the Mirage CLI without a live project token, then run the fresh `mint_cli_token` command with the installed CLI. Avoid downloading new code while carrying a live token.
+Install/update the Mirage CLI without a live project token. Use `mirage login` once to store the account token locally, then run `mirage sync <projectId>` whenever files are stale. The CLI mints short-lived project tokens internally. Use `mint_cli_token` only as a fallback when the login store is unavailable.
 
 Use MCP file reads only when the harness has no shell or local file-write capability.
 
@@ -71,7 +71,7 @@ For local debugging, `mirage status` / `mirage doctor` is the file-level check. 
 
 For uploaded guides, references, audio, or native imagegen outputs:
 
-1. Mint a CLI token.
+1. Make sure `mirage auth status` is authenticated, or use `mint_cli_token` as a one-off fallback.
 2. POST the file to `/api/agent/uploads` with the Mirage bearer token and correct `purpose`.
 3. Use the returned `assetId` in the relevant action.
 

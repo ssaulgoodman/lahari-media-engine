@@ -20,7 +20,7 @@ Mirage server state is canonical. Local files are a workbench for reading, draft
 2. Call `mirage_doctor` on first contact or after a deploy.
 3. Identify one active project with the user request, `list_projects`, `open_project`, or `create_project`.
 4. If this folder does not have `AGENTS.md` / `CLAUDE.md`, run `mirage init` once. This is token-free.
-5. If project files are missing or stale, call `mint_cli_token` and run the returned installed-CLI sync command from the workspace root.
+5. If project files are missing or stale, run `mirage sync <projectId>` from the workspace root. If the CLI is not logged in, run `mirage login` with the token from Mirage `/connect`; `mint_cli_token` is the one-off fallback.
 6. Use synced files for long bodies and traces. Use MCP for live state and actions.
 
 ## Tools
@@ -86,7 +86,7 @@ For meaningful creative text, draft in the local artifact first, then apply it: 
 
 Project sync is project-data only. It writes files under `mirage/projects/<projectId>/` and updates small workspace metadata. It does not rewrite `AGENTS.md`, skills, or local action schemas.
 
-Use `mint_cli_token`, then run the returned installed-CLI command from the workspace root. If the Mirage CLI is not installed, install/update it once without a live project token, then rerun the fresh token command.
+Use `mirage login` once to store the account token locally, then run `mirage sync <projectId>` from the workspace root. The CLI mints short-lived project tokens internally. If the Mirage CLI is not installed, install/update it once without a live token. Use `mint_cli_token` only as a fallback when the login store is unavailable.
 
 Use `get_project_notebook_manifest` + `read_project_notebook_file` only when the harness has no shell or local file-write capability. Do not use `detail='full'` just to fetch file bodies.
 

@@ -285,11 +285,12 @@ export const ConnectPage: React.FC<{
   const token = created?.token;
   const tokenPlaceholder = token || '<token>';
   const mcpEndpoint = mcpUrl();
-  const mirageCliPackage = '@ssaulgoodman420/mirage-cli@0.1.10';
+  const mirageCliPackage = '@ssaulgoodman420/mirage-cli@0.1.12';
   const tokenMaskedSuffix = token ? token.slice(-6) : '';
   const canMintToken = anyLaneReady;
 
   const codexPluginMacInstall = `npm install -g ${mirageCliPackage}
+mirage login --token '${tokenPlaceholder}'
 launchctl setenv MIRAGE_MCP_TOKEN '${tokenPlaceholder}'
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
@@ -297,6 +298,7 @@ codex mcp remove mirage
 codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
   const codexPluginLinuxInstall = `npm install -g ${mirageCliPackage}
+mirage login --token '${tokenPlaceholder}'
 export MIRAGE_MCP_TOKEN=${tokenPlaceholder}
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
@@ -304,6 +306,7 @@ codex mcp remove mirage
 codex mcp add mirage --url ${mcpEndpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
   const codexPluginWindowsInstall = `npm install -g ${mirageCliPackage}
+mirage login --token "${tokenPlaceholder}"
 [Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${tokenPlaceholder}", "User")
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
@@ -359,7 +362,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
           <Step n={1} title="Install the Mirage plugin and connection">
             <CodeBlock value={installCommand} copyLabel="Copy commands" />
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              This installs the Mirage helper CLI, installs the Mirage plugin, stores this token for Codex, registers the Mirage MCP server, and verifies the connection.
+              This installs the Mirage helper CLI, stores this token for local sync, installs the Mirage plugin, stores this token for Codex MCP, registers the Mirage MCP server, and verifies the connection.
             </p>
           </Step>
           <Step n={2} title="Fully restart Codex Desktop">
@@ -385,7 +388,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
           <Step n={1} title="Open PowerShell and run">
             <CodeBlock value={codexPluginWindowsInstall} copyLabel="Copy script" />
             <p className="text-[11px] text-zinc-400 leading-relaxed">
-              Installs the Mirage helper CLI and plugin, stores this token in your Windows user environment, registers the Mirage MCP server, then stops Codex so the reopened app inherits the token.
+              Installs the Mirage helper CLI and plugin, stores this token for local sync and in your Windows user environment, registers the Mirage MCP server, then stops Codex so the reopened app inherits the token.
             </p>
           </Step>
           <Step n={2} title="Reopen Codex Desktop">
