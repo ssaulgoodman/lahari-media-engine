@@ -14,6 +14,7 @@ interface OutputAsset {
   id: string;
   url?: string;
   category?: string;
+  shotId?: string;
 }
 
 interface XRayEntry {
@@ -50,6 +51,11 @@ interface Props {
   projectId: string;
   isOpen: boolean;
   onClose: () => void;
+  // When set, the panel opens scoped to calls that produced media for this
+  // shot ("what made this?"). Shot linkage rides on outputAssets.shotId, so
+  // text-only planning calls without output assets stay in the All view.
+  focusShotId?: string | null;
+  focusShotLabel?: string | null;
 }
 
 // ─── Stage grouping (for filter pills) ───────────────────────────────
@@ -58,22 +64,86 @@ const STAGE_GROUPS: { key: string; label: string; prefixes: string[] }[] = [
   { key: 'all',     label: 'All',       prefixes: [] },
   { key: 'errors',  label: 'Errors',    prefixes: [] },
   { key: 'blueprint', label: 'Blueprint', prefixes: ['transcribe', 'detect-structure', 'summarize', 'generate-concepts', 'generate-script', 'brainstorm-styles', 'visualize-style', 'refine-style', 'analyze-style', 'enrich-style', 'lock-style', 'generate-looks', 'generate-environment', 'write-shot-prompts'] },
-  { key: 'studio',  label: 'Studio',    prefixes: ['generate-shot-image', 'generate-shot-video', 'generate-shot-start-frame', 'generate-shot-end-frame', 'generate-shot-frame-pair', 'describe-frame'] },
+  { key: 'studio',  label: 'Studio',    prefixes: ['generate-shot-image', 'generate-shot-video', 'generate-shot-start-frame', 'generate-shot-end-frame', 'generate-shot-frame-pair', 'generate-end-frame', 'write-storyboard-prompt', 'refine-storyboard', 'generate-storyboard', 'describe-frame'] },
 ];
+
+// Human labels for the common stages — the artist reads "Start frame",
+// not "generate-shot-start-frame". Unknown stages fall back to prettyStage.
+const STAGE_LABELS: Record<string, string> = {
+  'generate-shot-start-frame': 'Start frame',
+  'generate-end-frame': 'End frame',
+  'generate-shot-video': 'Video',
+  'generate-storyboard-image': 'Storyboard image',
+  'write-storyboard-prompt': 'Storyboard prompt',
+  'refine-storyboard-prompt': 'Storyboard prompt rewrite',
+  'refine-storyboard-image': 'Storyboard image edit',
+  'generate-concepts': 'Concept directions',
+  'refine-concept': 'Concept refine',
+  'generate-script': 'Script',
+  'refine-script': 'Script refine',
+  'brainstorm-styles': 'Style directions',
+  'visualize-style': 'Style frame',
+  'refine-style-direction': 'Style refine',
+  'analyze-style': 'Style read',
+  'generate-looks': 'Character look',
+  'generate-environment-looks': 'Environment look',
+  'write-shot-prompts': 'Shot prompts',
+  'write-audio-plan': 'Audio plan',
+  'generate-dialogue-audio': 'Dialogue audio',
+  'transcribe': 'Transcription',
+  'detect-structure': 'Song structure',
+  'refine-shot-prompt': 'Frame prompt refine',
+  'refine-end-frame-prompt': 'End-frame prompt refine',
+  'refine-video-prompt': 'Motion prompt refine',
+  'describe-frame': 'Continuity read',
+  'copy-prev-last-frame': 'Continuity frame copy',
+};
 
 const prettyStage = (stage: string): string => {
   const base = stage.split(':')[0];
-  return base.replace(/-/g, ' ').replace(/generate /, '');
+  return STAGE_LABELS[base] || base.replace(/-/g, ' ').replace(/generate /, '');
+};
+
+// ─── Layer cards ─────────────────────────────────────────────────────
+// Each composed-prompt section renders as a "layer": who put it there and
+// what it contributes. Accent color encodes the source — engine contract
+// (zinc), project graph data (sky), artist taste (amber), overrides (violet).
+
+const SECTION_META: Record<string, { label: string; source: string; accent: string }> = {
+  coreTask:        { label: 'Task',             source: 'engine contract',    accent: 'border-zinc-500/40' },
+  inputs:          { label: 'Project inputs',   source: 'your project data',  accent: 'border-sky-400/40' },
+  styleNotes:      { label: 'Style notes',      source: 'your saved taste',   accent: 'border-amber-400/50' },
+  projectOverride: { label: 'Project override', source: 'your recipe',        accent: 'border-violet-400/50' },
+  userNotePolicy:  { label: 'Note policy',      source: 'engine contract',    accent: 'border-zinc-500/40' },
+  outputContract:  { label: 'Output contract',  source: 'engine contract',    accent: 'border-zinc-500/40' },
+  userNote:        { label: 'Your note',        source: 'this call',          accent: 'border-amber-400/50' },
+};
+
+const LayerCard: React.FC<{ section: RecipeSection; defaultOpen: boolean }> = ({ section, defaultOpen }) => {
+  const meta = SECTION_META[section.key] || { label: section.title, source: '', accent: 'border-zinc-500/40' };
+  return (
+    <details open={defaultOpen} className={`group border-l-2 ${meta.accent} pl-3`}>
+      <summary className="cursor-pointer list-none flex items-baseline gap-2 py-0.5">
+        <span className="text-xs font-medium text-zinc-300">{meta.label}</span>
+        {meta.source && <span className="text-[11px] text-zinc-400">{meta.source}</span>}
+        <span className="text-[11px] text-zinc-500 ml-auto font-mono group-open:hidden">{section.body.length > 120 ? `${section.body.slice(0, 90).replace(/\s+/g, ' ')}…` : section.body.replace(/\s+/g, ' ')}</span>
+      </summary>
+      <p className="mt-1 mb-2 text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{section.body}</p>
+    </details>
+  );
 };
 
 // ─── Main panel ──────────────────────────────────────────────────────
 
-export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
+export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose, focusShotId, focusShotLabel }) => {
   const [calls, setCalls] = useState<XRayEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const [query, setQuery] = useState('');
+  // Shot scope is its own axis on top of the stage filter; opening from a
+  // shot card turns it on, the chip in the header turns it off.
+  const [shotScoped, setShotScoped] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!projectId) return;
@@ -87,11 +157,23 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
   }, [projectId]);
 
   useEffect(() => {
-    if (isOpen) refresh();
+    if (isOpen) {
+      refresh();
+      setShotScoped(true);
+      setExpandedId(null);
+    }
   }, [isOpen, refresh]);
 
+  const shotCalls = useMemo(() => (
+    focusShotId
+      ? calls.filter(c => (c.outputAssets || []).some(a => a.shotId === focusShotId))
+      : calls
+  ), [calls, focusShotId]);
+
+  const scoped = focusShotId && shotScoped ? shotCalls : calls;
+
   const filtered = useMemo(() => {
-    let list = calls;
+    let list = scoped;
     if (filter === 'errors') {
       list = list.filter(c => c.error);
     } else if (filter !== 'all') {
@@ -108,11 +190,11 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
       );
     }
     return list;
-  }, [calls, filter, query]);
+  }, [scoped, filter, query]);
 
-  const totalCost = calls.reduce((s, c) => s + (c.costEstimate || 0), 0);
-  const totalDuration = calls.reduce((s, c) => s + (c.durationMs || 0), 0);
-  const errorCount = calls.filter(c => c.error).length;
+  const totalCost = scoped.reduce((s, c) => s + (c.costEstimate || 0), 0);
+  const totalDuration = scoped.reduce((s, c) => s + (c.durationMs || 0), 0);
+  const errorCount = scoped.filter(c => c.error).length;
 
   if (!isOpen) return null;
 
@@ -129,14 +211,24 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
       >
         {/* Header */}
         <div className="flex-shrink-0 h-14 px-5 flex items-center justify-between border-b border-white/[0.06]">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-medium text-white">X-Ray</h2>
-            <span className="text-[11px] text-zinc-400 font-mono">
-              {calls.length} calls · ${totalCost.toFixed(2)} · {(totalDuration / 1000).toFixed(0)}s
+          <div className="flex items-center gap-3 min-w-0">
+            <h2 className="text-sm font-medium text-white flex-shrink-0">X-Ray</h2>
+            {focusShotId && shotScoped && (
+              <button
+                onClick={() => setShotScoped(false)}
+                className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full bg-white/[0.08] text-zinc-200 hover:bg-white/[0.12] transition-colors flex-shrink-0"
+                title="Showing only this shot's generations. Click to see the whole project."
+              >
+                {focusShotLabel || 'This shot'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            )}
+            <span className="text-[11px] text-zinc-400 font-mono truncate">
+              {scoped.length} calls · ${totalCost.toFixed(2)} · {(totalDuration / 1000).toFixed(0)}s
               {errorCount > 0 && <span className="text-red-400 ml-2">· {errorCount} errors</span>}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
               onClick={refresh}
               disabled={loading}
@@ -154,9 +246,9 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
         <div className="flex-shrink-0 px-5 py-3 border-b border-white/[0.06] flex items-center gap-3">
           <div className="flex items-center gap-1">
             {STAGE_GROUPS.map(g => {
-              const count = g.key === 'all' ? calls.length
+              const count = g.key === 'all' ? scoped.length
                 : g.key === 'errors' ? errorCount
-                : calls.filter(c => g.prefixes.some(p => c.stage.startsWith(p))).length;
+                : scoped.filter(c => g.prefixes.some(p => c.stage.startsWith(p))).length;
               if (g.key !== 'all' && g.key !== 'errors' && count === 0) return null;
               const active = filter === g.key;
               return (
@@ -186,17 +278,24 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
             <div className="flex items-center justify-center h-48 text-zinc-400 text-xs">
-              {calls.length === 0 ? 'No calls yet' : 'No matches'}
+              {scoped.length === 0
+                ? (focusShotId && shotScoped ? 'No generations recorded for this shot yet' : 'No calls yet')
+                : 'No matches'}
             </div>
           )}
 
           {filtered.map(call => {
             const isExpanded = expandedId === call.id;
             const hasError = !!call.error;
-            const imageOutputs = (call.outputAssets || []).filter(a => a.url && (a.category === 'style' || a.category === 'character' || a.category === 'shot_image' || a.category === 'shot_end_frame' || a.category === 'shot_extracted_last_frame'));
+            const imageOutputs = (call.outputAssets || []).filter(a => a.url && (a.category === 'style' || a.category === 'character' || a.category === 'shot_image' || a.category === 'shot_end_frame' || a.category === 'shot_extracted_last_frame' || a.category === 'storyboard'));
             const videoOutputs = (call.outputAssets || []).filter(a => a.url && a.category === 'shot_video');
             const imageRefs = call.referenceInputs.filter(r => r.type === 'image' && r.url);
             const recipe = call.contextChain?.recipe as RecipeTrace | undefined;
+            const sections = recipe?.sections || [];
+            // A single PROMPT section means this wasn't a composed prompt
+            // (media calls) — show the prompt directly instead of one
+            // meaningless layer card.
+            const layered = sections.length > 1;
             const time = new Date(call.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
             return (
@@ -222,48 +321,39 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
 
                 {isExpanded && (
                   <div className="px-5 pb-5 pt-1 space-y-4">
-                    {recipe && (
-                      <div>
-                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Tool recipe</div>
-                        <div className="surface-inset rounded-md p-3 space-y-3">
-                          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                            {recipe.toolKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 font-mono">{recipe.toolKey}</span>}
-                            {recipe.workflowKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-mono">{recipe.workflowKey}</span>}
-                            {recipe.presetKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-400 font-mono">{recipe.presetKey}</span>}
-                          </div>
-                          {recipe.sections && recipe.sections.length > 0 && (
-                            <div className="space-y-2">
-                              {recipe.sections.map((section) => (
-                                <details key={`${call.id}-${section.key}`} className="group">
-                                  <summary className="cursor-pointer list-none flex items-center gap-2 text-[11px] text-zinc-400 hover:text-zinc-200">
-                                    <span className="font-mono uppercase tracking-wide">{section.title}</span>
-                                    <span className="text-zinc-500 font-mono">{section.body.length} chars</span>
-                                  </summary>
-                                  <pre className="mt-1.5 text-xs text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed border-l border-white/[0.08] pl-3">{section.body}</pre>
-                                </details>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Prompt */}
+                    {/* What we asked for — layered recipe or plain prompt */}
                     <div>
-                      <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Prompt</div>
-                      <div className="surface-inset rounded-md p-3">
-                        <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.prompt}</pre>
+                      <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5 flex items-center gap-2">
+                        What we asked for
+                        {recipe?.toolKey && <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-400 font-mono normal-case">{recipe.toolKey}</span>}
                       </div>
+                      <div className="surface-inset rounded-md p-3">
+                        {layered ? (
+                          <div className="space-y-1.5">
+                            {sections.map((section) => (
+                              <LayerCard key={`${call.id}-${section.key}`} section={section} defaultOpen={section.key !== 'outputContract' && section.key !== 'userNotePolicy'} />
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{call.prompt}</p>
+                        )}
+                      </div>
+                      {layered && (
+                        <details className="mt-1.5">
+                          <summary className="cursor-pointer list-none text-[11px] text-zinc-500 hover:text-zinc-300">Raw prompt as sent</summary>
+                          <pre className="mt-1.5 surface-inset rounded-md p-3 text-xs text-zinc-400 whitespace-pre-wrap font-mono leading-relaxed">{call.prompt}</pre>
+                        </details>
+                      )}
                     </div>
 
-                    {/* Reference images */}
+                    {/* What it saw — reference images */}
                     {imageRefs.length > 0 && (
                       <div>
-                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Reference inputs</div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">What it saw</div>
                         <div className="flex gap-2 flex-wrap">
                           {imageRefs.map((ref, i) => (
                             <div key={i} className="relative group">
-                              <img src={ref.url} className="w-16 h-16 object-cover rounded-md border border-white/[0.06]" alt={ref.label} />
+                              <img src={ref.url} className="w-20 h-20 object-cover rounded-md border border-white/[0.06]" alt={ref.label} />
                               <div className="absolute inset-x-0 bottom-0 bg-black/70 text-[11px] text-zinc-300 px-1 py-0.5 rounded-b-md truncate text-center">{ref.label}</div>
                             </div>
                           ))}
@@ -281,9 +371,9 @@ export const XRayPanel: React.FC<Props> = ({ projectId, isOpen, onClose }) => {
                       </div>
                     ) : call.responseSummary ? (
                       <div>
-                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">Response</div>
+                        <div className="text-[11px] text-zinc-400 uppercase tracking-wide mb-1.5">What came back</div>
                         <div className="surface-inset rounded-md p-3">
-                          <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{call.responseSummary}</pre>
+                          <p className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{call.responseSummary}</p>
                         </div>
                       </div>
                     ) : null}

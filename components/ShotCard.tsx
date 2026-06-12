@@ -97,6 +97,7 @@ interface ShotCardProps {
    *  Audio phase. Optional — Studio is functional without it; the chip just
    *  becomes non-clickable when omitted. */
   onJumpToAudioPhase?: () => void;
+  onOpenShotXray?: (shotId: string, shotLabel: string) => void;
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
   onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
@@ -119,6 +120,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
   onUploadEndFrame, onUploadShotRef, onDeleteShotRef, onSetProject, setModalImage,
   onJumpToAudioPhase,
+  onOpenShotXray,
 }) => {
   // Local state
   const [showFrames, setShowFrames] = useState(false);
@@ -284,6 +286,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           {(shot.videoUrl || shot.imageUrl || shot.storyboardUrl) && (
             <button onClick={onToggleHistory} className={`w-7 h-7 rounded-md transition-colors flex items-center justify-center ${historyOpen ? 'text-white bg-white/[0.1]' : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'}`} title="Version history" aria-label="Version history">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+            </button>
+          )}
+          {onOpenShotXray && (shot.videoUrl || shot.imageUrl || shot.storyboardUrl) && (
+            <button onClick={() => onOpenShotXray(shot.id, `Shot ${shotIdx + 1}`)} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center justify-center" title="X-Ray — what made this shot" aria-label="X-Ray this shot">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/><path d="M8 11h6"/><path d="M11 8v6"/></svg>
             </button>
           )}
           <button

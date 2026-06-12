@@ -51,8 +51,10 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
   const [lookCandidates, setLookCandidates] = useState<Record<string, { id: string; url: string }[]>>({});
   // Per-member loading state for parallel character generation
   const [looksLoading, setLooksLoading] = useState<Set<string>>(new Set());
-  // X-Ray panel
+  // X-Ray panel. Opening from a shot card scopes the panel to that shot's
+  // generations; the header button opens unscoped.
   const [xrayOpen, setXrayOpen] = useState(false);
+  const [xrayShotFocus, setXrayShotFocus] = useState<{ id: string; label: string } | null>(null);
   // Prompts library — full-page overlay, not tied to a project
   const [promptsOpen, setPromptsOpen] = useState(false);
   // Bulk-queue state — shot IDs waiting for a worker to pick them up.
@@ -1357,7 +1359,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
         project={project}
         realtimeBadge={realtimeBadge}
         onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
-        onOpenXray={() => setXrayOpen(true)}
+        onOpenXray={() => { setXrayShotFocus(null); setXrayOpen(true); }}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -1493,6 +1495,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                     project={project}
                     activeSceneIdx={activeSceneIdx}
                     onSceneChange={setActiveSceneIdx}
+                    onOpenShotXray={(shotId, shotLabel) => { setXrayShotFocus({ id: shotId, label: shotLabel }); setXrayOpen(true); }}
                     onUpdateShot={handleUpdateShot}
                     onGenerateImage={handleGenerateImage}
                     onGenerateVideo={handleGenerateVideo}
@@ -1601,6 +1604,8 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
           projectId={project.id}
           isOpen={xrayOpen}
           onClose={() => setXrayOpen(false)}
+          focusShotId={xrayShotFocus?.id}
+          focusShotLabel={xrayShotFocus?.label}
         />
       )}
     </div>

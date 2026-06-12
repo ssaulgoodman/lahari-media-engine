@@ -2012,7 +2012,7 @@ router.get('/:id/xray', async (req, res) => {
   const enriched = await Promise.all(calls.map(async (call) => {
     const outputAssets = await Promise.all(call.outputAssetIds.map(async (assetId: string) => {
       const asset: any = await selectOne('assets', { id: assetId });
-      return asset ? { id: asset.id, url: storageUrl(asset.file_path), category: asset.category } : { id: assetId };
+      return asset ? { id: asset.id, url: storageUrl(asset.file_path), category: asset.category, shotId: asset.shot_id || undefined } : { id: assetId };
     }));
     return { ...call, outputAssets };
   }));
