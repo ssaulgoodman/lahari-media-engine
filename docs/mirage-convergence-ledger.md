@@ -292,9 +292,17 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   Render button now gates on the timeline containing a visual clip and the editor mounts even
   with zero generated shots. Hides are events-attributed. C0's audit backlog is now empty.
 
+- 2026-06-10 · C4 prep + visual audit · `44554eb` · X-Ray panel is now shot-anchored and
+  filmmaker-readable (layer cards per composed-prompt section, source-labeled, human stage
+  names; per-shot scope via output-asset linkage) — first slice of the visual audit surface.
+  Opened `lahari-taste-harvest-audit.md`: content-level diff of Lahari skills/prompts/presets
+  vs Mirage, ranked harvest backlog for the C4 taste port (~70% preservable; key finds:
+  song-type pacing math, 4 curated style presets, props-in-hand rule living in prompt code).
+
 ## References
 
 - Audit + port backlog: `lahari-divergence-audit.md`
+- Taste harvest backlog for C4: `lahari-taste-harvest-audit.md`
 - Product shape: `mirage-beta-workspace-preset-packs.md`
 - Recipe rails for C4: `mirage-workflow-recipes.md`
 - v1 predecessor: `mirage-platform-v1-ledger.md`
