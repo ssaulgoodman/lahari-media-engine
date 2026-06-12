@@ -3,6 +3,7 @@ import { getSB, selectColumns, selectOne, updateRows, T } from '../database.js';
 
 const TOKEN_PREFIX = 'mirage_mcp_';
 const LEGACY_TOKEN_PREFIX = 'lahari_mcp_';
+const OAUTH_TOKEN_PREFIX = 'mirage_oauth_';
 const DEFAULT_EXPIRY_DAYS = 30;
 const MAX_EXPIRY_DAYS = 90;
 const DEFAULT_CLI_TTL_MINUTES = 60;
@@ -17,16 +18,20 @@ export const hashMcpToken = (token: string) => {
   return crypto.createHash('sha256').update(token).digest('hex');
 };
 
+export const createOAuthBearerToken = () => `${OAUTH_TOKEN_PREFIX}${crypto.randomBytes(32).toString('base64url')}`;
+
 const sanitizeLabel = (label?: string | null) => {
   const trimmed = (label || '').trim();
   return trimmed ? trimmed.slice(0, 80) : 'Mirage MCP';
 };
 
-const mcpUrl = () => (
+export const getMirageMcpUrl = () => (
   process.env.MIRAGE_MCP_URL
   || process.env.LAHARI_MCP_URL
   || process.env.APP_URL && `${process.env.APP_URL.replace(/\/+$/, '')}/mcp`
   || process.env.PUBLIC_APP_URL && `${process.env.PUBLIC_APP_URL.replace(/\/+$/, '')}/mcp`
+  || process.env.MIRAGE_API_URL && `${process.env.MIRAGE_API_URL.replace(/\/+$/, '')}/mcp`
+  || process.env.LAHARI_API_URL && `${process.env.LAHARI_API_URL.replace(/\/+$/, '')}/mcp`
   || 'https://mirage-platform-production-05ca.up.railway.app/mcp'
 );
 
@@ -47,7 +52,24 @@ const posixCliCacheEnv = `NPM_CONFIG_CACHE="${posixCliCacheDir}" npm_config_cach
 const powershellCliCacheCommand = `$env:NPM_CONFIG_CACHE=(Join-Path ([System.IO.Path]::GetTempPath()) 'mirage-npm-cache'); $env:npm_config_cache=$env:NPM_CONFIG_CACHE`;
 export const getConfiguredMirageCliPackage = () => process.env.MIRAGE_CLI_PACKAGE || '@ssaulgoodman420/mirage-cli@0.1.12';
 
-const codexPluginInstallCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+const codexPluginOAuthInstallCommand = (endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
+codex mcp remove mirage
+codex mcp add mirage --url ${endpoint}
+codex mcp login mirage
+codex mcp get mirage --json`;
+
+const codexPluginOAuthInstallWindowsCommand = (endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
+codex mcp remove mirage
+codex mcp add mirage --url ${endpoint}
+codex mcp login mirage
+codex mcp get mirage --json
+Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
+
+const codexPluginTokenInstallCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
 mirage login --token '${token}'
 launchctl setenv MIRAGE_MCP_TOKEN '${token}'
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
@@ -56,7 +78,7 @@ codex mcp remove mirage
 codex mcp add mirage --url ${endpoint} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json`;
 
-const codexPluginInstallWindowsCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
+const codexPluginTokenInstallWindowsCommand = (token: string, endpoint: string) => `npm install -g ${getConfiguredMirageCliPackage()}
 mirage login --token "${token}"
 [Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${token}", "User")
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
@@ -95,26 +117,27 @@ export const createMcpToken = async (
     label: row.label,
     expiresAt: row.expires_at,
     install: {
-      codexPlugin: codexPluginInstallCommand(token, mcpUrl()),
-      codexPluginWindows: codexPluginInstallWindowsCommand(token, mcpUrl()),
+      codexPlugin: codexPluginOAuthInstallCommand(getMirageMcpUrl()),
+      codexPluginWindows: codexPluginOAuthInstallWindowsCommand(getMirageMcpUrl()),
+      codexPluginTokenFallback: codexPluginTokenInstallCommand(token, getMirageMcpUrl()),
+      codexPluginTokenFallbackWindows: codexPluginTokenInstallWindowsCommand(token, getMirageMcpUrl()),
       codexApp: `Name: mirage
 Type: Streamable HTTP
-URL: ${mcpUrl()}
-Bearer token env var: leave blank
-Header key: Authorization
-Header value: Bearer ${token}`,
+URL: ${getMirageMcpUrl()}
+Authentication: OAuth. If the app does not support OAuth, use the bearer-token fallback below.`,
       codexAppVerify: `Fully quit and reopen Codex Desktop.
 Start a new chat.
 Ask: Call Mirage list_projects.`,
-      codex: `codex mcp add mirage --url ${mcpUrl()} --bearer-token-env-var MIRAGE_MCP_TOKEN`,
+      codex: `codex mcp add mirage --url ${getMirageMcpUrl()}
+codex mcp login mirage`,
       env: `export MIRAGE_MCP_TOKEN=${token}`,
       codexWindows: `[Environment]::SetEnvironmentVariable("MIRAGE_MCP_TOKEN", "${token}", "User")
 codex mcp remove mirage
-codex mcp add mirage --url ${mcpUrl()} --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp add mirage --url ${getMirageMcpUrl()} --bearer-token-env-var MIRAGE_MCP_TOKEN
 codex mcp get mirage --json
 Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`,
-      claude: `claude mcp add-json mirage '{"type":"http","url":"${mcpUrl()}","headers":{"Authorization":"Bearer \${MIRAGE_MCP_TOKEN}"}}'`,
-      claudeFallback: `claude mcp add mirage --transport http --header "Authorization: Bearer ${token}" ${mcpUrl()}`,
+      claude: `claude mcp add-json mirage '{"type":"http","url":"${getMirageMcpUrl()}","headers":{"Authorization":"Bearer \${MIRAGE_MCP_TOKEN}"}}'`,
+      claudeFallback: `claude mcp add mirage --transport http --header "Authorization: Bearer ${token}" ${getMirageMcpUrl()}`,
     },
   };
 };
@@ -220,7 +243,7 @@ export const listMcpTokens = async (userId: string) => {
   );
   return {
     kind: 'mirage.mcp_tokens.list',
-    tokens: rows.map((row: any) => ({
+    tokens: rows.filter((row: any) => row.token_kind !== 'oauth_access').map((row: any) => ({
       id: row.id,
       label: row.label,
       tokenPrefix: row.token_prefix,
@@ -250,11 +273,11 @@ export const revokeMcpToken = async (userId: string, tokenId: string) => {
 
 export const verifyMcpBearerToken = async (token: string | null | undefined) => {
   if (!token) throw new Error('Missing Mirage MCP bearer token');
-  if (!token.startsWith(TOKEN_PREFIX) && !token.startsWith(LEGACY_TOKEN_PREFIX)) throw new Error('Invalid Mirage MCP bearer token');
+  if (!token.startsWith(TOKEN_PREFIX) && !token.startsWith(LEGACY_TOKEN_PREFIX) && !token.startsWith(OAUTH_TOKEN_PREFIX)) throw new Error('Invalid Mirage MCP bearer token');
   const hash = hashMcpToken(token);
   const { data, error } = await getSB()
     .from(T.mcp_tokens)
-    .select('id,user_id,label,token_kind,scope_project_id,expires_at,revoked_at')
+    .select('id,user_id,label,token_kind,scope_project_id,expires_at,revoked_at,oauth_client_id,oauth_scopes,oauth_resource')
     .eq('token_hash', hash)
     .limit(1)
     .maybeSingle();
@@ -269,5 +292,8 @@ export const verifyMcpBearerToken = async (token: string | null | undefined) => 
     label: data.label as string,
     tokenKind: (data.token_kind || 'mcp') as string,
     scopeProjectId: (data.scope_project_id || null) as string | null,
+    oauthClientId: (data.oauth_client_id || null) as string | null,
+    oauthScopes: (data.oauth_scopes || []) as string[],
+    oauthResource: (data.oauth_resource || null) as string | null,
   };
 };

@@ -14,8 +14,9 @@ This plugin packages the Mirage MCP entrypoint and Mirage production skills so a
 
 ## Still Manual In This Beta
 
-- Authentication still comes from Mirage `/connect`. The plugin MCP config expects `MIRAGE_MCP_TOKEN` until Codex supports a native plugin-owned auth handoff.
-- Project-file sync uses `mirage login` once, then `mirage sync <projectId>`. `mint_cli_token` remains a one-off fallback when the CLI is not logged in.
+- Authentication is OAuth-first: install the plugin, add the MCP server URL, then run `codex mcp login mirage`. Mirage `/connect` handles the browser approval.
+- Bearer-token setup from `/connect` remains a fallback for older clients that do not support MCP OAuth.
+- Project-file sync can use `mint_cli_token` from the connected MCP session. `mirage login` remains a CLI convenience for users who want `mirage sync <projectId>` to mint short-lived project tokens without asking MCP each time.
 - Workspace instructions are initialized once with `mirage init`; skills come from this plugin; action schemas come from live MCP.
 - A future plugin/local bridge should own sync and uploads directly instead of asking the agent to reason about shell commands.
 
@@ -25,16 +26,15 @@ From macOS with Codex Desktop:
 
 ```bash
 npm install -g @ssaulgoodman420/mirage-cli@0.1.12
-mirage login --token '<token-from-connect>'
-launchctl setenv MIRAGE_MCP_TOKEN '<token-from-connect>'
 codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
 codex plugin add mirage@mirage
 codex mcp remove mirage
-codex mcp add mirage --url https://mirage-platform-production-05ca.up.railway.app/mcp --bearer-token-env-var MIRAGE_MCP_TOKEN
+codex mcp add mirage --url https://mirage-platform-production-05ca.up.railway.app/mcp
+codex mcp login mirage
 codex mcp get mirage --json
 ```
 
-Then fully restart Codex and start a new thread in an empty Mirage workspace folder. Plugin skills and MCP config are loaded at session start.
+The login command opens Mirage `/connect` in the browser. Approve the request, then fully restart Codex and start a new thread in an empty Mirage workspace folder. Plugin skills and MCP config are loaded at session start.
 
 The first useful prompt after install is:
 
@@ -42,7 +42,7 @@ The first useful prompt after install is:
 Check Mirage status and open my latest project.
 ```
 
-Codex should call `mirage_doctor`, run `mirage init` if the folder is new, choose or create a project, and sync project files with `mirage sync <projectId>`. If the CLI is not logged in, run `mirage login` with the `/connect` token or fall back to `mint_cli_token`. Project sync should not require a fresh chat; a fresh chat is only needed after installing or updating the plugin.
+Codex should call `mirage_doctor`, run `mirage init` if the folder is new, choose or create a project, and sync project files. If the CLI is not logged in, use `mint_cli_token` for a short-lived sync command or run `mirage login` from the `/connect` fallback token. Project sync should not require a fresh chat; a fresh chat is only needed after installing or updating the plugin.
 
 For recurring formats like Yapper, Codex should call `list_personas` and `create_project_from_persona` when the artist asks for a saved host/persona such as Padma, instead of asking for the same reference image, style, or voice id again.
 

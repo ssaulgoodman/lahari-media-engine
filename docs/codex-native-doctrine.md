@@ -135,7 +135,7 @@ Three tiers within tier-2 (project state) operations:
 
 **Engine sessions (this repo):** this repo is for code, prompts, infra, docs, schema, and deployment. Internal MCP and CLI are available for engine-side debug, smoke tests, and recovery, but they are not the artist/director surface. When an engineer wants to test director behavior, use an artist-shaped empty folder with remote MCP installed.
 
-**Artist sessions (production today):** remote MCP at `https://lahari-media-engine-production.up.railway.app/mcp`, authenticated with personal `lahari_mcp_...` tokens minted at `/connect`. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP server with the one-line snippet from `/connect`, restarts the harness, and asks "open <song name>." The agent resolves the song/project via `resolve_project` (with `list_queue` and `search_catalog` for browsing/discovery), attaches via `attach_director_session`, then refreshes the notebook. Preferred path: call `mint_cli_token(projectId)` and run the returned shell-specific command so file bodies move over HTTP directly to disk, not through chat. On Windows, the returned PowerShell command wraps `npx` through `cmd /c` to avoid `npx.ps1` execution-policy blocks. If shell/npx/npm is still blocked, call `get_project_notebook_manifest` and `read_project_notebook_file` path-by-path. Last fallback: call `write_project_notebook(projectId)` and manually write returned file payloads when the notebook is small enough. Either way the workspace materializes itself — `AGENTS.md` + `.agents/skills/*` + mirrors + drafts + config + journal.
+**Artist sessions (production today):** remote MCP at the deployed product `/mcp`, OAuth-first where the harness supports it (`codex mcp login mirage` opens `/connect` for consent). Bearer tokens from `/connect` remain the fallback for clients without MCP OAuth. Artist opens any empty folder in Codex Desktop or Claude Code, adds the MCP/plugin path from `/connect`, restarts the harness, and asks to open a project. The agent resolves/opens the project, then refreshes the notebook. Preferred file-sync path: logged-in `mirage sync <projectId>` when the standalone CLI has a stored account token, or `mint_cli_token(projectId)` plus the returned shell-specific command for a one-off short-lived project token. If shell/npx/npm is still blocked, call `get_project_notebook_manifest` and `read_project_notebook_file` path-by-path. Last fallback: call `write_project_notebook(projectId)` and manually write returned file payloads when the notebook is small enough.
 
 Notebook roles:
 - `state/` are read-only Supabase snapshots. Refresh them from notebook output or `changedArtifacts`.
@@ -144,10 +144,10 @@ Notebook roles:
 - `config/` is the project override layer. Edit prompt/preference files locally, then persist with config apply tools.
 - `journal.md` is local working memory, not canonical project state.
 
-Earlier design proposed an `@lahari/setup` npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. `@lahari/mcp-server` exists in this repo as a local fallback/debug package, but publishing it is a separate operational step. No engine code on the artist's machine. No service key. The preferred notebook path uses `npx @ssaulgoodman420/lahari-cli`, so it requires a working Node/npx runtime in the artist harness environment; the manifest + per-file MCP path is the no-npx fallback, and `write_project_notebook` is the small-notebook final fallback. Auth via account-scoped bearer token plus short-lived project-scoped CLI tokens.
+Earlier design proposed an npm bootstrap (Pattern B). It was replaced by the remote-MCP-primary path: remote MCP is the canonical distribution. No engine code on the artist's machine. No service key. The preferred notebook path uses the installed Mirage CLI or the one-off command returned by `mint_cli_token`; the manifest + per-file MCP path is the no-shell fallback, and `write_project_notebook` is the small-notebook final fallback. MCP auth is OAuth-first where supported, with account-scoped bearer tokens retained as compatibility fallback; project-scoped CLI tokens stay short-lived.
 
 **Plugin distribution gates** (all true as of 2026-05-15):
-1. ✅ Second-user setup is two terminal commands (`export TOKEN=...` + `codex mcp add ...` / `claude mcp add-json ...`) plus a one-time harness restart. `/connect` page issues the snippets.
+1. ✅ Second-user setup is plugin/MCP install plus harness-native OAuth login where supported, with `/connect` bearer-token snippets as fallback.
 2. ✅ MCP surface stable; `X-Lahari-MCP-Version` header + `minimumMcpServerVersion` give us a compatibility lever for future evolution.
 3. ✅ First non-Saul operator has run the install + workspace materialization end-to-end (2026-05-15 first artist test).
 4. ✅ Artist's MCP path has zero engine dependencies at runtime — `/mcp` is HTTP-only, talks to Supabase via the artist's JWT, no in-process service-layer call required.
@@ -189,7 +189,7 @@ Direct: `pwd`, `git status --short --branch`, then ask user what to build or fix
 
 ### When an engineer wants to test director-session behavior
 
-Open any empty folder in Codex Desktop (or Claude Code), mint a token at `/connect` against your own account, paste the install snippet, restart the harness. Same path an artist takes. The behavior you observe is what artists actually experience — testing it from inside the engine repo gives a falsely-comfortable shape because internal MCP is in-process.
+Open any empty folder in Codex Desktop (or Claude Code), install the deployed MCP/plugin path, authenticate through `/connect` OAuth where supported, restart the harness. Same path an artist takes. The behavior you observe is what artists actually experience — testing it from inside the engine repo gives a falsely-comfortable shape because internal MCP is in-process.
 
 ### Friction Capture
 

@@ -9,11 +9,11 @@ Use Mirage as an agent-operated video studio. Help the artist move one Mirage pr
 
 ## Do This Now
 
-1. Confirm Mirage MCP is connected. If auth fails, ask the artist to reconnect Mirage from `/connect`.
+1. Confirm Mirage MCP is connected. If auth fails, ask the artist to run `codex mcp login mirage` or reconnect Mirage from `/connect`.
 2. Call `mirage_doctor` on first contact or after a deploy. If it says production/plugin state is not coherent, report the verdict plainly and stop before paid work.
 3. Choose or create one project with Mirage tools.
 4. If the workspace lacks `AGENTS.md` / `CLAUDE.md`, run `mirage init` once. This is token-free and writes stable workspace instructions.
-5. Run `mirage sync <projectId>` to refresh project files. If the CLI is not logged in, run `mirage login` with the token from Mirage `/connect`; `mint_cli_token` is the one-off fallback.
+5. Run `mirage sync <projectId>` to refresh project files if the CLI is logged in. If the CLI is not logged in, use `mint_cli_token` for a one-off sync command, or run `mirage login` with the fallback token from Mirage `/connect`.
 6. Read the sync receipt. Trust `generatedAt`, file counts, and receipt status; do not treat the notebook schema version as freshness.
 
 ## Operating Contract
@@ -61,7 +61,9 @@ After references, storyboards, or videos exist, use `apply_text_edits` for wordi
 
 Project sync writes project files only. It should not rewrite skills, action schemas, `AGENTS.md`, or `CLAUDE.md`.
 
-Install/update the Mirage CLI without a live project token. Use `mirage login` once to store the account token locally, then run `mirage sync <projectId>` whenever files are stale. The CLI mints short-lived project tokens internally. Use `mint_cli_token` only as a fallback when the login store is unavailable.
+Install/update the Mirage CLI without a live project token. MCP auth is OAuth-first: `codex mcp login mirage` opens Mirage `/connect` and the harness stores the MCP credential. This does not automatically log in the standalone `mirage` CLI.
+
+For file sync, prefer the simplest available path: if the CLI is logged in, run `mirage sync <projectId>`; otherwise call `mint_cli_token` and run the returned short-lived sync command. Use `mirage login` only when the artist deliberately wants persistent CLI sync on that machine.
 
 Use MCP file reads only when the harness has no shell or local file-write capability.
 

@@ -30,6 +30,7 @@ import { renderRouter } from './routes/render.js';
 import { renderCallbackRouter } from './routes/render-callback.js';
 import { directorRouter } from './routes/director.js';
 import { mcpTokensRouter } from './routes/mcp-tokens.js';
+import { mcpOAuthApiRouter, mcpOAuthRouter } from './routes/mcp-oauth.js';
 import { mcpRouter } from './routes/mcp.js';
 import { agentUploadsRouter } from './routes/agent-uploads.js';
 import { notebookSyncRouter } from './routes/notebook-sync.js';
@@ -48,6 +49,7 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',')
   : ['http://localhost:3002', 'http://localhost:3000'];
 app.use(cors({ origin: ALLOWED_ORIGINS }));
+app.use(mcpOAuthRouter);
 app.use('/mcp', express.json({ limit: process.env.MCP_JSON_LIMIT || '2mb' }), mcpRouter);
 app.use('/mcp', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (!err) return next();
@@ -70,6 +72,7 @@ app.use('/mcp', (err: any, req: express.Request, res: express.Response, next: ex
 app.use('/api/director', express.json({ limit: process.env.DIRECTOR_API_JSON_LIMIT || '5mb' }), requireAuth, directorRouter);
 app.use('/api/agent/uploads', agentUploadsRouter);
 app.use('/api/notebook-sync', express.json({ limit: process.env.NOTEBOOK_SYNC_JSON_LIMIT || '25mb' }), notebookSyncRouter);
+app.use('/api/mcp-oauth', express.json({ limit: process.env.MCP_OAUTH_JSON_LIMIT || '32kb' }), requireAuth, mcpOAuthApiRouter);
 app.use('/api/mcp-tokens', express.json({ limit: process.env.MCP_TOKENS_JSON_LIMIT || '32kb' }), requireAuth, mcpTokensRouter);
 app.use('/api/account', express.json({ limit: process.env.ACCOUNT_API_JSON_LIMIT || '64kb' }), requireAuth, accountRouter);
 app.use(express.json({ limit: '50mb' }));

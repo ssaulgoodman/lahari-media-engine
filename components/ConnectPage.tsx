@@ -13,6 +13,18 @@ type KeyStatus = {
   isSet: boolean;
 };
 
+type McpOAuthRequest = {
+  approvalId: string;
+  clientName: string;
+  clientUri?: string | null;
+  scopes: string[];
+  resource: string;
+  expiresAt: string;
+  expired: boolean;
+  approved: boolean;
+  consumed: boolean;
+};
+
 const detectPlatform = (): CodexPlatform => {
   if (typeof navigator === 'undefined') return 'mac';
   const ua = navigator.userAgent;
@@ -131,6 +143,7 @@ export const ConnectPage: React.FC<{
   signInWithGoogle: (redirectTo?: string) => Promise<void>;
   signOut: () => Promise<void>;
 }> = ({ user, signInWithGoogle, signOut }) => {
+  const oauthApprovalId = new URLSearchParams(window.location.search).get('oauth');
   const [tokens, setTokens] = useState<any[]>([]);
   const [created, setCreated] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,6 +156,8 @@ export const ConnectPage: React.FC<{
   const [showFallback, setShowFallback] = useState(false);
   const [apiKeys, setApiKeys] = useState<KeyStatus[]>([]);
   const [keysLoading, setKeysLoading] = useState(true);
+  const [oauthRequest, setOAuthRequest] = useState<McpOAuthRequest | null>(null);
+  const [oauthLoading, setOAuthLoading] = useState(false);
 
   useEffect(() => {
     setCodexPlatform(detectPlatform());
@@ -175,12 +190,40 @@ export const ConnectPage: React.FC<{
     }
   }, [user]);
 
+  const loadOAuthRequest = useCallback(async () => {
+    if (!user || !oauthApprovalId) return;
+    setOAuthLoading(true);
+    setError(null);
+    try {
+      setOAuthRequest(await api.getMcpOAuthRequest(oauthApprovalId));
+    } catch (err: any) {
+      setError(err.message || 'Could not load OAuth request');
+    } finally {
+      setOAuthLoading(false);
+    }
+  }, [user, oauthApprovalId]);
+
   useEffect(() => {
     loadTokens();
     loadApiKeys();
-  }, [loadTokens, loadApiKeys]);
+    loadOAuthRequest();
+  }, [loadTokens, loadApiKeys, loadOAuthRequest]);
 
   const anyLaneReady = WORKFLOW_LANES.some((lane) => isLaneReady(lane, apiKeys));
+
+  const approveOAuth = async () => {
+    if (!oauthApprovalId) return;
+    setOAuthLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const approved = await api.approveMcpOAuthRequest(oauthApprovalId);
+      window.location.href = approved.redirectUrl;
+    } catch (err: any) {
+      setError(err.message || 'Could not approve OAuth request');
+      setOAuthLoading(false);
+    }
+  };
 
   const createToken = async () => {
     setLoading(true);
@@ -263,10 +306,10 @@ export const ConnectPage: React.FC<{
           <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-6">Mirage Connect</p>
           <h1 className="text-3xl font-display text-white mb-4 tracking-tight">Connect Mirage to your agent</h1>
           <p className="text-sm text-zinc-400 mb-10 leading-relaxed max-w-sm mx-auto">
-            Sign in to set your API keys and mint an account-scoped MCP token for Codex Desktop or Claude Code.
+            Sign in to approve Mirage for Codex Desktop or Claude Code.
           </p>
           <button
-            onClick={() => signInWithGoogle(`${window.location.origin}/connect`)}
+            onClick={() => signInWithGoogle(window.location.href)}
             className="inline-flex items-center gap-3 px-6 py-3 bg-white text-black rounded-lg font-medium text-sm hover:bg-zinc-100 transition-colors"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
@@ -288,6 +331,21 @@ export const ConnectPage: React.FC<{
   const mirageCliPackage = '@ssaulgoodman420/mirage-cli@0.1.12';
   const tokenMaskedSuffix = token ? token.slice(-6) : '';
   const canMintToken = anyLaneReady;
+  const codexPluginOAuthInstall = `npm install -g ${mirageCliPackage}
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpEndpoint}
+codex mcp login mirage
+codex mcp get mirage --json`;
+  const codexPluginOAuthWindowsInstall = `npm install -g ${mirageCliPackage}
+codex plugin marketplace add ssaulgoodman/lahari-media-engine --ref mirage --sparse .agents/plugins --sparse plugins/mirage
+codex plugin add mirage@mirage
+codex mcp remove mirage
+codex mcp add mirage --url ${mcpEndpoint}
+codex mcp login mirage
+codex mcp get mirage --json
+Get-Process *codex* -ErrorAction SilentlyContinue | Stop-Process -Force`;
 
   const codexPluginMacInstall = `npm install -g ${mirageCliPackage}
 mirage login --token '${tokenPlaceholder}'
@@ -495,13 +553,119 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
           <KeyChecklist keys={apiKeys} anyLaneReady={anyLaneReady} onGoToKeys={goToKeys} />
         )}
 
+        {oauthApprovalId && (
+          <div className="surface rounded-xl p-7 mb-5">
+            <div className="mb-5">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">OAuth approval</p>
+              <h2 className="text-xl font-display text-white tracking-tight">Authorize Mirage MCP</h2>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">
+                This connects your signed-in Mirage account to the MCP client that opened this browser.
+              </p>
+            </div>
+
+            {oauthLoading && !oauthRequest ? (
+              <div className="surface-inset rounded-md p-4 text-sm text-zinc-300 inline-flex items-center gap-2">
+                <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
+                Loading request
+              </div>
+            ) : oauthRequest ? (
+              <div className="space-y-5">
+                <div className="surface-inset rounded-lg p-4">
+                  <div className="flex items-center justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-sm text-white font-medium">{oauthRequest.clientName}</p>
+                      {oauthRequest.clientUri && (
+                        <p className="text-[11px] text-zinc-500 mt-0.5">{oauthRequest.clientUri}</p>
+                      )}
+                    </div>
+                    <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded ${
+                      oauthRequest.expired || oauthRequest.consumed
+                        ? 'text-amber-300/90 bg-amber-500/10'
+                        : 'text-emerald-300/90 bg-emerald-500/10'
+                    }`}>
+                      {oauthRequest.consumed ? 'Used' : oauthRequest.expired ? 'Expired' : 'Ready'}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 text-xs text-zinc-400">
+                    <p>Resource: <span className="font-mono text-zinc-300">{oauthRequest.resource}</span></p>
+                    <p>Scopes: <span className="font-mono text-zinc-300">{oauthRequest.scopes.join(' ')}</span></p>
+                    <p>Expires: {new Date(oauthRequest.expiresAt).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <p className="text-[11px] text-zinc-500 leading-relaxed max-w-md">
+                    After approval, your MCP client stores the OAuth credential. No launchctl env var or pasted bearer token is needed for Codex MCP.
+                  </p>
+                  <button
+                    onClick={approveOAuth}
+                    disabled={oauthLoading || !canMintToken || oauthRequest.expired || oauthRequest.consumed}
+                    className="px-4 py-2 bg-white text-black rounded-md text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                  >
+                    {oauthLoading ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-3 h-3 border-2 border-zinc-400 border-t-black rounded-full animate-spin" />
+                        Authorizing
+                      </span>
+                    ) : !canMintToken ? 'Add required keys first' : oauthRequest.expired ? 'Request expired' : 'Authorize'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-amber-200/90">Could not load this OAuth request. Start the MCP login again from your client.</p>
+            )}
+          </div>
+        )}
+
+        {!oauthApprovalId && (
+          <div className={`surface rounded-xl p-7 mb-5 ${!canMintToken ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className="mb-6">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Recommended</p>
+              <h2 className="text-xl font-display text-white tracking-tight">Install with OAuth</h2>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">
+                Codex opens this page for approval and stores the MCP credential itself. No bearer-token env var.
+              </p>
+              {!canMintToken && (
+                <p className="text-xs text-amber-300/70 mt-2">Complete at least one workflow lane above before connecting.</p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+              <span className="text-[11px] uppercase tracking-[0.18em] text-zinc-400 mr-1.5">Platform</span>
+              {(['mac', 'win', 'linux'] as CodexPlatform[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setCodexPlatform(p)}
+                  className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${
+                    codexPlatform === p
+                      ? 'bg-white text-black'
+                      : 'surface-inset text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                  }`}
+                >
+                  {platformLabel(p)}
+                </button>
+              ))}
+              <span className="text-[10px] text-zinc-400 ml-2">Detected: {platformLabel(detectPlatform())}</span>
+            </div>
+
+            <CodeBlock
+              value={codexPlatform === 'win' ? codexPluginOAuthWindowsInstall : codexPluginOAuthInstall}
+              copyLabel="Copy commands"
+            />
+            <p className="text-[11px] text-zinc-400 leading-relaxed mt-3">
+              When <span className="font-mono text-zinc-300">codex mcp login mirage</span> opens the browser, approve the request here. Then fully restart Codex and ask: <span className="font-mono text-zinc-300">Check Mirage status and open my latest project.</span>
+            </p>
+          </div>
+        )}
+
         {/* Step 1 — Mint a token */}
+        {!oauthApprovalId && (
         <div className={`surface rounded-xl p-7 mb-5 ${!canMintToken ? 'opacity-50 pointer-events-none' : ''}`}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 1</p>
-              <h2 className="text-xl font-display text-white tracking-tight">Mint your access token</h2>
-              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Shown once. Treat it like a password — anyone with it can act as you in Mirage.</p>
+              <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Fallback</p>
+              <h2 className="text-xl font-display text-white tracking-tight">Mint a bearer token</h2>
+              <p className="text-sm text-zinc-400 mt-1.5 leading-relaxed">Use this for older clients or Claude Code if OAuth login is unavailable. Shown once; treat it like a password.</p>
               {!canMintToken && (
                 <p className="text-xs text-amber-300/70 mt-2">Complete at least one workflow lane above to unlock token minting.</p>
               )}
@@ -572,9 +736,10 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
             </div>
           )}
         </div>
+        )}
 
         {/* Step 2 — Install */}
-        {token && (
+        {!oauthApprovalId && token && (
           <div className="surface rounded-xl p-7 mb-5">
             <div className="mb-6">
               <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-400 mb-2">Step 2</p>
@@ -629,7 +794,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
         )}
 
         {/* Step 3 — Verify */}
-        {token && (
+        {!oauthApprovalId && token && (
           <div className="rounded-xl p-7 mb-5 relative overflow-hidden" style={{
             background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04), rgba(255, 255, 255, 0.02))',
             boxShadow: 'inset 0 0 0 1px rgba(16, 185, 129, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.02)'
@@ -654,7 +819,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
         )}
 
         {/* Troubleshooting */}
-        {token && (
+        {!oauthApprovalId && token && (
           <details className="surface rounded-xl p-6 mb-5 group">
             <summary className="cursor-pointer flex items-center justify-between gap-3 select-none">
               <div>
@@ -699,6 +864,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
         )}
 
         {/* Existing tokens */}
+        {!oauthApprovalId && (
         <div className="surface rounded-xl p-7">
           <div className="flex items-baseline justify-between gap-3 mb-5">
             <div>
@@ -747,6 +913,7 @@ claude mcp add-json mirage '{"type":"http","url":"${mcpEndpoint}","headers":{"Au
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

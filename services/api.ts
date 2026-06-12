@@ -191,6 +191,18 @@ export const revokeMcpToken = async (tokenId: string) => {
   return body.data;
 };
 
+export const getMcpOAuthRequest = async (approvalId: string) => {
+  const res = await authFetch(`${API}/mcp-oauth/requests/${approvalId}`);
+  const body = await handleResponse(res);
+  return body.data;
+};
+
+export const approveMcpOAuthRequest = async (approvalId: string) => {
+  const res = await authFetch(`${API}/mcp-oauth/requests/${approvalId}/approve`, { method: 'POST' });
+  const body = await handleResponse(res);
+  return body.data;
+};
+
 export const analyzeAudio = async (
   id: string,
   opts?: { fork?: boolean; steps?: Array<'transcribe' | 'structure'> },

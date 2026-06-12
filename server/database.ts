@@ -39,6 +39,8 @@ const T = {
   agent_operations: `${TABLE_PREFIX}_agent_operations`,
   mcp_audit_events: `${TABLE_PREFIX}_mcp_audit_events`,
   mcp_tokens: `${TABLE_PREFIX}_mcp_tokens`,
+  mcp_oauth_clients: `${TABLE_PREFIX}_mcp_oauth_clients`,
+  mcp_oauth_codes: `${TABLE_PREFIX}_mcp_oauth_codes`,
   project_config: `${TABLE_PREFIX}_project_config`,
   project_prompt_overrides: `${TABLE_PREFIX}_project_prompt_overrides`,
   tenant_api_keys: `${TABLE_PREFIX}_tenant_api_keys`,

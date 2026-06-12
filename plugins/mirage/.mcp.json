@@ -3,10 +3,7 @@
     "mirage": {
       "type": "http",
       "url": "https://mirage-platform-production-05ca.up.railway.app/mcp",
-      "headers": {
-        "Authorization": "Bearer ${MIRAGE_MCP_TOKEN}"
-      },
-      "note": "Get a Mirage MCP token from the deployed /connect flow and set MIRAGE_MCP_TOKEN before starting Codex."
+      "note": "Authenticate with OAuth: codex mcp login mirage. Bearer-token env fallback is still available from /connect for clients without MCP OAuth."
     }
   }
 }

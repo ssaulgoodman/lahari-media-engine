@@ -13,9 +13,9 @@ Supabase is canonical project truth. Local files in artist workspaces are desk c
 
 Artist workspaces now use a **two-tier notebook**. Workspace-shared files live at the workspace root: `AGENTS.md`, `CLAUDE.md`, `.agents/skills/`, `.claude/skills/`, `config/actions/*`, and `config/skills.json`. Project files live under `mirage/projects/<projectId>/`: `state/` read-only DB snapshots, editable `script.md`, `audio-plan.md`, `storyboards/*.md`, project `config/`, `notebook.json`, and `journal.md`. Files become production only when a typed apply action persists them.
 
-**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Mirage — remote MCP at `/mcp`, synced into two-tier local workspaces with `mirage login` + `mirage sync <projectId>`. `mint_cli_token` remains the one-off fallback for sessions without a logged-in CLI, and `write_project_notebook` remains the heavy no-shell fallback. Internal legacy MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) still exist as engine-side debug + scripting tools, not as the director-session surface.
+**This repo is for engine work.** Code, prompts, infra, docs, schema, deployment. The artist-facing director surface lives in deployed Mirage — remote MCP at `/mcp`, authenticated OAuth-first by the harness, and synced into two-tier local workspaces with either logged-in `mirage sync <projectId>` or `mint_cli_token` one-off sync. `write_project_notebook` remains the heavy no-shell fallback. Internal legacy MCP (`mcp/lahari.ts`) and CLI (`cli/lahari.ts`) still exist as engine-side debug + scripting tools, not as the director-session surface.
 
-If you want to test director-session behavior, open any empty folder in Codex Desktop or Claude Code, mint a token at `/connect`, install the remote MCP. Same shape an artist gets. Don't try to do director work from inside this engine repo — that's a transitional pattern from before distribution shipped and it gives a falsely-comfortable shape.
+If you want to test director-session behavior, open any empty folder in Codex Desktop or Claude Code, install the Mirage plugin/remote MCP, and authenticate through `/connect` OAuth (`codex mcp login mirage` on Codex). Bearer-token snippets remain fallback for clients without MCP OAuth. Same shape an artist gets. Don't try to do director work from inside this engine repo — that's a transitional pattern from before distribution shipped and it gives a falsely-comfortable shape.
 
 The Mirage web app is the visual studio. Use deep links to it for visual approval moments instead of rebuilding visual review.
 
@@ -30,7 +30,7 @@ This checkout is the **Mirage platform lane**.
 
 Do Mirage platform work here. Do not switch the main checkout away from `main` for Lahari work, and do not use this checkout for urgent Lahari production hotfixes or Railway deploys unless the user explicitly asks. At session start, confirm with `pwd` and `git status --short --branch`.
 
-Artists do not use this repo. They mint a token at the deployed Mirage `/connect` page, install the Codex plugin or direct Claude Code MCP connection from the shown snippet, restart their harness, open any empty folder, and ask to open a project. The install snippet runs `mirage login` once so the agent can sync notebooks with `mirage sync <projectId>`; the CLI mints short-lived project tokens internally. `mint_cli_token` is the one-off fallback. On Windows/Codex, prefer installing the CLI once so `npx` is not downloading code while holding a live token. No engine code on the artist's machine.
+Artists do not use this repo. They install the Codex plugin or direct Claude Code MCP connection from deployed Mirage `/connect`, authenticate OAuth-first when the client supports it, restart their harness, open any empty folder, and ask to open a project. For project-file sync, a logged-in Mirage CLI can run `mirage sync <projectId>`; otherwise the agent uses `mint_cli_token` for a short-lived one-off sync. Bearer-token install snippets remain fallback for clients without MCP OAuth. On Windows/Codex, prefer installing the CLI once so `npx` is not downloading code while holding a live token. No engine code on the artist's machine.
 
 Current notebook contract:
 - Workspace-shared files are hash-gated and tracked in root `.mirage-workspace-state.json`; project files are tracked in `mirage/projects/<projectId>/.sync-state.json`. Existing old per-project `config/actions/*` and `config/skills.json` are pruned by CLI sync.
@@ -142,7 +142,7 @@ Sessions in this repo are engine sessions only — improving Mirage itself (code
 
 ### When an engineer wants to experience director-session behavior
 
-Open any empty folder in Codex Desktop or Claude Code, mint a token at the deployed Mirage `/connect` page, paste the install snippet, restart the harness, ask to open a project. Same path an artist takes. That's the surface to test — not the internal MCP from inside this repo (the internal path bypasses real auth, real rate limits, real network conditions, and presents a falsely-comfortable shape).
+Open any empty folder in Codex Desktop or Claude Code, install the deployed Mirage MCP/plugin path, authenticate through `/connect` OAuth where supported, restart the harness, ask to open a project. Same path an artist takes. That's the surface to test — not the internal MCP from inside this repo (the internal path bypasses real auth, real rate limits, real network conditions, and presents a falsely-comfortable shape).
 
 ### Director Skills
 
@@ -210,7 +210,7 @@ Generated local artifacts from current internal debug commands live under `.mira
 
 Durable artist/operator decisions are written to Supabase director events (`lahari_director_events` in legacy mode, prefix-mapped for studio mode where applicable). Internal `session attach` reads new events since the last monotonic `seq` cursor and appends them into `.mirage/sessions/<projectId>/journal.md`; this is a developer/debug mirror, not the artist distribution path.
 
-Remote artist notebooks use the two-tier layout: shared Mirage files at the workspace root, project files under `mirage/projects/<projectId>/`. The preferred path is `mirage login` once, then `mirage sync <projectId>`; `mint_cli_token` plus the returned Mirage CLI command is the one-off fallback, and `write_project_notebook` is the heavy MCP fallback for no-shell harnesses.
+Remote artist notebooks use the two-tier layout: shared Mirage files at the workspace root, project files under `mirage/projects/<projectId>/`. The MCP connection is OAuth-first where the harness supports it. For file sync, use logged-in `mirage sync <projectId>` when available; otherwise use `mint_cli_token` plus the returned Mirage CLI command as the one-off path, and `write_project_notebook` as the heavy MCP fallback for no-shell harnesses.
 
 **Realtime transport is shipped (R36):** prefix-mapped `agent_operations` tracks every non-readonly tool call (`status: running | success | error`, scoped to project/scene/shot), wired into both `/api/director/*` and `/mcp` `audited` wrappers. Web studio subscribes via Supabase realtime channel per project; renders a quiet pill in the header. See doctrine §6 reference. Frontend already subscribes to `postgres_changes` across project-relevant tables for cascade refresh.
 

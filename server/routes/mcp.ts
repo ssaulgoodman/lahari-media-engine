@@ -2,13 +2,14 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 import { selectColumns, selectOne } from '../database.js';
 import { getFullProject } from './projects.js';
 import { listDirectorEvents } from '../services/directorEvents.js';
 import { captureMirageIssue, recordMcpAudit, summarizeAgentTiming } from '../services/mirageAudit.js';
-import { createCliToken, getConfiguredMirageCliPackage, verifyMcpBearerToken } from '../services/mcpTokens.js';
+import { createCliToken, getConfiguredMirageCliPackage, getMirageMcpUrl, verifyMcpBearerToken } from '../services/mcpTokens.js';
 import { RateLimitError, assertRateLimit, envInt } from '../services/rateLimit.js';
 import { finishAgentOperation, getAgentOperation, listAgentOperations, startAgentOperation } from '../services/agentOperations.js';
 import * as studio from '../services/codexStudio.js';
@@ -94,6 +95,7 @@ type HostedAuth = {
   userId: string;
   tokenId: string;
   label: string;
+  tokenKind: string;
 };
 
 const textResult = (value: unknown) => ({
@@ -2367,6 +2369,9 @@ router.post('/', async (req, res) => {
   let auth: HostedAuth;
   try {
     auth = await verifyMcpBearerToken(bearerToken(req.headers.authorization));
+    if (!['mcp', 'oauth_access'].includes(auth.tokenKind)) {
+      throw new Error('This token cannot call the Mirage MCP tool surface');
+    }
     assertRateLimit({
       key: `mcp:request:${auth.tokenId}`,
       limit: MCP_LIMITS.requestPerMinute,
@@ -2376,6 +2381,10 @@ router.post('/', async (req, res) => {
   } catch (error) {
     const structured = structuredToolError(error);
     const status = error instanceof RateLimitError ? 429 : 401;
+    if (status === 401) {
+      const metadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(getMirageMcpUrl()));
+      res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${metadataUrl}"`);
+    }
     return res.status(status).json({
       jsonrpc: '2.0',
       error: {
