@@ -98,6 +98,10 @@ _(Things we've effectively agreed. Promote forks here as they're called.)_
 - **F5 — Deploy / domain cutover.** Lahari has live artists on its own Railway + URL. Merging
   means one deploy and a cutover for real users mid-work — the one genuinely ops-risky,
   irreversible piece. Needs its own migration + cutover plan (track C5).
+- **F6 — Workspace-level API keys.** D5 (per-user BYOK) meets reality: Lahari artists run on
+  Saul's platform keys. Proposed: key resolution user → workspace → none; the Lahari workspace
+  carries Saul's keys, future tenant workspaces carry theirs. Must be called before C2 schema
+  work. *Recommendation: yes.* (Raised 2026-06-12 in `mirage-lahari-tenant-port-plan.md`.)
 
 ## Tracks (the phased sequence)
 
@@ -299,10 +303,18 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   vs Mirage, ranked harvest backlog for the C4 taste port (~70% preservable; key finds:
   song-type pacing math, 4 curated style presets, props-in-hand rule living in prompt code).
 
+- 2026-06-12 · port plan pinned · — · opened `mirage-lahari-tenant-port-plan.md`: the C2→C4→C5
+  execution plan for Lahari as tenant #1, grounded in a verified schema/infra diff (storage paths
+  portable, UUIDs copy-safe, renderer shared; real work = auth user-id remap + queue port +
+  additive column backfill). New fork F6 (workspace-level keys) raised. Taste harvest dispositions
+  revised per Saul: props ban → generic rule, pacing doctrine → agent judgment, style presets →
+  general workspace primitive.
+
 ## References
 
 - Audit + port backlog: `lahari-divergence-audit.md`
 - Taste harvest backlog for C4: `lahari-taste-harvest-audit.md`
+- Tenant port execution plan (C2/C4/C5): `mirage-lahari-tenant-port-plan.md`
 - Product shape: `mirage-beta-workspace-preset-packs.md`
 - Recipe rails for C4: `mirage-workflow-recipes.md`
 - v1 predecessor: `mirage-platform-v1-ledger.md`
