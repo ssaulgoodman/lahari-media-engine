@@ -1,6 +1,7 @@
 import { selectOne, updateRows } from '../../database.js';
 import { readAsBase64, mimeFromExt, storageUrl } from '../../storage.js';
-import { GEMINI_AUDIO_ANALYSIS_MODEL, transcribeLyrics, detectStructure } from '../gemini.js';
+import { GEMINI_AUDIO_ANALYSIS_MODEL, detectStructure } from '../gemini.js';
+import { transcribeLyricsForAudioPath } from '../audioTranscription.js';
 import { recordDirectorEvent } from '../directorEvents.js';
 import { logCall } from '../../xray.js';
 import { generationKey, withInFlightGeneration } from '../inFlightGeneration.js';
@@ -136,10 +137,9 @@ const analyzeAudioTranscribeUnlocked = async (
   opts: { language?: string | null } = {},
 ) => {
   const audioPath = await requireAudioPath(project);
-  const audioBase64 = await readAsBase64(audioPath);
-  const audioMime = mimeFromExt(audioPath);
   const t0 = Date.now();
-  const lyrics = await transcribeLyrics(audioBase64, audioMime, opts.language || undefined);
+  const transcription = await transcribeLyricsForAudioPath(audioPath, opts.language || undefined);
+  const lyrics = transcription.lyrics;
   const durationMs = Date.now() - t0;
   assertTranscriptDoesNotRegress(project, lyrics);
 
@@ -152,11 +152,13 @@ const analyzeAudioTranscribeUnlocked = async (
     projectId: project.id,
     stage: 'transcribe-lyrics',
     model: GEMINI_AUDIO_ANALYSIS_MODEL,
-    prompt: `Transcribe lyrics from audio.\nLanguage: ${opts.language || 'Detect automatically'}.`,
+    prompt: `Transcribe lyrics from audio.\nLanguage: ${opts.language || 'Detect automatically'}.\nMethod: ${transcription.method}.`,
     referenceInputs: audioRef(project),
-    responseSummary: lyrics ? `${lyrics.split('\n').length} lines` : 'empty transcription',
+    responseSummary: lyrics
+      ? `${lyrics.split('\n').length} lines${transcription.method === 'chunked' ? ` across ${transcription.chunks} chunks` : ''}`
+      : 'empty transcription',
     durationMs,
-    costEstimate: 0.01,
+    costEstimate: Math.max(0.01, transcription.chunks * 0.01),
   });
   await recordDirectorEvent({
     projectId: project.id,
@@ -166,15 +168,24 @@ const analyzeAudioTranscribeUnlocked = async (
     entityType: 'project',
     entityId: project.id,
     summary: 'Audio transcription applied to the project.',
-    payload: { lines: lyrics ? lyrics.split('\n').length : 0 },
+    payload: {
+      lines: lyrics ? lyrics.split('\n').length : 0,
+      method: transcription.method,
+      chunks: transcription.chunks,
+      durationSec: transcription.durationSec,
+      quality: transcription.quality || null,
+    },
   });
-  appendApplyJournal(project, 'transcribed audio', `Lyrics chars: ${lyrics.length}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
+  appendApplyJournal(project, 'transcribed audio', `Lyrics chars: ${lyrics.length}\nMethod: ${transcription.method}${transcription.method === 'chunked' ? ` (${transcription.chunks} chunks)` : ''}\nWeb: ${webStudioUrl(project.id, { step: 'blueprint' })}`);
 
   const updatedProject = nextProject(project, { lyrics, status: 'analyzed' } as Partial<Project>);
   return {
     kind: 'mirage.audio.transcribe',
     projectId: project.id,
     lyrics,
+    method: transcription.method,
+    chunks: transcription.chunks,
+    quality: transcription.quality || null,
     changedArtifacts: buildNotebookMirrorArtifacts(updatedProject, { audioAnalysis: true }),
     note: 'Transcribed audio. Codex should interpret or summarize meaning in conversation when useful; no backend meaning prompt runs here.',
   };

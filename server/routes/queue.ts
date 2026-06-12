@@ -5,7 +5,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import { listQueue, updateQueueItem, getSongFiles, getDeities, downloadFile, findQueueByProjectIds } from '../services/supabase.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
-import { GEMINI_AUDIO_ANALYSIS_MODEL, transcribeLyrics, detectStructure } from '../services/gemini.js';
+import { GEMINI_AUDIO_ANALYSIS_MODEL, detectStructure } from '../services/gemini.js';
+import { transcribeLyricsForAudioPath } from '../services/audioTranscription.js';
 import { logCall } from '../xray.js';
 import { selectOne, insertRow, updateRows, getSB, T, supportsPlatformColumns, usesLegacyQueueAdapter } from '../database.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -261,9 +262,7 @@ router.post('/:queueId/start', async (req, res) => {
         if (!lyrics) {
           await setStep('Transcribing lyrics from audio');
           try {
-            const audioBase64 = await readAsBase64(audioPath);
-            const audioMime = mimeFromExt(audioPath);
-            lyrics = await transcribeLyrics(audioBase64, audioMime, item.original_language);
+            lyrics = (await transcribeLyricsForAudioPath(audioPath, item.original_language)).lyrics;
             console.log(`[queue] Transcribed lyrics from audio for ${item.song_name}`);
           } catch (e) {
             console.warn(`[queue] Lyrics transcription failed for ${item.song_name}:`, e);

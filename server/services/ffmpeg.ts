@@ -32,6 +32,10 @@ const cacheOutputPath = (ext: string): string => {
 
 export const probeMediaDurationSec = async (storagePath: string): Promise<number> => {
   const localMedia = await downloadToTmp(storagePath);
+  return probeLocalMediaDurationSec(localMedia);
+};
+
+export const probeLocalMediaDurationSec = async (localMedia: string): Promise<number> => {
   const stdout = await runProcess('ffprobe', [
     '-v', 'error',
     '-show_entries', 'format=duration',
@@ -40,9 +44,56 @@ export const probeMediaDurationSec = async (storagePath: string): Promise<number
   ]);
   const duration = Number(stdout.trim());
   if (!Number.isFinite(duration) || duration <= 0) {
-    throw new Error(`Could not read media duration for ${storagePath}.`);
+    throw new Error(`Could not read media duration for ${localMedia}.`);
   }
   return duration;
+};
+
+export interface LocalAudioChunk {
+  localPath: string;
+  startSec: number;
+  durationSec: number;
+  index: number;
+  mimeType: string;
+}
+
+export const splitAudioStorageToLocalChunks = async (
+  audioStoragePath: string,
+  chunkDurationSec = 180,
+): Promise<{ durationSec: number; chunks: LocalAudioChunk[] }> => {
+  const localAudio = await downloadToTmp(audioStoragePath);
+  const durationSec = await probeLocalMediaDurationSec(localAudio);
+  const safeChunkDuration = Math.max(30, Number.isFinite(chunkDurationSec) ? chunkDurationSec : 180);
+  const chunks: LocalAudioChunk[] = [];
+
+  let startSec = 0;
+  let index = 0;
+  while (startSec < durationSec - 0.01) {
+    const currentDuration = Math.min(safeChunkDuration, durationSec - startSec);
+    const outputLocal = cacheOutputPath('wav');
+    await runProcess('ffmpeg', [
+      '-ss', startSec.toFixed(3),
+      '-t', currentDuration.toFixed(3),
+      '-i', localAudio,
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-c:a', 'pcm_s16le',
+      '-y',
+      outputLocal,
+    ]);
+    chunks.push({
+      localPath: outputLocal,
+      startSec,
+      durationSec: currentDuration,
+      index,
+      mimeType: 'audio/wav',
+    });
+    startSec += currentDuration;
+    index++;
+  }
+
+  return { durationSec, chunks };
 };
 
 /**

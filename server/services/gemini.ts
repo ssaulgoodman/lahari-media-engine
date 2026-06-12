@@ -95,6 +95,42 @@ Return ONLY the transcription.` }
   return response.text || '';
 };
 
+export const transcribeAudioToSRT = async (
+  audioBase64: string,
+  mimeType: string,
+  language?: string,
+  opts: { chunkIndex?: number; totalChunks?: number } = {},
+): Promise<string> => {
+  const ai = await getAI();
+  const chunkNote = opts.totalChunks && opts.totalChunks > 1
+    ? `This is chunk ${Number(opts.chunkIndex || 0) + 1} of ${opts.totalChunks}. Timestamps must be relative to this chunk, starting near 00:00:00,000.`
+    : 'Timestamps must be relative to this audio, starting near 00:00:00,000.';
+  const response = await ai.models.generateContent({
+    model: GEMINI_AUDIO_ANALYSIS_MODEL,
+    contents: { parts: [
+      { inlineData: { mimeType, data: audioBase64 } },
+      { text: `Transcribe the lyrics or spoken words in this audio.
+Language: ${language || 'Detect automatically'}.
+${chunkNote}
+
+Return standard SRT format only:
+
+1
+00:00:01,000 --> 00:00:04,000
+lyric text
+
+Rules:
+- Original language ONLY. No translations.
+- Keep the script used in the audio.
+- If a section has no vocals, skip it.
+- Do not add commentary, markdown fences, metadata, or explanations.
+- Transcribe the entire provided audio chunk; do not stop early.` }
+    ]},
+    config: { maxOutputTokens: 8192 }
+  });
+  return response.text || '';
+};
+
 export const detectStructure = async (
   audioBase64: string,
   mimeType: string

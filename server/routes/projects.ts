@@ -9,7 +9,8 @@ import {
 } from '../database.js';
 import { saveBuffer, readAsBase64, mimeFromExt, storageUrl, deleteFile } from '../storage.js';
 import { findQueueByProjectIds, updateQueueItem } from '../services/supabase.js';
-import { GEMINI_AUDIO_ANALYSIS_MODEL, transcribeLyrics, detectStructure } from '../services/gemini.js';
+import { GEMINI_AUDIO_ANALYSIS_MODEL, detectStructure } from '../services/gemini.js';
+import { transcribeLyricsForAudioPath } from '../services/audioTranscription.js';
 import { generateConceptOptions, refineConceptDirection, parseAnimeScriptToPlan } from '../services/claude.js';
 import { logCall, getCalls, buildContextChain } from '../xray.js';
 import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } from '../presets.js';
@@ -1515,8 +1516,6 @@ router.post('/:id/analyze-audio', async (req, res) => {
   if (!project.audio_path) return res.status(400).json({ error: 'No audio file on this project' });
 
   try {
-    const audioBase64 = await readAsBase64(project.audio_path);
-    const audioMime = mimeFromExt(project.audio_path);
     const audioRef = [{ type: 'audio' as const, label: 'Project audio', url: storageUrl(project.audio_path) }];
     const t0 = Date.now();
 
@@ -1529,13 +1528,25 @@ router.post('/:id/analyze-audio', async (req, res) => {
     if (!runTranscribe && !runStructure) return res.status(400).json({ error: 'steps must include transcribe and/or structure' });
 
     const [lyricsResult, structureResult] = await Promise.allSettled([
-      runTranscribe ? transcribeLyrics(audioBase64, audioMime) : Promise.resolve(project.lyrics || ''),
-      runStructure ? detectStructure(audioBase64, audioMime) : Promise.resolve({
+      runTranscribe ? transcribeLyricsForAudioPath(project.audio_path, bodyString(req.body, 'language')) : Promise.resolve({
+        lyrics: project.lyrics || '',
+        method: 'single' as const,
+        model: GEMINI_AUDIO_ANALYSIS_MODEL,
+        durationSec: null,
+        chunks: 0,
+        quality: undefined,
+      }),
+      runStructure ? (async () => {
+        const audioBase64 = await readAsBase64(project.audio_path);
+        const audioMime = mimeFromExt(project.audio_path);
+        return detectStructure(audioBase64, audioMime);
+      })() : Promise.resolve({
         sections: project.musical_structure ? JSON.parse(project.musical_structure) : [],
       }),
     ]);
 
-    const lyrics = lyricsResult.status === 'fulfilled' ? lyricsResult.value : '';
+    const transcription = lyricsResult.status === 'fulfilled' ? lyricsResult.value : null;
+    const lyrics = transcription ? transcription.lyrics : '';
     const structureData2 = structureResult.status === 'fulfilled' ? structureResult.value : { sections: [] };
     const musicalStructure = Array.isArray(structureData2) ? structureData2 : structureData2.sections;
     const structureSucceeded = runStructure && structureResult.status === 'fulfilled';
@@ -1572,13 +1583,13 @@ router.post('/:id/analyze-audio', async (req, res) => {
         projectId,
         stage: 'transcribe-lyrics',
         model: GEMINI_AUDIO_ANALYSIS_MODEL,
-        prompt: 'Transcribe lyrics from audio with timestamps.',
+        prompt: `Transcribe lyrics from audio with timestamps.${transcription ? ` Method: ${transcription.method}.` : ''}`,
         referenceInputs: audioRef,
         responseSummary: transcribeSucceeded
-          ? `${lyrics.split('\n').length} lines`
+          ? `${lyrics.split('\n').length} lines${transcription?.method === 'chunked' ? ` across ${transcription.chunks} chunks` : ''}`
           : (lyrics ? `Rejected partial/regressed transcript (${lyrics.split('\n').length} lines)` : 'FAILED'),
         durationMs: analysisMs,
-        costEstimate: 0.01,
+        costEstimate: Math.max(0.01, (transcription?.chunks || 1) * 0.01),
         error: transcribeError || undefined,
       });
     }
@@ -1662,6 +1673,10 @@ router.post('/:id/analyze-audio', async (req, res) => {
           lines: transcribeSucceeded && lyrics ? lyrics.split('\n').length : 0,
           rejectedLines: !transcribeSucceeded && lyrics ? lyrics.split('\n').length : 0,
           error: transcribeError,
+          method: transcription?.method || null,
+          chunks: transcription?.chunks || 0,
+          durationSec: transcription?.durationSec || null,
+          quality: transcription?.quality || null,
         } : null,
         structure: runStructure ? {
           requested: true,
