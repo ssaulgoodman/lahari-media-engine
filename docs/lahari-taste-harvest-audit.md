@@ -14,6 +14,19 @@ as preset/recipe/skill *data* on rails Mirage already has. The single biggest fi
 load-bearing taste rules live in Lahari's *code*, not its docs (e.g. the props-in-hand ban inside
 `buildCharacterPrompt()`), and were invisible to every doc-level audit until now.
 
+**Dispositions (Saul, 2026-06-12):** most of the harvest is NOT Lahari-attributed.
+- The props-in-hand ban generalizes: it's a default rule for ALL character reference generation
+  ("no held props unless explicitly asked"), home = global casting-director skill / style notes.
+- Song-type calibration and hard pacing doctrine are **obsolete in the agent-driven machine** —
+  the agent reasons pacing from audio analysis / theme / concept per project. Do not re-bake
+  opinionated pacing into presets (that's the preset-blob pattern D28 killed). The machine's only
+  job is to expose enough signal (structure, energy, section timing) for the agent to reason with.
+- Style presets are a **general workspace primitive** for every workflow: artists curate their own
+  preset sets and port them. Lahari's four are simply the first imported set when its artists move,
+  not a Lahari-shaped feature.
+The genuinely Lahari-specific residue is small: the four preset *contents*, devotional storyboard
+anti-pattern examples, and devotional vocabulary — all of which land as workspace pack data.
+
 ## How different, per surface
 
 | Surface | Lahari (`lahari-local/main`) | Mirage (current) | Divergence |
@@ -24,44 +37,42 @@ load-bearing taste rules live in Lahari's *code*, not its docs (e.g. the props-i
 
 ## Harvest backlog (ranked)
 
-### HIGH — port these as part of C4
+### HIGH — generic machine improvements (not Lahari-gated; do whenever)
 
-1. **Song-type calibration** — `lahari-local/main:server/services/claude.ts` (generateConceptOptions, planScenes).
-   Classification (stotra/chant/bhajan/kirtan/song) + `isNarrative`/`isMeditative` axes, wired into
-   *pacing math*, not flavor: meditative material gets 8–10s holds, no over-cutting, fewer cast/envs,
-   recurring motifs. This prevents Lahari's #1 historical failure mode (plot-heavy scripts on
-   meditative songs). Mirage's `detect-structure` stripped song-type entirely. Restore as an optional
-   post-transcription step + preset-gated script-layer branching (music_led uses it; anime ignores it).
-2. **Meditative pacing rules / Seedance duration doctrine** — same file, planScenes prompt.
-   "Aim ~15s when the phrase holds one idea; 8–12s for meditative holds; 4–8s only for connective
-   beats; never above 15s; scene shot durations sum exactly to scene duration (validated)."
-   Mirage currently defaults to 8s uniform — structurally over-cut for devotional work. Port as
-   music_led preset default + exact-sum validation in the script layer.
-3. **Four curated style presets** — `lahari-local/main:server/style-presets.ts`.
-   `sacred-golden-serenity`, `pure-temple-morning`, `warm-incense-devotion`, `sacred-teal-riverlight`.
-   Proven registers over 60 productions. Port as the Lahari-workspace style-preset registry (preset
-   image is ground truth per existing doctrine). This is the speed win for tenant artists: lock one
-   and move, no brainstorm needed.
-4. **Props-in-hand anti-pattern** — `lahari-local/main:server/services/imagePrompts.ts`,
+1. **Props-in-hand default rule** — `lahari-local/main:server/services/imagePrompts.ts`,
    `buildCharacterPrompt()`: "Do NOT include props, weapons, lamps, offerings, or ritual items in
-   hand." Earned rule: deities holding objects read as actors, not presences — breaks darshan.
-   Devotional-specific: belongs in the Lahari pack's look rules / casting guidance, NOT generic Mirage.
-5. **Continuity-auditor skill** — `lahari-local/main:server/resources/skills/continuity-auditor/SKILL.md`.
+   hand." Generalized per Saul: default for ALL character reference generation, with an explicit
+   escape ("unless the artist asks for a held object"). Home = global casting-director skill +
+   look-generation guidance. The devotional *why* (held objects read as acting, breaks darshan)
+   goes in the Lahari pack notes as context.
+2. **Pacing signal exposure (NOT pacing doctrine)** — demoted from the original draft per Saul.
+   Lahari's hard rules ("15s default, 8–12s meditative holds…") were the pre-agent machine doing
+   the agent's job. The agent now reasons pacing from audio analysis/theme/concept. The only
+   portable requirement: audio analysis must expose enough signal (sections, energy, timing) and
+   the script-writer skill may carry one line of craft guidance ("let meditative material breathe;
+   don't over-cut") — judgment input, not enforced math. Lahari's exact-sum duration validation
+   stays useful as a mechanical check where Seedance needs durations to add up.
+3. **Style presets as a workspace primitive** — general feature for every workflow: workspace-scoped
+   curated preset sets (preset image is ground truth, per existing doctrine), artist-portable.
+   Lahari's four (`lahari-local/main:server/style-presets.ts`: sacred-golden-serenity,
+   pure-temple-morning, warm-incense-devotion, sacred-teal-riverlight) become the first imported
+   set when Lahari's artists move — content, not architecture.
+4. **Continuity-auditor skill** — `lahari-local/main:server/resources/skills/continuity-auditor/SKILL.md`.
    Four-layer model (identity/environment/style/temporal), chained-shot mechanics
    (`continuityFrom='prev_shot'` vs `'cut'` and what the model hallucinates when mismarked),
    cost-aware fix ladder. Mirage dropped it in the node-skill rebuild because "not a graph node" —
    correct for the skill taxonomy, but the *content* never got re-homed. Absorb into script-writer +
    storyboarding + video-director skills, or restore as an on-demand diagnostic worker skill.
-6. **Chained-shot temporal mechanics** — same file, "Temporal Continuity" section. Mirage's
+5. **Chained-shot temporal mechanics** — same file, "Temporal Continuity" section. Mirage's
    script-writer mentions continuity-dependent neighbors but never teaches the failure mode.
 
 ### MEDIUM
 
-7. **Render-triage content** — `lahari-local/main:server/resources/skills/render-triage/SKILL.md`.
+6. **Render-triage content** — `lahari-local/main:server/resources/skills/render-triage/SKILL.md`.
    Four failure modes (prompt/model/reference/taste) + one-shot diagnosis tests + cost ladder.
    Was dropped with the node-skill rebuild; port as an on-demand worker skill (matches the audit
    backlog's "selective worker agents" item), with hardcoded dollar costs stripped.
-8. **Storyboard prompt anti-patterns** — `lahari-local/main:server/resources/skills/storyboard-prompt-craft/SKILL.md`.
+7. **Storyboard prompt anti-patterns** — `lahari-local/main:server/resources/skills/storyboard-prompt-craft/SKILL.md`.
    Concrete ❌/✅ pairs (no film-tech jargon image models can't parse; "every panel a deity portrait"
    ban; specific-over-generic: "threshold of a stone shrine, oil lamps in clay holders" beats
    "glowing sanctum"). Mirage's storyboarding skill is template-forward and thinner — graft the
@@ -69,10 +80,10 @@ load-bearing taste rules live in Lahari's *code*, not its docs (e.g. the props-i
 
 ### LOW / adapt-only
 
-9. **lahari-director operating rhythm** — structure only (attach → refresh → read events → propose);
+8. **lahari-director operating rhythm** — structure only (attach → refresh → read events → propose);
    wording is stale against Mirage's cockpit. Mirage's AGENTS.md already covers most of it.
-10. **style-ref-critic reusability tests** (strip-the-subject / imagine-13-shots / constrain-vs-define)
-    — fold into art-director skill if not already covered.
+9. **style-ref-critic reusability tests** (strip-the-subject / imagine-13-shots / constrain-vs-define)
+   — fold into art-director skill if not already covered.
 
 ## Not worth porting
 
@@ -88,9 +99,10 @@ load-bearing taste rules live in Lahari's *code*, not its docs (e.g. the props-i
 
 | Harvest item | Mirage home |
 |---|---|
-| Song-type + pacing rules | music_led preset script layer + optional audio-analysis step |
-| 4 style presets | Lahari workspace style-preset registry (C4; `server/style-presets.ts` pattern exists) |
-| Props ban, devotional storyboard anti-patterns | Lahari pack style notes / pack-scoped skill content |
+| Props default rule ("no held objects unless asked") | global casting-director skill + look guidance |
+| Pacing | agent judgment; machine exposes audio-analysis signal; one craft line in script-writer skill; exact-sum check stays mechanical |
+| Style presets | general workspace-scoped preset primitive; Lahari's 4 = first imported set |
+| Devotional storyboard anti-patterns + vocabulary | Lahari workspace pack notes / pack-scoped skill content |
 | Continuity + triage content | node skills (generic parts) + on-demand worker skill (diagnosis ladder) |
 | Generic anti-patterns (film-jargon ban, specificity) | global storyboarding/video-director skills — safe for all tenants |
 
