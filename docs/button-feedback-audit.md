@@ -1,6 +1,6 @@
 # Button feedback audit
 
-**Status:** Living doc. Each slice marks rows ✅ + commit hash when shipped.
+**Status:** Active backlog. Each slice marks rows ✅ + commit hash when shipped.
 
 **Symptom:** clicking a button that fires an async backend call gives no immediate visual feedback. The action lands seconds later with nothing in between. Pattern across Concept / Characters / Environments / Style / Audio / Script and the global Unlock pills.
 

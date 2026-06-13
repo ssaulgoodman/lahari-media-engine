@@ -1,5 +1,7 @@
 # Mirage Beta Workspace And Preset Packs
 
+**Status:** Product-shape reference. Use with `docs/mirage-convergence-ledger.md` when planning workspaces, packs, and gated beta onboarding.
+
 Working note for turning Mirage from an internal studio into a friend/beta-user product where different creators can mass-produce repeatable video formats.
 
 ## Product Shape

@@ -1,5 +1,7 @@
 # Lahari → Mirage Divergence Audit
 
+**Status:** Active convergence backlog. Use with `docs/mirage-convergence-ledger.md` before porting Lahari behavior.
+
 **Date:** 2026-06-07
 **Author:** Claude (managed by Saul)
 **Purpose:** After the repo split, `lahari-media-engine` (artist-facing, lahari-specific

@@ -1,7 +1,7 @@
 # Mirage Convergence Ledger
 
 **Date opened:** 2026-06-08
-**Status:** planning — forks open
+**Status:** Active planning ledger — forks open
 **Horizon:** post-v1. The v1 ledger (`mirage-platform-v1-ledger.md`) is finishing the
 hosted studio; this ledger is the next horizon and depends on nothing in v1 being undone.
 
@@ -13,6 +13,12 @@ lahari-specific (the queue, `songs`, its skills, its model defaults) lives *insi
 workspace, gated by membership. The dual-repo split was the right phase — it let Mirage find
 its general shape without lahari's gravity. Re-converging through tenancy is the mature move
 now that the shape is found.
+
+**Fast read (2026-06-13):**
+- Prize: one Mirage codebase; Lahari becomes tenant #1 through workspace/preset-pack primitives.
+- Already landed from the audit: paid-generation guards, shot topology, render cancel/salvage, artist memory/assets, server-backed timelines, sidebar, media-library uploads.
+- Ready next without workspace forks: CP/Yapper/persona acceptance and small reliability/UX hardening.
+- Fork-gated work: workspace tenancy, preset-pack scoping, Lahari queue/data cutover, workspace-level provider keys.
 
 **Why it's the prize, not just cleanup:** one binary, no dual maintenance — and every Mirage
 improvement (charge-safety guards, agent-native render, MCP surface, the sidebar) flows to

@@ -1,5 +1,7 @@
 # Pipeline Anatomy — Every Step, Every Prompt, Every Control Point
 
+**Status:** Current behavior reference. Update whenever pipeline behavior, prompt flow, or artist control points change.
+
 Living document. Updated as we refine each step. Go back to any step, trace the flow, find the gap, fix it.
 
 **The pattern (universal across all steps):**

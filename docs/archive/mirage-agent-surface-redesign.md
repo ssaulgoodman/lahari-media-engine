@@ -1,3 +1,5 @@
+> Archived 2026-06-13. The cockpit/action-registry shape described here has largely shipped. Current tool surface lives in `docs/mirage-tool-reference.md`; future API shape lives in `docs/mirage-agent-platform-api-architecture.md`; active gaps live in `docs/mirage-tool-and-prompt-audit.md`.
+
 # Mirage Agent Surface Redesign
 
 Status: working draft for Codex/Claude/Saul iteration.

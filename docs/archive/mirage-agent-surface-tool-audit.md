@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Superseded by the current action surface in `docs/mirage-tool-reference.md` and active gap tracking in `docs/mirage-tool-and-prompt-audit.md`.
+
 # Mirage Agent Surface — Tool-By-Tool Audit
 
 Working sheet for Saul. Goes with `docs/mirage-agent-surface-redesign.md`.

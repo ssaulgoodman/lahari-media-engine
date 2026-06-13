@@ -1,6 +1,6 @@
 # Mirage Codex Plugin Prototype
 
-Status: v0 prototype, repo-local.
+**Status:** Prototype reference. Current onboarding behavior lives in root `AGENTS.md`, `/connect`, plugin manifests, and the deployed MCP.
 
 The goal is to make Mirage onboarding feel like installing a production surface in Codex, not manually assembling MCP config, skills, notebook sync habits, and project instructions.
 

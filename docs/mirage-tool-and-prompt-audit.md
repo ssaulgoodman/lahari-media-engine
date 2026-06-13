@@ -1,5 +1,7 @@
 # Mirage Tool & Prompt Audit
 
+**Status:** Active audit/backlog. Use for unresolved prompt/tool-surface gaps; current action inventory lives in `docs/mirage-tool-reference.md`.
+
 Working doc for reviewing every action contract and runtime prompt against the current architecture (D27 + style-notes + contextOverrides + graph-first). **This is the doc to read and annotate.** Sibling `docs/mirage-tool-reference.md` is the canonical zero-notes mirror.
 
 ## How to use this doc

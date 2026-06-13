@@ -1,5 +1,7 @@
 # Remotion Renderer Service
 
+**Status:** Ops reference. Update when the Remotion fallback renderer contract changes.
+
 A standalone Hono service that renders the timeline editor's preview to an
 mp4 using Remotion SSR. Lives at `remotion-renderer/`. Deploys as its own
 Docker image so the heavy Chromium + ffmpeg footprint stays out of the main

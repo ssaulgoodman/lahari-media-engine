@@ -1,8 +1,8 @@
 # Mirage Workflow Recipes
 
-Status: design + slice plan. Cornerstone for the repeatable-production-format path. Yapper is case #1.
+**Status:** Active recipe reference. Cornerstone for the repeatable-production-format path. Yapper is case #1.
 
-Related: `docs/mirage-agent-surface-redesign.md` (the layered surface), `docs/agent-working-method.md` (harvest-don't-author), `docs/mirage-platform-v1-ledger.md` (work log).
+Related: `docs/mirage-tool-reference.md` (current action surface), `docs/agent-working-method.md` (harvest-don't-author), `docs/mirage-platform-v1-ledger.md` (work log).
 
 ## Why this exists (the discovery)
 

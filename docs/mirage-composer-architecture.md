@@ -1,6 +1,6 @@
 # Mirage Composer Architecture
 
-Status: working direction for Saul/Codex/Claude review.
+**Status:** Reference architecture. Use with `docs/mirage-composer-audit.md` for composer/prompt cleanup context.
 Sibling: `docs/mirage-composer-audit.md` keeps the tactical prompt-bloat evidence.
 
 This doc replaces the longer debate draft. The point is simple: Mirage should be graph-first, not workflow-first. The composer should not be a hidden director. Codex, the artist, and the UI advance the project graph; the composer only assembles the exact context needed for one action.

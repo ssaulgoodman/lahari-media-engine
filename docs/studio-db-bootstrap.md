@@ -1,5 +1,7 @@
 # Clean Studio DB Bootstrap
 
+**Status:** Ops reference. Update when clean `studio_*` bootstrap or migration flow changes.
+
 This is the path for a fresh non-Lahari Supabase project. It keeps the current
 Lahari/Bhakti production workspace untouched while letting this same codebase
 run against a clean studio database.

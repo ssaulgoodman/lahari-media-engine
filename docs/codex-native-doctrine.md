@@ -1,5 +1,7 @@
 # Codex-Native Operating Doctrine
 
+**Status:** Durable reference. Current Mirage names and session routing in root `AGENTS.md` / `CLAUDE.md` override older Lahari-era wording here.
+
 **Purpose.** The durable operating contract for the codex-native-studio lane. Codex reads this at the start of any substantive engineering pass. Updated when the architecture changes, not when individual features ship. Current Mirage work is tracked in `docs/mirage-platform-v1-ledger.md` and `docs/mirage-convergence-ledger.md`; the old codex-native verification log is archived at `docs/archive/codex-native-review-ledger.md`.
 
 **Current Mirage note.** This doctrine still carries some Lahari-era names because it records the architecture that Mirage grew out of. For current Mirage session routing, tool names, and skill topology, root `AGENTS.md`, `CLAUDE.md`, and the Mirage ledgers win.

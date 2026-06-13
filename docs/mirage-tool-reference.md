@@ -1,5 +1,7 @@
 # Mirage Tool Reference
 
+**Status:** Current reference. Keep aligned with `server/services/actionRegistry.ts`, MCP dispatch, skills, and materialized notebook action files.
+
 Canonical reference for the Mirage MCP surface. Three layers: MCP tools, actions, prompts. Each layer is the format that fits it — table for tools/actions, grouped blocks for prompts.
 
 **Read order:**

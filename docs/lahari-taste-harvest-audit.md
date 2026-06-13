@@ -1,5 +1,7 @@
 # Lahari → Mirage Taste Harvest Audit
 
+**Status:** Active taste/preset harvest backlog. Use when turning Lahari-specific lessons into Mirage packs or recipes.
+
 **Date:** 2026-06-10
 **Author:** Fable (agent-assisted sweep over `lahari-local/main` content vs current `mirage` tree)
 **Purpose:** `lahari-divergence-audit.md` covered *code commits*. This covers *taste content* —

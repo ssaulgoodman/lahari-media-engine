@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Core schema interpretation decisions were captured in `docs/mirage-platform-v1-ledger.md` D21 and current migrations/code. Keep this as historical audit evidence.
+
 # Schema Audit — Mirage v1
 
 **Date:** 2026-05-20

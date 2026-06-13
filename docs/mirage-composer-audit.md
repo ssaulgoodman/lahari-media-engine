@@ -3,7 +3,7 @@
 Date: 2026-05-26
 Branch: `mirage`
 Purpose: inspect the prompt composer, preset taste additives, and runtime prompt builders for vague or bloated instruction layers before the next deployed agent smoke test.
-Status: merged — Codex's table-structured analysis (`8fbf4a4`) + Claude's Pattern 7 finding and architectural proposal.
+**Status:** Historical audit with current caveats. Read through `docs/mirage-composer-architecture.md`; do not treat old preset/runtime assumptions as current doctrine.
 
 > **Read this audit through `docs/mirage-composer-architecture.md`.** The latest direction is graph-first: presets/workflows are intake hints, the composer is editable plumbing, and `contextOverrides` are a first-class missing primitive. Verdicts in this audit that pre-date that decision are marked **⚠️ provisional** below. A full row-by-row re-verdict happens after the open calls in the architecture doc settle.
 >

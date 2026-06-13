@@ -1,5 +1,7 @@
 # Video Model Comparison — 720p, No Audio, Image-to-Video
 
+**Status:** Provider reference. Update when model defaults, provider routing, or pricing/quality conclusions change.
+
 All pricing verified for 720p, audio OFF where the provider supports it. Per-second rates derived from per-generation prices where needed (cost / duration).
 
 ## All models, all providers — sorted cheapest first

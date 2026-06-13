@@ -1,5 +1,7 @@
 # Seedance Storyboard Workflow
 
+**Status:** Reference. Current Seedance storyboard mode baseline; update when storyboard planning/rendering behavior changes.
+
 Current implementation contract for the Seedance storyboard branch.
 
 ## Product Shape

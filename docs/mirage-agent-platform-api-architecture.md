@@ -1,7 +1,7 @@
 # Mirage Agent Platform API Architecture
 
 Date: 2026-05-28
-Status: Post-audit target architecture
+**Status:** Target architecture. Reference for future Core HTTP API / small MCP cockpit work, not a shipped-runtime contract.
 
 This document captures the enterprise/product shape we want after the prompt and action-contract audit is clean. It is not a replacement for the current slice. Finish the action/prompt audit first; then use this as the next architectural move.
 

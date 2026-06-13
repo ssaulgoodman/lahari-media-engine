@@ -1,5 +1,7 @@
 # Modal renderer deployment
 
+**Status:** Ops reference. Update when Modal renderer deployment or environment handling changes.
+
 How to deploy the `remotion-renderer` service to Modal and switch the main
 backend over. Companion to `docs/remotion-renderer.md` (which describes the
 service itself — architecture, request shape, callback contract).

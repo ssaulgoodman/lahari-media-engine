@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Its main findings landed in lean reads, job/status surfaces, timing summaries, and the current Core HTTP API target. See `docs/mirage-agent-platform-api-architecture.md` and `docs/mirage-tool-reference.md`.
+
 # MCP Agent Speed Audit — 2026-05-25
 
 Why this exists: Visual Studio feels usable, but Codex-over-MCP feels slower and more hesitant than the old Lahari path. The goal is to make tomorrow's work measurement-led, not vibes-led.

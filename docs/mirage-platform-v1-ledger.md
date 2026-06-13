@@ -14,6 +14,12 @@ Both Claude and Codex read from and append progress to this ledger. Pick a task 
 
 **Navigation:** §2 (locked decisions D1-D28), §3 (architecture), §4 (tracks T1-T10), §6 (sequencing), §7 (contracts), §8 (open questions), §9 (checkpoints, append-only). When jumping in cold, read your owned tracks in §4 + tail §9 for what just shipped. The whole file is the single source of truth; if older docs disagree, this wins.
 
+**Fast read (2026-06-13):**
+- Use this ledger for locked Mirage v1 decisions, contracts, and checkpoint history.
+- For current post-v1/Lahari convergence planning, start with `docs/mirage-convergence-ledger.md`.
+- For current action inventory and prompt/tool gaps, start with `docs/mirage-tool-reference.md` and `docs/mirage-tool-and-prompt-audit.md`.
+- When changing pipeline behavior, check D1-D28 + `docs/pipeline-anatomy.md`, then append a checkpoint here.
+
 ---
 
 ## 1. Scope

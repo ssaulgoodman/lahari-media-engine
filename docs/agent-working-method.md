@@ -1,5 +1,7 @@
 # Agent Working Method
 
+**Status:** Current operating discipline. Read with root `AGENTS.md` before substantive engine work.
+
 How Claude and Codex should work on Mirage so good architecture lands earlier and bad ideas die at the whiteboard, not after implementation. This is a checklist to run, not a diary to read. It was distilled from the 2026-05-30 always-on-surface / payload / skills / workspace-layout session, where most defects were caught by reasoning about the architecture, not by testing.
 
 ## The failure mode

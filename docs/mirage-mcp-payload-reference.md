@@ -1,5 +1,7 @@
 # Mirage MCP Payload Reference
 
+**Status:** Reference. Update when MCP payload shapes or result-size strategy changes.
+
 Last audited: 2026-06-04
 Source of truth: `server/routes/mcp.ts`, `server/services/actionRegistry.ts`, `server/resources/notebook/AGENTS.template.md`
 

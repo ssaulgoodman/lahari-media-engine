@@ -22,6 +22,10 @@ Anything in `docs/archive/` is historical. Do not treat archived docs as current
 | [`mirage-tool-and-prompt-audit.md`](./mirage-tool-and-prompt-audit.md) | Active audit/backlog for tool and prompt-surface gaps. |
 | [`mirage-workflow-recipes.md`](./mirage-workflow-recipes.md) | Named repeatable workflow recipes and prompt-override patterns. |
 | [`mirage-mcp-payload-reference.md`](./mirage-mcp-payload-reference.md) | Payload reference for MCP/client surfaces. |
+| [`mirage-composer-architecture.md`](./mirage-composer-architecture.md) | Reference architecture for graph-first prompt composition. |
+| [`mirage-composer-audit.md`](./mirage-composer-audit.md) | Historical composer audit with current caveats; read through the architecture doc. |
+| [`seedance-storyboard-workflow.md`](./seedance-storyboard-workflow.md) | Seedance storyboard mode baseline. |
+| [`button-feedback-audit.md`](./button-feedback-audit.md) | Active UI feedback backlog. |
 
 ## Convergence And Taste Backlog
 
