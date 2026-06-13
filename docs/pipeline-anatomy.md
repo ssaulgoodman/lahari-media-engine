@@ -527,7 +527,7 @@ Render is async because Railway cannot hold long HTTP requests. `/render` insert
 
 **Media Library drawer** (`components/MediaLibraryDrawer.tsx`) — bottom-anchored drawer over the timeline canvas. Two layers: uploaded clips row, then horizontal scene picker (S1 S2 ...) → shots in that scene as a horizontal row, each shot showing its active video (ring outline) + older versions as small chips. Click any generated version or uploaded clip → appended to the timeline at the end as a fresh clip (canonical shot data is not modified). Uploaded clips (`POST /api/projects/:id/media-library/uploads`, asset category `media_library_video`) are library takes only — never canonical shot state, never mark shots stale; hiding one is a soft metadata flag, not a delete. The drawer stays available even before shot videos exist so artists can upload external clips, and cards show new / in-timeline / added feedback. Three-tier thumbnail strategy for generated takes: server-extracted last-frame asset → shot's storyboard or start frame poster (instant paint via `<video poster=...>`) → `#t=0.1` URL-fragment seek with `preload="metadata"`.
 
-**Still planned:** cancel-on-watchdog and timeline-hash dedup (E5). See [`docs/render-pipeline-overhaul-2026-05-11.md`](render-pipeline-overhaul-2026-05-11.md).
+**Still planned:** cancel-on-watchdog and timeline-hash dedup (E5). See [`docs/archive/render-pipeline-overhaul-2026-05-11.md`](archive/render-pipeline-overhaul-2026-05-11.md).
 
 ---
 

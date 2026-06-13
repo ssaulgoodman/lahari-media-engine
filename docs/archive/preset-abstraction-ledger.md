@@ -1,3 +1,5 @@
+> Archived. Historical preset abstraction ledger from the Codex-native Lahari phase; current Mirage direction lives in `docs/mirage-platform-v1-ledger.md` and `docs/mirage-convergence-ledger.md`.
+
 # Preset Abstraction Ledger
 
 Use this while building Codex-native Lahari. Do not stop every implementation to generalize the engine. Ship the Codex-native workflow, and record each Bhakti-specific assumption when it appears.

@@ -1,3 +1,5 @@
+> Archived. Historical leak audit; shipped fixes and current behavior live in code, `docs/pipeline-anatomy.md`, and current prompt/tool references.
+
 # Cinematic-realism Leak Audit + Fix Plan
 
 **STATUS as of 2026-05-12 evening:** Tiers 1, 2, and 3 all shipped. The narrow `visual_medium` enum was rejected in favor of a fully generic approach — see "Tier 3 (revised, shipped)" at the bottom. A separate storyboard-consistency restoration also landed in the same batch as Tier 3.

@@ -1,3 +1,5 @@
+> Archived. Historical prompt research scratchpad; current prompt behavior lives in `docs/mirage-tool-reference.md`, `docs/mirage-workflow-recipes.md`, and runtime prompt code.
+
 hey i see everyone doing storyboard prompts for gpt + seedance  workflowcan you find me good templates to prompt gpt 5.5 to make the storyboard prompts
 
 Thoughts
@@ -255,4 +257,3 @@ The model will internally reason the perfect 6 shots, write them, then generate 
 Follow the 2x3 storyboard grid reference image exactly in sequence. Smooth cinematic transitions between each panel, gentle camera movements matching the shot types shown, preserve every composition, character, and detail perfectly from the reference images. Spiritual devotional mood, soft slow-motion feel on emotional and singing parts, 24fps, 15 seconds.
 
 This version consistently gives the highest quality outputs in the current GPT-5.5 + Seedance pipeline for Bhakti clips. The built-in reasoning step makes the panels much more intelligent and flowing than if you tried to guess them yourself.Drop your song + scene details whenever you’re ready and I’ll plug them straight into this template for you so you can copy-paste one complete prompt. 
-

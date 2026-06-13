@@ -1,3 +1,5 @@
+> Archived. Historical cost audit; current model/provider choices live in `docs/video-model-comparison.md` and runtime provider config.
+
 # OpenAI Storyboard Cost Audit — 2026-05-11
 
 ## Summary

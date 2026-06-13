@@ -1,3 +1,5 @@
+> Archived. Historical render overhaul plan; current render behavior lives in `docs/pipeline-anatomy.md`, `docs/modal-renderer.md`, and `docs/remotion-renderer.md`.
+
 # Render Pipeline Overhaul — Audit, Diagnosis, and Plan
 
 **Date**: 2026-05-11

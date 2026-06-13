@@ -1,3 +1,5 @@
+> Archived. Historical test plan; current Seedance storyboard behavior lives in `docs/seedance-storyboard-workflow.md` and `docs/pipeline-anatomy.md`.
+
 # Seedance Storyboard Test Plan
 
 Branch: `seedance-storyboard-workflow`

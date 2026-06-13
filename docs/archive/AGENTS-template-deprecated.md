@@ -1,3 +1,5 @@
+> Archived. Deprecated workspace template; current Mirage operator guidance lives in root `AGENTS.md` and the notebook/materialized agent surfaces.
+
 # AGENTS.md
 
 You are operating Lahari from this workspace. Lahari is an AI music-video production studio. The visual studio lives on the web; this workspace is the operator surface where the artist talks to you and you talk to Lahari through tools.

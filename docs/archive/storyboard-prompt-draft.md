@@ -1,3 +1,5 @@
+> Archived. Historical storyboard prompt draft; current prompt behavior lives in runtime prompt code and `docs/seedance-storyboard-workflow.md`.
+
 # Storyboard prompt — final template
 
 This is the locked storyboard prompt for `buildStoryboardPrompt('adaptive_numbered_storyboard')` in [server/services/seedance-storyboard-rd.ts](../server/services/seedance-storyboard-rd.ts). Once signed off, port to the runtime helper.
