@@ -20,9 +20,9 @@ The Lahari web app is the visual studio. Use deep links to it for visual approva
 
 `/Users/ssaulgoodman/Code/lahari-media-engine/` is a parent folder, not the git repo root. Multiple worktrees share one git history:
 
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` — main checkout, usually for Claude Code / production work on `main`. Railway deploys from `main`.
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` — Codex-native engine work on `codex-native-studio`. This is where most engineering happens.
-- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-abstraction` — Mirage platform abstraction on the `abstraction` branch. New Supabase + Railway. See `docs/abstraction-platform-plan.md`. Engine fixes flow forward to this branch via merge; Mirage-specific work stays there.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` — primary Lahari engine worktree on `main`. Railway deploys from here via `~/.local/bin/lahari-deploy`.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` — parked legacy checkout on `archive/old-main-worktree-20260613`. Do not use for Lahari production deploys.
+- `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction` — Mirage platform abstraction on the `mirage` branch. New Supabase + Railway. See `docs/abstraction-platform-plan.md`. Engine fixes flow forward to this branch via merge; Mirage-specific work stays there.
 
 Always confirm `pwd` and `git status --short --branch` before editing. Don't switch a worktree's branch to another worktree's branch.
 
@@ -367,7 +367,7 @@ Railway project: `lahari-media-engine` (`a2ef8e79-f9ae-4dce-80e0-114d80e0a575`).
 ~/.local/bin/lahari-deploy
 ```
 
-This wrapper deploys from the main worktree with the project-scoped `RAILWAY_TOKEN_LAHARI` from `~/.zshrc`, so it does not depend on Railway's interactive OAuth session. If the wrapper is missing, run `source ~/.zshrc && lahari-deploy`. Before render-service deploys, check active renders via `/api/admin/active-renders` if possible.
+This wrapper deploys from this `lahari-codex-native` main worktree with the project-scoped `RAILWAY_TOKEN_LAHARI` from `~/.zshrc`, so it does not depend on Railway's interactive OAuth session. If the wrapper is missing, run `source ~/.zshrc && lahari-deploy`. Before render-service deploys, check active renders via `/api/admin/active-renders` if possible.
 
 Migrations are additive. Apply new migrations before deploying code that reads new columns (`text_provider`, storyboard prompt fields, render progress fields, etc.).
 

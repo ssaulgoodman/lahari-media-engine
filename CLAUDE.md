@@ -188,6 +188,8 @@ Railway project: `lahari-media-engine` (`a2ef8e79-f9ae-4dce-80e0-114d80e0a575`).
 
 Migrations are additive. Apply migrations before deploying code that reads new columns. The deploy wrapper uses `RAILWAY_TOKEN_LAHARI` from `~/.zshrc`, so do not use raw `railway up` unless you intentionally want interactive Railway OAuth.
 
+Current deploy source: `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native` on `main`. The older `/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine` checkout is parked on `archive/old-main-worktree-20260613` and should not be used for production deploys.
+
 ## UI System
 
 Use the typography/color tiers in `index.html`.

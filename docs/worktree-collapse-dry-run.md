@@ -49,3 +49,24 @@ Do not blindly delete or switch either worktree without first reconciling these 
 
 Do not rename folders in the same pass. First make `lahari-codex-native` the real `main` worktree and deploy from it. If that holds for a few days, optionally rename the folder later.
 
+## Completion Record
+
+Executed on 2026-06-13.
+
+- Backup refs created:
+  - `backup/pre-collapse-main-20260613`
+  - `backup/pre-collapse-codex-native-20260613`
+- `main` was merged into `codex-native-studio` in `lahari-codex-native`.
+- `lahari-media-engine` was parked on `archive/old-main-worktree-20260613`.
+- `lahari-codex-native` was switched to `main`.
+- `~/.local/bin/lahari-deploy` was updated to deploy from `lahari-codex-native`.
+
+Current intended state:
+
+```text
+/Users/ssaulgoodman/Code/lahari-media-engine/lahari-codex-native    main
+/Users/ssaulgoodman/Code/lahari-media-engine/lahari-media-engine    archive/old-main-worktree-20260613
+/Users/ssaulgoodman/Code/lahari-media-engine/lahari-preset-abstraction mirage
+```
+
+Folder rename is still intentionally deferred. Keep `lahari-codex-native` as the primary Lahari engine path until the new deploy path has held steady.

@@ -49,7 +49,7 @@ All migrations applied and `@ssaulgoodman420/lahari-cli@0.1.0` published. Latest
 
 **Design note:** MCP tool naming still carries old lock/unlock mechanics. See `docs/mcp-v2-intent-surface.md` for the future intent-shaped surface (`create_reference_candidates`, `choose_reference`, `create_media_clip`, etc.).
 
-**Worktree note:** `lahari-codex-native` is the real engineering context, but Railway still deploys from the old `lahari-media-engine` main checkout. See `docs/worktree-collapse-dry-run.md` before collapsing the two; the branches are clean but not identical.
+**Worktree note:** `lahari-codex-native` is now the primary Lahari `main` worktree. The old `lahari-media-engine` checkout is parked on `archive/old-main-worktree-20260613`, and `~/.local/bin/lahari-deploy` deploys from `lahari-codex-native`. See `docs/worktree-collapse-dry-run.md` for the migration record.
 
 **Engineering watch items (not yet ledger entries):**
 
