@@ -49,6 +49,8 @@ All migrations applied and `@ssaulgoodman420/lahari-cli@0.1.0` published. Latest
 
 **Design note:** MCP tool naming still carries old lock/unlock mechanics. See `docs/mcp-v2-intent-surface.md` for the future intent-shaped surface (`create_reference_candidates`, `choose_reference`, `create_media_clip`, etc.).
 
+**Worktree note:** `lahari-codex-native` is the real engineering context, but Railway still deploys from the old `lahari-media-engine` main checkout. See `docs/worktree-collapse-dry-run.md` before collapsing the two; the branches are clean but not identical.
+
 **Engineering watch items (not yet ledger entries):**
 
 - `structuredToolError` message-substring matching in director.ts / mcp.ts / mcp-tokens.ts (brittle, works today)
