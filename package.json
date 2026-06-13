@@ -10,6 +10,7 @@
     "build": "vite build",
     "lahari": "tsx cli/lahari.ts",
     "lahari:mcp": "tsx mcp/lahari.ts",
+    "cost:report": "node scripts/export-inference-costs.mjs",
     "start": "NODE_ENV=production tsx server/index.ts",
     "seedance:rd": "tsx scripts/seedance-storyboard-rd.ts",
     "preview": "vite preview"

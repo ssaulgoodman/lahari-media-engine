@@ -33,7 +33,7 @@ Useful checks: `npm run build`, `npx tsc --noEmit`, `git diff --check`. There is
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` - frontend auth.
 - `REMOTION_RENDERER_URL`, `RENDERER_SHARED_SECRET` - sibling renderer service and `x-renderer-secret`.
 - `RENDER_ENGINE` (optional, default `ffmpeg`) - renderer engine. FFmpeg fast path falls back to Remotion when ineligible. Defaults: `FFMPEG_PRESET=veryfast`, `FFMPEG_CRF=23`, `FFMPEG_AUDIO_BITRATE=192k`.
-- `GCP_PROJECT_ID`, `GCP_LOCATION`, `GOOGLE_APPLICATION_CREDENTIALS_JSON` - legacy only. Vertex video fallback is removed from the active path.
+- `GCP_PROJECT_ID`, `GCP_LOCATION`, `GOOGLE_APPLICATION_CREDENTIALS_JSON` - legacy only. Vertex video fallback is removed from the active path; `VIDEO_PROVIDER=vertex` / GCP creds must not route Lahari video calls to Vertex.
 
 Production: https://lahari-media-engine-production.up.railway.app
 

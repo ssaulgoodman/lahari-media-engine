@@ -1,0 +1,3 @@
+provider,invoice_service,invoice_inr,app_calls,app_errors,app_estimate_usd,notes
+google,Gemini API,43846.87,2355,12,90.11,Google invoice truth. App-side Gemini estimates are rough and currently undercount provider billing.
+vertex,Vertex AI,10795.68,104,0,115.4,Vertex bill roughly matches Lahari logged Veo fallback calls.
