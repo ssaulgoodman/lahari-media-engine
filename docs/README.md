@@ -1,45 +1,57 @@
 # docs/
 
-This folder holds living engineering documentation. Anything stale, superseded, or done is in `docs/archive/` — don't read those unless you need history.
+Agents should start at the repository root `AGENTS.md`. That file is the front door and current operating map. This file is only an index so humans and future agents can find the right deeper reference without reading the whole folder.
 
-## Read this first (in this order)
+Anything in `docs/archive/` is historical. Do not treat archived docs as current unless a living doc explicitly links one for provenance.
 
-| File | When to read | What it is |
-|---|---|---|
-| [`codex-native-doctrine.md`](./codex-native-doctrine.md) | Before any substantive engineering pass | Durable operating contract. Three editability tiers, MCP/CLI boundary, harness-native vs tool-call, permission model, source-of-truth rules, distribution arc, discipline list, session-type protocol. Sections only change when the architecture genuinely changes. |
-| [`codex-native-review-ledger.md`](./codex-native-review-ledger.md) | At session start and whenever a change ships | Append-only status tracking. **"Current State" snapshot at the top** tells you what's shipped, what's pending operationally, what the next workstream is. R# items each have a status. |
-
-## Active workstream
+## Current Source Of Truth
 
 | File | What it is |
 |---|---|
-| [`abstraction-platform-plan.md`](./abstraction-platform-plan.md) | The Mirage platform abstraction design. SeedKind / Workflow / Preset decomposition. Lives on the `abstraction` branch in a separate worktree. Engine fixes flow `codex-native-studio → abstraction` via merge. |
+| [`mirage-platform-v1-ledger.md`](./mirage-platform-v1-ledger.md) | Mirage v1 decisions, active tracks, contracts, checkpoints, and operational state. This wins over older v1/platform plans. |
+| [`mirage-convergence-ledger.md`](./mirage-convergence-ledger.md) | Post-v1 plan for Lahari-as-tenant convergence, workspaces, packs, queue shape, and sequencing. |
+| [`codex-native-doctrine.md`](./codex-native-doctrine.md) | Durable operating contract for source of truth, MCP/CLI boundary, editability tiers, distribution, and session protocol. |
+| [`agent-working-method.md`](./agent-working-method.md) | Practical agent working discipline and review habits. |
 
-## Reference (engine internals)
+## Pipeline And Tool Surface
 
 | File | What it is |
 |---|---|
-| [`pipeline-anatomy.md`](./pipeline-anatomy.md) | Backend control-flow truth. Every pipeline stage traced: input → prompt → output → artist control → gaps. Update when pipeline behavior changes. |
-| [`seedance-storyboard-workflow.md`](./seedance-storyboard-workflow.md) | Current Seedance two-step storyboard mode reference. |
-| [`video-model-comparison.md`](./video-model-comparison.md) | Practical reference for adding new video model providers. |
+| [`pipeline-anatomy.md`](./pipeline-anatomy.md) | Backend pipeline behavior truth. Update when pipeline behavior changes. |
+| [`mirage-tool-reference.md`](./mirage-tool-reference.md) | Current agent-visible action/tool reference. |
+| [`mirage-tool-and-prompt-audit.md`](./mirage-tool-and-prompt-audit.md) | Active audit/backlog for tool and prompt-surface gaps. |
+| [`mirage-workflow-recipes.md`](./mirage-workflow-recipes.md) | Named repeatable workflow recipes and prompt-override patterns. |
+| [`mirage-mcp-payload-reference.md`](./mirage-mcp-payload-reference.md) | Payload reference for MCP/client surfaces. |
+
+## Convergence And Taste Backlog
+
+| File | What it is |
+|---|---|
+| [`lahari-divergence-audit.md`](./lahari-divergence-audit.md) | Differential backlog for useful Lahari commits to port/adapt/skip. |
+| [`lahari-taste-harvest-audit.md`](./lahari-taste-harvest-audit.md) | Lahari taste, prompt, and preset harvest notes for packs/workflows. |
+| [`mirage-lahari-tenant-port-plan.md`](./mirage-lahari-tenant-port-plan.md) | Tenant-port plan when convergence moves from planning to implementation. |
+| [`mirage-beta-workspace-preset-packs.md`](./mirage-beta-workspace-preset-packs.md) | Product sketch for accounts, workspaces, and preset packs. |
+
+## Ops And Reference
+
+| File | What it is |
+|---|---|
+| [`studio-db-bootstrap.md`](./studio-db-bootstrap.md) | Fresh Supabase setup and clean `studio_*` schema notes. |
 | [`modal-renderer.md`](./modal-renderer.md) | Modal renderer infra reference. |
 | [`remotion-renderer.md`](./remotion-renderer.md) | Remotion renderer infra reference. |
-| [`database.sql`](./database.sql) | Schema reference. |
+| [`video-model-comparison.md`](./video-model-comparison.md) | Practical model/provider reference. |
+| [`database.sql`](./database.sql) | Schema reference snapshot. |
 | [`assets/`](./assets/) | Diagrams and reference images. |
 
-## Archive
+## Future / Architecture Targets
 
-[`docs/archive/`](./archive/) holds historical material. Don't treat anything there as current. Categories:
+| File | What it is |
+|---|---|
+| [`mirage-agent-platform-api-architecture.md`](./mirage-agent-platform-api-architecture.md) | Target architecture for a cleaner Core HTTP API + small MCP cockpit. |
+| [`mirage-codex-plugin-prototype.md`](./mirage-codex-plugin-prototype.md) | Plugin packaging notes and prototype shape. |
 
-- **Shipped R# design docs** (r17, r28, r29, audit) — implementation lives in the codebase; the ledger entry is the durable record of what shipped. Design docs preserved for "why we built it this way" reference.
-- **Superseded plans and vision docs** (assistant-director-plan, codex-native-studio, world-class-plan, learning-loop-plan, editable-prompts-plan, ui-polish-plan) — early thinking, replaced by what shipped. Each carries a header note pointing at the current source of truth.
-- **Dated fix lists / audits** (fix-list-2026-04-22, cinematic-leak-audit-2026-05-12, openai-storyboard-cost-audit-2026-05-11, render-pipeline-overhaul-2026-05-11) — snapshots in time; the work is done.
-- **Drafts and research** (grok-prompt-ressearch, storyboard-prompt-draft, seedance-storyboard-test-plan, preset-abstraction-ledger) — preserved for context; results applied.
-- **Deprecated templates** (AGENTS-template-deprecated) — obsoleted by `write_project_notebook` generating per-project AGENTS.md.
+## Archive Discipline
 
-## Discipline
-
-- Living docs (this folder, excluding `archive/`) should accurately describe what's true right now. If a doc drifts from reality, fix it or archive it.
-- Archived docs stay frozen except for the header note. Don't update archived content — write a new entry in the ledger or doctrine instead.
-- New R# design docs should land here when raised, then move to `archive/` with a ledger-pointing header note once implementation ships and the ledger entry has the durable record.
-- Keep `CLAUDE.md` and `AGENTS.md` at the repo root pointing at these docs, not duplicating them.
+- Root docs should describe what is true now or track active work.
+- Archived docs stay frozen except for a short header explaining why they were archived and where the current truth lives.
+- Do not add a second orientation doc. Keep orientation in root `AGENTS.md`; keep this file as an index.

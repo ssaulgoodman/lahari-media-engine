@@ -2,10 +2,14 @@
 
 Guidance for Codex when working in this repo. Keep this file aligned with `CLAUDE.md`, `docs/pipeline-anatomy.md`, `docs/mirage-platform-v1-ledger.md`, `server/tools/registry.ts`, `server/prompts/*`, and the doctrine when pipeline behavior changes.
 
-**Architectural context (read first):**
-- `docs/mirage-platform-v1-ledger.md` — current Mirage v1 decisions, task tracks, checkpoints, and pending workstreams.
-- `docs/codex-native-doctrine.md` — durable operating contract. Three editability tiers, MCP/CLI boundary, session-type protocol, distribution arc.
-- `docs/mirage-convergence-ledger.md` — post-v1 plan: collapse Lahari into Mirage as a tenant (tracks/forks/landed work). Port backlog in `docs/lahari-divergence-audit.md`.
+**Current doc map (read from here):**
+- This file is the orientation layer. `docs/README.md` is only an index; `docs/archive/` is historical unless a current doc links there for context.
+- `docs/mirage-platform-v1-ledger.md` — current Mirage v1 decisions, task tracks, checkpoints, and pending operational work.
+- `docs/mirage-convergence-ledger.md` — post-v1 plan: collapse Lahari into Mirage as a tenant. Port backlog lives in `docs/lahari-divergence-audit.md`; taste/preset harvest lives in `docs/lahari-taste-harvest-audit.md`.
+- `docs/pipeline-anatomy.md` — pipeline behavior truth. Update it when behavior changes.
+- `docs/mirage-tool-reference.md` — current agent-visible tool/action reference. Audit/backlog detail lives in `docs/mirage-tool-and-prompt-audit.md`.
+- `docs/mirage-workflow-recipes.md` — named repeatable formats such as Yapper and HF music-video planning.
+- `docs/codex-native-doctrine.md` and `docs/agent-working-method.md` — durable operating contract, MCP/CLI boundary, harness-native behavior, and working discipline.
 
 ## Operating Principle
 
@@ -75,15 +79,16 @@ Current strategy:
 - Platform-only project columns (`preset_key`, `workflow_key`, `seed_kind`, `project_brief`, `source_payload`) are only written when the platform schema is enabled.
 - The product-facing prompt surface is **Tool Recipes**, backed by the registry and composer/X-Ray recipe traces. `server/prompts/catalog.ts` is now a secondary legacy/template reference and must stay truthful, but it is not the primary product contract.
 
-Good starting docs:
-- `docs/abstraction-platform-plan.md` — merged Codex-native platform plan and strategic shape.
-- `docs/preset-abstraction-plan.md` — current preset/workflow/seed plan and v1 finish line.
-- `docs/studio-db-bootstrap.md` — how to create the fresh Supabase project and run the clean `studio_*` schema.
-- `docs/world-class-plan.md` — product north star; explicitly frames Lahari as the first vertical workflow, not the final product boundary.
-- `docs/pipeline-anatomy.md` — current pipeline trace and known hardcoded devotional points; search for "preset" and "Devotional cinema".
-- `docs/seedance-storyboard-workflow.md` — current Seedance storyboard baseline that the abstraction must preserve.
-- `docs/assistant-director-plan.md` — adjacent future lane for agentic orchestration; useful context, but do not mix it into the preset abstraction unless asked.
-- `docs/learning-loop-plan.md` — later feedback/research loop; useful after presets exist.
+Current supporting docs:
+- `docs/mirage-platform-v1-ledger.md` — v1 source of truth and operational checklist.
+- `docs/mirage-convergence-ledger.md` — post-v1 Lahari convergence, workspaces, packs, queue, and tenant-shape decisions.
+- `docs/pipeline-anatomy.md` — current pipeline trace and behavior contracts.
+- `docs/mirage-tool-reference.md` — current MCP/action surface for agents.
+- `docs/mirage-workflow-recipes.md` — reusable workflow recipes and prompt-override patterns.
+- `docs/studio-db-bootstrap.md` — fresh Supabase setup and clean `studio_*` schema notes.
+- `docs/modal-renderer.md`, `docs/remotion-renderer.md`, and `docs/video-model-comparison.md` — render/provider ops references.
+
+Older abstraction plans, vision docs, and Wave 2 drafts live in `docs/archive/`. Use them for provenance only; if they contradict this file, the ledgers, registry, or code, the current surfaces win.
 
 ## Build & Run
 

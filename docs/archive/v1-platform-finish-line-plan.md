@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Superseded by `docs/mirage-platform-v1-ledger.md`, which is the current v1 source of truth.
+
 # V1 Platform Finish Line Plan
 
 Status: draft for audit

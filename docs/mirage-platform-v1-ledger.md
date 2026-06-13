@@ -4,7 +4,7 @@
 **Date:** 2026-05-18
 **Branch:** `mirage`
 **Owners:** Claude + Codex working in parallel tracks
-**Supersedes:** `docs/v1-platform-finish-line-plan.md`, sections of `docs/abstraction-platform-plan.md`, sections of `docs/preset-abstraction-plan.md`
+**Supersedes:** `docs/archive/v1-platform-finish-line-plan.md`, sections of `docs/archive/abstraction-platform-plan.md`, sections of `docs/archive/preset-abstraction-plan.md`
 
 **Lock contract:** §2 (Locked Decisions), §3 (Architecture), §7 (Contracts) do not change without raising in §8 (Open Questions), discussing, and explicitly amending with a new D-number or contract-version. Track/task content (§4, §6) can be adjusted during execution as we learn; log every adjustment in §9 (Checkpoints).
 
@@ -948,10 +948,10 @@ This closes Claude's non-blocked v1 frontend lane. Remaining for v1: Codex's T1 
 ## 10. References
 
 - `docs/codex-native-doctrine.md` — operating contract (R28 apply-only, three editability tiers, two-surface convergence at apply layer)
-- `docs/r28-apply-only-text-gen-design.md` — apply tool patterns
-- `docs/r29-project-config-design.md` — project-level override pattern that pairs with workflow presets
-- `docs/abstraction-platform-plan.md` — strategic shape; the audio Blueprint addition supersedes the "anime is just script→shots" framing
-- `docs/preset-abstraction-plan.md` — preset/workflow/seed framework (still authoritative for that layer)
+- `docs/archive/r28-apply-only-text-gen-design.md` — historical apply tool patterns
+- `docs/archive/r29-project-config-design.md` — historical project-level override pattern
+- `docs/archive/abstraction-platform-plan.md` — historical strategic shape; current v1 decisions in this ledger supersede it
+- `docs/archive/preset-abstraction-plan.md` — historical preset/workflow/seed framework; current definitions live in D1/D26 and `server/presets.ts`
 - `docs/mirage-agent-platform-api-architecture.md` — post-audit target for Core HTTP API + OpenAPI + small MCP cockpit
 - `docs/studio-db-bootstrap.md` — clean Supabase setup steps
 - `server/presets.ts` — runtime presets + workflow recipes (extending with `audio` stage state in T3.9)

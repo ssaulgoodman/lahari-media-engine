@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Wave 2 draft material has either landed or been superseded by current composer/recipe doctrine in `docs/mirage-platform-v1-ledger.md`, `docs/mirage-tool-reference.md`, and `docs/mirage-workflow-recipes.md`.
+
 # Wave 2 — T9.3 + T9.4 prompt-composer drafts
 
 **Status:** Drafts ready for review. Composer signature with `userNotePolicy` slot is live (D25 + commit `654f8e0`). T9.2 reference template is `server/prompts/styleBrainstorm.ts`.

@@ -1,6 +1,8 @@
 # Codex-Native Operating Doctrine
 
-**Purpose.** The durable operating contract for the codex-native-studio lane. Codex reads this at the start of any substantive engineering pass. Updated when the architecture changes, not when individual features ship — that's what `codex-native-review-ledger.md` is for.
+**Purpose.** The durable operating contract for the codex-native-studio lane. Codex reads this at the start of any substantive engineering pass. Updated when the architecture changes, not when individual features ship. Current Mirage work is tracked in `docs/mirage-platform-v1-ledger.md` and `docs/mirage-convergence-ledger.md`; the old codex-native verification log is archived at `docs/archive/codex-native-review-ledger.md`.
+
+**Current Mirage note.** This doctrine still carries some Lahari-era names because it records the architecture that Mirage grew out of. For current Mirage session routing, tool names, and skill topology, root `AGENTS.md`, `CLAUDE.md`, and the Mirage ledgers win.
 
 **Stability rule.** Sections here are stable enough to design around. If a recommendation is still in flight, it lives in the ledger as an R# item until accepted, then lifts here. Once here, sections only change when the architecture genuinely changes, not for every commit.
 
@@ -152,7 +154,7 @@ Earlier design proposed an npm bootstrap (Pattern B). It was replaced by the rem
 3. ✅ First non-Saul operator has run the install + workspace materialization end-to-end (2026-05-15 first artist test).
 4. ✅ Artist's MCP path has zero engine dependencies at runtime — `/mcp` is HTTP-only, talks to Supabase via the artist's JWT, no in-process service-layer call required.
 
-**Future fork — the abstraction platform (`Mirage`):** R38 / `docs/abstraction-platform-plan.md`. Same engine code, separate Supabase + Railway, `studio_*` schema, SeedKind/Workflow/Preset decomposition for music video / anime / ads / reels. Single-brand multi-tenant SaaS. Develops on the `abstraction` branch in a separate worktree. Engine fixes flow forward (`codex-native-studio → abstraction`); Mirage-specific work stays on its branch.
+**Future fork — the abstraction platform (`Mirage`):** R38 / `docs/archive/abstraction-platform-plan.md` is historical provenance. Mirage is now the active `mirage` branch/lane, with current v1 state in `docs/mirage-platform-v1-ledger.md` and post-v1 convergence in `docs/mirage-convergence-ledger.md`.
 
 ---
 
@@ -178,8 +180,8 @@ When a gap shows up in Codex/Claude Code: file it upstream, route around with br
 
 Sessions are split by **workspace**, not by toggle inside one workspace:
 
-- **Engine sessions** — happen in this repo (`lahari-codex-native` or `abstraction` worktree). Improve code, prompts, infra, docs, schema. Full shell + edit + git access. Internal MCP and CLI are available here for engine-side debug, scripting, and disaster recovery, but those are *tools*, not a separate session type.
-- **Director sessions** — happen in an artist workspace (any empty folder with the remote MCP installed). Attach to a Lahari project via `/mcp`, materialize the workspace via `mint_cli_token` + `npx @ssaulgoodman420/lahari-cli sync`, or the manifest + per-file MCP fallback when npx is blocked, then operate through the apply tool surface. The orchestrator skill at `.agents/skills/lahari-director/SKILL.md` (materialized into the artist workspace by notebook sync) drives the protocol.
+- **Engine sessions** — happen in this repo. Improve code, prompts, infra, docs, schema. Full shell + edit + git access. Internal MCP and CLI are available here for engine-side debug, scripting, and disaster recovery, but those are *tools*, not a separate session type.
+- **Director sessions** — happen in an artist workspace (any empty folder with the remote MCP/plugin installed). Attach to a Mirage project through deployed `/mcp`, authenticate OAuth-first where supported, sync with logged-in `mirage sync <projectId>` or `mint_cli_token` fallback, then operate through the apply tool surface. Root `AGENTS.md` plus the eight node skills drive the protocol.
 
 Earlier doctrine ran both in the same worktree as a transitional pattern from before distribution shipped. That's no longer the recommended path — testing director-session behavior is cleaner from an artist-shaped workspace (any empty folder + remote MCP) than from this engine repo.
 
@@ -193,15 +195,15 @@ Open any empty folder in Codex Desktop (or Claude Code), install the deployed MC
 
 ### Friction Capture
 
-When something feels wrong mid-session, do not guess. Call `lahari_capture_issue` with severity, summary, and any suspected fix. The tool auto-collects recent audit context. Engine sessions read captured issues at start.
+When something feels wrong mid-session, do not guess. Call `mirage_capture_issue` with severity, summary, and any suspected fix. The tool auto-collects recent audit context. Engine sessions read captured issues at start.
 
 ---
 
 ## 10. References
 
-- **Status of recommendations and verification log:** `docs/codex-native-review-ledger.md`
-- **Vision detail and milestone history:** `docs/codex-native-studio.md`
-- **Director taste rubric (concept/script/style/shot taste checks):** `.agents/skills/lahari-director/SKILL.md`
+- **Historical codex-native recommendation log:** `docs/archive/codex-native-review-ledger.md`
+- **Vision detail and milestone history:** `docs/archive/codex-native-studio.md`
+- **Current director skills:** root `AGENTS.md` and the eight materialized Mirage node skills
 - **Pipeline anatomy (backend control flow):** `docs/pipeline-anatomy.md`
 - **Prompt catalog (read-only inventory):** `server/prompts/catalog.ts`
 - **Codex-native tools surface:** `server/services/codexStudio.ts`, `cli/lahari.ts`, `mcp/lahari.ts`

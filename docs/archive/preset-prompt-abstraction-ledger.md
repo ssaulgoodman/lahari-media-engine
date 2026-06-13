@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Current prompt/tool doctrine lives in `docs/mirage-platform-v1-ledger.md`, `docs/codex-native-doctrine.md`, `docs/mirage-tool-reference.md`, and `docs/mirage-workflow-recipes.md`.
+
 # Preset Prompt Abstraction Ledger
 
 Working ledger for scrubbing the Lahari-shaped prompt stack into a clean preset/workflow platform. This is the task list to keep future agents aligned while the abstraction is implemented.

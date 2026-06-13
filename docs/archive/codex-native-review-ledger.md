@@ -1,3 +1,5 @@
+> Archived 2026-06-13. This is the historical codex-native R-ledger through the pre-Mirage distribution phase. Current Mirage work is tracked in `docs/mirage-platform-v1-ledger.md` and `docs/mirage-convergence-ledger.md`.
+
 # Codex-Native Review Ledger
 
 **Purpose.** Status tracking for the codex-native-studio lane: what's been proposed, shipped, validated, or invalidated. Append-only verification log.

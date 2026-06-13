@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Current preset/workflow/seed definitions live in `docs/mirage-platform-v1-ledger.md` D1/D26 and `server/presets.ts`; this doc still records early rationale but uses old naming.
+
 # V1 Preset + Workflow Plan
 
 This lane turns the existing production code into a clean video platform for outside artists. The old deployment and database shape are useful as a starting point, but the v1 product should read as a fresh studio product.

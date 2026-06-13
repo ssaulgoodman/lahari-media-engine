@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Wave 2 draft material has either landed or been superseded by current composer/recipe doctrine in `docs/mirage-platform-v1-ledger.md`, `docs/mirage-tool-reference.md`, and `docs/mirage-workflow-recipes.md`.
+
 # Wave 2 — `presetTaste` drafts for T9.2 brainstorm-style
 
 **Status:** Drafts, ready to apply. T9.12 composer extension landed in `ed9efd2`; T9.2 is unblocked.

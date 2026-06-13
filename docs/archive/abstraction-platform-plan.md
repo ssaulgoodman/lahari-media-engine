@@ -1,3 +1,5 @@
+> Archived 2026-06-13. Current Mirage platform decisions live in `docs/mirage-platform-v1-ledger.md`; post-v1 convergence lives in `docs/mirage-convergence-ledger.md`. Keep this only as provenance for the original abstraction push.
+
 # Abstraction Platform Plan
 
 **Status:** superseded by `docs/mirage-platform-v1-ledger.md`
