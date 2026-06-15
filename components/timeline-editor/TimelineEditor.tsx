@@ -15,7 +15,7 @@ import useTimelineEvents from './use-timeline-events';
 import { loadSnapshot, saveSnapshot, SnapshotPayload } from './persistence';
 import { getProjectTimeline } from '../../services/api';
 
-export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean };
+export type InitialClip = { src: string; name?: string; shotId?: string; muted?: boolean; durationMs?: number };
 export type TimelineCanvasSize = { width: number; height: number };
 
 const DEFAULT_CANVAS_SIZE: TimelineCanvasSize = { width: 1920, height: 1080 };
@@ -84,23 +84,29 @@ const nextStartMs = () => {
 // Probe a media URL's real duration using a hidden element. Used by the
 // seeder below; lets us build the full timeline state synchronously and
 // commit it via stateManager.updateState without touching the event bus.
-const probeMediaDurationMs = (src: string, kind: 'video' | 'audio'): Promise<number> =>
+const probeMediaDurationMs = (src: string, kind: 'video' | 'audio', fallbackMs = 5000): Promise<number> =>
   new Promise((resolve) => {
     const el = document.createElement(kind) as HTMLMediaElement;
     el.preload = 'metadata';
     if (kind === 'video') (el as HTMLVideoElement).muted = true;
+    const fallback = Number.isFinite(fallbackMs) && fallbackMs > 0 ? Math.round(fallbackMs) : 5000;
+    let settled = false;
     const done = (ms: number) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
       el.onloadedmetadata = null;
       el.onerror = null;
       el.removeAttribute('src');
       el.load();
       resolve(ms);
     };
+    const timer = window.setTimeout(() => done(fallback), 8000);
     el.onloadedmetadata = () => {
       const d = el.duration;
-      done(isFinite(d) && d > 0 ? Math.round(d * 1000) : 5000);
+      done(isFinite(d) && d > 0 ? Math.round(d * 1000) : fallback);
     };
-    el.onerror = () => done(5000);
+    el.onerror = () => done(fallback);
     el.src = src;
   });
 
@@ -153,7 +159,22 @@ export const addVideoClip = (src: string, name?: string) => {
   return id;
 };
 
-const reconcileSnapshotWithInitialClips = <T extends {
+const isFiveSecondPlaceholder = (item: any) => {
+  const from = Number(item?.display?.from ?? 0);
+  const to = Number(item?.display?.to ?? from);
+  const width = Math.max(0, to - from);
+  const trimFrom = Number(item?.trim?.from ?? 0);
+  const trimTo = Number(item?.trim?.to ?? width);
+  const duration = Number(item?.duration ?? width);
+  return (
+    Math.abs(width - 5000) <= 100
+    && Math.abs(trimFrom) <= 100
+    && Math.abs(trimTo - 5000) <= 100
+    && Math.abs(duration - 5000) <= 100
+  );
+};
+
+const reconcileSnapshotWithInitialClips = async <T extends {
   tracks: any[];
   trackItemIds: string[];
   trackItemsMap: Record<string, any>;
@@ -172,6 +193,15 @@ const reconcileSnapshotWithInitialClips = <T extends {
   }));
   let duration = restored.duration;
   let changed = false;
+  const durationCache = new Map<string, number>();
+  const durationForClip = async (clip: InitialClip) => {
+    const cached = durationCache.get(clip.src);
+    if (cached) return cached;
+    const fallback = clip.durationMs && clip.durationMs > 0 ? clip.durationMs : 5000;
+    const dur = await probeMediaDurationMs(clip.src, 'video', fallback);
+    durationCache.set(clip.src, dur);
+    return dur;
+  };
 
   const videoTrackIds = tracks.filter((track) => track.type === 'video').flatMap((track) => track.items as string[]);
   const videoItems = videoTrackIds
@@ -213,9 +243,17 @@ const reconcileSnapshotWithInitialClips = <T extends {
         existing.details?.src !== clip.src
         || existing.details?.name !== clip.name
         || existing.details?.muted !== clip.muted
+        || isFiveSecondPlaceholder(existing)
       ) {
+        const nextDur = isFiveSecondPlaceholder(existing)
+          ? await durationForClip(clip)
+          : Math.max(0, Number(existing.display?.to ?? 0) - Number(existing.display?.from ?? 0));
+        const from = Number(existing.display?.from ?? 0);
         trackItemsMap[existing.id] = {
           ...existing,
+          display: isFiveSecondPlaceholder(existing)
+            ? { from, to: from + nextDur }
+            : existing.display,
           details: {
             ...(existing.details || {}),
             src: clip.src,
@@ -227,7 +265,12 @@ const reconcileSnapshotWithInitialClips = <T extends {
             ...(clip.name ? { displayName: clip.name } : {}),
             ...(clip.shotId ? { shotId: clip.shotId } : {}),
           },
+          duration: isFiveSecondPlaceholder(existing) ? nextDur : existing.duration,
+          trim: isFiveSecondPlaceholder(existing) ? { from: 0, to: nextDur } : existing.trim,
         };
+        if (isFiveSecondPlaceholder(existing)) {
+          duration = Math.max(duration, from + nextDur);
+        }
         changed = true;
       }
       continue;
@@ -236,7 +279,7 @@ const reconcileSnapshotWithInitialClips = <T extends {
     if (videoItems.some((item) => item.details?.src === clip.src)) continue;
 
     const itemId = generateId();
-    const dur = 5000;
+    const dur = await durationForClip(clip);
     trackItemIds.push(itemId);
     videoTrack.items.push(itemId);
     trackItemsMap[itemId] = {
@@ -671,7 +714,7 @@ const TimelineEditor: React.FC<Props> = ({
               restored = { ...restored, trackItemsMap, trackItemIds, tracks };
             }
           }
-          restored = reconcileSnapshotWithInitialClips(restored, initialClips ?? []);
+          restored = await reconcileSnapshotWithInitialClips(restored, initialClips ?? []);
           if (cancelled) return;
           if (useStore.getState().stateManager !== stateManager) return;
           (stateManager as any).updateState(

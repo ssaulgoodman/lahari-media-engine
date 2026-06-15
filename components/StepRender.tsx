@@ -176,6 +176,7 @@ export const StepRender: React.FC<Props> = ({ project, onBack }) => {
           src: s.videoUrl!,
           name: `v_${i + 1}`,
           shotId: s.id,
+          durationMs: Math.max(1000, Math.round(Number(s.duration || 5) * 1000)),
           muted: project.workflowKey === 'music_led' || !!project.audioPath,
         })),
     // Only re-seed if the set of video URLs actually changes.
