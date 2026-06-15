@@ -1,15 +1,6 @@
-<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="256" height="256" rx="56" fill="#101827"/>
-  <path d="M128 42L202.5 85V171L128 214L53.5 171V85L128 42Z" fill="url(#g0)"/>
-  <path d="M128 68L180 98V158L128 188L76 158V98L128 68Z" fill="#101827" fill-opacity=".82"/>
-  <path d="M92 117.5L128 96.5L164 117.5V138.5L128 159.5L92 138.5V117.5Z" fill="white" fill-opacity=".94"/>
-  <path d="M128 96.5V159.5" stroke="#101827" stroke-opacity=".48" stroke-width="10" stroke-linecap="round"/>
-  <path d="M92 117.5L128 138.5L164 117.5" stroke="#101827" stroke-opacity=".48" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <defs>
-    <linearGradient id="g0" x1="61" y1="57" x2="198" y2="198" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F8D477"/>
-      <stop offset=".42" stop-color="#FF6F91"/>
-      <stop offset="1" stop-color="#7C5CFF"/>
-    </linearGradient>
-  </defs>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Mirage plugin icon</title>
+  <desc id="desc">A minimal white Mirage M on a black rounded square.</desc>
+  <rect width="256" height="256" rx="56" fill="#050505"/>
+  <path d="M64 182V72C64 65.4 71.7 61.8 76.8 66L128 108.5L179.2 66C184.3 61.8 192 65.4 192 72V182H160V119.5L137.6 140.1C132.2 145.1 123.8 145.1 118.4 140.1L96 119.5V182H64Z" fill="#F7F7F2"/>
 </svg>

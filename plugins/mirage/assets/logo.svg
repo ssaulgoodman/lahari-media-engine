@@ -1,19 +1,8 @@
-<svg width="720" height="220" viewBox="0 0 720 220" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="720" height="220" rx="32" fill="#101827"/>
-  <g transform="translate(48 40)">
-    <path d="M70 0L130.622 35V105L70 140L9.37822 105V35L70 0Z" fill="url(#g0)"/>
-    <path d="M70 23L110.703 46.5V93.5L70 117L29.2968 93.5V46.5L70 23Z" fill="#101827" fill-opacity=".82"/>
-    <path d="M43 62L70 46L97 62V78L70 94L43 78V62Z" fill="white" fill-opacity=".94"/>
-    <path d="M70 46V94" stroke="#101827" stroke-opacity=".48" stroke-width="8" stroke-linecap="round"/>
-    <path d="M43 62L70 78L97 62" stroke="#101827" stroke-opacity=".48" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-  <text x="220" y="115" fill="white" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="58" font-weight="650" letter-spacing="0">Mirage</text>
-  <text x="224" y="154" fill="#A1A1AA" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="21" font-weight="450" letter-spacing="0">Agent-operated AI video studio</text>
-  <defs>
-    <linearGradient id="g0" x1="16" y1="12" x2="126" y2="124" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F8D477"/>
-      <stop offset=".42" stop-color="#FF6F91"/>
-      <stop offset="1" stop-color="#7C5CFF"/>
-    </linearGradient>
-  </defs>
+<svg width="720" height="220" viewBox="0 0 720 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Mirage plugin logo</title>
+  <desc id="desc">Mirage wordmark with a minimal white M on a black background.</desc>
+  <rect width="720" height="220" rx="32" fill="#050505"/>
+  <path d="M60 164V56C60 49.4 67.7 45.8 72.8 50L126 94.2L179.2 50C184.3 45.8 192 49.4 192 56V164H160V103.8L135.3 126.5C130 131.4 122 131.4 116.7 126.5L92 103.8V164H60Z" fill="#F7F7F2"/>
+  <text x="246" y="118" fill="#F7F7F2" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="62" font-weight="680">Mirage</text>
+  <text x="250" y="154" fill="#9CA3AF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="20" font-weight="450">Agent-operated AI video studio</text>
 </svg>
