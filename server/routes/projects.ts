@@ -17,7 +17,7 @@ import { getProjectRuntimePreset, normalizeWorkflowKey, resolveProjectIntake } f
 import { availableTools, blockedTools } from '../tools/registry.js';
 import { sendStructuredError } from '../services/structuredErrors.js';
 import { isLegacyLookPrompt } from '../prompts/lookPrompts.js';
-import { getProjectPromptOverride } from '../services/projectConfig.js';
+import { getProjectPreferencesState, getProjectPromptOverride } from '../services/projectConfig.js';
 // Registry-first-entry defaults so a future reorder in the constants files
 // auto-propagates to getFullProject hydration. Old projects with null columns
 // (pre-queue.ts-default-fill) get the current default instead of a stale
@@ -721,6 +721,12 @@ const _getFullProjectCore = async (projectId: string) => {
     createdAt: project.created_at,
     updatedAt: project.updated_at,
   };
+
+  const preferenceState = await getProjectPreferencesState(fullProject);
+  fullProject.imageModel = preferenceState.preferences.imageModel;
+  fullProject.storyboardProvider = preferenceState.preferences.storyboardProvider;
+  fullProject.videoModel = preferenceState.preferences.videoModel;
+  fullProject.textProvider = getTextProvider(preferenceState.preferences.textProvider).key;
 
   return fullProject;
 };
