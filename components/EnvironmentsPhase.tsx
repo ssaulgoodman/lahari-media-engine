@@ -34,6 +34,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
   const [pendingEnvRef, setPendingEnvRef] = useState<{ envId: string; file: File; previewUrl: string; note: string } | null>(null);
   const [envRefineImage, setEnvRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const [savedFlash, setSavedFlash] = useState<string | null>(null);
+  const [refreshingCandidateIds, setRefreshingCandidateIds] = useState<Set<string>>(new Set());
   // Slice B of button-feedback-audit: which env look candidate is being
   // locked. Per-look pending state for immediate Lock button feedback.
   const [lockingLookId, setLockingLookId] = useState<string | null>(null);
@@ -72,6 +73,20 @@ export const EnvironmentsPhase: React.FC<Props> = ({
       showActionError(`Environment look generation failed: ${err.message}`);
     } finally {
       onSetEnvGenerating(prev => { const s = new Set(prev); s.delete(envId); return s; });
+    }
+  };
+
+  const refreshEnvCandidates = async (envId: string) => {
+    if (refreshingCandidateIds.has(envId)) return;
+    setRefreshingCandidateIds(prev => new Set(prev).add(envId));
+    try {
+      const candidates = await api.getCandidates(project.id, 'environment', envId);
+      onSetEnvLooks(prev => ({ ...prev, [envId]: candidates }));
+      if (candidates.length === 0) showActionError('No generated candidates found for this environment yet.');
+    } catch (err: any) {
+      showActionError(`Refresh candidates failed: ${err.message}`);
+    } finally {
+      setRefreshingCandidateIds(prev => { const next = new Set(prev); next.delete(envId); return next; });
     }
   };
 
@@ -337,6 +352,14 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                       className="px-4 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-50 transition-colors"
                     >
                       {envGenerating.has(activeEnv.id) ? 'Generating…' : activeEnv.referenceImageUrl ? 'Regenerate' : 'Generate Looks'}
+                    </button>
+                    <button
+                      onClick={() => refreshEnvCandidates(activeEnv.id)}
+                      disabled={refreshingCandidateIds.has(activeEnv.id)}
+                      className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 hover:text-white rounded-md text-xs transition-colors disabled:opacity-50"
+                      title="Refresh generated candidates from Mirage. Use after agent/Codex generation finishes."
+                    >
+                      {refreshingCandidateIds.has(activeEnv.id) ? 'Refreshing…' : 'Refresh candidates'}
                     </button>
                   </div>
                 </div>

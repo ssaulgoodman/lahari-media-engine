@@ -302,6 +302,18 @@ router.post('/:id/lock-character', async (req, res) => {
 });
 
 // ─── Get candidates for a character or environment ────────────────
+const parseAssetMetadata = (metadata: unknown): Record<string, any> => {
+  if (!metadata) return {};
+  if (typeof metadata === 'object' && !Array.isArray(metadata)) return metadata as Record<string, any>;
+  if (typeof metadata !== 'string') return {};
+  try {
+    const parsed = JSON.parse(metadata);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 router.get('/:id/candidates/:entityType/:entityId', async (req, res) => {
   const projectId = paramStr(req.params.id);
   const entityType = req.params.entityType as string; // 'character' or 'environment'
@@ -311,9 +323,7 @@ router.get('/:id/candidates/:entityType/:entityId', async (req, res) => {
 
   const allAssets = await selectAll('assets', { project_id: projectId, category });
   const candidates = allAssets
-    .filter((a: any) => {
-      try { return JSON.parse(a.metadata || '{}')[metaKey] === entityId; } catch { return false; }
-    })
+    .filter((a: any) => parseAssetMetadata(a.metadata)[metaKey] === entityId)
     .map((a: any) => ({ id: a.id, url: storageUrl(a.file_path) }));
 
   res.json({ candidates });

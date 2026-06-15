@@ -142,11 +142,13 @@ export const AnalysisEditor: React.FC<Props> = ({
     );
     if (missingWithNoLoadedCandidates.length === 0) return;
 
-    missingWithNoLoadedCandidates.forEach(member => hydratedCharacterCandidates.current.add(member.id));
     void Promise.all(missingWithNoLoadedCandidates.map(async member => {
       try {
         const candidates = await api.getCandidates(project.id, 'character', member.id);
-        if (!cancelled && candidates.length > 0) onSetLookCandidates(member.id, candidates);
+        if (!cancelled && candidates.length > 0) {
+          hydratedCharacterCandidates.current.add(member.id);
+          onSetLookCandidates(member.id, candidates);
+        }
       } catch (err) {
         console.warn('Failed to hydrate character look candidates', { projectId: project.id, castMemberId: member.id, err });
       }
@@ -164,11 +166,11 @@ export const AnalysisEditor: React.FC<Props> = ({
     );
     if (missingWithNoLoadedCandidates.length === 0) return;
 
-    missingWithNoLoadedCandidates.forEach(environment => hydratedEnvironmentCandidates.current.add(environment.id));
     void Promise.all(missingWithNoLoadedCandidates.map(async environment => {
       try {
         const candidates = await api.getCandidates(project.id, 'environment', environment.id);
         if (!cancelled && candidates.length > 0) {
+          hydratedEnvironmentCandidates.current.add(environment.id);
           setEnvLooks(prev => ({ ...prev, [environment.id]: candidates }));
         }
       } catch (err) {

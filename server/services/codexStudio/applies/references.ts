@@ -30,6 +30,9 @@ const imageExtFromMime = (mimeType?: string, filename?: string) => {
 const stripDataUrl = (input: string) => input.replace(/^data:[^;]+;base64,/i, '').trim();
 
 const candidateMetadata = (asset: any) => {
+  if (asset?.metadata && typeof asset.metadata === 'object' && !Array.isArray(asset.metadata)) {
+    return asset.metadata;
+  }
   try {
     return JSON.parse(asset.metadata || '{}');
   } catch {
