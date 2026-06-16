@@ -429,6 +429,66 @@ Refine: Route: `server/routes/generate-shots.ts` → `POST /:id/shots/:shotId/re
 
 ---
 
+## Step 9.5: Storyboard Generation (per shot)
+
+**Source:** [`server/services/storyboard.ts`](../server/services/storyboard.ts) · Routes: `server/routes/generate-shots.ts` storyboard prompt/write/render/refine endpoints · Agent actions: `apply_storyboard_prompts`, `generate_storyboard`, `refine_storyboard_image`, `import_storyboard_image`, `lock_storyboard`
+
+Storyboard generation has two distinct prompt surfaces:
+
+| Surface | Model | Owns | Output |
+|---|---|---|---|
+| **Planner prompt** | project text provider via `generateText` | Writes/repairs saved `storyboard_prompt` + `storyboard_cut_plan` | Text only |
+| **Renderer prompt** | storyboard image provider (`gpt-image-2`, Nano Banana, etc.) | Turns saved board prompt + refs into an image asset/version | Storyboard image |
+
+### Planner Prompt Audit
+
+The planner prompt is built by [`buildStoryboardPlannerPrompt`](../server/prompts/storyboard.ts) after `loadStoryboardContext` gathers project/scene/shot context.
+
+| Slot | Current owner | Source | Edit path |
+|---|---|---|---|
+| `core_task` | engine | `WRITE_CORE_TASK` / `REFINE_CORE_TASK` in `server/prompts/storyboard.ts` | code only |
+| `source_brief` | engine + shot graph | `buildStoryboardPrompt(ctx.input, variant)` from `seedance-storyboard-rd.ts` using title, concept, scene label/timestamps/lyrics, shot direction, duration, cast names, environment name, preset storyboard rule | edit concept/script/shot text, workflow recipe, or code |
+| `current_board` | shot state | existing `shots.storyboard_prompt` when refining | `apply_storyboard_prompts` |
+| `current_cut_plan` | shot state | existing `shots.storyboard_cut_plan` when refining | `apply_storyboard_prompts` |
+| `previous_continuity` | shot state + previous shot | previous cut-plan tail when `include_prev_cut_plan` resolves true; previous storyboard image when `use_prev_storyboard_ref` is true | shot workflow/continuity settings |
+| `style_notes` | project config | selected `image` + `storyboard` style-note buckets | `apply_project_style_notes` |
+| `project_override` | project config | `project_prompt_overrides.kind='storyboard'`, e.g. HF sketch-board recipe | `apply_project_workflow` / `apply_project_prompt_override` |
+| `artist_note` | per call | refinement/generation note | action input |
+| `output_contract` | engine | JSON schema + storyboard hard rules | code only |
+
+Planner vision refs are intentionally narrow: artist attached ref, previous storyboard continuity ref, and locked style image. Cast/environment refs are **not** sent to the text planner; they bind downstream in the image renderer. This is a deliberate split: planner writes graph-name staging, renderer attaches identity/location images.
+
+### Renderer Prompt Audit
+
+The renderer prompt is built in `generateStoryboardVersionUnlocked`:
+
+`renderPrompt = refBindingContract + saved storyboard prompt`
+
+For edit-image refine mode, the prompt becomes an edit instruction against the previous storyboard image instead of resending the full saved prompt/cut plan.
+
+| Slot | Current owner | Source | Edit path |
+|---|---|---|---|
+| `ref_binding_contract` | engine | `buildStoryboardRefBindingContract(refMeta)` from attached refs | ref locks / `contextOverrides` / shot excluded refs |
+| `board_prompt` | shot state | `shots.storyboard_prompt` or edit instruction | `apply_storyboard_prompts` / `refine_storyboard_image` |
+| `refs` | project/shot graph | locked style, active cast refs, environment ref, optional previous storyboard, optional artist ref | `lock_reference`, storyboard ref exclusions, `contextOverrides`, upload/import |
+| `context_trace` | action input + shot exclusions | included/excluded/replaced ref keys | `contextOverrides` |
+| `provider/model` | project prefs or per-call model override | `preferences.storyboardProvider` / `modelOverride.storyboardProvider` | `apply_project_preferences` / action input |
+
+The renderer already persists strong evidence: `assets.prompt`, `storyboard_versions.prompt`, `storyboard_versions.refs`, and `storyboard_versions.metadata.renderPrompt/refBindingContract/contextOverrides`. X-Ray logs the same render prompt + reference inputs. What it does **not** have yet is a provenance-annotated composition object like video.
+
+### Next Composer Slice
+
+Storyboard generation should get the same auditability as storyboard video, but as a separate slice:
+
+1. Add `composeStoryboardPlannerPrompt` for the planner surface with segments: `core_task`, `source_brief`, `current_board`, `current_cut_plan`, `continuity`, `style_notes`, `project_override`, `artist_note`, `output_contract`, `planner_refs`.
+2. Add `composeStoryboardRenderPrompt` for the image-render surface with segments: `ref_binding_contract`, `board_prompt`, `edit_instruction`, `guardrails`, `refs`, `context_trace`, `provider_params`.
+3. Persist the composition on generation attempts / storyboard version metadata; keep routine receipts lean.
+4. When this second surface is composed, replace `describe_video_prompt` with the general `describe_prompt({ kind })` read action instead of adding sibling `describe_storyboard_prompt`.
+
+Open questions for that slice: whether planner and renderer should share one `kind` with `phase: planner|render`, or separate kinds (`storyboard_planner`, `storyboard_render`); and whether `promptOverride` on storyboard render should bypass only `board_prompt` or the whole renderer composition.
+
+---
+
 ## Step 10: Video Generation (per shot)
 
 **Source:** [`server/services/segmind.ts:62`](../server/services/segmind.ts#L62) · Route: `server/routes/generate-video.ts` → `POST /:id/shots/:shotId/generate-video`
