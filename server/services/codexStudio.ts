@@ -120,6 +120,8 @@ export {
   lockStoryboardBoard,
   planGenerateStoryboard,
   planGenerateVideo,
+  previewGenerateVideo,
+  getShotVideoPromptComposition,
   refineStoryboardImage,
   renameProjectConfig,
   revertProjectPromptOverrideConfig,

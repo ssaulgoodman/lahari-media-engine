@@ -6,7 +6,7 @@
   "applies": {
     "promptOverrides": {
       "storyboard": "HF MUSIC STORYBOARD RECIPE\nWrite each storyboardPrompt as a planning storyboard sheet, not final production art. The board should clarify camera grammar, staging, subject positions, motion beats, eyeline, and action progression for the current music section.\n\nStoryboard image style: 2x2 or 2x3 grid of 16:9 panels on pure white paper (#FFFFFF), thin black panel borders, generous gaps, hand-drawn pen-and-pencil sketch style. Strictly black and white: bold black ink linework with optional gray pencil shading only. No color, no cream tint, no sepia, no watercolor, no accent colors, no colored wardrobe, skin, props, headers, or footers. No photorealism.\n\nReference policy: locked style, cast, environment, and guide images are planning references for identity, pose, setting layout, composition, and shot intent. Strip color and final-render texture from them in the storyboard. Do not paste or reproduce reference images directly.\n\nPanel policy: map panels to song beats, lyric sections, camera moments, or choreographic transitions. Each panel should have a different framing or action purpose. Use clear staging and motion cues that can become the later cut plan.\n\nNo in-image labels: do not render panel numbers, captions, subtitles, arrows, speech bubbles, readable headers, watermarks, or footer text.",
-      "video": "HF MUSIC VIDEO FINAL-GEN CONTRACT\nGenerate one full-frame cinematic music-video clip, not a storyboard grid, not a panel sheet, and not a split-screen layout.\n\nUse the locked sketch storyboard as a camera-and-choreography plan only. Use the locked style, cast, environment, and key visual references as the final-render truth for identity, world, wardrobe, lighting, texture, and finish.\n\nMusic section: {musicSection}\nTiming plan: {beatTiming}\nChoreography: {choreography}\nAudio policy: {audioPolicy}\n\nFollow the storyboard/cut plan as timing guidance: translate each panel beat into camera movement, subject movement, gesture, rhythm, and beat accents. Preserve screen direction and geography. Let the source song drive pacing and motion intensity.\n\nIf a source-audio lipsync reference is attached for this shot, use it only to drive mouth timing, singing performance, beat timing, and body motion. Do not add subtitles, captions, karaoke text, autosubs, lyric cards, or readable text.\n\nFinal output reminder: one continuous full-frame video clip for this shot, with no storyboard borders and no generated captions."
+      "video": "HF MUSIC VIDEO FORMAT\nGenerate one full-frame cinematic music-video clip. The locked storyboard is a black-and-white sketch plan — use it for composition, staging, screen direction, geography, and beat timing only. Render the clip in the finish of the locked style, cast, and environment references: full color, final-render texture, lighting, wardrobe, and material. Do not copy the board's sketch linework, monochrome, or paper look.\n\nMusic section: {musicSection}\nTiming plan: {beatTiming}\nChoreography: {choreography}\nAudio policy: {audioPolicy}"
     },
     "preferences": {
       "storyboardProvider": "gpt-image-2",
@@ -15,10 +15,10 @@
     "video": {
       "nativeAudioMode": "off",
       "slotDefaults": {
-        "musicSection": "the current source-audio section for this shot",
-        "beatTiming": "follow the shot duration, scene timestamps, cut plan, and any source-audio timing available in the project",
+        "musicSection": "current music section",
+        "beatTiming": "follow the shot duration and locked storyboard panel order",
         "choreography": "convert the storyboard panels into precise camera movement, subject movement, pose changes, performance beats, and rhythmic accents",
-        "audioPolicy": "the final render uses the uploaded source song as the authoritative audio; do not invent native soundtrack, dialogue, or captions"
+        "audioPolicy": "No audio is sent to the video model; final render uses the uploaded source song."
       },
       "postprocess": "Review whether the sketch board improved camera clarity. For singing/lipsync shots, enable the existing source-audio lipsync path only when the shot explicitly needs the character to sing or mouth the track."
     }

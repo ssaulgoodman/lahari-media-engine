@@ -228,7 +228,7 @@ export const VIDEO_ACTION_SPECS = {
     surface: 'video',
     mutates: true,
     paid: true,
-    description: 'Generate the video clip for one shot. dryRun returns requirements, provider, and cost without spending.',
+    description: 'Generate the video clip for one shot. dryRun returns requirements, provider, cost, AND the composed prompt decomposed into segments (each with its source + the exact action that edits it) without spending — preview/audit before generating.',
     input: {
       projectId: 'string',
       shotId: 'string',
@@ -237,9 +237,23 @@ export const VIDEO_ACTION_SPECS = {
       modelOverride: 'optional videoModel override',
       nativeAudioMode: 'optional "auto" | "off" | "on"; use "off" for silent lipsync video when final audio will be overlaid in render',
       recipeSlots: 'optional workflow recipe slot values, e.g. { pace, performance, ending, language } for Yapper or { musicSection, beatTiming, choreography } for music-led recipes; {dialogue} is filled from the shot audio plan when present',
+      contextOverrides: 'optional per-slot include/exclude for the storyboard video prompt, e.g. { includeShotBeat: false, includeCutPlan: false }; preview the effect with dryRun first',
       acknowledgePreviousChargeRisk: 'required true only after a prior video attempt has an unknown or pending provider outcome; retry may spend again',
     },
-    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }],
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true }, { projectId: 'project_uuid', shotId: 'shot_uuid', dryRun: true, contextOverrides: { includeShotBeat: false } }],
+  },
+  describe_video_prompt: {
+    key: 'describe_video_prompt',
+    title: 'Describe video prompt',
+    surface: 'video',
+    mutates: false,
+    paid: false,
+    description: 'Read what was actually sent for a shot\'s most recent video generation — the composed prompt decomposed into segments, each with its source and the exact action that edits it. Read-only. For "what would be sent now", use generate_video dryRun.',
+    input: {
+      projectId: 'string',
+      shotId: 'string',
+    },
+    examples: [{ projectId: 'project_uuid', shotId: 'shot_uuid' }],
   },
   apply_video_prompt: {
     key: 'apply_video_prompt',

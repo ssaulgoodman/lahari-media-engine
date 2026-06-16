@@ -14,7 +14,7 @@ Read the shot state, mode, locked board/frame, motion prompt, audio plan, and re
 - Is this **keyframe mode** or **storyboard mode**?
 - Is the board/frame good enough to animate?
 - Is the failure in script, refs, board/frame, motion wording, audio cue, or model?
-- Have you run `run_action(generate_video, { dryRun: true })`?
+- Have you run `run_action(generate_video, { dryRun: true })` and inspected the prompt composition?
 - Is there a project workflow recipe already applied for this format?
 
 Do not generate video to discover what a bad still already tells you.
@@ -51,16 +51,20 @@ Weak:
 
 - **Save keyframe motion text** -> `run_action(apply_video_prompt)`. It does not generate.
 - **Use an existing/native image as start frame** -> `run_action(import_keyframe_image)`.
-- **Check requirements/cost** -> `run_action(generate_video, { dryRun: true })`.
+- **Check requirements/cost/prompt composition** -> `run_action(generate_video, { dryRun: true })`.
 - **Generate** -> `start_job(generate_video)` after approval.
 - **Previous provider outcome unknown/pending** -> do not retry until the artist acknowledges the risk; pass `acknowledgePreviousChargeRisk: true` only after that approval.
 - **One exact final prompt needed** -> use `promptOverride` on `generate_video`.
+- **One storyboard-video prompt segment is hurting the call** -> use `contextOverrides` on `generate_video` dry-run first, e.g. `{ includeShotBeat: false }` or `{ includeCutPlan: false }`, then generate only after the composition reads clean.
+- **Need to know what was actually sent last time** -> `run_action(describe_video_prompt)`.
 - **Repeatable format needed** -> `run_action(list_workflows)`, then `run_action(apply_project_workflow)` if a named recipe fits. After that, fill the stored recipe's slots with `recipeSlots` and project dialogue; do not rewrite the wrapper.
 - **Native dialogue voice needs character match** -> generate the raw native-audio clip first, review it, then use `voice_change_video` from the audio surface. Do not solve this with TTS unless the artist wants overlay.
 - **Board/frame wrong** -> return to storyboarding/keyframe tools before video.
 - **Same failure twice** -> change model or upstream input, not just the same retry.
 
 For `hf_music_video`, keep the final video prompt full-frame and music-led. Use the sketch board as a camera/choreography plan only, not final style. When useful, pass `recipeSlots` such as `musicSection`, `beatTiming`, `choreography`, and `audioPolicy` on `generate_video`. The uploaded song remains the authoritative final audio; use source-audio lipsync only when a shot explicitly needs singing or mouth timing.
+
+In storyboard mode, dry-run returns the composed prompt as segments: `format`, `animation`, `beat`, `refs`, `cut_plan`, `audio`, and `guardrail`. Read those segments before paid generation when output quality is sensitive. The segment `source` tells where the text came from; `editPath` tells what action changes it. Prefer dropping a bad segment with `contextOverrides` over hand-writing a full `promptOverride`.
 
 ## Repair Ladder
 

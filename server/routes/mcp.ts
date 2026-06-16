@@ -324,6 +324,13 @@ const generateVideoInputSchema = z.object({
   nativeAudioMode: z.enum(['auto', 'off', 'on']).optional(),
   recipeSlots: z.record(z.string(), shortText).optional(),
   acknowledgePreviousChargeRisk: z.boolean().optional(),
+  contextOverrides: z.object({
+    includeFormat: z.boolean().optional(),
+    includeShotBeat: z.boolean().optional(),
+    includeRefs: z.boolean().optional(),
+    includeCutPlan: z.boolean().optional(),
+    includeAudio: z.boolean().optional(),
+  }).optional(),
 });
 const applyVideoPromptInputSchema = z.object({
   projectId,
@@ -1146,12 +1153,22 @@ const createHostedMcpServer = (auth: HostedAuth) => {
       const input = generateVideoInputSchema.parse(rawInput);
       const project = await fullProjectForUser(input.projectId, auth.userId);
       return input.dryRun
-        ? studio.planGenerateVideo(project, input.shotId, input.modelOverride || {})
+        ? studio.previewGenerateVideo(project, input.shotId, input.modelOverride || {}, {
+          promptOverride: input.promptOverride,
+          nativeAudioMode: input.nativeAudioMode,
+          recipeSlots: input.recipeSlots,
+          contextOverrides: input.contextOverrides,
+        })
         : studio.applyGenerateVideo(project, input.shotId, input.promptOverride, input.modelOverride || {}, {
           acknowledgePreviousChargeRisk: input.acknowledgePreviousChargeRisk,
           nativeAudioMode: input.nativeAudioMode,
           recipeSlots: input.recipeSlots,
+          contextOverrides: input.contextOverrides,
         });
+    }
+    if (actionKey === 'describe_video_prompt') {
+      const input = z.object({ projectId, shotId }).parse(rawInput);
+      return studio.getShotVideoPromptComposition(await fullProjectForUser(input.projectId, auth.userId), input.shotId);
     }
     if (actionKey === 'apply_video_prompt') {
       const input = applyVideoPromptInputSchema.parse(rawInput);

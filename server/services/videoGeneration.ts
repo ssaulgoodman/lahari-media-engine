@@ -4,7 +4,8 @@ import { readAsBase64, mimeFromExt, storageUrl } from '../storage.js';
 import { generateVideoWithFallback, resolveVideoModelSpec, type VideoModelKey } from './video-provider.js';
 import { extractAudioSegment, extractLastFrame } from './ffmpeg.js';
 import { refreshChainedShotPrompt } from './claude.js';
-import { buildSeedanceStoryboardVideoPrompt } from './seedance-storyboard-rd.js';
+import { composeStoryboardVideoPrompt, type VideoPromptComposition } from './videoPromptComposition.js';
+import { getRuntimePreset } from '../presets.js';
 import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
 import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
@@ -87,6 +88,16 @@ export type GenerateShotVideoOptions = {
   modelOverride?: {
     videoModel?: string;
   };
+  // Per-slot include/exclude for the storyboard video prompt composition.
+  contextOverrides?: {
+    includeFormat?: boolean;
+    includeShotBeat?: boolean;
+    includeRefs?: boolean;
+    includeCutPlan?: boolean;
+    includeAudio?: boolean;
+  };
+  // Build the composition + requirements and return without spending or side effects.
+  dryRun?: boolean;
 };
 
 const structuredVideoError = (code: string, message: string, details: Record<string, any>, statusCode = 400) => {
@@ -147,6 +158,47 @@ const normalizeNativeAudioMode = (value: unknown): 'auto' | 'off' | 'on' | null 
 const cleanSlotValue = (value: unknown): string => (
   typeof value === 'string' ? value.trim().slice(0, 1000) : ''
 );
+
+const compactLine = (value: unknown, max = 220): string => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 1).trim()}…` : text;
+};
+
+const deriveMusicVideoRecipeSlots = (input: {
+  scene: any;
+  shot: any;
+  cutPlanText?: string | null;
+  sourceAudioReferenceAttached?: boolean;
+}): Record<string, string> => {
+  const { scene, shot } = input;
+  const sceneLabel = compactLine(scene?.section_label || 'current music section', 90);
+  const start = compactLine(scene?.start_time || '', 20);
+  const end = compactLine(scene?.end_time || '', 20);
+  const timeRange = start && end ? `${start}-${end}` : start || end || '';
+  const sceneMeaning = compactLine(scene?.lyrics || scene?.narrative_description || '', 180);
+  const sectionBits = [
+    timeRange,
+    sceneLabel,
+    sceneMeaning,
+  ].filter(Boolean);
+
+  const duration = Number(shot?.duration || 0);
+  const beatTiming = [
+    duration ? `${duration}s shot` : '',
+    input.cutPlanText?.trim()
+      ? 'follow the saved Panel beats segment below'
+      : 'follow the locked storyboard panel order',
+  ].filter(Boolean).join('; ');
+
+  return {
+    musicSection: sectionBits.join(', ') || 'current music section',
+    beatTiming: beatTiming || 'follow the shot duration and locked storyboard panel order',
+    choreography: 'convert the storyboard panels into camera movement, subject movement, pose changes, performance beats, and rhythmic accents',
+    audioPolicy: input.sourceAudioReferenceAttached
+      ? 'Use @audio1 only as a visual timing reference for visible singing or performance; final render uses the uploaded source song.'
+      : 'No audio is sent to the video model; final render uses the uploaded source song.',
+  };
+};
 
 const renderProjectVideoRecipe = (
   template: string,
@@ -254,7 +306,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
   let finalVideoPromptForTrace = shot.motion_prompt || 'Cinematic camera movement';
 
   try {
-    await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
+    if (!opts.dryRun) await updateRows('shots', { id: shot.id }, { video_status: 'loading' });
 
     const veoPromptParts: string[] = [];
 
@@ -341,6 +393,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     const soundNotes = String(audioPlan?.soundNotes || '').trim().slice(0, 500);
     const dialogueLines = [...(audioPlan?.dialogue || [])].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
     const hasDialogue = dialogueLines.length > 0;
+    const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
     const projectVideoOverrideState = !promptOverrideText
       ? await getPromptOverrideState(project.id, 'video')
       : null;
@@ -351,10 +404,21 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     const projectVideoRecipeBody = projectVideoOverrideBody && (projectVideoRecipeMeta || /\{[a-zA-Z][a-zA-Z0-9_]*\}/.test(projectVideoOverrideBody))
       ? String(projectVideoOverrideState.body || '').trim()
       : '';
+    const legacySongLipsync = useStoryboardMode && shot.lipsync_enabled && !planWantsLipsync;
+    const sourceAudioReferenceAttached = legacySongLipsync && !!project.audio_path && modelSpec.family === 'seedance';
+    const derivedVideoRecipeSlots = deriveMusicVideoRecipeSlots({
+      scene,
+      shot,
+      cutPlanText: storyboardCutPlanText,
+      sourceAudioReferenceAttached,
+    });
     const renderedProjectVideoRecipe = projectVideoRecipeBody
       ? renderProjectVideoRecipe(projectVideoRecipeBody, {
         dialogueLines,
-        recipeDefaults: projectVideoRecipeMeta?.video?.slotDefaults,
+        recipeDefaults: {
+          ...(projectVideoRecipeMeta?.video?.slotDefaults || {}),
+          ...derivedVideoRecipeSlots,
+        },
         recipeSlots: opts.recipeSlots,
       })
       : '';
@@ -362,7 +426,6 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     if (baseKeyframePromptText && baseKeyframePromptText !== 'Cinematic camera movement') {
       veoPromptParts.push(baseKeyframePromptText);
     }
-    const planWantsLipsync = projectDialogueMode === 'lipsync' && hasDialogue;
     const keyframePromptHasDialogue = promptAlreadyContainsDialogue(baseKeyframePromptText, dialogueLines);
     const recipeNativeAudioMode = normalizeNativeAudioMode(projectVideoRecipeMeta?.video?.nativeAudioMode);
     const nativeAudioMode = opts.nativeAudioMode || recipeNativeAudioMode || 'auto';
@@ -417,28 +480,84 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       }
     }
 
-    const storyboardPromptBase = useStoryboardMode
-      ? buildSeedanceStoryboardVideoPrompt(storyboardContext!.input, 'board_plus_timing', {
+    // Storyboard-mode video prompt is composed from provenance-annotated segments
+    // (see videoPromptComposition.ts): one owner per slot, guardrails emitted once.
+    // Board treatment lives in the format slot (recipe text, or engine default).
+    // The composition object is both the prompt (.text) and the audit surface the
+    // director agent reads to decide how to override/edit/redo.
+    const storyboardPreset = storyboardContext?.input.preset || getRuntimePreset();
+    const storyboardAudioCue = [visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n') || null;
+    const videoComposition: VideoPromptComposition | null = useStoryboardMode && storyboardContext && !promptOverrideText
+      ? composeStoryboardVideoPrompt({
+        toolName: storyboardPreset.toolName,
+        clipDuration: storyboardContext.input.clipDuration,
+        clipDirection: storyboardContext.input.clipDirection,
+        formatIntent: (renderedProjectVideoRecipe || projectVideoOverrideBody) || null,
+        formatSource: projectVideoRecipeMeta?.name
+          ? `project video recipe: ${projectVideoRecipeMeta.name}`
+          : 'project video override',
+        refLabels: storyboardSentRefs.map((ref) => ref.label),
         cutPlanText: storyboardCutPlanText,
-        refs: storyboardSentRefs.map((ref) => ({ label: ref.label })),
+        cutPlanFromShot: !!String(shot.storyboard_cut_plan || '').trim(),
+        presetVideoRules: storyboardPreset.studio.videoPromptRules,
         lipsyncEnabled: !!shot.lipsync_enabled && !planWantsLipsync,
         nativeAudioEnabled: nativeVideoAudio,
+        audioCue: storyboardAudioCue,
+        // contextOverrides drive per-slot include/exclude (e.g. drop the shot beat).
+        include: opts.contextOverrides ? {
+          format: opts.contextOverrides.includeFormat,
+          beat: opts.contextOverrides.includeShotBeat,
+          refs: opts.contextOverrides.includeRefs,
+          cut_plan: opts.contextOverrides.includeCutPlan,
+          audio: opts.contextOverrides.includeAudio,
+        } : undefined,
+        images: [
+          ...(storyboardAsset?.file_path
+            ? [{ ref: '@image1', role: 'storyboard board', assetId: shot.storyboard_asset_id || null, source: 'locked storyboard version' }]
+            : []),
+          ...storyboardSentRefs.map((ref, idx) => ({ ref: `@image${idx + 2}`, role: ref.label, assetId: null, source: 'locked reference' })),
+        ],
+        params: {
+          model: videoModelKey,
+          mode: 'storyboard',
+          aspectRatio: aspect,
+          resolution,
+          durationSec: shot.duration,
+          nativeAudioMode,
+          nativeAudio: nativeVideoAudio,
+          lipsync: !!shot.lipsync_enabled && !planWantsLipsync,
+        },
       })
-      : '';
-    const projectVideoInstruction = renderedProjectVideoRecipe || projectVideoOverrideBody;
-    const storyboardPrompt = useStoryboardMode && projectVideoInstruction
-      ? `${projectVideoInstruction.trim()}\n\nBase storyboard video prompt:\n${storyboardPromptBase}`
-      : storyboardPromptBase;
+      : null;
     const keyframePrompt = promptOverrideText
       ? promptOverrideText
       : veoPromptParts.join('. ');
-    const veoPrompt = useStoryboardMode
-      ? [storyboardPrompt, visibleSoundCue, dialoguePerformanceCue].filter(Boolean).join('\n\n')
-      : keyframePrompt;
+    const veoPrompt = promptOverrideText
+      ? promptOverrideText
+      : useStoryboardMode
+        ? (videoComposition?.text || '')
+        : keyframePrompt;
     finalVideoPromptForTrace = veoPrompt || finalVideoPromptForTrace;
     console.log(`  [shot ${shot.id} video] model=${videoModelKey} | ${veoPrompt.substring(0, 120)}...`);
 
-    const legacySongLipsync = useStoryboardMode && shot.lipsync_enabled && !planWantsLipsync;
+    // dryRun: the composition + requirements are built; return before any side
+    // effect (no status write — guarded above — no audio extraction, no attempt,
+    // no provider spend). This is the proactive "what would be sent" preview.
+    if (opts.dryRun) {
+      return {
+        kind: 'mirage.video_dry_run' as const,
+        projectId,
+        shotId,
+        mode: useStoryboardMode ? 'storyboard' as const : 'keyframe' as const,
+        model: videoModelKey,
+        provider: modelSpec.provider,
+        estimatedCost: estimatedVideoCost,
+        durationSec: estimatedProviderDuration,
+        prompt: veoPrompt,
+        composition: videoComposition,
+      };
+    }
+
     const referenceAudioPaths: string[] = [];
     let referenceAudioAssetId: string | null = null;
     let referenceAudioMode: 'source_audio_lipsync' | null = null;
@@ -507,6 +626,16 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
         generateAudio: nativeVideoAudio,
         storyboardAssetId: useStoryboardMode ? shot.storyboard_asset_id : null,
         startImageAssetId: useStoryboardMode ? null : shot.image_asset_id,
+        // Durable audit: the exact composed payload (provenance + edit paths) so a
+        // bad clip can be diagnosed against what was actually sent, not a reconstruction.
+        promptComposition: videoComposition
+          ? {
+            text: videoComposition.text,
+            segments: videoComposition.segments,
+            images: videoComposition.images,
+            params: videoComposition.params,
+          }
+          : null,
       },
     });
 
@@ -708,6 +837,10 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
       costEstimate,
       mode: useStoryboardMode ? 'storyboard' : 'keyframe',
       completedAfterLocalCancel: savedAfterLocalCancel,
+      // NOTE: the prompt composition is deliberately NOT on the routine result —
+      // it would bloat the director receipt. It is persisted on the generation
+      // attempt (requestSummary.promptComposition) and surfaced on demand only
+      // (dryRun preview / attempt read tool). Audit is pull, not push.
     };
   } catch (err: any) {
     console.error(`[shot ${shot.id}] Video gen failed:`, err);
@@ -760,8 +893,12 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
 };
 
 export const generateShotVideo = async (projectId: string, shotId: string, opts: GenerateShotVideoOptions = {}) =>
-  withInFlightGeneration(
-    generationKey('video', projectId, shotId),
-    { kind: 'video', projectId, shotId },
-    () => generateShotVideoUnlocked(projectId, shotId, opts),
-  );
+  // dryRun is read-only (no spend, no side effects) — it does not take the
+  // per-shot paid-generation lock, so a preview never blocks a real generation.
+  opts.dryRun
+    ? generateShotVideoUnlocked(projectId, shotId, opts)
+    : withInFlightGeneration(
+        generationKey('video', projectId, shotId),
+        { kind: 'video', projectId, shotId },
+        () => generateShotVideoUnlocked(projectId, shotId, opts),
+      );

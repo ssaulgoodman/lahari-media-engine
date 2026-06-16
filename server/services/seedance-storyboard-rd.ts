@@ -1,4 +1,5 @@
 import { getRuntimePreset, PipelinePreset } from '../presets.js';
+import { composeStoryboardVideoPrompt } from './videoPromptComposition.js';
 
 export const SEEDANCE_STORYBOARD_DURATIONS = [4, 5, 6, 8, 10, 12, 15] as const;
 
@@ -298,38 +299,23 @@ ${seedanceShotList(input)}
 ${opts?.nativeAudioEnabled ? 'Generate synchronized native audio when the prompt includes spoken dialogue or sound.' : 'No generated audio.'} No subtitles, no readable text. Preserve all provided reference identities and style.`;
   }
 
+  // board_plus_timing delegates to the shared composer (videoPromptComposition.ts)
+  // so there is one source of truth for the storyboard video prompt. With no
+  // formatIntent, the composer emits its default "match the board" treatment;
+  // recipe-aware board treatment (e.g. HF sketch plan) is supplied by
+  // videoGeneration.ts as the format segment.
   const refs = opts?.refs || [];
-  const refBindings = refs.length
-    ? refs.map((ref, idx) => `- @image${idx + 2} = ${ref.label} — identity anchor only`).join('\n')
-    : '- @image2..N = locked style, character, and environment refs — identity anchors only';
-  const cutPlan = opts?.cutPlanText?.trim() || seedanceShotList(input, minimal);
-  const lipsyncInstruction = opts?.lipsyncEnabled
-    ? `\nLip-sync: audio 1 is the song segment — use it only as visual timing reference for mouth movement on clearly-visible singing faces. Do not generate or preserve audio. Faces turned away or instrumental moments: keep mouth natural.`
-    : '';
-  const nativeAudioInstruction = opts?.nativeAudioEnabled
-    ? '\nNative audio: generate audible synchronized speech, sound effects, and ambience only for dialogue/sound cues explicitly named in the prompt. Keep voices natural and matched to the visible acting. Do not add subtitles or readable text.'
-    : '';
-
-  // Trimmed video prompt. The image model handles composition; this prompt
-  // exists to (1) say "follow @image1," (2) name the shot in one line, and
-  // (3) lock identity to refs. Everything else (animation contract, cut
-  // sequencing rules, 24fps quality boilerplate) confused Seedance more
-  // than it helped — the model's defaults are already fine for the music-
-  // video format. Was ~80 lines; now ~10.
-  return `Animate the storyboard @image1 into one ${input.clipDuration}s ${preset.toolName} clip. Follow the panels left-to-right, then top-to-bottom, as one continuous edited shot.
-
-Shot: ${input.clipDirection}
-
-${refBindings ? `Identity refs (do not redesign):\n${refBindings}\nReference images are guides, not frames. Never insert them into the video — even briefly, even for a single frame — between or during panels. They exist only to anchor likeness, costume, and environment geometry.` : ''}
-${cutPlan ? `\nPanel beats:\n${cutPlan}` : ''}${lipsyncInstruction}${nativeAudioInstruction}
-
-Preserve character identity (face, body, costume, jewelry) and environment geometry across the whole animation — match the locked references throughout, do not let them drift between panels.
-
-Style discipline: match the rendering, palette, line treatment, texture, and finish of the storyboard @image1 and the locked style reference throughout the clip. Do not drift toward photoreal, toward a different aesthetic, or toward a more generic look mid-clip. Identity refs are guides for likeness only — never use them as aesthetic targets.
-
-${preset.studio.videoPromptRules}
-${opts?.lipsyncEnabled ? `Use @audio1 only as a rhythm reference. If a singer, performer, or visible character mouth is clearly visible, add subtle mouth movement matching @audio1; avoid exaggerated dialogue lip-sync if the face is not featured.` : ''}
-Do not render text, panel borders, numbers, gutters, or split-screen artifacts from the board into the video.`;
+  return composeStoryboardVideoPrompt({
+    toolName: preset.toolName,
+    clipDuration: input.clipDuration,
+    clipDirection: input.clipDirection,
+    refLabels: refs.map((ref) => ref.label),
+    cutPlanText: opts?.cutPlanText?.trim() || seedanceShotList(input, minimal),
+    cutPlanFromShot: !!opts?.cutPlanText?.trim(),
+    presetVideoRules: preset.studio.videoPromptRules,
+    lipsyncEnabled: opts?.lipsyncEnabled,
+    nativeAudioEnabled: opts?.nativeAudioEnabled,
+  }).text;
 };
 
 export const buildPromptPack = (input: StoryboardRdInput): string => {

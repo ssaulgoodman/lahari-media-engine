@@ -14,6 +14,7 @@
     "check:segmind-video": "tsx scripts/check-segmind-video-contract.ts",
     "check:kie-video": "tsx scripts/check-kie-video-contract.ts",
     "check:inflight-generation": "tsx scripts/check-inflight-generation.ts",
+    "check:video-prompt-composition": "tsx scripts/check-video-prompt-composition.ts",
     "check:storyboard-contract": "tsx scripts/check-storyboard-prompt-contract.ts",
     "smoke:agent-contract": "tsx scripts/mirage-agent-contract-smoke.ts",
     "release:mirage-cli": "node scripts/release-mirage-cli.mjs",

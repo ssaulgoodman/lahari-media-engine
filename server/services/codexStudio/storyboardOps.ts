@@ -1435,12 +1435,94 @@ const latestUnknownChargeVideoFailure = async (projectId: string, shotId: string
   return row;
 };
 
+export type VideoContextOverrides = {
+  includeFormat?: boolean;
+  includeShotBeat?: boolean;
+  includeRefs?: boolean;
+  includeCutPlan?: boolean;
+  includeAudio?: boolean;
+};
+
+// dryRun preview: build the exact composition that WOULD be sent, decomposed by
+// source + edit path, without spending or side effects. Pairs the cheap
+// prerequisites/cost plan with the full composition.
+export const previewGenerateVideo = async (
+  project: Project,
+  shotId: string,
+  modelOverride: ModelOverride = {},
+  opts: { promptOverride?: string; nativeAudioMode?: 'auto' | 'off' | 'on'; recipeSlots?: Record<string, string>; contextOverrides?: VideoContextOverrides } = {},
+) => {
+  const plan = planGenerateVideo(project, shotId, modelOverride);
+  let composition: unknown = null;
+  let prompt: string | null = null;
+  let compositionError: { message: string; code?: string; details?: unknown } | null = null;
+  if (plan.canRun) {
+    try {
+      const dry = await generateShotVideo(project.id, shotId, {
+        dryRun: true,
+        promptOverride: opts.promptOverride,
+        nativeAudioMode: opts.nativeAudioMode,
+        recipeSlots: opts.recipeSlots,
+        contextOverrides: opts.contextOverrides,
+        modelOverride: { videoModel: modelOverride.videoModel },
+      }) as { composition?: unknown; prompt?: string };
+      composition = dry.composition ?? null;
+      prompt = dry.prompt ?? null;
+    } catch (err: any) {
+      composition = null;
+      compositionError = {
+        message: err?.message || 'Could not build video prompt composition.',
+        code: err?.code,
+        details: err?.details,
+      };
+    }
+  }
+  return {
+    ...plan,
+    prompt,
+    composition,
+    compositionError,
+    compositionNote: composition
+      ? 'Exactly what would be sent, decomposed by source + edit path. Edit the named source or pass contextOverrides (e.g. includeShotBeat=false) to change a slot, then re-run dryRun.'
+      : compositionError
+        ? 'Composition preview failed; see compositionError. Fix the named missing/invalid input, then re-run dryRun before spending.'
+      : plan.canRun
+        ? 'Composition preview is available only in storyboard mode.'
+        : 'Prerequisites not met — see prerequisites.',
+  };
+};
+
+// Read what WAS sent for the most recent video generation of a shot — the
+// persisted composition on the generation attempt. Exact post-hoc audit (current
+// shot state may have drifted from what was actually sent), read-only.
+export const getShotVideoPromptComposition = async (project: Project, shotId: string) => {
+  const rows = await selectAll('generation_attempts', {
+    project_id: project.id,
+    shot_id: shotId,
+    stage: 'generate-shot-video',
+  }, { orderBy: 'created_at', ascending: false, limit: 1 });
+  const row = rows[0] as any;
+  const composition = row?.request_summary?.promptComposition || null;
+  return {
+    kind: 'mirage.shot_video_prompt',
+    projectId: project.id,
+    shotId,
+    attemptId: row?.id || null,
+    generatedAt: row?.created_at || null,
+    composition,
+    webUrl: webStudioUrl(project.id, { step: 'studio', shotId, action: 'review-video' }),
+    note: composition
+      ? 'What was actually sent for the most recent video generation, decomposed by source + edit path. Edit the named source to change it.'
+      : 'No prior video generation found for this shot. Use generate_video dryRun to preview the composition before spending.',
+  };
+};
+
 export const applyGenerateVideo = async (
   project: Project,
   shotId: string,
   promptOverride?: string,
   modelOverride: ModelOverride = {},
-  opts: { acknowledgePreviousChargeRisk?: boolean; nativeAudioMode?: 'auto' | 'off' | 'on'; recipeSlots?: Record<string, string> } = {},
+  opts: { acknowledgePreviousChargeRisk?: boolean; nativeAudioMode?: 'auto' | 'off' | 'on'; recipeSlots?: Record<string, string>; contextOverrides?: VideoContextOverrides } = {},
 ) => {
   const plan = planGenerateVideo(project, shotId, modelOverride);
   if (!plan.canRun) {
@@ -1465,6 +1547,7 @@ export const applyGenerateVideo = async (
     promptOverride,
     nativeAudioMode: opts.nativeAudioMode,
     recipeSlots: opts.recipeSlots,
+    contextOverrides: opts.contextOverrides,
     modelOverride: { videoModel: modelOverride.videoModel },
   });
   await recordDirectorEvent({
