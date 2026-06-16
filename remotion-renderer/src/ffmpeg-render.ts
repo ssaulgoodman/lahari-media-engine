@@ -59,46 +59,13 @@ const hasNonDefaultEffects = (details: any) => {
   return false;
 };
 
-// Saved timelines often carry layout metadata with purely default values.
-// The ffmpeg path composes every visual as objectFit "contain" centered on
-// the full canvas, so a layout value that reproduces exactly that is benign;
-// anything else is a real transform and must fall back to Remotion. Unknown
-// or unparseable values count as non-default (correctness over speed).
+// Saved timelines often carry editor layout metadata, but the current
+// render-authoritative video/image composition ignores it: both preview and
+// Remotion render visuals as full-canvas objectFit "contain" plus effect
+// styles. Do not force a Remotion fallback for metadata that Remotion itself
+// does not apply. When visual transforms become render-authoritative, add the
+// corresponding implementation to both Remotion and FFmpeg before gating here.
 const hasNonDefaultLayout = (details: any, size: { width: number; height: number }) => {
-  if (!details) return false;
-  for (const key of ['top', 'left', 'right', 'bottom', 'x', 'y']) {
-    const value = details[key];
-    if (value === undefined || value === null) continue;
-    if (parseFloat(String(value)) !== 0) return true;
-  }
-  for (const [key, full] of [['width', size?.width], ['height', size?.height]] as const) {
-    const value = details[key];
-    if (value === undefined || value === null) continue;
-    if (Number(value) !== full) return true;
-  }
-  for (const key of ['scale', 'scaleX', 'scaleY']) {
-    const value = details[key];
-    if (value === undefined || value === null) continue;
-    const numeric = Number(value);
-    // identity in either unit convention (1 = css scale factor, 100 = percent)
-    if (numeric !== 1 && numeric !== 100) return true;
-  }
-  for (const key of ['rotate', 'rotation']) {
-    const value = details[key];
-    if (value === undefined || value === null) continue;
-    if (parseFloat(String(value)) !== 0) return true;
-  }
-  if (details.transform != null && String(details.transform).trim() !== '' && details.transform !== 'none') return true;
-  if (details.objectFit != null && details.objectFit !== 'contain') return true;
-  if (details.objectPosition != null) {
-    const position = String(details.objectPosition).trim().toLowerCase();
-    if (position !== 'center' && position !== 'center center' && position !== '50% 50%') return true;
-  }
-  if (details.crop != null) {
-    if (typeof details.crop !== 'object') return true;
-    const cropValues = Object.values(details.crop).filter((value) => value !== undefined && value !== null);
-    if (cropValues.some((value) => parseFloat(String(value)) !== 0)) return true;
-  }
   return false;
 };
 
