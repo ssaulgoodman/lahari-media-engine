@@ -1,6 +1,6 @@
 # Mirage Platform v1 — Source of Truth Ledger
 
-**Status:** 🔒 LOCKED 2026-05-18 — execution begins next session
+**Status:** 🔒 LOCKED historical v1 ledger — v1 shipped; use for decisions/contracts/checkpoints
 **Date:** 2026-05-18
 **Branch:** `mirage`
 **Owners:** Claude + Codex working in parallel tracks
@@ -14,10 +14,11 @@ Both Claude and Codex read from and append progress to this ledger. Pick a task 
 
 **Navigation:** §2 (locked decisions D1-D28), §3 (architecture), §4 (tracks T1-T10), §6 (sequencing), §7 (contracts), §8 (open questions), §9 (checkpoints, append-only). When jumping in cold, read your owned tracks in §4 + tail §9 for what just shipped. The whole file is the single source of truth; if older docs disagree, this wins.
 
-**Fast read (2026-06-13):**
+**Fast read (2026-06-16):**
 - Use this ledger for locked Mirage v1 decisions, contracts, and checkpoint history.
 - For current post-v1/Lahari convergence planning, start with `docs/mirage-convergence-ledger.md`.
 - For current action inventory and prompt/tool gaps, start with `docs/mirage-tool-reference.md` and `docs/mirage-tool-and-prompt-audit.md`.
+- v1 has passed a real music-video smoke. The current product frontier is not basic function; it is payload transparency, durable override parity between agent and Studio, storyboard prompt auditing, render/timeline polish, and storage/render ops hardening.
 - When changing pipeline behavior, check D1-D28 + `docs/pipeline-anatomy.md`, then append a checkpoint here.
 
 ---
