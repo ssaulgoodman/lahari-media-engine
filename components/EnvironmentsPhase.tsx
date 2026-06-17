@@ -270,8 +270,8 @@ export const EnvironmentsPhase: React.FC<Props> = ({
             {activeEnv ? (
               <div key={activeEnv.id} className="rounded-xl overflow-hidden border border-white/[0.06]">
                 {/* Header bar */}
-                <div className="px-5 py-3 flex items-center gap-4 border-b border-white/[0.06]">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="px-5 py-3 flex flex-col xl:flex-row xl:items-center gap-3 border-b border-white/[0.06]">
+                  <div className="flex items-center gap-3 min-w-0 flex-1 w-full">
                     <input
                       key={`env-name-${activeEnv.id}`}
                       defaultValue={activeEnv.name}
@@ -283,7 +283,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                           onSetProject?.(updated);
                         } catch (err: any) { showActionError(`Save failed: ${err.message}`); }
                       }}
-                      className="text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1 w-auto"
+                      className="min-w-0 flex-1 text-sm font-medium text-white bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-white/20 rounded px-1 -ml-1"
                     />
                     {activeEnv.referenceImageUrl && (
                       <span className="text-xs text-zinc-400 flex items-center gap-1.5 flex-shrink-0">
@@ -299,6 +299,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                             } catch (err: any) { showActionError(`Unlock failed: ${err.message}`); }
                           }}
                           className="text-zinc-500 hover:text-amber-400/80 transition-colors"
+                          aria-label={`Unlock ${activeEnv.name} look`}
                           title="Unlock and regenerate — pick a different look"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
@@ -306,7 +307,7 @@ export const EnvironmentsPhase: React.FC<Props> = ({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="flex flex-wrap items-center gap-1.5 w-full xl:w-auto xl:justify-end xl:flex-shrink-0">
                     <input
                       type="file"
                       accept="image/*"
