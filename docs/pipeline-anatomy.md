@@ -462,12 +462,15 @@ Planner vision refs are intentionally narrow: artist attached ref, previous stor
 
 The renderer prompt is built in `generateStoryboardVersionUnlocked`:
 
-`renderPrompt = refBindingContract + saved storyboard prompt`
+`renderPrompt = workflowRenderContract + refBindingContract + saved storyboard prompt`
 
 For edit-image refine mode, the prompt becomes an edit instruction against the previous storyboard image instead of resending the full saved prompt/cut plan.
 
+When the active project storyboard override is the `hf_music_video` recipe, the renderer adds the HF sketch-board contract at paid image-call time. That contract is canonical for both fresh board generation and edit-image refine: boards must be pure black-and-white ink/pencil planning sheets, refs are converted into sketch guidance, and color/final-render texture from existing refs or previous boards is explicitly stripped. Normal non-HF projects keep the default renderer behavior.
+
 | Slot | Current owner | Source | Edit path |
 |---|---|---|---|
+| `workflow_render_contract` | workflow recipe + engine | active `project_prompt_overrides.kind='storyboard'`; currently `hf_music_video` enables the black-and-white sketch-board render contract | `apply_project_workflow` / `apply_project_prompt_override` |
 | `ref_binding_contract` | engine | `buildStoryboardRefBindingContract(refMeta)` from attached refs | ref locks / `contextOverrides` / shot excluded refs |
 | `board_prompt` | shot state | `shots.storyboard_prompt` or edit instruction | `apply_storyboard_prompts` / `refine_storyboard_image` |
 | `refs` | project/shot graph | locked style, active cast refs, environment ref, optional previous storyboard, optional artist ref | `lock_reference`, storyboard ref exclusions, `contextOverrides`, upload/import |
@@ -481,7 +484,7 @@ The renderer already persists strong evidence: `assets.prompt`, `storyboard_vers
 Storyboard generation should get the same auditability as storyboard video, but as a separate slice:
 
 1. Add `composeStoryboardPlannerPrompt` for the planner surface with segments: `core_task`, `source_brief`, `current_board`, `current_cut_plan`, `continuity`, `style_notes`, `project_override`, `artist_note`, `output_contract`, `planner_refs`.
-2. Add `composeStoryboardRenderPrompt` for the image-render surface with segments: `ref_binding_contract`, `board_prompt`, `edit_instruction`, `guardrails`, `refs`, `context_trace`, `provider_params`.
+2. Extend the current `composeStoryboardRenderPrompt` into a provenance-returning composer for the image-render surface with segments: `workflow_render_contract`, `ref_binding_contract`, `board_prompt`, `edit_instruction`, `guardrails`, `refs`, `context_trace`, `provider_params`.
 3. Persist the composition on generation attempts / storyboard version metadata; keep routine receipts lean.
 4. When this second surface is composed, replace `describe_video_prompt` with the general `describe_prompt({ kind })` read action instead of adding sibling `describe_storyboard_prompt`.
 

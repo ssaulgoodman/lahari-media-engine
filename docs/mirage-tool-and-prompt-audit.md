@@ -378,6 +378,8 @@ Renders one reusable environment reference.
 
 Renders the storyboard image for one shot from the saved storyboard prompt.
 
+When the active project storyboard override is the `hf_music_video` workflow recipe, the render path prepends the HF black-and-white sketch-board contract to both fresh generation and edit-image refine. This is enforced in the paid renderer prompt, not just in the planner text, so Studio and MCP calls share the same canonical behavior.
+
 - Triggered by: `generate_storyboard`, `bulk_generate_storyboards`
 - Model: `project.storyboard_provider` (nano-banana-2 / nano-banana-pro / gpt-image-2)
 - Inputs: storyboardPrompt (saved), locked style/cast/env refs, optional artist edit instruction in refine mode

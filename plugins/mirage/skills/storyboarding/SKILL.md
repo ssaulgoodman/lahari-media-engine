@@ -46,7 +46,7 @@ It can be empty when the board order is enough.
 
 ## HF Music Planning
 
-When the artist asks for HF/Supercomputer-style music-video planning, do not make that the global storyboard style. Use `run_action(list_workflows)` and `run_action(apply_project_workflow, { name: "hf_music_video" })` first. That recipe makes storyboard boards black-and-white sketch planning sheets: pure white paper, ink/pencil, no color, no labels, no captions. Panels should map to song beats, lyric sections, camera moments, or choreography rather than final-render beauty frames. The final video style still comes from locked style/cast/environment refs.
+When the artist asks for HF/Supercomputer-style music-video planning, do not make that the global storyboard style. Use `run_action(list_workflows)` and `run_action(apply_project_workflow, { name: "hf_music_video" })` first. That recipe makes storyboard boards black-and-white sketch planning sheets: pure white paper, ink/pencil, no color, no labels, no captions. Panels should map to song beats, lyric sections, camera moments, or choreography rather than final-render beauty frames. The final video style still comes from locked style/cast/environment refs. Once the workflow is active, Mirage also enforces the HF sketch-board contract during storyboard render/refine, so regenerate bad color boards instead of hand-pasting the recipe into each shot.
 
 ## Check The Board
 
