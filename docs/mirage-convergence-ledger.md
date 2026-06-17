@@ -1,10 +1,10 @@
 # Mirage Convergence Ledger
 
 **Date opened:** 2026-06-08
-**Status:** Active planning ledger — post-smoke product frontier
+**Status:** Active planning ledger — Lahari/workspace/tenant convergence
 **Horizon:** post-v1. The v1 ledger (`mirage-platform-v1-ledger.md`) is now historical
-decision/checkpoint truth; this ledger owns the next horizon and depends on nothing in v1
-being undone.
+decision/checkpoint truth; this ledger owns the Lahari-as-tenant horizon and depends on
+nothing in v1 being undone.
 
 ## North Star
 
@@ -18,8 +18,8 @@ now that the shape is found.
 **Fast read (2026-06-16):**
 - Prize: one Mirage codebase; Lahari becomes tenant #1 through workspace/preset-pack primitives.
 - Already landed from the audit: paid-generation guards, shot topology, render cancel/salvage, artist memory/assets, server-backed timelines, sidebar, media-library uploads.
-- Music-video smoke passed. Payload/prompt audit materially improved output quality; the next product move is making that inspection and control visible in Studio.
-- Ready next without workspace forks: PX payload transparency, CP/Yapper/persona acceptance, and small reliability/UX hardening.
+- Music-video smoke passed; smoke-derived Studio/product work now lives in `docs/mirage-post-smoke-product-ledger.md`.
+- Ready next without workspace forks: CP/Yapper/persona acceptance and small reliability/UX hardening.
 - Fork-gated work: workspace tenancy, preset-pack scoping, Lahari queue/data cutover, workspace-level provider keys.
 
 **Why it's the prize, not just cleanup:** one binary, no dual maintenance — and every Mirage
@@ -39,7 +39,11 @@ recipes + model choices + render defaults.
   / project). This ledger is its execution plan.
 - `lahari-divergence-audit.md` — the port-candidate backlog (render fixes, extra-shot, memory).
   Tracks below pull from it.
-- `mirage-platform-v1-ledger.md` — predecessor; same format. v1 must land first.
+- `mirage-platform-v1-ledger.md` — predecessor; same format. v1 has shipped and remains
+  decision/checkpoint truth.
+- `mirage-post-smoke-product-ledger.md` — smoke-derived Mirage product maturity work
+  (payload inspector, durable overrides, shot-scoped reads, timeline/render polish). Referenced
+  here because Lahari will inherit it, but tracked separately because it is not convergence work.
 
 ## Current landed work
 
@@ -133,41 +137,6 @@ nav (Blueprint/Studio/Render) › account/settings/profile/BYOK at bottom.** Bui
 workspace-aware from day one so the shell isn't rebuilt twice. `usePersistedProject` already
 maps phases to URL params — presentation change, not a routing rewrite.
 
-### PX — Payload transparency + durable override parity `[ready now — no forks]`
-
-The post-smoke frontier. The music-video smoke proved the engine can produce useful work, and
-also proved that prompt/payload auditing improves the creative result. The next product layer
-is to make that power visible and controllable in Studio instead of leaving it as an agent-only
-debug maneuver.
-
-**Done when:** from Studio, a human can inspect the same composed payload an agent sees before
-spending on storyboard/video generation, understand which segment came from which source, toggle
-or remove safe segments, preview the resulting dry-run prompt, and generate with exactly that
-visible state. If an agent used `contextOverrides` or a project/workflow override, Studio makes
-that state explicit instead of silently reverting to defaults on the next click.
-
-**First surface: video storyboard-mode.** Show the composed sections the engine already knows:
-`format`, `animation`, `beat`, `refs`, `cut_plan`, `audio`, `guardrail`, and final provider
-prompt. Each section should display its source and edit path: workflow recipe, shot direction,
-locked refs, storyboard/cut plan, audio analysis/source song, project prompt override, per-call
-`contextOverrides`, or exact `promptOverride`.
-
-**Manipulation model:** `contextOverrides` remain per-generation toggles by default. Studio
-should expose them as visible chips/toggles (for example remove Beat, suppress Cut Plan, exclude
-Refs, hide Audio) and send the matching dry-run/generate payload. A separate explicit action
-should persist a useful configuration as shot default or project recipe/override; do not make
-one-off generation tweaks durable by accident.
-
-**Second surface: storyboard generation audit.** Bring storyboard generation under the same
-composition discipline as video: named segments, one owner for universal guardrails, persisted
-attempt anatomy, dry-run/describe support, and no duplicate/conflicting recipe/wrapper language.
-When the second composed surface lands, fold the read side toward a generic
-`describe_prompt({ kind })` rather than adding a family of `describe_*_prompt` tools.
-
-**Why before Lahari convergence:** Lahari-as-tenant will multiply workflows and operators. If
-payload state is invisible, every new workflow becomes another hidden behavior stack. If payload
-state is visible/manipulatable, workflows become product controls, not folklore.
-
 ### CP — Yapper Pack v1 (preset-pack pilot) `[ready now — no forks]`
 The smallest real preset-pack pilot, chosen to *earn* the workspace/queue foundation rather
 than guess it. Proves the persona/pack pattern with low blast radius before C2 exists.
@@ -258,18 +227,17 @@ StepRender flow, or visual design?* Scope this once C1/C3 land.
 ```
 C0  (closed)
 C1  (landed, visual pass pending) ──┐
-PX  (payload transparency — ready now) ──► makes prompts/workflows inspectable
 CP  (Yapper Pack v1 — user-scoped, no forks) ──► teaches ──► C2 / generic queue / C4
 F1,F3,F4 ─► C2 ───────────────┼─► C4 ─► C5 (cutover)
 F2 ─► C3 ─────────────────────┘
 C1 + C3 ─► C6 (polish)
 ```
 
-Sequencing note: PX is the recommended immediate product slice after the music-video smoke,
-because it turns the agent-only prompt audit win into Studio-native visibility/control. CP
-(Yapper Pack v1) remains the lowest-blast-radius preset-pack pilot and can run next or in
-parallel. The generic workspace queue follows CP, then C2 re-homes personas under workspaces,
-then C4 ports Lahari as a bigger adapter on the same primitive.
+Sequencing note: CP (Yapper Pack v1) remains the lowest-blast-radius convergence-adjacent
+preset-pack pilot. Smoke-derived Studio/product maturity work should proceed from
+`docs/mirage-post-smoke-product-ledger.md` and will be inherited by Lahari later, but it should
+not crowd this convergence plan. The generic workspace queue follows CP, then C2 re-homes
+personas under workspaces, then C4 ports Lahari as a bigger adapter on the same primitive.
 
 ## Checkpoints
 
@@ -356,10 +324,10 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
   general workspace primitive.
 - 2026-06-16 · music-video smoke · `ee873d2` / `9cbb700` · Lingashtakam/Suprabhatam smoke proved
   the end-to-end music-video loop is usable and that prompt/payload auditing materially improves
-  creative output. Follow-up frontier is PX: Studio-visible payload sections, durable override
-  parity between agent and Studio, storyboard composer audit, and render/timeline polish. The
-  same smoke surfaced a render storage-size cap on the free Mirage Supabase project; long final
-  renders need higher-cap storage or an explicit preview-compression policy.
+  creative output. Follow-up product work moved to `docs/mirage-post-smoke-product-ledger.md`
+  so this ledger stays focused on Lahari/workspace/tenant convergence. The same smoke surfaced a
+  render storage-size cap on the free Mirage Supabase project; long final renders need
+  higher-cap storage or an explicit preview-compression policy.
 
 ## References
 
@@ -368,4 +336,5 @@ _(Append as tracks execute. Format: date · track · commit · note.)_
 - Tenant port execution plan (C2/C4/C5): `mirage-lahari-tenant-port-plan.md`
 - Product shape: `mirage-beta-workspace-preset-packs.md`
 - Recipe rails for C4: `mirage-workflow-recipes.md`
+- Post-smoke Mirage product maturity: `mirage-post-smoke-product-ledger.md`
 - v1 predecessor: `mirage-platform-v1-ledger.md`

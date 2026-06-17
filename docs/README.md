@@ -8,7 +8,8 @@ Anything in `docs/archive/` is historical. Do not treat archived docs as current
 
 | File | What it is |
 |---|---|
-| [`mirage-platform-v1-ledger.md`](./mirage-platform-v1-ledger.md) | Mirage v1 decisions, active tracks, contracts, checkpoints, and operational state. This wins over older v1/platform plans. |
+| [`mirage-platform-v1-ledger.md`](./mirage-platform-v1-ledger.md) | Mirage v1 decisions, contracts, checkpoints, and historical operational state. This wins over older v1/platform plans. |
+| [`mirage-post-smoke-product-ledger.md`](./mirage-post-smoke-product-ledger.md) | Smoke-derived Mirage product work: payload inspector, durable overrides, shot-scoped reads, local audit artifacts, timeline UX, and render ops. |
 | [`mirage-convergence-ledger.md`](./mirage-convergence-ledger.md) | Post-v1 plan for Lahari-as-tenant convergence, workspaces, packs, queue shape, and sequencing. |
 | [`codex-native-doctrine.md`](./codex-native-doctrine.md) | Durable operating contract for source of truth, MCP/CLI boundary, editability tiers, distribution, and session protocol. |
 | [`agent-working-method.md`](./agent-working-method.md) | Practical agent working discipline and review habits. |
