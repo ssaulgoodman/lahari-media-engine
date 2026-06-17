@@ -1441,6 +1441,12 @@ export type VideoContextOverrides = {
   includeRefs?: boolean;
   includeCutPlan?: boolean;
   includeAudio?: boolean;
+  includeStyleImage?: boolean;
+  includeCastRefs?: boolean | string[];
+  excludeCastRefs?: string[];
+  includeEnvironmentRefs?: boolean | string[];
+  excludeEnvironmentRefs?: string[];
+  includePreviousStoryboard?: boolean;
 };
 
 // dryRun preview: build the exact composition that WOULD be sent, decomposed by

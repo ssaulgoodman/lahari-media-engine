@@ -7,6 +7,7 @@ import { refreshChainedShotPrompt } from './claude.js';
 import { composeStoryboardVideoPrompt, type VideoPromptComposition } from './videoPromptComposition.js';
 import { getRuntimePreset } from '../presets.js';
 import { loadStoryboardContext, getShotExcludedRefs } from './storyboard.js';
+import { shouldIncludeStoryboardRefKey, type ContextOverrides } from './contextOverrides.js';
 import { logCall, buildContextChain } from '../xray.js';
 import type { XRayReference } from '../xray.js';
 import { parseTimestamp } from '../routes/scope-helpers.js';
@@ -55,6 +56,14 @@ type VideoGenerationRef = {
   id?: string;
 };
 
+type VideoContextOverrides = ContextOverrides & {
+  includeFormat?: boolean;
+  includeShotBeat?: boolean;
+  includeRefs?: boolean;
+  includeCutPlan?: boolean;
+  includeAudio?: boolean;
+};
+
 type DialogueLine = {
   id?: string;
   characterId?: string;
@@ -88,14 +97,10 @@ export type GenerateShotVideoOptions = {
   modelOverride?: {
     videoModel?: string;
   };
-  // Per-slot include/exclude for the storyboard video prompt composition.
-  contextOverrides?: {
-    includeFormat?: boolean;
-    includeShotBeat?: boolean;
-    includeRefs?: boolean;
-    includeCutPlan?: boolean;
-    includeAudio?: boolean;
-  };
+  // Per-slot prompt include/exclude plus ref include/exclude controls for
+  // storyboard-mode video. Ref controls reuse the same ContextOverrides
+  // vocabulary as storyboard rendering.
+  contextOverrides?: VideoContextOverrides;
   // Build the composition + requirements and return without spending or side effects.
   dryRun?: boolean;
 };
@@ -300,7 +305,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
   const shotCastIds = JSON.parse(shot.cast_ids || '[]');
   const cast = await selectAll('cast_members', { project_id: projectId });
   const activeCast = cast.filter((c: any) => shotCastIds.includes(c.id));
-  const storyboardSentRefs: { label: string; filePath: string }[] = [];
+  const storyboardSentRefs: { label: string; filePath: string; assetId?: string | null }[] = [];
   const storyboardAudioRefs: XRayReference[] = [];
   const t0 = Date.now();
   let finalVideoPromptForTrace = shot.motion_prompt || 'Cinematic camera movement';
@@ -339,13 +344,55 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
     } else {
       if (useStoryboardMode && storyboardContext) {
         const excludedVideoKeys = getShotExcludedRefs(shot).video;
-        const allowedRefs = excludedVideoKeys.length
-          ? storyboardContext.refMeta.filter((r) => !r.excludableKey || !excludedVideoKeys.includes(r.excludableKey))
-          : storyboardContext.refMeta;
+        const allowedRefs = storyboardContext.refMeta.filter((ref) => {
+          if (ref.excludableKey && excludedVideoKeys.includes(ref.excludableKey)) return false;
+          return shouldIncludeStoryboardRefKey(ref.excludableKey, opts.contextOverrides);
+        });
+        const requestedEnvIds = Array.isArray(opts.contextOverrides?.includeEnvironmentRefs)
+          ? opts.contextOverrides.includeEnvironmentRefs
+          : [];
+        const requestedCastIds = Array.isArray(opts.contextOverrides?.includeCastRefs)
+          ? opts.contextOverrides.includeCastRefs
+          : [];
+        const existingKeys = new Set(allowedRefs.map((ref) => ref.excludableKey).filter(Boolean));
+        for (const envId of requestedEnvIds) {
+          const key = `env:${envId}`;
+          if (existingKeys.has(key) || excludedVideoKeys.includes(key)) continue;
+          const env = await selectOne('environments', { id: envId });
+          if (!env || env.project_id !== projectId) throw structuredVideoError('invalid_video_context_ref', `Environment reference ${envId} is not in this project.`, { envId });
+          if (!env.reference_asset_id) continue;
+          const asset = await selectOne('assets', { id: env.reference_asset_id });
+          if (asset?.file_path) {
+            allowedRefs.push({
+              label: `Environment reference: ${env.name || 'Environment'}`,
+              assetId: asset.id,
+              filePath: asset.file_path,
+              excludableKey: key,
+            });
+            existingKeys.add(key);
+          }
+        }
+        for (const castId of requestedCastIds) {
+          const key = `cast:${castId}`;
+          if (existingKeys.has(key) || excludedVideoKeys.includes(key)) continue;
+          const member = await selectOne('cast_members', { id: castId });
+          if (!member || member.project_id !== projectId) throw structuredVideoError('invalid_video_context_ref', `Cast reference ${castId} is not in this project.`, { castId });
+          if (!member.reference_asset_id) continue;
+          const asset = await selectOne('assets', { id: member.reference_asset_id });
+          if (asset?.file_path) {
+            allowedRefs.push({
+              label: `Character reference: ${member.name || 'Character'}`,
+              assetId: asset.id,
+              filePath: asset.file_path,
+              excludableKey: key,
+            });
+            existingKeys.add(key);
+          }
+        }
         for (const ref of allowedRefs) {
           if (referenceImagePaths.length >= 9) break;
           referenceImagePaths.push(ref.filePath);
-          storyboardSentRefs.push({ label: ref.label, filePath: ref.filePath });
+          storyboardSentRefs.push({ label: ref.label, filePath: ref.filePath, assetId: ref.assetId });
         }
       } else {
         for (const c of activeCast) {
@@ -515,7 +562,7 @@ const generateShotVideoUnlocked = async (projectId: string, shotId: string, opts
           ...(storyboardAsset?.file_path
             ? [{ ref: '@image1', role: 'storyboard board', assetId: shot.storyboard_asset_id || null, source: 'locked storyboard version' }]
             : []),
-          ...storyboardSentRefs.map((ref, idx) => ({ ref: `@image${idx + 2}`, role: ref.label, assetId: null, source: 'locked reference' })),
+          ...storyboardSentRefs.map((ref, idx) => ({ ref: `@image${idx + 2}`, role: ref.label, assetId: ref.assetId || null, source: 'locked reference' })),
         ],
         params: {
           model: videoModelKey,

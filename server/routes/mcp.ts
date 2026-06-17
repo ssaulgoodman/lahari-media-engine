@@ -330,6 +330,12 @@ const generateVideoInputSchema = z.object({
     includeRefs: z.boolean().optional(),
     includeCutPlan: z.boolean().optional(),
     includeAudio: z.boolean().optional(),
+    includeStyleImage: z.boolean().optional(),
+    includeCastRefs: contextOverrideListSchema.optional(),
+    excludeCastRefs: maxArray(idString, 80).optional(),
+    includeEnvironmentRefs: contextOverrideListSchema.optional(),
+    excludeEnvironmentRefs: maxArray(idString, 80).optional(),
+    includePreviousStoryboard: z.boolean().optional(),
   }).optional(),
 });
 const applyVideoPromptInputSchema = z.object({
