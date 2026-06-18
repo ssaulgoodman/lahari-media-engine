@@ -144,7 +144,7 @@ Work:
 second composed surface, design `describe_prompt({ kind, projectId, shotId?, entityId? })`
 instead of adding a family of `describe_*_prompt` tools.
 
-### P3b — Upload Storyboard As-Is `[ready now]`
+### P3b — Upload Storyboard As-Is `[landed locally]`
 
 **Goal:** a human or agent can bypass generation and attach an exact storyboard image without
 fighting the UI.
@@ -161,6 +161,11 @@ product work is a clean Studio button:
 **Done when:** in Studio, a user can click "Upload storyboard as-is", choose/drop an image, and
 see it become the active board for that shot with the same downstream eligibility as generated
 boards.
+
+**Implementation note:** landed as a Studio storyboard-tab upload button plus a scoped web route
+that stores a `shot_storyboard` asset, creates a `storyboard_versions` row with upload
+provenance, makes it the active unlocked board, and marks video stale. The existing Lock button
+remains the explicit approval step.
 
 ### P4 — Shot-Scoped Agent Reads `[ready now]`
 
@@ -334,3 +339,6 @@ repeatable human/agent product surface.
   state and decomposed prompt payloads were more useful than local workbench editing; biggest
   friction was broad `open_project` payloads and verbose dry-run prompt bodies. Render surfaced
   a storage object-size cap; local recovery produced a valid MP4.
+- 2026-06-18 · P3b landed locally · — · Studio can upload a native storyboard image as-is for a
+  shot. The upload becomes the active storyboard version without a provider call and stays
+  unlocked until the artist explicitly locks it.

@@ -627,6 +627,16 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     }
   };
 
+  const handleUploadStoryboardImage = async (shotId: string, file: File) => {
+    if (!project) return;
+    try {
+      const p = await api.uploadStoryboardImage(project.id, shotId, file);
+      setProject(p);
+    } catch (err: any) {
+      setError(`Upload storyboard failed: ${err.message}`);
+    }
+  };
+
   const handleUploadShotRef = async (shotId: string, file: File) => {
     if (!project) return;
     try {
@@ -1531,6 +1541,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                     onClearEndFrame={handleClearEndFrame}
                     onClearExtractedFrame={handleClearExtractedFrame}
                     onUploadEndFrame={handleUploadEndFrame}
+                    onUploadStoryboardImage={handleUploadStoryboardImage}
                     onRefineEndFramePrompt={handleRefineEndFramePrompt}
                     onRefineVideoPrompt={handleRefineVideoPrompt}
                     onUploadShotRef={handleUploadShotRef}

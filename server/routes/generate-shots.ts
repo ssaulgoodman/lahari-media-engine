@@ -31,6 +31,15 @@ const parseJson = <T>(value: any, fallback: T): T => {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 };
 
+const imageExtFromMime = (mimeType?: string, fallbackName?: string) => {
+  const fromName = path.extname(fallbackName || '').replace(/^\./, '').toLowerCase();
+  if (['png', 'jpg', 'jpeg', 'webp'].includes(fromName)) return fromName;
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.includes('webp')) return 'webp';
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg';
+  return 'png';
+};
+
 const updateShotIfStatus = async (
   shotId: string,
   statusColumn: 'image_status' | 'video_status' | 'end_image_status',
@@ -575,6 +584,105 @@ router.post('/:id/shots/:shotId/unlock-storyboard', async (req, res) => {
   } catch (err: any) {
     console.error(`[shot ${shotId}] Storyboard unlock failed:`, err);
     res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/:id/shots/:shotId/upload-storyboard', upload.single('image'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  if (!req.file) return res.status(400).json({ error: 'image file required' });
+  if (!String(req.file.mimetype || '').toLowerCase().startsWith('image/')) {
+    return res.status(400).json({ error: 'Storyboard upload requires an image file' });
+  }
+
+  const shot = await selectOne('shots', { id: shotId });
+  if (!shot) return res.status(404).json({ error: 'Shot not found' });
+
+  try {
+    const ext = imageExtFromMime(req.file.mimetype, req.file.originalname);
+    const filePath = await saveBuffer(req.file.buffer, 'images', ext);
+    const assetId = uuidv4();
+    const versionId = uuidv4();
+    const importedAt = new Date().toISOString();
+    const note = String(req.body?.note || 'Uploaded storyboard image as-is').trim();
+    const parentVersionId = shot.storyboard_version_id || null;
+
+    await insertRow('assets', {
+      id: assetId,
+      project_id: projectId,
+      shot_id: shotId,
+      category: 'shot_storyboard',
+      file_path: filePath,
+      prompt: note,
+      metadata: JSON.stringify({
+        storyboardVersionId: versionId,
+        variant: 'studio_uploaded_storyboard_image',
+        importedAt,
+        importedBy: 'web',
+        originalName: req.file.originalname || null,
+        mimeType: req.file.mimetype || null,
+        bytes: req.file.size || null,
+      }),
+    });
+
+    await insertRow('storyboard_versions', {
+      id: versionId,
+      project_id: projectId,
+      shot_id: shotId,
+      asset_id: assetId,
+      parent_version_id: parentVersionId,
+      openai_response_id: null,
+      openai_image_call_ids: [],
+      reasoning_model: null,
+      image_model: 'studio_upload',
+      prompt: shot.storyboard_prompt || null,
+      artist_note: note,
+      refs: [],
+      metadata: {
+        variant: 'studio_uploaded_storyboard_image',
+        sourceAssetId: assetId,
+        importedAt,
+        importedBy: 'web',
+        previousVersionId: parentVersionId,
+        note,
+        originalName: req.file.originalname || null,
+        mimeType: req.file.mimetype || null,
+        bytes: req.file.size || null,
+      },
+      locked: false,
+    });
+
+    await updateRows('storyboard_versions', { shot_id: shotId }, { locked: false });
+    await updateRows('shots', { id: shotId }, {
+      storyboard_asset_id: assetId,
+      storyboard_version_id: versionId,
+      storyboard_status: 'success',
+      storyboard_locked: false,
+      storyboard_user_feedback: note,
+      video_status: 'stale',
+      last_error: null,
+    });
+
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_uploaded',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist uploaded a storyboard image as-is in the web studio.',
+      payload: {
+        assetId,
+        versionId,
+        previousVersionId: parentVersionId,
+        imageUrl: storageUrl(filePath),
+      },
+    });
+
+    res.json(await getFullProject(projectId));
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard upload failed:`, err);
+    sendStructuredError(res, err);
   }
 });
 

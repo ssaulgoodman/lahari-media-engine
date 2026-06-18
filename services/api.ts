@@ -817,6 +817,13 @@ export const uploadEndFrame = async (projectId: string, shotId: string, file: Fi
   return handleResponse(res);
 };
 
+export const uploadStoryboardImage = async (projectId: string, shotId: string, file: File) => {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/upload-storyboard`, { method: 'POST', body: form });
+  return handleResponse(res);
+};
+
 export const uploadShotRef = async (projectId: string, shotId: string, file: File): Promise<{ ok: true; ref: { id: string; url: string } }> => {
   const form = new FormData();
   form.append('image', file);

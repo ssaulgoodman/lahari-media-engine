@@ -44,6 +44,7 @@ interface StoryboardPanelProps {
   // Storyboard callbacks — required at this boundary; parent guarantees them.
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onUploadStoryboardImage?: (shotId: string, file: File) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
   onCancelStoryboard: (shotId: string) => void;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
@@ -73,7 +74,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   project, shot, scene,
   resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboardImage, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onUpdateShot,
   onGenerateVideo,
   setModalImage,
@@ -105,6 +106,8 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   const savedFlashTimer = useRef<number | null>(null);
   const refineRef = useRef<HTMLTextAreaElement>(null);
   const [refineImage, setRefineImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const uploadStoryboardInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingStoryboard, setUploadingStoryboard] = useState(false);
   // Storyboard prompt is collapsed by default once it has content — the
   // generated text can run several paragraphs and dominates the panel when
   // every shot expands it. Click to expand; a refine auto-expands so the
@@ -354,6 +357,17 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
     if (!isLocked && hasStoryboard) void handleLock();
   }, [lockRequestToken, isLocked, hasStoryboard, handleLock]);
 
+  const handleStoryboardUpload = async (file: File) => {
+    if (!onUploadStoryboardImage || uploadingStoryboard) return;
+    setUploadingStoryboard(true);
+    try {
+      await onUploadStoryboardImage(shot.id, file);
+      setSubTab('storyboard');
+    } finally {
+      setUploadingStoryboard(false);
+    }
+  };
+
   const handleRefine = async (feedback: string) => {
     if (!feedback.trim()) return;
     const key = `storyboard:${shot.id}`;
@@ -582,6 +596,8 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
+          onUploadStoryboardClick={onUploadStoryboardImage ? () => uploadStoryboardInputRef.current?.click() : undefined}
+          uploadingStoryboard={uploadingStoryboard}
           onCancelStoryboard={onCancelStoryboard}
           onLock={handleLock}
           onUnlockStoryboard={onUnlockStoryboard}
@@ -608,6 +624,17 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onGenerateVideo={onGenerateVideo}
         />
       )}
+      <input
+        ref={uploadStoryboardInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleStoryboardUpload(file);
+          if (uploadStoryboardInputRef.current) uploadStoryboardInputRef.current.value = '';
+        }}
+      />
     </div>
   );
 };
@@ -648,6 +675,8 @@ interface StoryboardTabBodyProps {
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onUploadStoryboardClick?: () => void;
+  uploadingStoryboard: boolean;
   onCancelStoryboard: (shotId: string) => void;
   onLock: () => Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
@@ -662,7 +691,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   onPromptChange, onPlanBlur,
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
   refineImage, onRefineImageChange,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboardClick, uploadingStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
@@ -813,6 +842,18 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             )}
             {isGenerating ? 'Rendering…' : hasStoryboard ? 'Regenerate image' : 'Generate image'}
           </button>
+          {onUploadStoryboardClick && (
+            <button
+              type="button"
+              onClick={onUploadStoryboardClick}
+              disabled={isGenerating || saving || isWritingPrompt || uploadingStoryboard}
+              className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              title="Upload an existing storyboard image and make it the active board for this shot."
+            >
+              {uploadingStoryboard && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
+              {uploadingStoryboard ? 'Uploading…' : 'Upload as-is'}
+            </button>
+          )}
           {isGenerating && (
             <button
               type="button"

@@ -100,6 +100,7 @@ interface ShotCardProps {
   onOpenShotXray?: (shotId: string, shotLabel: string) => void;
   onClearExtractedFrame?: (shotId: string) => void | Promise<void>;
   onUploadEndFrame?: (shotId: string, file: File) => void | Promise<void>;
+  onUploadStoryboardImage?: (shotId: string, file: File) => void | Promise<void>;
   onUploadShotRef?: (shotId: string, file: File) => void | Promise<void>;
   onDeleteShotRef?: (shotId: string, assetId: string) => void | Promise<void>;
   onSetProject?: (project: ApiProject) => void;
@@ -118,7 +119,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
-  onUploadEndFrame, onUploadShotRef, onDeleteShotRef, onSetProject, setModalImage,
+  onUploadEndFrame, onUploadStoryboardImage, onUploadShotRef, onDeleteShotRef, onSetProject, setModalImage,
   onJumpToAudioPhase,
   onOpenShotXray,
 }) => {
@@ -614,6 +615,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               onUpdateStoryboardPlan={onUpdateStoryboardPlan}
               onUpdateShot={onUpdateShot}
               onGenerateVideo={onGenerateVideo}
+              onUploadStoryboardImage={onUploadStoryboardImage}
               setModalImage={setModalImage}
               subTab={storyboardSubTab}
               onSubTabChange={setStoryboardSubTab}
