@@ -891,6 +891,18 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
     }
   };
 
+  const handleUploadStoryboard = async (shotId: string, file: File) => {
+    if (!project) return;
+    updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.LOADING });
+    try {
+      const result = await api.uploadStoryboard(project.id, shotId, file);
+      setProject(result.project);
+    } catch (err: any) {
+      updateShotOptimistic(shotId, { storyboardStatus: GenerationStatus.ERROR });
+      setError(`Storyboard upload failed: ${err.message}`);
+    }
+  };
+
   const handleWriteStoryboardPrompt = async (shotId: string, feedback?: string) => {
     if (!project) return;
     updateShotOptimistic(shotId, { storyboardPromptStatus: GenerationStatus.LOADING, storyboardPromptUserFeedback: feedback });
@@ -1489,6 +1501,7 @@ export const AppShell: React.FC<{ user: { id: string; email?: string; user_metad
                     onGenerateVideo={handleGenerateVideo}
                     onWriteStoryboardPrompt={handleWriteStoryboardPrompt}
                     onGenerateStoryboard={handleGenerateStoryboard}
+                    onUploadStoryboard={handleUploadStoryboard}
                     onRefineStoryboard={handleRefineStoryboard}
                     onCancelStoryboard={handleCancelStoryboard}
                     onLockStoryboard={handleLockStoryboard}

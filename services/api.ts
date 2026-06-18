@@ -529,6 +529,18 @@ export const generateStoryboard = async (projectId: string, shotId: string, sign
   return handleResponse(res);
 };
 
+export const uploadStoryboard = async (projectId: string, shotId: string, file: File, artistNote?: string, lock = false) => {
+  const form = new FormData();
+  form.append('image', file);
+  if (artistNote?.trim()) form.append('artistNote', artistNote.trim());
+  if (lock) form.append('lock', 'true');
+  const res = await authFetch(`${API}/projects/${projectId}/shots/${shotId}/upload-storyboard`, {
+    method: 'POST',
+    body: form,
+  });
+  return handleResponse(res);
+};
+
 export type StoryboardRefineMode = 'replan' | 'edit_image';
 
 export const refineStoryboard = async (

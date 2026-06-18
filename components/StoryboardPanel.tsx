@@ -44,6 +44,7 @@ interface StoryboardPanelProps {
   // Storyboard callbacks — required at this boundary; parent guarantees them.
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onUploadStoryboard: (shotId: string, file: File) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
   onCancelStoryboard: (shotId: string) => void;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
@@ -70,7 +71,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
   project, shot, scene,
   resolveRefDisplay,
   isRefining, onRefineStart, onRefineEnd,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onUpdateShot,
   onGenerateVideo,
   setModalImage,
@@ -581,6 +582,7 @@ export const StoryboardPanel: React.FC<StoryboardPanelProps> = ({
           onRefineImageChange={setRefineImage}
           onWriteStoryboardPrompt={onWriteStoryboardPrompt}
           onGenerateStoryboard={onGenerateStoryboard}
+          onUploadStoryboard={onUploadStoryboard}
           onCancelStoryboard={onCancelStoryboard}
           onLock={handleLock}
           onUnlockStoryboard={onUnlockStoryboard}
@@ -647,6 +649,7 @@ interface StoryboardTabBodyProps {
   onRefineImageChange: (image: { file: File; previewUrl: string } | null) => void;
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onUploadStoryboard: (shotId: string, file: File) => void | Promise<void>;
   onCancelStoryboard: (shotId: string) => void;
   onLock: () => Promise<void>;
   onUnlockStoryboard: (shotId: string) => void | Promise<void>;
@@ -662,9 +665,10 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
   isPromptCollapsed, onTogglePromptCollapse, recentlyRefined,
   hideLockControls,
   refineImage, onRefineImageChange,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboard, onCancelStoryboard, onLock, onUnlockStoryboard, onRefine, refineRef,
 }) => {
   const saving = saveState === 'saving';
+  const uploadBoardInputRef = useRef<HTMLInputElement>(null);
   const isWritingPrompt = shot.storyboardPromptStatus === GenerationStatus.LOADING;
   // Cast / environment changed in Script since this storyboard was planned.
   // Only meaningful once a prompt actually exists — otherwise "stale" is
@@ -806,6 +810,27 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               Stop
             </button>
           )}
+          <input
+            ref={uploadBoardInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={isGenerating || saving}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void onUploadStoryboard(shot.id, file);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => uploadBoardInputRef.current?.click()}
+            disabled={isGenerating || saving}
+            className="px-3 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40"
+            title="Upload a fixed storyboard image and make it the active board for this shot. It will appear in history and can be locked after review."
+          >
+            Upload fixed board
+          </button>
           {/* Lock no longer hard-blocks on empty cut plan. The artist may
               deliberately delete the cut plan to fall back to Seedance's
               "follow the storyboard image" default — see VideoTabBody and
@@ -837,6 +862,27 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
             </svg>
             Unlock storyboard
+          </button>
+          <input
+            ref={uploadBoardInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={isGenerating || saving}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void onUploadStoryboard(shot.id, file);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => uploadBoardInputRef.current?.click()}
+            disabled={isGenerating || saving}
+            className="text-[11px] text-zinc-400 hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-40"
+            title="Upload a fixed storyboard image as a new active version. The new uploaded board will be unlocked for review."
+          >
+            Upload fixed board
           </button>
         </div>
       )}

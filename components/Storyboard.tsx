@@ -21,6 +21,7 @@ interface Props {
   // non-null asserts further down the tree (StoryboardPanel needs them).
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onUploadStoryboard: (shotId: string, file: File) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
   onCancelStoryboard: (shotId: string) => void;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
@@ -59,7 +60,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue, isLoading }) => {
+export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, onSceneChange, onUpdateShot, onGenerateImage, onGenerateVideo, onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan, onLockShot, onRefinePrompt, onUpdateProject, onRewriteShotPrompts, onCancelRewritePrompts, onBulkGenerateFrames, onBulkGenerateVideos, onBulkWriteStoryboardPrompts, onBulkGenerateStoryboards, onCancelBulk, bulkStopNotice, onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame, onRevertVideo, onUseAsPrevEnd, onGenerateEndFrame, onClearEndFrame, onClearExtractedFrame, onUploadEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt, onUploadShotRef, onDeleteShotRef, onSetProject, frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue, isLoading }) => {
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [promptTab, setPromptTab] = useState<Record<string, 'image' | 'endframe' | 'video'>>({});
   const [videoOverride, setVideoOverride] = useState<Record<string, string>>({});
@@ -308,6 +309,7 @@ export const Storyboard: React.FC<Props> = ({ scenes, project, activeSceneIdx, o
                   onGenerateVideo={onGenerateVideo}
                   onWriteStoryboardPrompt={onWriteStoryboardPrompt}
                   onGenerateStoryboard={onGenerateStoryboard}
+                  onUploadStoryboard={onUploadStoryboard}
                   onRefineStoryboard={onRefineStoryboard}
                   onCancelStoryboard={onCancelStoryboard}
                   onLockStoryboard={onLockStoryboard}

@@ -15,7 +15,7 @@ import { SEGMIND_MODELS } from '../services/segmind.js';
 import { refineFramePrompt, refineMotionPrompt } from '../services/claude.js';
 import { describeFrame } from '../services/gemini.js';
 import { getImageGenerationModelName, getImageService } from '../services/image-provider.js';
-import { generateStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
+import { generateStoryboardVersion, importStoryboardVersion, lockStoryboardVersion, unlockStoryboardVersion, updateStoryboardCutPlan, writeStoryboardPrompt } from '../services/storyboard.js';
 import { eventResultPointers, recordDirectorEvent } from '../services/directorEvents.js';
 import { beginInFlightGeneration } from '../services/inFlightGeneration.js';
 import { getFullProject } from './projects.js';
@@ -384,6 +384,49 @@ router.post('/:id/shots/:shotId/generate-storyboard', async (req, res) => {
     res.status((err as any).statusCode || 500).json({ error: err.message });
   } finally {
     release();
+  }
+});
+
+router.post('/:id/shots/:shotId/upload-storyboard', upload.single('image'), async (req, res) => {
+  const projectId = paramStr(req.params.id);
+  const shotId = paramStr(req.params.shotId);
+  if (!req.file) return res.status(400).json({ error: 'image required' });
+  if (!req.file.mimetype?.startsWith('image/')) return res.status(400).json({ error: 'Storyboard upload must be an image file.' });
+
+  try {
+    const ext = path.extname(req.file.originalname || '').slice(1) || (req.file.mimetype === 'image/jpeg' ? 'jpg' : 'png');
+    const storagePath = await saveBuffer(req.file.buffer, 'images', ext);
+    const result = await importStoryboardVersion({
+      projectId,
+      shotId,
+      storagePath,
+      artistNote: req.body?.artistNote || req.body?.note || null,
+      originalName: req.file.originalname || null,
+      mimeType: req.file.mimetype || null,
+      bytes: req.file.size || null,
+      lock: req.body?.lock === 'true' || req.body?.lock === true,
+    });
+    await recordDirectorEvent({
+      projectId,
+      userId: req.userId,
+      source: 'web',
+      eventType: 'storyboard_uploaded',
+      entityType: 'shot',
+      entityId: shotId,
+      summary: 'Artist uploaded a fixed storyboard board and made it the active storyboard.',
+      payload: {
+        artistNote: req.body?.artistNote || req.body?.note || null,
+        originalName: req.file.originalname || null,
+        mimeType: req.file.mimetype || null,
+        bytes: req.file.size || null,
+        lock: req.body?.lock === 'true' || req.body?.lock === true,
+        result: eventResultPointers(result),
+      },
+    });
+    res.json({ ok: true, storyboard: result, project: await getFullProject(projectId) });
+  } catch (err: any) {
+    console.error(`[shot ${shotId}] Storyboard upload failed:`, err);
+    res.status((err as any).statusCode || 500).json({ error: err.message });
   }
 });
 

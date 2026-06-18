@@ -691,6 +691,93 @@ export const unlockStoryboardVersion = async (projectId: string, shotId: string)
   });
 };
 
+export const importStoryboardVersion = async (opts: {
+  projectId: string;
+  shotId: string;
+  storagePath: string;
+  artistNote?: string | null;
+  originalName?: string | null;
+  mimeType?: string | null;
+  bytes?: number | null;
+  lock?: boolean;
+}) => {
+  const shot = await selectOne('shots', { id: opts.shotId });
+  if (!shot) throw new Error('Shot not found');
+
+  const scene = await selectOne('scenes', { id: shot.scene_id });
+  if (!scene || scene.project_id !== opts.projectId) throw new Error('Shot does not belong to this project');
+
+  const assetId = uuidv4();
+  const versionId = uuidv4();
+  const note = opts.artistNote?.trim() || null;
+  const prompt = shot.storyboard_prompt || note || 'Artist-uploaded storyboard image';
+  const cutPlanText = shot.storyboard_cut_plan || '';
+
+  await insertRow('assets', {
+    id: assetId,
+    project_id: opts.projectId,
+    shot_id: opts.shotId,
+    category: 'shot_storyboard',
+    file_path: opts.storagePath,
+    prompt,
+    metadata: JSON.stringify({
+      storyboardVersionId: versionId,
+      source: 'upload',
+      originalName: opts.originalName || null,
+      mimeType: opts.mimeType || null,
+      bytes: opts.bytes || null,
+    }),
+  });
+
+  if (opts.lock) {
+    await updateRows('storyboard_versions', { shot_id: opts.shotId }, { locked: false });
+  }
+
+  await insertRow('storyboard_versions', {
+    id: versionId,
+    project_id: opts.projectId,
+    shot_id: opts.shotId,
+    asset_id: assetId,
+    parent_version_id: shot.storyboard_version_id || null,
+    openai_response_id: null,
+    openai_image_call_ids: [],
+    reasoning_model: null,
+    image_model: 'artist-upload',
+    prompt,
+    artist_note: note,
+    refs: [],
+    metadata: {
+      source: 'upload',
+      cutPlanText,
+      storyboardPrompt: shot.storyboard_prompt || '',
+      originalName: opts.originalName || null,
+      mimeType: opts.mimeType || null,
+      bytes: opts.bytes || null,
+    },
+    locked: !!opts.lock,
+  });
+
+  await updateRows('shots', { id: opts.shotId }, {
+    storyboard_asset_id: assetId,
+    storyboard_version_id: versionId,
+    storyboard_status: 'success',
+    storyboard_locked: !!opts.lock,
+    storyboard_user_feedback: note,
+    video_status: 'stale',
+    last_error: null,
+  });
+
+  return {
+    versionId,
+    assetId,
+    imageUrl: storageUrl(opts.storagePath),
+    storagePath: opts.storagePath,
+    responseId: null,
+    reasoningModel: null,
+    imageModel: 'artist-upload',
+  };
+};
+
 export const updateStoryboardCutPlan = async (
   projectId: string,
   shotId: string,

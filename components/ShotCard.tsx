@@ -71,6 +71,7 @@ interface ShotCardProps {
   // here would force `!` non-null asserts inside StoryboardPanel.
   onWriteStoryboardPrompt: (shotId: string, feedback?: string) => void | Promise<void>;
   onGenerateStoryboard: (shotId: string) => void | Promise<void>;
+  onUploadStoryboard: (shotId: string, file: File) => void | Promise<void>;
   onRefineStoryboard: (shotId: string, feedback: string, previousVersionId?: string, refineMode?: StoryboardRefineMode, referenceImage?: File) => void | Promise<void>;
   onCancelStoryboard: (shotId: string) => void;
   onLockStoryboard: (shotId: string, versionId?: string) => void | Promise<void>;
@@ -104,7 +105,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   isRefining, onRefineStart, onRefineEnd,
   frameQueue, videoQueue, storyboardPromptQueue, storyboardImageQueue,
   onUpdateShot, onGenerateImage, onGenerateVideo, onLockShot, onRefinePrompt,
-  onWriteStoryboardPrompt, onGenerateStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
+  onWriteStoryboardPrompt, onGenerateStoryboard, onUploadStoryboard, onRefineStoryboard, onCancelStoryboard, onLockStoryboard, onUnlockStoryboard, onUpdateStoryboardPlan,
   onGenerateEndFrame, onRefineEndFramePrompt, onRefineVideoPrompt,
   onCancelShotImage, onCancelShotVideo, onUsePrevLastFrame, onClearShotFrame,
   onRevertVideo, onUseAsPrevEnd, onClearEndFrame, onClearExtractedFrame,
@@ -584,6 +585,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
               onRefineEnd={onRefineEnd}
               onWriteStoryboardPrompt={onWriteStoryboardPrompt}
               onGenerateStoryboard={onGenerateStoryboard}
+              onUploadStoryboard={onUploadStoryboard}
               onRefineStoryboard={onRefineStoryboard}
               onCancelStoryboard={onCancelStoryboard}
               onLockStoryboard={onLockStoryboard}
