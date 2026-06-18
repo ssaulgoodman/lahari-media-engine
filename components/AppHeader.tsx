@@ -71,24 +71,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       <div className="flex items-center gap-1 flex-shrink-0">
         {project && realtimeBadge && (
-          <div
-            className="hidden lg:flex items-center gap-2 max-w-[260px] px-2.5 py-1 rounded-md surface-inset text-[11px] text-zinc-300"
-            title={activeAgentOperationList.length > 1
-              ? activeAgentOperationList.map(op => op.label).join(' · ')
-              : realtimeBadge.message}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                realtimeBadge.tone === 'working' ? 'bg-amber-400 animate-pulse'
-                  : realtimeBadge.tone === 'error' ? 'bg-red-400'
-                    : 'bg-emerald-400'
-              }`}
-            />
-            <span className="truncate">
-              {realtimeBadge.message}
-              {activeAgentOperationList.length > 1 ? ` +${activeAgentOperationList.length - 1}` : ''}
-            </span>
-          </div>
+          <ActivityPill
+            activeAgentOperationList={activeAgentOperationList}
+            realtimeBadge={realtimeBadge}
+          />
         )}
         {project && (
           <>
@@ -110,6 +96,60 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     </div>
   </header>
 );
+
+const ActivityPill: React.FC<{
+  activeAgentOperationList: AgentOperationRow[];
+  realtimeBadge: RealtimeNotice;
+}> = ({ activeAgentOperationList, realtimeBadge }) => {
+  const title = activeAgentOperationList.length > 1
+    ? activeAgentOperationList.map(op => op.label).join(' · ')
+    : realtimeBadge.message;
+  const toneClass = realtimeBadge.tone === 'error'
+    ? 'border-red-400/20 text-red-200/90 bg-red-500/[0.04]'
+    : realtimeBadge.tone === 'updated'
+      ? 'border-emerald-400/15 text-zinc-300 bg-emerald-400/[0.03]'
+      : 'border-white/[0.08] text-zinc-300 bg-white/[0.035]';
+
+  return (
+    <div
+      className={`hidden lg:flex items-center gap-2 max-w-[300px] px-2.5 py-1 rounded-full border shadow-sm transition-all duration-300 ${toneClass}`}
+      title={title}
+      role="status"
+      aria-live="polite"
+    >
+      <ActivityGlyph tone={realtimeBadge.tone} />
+      <span className="truncate text-[11px]">
+        {realtimeBadge.message}
+        {activeAgentOperationList.length > 1 ? ` +${activeAgentOperationList.length - 1}` : ''}
+      </span>
+    </div>
+  );
+};
+
+const ActivityGlyph: React.FC<{ tone: RealtimeNotice['tone'] }> = ({ tone }) => {
+  if (tone === 'working') {
+    return (
+      <span
+        className="w-3 h-3 rounded-full border border-zinc-500/60 border-t-zinc-100 animate-spin flex-shrink-0"
+        aria-hidden="true"
+      />
+    );
+  }
+  if (tone === 'error') {
+    return (
+      <span className="w-3 h-3 rounded-full border border-red-300/40 bg-red-400/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+        <span className="w-1 h-1 rounded-full bg-red-300" />
+      </span>
+    );
+  }
+  return (
+    <span className="w-3 h-3 rounded-full border border-emerald-300/30 bg-emerald-300/10 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-200">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    </span>
+  );
+};
 
 const ProjectedCost: React.FC<{ project: ApiProject }> = ({ project }) => {
   const model = getVideoModel(project.videoModel);

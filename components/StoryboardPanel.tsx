@@ -795,7 +795,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             // Stale → subtle amber ring nominates Rewrite as the recommended
             // next action. No size change; reads as "this one first" without
             // shouting.
-            className={`px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5 ${promptStale ? 'ring-1 ring-amber-400/40' : ''}`}
+            className={`min-w-[112px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5 ${promptStale ? 'ring-1 ring-amber-400/40' : ''}`}
             title={promptStale ? stalenessHint : undefined}
           >
             {isWritingPrompt && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
@@ -819,7 +819,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
           <button
             onClick={() => onGenerateStoryboard(shot.id)}
             disabled={isGenerating || saving || promptRequired}
-            className="px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+            className="min-w-[134px] justify-center px-3 py-1.5 bg-white text-black rounded-md text-xs font-semibold hover:bg-zinc-200 disabled:opacity-30 transition-colors flex items-center gap-1.5"
             // Tooltip priority: required-fields error > staleness hint >
             // nothing. Staleness only surfaces after the first storyboard
             // exists; before that the artist hasn't seen any output yet so
@@ -847,7 +847,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
               type="button"
               onClick={onUploadStoryboardClick}
               disabled={isGenerating || saving || isWritingPrompt || uploadingStoryboard}
-              className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              className="min-w-[98px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-40 flex items-center gap-1.5"
               title="Upload an existing storyboard image and make it the active board for this shot."
             >
               {uploadingStoryboard && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}
@@ -873,7 +873,7 @@ const StoryboardTabBody: React.FC<StoryboardTabBodyProps> = ({
             <button
               onClick={handleLockClick}
               disabled={isGenerating || saving || locking}
-              className="px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="min-w-[74px] justify-center px-3 py-1.5 bg-white/[0.06] hover:bg-white/[0.1] text-zinc-300 hover:text-white border border-white/[0.08] rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
               title={saving ? 'Saving first…' : locking ? 'Locking…' : 'Lock this storyboard so video generation can use it.'}
             >
               {(saving || locking) && <div className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />}

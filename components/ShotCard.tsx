@@ -141,6 +141,7 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   // Header lock requests for an expanded storyboard panel route through the
   // panel (it owns versionId resolution); the token bump triggers its lock.
   const [storyboardLockRequestToken, setStoryboardLockRequestToken] = useState(0);
+  const [headerPendingAction, setHeaderPendingAction] = useState<'image' | 'video' | 'lock' | null>(null);
   const endFrameFileRef = useRef<HTMLInputElement>(null);
 
   const isStoryboardMode = storyboardSupported && studioMode === 'storyboard';
@@ -159,6 +160,26 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   // In storyboard mode the storyboard image stands in for the start frame —
   // show it as soon as it exists, alongside any video that gets generated.
   const showMediaSection = isStoryboardMode ? (hasStoryboard || hasVideo || shot.storyboardStatus === GenerationStatus.LOADING || shot.videoStatus === GenerationStatus.LOADING) : true;
+  const headerImageWorking = headerPendingAction === 'image'
+    || shot.storyboardPromptStatus === GenerationStatus.LOADING
+    || shot.storyboardStatus === GenerationStatus.LOADING
+    || shot.imageStatus === GenerationStatus.LOADING
+    || shot.imageStatus === GenerationStatus.CRITIQUING;
+  const headerVideoWorking = headerPendingAction === 'video' || shot.videoStatus === GenerationStatus.LOADING;
+  const headerLockWorking = headerPendingAction === 'lock' || !!isLockingShot;
+
+  const runHeaderAction = async (action: 'image' | 'video' | 'lock', fn: () => void | Promise<void>) => {
+    if (headerPendingAction) return;
+    setHeaderPendingAction(action);
+    try {
+      await Promise.all([
+        Promise.resolve(fn()),
+        new Promise(resolve => window.setTimeout(resolve, 220)),
+      ]);
+    } finally {
+      setHeaderPendingAction(current => current === action ? null : current);
+    }
+  };
 
   // Build auto video prompt for display (mirrors server-side generate-video.ts logic)
   const buildAutoVeoPrompt = () => {
@@ -296,14 +317,15 @@ export const ShotCard: React.FC<ShotCardProps> = ({
           )}
           <button
             onClick={() => {
-              if (isStoryboardMode) {
-                if (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()) onWriteStoryboardPrompt(shot.id);
-                else onGenerateStoryboard(shot.id);
-                return;
-              }
-              onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'));
+              void runHeaderAction('image', () => {
+                if (isStoryboardMode) {
+                  if (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()) return onWriteStoryboardPrompt(shot.id);
+                  return onGenerateStoryboard(shot.id);
+                }
+                return onGenerateImage(scene.id, shot.id, getActiveRefs(shot, 'image'));
+              });
             }}
-            disabled={isGenerating || (!actionable && !shot.locked)}
+            disabled={!!headerPendingAction || isGenerating || (!actionable && !shot.locked)}
             className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
             title={isStoryboardMode
               ? (!shot.storyboardPrompt?.trim() || !shot.storyboardCutPlan?.trim()
@@ -316,33 +338,47 @@ export const ShotCard: React.FC<ShotCardProps> = ({
                 : hasStoryboard ? 'Regenerate storyboard image' : 'Generate storyboard image')
               : hasStartFrame ? 'Regenerate start frame' : 'Generate start frame'}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+            {headerImageWorking ? (
+              <span className="w-3 h-3 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+            )}
           </button>
-          <button onClick={() => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))} disabled={!canGenerateVideo || isGenerating} className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center" title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'} aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          <button
+            onClick={() => { void runHeaderAction('video', () => onGenerateVideo(scene.id, shot.id, undefined, getActiveRefs(shot, 'video'))); }}
+            disabled={!!headerPendingAction || !canGenerateVideo || isGenerating}
+            className="w-7 h-7 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors disabled:opacity-30 flex items-center justify-center"
+            title={isStoryboardMode && !shot.storyboardLocked ? 'Lock the storyboard first' : hasVideo ? 'Regenerate video' : 'Generate video'}
+            aria-label={hasVideo ? 'Regenerate video' : 'Generate video'}
+          >
+            {headerVideoWorking ? (
+              <span className="w-3 h-3 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            )}
           </button>
           <button
             onClick={() => {
-              if (isStoryboardMode) {
-                if (shot.storyboardLocked) {
-                  onUnlockStoryboard(shot.id);
-                } else if (isExpanded) {
-                  setStoryboardLockRequestToken((n) => n + 1);
-                } else {
-                  onLockStoryboard(shot.id, shot.storyboardVersionId);
+              void runHeaderAction('lock', () => {
+                if (isStoryboardMode) {
+                  if (shot.storyboardLocked) return onUnlockStoryboard(shot.id);
+                  if (isExpanded) {
+                    setStoryboardLockRequestToken((n) => n + 1);
+                    return;
+                  }
+                  return onLockStoryboard(shot.id, shot.storyboardVersionId);
                 }
-                return;
-              }
-              onLockShot(scene.id, shot.id);
+                return onLockShot(scene.id, shot.id);
+              });
             }}
-            disabled={isLockingShot || isGenerating || (isStoryboardMode ? (!shot.storyboardLocked && !canLockStoryboard) : (!shot.locked && !canLockShot))}
+            disabled={!!headerPendingAction || isLockingShot || isGenerating || (isStoryboardMode ? (!shot.storyboardLocked && !canLockStoryboard) : (!shot.locked && !canLockShot))}
             className={`w-7 h-7 rounded-md transition-all flex items-center justify-center ${visibleLocked ? 'text-white bg-white/[0.08] hover:bg-white/[0.12]' : (isStoryboardMode ? canLockStoryboard : canLockShot) ? 'text-white ring-1 ring-white/50 hover:ring-white hover:bg-white/[0.04]' : 'text-zinc-400/60'} disabled:opacity-50`}
             title={isStoryboardMode
               ? (shot.storyboardLocked ? 'Unlock storyboard' : canLockStoryboard ? 'Lock storyboard for video' : 'Generate storyboard image first')
               : isLockingShot ? (shot.locked ? 'Locking…' : 'Unlocking…') : shot.locked ? 'Unlock shot' : canLockShot ? 'Lock shot' : 'Generate start frame + video first to lock'}
             aria-label={isStoryboardMode ? (shot.storyboardLocked ? 'Unlock storyboard' : 'Lock storyboard') : (shot.locked ? 'Unlock shot' : 'Lock shot')}
           >
-            {isLockingShot && !isStoryboardMode ? (
+            {headerLockWorking ? (
               <span className="w-3 h-3 border-2 border-zinc-500 border-t-white rounded-full animate-spin" />
             ) : visibleLocked ? (
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>

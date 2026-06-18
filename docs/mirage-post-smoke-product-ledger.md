@@ -432,3 +432,6 @@ repeatable human/agent product surface.
   refresh or agent polling loops.
 - 2026-06-18 · top-bar activity polish captured · — · Added refined agent/action indicators to
   Studio polish: calm spinners/progress pills, soft transitions, and no flashing debug colors.
+- 2026-06-18 · P1b first UI polish landed locally · — · Autosizing prompt textareas now refit on
+  external writes/layout changes, top-bar activity uses a refined status pill, and Studio shot
+  header / storyboard panel actions get immediate spinner feedback with steadier button widths.
