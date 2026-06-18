@@ -37,6 +37,9 @@ shot-scoped agent reads, local audit artifacts, timeline UX, and render ops.
   and render decisions should become reusable taste/workflow memory instead of dying in chat.
 - Studio needs obvious manual override controls for power users: upload this storyboard exactly
   as-is, lock it, use it downstream. No ceremony.
+- Studio interaction polish is now part of the product loop: expanded prompt panels must not
+  create huge blank scroll regions, and Lock/Generate buttons need immediate, elegant feedback
+  instead of delayed/janky state changes.
 - Render/editor is not the final creative surface. Mirage should hand shots, audio, captions,
   and metadata cleanly into a professional finishing path, ideally a Premiere Pro extension or
   export bridge, without losing Mirage shot identity.
@@ -100,6 +103,30 @@ before the paid call.
 
 **Done when:** a human can open a shot in Studio, inspect the full effective payload, toggle one
 section, dry-run, and generate with exactly the visible payload.
+
+### P1b — Studio Interaction Polish `[ready now]`
+
+**Goal:** Studio controls feel immediate, stable, and professional during repeated generation
+loops.
+
+Problems observed:
+
+- Expanded storyboard/prompt sections sometimes leave a long blank scroll region under the
+  textarea/body, forcing the user to scroll through empty space before reaching the end.
+- Core action buttons such as Lock and Generate can feel janky: feedback is delayed, spinner
+  state is not always elegant, and button/state changes can lag the action the artist just took.
+
+Work:
+
+- audit prompt/textarea containers for stale measured height, flex/min-height, virtualized
+  scroll, or autosize bugs that leave empty vertical space after agent-written text changes
+- make Lock/Generate actions optimistically show pending state immediately while still reconciling
+  against canonical server success/error
+- standardize disabled/loading/success/error button states across Studio shot cards and panels
+- avoid layout jump when buttons change labels or spinner state
+
+**Done when:** expanding a prompt section never creates phantom blank space, and every Lock /
+Generate click gives instant, calm feedback without shifting neighboring controls.
 
 ### P2 — Durable Override Parity `[ready now]`
 
@@ -356,16 +383,17 @@ artist before rendering if the expected output may exceed the current storage ca
 Recommended order:
 
 1. P1 video payload inspector.
-2. P2 durable override parity for the same surface.
-3. P2b per-shot workflow mode overrides.
-4. P3 storyboard composer audit.
-5. P4 shot-scoped agent reads and summary-first dry-run mode.
-6. P5b async job watch discipline.
-7. P3b upload storyboard as-is.
-8. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
-9. P7 storage/render ops fix.
-10. P6 timeline/sidebar/playback overhaul and then timeline agent actions.
-11. P6b Premiere Pro bridge after timeline/export semantics are stable.
+2. P1b Studio interaction polish for prompt panels and core action buttons.
+3. P2 durable override parity for the same surface.
+4. P2b per-shot workflow mode overrides.
+5. P3 storyboard composer audit.
+6. P4 shot-scoped agent reads and summary-first dry-run mode.
+7. P5b async job watch discipline.
+8. P3b upload storyboard as-is.
+9. P5 local audit artifacts, P5c isolated image fix workers, and P5d agent learning loop.
+10. P7 storage/render ops fix.
+11. P6 timeline/sidebar/playback overhaul and then timeline agent actions.
+12. P6b Premiere Pro bridge after timeline/export semantics are stable.
 
 P1/P2 are the most valuable first slice because they turn the successful smoke maneuver into a
 repeatable human/agent product surface.
@@ -385,3 +413,5 @@ repeatable human/agent product surface.
   through storyboard history.
 - 2026-06-18 · new UX/control backlog captured · — · Added per-shot workflow mode overrides,
   smooth toggleable sidebars, and guarded Space play/pause controls to the post-smoke roadmap.
+- 2026-06-18 · Studio polish backlog captured · — · Added the expanded-prompt blank-scroll bug
+  and delayed/janky Lock/Generate button feedback as first-class Studio interaction work.
